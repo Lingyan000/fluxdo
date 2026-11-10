@@ -70,7 +70,7 @@ class ComposerTopicKindPicker extends StatelessWidget {
       position: PopupMenuPosition.under,
       offset: const Offset(0, 6),
       padding: EdgeInsets.zero,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: context.shapes.borderRadius(8),
       tooltip: '',
       constraints: const BoxConstraints(minWidth: 180, maxWidth: 220),
       color: colors.surfaceContainer,
@@ -78,7 +78,7 @@ class ComposerTopicKindPicker extends StatelessWidget {
       shadowColor: colors.shadow.withValues(alpha: .24),
       surfaceTintColor: Colors.transparent,
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
         side: BorderSide(
           color: colors.outlineVariant.withValues(alpha: .45),
           width: .6,

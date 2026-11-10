@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -134,7 +135,7 @@ class LdcBalanceCard extends ConsumerWidget {
                           color: theme.colorScheme.secondaryContainer
                               .withValues(alpha: 0.5),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: Row(
@@ -182,7 +183,7 @@ class LdcBalanceCard extends ConsumerWidget {
           elevation: 0,
           color: theme.colorScheme.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
             side: BorderSide(
               color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
             ),
@@ -235,7 +236,7 @@ class LdcBalanceCard extends ConsumerWidget {
                         alpha: 0.5,
                       ),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
                     child: Row(
@@ -275,7 +276,7 @@ class LdcBalanceCard extends ConsumerWidget {
         elevation: 8,
         shadowColor: theme.colorScheme.primary.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -311,7 +312,7 @@ class LdcBalanceCard extends ConsumerWidget {
                           decoration: ShapeDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: context.shapes.borderRadius(12),
                             ),
                           ),
                           child: const Icon(
@@ -369,7 +370,7 @@ class LdcBalanceCard extends ConsumerWidget {
                         decoration: ShapeDecoration(
                           color: Colors.black.withValues(alpha: 0.2),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: context.shapes.borderRadius(20),
                           ),
                         ),
                         child: Row(
@@ -509,7 +510,7 @@ class LdcBalanceCard extends ConsumerWidget {
             ? theme.colorScheme.errorContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: isExpired
                 ? theme.colorScheme.error.withValues(alpha: 0.3)
@@ -577,7 +578,7 @@ class LdcBalanceCard extends ConsumerWidget {
       shadowColor: isExpired
           ? theme.colorScheme.error.withValues(alpha: 0.3)
           : theme.colorScheme.primary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -620,7 +621,7 @@ class LdcBalanceCard extends ConsumerWidget {
                         decoration: ShapeDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: Icon(
@@ -751,7 +752,7 @@ class LdcBalanceCard extends ConsumerWidget {
         elevation: 0,
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
           ),
@@ -792,7 +793,7 @@ class LdcBalanceCard extends ConsumerWidget {
     return Card(
       elevation: 8,
       shadowColor: theme.colorScheme.primary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -811,7 +812,7 @@ class LdcBalanceCard extends ConsumerWidget {
               decoration: ShapeDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: const Icon(

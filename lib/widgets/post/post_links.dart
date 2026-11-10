@@ -109,7 +109,7 @@ class _PostLinksState extends State<PostLinks>
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
@@ -123,11 +123,11 @@ class _PostLinksState extends State<PostLinks>
             onTap: () => setState(() => _expanded = !_expanded),
             customBorder: RoundedSuperellipseBorder(
               borderRadius: _expanded
-                  ? const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
+                  ? BorderRadius.only(
+                      topLeft: context.shapes.radius(12),
+                      topRight: context.shapes.radius(12),
                     )
-                  : BorderRadius.circular(12),
+                  : context.shapes.borderRadius(12),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -157,7 +157,7 @@ class _PostLinksState extends State<PostLinks>
                         alpha: 0.5,
                       ),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: context.shapes.borderRadius(8),
                       ),
                     ),
                     child: Text(
@@ -208,9 +208,9 @@ class _PostLinksState extends State<PostLinks>
                         InkWell(
                           onTap: () => setState(() => _showAll = true),
                           customBorder: RoundedSuperellipseBorder(
-                            borderRadius: const BorderRadius.only(
-                              bottomLeft: Radius.circular(12),
-                              bottomRight: Radius.circular(12),
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: context.shapes.radius(12),
+                              bottomRight: context.shapes.radius(12),
                             ),
                           ),
                           child: Container(
@@ -273,7 +273,7 @@ class _PostLinksState extends State<PostLinks>
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHighest,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: Text(

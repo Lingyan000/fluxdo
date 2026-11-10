@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -195,7 +196,7 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
           child: Material(
             elevation: 8,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
             clipBehavior: Clip.antiAlias,
             color: theme.colorScheme.surfaceContainerHigh,

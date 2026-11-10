@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
@@ -830,7 +831,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
       ),
       child: Column(
@@ -927,7 +928,7 @@ class _SortChip extends StatelessWidget {
                   alpha: 0.4,
                 ),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
         ),
         child: Text(

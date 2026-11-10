@@ -821,7 +821,7 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.inverseSurface,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                 ),
                 child: Padding(
@@ -989,7 +989,7 @@ class _ReactionItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
-    final borderRadius = BorderRadius.circular(14);
+    final borderRadius = context.shapes.borderRadius(14);
     final highlightScale = isHighlighted
         ? _kHighlightScale
         : isNeighbor

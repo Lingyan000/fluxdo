@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -167,7 +168,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                   decoration: ShapeDecoration(
                     color: scheme.surface,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: context.shapes.borderRadius(16),
                     ),
                   ),
                   child: Column(
@@ -217,7 +218,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
                       height: 240,
                       decoration: ShapeDecoration(
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: context.shapes.borderRadius(20),
                           side: BorderSide(
                             color: Colors.white.withValues(alpha: 0.85),
                             width: 2.5,

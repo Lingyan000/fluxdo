@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/s.dart';
@@ -54,7 +55,7 @@ Future<double?> showPlaybackSpeedMenu(
     elevation: darkOverlay ? 12 : null,
     shape: darkOverlay
         ? RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
             side: const BorderSide(color: Color(0x1FFFFFFF)),
           )
         : null,

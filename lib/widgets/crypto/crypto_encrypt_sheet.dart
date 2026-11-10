@@ -4,6 +4,7 @@
 /// 对称算法输出 ENC1（默认）或 OpenSSL 兼容格式；编码/哈希/经典直接输出。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -349,11 +350,11 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6)
               : theme.colorScheme.surfaceContainerHigh,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
           ),
           child: InkWell(
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
             onTap: () => setState(() {
               _outputFormat = format;

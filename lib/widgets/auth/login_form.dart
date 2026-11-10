@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -89,7 +90,7 @@ class _LoginFormState extends State<LoginForm> {
     Widget? suffixIcon,
   }) {
     OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: context.shapes.borderRadius(14),
       borderSide: BorderSide(color: color, width: width),
     );
     return InputDecoration(
@@ -183,7 +184,7 @@ class _LoginFormState extends State<LoginForm> {
             style: FilledButton.styleFrom(
               minimumSize: const Size(double.infinity, 56),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: context.shapes.borderRadius(28),
               ),
               elevation: 8,
               shadowColor: scheme.primary.withValues(alpha: 0.4),

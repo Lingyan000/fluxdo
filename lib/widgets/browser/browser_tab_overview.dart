@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
@@ -95,7 +96,7 @@ class BrowserTabOverview extends StatelessWidget {
                               child: Material(
                                 key: const ValueKey('browser-overview-panel'),
                                 color: colors.surface,
-                                borderRadius: BorderRadius.circular(28),
+                                borderRadius: context.shapes.borderRadius(28),
                                 clipBehavior: Clip.antiAlias,
                                 child: Column(
                                   children: [
@@ -315,7 +316,7 @@ class BrowserTabOverview extends StatelessWidget {
         key: ValueKey(tab),
         color: colors.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: context.shapes.borderRadius(18),
           side: BorderSide(color: colors.outlineVariant.withValues(alpha: .55)),
         ),
         clipBehavior: Clip.antiAlias,

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -178,7 +179,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
       decoration: ShapeDecoration(
         color: colorScheme.overlaySurface,
         shape: RoundedSuperellipseBorder(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),
       ),
       child: Column(
@@ -193,7 +194,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
               decoration: ShapeDecoration(
                 color: colorScheme.outlineVariant.withValues(alpha: 0.5),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: context.shapes.borderRadius(2),
                 ),
               ),
             ),
@@ -375,7 +376,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                     ),
                   ),
                   child: Text(
@@ -593,7 +594,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                         decoration: ShapeDecoration(
                           color: parentColor.withValues(alpha: 0.3),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(1),
+                            borderRadius: context.shapes.borderRadius(1),
                           ),
                         ),
                       ),
@@ -643,7 +644,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
           child: InkWell(
             onTap: () => _toggleTag(tag),
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
@@ -655,7 +656,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
                         alpha: 0.5,
                       ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                   side: BorderSide(
                     color: isSelected
                         ? colorScheme.primary.withValues(alpha: 0.5)
@@ -741,7 +742,7 @@ class _FilterChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -751,7 +752,7 @@ class _FilterChip extends StatelessWidget {
                 ? colorScheme.primaryContainer
                 : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               side: BorderSide(
                 color: isSelected
                     ? colorScheme.primary.withValues(alpha: 0.5)
@@ -834,7 +835,7 @@ class _CategoryFilterItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
         ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -849,7 +850,7 @@ class _CategoryFilterItem extends StatelessWidget {
                 ? color.withValues(alpha: 0.15)
                 : color.withValues(alpha: 0.08),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
               side: BorderSide(
                 color: isSelected ? color : color.withValues(alpha: 0.2),
                 width: 1,
@@ -1100,7 +1101,7 @@ class _RemovableChip extends StatelessWidget {
       decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
       ),
       child: Row(

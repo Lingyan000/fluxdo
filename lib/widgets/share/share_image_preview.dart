@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
@@ -295,7 +296,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
               ),
             ],
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -377,7 +378,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surface,
         shape: RoundedSuperellipseBorder(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
         ),
       ),
       child: Column(
@@ -390,7 +391,7 @@ class _ShareImagePreviewState extends ConsumerState<ShareImagePreview> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: context.shapes.borderRadius(2),
               ),
             ),
           ),

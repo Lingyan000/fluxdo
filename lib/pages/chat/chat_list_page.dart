@@ -622,8 +622,8 @@ class _UnreadPill extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 20),
       decoration: ShapeDecoration(
         color: error ? theme.colorScheme.error : theme.colorScheme.primary,
-        shape: const RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.all(Radius.circular(9999)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(context.shapes.radius(9999)),
         ),
       ),
       child: Text(

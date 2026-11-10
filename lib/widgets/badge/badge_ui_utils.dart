@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -98,7 +99,7 @@ class BadgeUIUtils {
         ),
       ],
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         side: BorderSide(
           color: borderColor.withValues(alpha: isDark ? 0.3 : 0.2),
           width: 1.5,

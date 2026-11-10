@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../../l10n/s.dart';
@@ -119,7 +120,7 @@ class PrivateMessageParticipants extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
           side: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
       ),
@@ -146,7 +147,7 @@ class PrivateMessageParticipants extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: context.shapes.borderRadius(999),
                   ),
                 ),
                 child: Text(
@@ -363,7 +364,7 @@ class _PmEntryChipState extends State<_PmEntryChip> {
           child: Material(
             color: theme.colorScheme.surfaceContainerHighest,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(

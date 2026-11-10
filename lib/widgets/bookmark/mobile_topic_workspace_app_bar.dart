@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -101,7 +102,7 @@ class MobileWorkspaceCountButton extends StatelessWidget {
         decoration: ShapeDecoration(
           color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
             side: BorderSide(
               color: colorScheme.outlineVariant.withValues(alpha: 0.6),
               width: 1,

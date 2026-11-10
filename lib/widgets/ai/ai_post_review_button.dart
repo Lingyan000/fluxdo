@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -563,7 +564,7 @@ class _LevelHeader extends StatelessWidget {
       decoration: ShapeDecoration(
         color: tone.color.withValues(alpha: 0.10),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: tone.color.withValues(alpha: 0.35)),
         ),
       ),
@@ -583,7 +584,7 @@ class _LevelHeader extends StatelessWidget {
             decoration: ShapeDecoration(
               color: tone.color,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: context.shapes.borderRadius(999),
               ),
             ),
             child: Text(
@@ -670,7 +671,7 @@ class _NoticeBox extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
       ),
       child: Row(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
+import 'ui_shapes.dart';
+
 // 统一底部弹框外壳常量
 const double _kSheetCornerRadius = 20.0;
 const double _kHandleWidth = 32.0;
@@ -114,8 +116,8 @@ class AppSheetScaffold extends StatelessWidget {
       shape: RoundedSuperellipseBorder(
         borderRadius:
             borderRadius ??
-            const BorderRadius.vertical(
-              top: Radius.circular(_kSheetCornerRadius),
+            BorderRadius.vertical(
+              top: context.shapes.radius(_kSheetCornerRadius),
             ),
       ),
       clipBehavior: Clip.antiAlias,

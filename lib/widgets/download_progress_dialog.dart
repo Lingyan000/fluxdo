@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,7 +28,7 @@ class DownloadProgressDialog extends ConsumerWidget {
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 40),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: context.shapes.borderRadius(32),
         child: SizedBox(
           width: dialogWidth,
           height: dialogHeight,

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -140,7 +141,7 @@ Widget buildPollStaticPreview({
     decoration: ShapeDecoration(
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.2),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.shapes.borderRadius(8),
         side: BorderSide(
           color: scheme.outline.withValues(alpha: 0.3),
           width: 1,
@@ -161,7 +162,7 @@ Widget buildPollStaticPreview({
                 decoration: ShapeDecoration(
                   color: scheme.primaryContainer.withValues(alpha: 0.6),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: context.shapes.borderRadius(10),
                   ),
                 ),
                 child: Text(
@@ -203,7 +204,7 @@ Widget buildPollStaticPreview({
                       decoration: ShapeDecoration(
                         color: scheme.surface,
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: context.shapes.borderRadius(6),
                           side: BorderSide(
                             color: scheme.outline.withValues(alpha: 0.2),
                           ),
@@ -490,7 +491,7 @@ class _PollWidgetState extends State<_PollWidget> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(
             color: theme.colorScheme.outline.withValues(alpha: 0.3),
             width: 1,
@@ -631,7 +632,7 @@ class _PollWidgetState extends State<_PollWidget> {
         return InkWell(
           onTap: _isVoting ? null : () => _vote(option.id),
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: context.shapes.borderRadius(6),
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -640,7 +641,7 @@ class _PollWidgetState extends State<_PollWidget> {
                   ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
                   : theme.colorScheme.surface,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: context.shapes.borderRadius(6),
                 side: BorderSide(
                   color: isUserVoted
                       ? theme.colorScheme.primary
@@ -740,7 +741,7 @@ class _PollWidgetState extends State<_PollWidget> {
     final hidden = _pieHidden.contains(index);
     return InkWell(
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: context.shapes.borderRadius(6),
       ),
       onTap: () => setState(() {
         // chart.js toggleDataVisibility 同款:点图例切换该项参与绘制
@@ -760,7 +761,7 @@ class _PollWidgetState extends State<_PollWidget> {
                 decoration: ShapeDecoration(
                   color: color,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(3),
+                    borderRadius: context.shapes.borderRadius(3),
                     side: BorderSide(
                       color: theme.colorScheme.outlineVariant.withValues(
                         alpha: 0.6,
@@ -847,7 +848,7 @@ class _PollWidgetState extends State<_PollWidget> {
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
                 : theme.colorScheme.surface,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
               side: BorderSide(
                 color: isUserVoted
                     ? theme.colorScheme.primary
@@ -896,7 +897,7 @@ class _PollWidgetState extends State<_PollWidget> {
               ),
               const SizedBox(height: 8),
               ClipRSuperellipse(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: context.shapes.borderRadius(2),
                 child: LinearProgressIndicator(
                   value: percentage / 100,
                   minHeight: 4,
@@ -1011,7 +1012,7 @@ class _PieChartInteractiveState extends State<_PieChartInteractive> {
       decoration: ShapeDecoration(
         color: Colors.black.withValues(alpha: 0.8),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
         ),
       ),
       child: Column(

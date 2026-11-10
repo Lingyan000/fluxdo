@@ -262,7 +262,7 @@ class _BoostAuthorPopoverCard extends StatelessWidget {
           elevation: 4,
           shadowColor: Colors.black.withValues(alpha: 0.35),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -359,7 +359,7 @@ class _PopoverActionButton extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: context.shapes.borderRadius(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),

@@ -9,6 +9,7 @@
   "kind": "fixed",
   "group": "reading",
   "order": 200,
+  "shape": "compact",
   "supportsPureBlack": false,
   "allowCustomAccent": true,
   "light": {

@@ -1408,7 +1408,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
         ),
       ),
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: context.shapes.borderRadius(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

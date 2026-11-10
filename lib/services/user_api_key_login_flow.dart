@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -185,7 +186,7 @@ class _AuthLoadingOverlay extends StatelessWidget {
             decoration: ShapeDecoration(
               color: theme.colorScheme.surface,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: context.shapes.borderRadius(16),
               ),
             ),
             child: Column(

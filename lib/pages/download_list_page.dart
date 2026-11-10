@@ -166,7 +166,7 @@ class _DownloadListPageState extends ConsumerState<DownloadListPage> {
                                 )
                               : Colors.transparent,
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: _DownloadCard(
@@ -361,7 +361,7 @@ class _DownloadCard extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: _statusColor(context).withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Icon(_statusIcon, color: _statusColor(context), size: 24),

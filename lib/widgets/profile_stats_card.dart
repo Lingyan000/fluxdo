@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,12 +34,12 @@ class ProfileStatsCard extends ConsumerWidget {
     if (config.enabledStats.isEmpty) {
       return Card(
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         child: InkWell(
           onTap: onEdit,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
@@ -98,12 +99,12 @@ class ProfileStatsCardPreview extends StatelessWidget {
         width: double.infinity,
         child: Card(
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           child: InkWell(
             onTap: onTap,
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -125,13 +126,13 @@ class ProfileStatsCardPreview extends StatelessWidget {
       width: double.infinity,
       child: Card(
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
@@ -561,7 +562,7 @@ class _DraggableStatItemState extends State<_DraggableStatItem> {
               elevation: 8,
               color: Colors.transparent,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               child: DefaultTextStyle(
                 style: theme.textTheme.bodyMedium!,
@@ -578,7 +579,7 @@ class _DraggableStatItemState extends State<_DraggableStatItem> {
                   ? theme.colorScheme.primary.withValues(alpha: 0.08)
                   : Colors.transparent,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
             ),
             child: Opacity(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -199,22 +200,22 @@ class GithubOneboxBuilder {
         decoration: ShapeDecoration(
           color: bgColor,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
             side: BorderSide(color: borderColor),
           ),
         ),
         child: InkWell(
           onTap: () => _launchUrl(context, url),
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // 文件头
               ClipRSuperellipse(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(7),
+                borderRadius: BorderRadius.vertical(
+                  top: context.shapes.radius(7),
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -280,7 +281,7 @@ class GithubOneboxBuilder {
                             );
                           },
                           customBorder: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: context.shapes.borderRadius(4),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(4),
@@ -994,7 +995,7 @@ class GithubOneboxBuilder {
                         decoration: ShapeDecoration(
                           color: theme.colorScheme.surfaceContainerHigh,
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: context.shapes.borderRadius(4),
                           ),
                         ),
                         child: Text(
@@ -1071,22 +1072,22 @@ class GithubOneboxBuilder {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: borderColor),
         ),
       ),
       child: InkWell(
         onTap: () => _launchUrl(context, url),
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 头部
             ClipRSuperellipse(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(7),
+              borderRadius: BorderRadius.vertical(
+                top: context.shapes.radius(7),
               ),
               child: Container(
                 padding: const EdgeInsets.symmetric(

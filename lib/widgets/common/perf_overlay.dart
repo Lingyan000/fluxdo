@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -156,7 +157,7 @@ class _PerfPanelState extends State<_PerfPanel> {
           key: _panelKey,
           color: Colors.black.withValues(alpha: 0.78),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: context.shapes.borderRadius(10),
           ),
           elevation: 4,
           child: ValueListenableBuilder<int>(
@@ -177,7 +178,7 @@ class _PerfPanelState extends State<_PerfPanel> {
         _reclampAfterLayout();
       },
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: context.shapes.borderRadius(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -282,14 +283,14 @@ class _PerfPanelState extends State<_PerfPanel> {
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: ShapeDecoration(
             color: Colors.white.withValues(alpha: 0.12),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
             ),
           ),
           child: Text(

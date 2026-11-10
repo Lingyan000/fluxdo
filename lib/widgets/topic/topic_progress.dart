@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -35,8 +36,8 @@ class TopicProgress extends StatelessWidget {
     return Card(
       elevation: 4,
       shadowColor: Colors.black26,
-      shape: const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(9999)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
       ),
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
@@ -266,7 +267,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
         decoration: ShapeDecoration(
           color: theme.colorScheme.surface,
           shape: RoundedSuperellipseBorder(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            borderRadius: BorderRadius.vertical(top: context.shapes.radius(28)),
           ),
         ),
         child: SafeArea(
@@ -281,7 +282,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                     alpha: 0.2,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: context.shapes.borderRadius(2),
                   ),
                 ),
               ),
@@ -450,7 +451,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                                   color: theme.colorScheme.primaryContainer
                                       .withValues(alpha: 0.4),
                                   shape: RoundedSuperellipseBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                                    borderRadius: context.shapes.borderRadius(8),
                                   ),
                                 ),
                                 child: Text(
@@ -582,7 +583,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: context.shapes.borderRadius(16),
                           ),
                         ),
                         child: Text(

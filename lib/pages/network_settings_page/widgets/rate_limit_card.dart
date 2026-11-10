@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
+import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,7 +40,7 @@ class _RateLimitCardState extends ConsumerState<RateLimitCard> {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

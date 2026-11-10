@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -501,7 +502,7 @@ class _SwipePreviewOverlay extends StatelessWidget {
                 child: Material(
                   color: bgColor,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                   elevation: triggerable ? 6 : 3,
                   shadowColor: shadow,

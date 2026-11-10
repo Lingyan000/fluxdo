@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 
 import 'route_interaction.dart';
 
+import 'ui_shapes.dart';
+
 part 'popup_menu_morph.dart';
 part 'popup_menu_interaction.dart';
 
@@ -782,7 +784,7 @@ class _SubmenuRoute extends PopupRoute<void>
     final PopupMenuThemeData popupMenuTheme = PopupMenuTheme.of(context);
     final ShapeBorder shape =
         popupMenuTheme.shape ??
-        RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20));
+        RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20));
 
     final Widget panelContent = Column(
       mainAxisSize: MainAxisSize.min,
@@ -1049,7 +1051,7 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
     final menuShape =
         widget.route.shape ??
         popupMenuTheme.shape ??
-        RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16));
+        RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16));
     final menuColor =
         widget.route.color ??
         popupMenuTheme.color ??

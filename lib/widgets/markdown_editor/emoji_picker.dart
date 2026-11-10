@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -256,7 +257,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
           shape: RoundedSuperellipseBorder(
             borderRadius: widget.compact
                 ? null
-                : const BorderRadius.vertical(top: Radius.circular(16)),
+                : BorderRadius.vertical(top: context.shapes.radius(16)),
           ),
         ),
         child: (() {
@@ -424,7 +425,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
                                 color: theme.colorScheme.primaryContainer
                                     .withValues(alpha: 0.5),
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: context.shapes.borderRadius(8),
                                 ),
                               ),
                             ),
@@ -570,7 +571,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       child: InkWell(
         onTap: () => _onEmojiTap(emoji),
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
         child: Tooltip(
           message: ':${emoji.name}:',
@@ -646,7 +647,7 @@ class _EmojiCell extends StatelessWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant
                 .withValues(alpha: 0.06),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
           ),
           child: SizedBox(width: width, height: height),
@@ -735,7 +736,7 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                       alpha: 0.5,
                     ),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: context.shapes.borderRadius(10),
                     ),
                   ),
                   child: TextField(
@@ -807,7 +808,7 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                     return InkWell(
                       onTap: () => widget.onSelected(emoji),
                       customBorder: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: context.shapes.borderRadius(4),
                       ),
                       child: Tooltip(
                         message: ':${emoji.name}:',
@@ -907,7 +908,7 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                       color: theme.colorScheme.surfaceContainerHighest
                           .withValues(alpha: 0.5),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
                     child: TextField(
@@ -1016,7 +1017,7 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                           Navigator.pop(context, emoji);
                         },
                         customBorder: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: context.shapes.borderRadius(8),
                         ),
                         child: Tooltip(
                           message: ':${emoji.name}:',

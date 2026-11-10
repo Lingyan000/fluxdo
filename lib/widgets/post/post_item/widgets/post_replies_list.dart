@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -53,7 +54,7 @@ class PostRepliesList extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.primary,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(1.5),
+                      borderRadius: context.shapes.borderRadius(1.5),
                     ),
                   ),
                 ),
@@ -78,7 +79,7 @@ class PostRepliesList extends StatelessWidget {
                   alpha: 0.4,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                   side: BorderSide(
                     color: theme.colorScheme.outlineVariant.withValues(
                       alpha: 0.2,
@@ -91,7 +92,7 @@ class PostRepliesList extends StatelessWidget {
                 child: InkWell(
                   onTap: () => onJumpToPost?.call(reply.postNumber),
                   customBorder: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(12),

@@ -487,7 +487,7 @@ class _PaneActiveIndicatorState extends ConsumerState<_PaneActiveIndicator>
                       alpha: 0.8,
                     ),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                     ),
                   ),
                   child: Row(

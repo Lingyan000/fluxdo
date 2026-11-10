@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -299,7 +300,7 @@ class _LazyImageState extends State<LazyImage> {
         decoration: ShapeDecoration(
           color: baseColor,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
         ),
         child: RepaintBoundary(
@@ -365,7 +366,7 @@ class _LazyImageState extends State<LazyImage> {
               alpha: 0.2,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
           ),
           child: Icon(

@@ -315,7 +315,7 @@ class _MiniAppFeedbackDialogState extends ConsumerState<MiniAppFeedbackDialog> {
                   initialValue: _selected,
                   position: PopupMenuPosition.under,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                   itemBuilder: (_) => [
                     for (final flag in _flags)
@@ -507,7 +507,7 @@ class _MiniAppFeedbackDialogState extends ConsumerState<MiniAppFeedbackDialog> {
           decoration: ShapeDecoration(
             color: error ? colors.errorContainer : colors.surfaceContainerHigh,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
           ),
           child: Text(

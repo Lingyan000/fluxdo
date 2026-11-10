@@ -13,6 +13,7 @@ library;
 
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -127,7 +128,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
             child: Material(
               color: scheme.inverseSurface,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               elevation: 2,
               child: Padding(
@@ -309,7 +310,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
                 ? scheme.primary.withValues(alpha: _dragging ? 0.18 : 0.12)
                 : Colors.transparent,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: context.shapes.borderRadius(18),
             ),
           ),
           child: _selecting

@@ -168,7 +168,7 @@ class _PresetTile extends ConsumerWidget {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHigh,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: PresetIcon(
@@ -238,7 +238,7 @@ class _PresetTile extends ConsumerWidget {
             ? theme.colorScheme.surfaceContainerHighest
             : theme.colorScheme.primaryContainer.withValues(alpha: 0.6),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: UiShapes.current.borderRadius(4),
         ),
       ),
       child: Text(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -46,7 +47,7 @@ class PostNoticeWidget extends StatelessWidget {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: borderColor, width: 0.5),
         ),
       ),

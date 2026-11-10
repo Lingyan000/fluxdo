@@ -235,7 +235,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerHighest,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 clipBehavior: Clip.antiAlias,
@@ -585,7 +585,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                           decoration: ShapeDecoration(
                             color: theme.colorScheme.surfaceContainerHighest,
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: context.shapes.borderRadius(8),
                             ),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -616,7 +616,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                               decoration: ShapeDecoration(
                                 color: Colors.black54,
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: context.shapes.borderRadius(12),
                                 ),
                               ),
                               child: const Icon(
@@ -640,7 +640,7 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                               decoration: ShapeDecoration(
                                 color: Colors.black54,
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: context.shapes.borderRadius(4),
                                 ),
                               ),
                               child: Text(

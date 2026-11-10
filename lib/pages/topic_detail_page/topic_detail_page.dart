@@ -2946,8 +2946,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                             color: Theme.of(context).colorScheme.surface,
                             elevation: 0,
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: const BorderRadius.vertical(
-                                bottom: Radius.circular(16),
+                              borderRadius: BorderRadius.vertical(
+                                bottom: context.shapes.radius(16),
                               ),
                             ),
                             clipBehavior: Clip.antiAlias,

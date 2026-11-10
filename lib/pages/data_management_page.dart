@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -547,7 +548,7 @@ class _ShimmerBox extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
     );

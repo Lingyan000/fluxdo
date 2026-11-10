@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -118,7 +119,7 @@ Widget _buildWithThumbnail({
       ),
       const SizedBox(width: 12),
       ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: UiShapes.current.borderRadius(6),
         child: OneboxAvatar(
           imageUrl: thumbnailUrl,
           size: 80,

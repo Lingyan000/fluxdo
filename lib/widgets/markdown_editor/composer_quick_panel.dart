@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -277,7 +278,7 @@ class _ComposerQuickPanelState extends State<_ComposerQuickPanel> {
                                 color: Colors.transparent,
                                 clipBehavior: Clip.antiAlias,
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: context.shapes.borderRadius(8),
                                 ),
                                 child: ListTile(
                                   key: ObjectKey(action),

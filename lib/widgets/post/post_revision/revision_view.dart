@@ -488,7 +488,7 @@ class _AuthorMeta extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
         ),
       ),
       child: Column(
@@ -530,7 +530,7 @@ class _AuthorMeta extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.errorContainer,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                   ),
                   child: Text(
@@ -663,7 +663,7 @@ class _MetaChanges extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: ShapeDecoration(
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
           ),
@@ -762,7 +762,7 @@ class _MetaChip extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Text(
@@ -790,7 +790,7 @@ class _BodyDiff extends StatelessWidget {
         decoration: ShapeDecoration(
           color: theme.colorScheme.errorContainer.withValues(alpha: 0.5),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
         ),
         child: Text(
@@ -943,7 +943,7 @@ class _DiffColumn extends StatelessWidget {
       padding: const EdgeInsets.all(8),
       decoration: ShapeDecoration(
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
           side: BorderSide(color: borderColor),
         ),
       ),

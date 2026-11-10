@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
+import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -270,7 +270,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                     hintText: 'secret_xxxxxxxxxxxxxxxx',
                     filled: true,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -305,7 +305,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                     hintText: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
                     filled: true,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                     suffixIcon: IconButton(
                       tooltip: context.l10n.common_paste,
@@ -443,7 +443,7 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerLow,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
               ),
             ),
             child: Row(
@@ -489,7 +489,7 @@ class _UpgradeBanner extends StatelessWidget {
       decoration: ShapeDecoration(
         color: accent.withValues(alpha: 0.12),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
           side: BorderSide(color: accent.withValues(alpha: 0.45)),
         ),
       ),
@@ -565,7 +565,7 @@ class _ConfiguredBanner extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
           side: BorderSide(
             color: theme.colorScheme.primary.withValues(alpha: 0.35),
           ),
@@ -623,7 +623,7 @@ class _Header extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
       ),
       child: Row(
@@ -634,7 +634,7 @@ class _Header extends StatelessWidget {
             decoration: ShapeDecoration(
               color: theme.colorScheme.primary.withValues(alpha: 0.16),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
               ),
             ),
             child: Icon(
@@ -693,7 +693,7 @@ class _StepCard extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
           side: BorderSide(
             color: done
                 ? theme.colorScheme.primary.withValues(alpha: 0.4)

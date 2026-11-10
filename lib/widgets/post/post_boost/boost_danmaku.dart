@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 
 import 'dart:math' as math;
@@ -495,7 +496,7 @@ class _DanmakuItemState extends State<_DanmakuItem> {
               decoration: ShapeDecoration(
                 color: Colors.black.withValues(alpha: 0.42),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: context.shapes.borderRadius(999),
                 ),
               ),
               child: Row(
@@ -659,7 +660,7 @@ class _DanmakuIconPainter extends CustomPainter {
     // 弹幕屏外框
     final rrect = RSuperellipse.fromRectAndRadius(
       const Rect.fromLTWH(1.2, 3.6, iconSize - 2.4, iconSize - 7.2),
-      const Radius.circular(3.2),
+      UiShapes.current.radius(3.2),
     );
     canvas.drawRSuperellipse(rrect, stroke);
 

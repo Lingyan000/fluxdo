@@ -918,7 +918,7 @@ class _LiftActionButton extends StatelessWidget {
       width: 76,
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: context.shapes.borderRadius(22),
         ),
         onTap: onTap,
         child: Padding(
@@ -932,7 +932,7 @@ class _LiftActionButton extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: colorScheme.surfaceContainerHighest,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: context.shapes.borderRadius(18),
                   ),
                 ),
                 child: Icon(

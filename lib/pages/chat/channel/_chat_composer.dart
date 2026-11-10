@@ -540,7 +540,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                       decoration: ShapeDecoration(
                         color: theme.colorScheme.surface,
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: context.shapes.borderRadius(12),
                         ),
                       ),
                       child: Row(
@@ -945,15 +945,15 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
       ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
       contentPadding: _fieldPadding,

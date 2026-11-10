@@ -374,7 +374,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
           child: InkWell(
             onTap: widget.onExpandDeleted,
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -530,7 +530,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: InkWell(
               onTap: widget.onReplyRefTap,
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -831,7 +831,7 @@ class _HoverActionBar extends StatelessWidget {
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.25),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: context.shapes.borderRadius(10),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
@@ -851,7 +851,7 @@ class _HoverActionBar extends StatelessWidget {
                   child: InkWell(
                     onTap: () => onQuickEmoji(emoji),
                     customBorder: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                     hoverColor: theme.colorScheme.onSurface.withValues(
                       alpha: 0.08,
@@ -941,7 +941,7 @@ class _HoverBarButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         hoverColor: Theme.of(context).colorScheme.onSurface
             .withValues(alpha: 0.08),

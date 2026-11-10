@@ -51,7 +51,7 @@ class VpnAutoToggleCard extends StatelessWidget {
                   tooltip: context.l10n.vpnToggle_detectionMode,
                   offset: const Offset(0, 36),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                   onSelected: service.setDetectionMode,
                   itemBuilder: (context) => [

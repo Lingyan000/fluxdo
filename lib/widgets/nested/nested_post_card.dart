@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -675,7 +676,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
                 alpha: 0.35 * value,
               ),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
             ),
             child: child,
@@ -879,7 +880,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.primaryContainer,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: context.shapes.borderRadius(4),
               ),
             ),
             child: Text(

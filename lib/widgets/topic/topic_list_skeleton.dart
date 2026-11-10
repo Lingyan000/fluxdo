@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../common/skeleton.dart';
@@ -39,7 +40,7 @@ class _TopicCardSkeleton extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(10)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Column(
@@ -95,7 +96,7 @@ class _MessageCardSkeleton extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(10)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         child: Row(

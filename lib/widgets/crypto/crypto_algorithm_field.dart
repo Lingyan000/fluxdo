@@ -9,6 +9,7 @@
 /// - 「最近使用」横向 chips（历史图标），支持列表/网格展示切换
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -183,7 +184,7 @@ class _CryptoAlgorithmPickerSheetState
           vertical: 12,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide.none,
         ),
       ),
@@ -314,11 +315,11 @@ class _CryptoAlgorithmPickerSheetState
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.7)
               : theme.colorScheme.surfaceContainerHigh,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
           ),
           child: InkWell(
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
             onTap: () => _select(algo.id),
             child: Center(
@@ -367,11 +368,11 @@ class _CryptoAlgorithmPickerSheetState
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         child: InkWell(
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
           ),
           onTap: () => _select(algo.id),
           child: Padding(
@@ -433,10 +434,10 @@ class CryptoAlgorithmTile extends StatelessWidget {
     return Material(
       key: const ValueKey('crypto-algorithm-tile'),
       color: theme.colorScheme.surfaceContainerHigh,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         onTap: () async {
           final selected = await showCryptoAlgorithmPicker(
@@ -474,7 +475,7 @@ class CryptoAlgorithmTile extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: 0.12),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: context.shapes.borderRadius(6),
                     ),
                   ),
                   child: Text(

@@ -755,8 +755,8 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
                   minimumSize: const Size(0, 40),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: const RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(9999)),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.all(context.shapes.radius(9999)),
                   ),
                   textStyle: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w600,

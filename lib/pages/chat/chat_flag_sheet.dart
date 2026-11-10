@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -202,7 +203,7 @@ class _ChatFlagSheetState extends State<_ChatFlagSheet> {
                 decoration: InputDecoration(
                   hintText: context.l10n.chat_flagMessageHint,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
@@ -238,7 +239,7 @@ class _ChatFlagSheetState extends State<_ChatFlagSheet> {
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -247,7 +248,7 @@ class _ChatFlagSheetState extends State<_ChatFlagSheet> {
             padding: const EdgeInsets.all(12),
             decoration: ShapeDecoration(
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(
                   color: isSelected
                       ? theme.colorScheme.primary

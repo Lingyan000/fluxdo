@@ -409,11 +409,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
       ),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: context.shapes.borderRadius(24),
         child: BackdropFilter(
           filter: createBlurFilter(blurSigma),
           child: Container(
@@ -421,7 +421,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             decoration: ShapeDecoration(
               color: scheme.surfaceContainer.withValues(alpha: 0.72),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: context.shapes.borderRadius(24),
                 side: BorderSide(
                   color: scheme.outlineVariant.withValues(alpha: 0.4),
                 ),
@@ -460,7 +460,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),
@@ -481,7 +481,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),
@@ -496,7 +496,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: context.shapes.borderRadius(28),
             ),
             side: BorderSide(
               color: scheme.outlineVariant.withValues(alpha: 0.6),

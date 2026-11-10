@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -278,7 +279,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: ShapeDecoration(
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
           ),
@@ -470,7 +471,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: context.shapes.borderRadius(14),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -546,7 +547,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
     return InkWell(
       onTap: isLoading ? null : onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
       ),
       child: Container(
         constraints: const BoxConstraints(minWidth: 32, minHeight: 24),
@@ -554,7 +555,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
         decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHigh,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
           ),
         ),
         alignment: Alignment.center,

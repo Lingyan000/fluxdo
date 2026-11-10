@@ -213,11 +213,11 @@ class _NavigationRailItem extends StatelessWidget {
         child: Material(
           color: backgroundColor,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           child: InkWell(
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
             onTap: onTap,
             child: SizedBox(
@@ -799,9 +799,9 @@ class _CapsuleNavBarState extends State<_CapsuleNavBar>
                           child: DecoratedBox(
                             decoration: ShapeDecoration(
                               color: pillColor,
-                              shape: const RoundedSuperellipseBorder(
+                              shape: RoundedSuperellipseBorder(
                                 borderRadius: BorderRadius.all(
-                                  Radius.circular(9999),
+                                  context.shapes.radius(9999),
                                 ),
                               ),
                             ),
@@ -878,8 +878,8 @@ class _CapsuleNavItem extends StatelessWidget {
         message: dest.label,
         child: InkWell(
           // 墨水跟随 pill 的 stadium 造型（pill 铺满整个条目）
-          customBorder: const RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.all(Radius.circular(9999)),
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(context.shapes.radius(9999)),
           ),
           onTap: onTap,
           child: labelless

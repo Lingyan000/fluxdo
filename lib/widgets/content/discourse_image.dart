@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -255,7 +256,7 @@ class _DiscourseImageState extends State<DiscourseImage> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Center(
@@ -276,7 +277,7 @@ class _DiscourseImageState extends State<DiscourseImage> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Center(

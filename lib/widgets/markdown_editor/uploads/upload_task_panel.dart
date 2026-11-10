@@ -57,7 +57,7 @@ class _UploadTaskPanelState extends State<UploadTaskPanel> {
       return Material(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -145,7 +145,7 @@ class UploadTaskCard extends StatelessWidget {
             height: 44,
             child: task.isImage
                 ? ClipRSuperellipse(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: context.shapes.borderRadius(6),
                     child: Image.file(
                       File(task.path),
                       fit: BoxFit.cover,
@@ -175,7 +175,7 @@ class UploadTaskCard extends StatelessWidget {
                   LinearProgressIndicator(
                     value: fraction,
                     minHeight: 2,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: context.shapes.borderRadius(2),
                   ),
                 ],
               ],
@@ -273,7 +273,7 @@ class _ChatUploadTile extends StatelessWidget {
           decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHigh,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: context.shapes.borderRadius(14),
               side: BorderSide(
                 color: failed
                     ? theme.colorScheme.error
@@ -501,7 +501,7 @@ class _SourceUploadPanelState extends State<SourceUploadPanel> {
                               color: (failed ? colors.error : colors.primary)
                                   .withValues(alpha: .12),
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: context.shapes.borderRadius(10),
                               ),
                             ),
                             child: Icon(

@@ -119,7 +119,7 @@ class SearchPreviewDialog extends ConsumerWidget {
               : Material(
                   color: theme.colorScheme.surface,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                   clipBehavior: Clip.antiAlias,
                   elevation: 8,
@@ -275,7 +275,7 @@ class SearchPreviewDialog extends ConsumerWidget {
             decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
               ),
             ),
             child: Text(
@@ -453,7 +453,7 @@ class SearchPreviewDialog extends ConsumerWidget {
           theme.brightness,
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: context.shapes.borderRadius(2),
         ),
       ),
     );

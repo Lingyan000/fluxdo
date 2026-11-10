@@ -353,7 +353,7 @@ class _BrowserRouteSurface extends StatelessWidget {
                                         .colorScheme
                                         .onSurfaceVariant
                                         .withValues(alpha: .42),
-                                    borderRadius: BorderRadius.circular(2),
+                                    borderRadius: context.shapes.borderRadius(2),
                                   ),
                                 ),
                               ),

@@ -20,7 +20,7 @@ class _PaginationLoading extends StatelessWidget {
               color: theme.colorScheme.surfaceContainerHigh,
               elevation: 2,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: context.shapes.borderRadius(24),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -95,7 +95,7 @@ class _SelectionToolbar extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
         ),
       ),
       child: Row(
@@ -152,7 +152,7 @@ class _SelectionAction extends StatelessWidget {
     return InkWell(
       onTap: enabled ? onTap : null,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -268,7 +268,7 @@ class _PinnedBanner extends StatelessWidget {
                             ? theme.colorScheme.primary
                             : theme.colorScheme.primary.withValues(alpha: 0.35),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: context.shapes.borderRadius(2),
                         ),
                       ),
                     ),
@@ -335,7 +335,7 @@ class _MentionCandidateBar extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: 0.25),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -353,7 +353,7 @@ class _MentionCandidateBar extends StatelessWidget {
                   child: InkWell(
                     onTap: () => onSelect(user),
                     customBorder: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: context.shapes.borderRadius(10),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
@@ -431,7 +431,7 @@ class _MessageUploads extends StatelessWidget {
             child: Material(
               color: theme.colorScheme.surface.withValues(alpha: 0.55),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
@@ -501,7 +501,7 @@ class _MessageUploads extends StatelessWidget {
     final heroTag = '${heroNamespace}_$i';
 
     final image = ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: context.shapes.borderRadius(10),
       child: Image(
         image: discourseImageProvider(url),
         width: w,

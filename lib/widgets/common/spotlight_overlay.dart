@@ -190,7 +190,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
                           alpha: 0.92,
                         ),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: context.shapes.borderRadius(12),
                         ),
                       ),
                       child: Text(

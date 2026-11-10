@@ -103,7 +103,7 @@ class TopicSummaryWidget extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: UiShapes.current.borderRadius(12),
         ),
       ),
       child: Row(
@@ -134,7 +134,7 @@ class TopicSummaryWidget extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: UiShapes.current.borderRadius(12),
         ),
       ),
       child: Row(
@@ -167,7 +167,7 @@ class TopicSummaryWidget extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
             width: 0.5,
@@ -222,7 +222,7 @@ class TopicSummaryWidget extends ConsumerWidget {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.tertiaryContainer,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                   ),
                   child: Text(
@@ -554,7 +554,7 @@ class _CollapsibleTopicSummaryState
             InkWell(
               onTap: _toggleExpand,
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -566,7 +566,7 @@ class _CollapsibleTopicSummaryState
                     alpha: 0.3,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: Row(

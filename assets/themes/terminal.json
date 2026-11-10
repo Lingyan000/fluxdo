@@ -9,6 +9,7 @@
   "kind": "fixed",
   "group": "terminal",
   "order": 300,
+  "shape": "sharp",
   "supportsPureBlack": true,
   "allowCustomAccent": true,
   "light": {

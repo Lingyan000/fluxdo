@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
@@ -879,7 +880,7 @@ class TopicCardLayout {
           extraFills.add((
             RSuperellipse.fromRectAndRadius(
               Rect.fromLTWH(chipX, y + 1, w, h),
-              const Radius.circular(10),
+              UiShapes.current.radius(10),
             ),
             scheme.surfaceContainerHighest,
           ));
@@ -1042,7 +1043,7 @@ class TopicCardLayout {
       final h = badge.height + 4;
       final r = Rect.fromLTWH(rightX - w, top, w, h);
       extraFills.add((
-        RSuperellipse.fromRectAndRadius(r, const Radius.circular(10)),
+        RSuperellipse.fromRectAndRadius(r, UiShapes.current.radius(10)),
         scheme.primary,
       ));
       extraTexts.add((
@@ -1054,7 +1055,7 @@ class TopicCardLayout {
     if (unseen) {
       final r = Rect.fromLTWH(rightX - 8, top, 8, 8);
       extraFills.add((
-        RSuperellipse.fromRectAndRadius(r, const Radius.circular(4)),
+        RSuperellipse.fromRectAndRadius(r, UiShapes.current.radius(4)),
         scheme.primary,
       ));
       return r.left;

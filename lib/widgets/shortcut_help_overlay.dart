@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -61,7 +62,7 @@ class _ShortcutHelpDialogState extends State<_ShortcutHelpDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       clipBehavior: Clip.antiAlias,
       backgroundColor: theme.colorScheme.surface,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: SizedBox(
         width: dialogWidth,
         height: dialogHeight,
@@ -184,19 +185,19 @@ class _ShortcutSearchField extends StatelessWidget {
           vertical: 12,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           borderSide: BorderSide(
             color: theme.colorScheme.primary.withValues(alpha: 0.65),
           ),
@@ -315,7 +316,7 @@ class _ShortcutCategoryCard extends StatelessWidget {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
           ),

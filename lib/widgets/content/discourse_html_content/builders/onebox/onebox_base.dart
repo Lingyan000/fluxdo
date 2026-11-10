@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -163,7 +164,7 @@ class OneboxLabel extends StatelessWidget {
       decoration: ShapeDecoration(
         color: backgroundColor ?? theme.colorScheme.surfaceContainerHigh,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Text(
@@ -243,7 +244,7 @@ class OneboxStatusIndicator extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.15),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(color: color.withValues(alpha: 0.3)),
         ),
       ),
@@ -282,7 +283,7 @@ class OneboxClickCount extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHigh,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Row(

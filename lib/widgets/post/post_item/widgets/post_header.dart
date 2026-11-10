@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -425,7 +426,7 @@ class PostHeader extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.primary.withValues(alpha: 0.08),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: UiShapes.current.borderRadius(20),
           side: BorderSide(
             color: theme.colorScheme.primary.withValues(alpha: 0.1),
           ),

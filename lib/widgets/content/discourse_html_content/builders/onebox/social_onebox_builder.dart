@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:app_icons/app_icons.dart';
@@ -111,7 +112,7 @@ class SocialOneboxBuilder {
                       ? Colors.white
                       : Colors.black,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                 ),
                 child: Center(
@@ -143,7 +144,7 @@ class SocialOneboxBuilder {
           if (images.isNotEmpty) ...[
             const SizedBox(height: 10),
             ClipRSuperellipse(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               child: OneboxAvatar(
                 imageUrl: images.first,
                 size: 150,
@@ -255,7 +256,7 @@ class SocialOneboxBuilder {
                 decoration: ShapeDecoration(
                   color: const Color(0xFFFF4500),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                 ),
                 child: const FaIcon(
@@ -308,7 +309,7 @@ class SocialOneboxBuilder {
                   !thumbnailUrl.contains('default')) ...[
                 const SizedBox(width: 12),
                 ClipRSuperellipse(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: context.shapes.borderRadius(6),
                   child: OneboxAvatar(
                     imageUrl: thumbnailUrl,
                     size: 70,
@@ -409,7 +410,7 @@ class SocialOneboxBuilder {
                     end: Alignment.bottomRight,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: const Icon(
@@ -433,7 +434,7 @@ class SocialOneboxBuilder {
           if (imageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             ClipRSuperellipse(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               child: AspectRatio(
                 aspectRatio: 1,
                 child: OneboxAvatar(

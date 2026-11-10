@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -333,7 +334,7 @@ class _LayoutSettings extends ConsumerWidget {
     final notifier = ref.read(profileStatsConfigProvider.notifier);
 
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

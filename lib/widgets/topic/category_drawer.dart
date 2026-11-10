@@ -407,7 +407,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
     final action = await showMenu<Symbol>(
       context: rowContext,
       position: position,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       items: [
         PopupMenuItem(
           value: #togglePin,
@@ -512,8 +512,8 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
 
     return Drawer(
       backgroundColor: colorScheme.surface,
-      shape: const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(24)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.horizontal(right: context.shapes.radius(24)),
       ),
       child: SafeArea(
         child: Column(
@@ -799,7 +799,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
                     ),
                     contentPadding: EdgeInsets.zero,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                   ),
@@ -911,7 +911,7 @@ class _CategoryRow extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         clipBehavior: Clip.antiAlias,
         child: Builder(
@@ -994,7 +994,7 @@ class _AllTopicsRow extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1011,7 +1011,7 @@ class _AllTopicsRow extends StatelessWidget {
                     decoration: ShapeDecoration(
                       color: parentColor.withValues(alpha: 0.14),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: context.shapes.borderRadius(9),
                       ),
                     ),
                     child: Center(
@@ -1067,7 +1067,7 @@ class _TagGroupChip extends StatelessWidget {
             ? colorScheme.secondaryContainer
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1115,7 +1115,7 @@ class _TagRow extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1133,7 +1133,7 @@ class _TagRow extends StatelessWidget {
                     decoration: ShapeDecoration(
                       color: accent.withValues(alpha: 0.14),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: context.shapes.borderRadius(9),
                       ),
                     ),
                     child: Center(
@@ -1160,7 +1160,7 @@ class _TagRow extends StatelessWidget {
                         const SizedBox(height: 5),
                         // 热度条：4px 圆角细条，相对榜首归一化
                         ClipRSuperellipse(
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: context.shapes.borderRadius(2),
                           child: SizedBox(
                             height: 3,
                             child: LayoutBuilder(
@@ -1226,7 +1226,7 @@ class _DrawerTabSwitcher extends StatelessWidget {
           decoration: ShapeDecoration(
             color: selected ? colorScheme.secondaryContainer : null,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
           ),
           child: AnimatedDefaultTextStyle(
@@ -1250,7 +1250,7 @@ class _DrawerTabSwitcher extends StatelessWidget {
       decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(23),
+          borderRadius: context.shapes.borderRadius(23),
         ),
       ),
       child: Row(
@@ -1285,7 +1285,7 @@ class _CategoryIconBlock extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.14),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: context.shapes.borderRadius(9),
         ),
       ),
       child: Center(child: _buildCategoryIcon(category, color, 18)),

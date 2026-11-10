@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../common/skeleton.dart';
@@ -112,7 +113,7 @@ class MyBadgesSkeleton extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: context.shapes.borderRadius(20),
         ),
       ),
       child: Column(

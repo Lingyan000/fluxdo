@@ -101,7 +101,7 @@ Future<void> _showSubcategoryMenu({
       Rect.fromCenter(center: tapPosition, width: 0, height: 0),
       Offset.zero & overlay.size,
     ),
-    shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+    shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
     elevation: 6,
     items: [
       // "全部"
@@ -347,7 +347,7 @@ class _BrowseContent extends ConsumerWidget {
         decoration: ShapeDecoration(
           color: color.withValues(alpha: 0.08),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: context.shapes.borderRadius(6),
             side: BorderSide(color: color.withValues(alpha: 0.2)),
           ),
         ),
@@ -561,7 +561,7 @@ class _EditContent extends ConsumerWidget {
               return Material(
                 elevation: 2,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
                 child: child,
               );
@@ -665,7 +665,7 @@ class _EditContent extends ConsumerWidget {
         Rect.fromCenter(center: tapPosition, width: 0, height: 0),
         Offset.zero & overlay.size,
       ),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       elevation: 6,
       items: allItems.map((cat) {
         final color = _parseColor(cat.color);
@@ -729,7 +729,7 @@ class _PinnedCategoryTile extends StatelessWidget {
       decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
       ),
       child: Padding(

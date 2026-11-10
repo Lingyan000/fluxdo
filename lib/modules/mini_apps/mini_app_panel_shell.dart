@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
@@ -115,8 +116,8 @@ class _MiniAppPanelShellState extends State<MiniAppPanelShell> {
                     borderRadius: _fullscreen
                         ? BorderRadius.zero
                         : desktop
-                        ? BorderRadius.circular(28)
-                        : const BorderRadius.vertical(top: Radius.circular(28)),
+                        ? context.shapes.borderRadius(28)
+                        : BorderRadius.vertical(top: context.shapes.radius(28)),
                     child: widget.builder((value) {
                       if (mounted && value != _fullscreen) {
                         setState(() => _fullscreen = value);

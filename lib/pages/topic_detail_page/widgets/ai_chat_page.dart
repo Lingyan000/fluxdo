@@ -665,7 +665,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
         decoration: ShapeDecoration(
           color: theme.colorScheme.surface,
           shape: RoundedSuperellipseBorder(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
           ),
         ),
         child: SafeArea(
@@ -682,7 +682,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
                     alpha: 0.3,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: context.shapes.borderRadius(2),
                   ),
                 ),
               ),
@@ -1200,7 +1200,7 @@ class _ModelLogoButton extends StatelessWidget {
       message: S.current.ai_selectModel,
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: context.shapes.borderRadius(20),
         ),
         onTap: () async {
           final picked = await showAiModelSelectSheet(

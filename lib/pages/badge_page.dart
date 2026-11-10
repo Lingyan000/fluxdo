@@ -155,7 +155,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
                                   .colorScheme
                                   .surfaceContainerHighest,
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: context.shapes.borderRadius(20),
                               ),
                             ),
                             child: Text(
@@ -302,7 +302,7 @@ class _BadgeInfoCard extends StatelessWidget {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
           ),
@@ -325,7 +325,7 @@ class _BadgeInfoCard extends StatelessWidget {
             decoration: ShapeDecoration(
               color: badgeColor.withValues(alpha: 0.1),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
                 side: BorderSide(color: badgeColor.withValues(alpha: 0.2)),
               ),
             ),
@@ -364,7 +364,7 @@ class _BadgeInfoCard extends StatelessWidget {
                   alpha: 0.3,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: context.shapes.borderRadius(16),
                 ),
               ),
               child:
@@ -517,7 +517,7 @@ class _UserBadgeItem extends StatelessWidget {
                         color: theme.colorScheme.surfaceContainerHighest
                             .withValues(alpha: 0.4),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: context.shapes.borderRadius(8),
                         ),
                       ),
                       child: Row(

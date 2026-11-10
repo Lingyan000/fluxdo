@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -530,7 +531,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildSummaryCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -586,7 +587,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildAdvancedOptionsCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -694,7 +695,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     final invite = _latestInvite!;
     final inviteLink = _effectiveInviteLink ?? invite.inviteLink;
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -715,7 +716,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                   alpha: 0.45,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: SelectableText(
@@ -777,7 +778,7 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildEmptyStateCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
@@ -807,7 +808,7 @@ class _MetaChip extends StatelessWidget {
           alpha: 0.45,
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: context.shapes.borderRadius(999),
         ),
       ),
       child: Row(

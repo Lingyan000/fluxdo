@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -106,7 +107,7 @@ class ShortcutKeyCap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderRadius = BorderRadius.circular(7);
+    final borderRadius = context.shapes.borderRadius(7);
     final textColor = theme.brightness == Brightness.dark
         ? const Color(0xFFF5F5F5)
         : const Color(0xFF1F2328);

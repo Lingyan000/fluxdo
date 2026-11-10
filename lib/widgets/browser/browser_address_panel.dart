@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
@@ -250,7 +251,7 @@ class BrowserAddressPanel extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -296,7 +297,7 @@ class BrowserAddressPanel extends StatelessWidget {
     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
     minLeadingWidth: 24,
     horizontalTitleGap: 12,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    shape: RoundedRectangleBorder(borderRadius: context.shapes.borderRadius(16)),
     leading: Icon(icon, size: 22),
     title: Text(
       title.isEmpty ? browserDisplayHost(url) : title,

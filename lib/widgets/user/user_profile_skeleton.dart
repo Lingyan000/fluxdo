@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/responsive.dart';
@@ -181,8 +182,8 @@ class UserProfileSkeleton extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: Theme.of(context).scaffoldBackgroundColor,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
+                      borderRadius: BorderRadius.vertical(
+                        top: context.shapes.radius(16),
                       ),
                     ),
                   ),
@@ -307,7 +308,7 @@ class UserProfileSkeleton extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: Colors.white.withValues(alpha: 0.1),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                   ),
                 ),
@@ -346,7 +347,7 @@ class UserActionItemSkeleton extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -362,7 +363,7 @@ class UserActionItemSkeleton extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.primary.withValues(alpha: 0.15),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                   ),
                 ),

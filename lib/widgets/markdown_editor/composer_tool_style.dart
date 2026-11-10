@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -38,7 +39,7 @@ class ComposerEditingControls extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerHighest
             .withValues(alpha: .42),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: context.shapes.borderRadius(22),
         ),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: children),

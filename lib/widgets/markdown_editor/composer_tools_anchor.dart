@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -300,7 +301,7 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
       child: InkWell(
         onTap: widget.onActivate,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         child: SizedBox(
           height: ComposerToolsHandle.height,
@@ -313,7 +314,7 @@ class _ComposerToolsHandleState extends State<ComposerToolsHandle> {
                 color: Theme.of(context).colorScheme.onSurfaceVariant
                     .withValues(alpha: .35),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: context.shapes.borderRadius(2),
                 ),
               ),
             ),

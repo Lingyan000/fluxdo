@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -558,7 +559,7 @@ class _TrustLevelRequirementsPageState
                         decoration: ShapeDecoration(
                           color: badgeBg,
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: context.shapes.borderRadius(20),
                             side: BorderSide(
                               color: badgeText.withValues(alpha: 0.2),
                             ),
@@ -600,7 +601,7 @@ class _TrustLevelRequirementsPageState
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: colorScheme.outlineVariant.withValues(alpha: 0.3),
           ),
@@ -745,7 +746,7 @@ class _TrustLevelRequirementsPageState
           ),
           const SizedBox(height: 8),
           ClipRSuperellipse(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: context.shapes.borderRadius(4),
             child: Container(
               height: 8,
               width: double.infinity,
@@ -773,7 +774,7 @@ class _TrustLevelRequirementsPageState
                       ),
                     ],
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                   ),
                 ),
@@ -841,7 +842,7 @@ class _TrustLevelRequirementsPageState
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(color: borderColor),
         ),
       ),
@@ -895,7 +896,7 @@ class _TrustLevelRequirementsPageState
                           ]
                         : null,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(3),
+                      borderRadius: context.shapes.borderRadius(3),
                     ),
                   ),
                 ),
@@ -936,7 +937,7 @@ class _TrustLevelRequirementsPageState
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(color: borderColor),
         ),
       ),
@@ -1013,7 +1014,7 @@ class _TrustLevelRequirementsPageState
             decoration: ShapeDecoration(
               color: statusColor.withValues(alpha: 0.08),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(color: statusColor.withValues(alpha: 0.2)),
               ),
             ),
@@ -1072,7 +1073,7 @@ class _TrustLevelRequirementsPageState
                     decoration: ShapeDecoration(
                       color: colorScheme.surfaceContainerLow,
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: context.shapes.borderRadius(16),
                         side: BorderSide(
                           color: colorScheme.outlineVariant.withValues(
                             alpha: 0.3,
@@ -1203,7 +1204,7 @@ class _TrustLevelRequirementsPageState
         decoration: ShapeDecoration(
           color: colorScheme.surface,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
             side: BorderSide(
               color: colorScheme.outlineVariant.withValues(alpha: 0.5),
             ),

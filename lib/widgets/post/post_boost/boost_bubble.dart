@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -72,7 +73,7 @@ class BoostBubble extends StatelessWidget {
               alpha: 0.4,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
           ),
           child: Row(
@@ -148,7 +149,7 @@ class _GroupedBoostBubble extends StatelessWidget {
               alpha: 0.4,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
           ),
           child: Row(
@@ -174,7 +175,7 @@ class _GroupedBoostBubble extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.primary,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: context.shapes.borderRadius(10),
                   ),
                 ),
                 child: Text(

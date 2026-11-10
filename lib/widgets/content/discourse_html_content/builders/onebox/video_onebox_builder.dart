@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -68,8 +69,8 @@ class VideoOneboxBuilder {
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: ClipRSuperellipse(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(7),
+                  borderRadius: BorderRadius.vertical(
+                    top: context.shapes.radius(7),
                   ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
@@ -107,7 +108,7 @@ class VideoOneboxBuilder {
                 decoration: ShapeDecoration(
                   color: const Color(0xFFFF0000),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: const Icon(
@@ -129,7 +130,7 @@ class VideoOneboxBuilder {
                     decoration: ShapeDecoration(
                       color: Colors.black.withValues(alpha: 0.8),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: context.shapes.borderRadius(4),
                       ),
                     ),
                     child: Text(
@@ -260,8 +261,8 @@ class VideoOneboxBuilder {
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: ClipRSuperellipse(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(7),
+                  borderRadius: BorderRadius.vertical(
+                    top: context.shapes.radius(7),
                   ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
@@ -419,8 +420,8 @@ class VideoOneboxBuilder {
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: ClipRSuperellipse(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(7),
+                  borderRadius: BorderRadius.vertical(
+                    top: context.shapes.radius(7),
                   ),
                   child: thumbnailUrl.isNotEmpty
                       ? Image(
@@ -484,7 +485,7 @@ class VideoOneboxBuilder {
                       decoration: ShapeDecoration(
                         color: const Color(0xFF625DF5),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: context.shapes.borderRadius(4),
                         ),
                       ),
                       child: const Text(

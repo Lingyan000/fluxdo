@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../../l10n/s.dart';
@@ -175,7 +176,7 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                   decoration: ShapeDecoration(
                     color: scheme.surfaceContainerLow,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                       side: BorderSide(
                         color: scheme.outlineVariant.withValues(alpha: 0.5),
                       ),

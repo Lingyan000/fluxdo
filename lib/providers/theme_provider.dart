@@ -9,7 +9,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/launch_splash_handoff.dart';
 import '../theme/accent_colors.dart';
 import '../theme/app_background.dart';
+import 'package:common_ui/common_ui.dart' show UiShapes;
+
 import '../theme/app_palettes.dart';
+import '../theme/shape_presets.dart';
 import '../theme/theme_registry.dart';
 import '../theme/theme_spec.dart';
 
@@ -44,6 +47,9 @@ class ThemeState {
 
   /// 当前主题 id（见 [ThemeRegistry]），与模式正交
   final String themeId;
+
+  /// 用户指定的圆角风格，null 表示跟随主题推荐
+  final ShapePreset? shapeOverride;
 
   /// 固定配色主题按族记忆的强调色：主题自带强调色 id，或 `#RRGGBB`
   /// 自定义色（主题允许时）。生成式主题的强调色见 [accentSource]。
@@ -86,6 +92,7 @@ class ThemeState {
     required this.mode,
     this.themeId = ThemeRegistry.materialId,
     this.themeAccents = const {},
+    this.shapeOverride,
     this.blackEnabled = false,
     this.transparentEnabled = false,
     this.accentSource = AccentSource.palette,
@@ -105,6 +112,12 @@ class ThemeState {
 
   /// 当前主题
   ThemeSpec get themeSpec => ThemeRegistry.byId(themeId);
+
+  /// 当前生效的圆角风格：用户指定优先，否则取主题推荐
+  ShapePreset get effectiveShapePreset => shapeOverride ?? themeSpec.shape;
+
+  /// 当前生效的形状 token
+  UiShapes get effectiveShapes => effectiveShapePreset.shapes;
 
   /// [spec] 所在主题族记忆的强调色选择（null = 主题默认）
   String? accentFor(ThemeSpec spec) => themeAccents[spec.familyId];
@@ -130,6 +143,7 @@ class ThemeState {
     ThemeMode? mode,
     String? themeId,
     Map<String, String>? themeAccents,
+    ShapePreset? Function()? shapeOverride,
     bool? blackEnabled,
     bool? transparentEnabled,
     AccentSource? accentSource,
@@ -146,6 +160,9 @@ class ThemeState {
       mode: mode ?? this.mode,
       themeId: themeId ?? this.themeId,
       themeAccents: themeAccents ?? this.themeAccents,
+      shapeOverride: shapeOverride != null
+          ? shapeOverride()
+          : this.shapeOverride,
       blackEnabled: blackEnabled ?? this.blackEnabled,
       transparentEnabled: transparentEnabled ?? this.transparentEnabled,
       accentSource: accentSource ?? this.accentSource,
@@ -166,6 +183,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _themeModeKey = 'theme_mode';
   static const String _themeIdKey = 'theme_id';
   static const String _themeAccentsKey = 'theme_accents';
+  static const String _shapePresetKey = 'shape_preset';
   static const String _blackKey = 'theme_black';
   static const String _transparentKey = 'theme_transparent';
   static const String _accentSourceKey = 'accent_source';
@@ -275,6 +293,9 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       mode: mode,
       themeId: themeId,
       themeAccents: _decodeAccents(prefs.getString(_themeAccentsKey)),
+      shapeOverride: ShapePreset.values.asNameMap()[prefs.getString(
+        _shapePresetKey,
+      )],
       blackEnabled: prefs.getBool(_blackKey) ?? false,
       transparentEnabled: prefs.getBool(_transparentKey) ?? false,
       accentSource: accentSource,
@@ -315,6 +336,16 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     final accents = {...state.themeAccents, familyId: selection};
     state = state.copyWith(themeAccents: accents);
     await _prefs.setString(_themeAccentsKey, jsonEncode(accents));
+  }
+
+  /// 指定圆角风格，null 表示跟随主题推荐。
+  Future<void> setShapeOverride(ShapePreset? preset) async {
+    state = state.copyWith(shapeOverride: () => preset);
+    if (preset == null) {
+      await _prefs.remove(_shapePresetKey);
+    } else {
+      await _prefs.setString(_shapePresetKey, preset.name);
+    }
   }
 
   Future<void> setThemeId(String themeId) async {

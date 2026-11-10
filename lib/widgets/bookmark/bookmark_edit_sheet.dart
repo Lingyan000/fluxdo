@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -502,7 +503,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                       ? theme.colorScheme.primaryContainer
                       : theme.colorScheme.errorContainer,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: context.shapes.borderRadius(8),
                   ),
                 ),
                 child: Row(
@@ -577,7 +578,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.primaryContainer,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                   ),
                   child: Row(

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -368,7 +369,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
                   ),
                 ],
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Material(
@@ -412,7 +413,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         else if (_results.isNotEmpty)
           Flexible(
             child: ClipRSuperellipse(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,
@@ -552,7 +553,7 @@ class _MentionItemTile extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.secondaryContainer,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: UiShapes.current.borderRadius(4),
         ),
       ),
       child: Text(

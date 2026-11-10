@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -301,7 +302,7 @@ class _PostActionBarState extends State<PostActionBar>
                           alpha: 0.3,
                         ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: context.shapes.borderRadius(18),
                     side: BorderSide(
                       color: showReplies
                           ? theme.colorScheme.primary.withValues(alpha: 0.2)
@@ -564,7 +565,7 @@ class _PostActionBarState extends State<PostActionBar>
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: context.shapes.borderRadius(18),
           side: BorderSide(
             color: widget.currentUserReaction != null
                 ? theme.colorScheme.primary.withValues(alpha: 0.2)

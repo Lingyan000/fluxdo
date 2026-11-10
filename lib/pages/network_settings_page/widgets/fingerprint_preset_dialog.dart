@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -167,7 +168,7 @@ class _FingerprintPresetDialogState extends State<FingerprintPresetDialog> {
             ? colors.surfaceContainerHighest
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         clipBehavior: Clip.antiAlias,
         child: ListTile(

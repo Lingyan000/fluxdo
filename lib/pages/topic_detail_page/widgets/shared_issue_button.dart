@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,7 +109,7 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
       child: InkWell(
         onTap: (disabled || _isLoading) ? null : _handleTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -127,7 +128,7 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
                   ]
                 : null,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: context.shapes.borderRadius(24),
               side: BorderSide(
                 color: _userMarked
                     ? theme.colorScheme.primary
@@ -185,7 +186,7 @@ class _SharedIssueButtonState extends ConsumerState<SharedIssueButton> {
                         ? theme.colorScheme.onPrimary.withValues(alpha: 0.2)
                         : theme.colorScheme.primary.withValues(alpha: 0.1),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: context.shapes.borderRadius(10),
                     ),
                   ),
                   alignment: Alignment.center,

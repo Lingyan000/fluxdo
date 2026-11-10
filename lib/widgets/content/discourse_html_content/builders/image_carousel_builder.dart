@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -209,7 +210,7 @@ class _ImageCarouselState extends State<_ImageCarousel> {
         SizedBox(
           height: _carouselHeight,
           child: ClipRSuperellipse(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
             child: Stack(
               children: [
                 // 背景色
@@ -513,7 +514,7 @@ class _DotsIndicator extends StatelessWidget {
                   ? theme.colorScheme.primary
                   : theme.colorScheme.outlineVariant,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: context.shapes.borderRadius(4),
               ),
             ),
           ),

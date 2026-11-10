@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:app_icons/app_icons.dart';
@@ -113,7 +114,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.surfaceContainerHighest,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Column(
@@ -146,7 +147,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                           decoration: ShapeDecoration(
                             color: theme.colorScheme.surfaceContainerLow,
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: context.shapes.borderRadius(6),
                             ),
                           ),
                           child: Icon(
@@ -183,7 +184,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: config.color.withValues(alpha: 0.08),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                     side: BorderSide(
                       color: config.color.withValues(alpha: 0.2),
                     ),
@@ -222,7 +223,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
                     child: Text(context.l10n.common_cancel),
@@ -239,7 +240,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                       backgroundColor: config.buttonColor,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
                     child: Text(context.l10n.externalLink_openInSystemBrowser),
@@ -259,7 +260,7 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                     ),
                   ),
                   icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
@@ -411,7 +412,7 @@ class _LinkBlockedSheet extends StatelessWidget {
             decoration: ShapeDecoration(
               color: context.appColors.red.withValues(alpha: 0.06),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(color: context.appColors.red.withValues(alpha: 0.15)),
               ),
             ),
@@ -448,7 +449,7 @@ class _LinkBlockedSheet extends StatelessWidget {
             decoration: ShapeDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
               ),
             ),
             child: Row(
@@ -481,7 +482,7 @@ class _LinkBlockedSheet extends StatelessWidget {
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Text(context.l10n.common_understood),

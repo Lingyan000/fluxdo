@@ -9,6 +9,7 @@
 /// null→up +1;null→down -1;up→null -1;down→null +1;up↔down ±2。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -248,7 +249,7 @@ class _PostVotingControlState extends ConsumerState<PostVotingControl> {
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: context.shapes.borderRadius(18),
           side: BorderSide(
             color: _direction != null
                 ? theme.colorScheme.primary.withValues(alpha: 0.2)

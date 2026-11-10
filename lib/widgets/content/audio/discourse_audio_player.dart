@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -120,11 +121,11 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
           child: Material(
             color: scheme.primaryContainer,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: context.shapes.borderRadius(22),
             ),
             child: InkWell(
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: context.shapes.borderRadius(22),
               ),
               onTap: !_ready
                   ? null
@@ -215,7 +216,7 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
         decoration: ShapeDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
             side: BorderSide(color: scheme.outlineVariant, width: 1),
           ),
         ),

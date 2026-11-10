@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -201,7 +202,7 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: context.shapes.borderRadius(2),
               ),
             ),
           ),
@@ -237,7 +238,7 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                       fillColor: theme.colorScheme.surfaceContainerHighest
                           .withValues(alpha: 0.4),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: context.shapes.borderRadius(20),
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(

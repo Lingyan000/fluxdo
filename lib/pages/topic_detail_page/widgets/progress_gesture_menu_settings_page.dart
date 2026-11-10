@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -455,8 +456,8 @@ class _PreviewAreaState extends State<_PreviewArea> {
   Widget _buildIdlePill(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
-      shape: const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(9999)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
       ),
       elevation: 2,
       shadowColor: Colors.black26,
@@ -512,8 +513,8 @@ class _PreviewAreaState extends State<_PreviewArea> {
         color: active
             ? theme.colorScheme.error
             : theme.colorScheme.errorContainer,
-        shape: const RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.all(Radius.circular(9999)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(context.shapes.radius(9999)),
         ),
         elevation: active ? 8 : 2,
         shadowColor: theme.colorScheme.error.withValues(alpha: 0.45),
@@ -550,7 +551,7 @@ class _EmptyPreview extends StatelessWidget {
           decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: context.shapes.borderRadius(28),
             ),
           ),
           child: Row(

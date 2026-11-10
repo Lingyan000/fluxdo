@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart';
@@ -556,7 +557,7 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                   : Colors.transparent,
               foregroundColor: colors.onSurface,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: context.shapes.borderRadius(7),
               ),
             ),
             onPressed: () => widget.controller.choose(item),

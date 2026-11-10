@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/category.dart';
@@ -83,7 +84,7 @@ class CategoryTagsLine extends StatelessWidget {
           decoration: ShapeDecoration(
             color: chipColor,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: context.shapes.borderRadius(2),
             ),
           ),
         ),

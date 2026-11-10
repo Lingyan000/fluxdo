@@ -688,7 +688,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Widget _buildError(ThemeData theme, String error) {
     return Card(
       color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -774,7 +774,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     ];
 
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -822,7 +822,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -836,7 +836,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 decoration: ShapeDecoration(
                   color: iconColor.withValues(alpha: 0.1),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
@@ -1018,7 +1018,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               decoration: ShapeDecoration(
                 color: finalIconColor.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: context.shapes.borderRadius(10),
                 ),
               ),
               child: Icon(icon, color: finalIconColor, size: 20),
@@ -1067,7 +1067,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               alpha: 0.1,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
           ),
         ),
@@ -1086,7 +1086,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             minimumSize: const Size(double.infinity, 52),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
           ),
         ),
@@ -1262,7 +1262,7 @@ class _ProfileInfoSection extends ConsumerWidget {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: context.shapes.borderRadius(6),
                   ),
                 ),
                 child: Text(
@@ -1428,7 +1428,7 @@ Widget _buildStatusChip(UserStatus status, ThemeData theme) {
     decoration: ShapeDecoration(
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: UiShapes.current.borderRadius(6),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),

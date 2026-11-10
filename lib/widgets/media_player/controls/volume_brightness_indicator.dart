@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import 'media_overlay_style.dart';
@@ -50,7 +51,7 @@ class VolumeBrightnessIndicator extends StatelessWidget {
                     width: 110,
                     height: 3.5,
                     child: ClipRSuperellipse(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: context.shapes.borderRadius(2),
                       child: Stack(
                         children: [
                           const ColoredBox(color: Color(0x4DFFFFFF)),

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -253,7 +254,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
           side: compact
               ? BorderSide(
                   color: theme.colorScheme.outlineVariant.withValues(
@@ -286,7 +287,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
                         alpha: 0.7,
                       ),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: context.shapes.borderRadius(20),
                       ),
                     ),
                   ),

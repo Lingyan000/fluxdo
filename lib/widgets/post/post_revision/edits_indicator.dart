@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -68,8 +69,8 @@ class EditsIndicator extends StatelessWidget {
     final tappable = enabled
         ? InkResponse(
             radius: 14,
-            customBorder: const RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.all(Radius.circular(9999)),
+            customBorder: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.all(context.shapes.radius(9999)),
             ),
             onTap: () {
               if (canEnterEditor) {

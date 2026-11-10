@@ -211,7 +211,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
               : Material(
                   color: theme.colorScheme.surface,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                   clipBehavior: Clip.antiAlias,
                   elevation: 8,
@@ -638,7 +638,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   Widget _buildCustomActions(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surface,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       clipBehavior: Clip.antiAlias,
       elevation: 8,
       child: Column(
@@ -702,7 +702,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
           theme.brightness,
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(2),
+          borderRadius: context.shapes.borderRadius(2),
         ),
       ),
     );

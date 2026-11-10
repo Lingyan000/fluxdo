@@ -575,8 +575,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 ),
               ],
               shape: RoundedSuperellipseBorder(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+                borderRadius: BorderRadius.vertical(
+                  top: context.shapes.radius(24),
                 ),
               ),
             ),
@@ -590,7 +590,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.outlineVariant,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: context.shapes.borderRadius(2),
                     ),
                   ),
                 ),
@@ -751,7 +751,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             decoration: ShapeDecoration(
               color: color.withValues(alpha: 0.08),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(color: color.withValues(alpha: 0.2)),
               ),
             ),
@@ -805,7 +805,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       child: InkWell(
         onTap: isLink && url != null ? () => launchUrl(Uri.parse(url)) : null,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Row(
           children: [
@@ -816,7 +816,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   alpha: 0.5,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Icon(
@@ -1546,7 +1546,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                               decoration: ShapeDecoration(
                                 color: theme.colorScheme.secondaryContainer,
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: context.shapes.borderRadius(12),
                                 ),
                               ),
                               child: Text(
@@ -1613,7 +1613,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           InkWell(
                             onTap: hasInfo ? _showUserInfo : null,
                             customBorder: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: context.shapes.borderRadius(12),
                             ),
                             child: Container(
                               width: double.infinity,
@@ -1624,7 +1624,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                               decoration: ShapeDecoration(
                                 color: theme.colorScheme.surfaceContainerLow,
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: context.shapes.borderRadius(12),
                                 ),
                               ),
                               child: Row(
@@ -1780,7 +1780,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         decoration: ShapeDecoration(
           shape: isSquare
               ? RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                   side: BorderSide(color: borderColor, width: borderWidth),
                 )
               : CircleBorder(
@@ -1933,7 +1933,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           : InkWell(
               onTap: onTap,
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               child: content,
             ),
@@ -2038,9 +2038,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(36),
         child: Container(
-          decoration: const ShapeDecoration(
+          decoration: ShapeDecoration(
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
             ),
           ),
           clipBehavior: Clip.antiAlias,
@@ -2262,7 +2262,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                     decoration: ShapeDecoration(
                       shape: isSquare
                           ? RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: context.shapes.borderRadius(8),
                               side: const BorderSide(
                                 color: Colors.white,
                                 width: 2,
@@ -2368,7 +2368,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                     decoration: ShapeDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: context.shapes.borderRadius(12),
                       ),
                     ),
                     child: Text(
@@ -2440,7 +2440,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               decoration: ShapeDecoration(
                 color: Colors.white.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Row(
@@ -2572,7 +2572,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             decoration: ShapeDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
               ),
             ),
             child: Row(
@@ -2823,7 +2823,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   : Colors.white,
               foregroundColor: _isFollowed ? Colors.white : Colors.black87,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: context.shapes.borderRadius(18),
                 side: _isFollowed
                     ? const BorderSide(color: Colors.white38)
                     : BorderSide.none,
@@ -2851,7 +2851,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.15),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: color.withValues(alpha: 0.3)),
         ),
       ),
@@ -3337,14 +3337,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               onTap: () =>
                   EmbeddedStackScope.openProfile(context, user.username),
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
               ),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.surfaceContainerLow,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                 ),
                 child: Row(
@@ -3373,7 +3373,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       decoration: ShapeDecoration(
                         color: theme.colorScheme.primaryContainer,
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: context.shapes.borderRadius(10),
                         ),
                       ),
                       child: Text(
@@ -3411,7 +3411,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               decoration: ShapeDecoration(
                 color: color,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(3),
+                  borderRadius: context.shapes.borderRadius(3),
                 ),
               ),
             ),
@@ -3461,7 +3461,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             decoration: ShapeDecoration(
               gradient: BadgeUIUtils.getBadgeGradient(context, badgeType),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(color: color.withValues(alpha: 0.3)),
               ),
             ),
@@ -3780,7 +3780,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -3863,7 +3863,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -3939,7 +3939,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -4022,7 +4022,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(

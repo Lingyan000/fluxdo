@@ -513,7 +513,7 @@ void _showGestureActionPicker(
                     return InkWell(
                       onTap: () => Navigator.pop(dialogContext, action),
                       customBorder: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: context.shapes.borderRadius(8),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(

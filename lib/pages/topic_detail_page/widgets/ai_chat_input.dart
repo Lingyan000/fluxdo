@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -162,7 +163,7 @@ class _AiChatInputState extends State<AiChatInput> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
         ),
       ),
       child: Column(
@@ -203,15 +204,15 @@ class _AiChatInputState extends State<AiChatInput> {
                 ),
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
                 borderSide: BorderSide.none,
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
                 borderSide: BorderSide.none,
               ),
               contentPadding: const EdgeInsets.symmetric(
@@ -386,12 +387,12 @@ class _ToolCard extends StatelessWidget {
         child: Material(
           color: baseColor,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: context.shapes.borderRadius(14),
           ),
           child: InkWell(
             onTap: onTap,
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: context.shapes.borderRadius(14),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -432,7 +433,7 @@ class _PendingAttachmentTile extends StatelessWidget {
     return Stack(
       children: [
         ClipRSuperellipse(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
           child: _buildPreview(64),
         ),
         Positioned(

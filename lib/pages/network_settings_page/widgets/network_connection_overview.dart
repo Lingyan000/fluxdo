@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -321,9 +322,9 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
                                         key: const ValueKey('network-map-core'),
                                         onTap: widget.onTemplate,
                                         customBorder:
-                                            const RoundedSuperellipseBorder(
+                                            RoundedSuperellipseBorder(
                                               borderRadius: BorderRadius.all(
-                                                Radius.circular(32),
+                                                context.shapes.radius(32),
                                               ),
                                             ),
                                         child: Column(
@@ -336,10 +337,10 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
                                               decoration: ShapeDecoration(
                                                 color: c.primaryContainer,
                                                 shape:
-                                                    const RoundedSuperellipseBorder(
+                                                    RoundedSuperellipseBorder(
                                                       borderRadius:
                                                           BorderRadius.all(
-                                                            Radius.circular(22),
+                                                            context.shapes.radius(22),
                                                           ),
                                                     ),
                                               ),
@@ -497,8 +498,8 @@ class _Control extends StatelessWidget {
             color.withValues(alpha: .055),
             c.surfaceContainerLow,
           ),
-          shape: const RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.all(Radius.circular(24)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(context.shapes.radius(24)),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(

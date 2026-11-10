@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -315,7 +316,7 @@ class TopicCard extends ConsumerWidget {
     // (AnimationController/Ticker/PhysicalShape),对列表滚动物化是纯税
     // (生产 PROF 点名)。DecoratedBox 复刻色/圆角/选中描边,ClipRSuperellipse
     // 复刻 antiAlias 裁剪,Material(transparency) 只做 InkWell 的 ink 载体。
-    final cardRadius = BorderRadius.circular(10);
+    final cardRadius = context.shapes.borderRadius(10);
     // PerfSpanBox:整卡子树的 layout/paint 账单(lay:card#N / pnt:card#N),
     // 与 noteBuild 在场名单互补(监控关闭零开销,纯代理盒无视觉影响)
     return PerfSpanBox(
@@ -853,7 +854,7 @@ class TopicCard extends ConsumerWidget {
         decoration: ShapeDecoration(
           color: theme.colorScheme.primary,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: context.shapes.borderRadius(10),
           ),
         ),
         child: Text(
@@ -1040,7 +1041,7 @@ class CompactTopicCard extends ConsumerWidget {
 
     // 同 TopicCard:Card 壳换轻装(elevation=0 主题下视觉逐项等价),
     // 砍每卡一套 AnimatedPhysicalModel 隐式动画基建。
-    final cardRadius = BorderRadius.circular(10);
+    final cardRadius = context.shapes.borderRadius(10);
     final compactTitleStyle = theme.textTheme.labelMedium?.copyWith(
       fontWeight: isUnread ? FontWeight.w500 : FontWeight.w400,
       color: isUnread
@@ -1182,7 +1183,7 @@ class CompactTopicCard extends ConsumerWidget {
                           alpha: 0.7,
                         ),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: context.shapes.borderRadius(10),
                         ),
                       ),
                       child: Text(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -111,11 +112,11 @@ class AiChatMessageItem extends StatelessWidget {
         decoration: ShapeDecoration(
           color: theme.colorScheme.primaryContainer,
           shape: RoundedSuperellipseBorder(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(16),
-              bottomRight: Radius.circular(4),
+            borderRadius: BorderRadius.only(
+              topLeft: context.shapes.radius(16),
+              topRight: context.shapes.radius(16),
+              bottomLeft: context.shapes.radius(16),
+              bottomRight: context.shapes.radius(4),
             ),
           ),
         ),
@@ -169,11 +170,11 @@ class AiChatMessageItem extends StatelessWidget {
         decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(4),
-              bottomRight: Radius.circular(16),
+            borderRadius: BorderRadius.only(
+              topLeft: context.shapes.radius(16),
+              topRight: context.shapes.radius(16),
+              bottomLeft: context.shapes.radius(4),
+              bottomRight: context.shapes.radius(16),
             ),
           ),
         ),
@@ -536,7 +537,7 @@ class _TappableImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: context.shapes.borderRadius(10),
       child: Material(
         color: Colors.transparent,
         child: Stack(
@@ -646,7 +647,7 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
             width: 0.5,
@@ -660,7 +661,7 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -696,7 +697,7 @@ class _OptimizedPromptBlockState extends State<_OptimizedPromptBlock> {
                         );
                       },
                       customBorder: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: context.shapes.borderRadius(4),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(2),
@@ -740,7 +741,7 @@ class _PartialBadge extends StatelessWidget {
       decoration: ShapeDecoration(
         color: Colors.black54,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
         ),
       ),
       child: Row(
@@ -839,7 +840,7 @@ class _ImageGenerationPlaceholderState
     final size = widget.compact ? 80.0 : 280.0;
 
     return ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: context.shapes.borderRadius(10),
       child: SizedBox(
         height: size,
         width: size,
@@ -945,7 +946,7 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
             width: 0.5,
@@ -959,7 +960,7 @@ class _ThinkingBlockState extends State<_ThinkingBlock> {
           InkWell(
             onTap: () => setState(() => _userExpanded = !_expanded),
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1020,7 +1021,7 @@ class _AttachmentThumbnails extends StatelessWidget {
         itemBuilder: (context, index) {
           final att = attachments[index];
           return ClipRSuperellipse(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: context.shapes.borderRadius(6),
             child: _attachmentImage(att, size: 80),
           );
         },
@@ -1093,7 +1094,7 @@ class _ActionButton extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: context.shapes.borderRadius(4),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),

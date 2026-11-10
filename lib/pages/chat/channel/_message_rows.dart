@@ -17,7 +17,7 @@ class _ThreadEntryCard extends StatelessWidget {
     final participants = thread.participants.take(3).toList();
     return Material(
       color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -160,7 +160,7 @@ class _ReactionChip extends StatelessWidget {
           ? theme.colorScheme.primary.withValues(alpha: 0.12)
           : theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.shapes.borderRadius(8),
         side: BorderSide(
           color: reaction.reacted
               ? theme.colorScheme.primary.withValues(alpha: 0.7)
@@ -171,7 +171,7 @@ class _ReactionChip extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -219,7 +219,7 @@ class _AddReactionChip extends StatelessWidget {
     return Material(
       color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.shapes.borderRadius(8),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
@@ -227,7 +227,7 @@ class _AddReactionChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

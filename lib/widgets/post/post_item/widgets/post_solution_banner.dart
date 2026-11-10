@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -54,14 +55,14 @@ class _PostSolutionBannerState extends State<PostSolutionBanner> {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
         child: Container(
           decoration: ShapeDecoration(
             color: isDark
                 ? context.appColors.green.withValues(alpha: 0.05)
                 : context.appColors.green.withValues(alpha: 0.04),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
               side: BorderSide(
                 color: context.appColors.green.withValues(alpha: 0.3),
                 width: 1,
@@ -291,7 +292,7 @@ class _ExpandedExcerpt extends StatelessWidget {
           InkWell(
             onTap: () => onJumpToPost?.call(postNumber),
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: context.shapes.borderRadius(4),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),

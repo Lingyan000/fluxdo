@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -248,7 +249,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surface,
         shape: RoundedSuperellipseBorder(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
         ),
       ),
       child: Column(
@@ -261,7 +262,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: context.shapes.borderRadius(2),
               ),
             ),
           ),
@@ -309,7 +310,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
                       ),
                     ],
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                     ),
                   ),
                   clipBehavior: Clip.antiAlias,

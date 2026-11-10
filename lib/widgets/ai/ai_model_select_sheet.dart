@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -108,7 +109,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                   vertical: 12,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -271,7 +272,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.surfaceContainerHigh,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(999),
+                      borderRadius: context.shapes.borderRadius(999),
                     ),
                   ),
                   child: Text(
@@ -400,7 +401,7 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
             return Material(
               color: background,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: context.shapes.borderRadius(14),
               ),
               child: InkWell(
                 onTap: () => _scrollController.scrollToIndex(
@@ -409,12 +410,12 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
                   duration: const Duration(milliseconds: 280),
                 ),
                 customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: context.shapes.borderRadius(14),
                 ),
                 child: Container(
                   decoration: ShapeDecoration(
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: context.shapes.borderRadius(14),
                       side: BorderSide(color: borderColor),
                     ),
                   ),
@@ -512,7 +513,7 @@ class _ModelRow extends StatelessWidget {
       color: isCurrent
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
           : Colors.transparent,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
@@ -521,7 +522,7 @@ class _ModelRow extends StatelessWidget {
               child: InkWell(
                 onTap: () => Navigator.of(context).pop(item),
                 customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: context.shapes.borderRadius(10),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
@@ -651,7 +652,7 @@ class _CapabilityBadge extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.12),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Row(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -63,7 +64,7 @@ class _PendingPostCard extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.45),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: theme.colorScheme.tertiary.withValues(alpha: 0.25),
           ),

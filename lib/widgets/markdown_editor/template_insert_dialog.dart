@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -100,7 +101,7 @@ class _TemplateInsertDialogState extends State<TemplateInsertDialog> {
                     hintText: S.current.template_searchHint,
                     prefixIcon: const Icon(Symbols.search_rounded, size: 20),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                     isDense: true,
@@ -216,7 +217,7 @@ class _TemplateInsertDialogState extends State<TemplateInsertDialog> {
                       alpha: 0.5,
                     ),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                   ),
                   child: Text(

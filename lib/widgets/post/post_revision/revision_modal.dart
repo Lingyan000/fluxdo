@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -80,7 +81,7 @@ Future<void> _showAsDialog({
       return Dialog(
         clipBehavior: Clip.antiAlias,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         child: SizedBox(
           width: width,

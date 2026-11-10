@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart'
     show
         DelayedMultiDragGestureRecognizer,
@@ -352,7 +353,7 @@ class _PreviewBar extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: context.shapes.borderRadius(20),
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -376,7 +377,7 @@ class _PreviewBar extends StatelessWidget {
                   elevation: 12 * lift,
                   shadowColor: Colors.black.withValues(alpha: 0.4),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                   child: c,
                 ),
@@ -441,7 +442,7 @@ class _PreviewItem extends StatelessWidget {
                     decoration: ShapeDecoration(
                       color: theme.colorScheme.secondaryContainer,
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: context.shapes.borderRadius(18),
                       ),
                     ),
                     alignment: Alignment.center,

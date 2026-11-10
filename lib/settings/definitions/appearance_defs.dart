@@ -27,6 +27,7 @@ import '../../theme/app_background.dart';
 import '../../theme/app_palettes.dart';
 import '../../theme/color_contrast.dart';
 import '../../theme/theme_registry.dart';
+import '../../theme/shape_presets.dart';
 import '../../theme/theme_preview_cache.dart';
 import '../../theme/theme_resolver.dart';
 import '../../theme/theme_spec.dart';
@@ -175,6 +176,20 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             padding: EdgeInsets.only(top: 16),
             child: _ThemeOptionsSection(),
           ),
+        ),
+      ],
+    ),
+
+    // ── 圆角风格 ───────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_shape,
+      icon: Symbols.rounded_corner_rounded,
+      wrapInCard: false,
+      items: [
+        CustomModel(
+          id: 'shapePreset',
+          title: l10n.appearance_shape,
+          builder: (context, ref) => const _ShapeSelector(),
         ),
       ],
     ),
@@ -893,7 +908,7 @@ class _IconKeylinePainter extends CustomPainter {
     canvas.drawRSuperellipse(
       RSuperellipse.fromRectAndRadius(
         Rect.fromCenter(center: center, width: 54, height: 54),
-        const Radius.circular(12),
+        UiShapes.current.radius(12),
       ),
       paint,
     );
@@ -950,7 +965,7 @@ class _AppIconCard extends StatelessWidget {
               ? cs.secondaryContainer.withValues(alpha: 0.5)
               : cs.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
             side: BorderSide(
               color: isSelected
                   ? cs.primary
@@ -965,7 +980,7 @@ class _AppIconCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
               child: ClipRSuperellipse(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
                 child: SizedBox(
                   height: 64,
                   child: Stack(
@@ -999,7 +1014,7 @@ class _AppIconCard extends StatelessWidget {
                                 ),
                               ],
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: context.shapes.borderRadius(10),
                               ),
                             ),
                             child: Image.asset(assetPath, fit: BoxFit.cover),
@@ -1099,7 +1114,7 @@ class _ThemeModeCard extends StatelessWidget {
               ? cs.secondaryContainer.withValues(alpha: 0.5)
               : cs.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
             side: BorderSide(
               color: isSelected
                   ? cs.primary
@@ -1151,7 +1166,7 @@ class _ThemeModeCard extends StatelessWidget {
     if (mode == ThemeMode.system) {
       // 跟随系统：同一个屏幕，左半亮色右半暗色
       return ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: UiShapes.current.borderRadius(10),
         child: SizedBox(
           height: 64,
           child: CustomPaint(
@@ -1166,7 +1181,7 @@ class _ThemeModeCard extends StatelessWidget {
     }
 
     return ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: UiShapes.current.borderRadius(10),
       child: SizedBox(height: 64, child: _buildMiniScreen(previewScheme!)),
     );
   }
@@ -1185,7 +1200,7 @@ class _ThemeModeCard extends StatelessWidget {
             decoration: ShapeDecoration(
               color: scheme.surfaceContainerHighest,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: UiShapes.current.borderRadius(3),
               ),
             ),
             child: Row(
@@ -1197,7 +1212,7 @@ class _ThemeModeCard extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: scheme.onSurface.withValues(alpha: 0.6),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: UiShapes.current.borderRadius(2),
                     ),
                   ),
                 ),
@@ -1219,7 +1234,7 @@ class _ThemeModeCard extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: scheme.primary,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(3),
+                  borderRadius: UiShapes.current.borderRadius(3),
                 ),
               ),
             ),
@@ -1237,7 +1252,7 @@ class _ThemeModeCard extends StatelessWidget {
         decoration: ShapeDecoration(
           color: scheme.onSurface.withValues(alpha: 0.15),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: UiShapes.current.borderRadius(2),
           ),
         ),
       ),
@@ -1407,7 +1422,7 @@ class _BackgroundSection extends ConsumerWidget {
     return Material(
       color: cs.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: Column(
         children: [
           SwitchListTile(
@@ -1464,7 +1479,7 @@ class _BackgroundControls extends ConsumerWidget {
         Row(
           children: [
             ClipRSuperellipse(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: context.shapes.borderRadius(10),
               child: SizedBox(
                 width: 56,
                 height: 56,
@@ -1746,7 +1761,7 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                             decoration: ShapeDecoration(
                               color: Colors.black45,
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: context.shapes.borderRadius(16),
                               ),
                             ),
                             child: IconButton.filledTonal(
@@ -1868,7 +1883,7 @@ Future<Color?> _showSeedColorPicker(BuildContext context, WidgetRef ref) {
                         decoration: ShapeDecoration(
                           color: scheme.surfaceContainerLow,
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: context.shapes.borderRadius(16),
                             side: BorderSide(color: scheme.primary, width: 2),
                           ),
                         ),
@@ -2116,12 +2131,12 @@ class _VariantChip extends StatelessWidget {
         decoration: ShapeDecoration(
           color: scheme.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
           ),
         ),
         foregroundDecoration: ShapeDecoration(
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: context.shapes.borderRadius(12),
             side: BorderSide(
               color: isSelected
                   ? scheme.primary
@@ -2228,12 +2243,12 @@ class _ColorSwatchCard extends StatelessWidget {
         decoration: ShapeDecoration(
           color: tileScheme.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
         ),
         foregroundDecoration: ShapeDecoration(
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
             side: BorderSide(
               color: isSelected
                   ? tileScheme.primary
@@ -2340,7 +2355,7 @@ class _HueBar extends StatelessWidget {
           ],
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: context.shapes.borderRadius(18),
         ),
       ),
       child: SliderTheme(
@@ -2438,7 +2453,7 @@ class _GradientSlider extends StatelessWidget {
             decoration: ShapeDecoration(
               gradient: LinearGradient(colors: gradientColors),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: context.shapes.borderRadius(14),
               ),
             ),
             child: SliderTheme(

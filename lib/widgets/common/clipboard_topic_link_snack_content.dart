@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -20,7 +21,7 @@ class ClipboardTopicLinkSnackContent extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final borderRadius = BorderRadius.circular(8);
+    final borderRadius = context.shapes.borderRadius(8);
     final backgroundColor = Color.alphaBlend(
       colorScheme.primary.withValues(alpha: isDark ? 0.14 : 0.06),
       colorScheme.surfaceContainerHigh,
@@ -61,7 +62,7 @@ class ClipboardTopicLinkSnackContent extends StatelessWidget {
                         alpha: isDark ? 0.62 : 0.78,
                       ),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: context.shapes.borderRadius(8),
                       ),
                     ),
                     alignment: Alignment.center,

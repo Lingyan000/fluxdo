@@ -78,7 +78,7 @@ class MiniAppRunnerToolbar extends StatelessWidget
         message: l.miniApp_info,
         child: InkWell(
           onTap: onInfo,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(

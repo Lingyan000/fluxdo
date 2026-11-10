@@ -558,7 +558,7 @@ class _UserChip extends StatelessWidget {
           : const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
         ),
         onTap: onTap,
         onLongPress: () => showInteractionDialog<void>(
@@ -594,7 +594,7 @@ class _UserChip extends StatelessWidget {
                     alpha: 0.5,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: context.shapes.borderRadius(10),
                   ),
                 )
               : null,
@@ -692,7 +692,7 @@ class _AllUsersChip extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.error,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Text(
@@ -709,7 +709,7 @@ class _AllUsersChip extends StatelessWidget {
           : const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
         ),
         onTap: onTap,
         child: Container(
@@ -722,7 +722,7 @@ class _AllUsersChip extends StatelessWidget {
                     alpha: 0.5,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: context.shapes.borderRadius(10),
                   ),
                 )
               : null,
@@ -793,7 +793,7 @@ class _UserAvatar extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.error,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Text(

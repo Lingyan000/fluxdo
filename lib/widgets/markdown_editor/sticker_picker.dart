@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/scheduler.dart';
@@ -278,7 +279,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           shape: RoundedSuperellipseBorder(
             borderRadius: widget.compact
                 ? null
-                : const BorderRadius.vertical(top: Radius.circular(16)),
+                : BorderRadius.vertical(top: context.shapes.radius(16)),
           ),
         ),
         child: subscribedGroups.isEmpty
@@ -397,7 +398,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
                                 color: theme.colorScheme.primaryContainer
                                     .withValues(alpha: 0.5),
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: context.shapes.borderRadius(8),
                                 ),
                               ),
                             ),
@@ -472,7 +473,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     final icon = group.icon;
     if (icon.startsWith('http://') || icon.startsWith('https://')) {
       return ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: context.shapes.borderRadius(4),
         child: CachedImage(
           url: icon,
           width: 24,
@@ -746,7 +747,7 @@ class _StickerItemWidget extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: context.shapes.borderRadius(6),
                   ),
                 ),
               ),
@@ -852,7 +853,7 @@ class _StickerPreviewPopup extends StatelessWidget {
           child: Material(
             elevation: 8,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
             color: theme.colorScheme.surfaceContainerHigh,
             child: Padding(

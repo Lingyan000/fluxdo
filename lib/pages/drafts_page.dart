@@ -467,7 +467,7 @@ class _DraftCard extends StatelessWidget {
                     decoration: ShapeDecoration(
                       color: theme.colorScheme.primaryContainer,
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: context.shapes.borderRadius(6),
                       ),
                     ),
                     child: Row(

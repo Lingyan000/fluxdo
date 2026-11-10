@@ -414,7 +414,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: InkWell(
                         customBorder: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: context.shapes.borderRadius(20),
                         ),
                         onTap: _busy ? null : () => _assignToUser(user),
                         child: Padding(
@@ -573,7 +573,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                     child: Material(
                       elevation: 4,
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: context.shapes.borderRadius(8),
                       ),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
@@ -638,7 +638,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             InkWell(
               onTap: _editNote,
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: context.shapes.borderRadius(4),
               ),
               child: InputDecorator(
                 decoration: const InputDecoration(

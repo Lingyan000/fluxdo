@@ -258,7 +258,7 @@ class _ReadLaterCard extends StatelessWidget {
 
     return Material(
       color: colorScheme.surfaceContainerHigh,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       clipBehavior: Clip.antiAlias,
       elevation: 6,
       shadowColor: Colors.black.withValues(alpha: 0.25),
@@ -393,7 +393,7 @@ class _ProgressPill extends StatelessWidget {
         decoration: ShapeDecoration(
           color: colorScheme.primaryContainer.withValues(alpha: 0.7),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: context.shapes.borderRadius(20),
           ),
         ),
         child: Row(

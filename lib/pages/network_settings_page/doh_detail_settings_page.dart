@@ -212,7 +212,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.tertiaryContainer,
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: context.shapes.borderRadius(4),
                 ),
               ),
               child: Text(
@@ -1028,7 +1028,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
               hintText: l10n.dohDetail_searchHosts,
               isDense: true,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 borderSide: BorderSide(
                   color: theme.colorScheme.outlineVariant.withValues(
                     alpha: 0.4,
@@ -1036,7 +1036,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
                 ),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 borderSide: BorderSide(
                   color: theme.colorScheme.outlineVariant.withValues(
                     alpha: 0.4,
@@ -1044,7 +1044,7 @@ class _DnsRecordsSheetState extends State<_DnsRecordsSheet> {
                 ),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 borderSide: BorderSide(color: theme.colorScheme.primary),
               ),
               suffixIcon: _query.isEmpty
@@ -1114,7 +1114,7 @@ class _DnsRecordGroupCardState extends State<_DnsRecordGroupCard> {
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: context.shapes.borderRadius(14),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
         ),
@@ -1148,7 +1148,7 @@ class _DnsRecordGroupCardState extends State<_DnsRecordGroupCard> {
                       ),
                       InkWell(
                         customBorder: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: context.shapes.borderRadius(8),
                         ),
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: group.host));
@@ -1288,7 +1288,7 @@ class _StatusChip extends StatelessWidget {
       decoration: ShapeDecoration(
         color: bg,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: context.shapes.borderRadius(999),
         ),
       ),
       child: Row(
@@ -1339,7 +1339,7 @@ class _RecordSection extends StatelessWidget {
             const Spacer(),
             InkWell(
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               onTap: () {
                 Clipboard.setData(ClipboardData(text: copyText));
@@ -1363,7 +1363,7 @@ class _RecordSection extends StatelessWidget {
           decoration: ShapeDecoration(
             color: theme.colorScheme.surface,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               side: BorderSide(
                 color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
               ),

@@ -57,8 +57,8 @@ class NotificationQuickPanel {
         useRootNavigator: true,
         isScrollControlled: true,
         showDragHandle: true,
-        shape: const RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),
         shortcutSurface: const ShortcutSurfaceConfig(
           id: ShortcutSurfaceIds.notifications,
@@ -306,8 +306,8 @@ class _SidebarNotificationPanelState
           elevation: 8,
           shape: RoundedSuperellipseBorder(
             borderRadius: showRail
-                ? const BorderRadius.only(topRight: Radius.circular(20))
-                : const BorderRadius.vertical(top: Radius.circular(20)),
+                ? BorderRadius.only(topRight: context.shapes.radius(20))
+                : BorderRadius.vertical(top: context.shapes.radius(20)),
           ),
           child: Column(
             children: [
@@ -356,7 +356,7 @@ class _SidebarNotificationPanelState
         visiblePanelWidth,
         panelHeight,
       ),
-      topRight: const Radius.circular(20),
+      topRight: UiShapes.current.radius(20),
     );
 
     return Stack(
@@ -420,8 +420,8 @@ class _SidebarNotificationPanelState
         screenSize.width,
         visibleHeight,
       ),
-      topLeft: const Radius.circular(20),
-      topRight: const Radius.circular(20),
+      topLeft: UiShapes.current.radius(20),
+      topRight: UiShapes.current.radius(20),
     );
 
     return Stack(
@@ -505,7 +505,7 @@ class _DragHandle extends StatelessWidget {
         decoration: ShapeDecoration(
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: context.shapes.borderRadius(2),
           ),
         ),
       ),

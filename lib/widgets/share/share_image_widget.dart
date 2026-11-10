@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -245,7 +246,7 @@ class ShareImageWidget extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: cardColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: UiShapes.current.borderRadius(8),
         ),
       ),
       // 整帖非分块渲染:FluxdoRender 内部就是一个 Column(无虚拟化),适合离屏

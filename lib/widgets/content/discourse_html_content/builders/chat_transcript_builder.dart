@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -72,9 +73,9 @@ Widget buildChatTranscript({
       shape: RoundedSuperellipseBorder(
         borderRadius: isChained
             ? null
-            : const BorderRadius.only(
-                topRight: Radius.circular(4),
-                bottomRight: Radius.circular(4),
+            : BorderRadius.only(
+                topRight: context.shapes.radius(4),
+                bottomRight: context.shapes.radius(4),
               ),
         side: isChained
             ? BorderSide.none
@@ -191,7 +192,7 @@ Widget _buildReactionChip(ThemeData theme, _ChatReaction reaction) {
     decoration: ShapeDecoration(
       color: theme.colorScheme.surfaceContainerHighest,
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: UiShapes.current.borderRadius(10),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           width: 1,

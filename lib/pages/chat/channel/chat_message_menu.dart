@@ -367,11 +367,11 @@ class _MessageActionsOverlay extends StatelessWidget {
                         ),
                     ],
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: context.shapes.borderRadius(16),
                     ),
                   ),
                   child: ClipRSuperellipse(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: context.shapes.borderRadius(16),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: theme.colorScheme.surfaceContainerHigh
@@ -558,7 +558,7 @@ class _MessageActionsOverlay extends StatelessWidget {
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: context.shapes.borderRadius(18),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
           width: 0.5,
@@ -652,7 +652,7 @@ class _ReactionBar extends StatelessWidget {
       elevation: 8,
       shadowColor: Colors.black.withValues(alpha: 0.25),
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(9999)),
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
           width: 0.5,

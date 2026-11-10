@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -441,7 +442,7 @@ class _PostRepliesSheetContentState
             decoration: ShapeDecoration(
               color: theme.colorScheme.primary,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(1.5),
+                borderRadius: context.shapes.borderRadius(1.5),
               ),
             ),
           ),
@@ -469,7 +470,7 @@ class _PostRepliesSheetContentState
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surface,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
       ),
       child: _buildPostContent(post),
@@ -482,7 +483,7 @@ class _PostRepliesSheetContentState
     return Padding(
       padding: const EdgeInsets.only(left: 20),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           margin: const EdgeInsets.only(bottom: 8),

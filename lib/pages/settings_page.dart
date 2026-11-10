@@ -191,7 +191,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   alpha: 0.4,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: context.shapes.borderRadius(24),
                   borderSide: BorderSide.none,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
@@ -306,7 +306,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               decoration: ShapeDecoration(
                 color: result.categoryColor.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Icon(
@@ -436,7 +436,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               decoration: ShapeDecoration(
                 color: finalIconColor.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: context.shapes.borderRadius(10),
                 ),
               ),
               child: Icon(icon, color: finalIconColor, size: 20),

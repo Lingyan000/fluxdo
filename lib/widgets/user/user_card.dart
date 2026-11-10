@@ -734,7 +734,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: context.shapes.borderRadius(20),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
             width: 0.5,
@@ -877,7 +877,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.primaryContainer,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                   ),
                   child: Text(
@@ -937,7 +937,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.08),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
           side: BorderSide(color: color.withValues(alpha: 0.2)),
         ),
       ),
@@ -1262,7 +1262,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
           color: theme.colorScheme.outline.withValues(alpha: 0.5),
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         minimumSize: const Size(48, 40),
       ),

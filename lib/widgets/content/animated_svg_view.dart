@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -841,7 +842,7 @@ class _AnimatedSvgViewState extends State<AnimatedSvgView> {
             alpha: 0.3,
           ),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: context.shapes.borderRadius(4),
           ),
         ),
       );

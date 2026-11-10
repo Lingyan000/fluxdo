@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -62,7 +63,7 @@ class ToolCellBody extends StatelessWidget {
                         alpha: 0.6,
                       ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: context.shapes.borderRadius(14),
                 ),
               ),
               alignment: Alignment.center,
@@ -145,10 +146,10 @@ class ToolCell extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         onTap: onTap,
         onLongPress: onLongPress,

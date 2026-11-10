@@ -1406,7 +1406,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
               InkWell(
                 onTap: _openTagSelection,
                 customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: context.shapes.borderRadius(6),
                 ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -1415,7 +1415,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
                   ),
                   decoration: ShapeDecoration(
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: context.shapes.borderRadius(6),
                       side: BorderSide(
                         color: colorScheme.outlineVariant.withValues(
                           alpha: 0.5,
@@ -2434,8 +2434,8 @@ class _CategoryChip extends StatelessWidget {
     }
     final chip = Material(
       color: bg,
-      shape: const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(9999)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(context.shapes.radius(9999)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -2625,10 +2625,10 @@ class _TopicListState extends ConsumerState<_TopicList>
   @override
   bool get wantKeepAlive => true;
 
-  /// 列表区域顶部圆角
-  static const _topBorderRadius = BorderRadius.only(
-    topLeft: Radius.circular(12),
-    topRight: Radius.circular(12),
+  /// 列表区域顶部圆角（随主题形状风格）
+  BorderRadius get _topBorderRadius => BorderRadius.only(
+    topLeft: context.shapes.radius(12),
+    topRight: context.shapes.radius(12),
   );
 
   /// overlay 头部可折叠段悬浮在列表上方，列表内容顶部让出的恒定 inset

@@ -6,6 +6,7 @@
 /// 缺省 600)。提交在弹层内完成,失败不关闭不丢稿;成功返回新评论。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -208,7 +209,7 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
             decoration: ShapeDecoration(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: context.shapes.borderRadius(2),
               ),
             ),
           ),
@@ -284,7 +285,7 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
                       fillColor: theme.colorScheme.surfaceContainerHighest
                           .withValues(alpha: 0.4),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: context.shapes.borderRadius(20),
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,7 +26,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
       color: theme.colorScheme.surfaceContainerHigh,
       margin: EdgeInsets.zero,
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: context.shapes.borderRadius(24),
         side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
         ),
@@ -33,7 +34,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
       child: InkWell(
         onTap: () => _showConfigDialog(context, ref, isConfigured),
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -45,7 +46,7 @@ class LdcRewardConfigTile extends ConsumerWidget {
                 decoration: ShapeDecoration(
                   color: theme.colorScheme.secondaryContainer,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: context.shapes.borderRadius(16),
                   ),
                 ),
                 child: Icon(

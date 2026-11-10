@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -222,7 +223,7 @@ class _TopicExpandableExcerptState
             child: Material(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(

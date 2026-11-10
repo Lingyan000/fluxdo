@@ -70,7 +70,7 @@ class FilterDropdown extends ConsumerWidget {
     return SwipeDismissiblePopupMenuButton<TopicListFilter>(
       onSelected: onFilterChanged,
       offset: const Offset(0, 36),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       tooltip: S.current.topic_filterTooltip(filterLabel(currentFilter)),
       itemBuilder: (context) {
         return filterOptions
@@ -130,7 +130,7 @@ class FilterDropdown extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: UiShapes.current.borderRadius(8),
         ),
       ),
       child: Row(
@@ -209,7 +209,7 @@ class OrderDropdown extends StatelessWidget {
         }
       },
       offset: const Offset(0, 36),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       tooltip: S.current.topic_sortTooltip(currentOrder.label),
       itemBuilder: (context) {
         return TopicSortOrder.values.map((order) {
@@ -256,7 +256,7 @@ class OrderDropdown extends StatelessWidget {
             ? colorScheme.primaryContainer.withValues(alpha: 0.3)
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: UiShapes.current.borderRadius(8),
         ),
       ),
       child: Row(
@@ -355,7 +355,7 @@ class NewSubsetDropdown extends StatelessWidget {
     return SwipeDismissiblePopupMenuButton<NewSubset>(
       onSelected: onSubsetChanged,
       offset: const Offset(0, 36),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       tooltip: _shortLabel(currentSubset),
       itemBuilder: (context) {
         return NewSubset.values.map((subset) {
@@ -393,7 +393,7 @@ class NewSubsetDropdown extends StatelessWidget {
             ? colorScheme.primaryContainer.withValues(alpha: 0.3)
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: UiShapes.current.borderRadius(8),
         ),
       ),
       child: Row(

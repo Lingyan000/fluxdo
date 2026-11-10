@@ -131,7 +131,7 @@ class _PageDialogScaffoldState extends State<PageDialogScaffold> {
                   clipBehavior: Clip.antiAlias,
                   elevation: 6,
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: context.shapes.borderRadius(28),
                   ),
                   child: _buildPanelBody(theme),
                 ),

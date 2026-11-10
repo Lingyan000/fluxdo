@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 import 'color_scheme_roles.dart';
+import 'shape_presets.dart';
 
 /// 主题配色的生成方式。
 enum ThemeColorKind {
@@ -188,6 +189,7 @@ class ThemeSpec {
     this.family,
     this.variantName = const {},
     this.order = 1000,
+    this.shape = ShapePreset.standard,
     this.surface = GeneratedSurface.tinted,
     this.light,
     this.dark,
@@ -206,6 +208,7 @@ class ThemeSpec {
        group = ThemeGroup.generated,
        family = null,
        variantName = const {},
+       shape = ShapePreset.standard,
        light = null,
        dark = null,
        accents = const [],
@@ -233,6 +236,9 @@ class ThemeSpec {
 
   /// 画廊内排序，小的在前。
   final int order;
+
+  /// 主题推荐的圆角风格（用户可在外观设置中覆盖）。
+  final ShapePreset shape;
 
   /// 强调色记忆与画廊合并用的族标识。
   String get familyId => family ?? id;
@@ -310,6 +316,12 @@ class ThemeSpec {
     if (ids.length != accents.length) {
       throw FormatException('主题 $id 的强调色 id 重复');
     }
+    final shape = json['shape'] == null
+        ? ShapePreset.standard
+        : ShapePreset.values.asNameMap()[json['shape']];
+    if (shape == null) {
+      throw FormatException('主题 $id 的 shape 无效: ${json['shape']}');
+    }
     final group = ThemeGroup.values.asNameMap()[json['group']];
     if (json['group'] != null && group == null) {
       throw FormatException('主题 $id 的 group 无效: ${json['group']}');
@@ -322,6 +334,7 @@ class ThemeSpec {
       family: json['family'] as String?,
       variantName: _parseName(json['variantName']),
       order: json['order'] as int? ?? 1000,
+      shape: shape,
       light: ThemePalette.fromJson(lightJson),
       dark: ThemePalette.fromJson(darkJson),
       accents: accents,
@@ -338,6 +351,7 @@ class ThemeSpec {
     if (family != null) 'family': family,
     if (variantName.isNotEmpty) 'variantName': variantName,
     if (order != (isGenerated ? 0 : 1000)) 'order': order,
+    if (shape != ShapePreset.standard) 'shape': shape.name,
     if (isGenerated) 'surface': surface.name,
     if (!isGenerated) ...{
       'light': light!.toJson(),

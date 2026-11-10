@@ -566,7 +566,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
                         .colorScheme
                         .surfaceContainerHighest,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: context.shapes.borderRadius(8),
                     ),
                   ),
                   child: SelectableText(
@@ -1119,11 +1119,11 @@ class _AppLogsPageState extends State<AppLogsPage> {
             ? theme.colorScheme.secondaryContainer
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           onTap: onTap,
           child: Container(
@@ -1132,7 +1132,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
             alignment: Alignment.center,
             decoration: ShapeDecoration(
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
                 side: BorderSide(
                   color: selected
                       ? Colors.transparent
@@ -1247,7 +1247,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
         decoration: ShapeDecoration(
           color: active ? theme.colorScheme.secondaryContainer : null,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
             side: active
                 ? BorderSide.none
                 : BorderSide(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -140,13 +141,13 @@ class _AddTagButton extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: context.shapes.borderRadius(6),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: ShapeDecoration(
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: context.shapes.borderRadius(6),
             side: BorderSide(
               color: colorScheme.outlineVariant.withValues(alpha: 0.5),
             ),

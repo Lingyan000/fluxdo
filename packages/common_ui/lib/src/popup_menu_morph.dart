@@ -16,7 +16,7 @@ class _MenuRowSurface extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final shape = RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: context.shapes.borderRadius(10),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),

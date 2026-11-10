@@ -460,7 +460,7 @@ class FluxdoRenderCallbacks {
     Widget playerFor(String resolvedSrc) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: UiShapes.current.borderRadius(8),
         child: DiscourseVideoPlayer(
           resolvedSrc,
           aspectRatio: dimensOk ? node.width! / node.height! : 16 / 9,
@@ -1824,7 +1824,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
         controller: _vController,
         thumbVisibility: false,
         thickness: 4,
-        radius: const Radius.circular(2),
+        radius: UiShapes.current.radius(2),
         thumbColor: thumbColor,
         child: SingleChildScrollView(
           controller: _vController,
@@ -1958,7 +1958,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: borderColor),
         ),
       ),
@@ -1976,7 +1976,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                 InkWell(
                   onTap: () => setState(() => _showCode = !_showCode),
                   customBorder: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: context.shapes.borderRadius(4),
                   ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -2030,7 +2030,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                       );
                     },
                     customBorder: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: context.shapes.borderRadius(4),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(6),
@@ -2049,7 +2049,7 @@ class _MermaidBlockState extends State<_MermaidBlock> {
                     ToastService.showSuccess(S.current.common_codeCopied);
                   },
                   customBorder: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: context.shapes.borderRadius(4),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
@@ -2067,9 +2067,9 @@ class _MermaidBlockState extends State<_MermaidBlock> {
           // .mermaid-wrapper 的 aspect-ratio: 16/9)。shimmer / 出图 /
           // 错误 / 代码态共用同一个框 → 加载完成或切视图块高不变,页面不抖。
           ClipRSuperellipse(
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(8),
-              bottomRight: Radius.circular(8),
+            borderRadius: BorderRadius.only(
+              bottomLeft: context.shapes.radius(8),
+              bottomRight: context.shapes.radius(8),
             ),
             child: AspectRatio(
               aspectRatio: 16 / 9,
@@ -2142,7 +2142,7 @@ class _MermaidShimmerState extends State<_MermaidShimmer>
                 stops: const [0.0, 0.5, 1.0],
               ),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: context.shapes.borderRadius(8),
               ),
             ),
           );

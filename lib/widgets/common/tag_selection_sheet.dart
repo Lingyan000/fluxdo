@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -231,7 +232,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                             alpha: 0.3,
                           ),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: context.shapes.borderRadius(8),
                             side: BorderSide(
                               color: theme.colorScheme.primary.withValues(
                                 alpha: 0.3,
@@ -271,7 +272,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                               color: theme.colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: context.shapes.borderRadius(12),
                               ),
                             ),
                             child: TextField(

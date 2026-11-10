@@ -297,7 +297,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                   child: Material(
                     elevation: 6,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: context.shapes.borderRadius(16),
                     ),
                     color: colorScheme.surface,
                     surfaceTintColor: colorScheme.surfaceTint,
@@ -350,7 +350,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: context.shapes.borderRadius(20),
                               ),
                             ),
                             child: Text(context.l10n.common_continue),
@@ -371,7 +371,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
   Widget _buildIcon(ColorScheme colorScheme) {
     if (widget.appIcon != null && widget.appIcon!.isNotEmpty) {
       return ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: context.shapes.borderRadius(10),
         child: Image.memory(
           widget.appIcon!,
           width: 40,
@@ -387,7 +387,7 @@ class _AppLinkBannerState extends State<_AppLinkBanner>
       decoration: ShapeDecoration(
         color: colorScheme.primaryContainer,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: context.shapes.borderRadius(10),
         ),
       ),
       child: Icon(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -499,14 +500,14 @@ class _BrowserDockHostState extends State<BrowserDockHost>
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: colors.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: context.shapes.borderRadius(16),
               ),
             ),
           ),
         Material(
           key: const ValueKey('browser-dock-card'),
           color: colors.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: _open,

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:intl/intl.dart';
@@ -265,7 +266,7 @@ class _LocalDatePopover extends StatelessWidget {
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
             : null,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: UiShapes.current.borderRadius(6),
         ),
       ),
       child: Column(

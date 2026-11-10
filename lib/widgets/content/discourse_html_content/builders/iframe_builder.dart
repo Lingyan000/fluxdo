@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -265,11 +266,11 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
           child: Material(
             color: Colors.black87,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
             child: InkWell(
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: context.shapes.borderRadius(20),
               ),
               onTap: _exitInteractMode,
               child: Padding(
@@ -319,7 +320,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
 
     // 构建内容 Widget
     Widget content = ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: context.shapes.borderRadius(8),
       child: Stack(
         children: [
           // Windows 快速滚动时禁止自动创建 WebView2 Controller。用户明确

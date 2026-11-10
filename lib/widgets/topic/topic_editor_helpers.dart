@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -296,12 +297,12 @@ class CategoryTrigger extends StatelessWidget {
       return Material(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           onTap: () => _showPicker(context),
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -346,17 +347,17 @@ class CategoryTrigger extends StatelessWidget {
 
     return Material(
       color: color.withValues(alpha: 0.1),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(8)),
       child: InkWell(
         onTap: () => _showPicker(context),
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: ShapeDecoration(
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
               side: BorderSide(color: color.withValues(alpha: 0.3), width: 1),
             ),
           ),
@@ -486,7 +487,7 @@ class TagsArea extends StatelessWidget {
                 alpha: 0.3,
               ),
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: context.shapes.borderRadius(6),
                 side: BorderSide(
                   color: theme.colorScheme.outline.withValues(alpha: 0.1),
                 ),
@@ -529,7 +530,7 @@ class TagsArea extends StatelessWidget {
           child: InkWell(
             onTap: () => _showPicker(context, availableTags),
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
             ),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -538,7 +539,7 @@ class TagsArea extends StatelessWidget {
                     ? null
                     : theme.colorScheme.errorContainer.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: context.shapes.borderRadius(6),
                   side: BorderSide(
                     color: isSatisfied
                         ? theme.colorScheme.outline.withValues(alpha: 0.2)
@@ -695,7 +696,7 @@ class ComposerMetaBar extends StatelessWidget {
         child: InkWell(
           onTap: enabled ? onTap : null,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: UiShapes.current.borderRadius(20),
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
@@ -708,7 +709,7 @@ class ComposerMetaBar extends StatelessWidget {
                     alpha: .42,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(9999)),
+                    borderRadius: BorderRadius.all(UiShapes.current.radius(9999)),
                     side: BorderSide(
                       color:
                           borderColor ??

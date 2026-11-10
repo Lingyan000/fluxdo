@@ -2077,7 +2077,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
     return Material(
       color: backgroundColor,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(8)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2478,7 +2478,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     return Material(
       color: colorScheme.surface,
       elevation: 0,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -2649,7 +2649,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                                   ),
                                 ],
                                 shape: RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: context.shapes.borderRadius(20),
                                   side: BorderSide(
                                     color: colorScheme.outlineVariant
                                         .withValues(alpha: 0.35),

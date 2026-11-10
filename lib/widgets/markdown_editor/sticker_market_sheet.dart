@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -167,15 +168,15 @@ class _StickerMarketSheetState extends ConsumerState<StickerMarketSheet> {
                       },
                     ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
                 borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
                 borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: context.shapes.borderRadius(10),
                 borderSide: BorderSide(color: theme.colorScheme.primary),
               ),
               contentPadding: const EdgeInsets.symmetric(
@@ -414,7 +415,7 @@ class _StickerGroupTile extends ConsumerWidget {
     final icon = group.icon;
     if (icon.startsWith('http://') || icon.startsWith('https://')) {
       return ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: UiShapes.current.borderRadius(8),
         child: RepaintBoundary(
           child: CachedImage(
             url: icon,
@@ -451,7 +452,7 @@ class _StickerGroupTile extends ConsumerWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: UiShapes.current.borderRadius(8),
         ),
       ),
       child: Center(

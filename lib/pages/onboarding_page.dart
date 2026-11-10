@@ -197,7 +197,7 @@ class _OnboardingPageState extends State<OnboardingPage>
                     FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 56),
                       shape: RoundedSuperellipseBorder(
-                        borderRadius: BorderRadius.circular(28),
+                        borderRadius: context.shapes.borderRadius(28),
                       ),
                       elevation: 0,
                       backgroundColor: theme.colorScheme.primary,
@@ -233,7 +233,7 @@ class _OnboardingPageState extends State<OnboardingPage>
                 style: TextButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: context.shapes.borderRadius(28),
                   ),
                   foregroundColor: theme.colorScheme.onSurfaceVariant,
                 ),

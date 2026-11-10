@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -110,7 +111,7 @@ class TechOneboxBuilder {
                             ? const Color(0xFFf48024)
                             : const Color(0xFF0077cc),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: context.shapes.borderRadius(4),
                         ),
                       ),
                       child: Text(
@@ -165,7 +166,7 @@ class TechOneboxBuilder {
                         decoration: ShapeDecoration(
                           color: const Color(0xFFe1ecf4),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: context.shapes.borderRadius(4),
                           ),
                         ),
                         child: Text(
@@ -257,7 +258,7 @@ class TechOneboxBuilder {
                 decoration: ShapeDecoration(
                   color: const Color(0xFFff6600),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: context.shapes.borderRadius(2),
                   ),
                 ),
                 child: const Center(
@@ -379,14 +380,14 @@ class TechOneboxBuilder {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           side: BorderSide(color: borderColor),
         ),
       ),
       child: InkWell(
         onTap: () => _launchUrl(context, url),
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -397,8 +398,8 @@ class TechOneboxBuilder {
               decoration: ShapeDecoration(
                 color: const Color(0xFF02589D),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(7),
+                  borderRadius: BorderRadius.vertical(
+                    top: context.shapes.radius(7),
                   ),
                 ),
               ),
@@ -429,7 +430,7 @@ class TechOneboxBuilder {
                       decoration: ShapeDecoration(
                         color: Colors.white.withValues(alpha: 0.2),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: context.shapes.borderRadius(4),
                         ),
                       ),
                       child: Row(
@@ -463,7 +464,7 @@ class TechOneboxBuilder {
                       decoration: ShapeDecoration(
                         color: Colors.white.withValues(alpha: 0.2),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: context.shapes.borderRadius(4),
                         ),
                       ),
                       child: Text(
@@ -537,7 +538,7 @@ class _StatBox extends StatelessWidget {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: context.shapes.borderRadius(6),
           side: isHighlighted
               ? BorderSide.none
               : BorderSide(color: theme.colorScheme.outlineVariant),

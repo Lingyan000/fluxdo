@@ -1,5 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -50,13 +51,13 @@ class SearchCapsule extends StatelessWidget {
             alpha: 0.5 * backgroundOpacity,
           ),
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: context.shapes.borderRadius(20),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
             child: Row(
               children: [
@@ -190,7 +191,7 @@ class _SearchCapsuleFlight extends StatelessWidget {
               alpha: 0.5 * bgOpacity,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
             ),
             clipBehavior: Clip.antiAlias,
             child: Stack(

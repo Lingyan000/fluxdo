@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,11 +39,11 @@ class KeywordFilterHintBar extends ConsumerWidget {
       child: Material(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           onTap: () => onlyBlocked
               ? showBlockedUsernamesDialog(context, ref)

@@ -283,11 +283,11 @@ class _SidebarCategoryAddButton extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         child: InkWell(
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
           onTap: onOpenCategoryManager,
           child: SizedBox(

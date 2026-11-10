@@ -65,7 +65,7 @@ import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, ParagraphLayoutCache;
+    show FlattenCache, ParagraphLayoutCache, FluxdoRenderShapes;
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -96,6 +96,7 @@ import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'theme/app_colors.dart';
+import 'theme/shape_presets.dart';
 import 'theme/theme_registry.dart';
 import 'theme/theme_resolver.dart';
 import 'widgets/common/app_background_layer.dart';
@@ -674,9 +675,11 @@ ButtonStyle _m3ePressedShapeStyle() => ButtonStyle(
   animationDuration: const Duration(milliseconds: 180),
   shape: WidgetStateProperty.resolveWith(
     (states) => states.contains(WidgetState.pressed)
-        ? RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8))
-        : const RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.all(Radius.circular(9999)),
+        ? RoundedSuperellipseBorder(
+            borderRadius: UiShapes.current.borderRadius(8),
+          )
+        : RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(UiShapes.current.radius(9999)),
           ),
   ),
 );
@@ -689,13 +692,17 @@ ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
   animationDuration: const Duration(milliseconds: 180),
   shape: WidgetStateProperty.resolveWith((states) {
     if (states.contains(WidgetState.pressed)) {
-      return RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8));
+      return RoundedSuperellipseBorder(
+        borderRadius: UiShapes.current.borderRadius(8),
+      );
     }
     if (states.contains(WidgetState.selected)) {
-      return RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12));
+      return RoundedSuperellipseBorder(
+        borderRadius: UiShapes.current.borderRadius(12),
+      );
     }
-    return const RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.all(Radius.circular(9999)),
+    return RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.all(UiShapes.current.radius(9999)),
     );
   }),
 );
@@ -705,15 +712,16 @@ ButtonStyle _m3eIconButtonShapeStyle() => ButtonStyle(
 ThemeData _buildAppTheme(
   ColorScheme scheme,
   AppColors colors,
+  UiShapes shapes,
   ThemeState themeState, {
   required bool fullscreenSwipeBack,
   required bool transparent,
 }) {
   final m3e = themeState.m3eEnabled;
-  const fullShape = RoundedSuperellipseBorder(
-    borderRadius: BorderRadius.all(Radius.circular(9999)),
+  final fullShape = RoundedSuperellipseBorder(
+    borderRadius: BorderRadius.all(shapes.radius(9999)),
   );
-  const roundButtonStyle = ButtonStyle(
+  final roundButtonStyle = ButtonStyle(
     shape: WidgetStatePropertyAll(fullShape),
   );
   final buttonStyle = m3e ? _m3ePressedShapeStyle() : roundButtonStyle;
@@ -728,7 +736,13 @@ ThemeData _buildAppTheme(
         : _pageTransitionsTheme,
     iconTheme: _appIconTheme(scheme.onSurface),
     primaryIconTheme: _appIconTheme(scheme.onPrimary),
-    extensions: [M3eFlags(enabled: m3e), colors, colors.render],
+    extensions: [
+      M3eFlags(enabled: m3e),
+      colors,
+      colors.render,
+      shapes,
+      shapes.render,
+    ],
     // year2023: false 启用进度条/滑块的 M3E 翻新(圆角端点/track gap/
     // stop indicator/16dp 滑轨+竖条 thumb)。字段虽标记 deprecated,但
     // trackGap 等新样式只由它驱动,官方 M3E 独立包落地前只能走这里。
@@ -749,61 +763,55 @@ ThemeData _buildAppTheme(
     iconButtonTheme: IconButtonThemeData(
       style: m3e ? _m3eIconButtonShapeStyle() : roundButtonStyle,
     ),
-    navigationBarTheme: const NavigationBarThemeData(indicatorShape: fullShape),
-    navigationRailTheme: const NavigationRailThemeData(
-      indicatorShape: fullShape,
-    ),
+    navigationBarTheme: NavigationBarThemeData(indicatorShape: fullShape),
+    navigationRailTheme: NavigationRailThemeData(indicatorShape: fullShape),
     tooltipTheme: TooltipThemeData(
       decoration: ShapeDecoration(
         color: scheme.inverseSurface,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
-        ),
+        shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(4)),
       ),
       textStyle: TextStyle(color: scheme.onInverseSurface),
     ),
-    dialogTheme: const DialogThemeData(
+    dialogTheme: DialogThemeData(
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(28)),
+        borderRadius: BorderRadius.all(shapes.radius(28)),
       ),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
+    bottomSheetTheme: BottomSheetThemeData(
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: shapes.radius(28)),
       ),
     ),
-    floatingActionButtonTheme: const FloatingActionButtonThemeData(
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
       shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(Radius.circular(16)),
+        borderRadius: BorderRadius.all(shapes.radius(16)),
       ),
     ),
-    segmentedButtonTheme: const SegmentedButtonThemeData(
-      style: roundButtonStyle,
-    ),
-    searchBarTheme: const SearchBarThemeData(
+    segmentedButtonTheme: SegmentedButtonThemeData(style: roundButtonStyle),
+    searchBarTheme: SearchBarThemeData(
       shape: WidgetStatePropertyAll(fullShape),
     ),
     chipTheme: ChipThemeData(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(8)),
     ),
     snackBarTheme: SnackBarThemeData(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(4)),
     ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
         shape: WidgetStatePropertyAll(
-          RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(4)),
+          RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(4)),
         ),
       ),
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(12)),
       color: scheme.surfaceContainerLow,
       margin: EdgeInsets.zero,
     ),
     popupMenuTheme: PopupMenuThemeData(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedSuperellipseBorder(borderRadius: shapes.borderRadius(20)),
       elevation: 3,
       color: scheme.surfaceContainerLow,
       surfaceTintColor: Colors.transparent,
@@ -852,6 +860,10 @@ class MainApp extends ConsumerWidget {
           seed: themeState.effectiveSeedColor,
           variant: themeState.schemeVariant,
         );
+        // 形状 token：注入 ThemeData，并同步给拿不到 context 的绘制代码
+        final shapes = themeState.effectiveShapes;
+        UiShapes.current = shapes;
+        FluxdoRenderShapes.current = shapes.render;
         final lightScheme = resolvedTheme.light;
         final darkScheme = resolvedTheme.dark;
 
@@ -890,6 +902,7 @@ class MainApp extends ConsumerWidget {
                 _buildAppTheme(
                   lightScheme,
                   resolvedTheme.lightColors,
+                  shapes,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,
@@ -899,6 +912,7 @@ class MainApp extends ConsumerWidget {
                 _buildAppTheme(
                   darkScheme,
                   resolvedTheme.darkColors,
+                  shapes,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -65,7 +66,7 @@ Future<void> showQrLoginSheet(BuildContext context, {String? username}) async {
       builder: (_) => Dialog(
         clipBehavior: Clip.antiAlias,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
         child: SizedBox(
           width: 440,
@@ -348,7 +349,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
       decoration: ShapeDecoration(
         color: scheme.errorContainer.withValues(alpha: 0.35),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
       ),
       child: Row(
@@ -467,7 +468,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   /// 扫码成功覆盖层:对方设备已用此码完成登录。
   Widget _buildConsumedOverlay(ThemeData theme, ColorScheme scheme) {
     return ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: context.shapes.borderRadius(28),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: Material(
@@ -503,7 +504,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
 
   Widget _buildExpiredOverlay(ThemeData theme, ColorScheme scheme) {
     return ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: context.shapes.borderRadius(28),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
         child: Material(
@@ -560,7 +561,7 @@ class _QrCard extends StatelessWidget {
       decoration: ShapeDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: context.shapes.borderRadius(28),
         ),
       ),
       child: AnimatedOpacity(
@@ -580,7 +581,7 @@ class _QrCard extends StatelessWidget {
               ),
             ],
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: context.shapes.borderRadius(20),
               side: BorderSide(
                 color: scheme.outlineVariant.withValues(alpha: 0.4),
               ),
@@ -634,7 +635,7 @@ class _InfoChip extends StatelessWidget {
           alpha: 0.45,
         ),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: context.shapes.borderRadius(999),
         ),
       ),
       child: Row(

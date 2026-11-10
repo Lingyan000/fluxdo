@@ -248,7 +248,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                   decoration: ShapeDecoration(
                     color: sectionColor.withValues(alpha: 0.1),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                     ),
                   ),
                   child: Text(
@@ -303,7 +303,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
         }
       },
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: context.shapes.borderRadius(20),
       ),
       child: Container(
         decoration: BadgeUIUtils.getCardDecoration(context, type),
@@ -323,7 +323,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                   decoration: ShapeDecoration(
                     color: iconColor.withValues(alpha: 0.15),
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: context.shapes.borderRadius(12),
                       side: BorderSide(
                         color: iconColor.withValues(alpha: 0.3),
                         width: 1,

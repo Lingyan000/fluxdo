@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 
@@ -45,7 +46,7 @@ class TopicTocSidePanel extends StatelessWidget {
         elevation: 1,
         clipBehavior: Clip.antiAlias,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: context.shapes.borderRadius(14),
         ),
         child: visible
             ? OverflowBox(
@@ -189,8 +190,8 @@ Future<void> showTocBottomSheet({
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    shape: const RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    shape: RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
     ),
     builder: (sheetContext) {
       return ConstrainedBox(
@@ -424,12 +425,12 @@ class _TocTile extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.10)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           hoverColor: scheme.onSurface.withValues(alpha: 0.06),
           child: Padding(
@@ -445,7 +446,7 @@ class _TocTile extends StatelessWidget {
                   decoration: ShapeDecoration(
                     color: isActive ? scheme.primary : Colors.transparent,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(1.5),
+                      borderRadius: context.shapes.borderRadius(1.5),
                     ),
                   ),
                 ),

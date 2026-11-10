@@ -1185,8 +1185,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                   decoration: ShapeDecoration(
                     color: theme.colorScheme.surface,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(16),
+                      borderRadius: BorderRadius.vertical(
+                        top: context.shapes.radius(16),
                       ),
                     ),
                   ),
@@ -1204,7 +1204,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             decoration: ShapeDecoration(
                               color: theme.colorScheme.outlineVariant,
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(2),
+                                borderRadius: context.shapes.borderRadius(2),
                               ),
                             ),
                           ),
@@ -1379,8 +1379,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                       decoration: ShapeDecoration(
                         color: theme.colorScheme.surface.withValues(alpha: 0.7),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(16),
+                          borderRadius: BorderRadius.vertical(
+                            top: context.shapes.radius(16),
                           ),
                         ),
                       ),

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 
 import 'dart:async';
@@ -158,15 +159,15 @@ class _UserPickerBodyState extends ConsumerState<_UserPickerBody> {
                     fillColor: theme.colorScheme.surfaceContainerHighest
                         .withValues(alpha: 0.4),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: context.shapes.borderRadius(20),
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
@@ -260,7 +261,7 @@ class _UserResultTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

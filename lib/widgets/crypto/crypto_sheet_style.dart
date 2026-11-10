@@ -3,6 +3,7 @@
 /// 解密/加密弹窗共用，避免两个文件重复同一份 decoration。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 /// 填充式输入框装饰（无边框 + 圆角 12 + surfaceContainerHighest 填充）。
@@ -21,15 +22,15 @@ InputDecoration cryptoSheetInputDecoration(
     fillColor: theme.colorScheme.surfaceContainerHigh,
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: UiShapes.current.borderRadius(12),
       borderSide: BorderSide.none,
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: UiShapes.current.borderRadius(12),
       borderSide: BorderSide.none,
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: UiShapes.current.borderRadius(12),
       borderSide: BorderSide(
         color: theme.colorScheme.primary.withValues(alpha: 0.6),
         width: 1.4,
@@ -60,7 +61,7 @@ class CryptoSheetMessageCard extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.08),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
       ),
       child: Row(
@@ -103,7 +104,7 @@ class CryptoSheetResultCard extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
       ),
       child: Column(

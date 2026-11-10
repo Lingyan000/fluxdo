@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -295,7 +296,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                           alpha: 0.2,
                         ),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: context.shapes.borderRadius(8),
                         ),
                       )
                     : null,
@@ -428,7 +429,7 @@ class _PostItemState extends ConsumerState<PostItem> {
                   child: InkWell(
                     onTap: () => widget.onExpandHiddenPost!(post.id),
                     customBorder: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: context.shapes.borderRadius(6),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
@@ -532,7 +533,7 @@ class _PostAssignmentBadge extends ConsumerWidget {
       padding: const EdgeInsets.only(top: 8),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         onTap: () => showPostAssignDialog(
           context,
@@ -546,7 +547,7 @@ class _PostAssignmentBadge extends ConsumerWidget {
           decoration: ShapeDecoration(
             color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
           ),
           child: Row(

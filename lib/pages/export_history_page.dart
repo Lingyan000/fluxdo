@@ -395,7 +395,7 @@ class _ExportEntryCard extends StatelessWidget {
 
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -412,7 +412,7 @@ class _ExportEntryCard extends StatelessWidget {
                 decoration: ShapeDecoration(
                   color: accent.withValues(alpha: 0.12),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: context.shapes.borderRadius(10),
                   ),
                 ),
                 child: Icon(_icon, color: accent, size: 20),
@@ -537,7 +537,7 @@ class _FormatPill extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.14),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: context.shapes.borderRadius(5),
         ),
       ),
       child: Text(

@@ -141,7 +141,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
         }
       },
       offset: const Offset(0, 36),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
       tooltip: S.current.topic_filterTooltip(filterLabel(widget.currentFilter)),
       itemBuilder: (context) {
         final items = <PopupMenuEntry<Object>>[];
@@ -352,7 +352,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                   alpha: 0.5,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
               ),
               child: Row(

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -229,7 +230,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
                     alpha: 0.3,
                   ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
               side: BorderSide(
                 color: isSelected
                     ? theme.colorScheme.primary.withValues(alpha: 0.3)

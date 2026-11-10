@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -195,7 +196,7 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
                 decoration: InputDecoration(
                   hintText: context.l10n.post_flagDescriptionHint,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: context.shapes.borderRadius(12),
                   ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
@@ -232,7 +233,7 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
             ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -241,7 +242,7 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
             padding: const EdgeInsets.all(12),
             decoration: ShapeDecoration(
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
                 side: BorderSide(
                   color: isSelected
                       ? theme.colorScheme.primary

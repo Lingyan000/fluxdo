@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:popover/popover.dart';
@@ -276,7 +277,7 @@ class _BoostListState extends State<BoostList>
               ),
             ],
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
           ),
           child: child,
@@ -554,7 +555,7 @@ class _InlineControlChip extends StatelessWidget {
               alpha: 0.4,
             ),
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: context.shapes.borderRadius(16),
             ),
           ),
           child: Icon(

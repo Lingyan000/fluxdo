@@ -34,7 +34,7 @@ import 'package:flutter/foundation.dart'
         listEquals,
         visibleForTesting;
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
+import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -3117,7 +3117,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               child: InkWell(
                 onTap: onTap,
                 customBorder: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: context.shapes.borderRadius(8),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
@@ -3188,7 +3188,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                 ? null
                                 : () => launchContentLink(this.context, href),
                             customBorder: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: context.shapes.borderRadius(8),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -4806,7 +4806,7 @@ class _FloatingPanel extends StatelessWidget {
           ),
         ],
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
@@ -4867,12 +4867,12 @@ class _MentionRow extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -4957,12 +4957,12 @@ class _EmojiCandidateRow extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -5026,12 +5026,12 @@ class _EmojiMoreRow extends StatelessWidget {
             ? scheme.primary.withValues(alpha: 0.12)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: context.shapes.borderRadius(8),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -190,7 +191,7 @@ class _BookmarkNameAutocompleteFieldState
               labelText: widget.labelText,
               hintText: widget.hintText,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: context.shapes.borderRadius(12),
               ),
               counterText: '',
               prefixIcon: const Icon(Symbols.label_rounded, size: 20),
@@ -210,7 +211,7 @@ class _BookmarkNameAutocompleteFieldState
             elevation: 6,
             color: theme.colorScheme.overlaySurface,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: context.shapes.borderRadius(12),
             ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420, maxHeight: 240),

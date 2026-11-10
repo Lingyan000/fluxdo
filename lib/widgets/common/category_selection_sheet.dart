@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -125,7 +126,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                               color: theme.colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: context.shapes.borderRadius(12),
                               ),
                             ),
                             child: TextField(

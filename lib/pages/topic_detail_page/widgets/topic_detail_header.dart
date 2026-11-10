@@ -207,7 +207,7 @@ class TopicDetailHeader extends ConsumerWidget {
           if (detail.isAssigned) ...[
             InkWell(
               customBorder: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: context.shapes.borderRadius(16),
               ),
               onTap: () =>
                   unawaited(showAssignSheet(context, ref, topicId: detail.id)),
@@ -221,7 +221,7 @@ class TopicDetailHeader extends ConsumerWidget {
                     alpha: 0.5,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: context.shapes.borderRadius(16),
                   ),
                 ),
                 child: Row(

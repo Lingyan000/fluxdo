@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:markdown/markdown.dart' as md;
@@ -30,7 +31,7 @@ class UpdateDialog extends StatelessWidget {
     final maxContentHeight = size.height * 0.5;
 
     return Dialog(
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       elevation: 0,
       backgroundColor: Colors.transparent,
       child: Container(
@@ -45,7 +46,7 @@ class UpdateDialog extends StatelessWidget {
             ),
           ],
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: context.shapes.borderRadius(24),
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -76,7 +77,7 @@ class UpdateDialog extends StatelessWidget {
                         decoration: ShapeDecoration(
                           color: colorScheme.primaryContainer,
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: Icon(
@@ -176,7 +177,7 @@ class UpdateDialog extends StatelessWidget {
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: Text(
@@ -262,7 +263,7 @@ class UpdateDialog extends StatelessWidget {
             ? colorScheme.primary.withValues(alpha: 0.1)
             : colorScheme.surfaceContainerHighest,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: context.shapes.borderRadius(4),
         ),
       ),
       child: Text(

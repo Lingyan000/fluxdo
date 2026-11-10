@@ -49,20 +49,25 @@ class _ThemeLivePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final shapes = context.shapes;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20),
       alignment: Alignment.center,
       decoration: ShapeDecoration(
         color: scheme.surfaceContainer,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: context.shapes.borderRadius(28),
         ),
       ),
       child: SizedBox(
         width: _phoneWidth,
         child: AspectRatio(
           aspectRatio: 9 / 17,
-          child: _MiniScreen(scheme: scheme, cornerRadius: 22),
+          child: _MiniScreen(
+            scheme: scheme,
+            shapes: shapes,
+            cornerRadius: 22,
+          ),
         ),
       ),
     );
@@ -71,9 +76,16 @@ class _ThemeLivePreview extends StatelessWidget {
 
 /// 缩略首页：带圆角外框的 [_MiniHomePainter]。
 class _MiniScreen extends StatelessWidget {
-  const _MiniScreen({required this.scheme, required this.cornerRadius});
+  const _MiniScreen({
+    required this.scheme,
+    required this.shapes,
+    required this.cornerRadius,
+  });
 
   final ColorScheme scheme;
+
+  /// 缩略图内元素的圆角风格（外框是设备轮廓，不随风格变化）。
+  final UiShapes shapes;
   final double cornerRadius;
 
   @override
@@ -90,7 +102,7 @@ class _MiniScreen extends StatelessWidget {
       child: ClipRSuperellipse(
         borderRadius: radius,
         child: CustomPaint(
-          painter: _MiniHomePainter(scheme),
+          painter: _MiniHomePainter(scheme, shapes),
           child: const SizedBox.expand(),
         ),
       ),
@@ -99,11 +111,18 @@ class _MiniScreen extends StatelessWidget {
 }
 
 /// 首页草图：顶栏、分类标签、话题卡、悬浮按钮、底栏，全部用 [scheme]
-/// 的 role 上色，几何按画布尺寸等比缩放。
+/// 的 role 上色，几何按画布尺寸等比缩放，圆角按 [shapes] 风格换算。
 class _MiniHomePainter extends CustomPainter {
-  _MiniHomePainter(this.scheme);
+  _MiniHomePainter(this.scheme, this.shapes);
 
   final ColorScheme scheme;
+  final UiShapes shapes;
+
+  /// 缩略图里的普通圆角：按设计值 16 处的缩放比例等比换算。
+  double _corner(double r) => r * shapes.resolve(16) / 16;
+
+  /// 缩略图里的胶囊：封顶风格下收成小圆角，否则保持胶囊。
+  double _pill(double r) => shapes.max == null ? r : r * 0.15;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -127,7 +146,7 @@ class _MiniHomePainter extends CustomPainter {
     // 顶栏：标题 + 搜索按钮
     rrect(
       Rect.fromLTWH(pad, h * 0.06, w * 0.34, line * 1.3),
-      line,
+      _pill(line),
       scheme.onSurface,
     );
     paint.color = scheme.surfaceContainerHigh;
@@ -139,7 +158,7 @@ class _MiniHomePainter extends CustomPainter {
       final tw = w * (i == 0 ? 0.2 : 0.15);
       rrect(
         Rect.fromLTWH(x, h * 0.115, tw, h * 0.036),
-        h * 0.018,
+        _pill(h * 0.018),
         i == 0 ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
       );
       x += tw + w * 0.025;
@@ -153,7 +172,7 @@ class _MiniHomePainter extends CustomPainter {
     var index = 0;
     while (y + cardH <= navTop - gap) {
       final card = Rect.fromLTWH(pad, y, w - pad * 2, cardH);
-      rrect(card, w * 0.05, scheme.surfaceContainerLow);
+      rrect(card, _corner(w * 0.05), scheme.surfaceContainerLow);
       final cx = card.left + w * 0.05;
       paint.color = scheme.primaryContainer;
       canvas.drawCircle(
@@ -194,7 +213,7 @@ class _MiniHomePainter extends CustomPainter {
     final fab = w * 0.17;
     rrect(
       Rect.fromLTWH(w - pad - fab, navTop - fab - gap, fab, fab),
-      fab * 0.3,
+      _corner(fab * 0.3),
       scheme.primaryContainer,
     );
     final plus = fab * 0.32;
@@ -221,7 +240,7 @@ class _MiniHomePainter extends CustomPainter {
       if (i == 0) {
         rrect(
           Rect.fromCenter(center: center, width: cell * 0.62, height: h * 0.04),
-          h * 0.02,
+          _pill(h * 0.02),
           scheme.secondaryContainer,
         );
       }
@@ -237,7 +256,7 @@ class _MiniHomePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniHomePainter oldDelegate) =>
-      oldDelegate.scheme != scheme;
+      oldDelegate.scheme != scheme || oldDelegate.shapes != shapes;
 }
 
 /// 主题画廊：按分组列出全部主题，同族主题合并成一张卡。
@@ -298,6 +317,7 @@ class _ThemeGallery extends ConsumerWidget {
                         width: itemWidth,
                         name: _themeName(context, spec),
                         scheme: _galleryScheme(spec, themeState, brightness),
+                        shapes: (themeState.shapeOverride ?? spec.shape).shapes,
                         selected: spec.familyId == current.familyId,
                         onTap: () {
                           if (spec.familyId == current.familyId) return;
@@ -320,6 +340,7 @@ class _ThemeCard extends StatelessWidget {
     required this.width,
     required this.name,
     required this.scheme,
+    required this.shapes,
     required this.selected,
     required this.onTap,
   });
@@ -327,6 +348,7 @@ class _ThemeCard extends StatelessWidget {
   final double width;
   final String name;
   final ColorScheme scheme;
+  final UiShapes shapes;
   final bool selected;
   final VoidCallback onTap;
 
@@ -350,7 +372,7 @@ class _ThemeCard extends StatelessWidget {
                 padding: const EdgeInsets.all(3),
                 decoration: ShapeDecoration(
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(21),
+                    borderRadius: context.shapes.borderRadius(21),
                     side: BorderSide(
                       color: selected ? cs.primary : Colors.transparent,
                       width: 2.5,
@@ -361,7 +383,11 @@ class _ThemeCard extends StatelessWidget {
                   children: [
                     AspectRatio(
                       aspectRatio: 9 / 14,
-                      child: _MiniScreen(scheme: scheme, cornerRadius: 18),
+                      child: _MiniScreen(
+                        scheme: scheme,
+                        shapes: shapes,
+                        cornerRadius: 18,
+                      ),
                     ),
                     if (selected)
                       Positioned(
@@ -561,6 +587,139 @@ class _AccentDot extends StatelessWidget {
                   ? Icon(Symbols.check_rounded, size: 20, color: onColor)
                   : null,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 圆角风格选择：跟随主题 + 三档预设，每档一张小样。
+class _ShapeSelector extends ConsumerWidget {
+  const _ShapeSelector();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeState = ref.watch(themeProvider);
+    final override = themeState.shapeOverride;
+    final themePreset = themeState.themeSpec.shape;
+    final l10n = context.l10n;
+    String presetName(ShapePreset p) => switch (p) {
+      ShapePreset.standard => l10n.appearance_shapeStandard,
+      ShapePreset.compact => l10n.appearance_shapeCompact,
+      ShapePreset.sharp => l10n.appearance_shapeSharp,
+    };
+    final choices = <(ShapePreset?, String, ShapePreset)>[
+      (null, l10n.appearance_shapeFollow, themePreset),
+      for (final p in ShapePreset.values) (p, presetName(p), p),
+    ];
+    return Row(
+      children: [
+        for (var i = 0; i < choices.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(
+            child: _ShapeChoiceCard(
+              label: choices[i].$2,
+              caption: choices[i].$1 == null ? presetName(themePreset) : null,
+              shapes: choices[i].$3.shapes,
+              selected: choices[i].$1 == override,
+              onTap: () => ref
+                  .read(themeProvider.notifier)
+                  .setShapeOverride(choices[i].$1),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ShapeChoiceCard extends StatelessWidget {
+  const _ShapeChoiceCard({
+    required this.label,
+    required this.caption,
+    required this.shapes,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+
+  /// 「跟随主题」下显示主题推荐的那一档
+  final String? caption;
+  final UiShapes shapes;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+          decoration: ShapeDecoration(
+            color: selected
+                ? cs.secondaryContainer
+                : cs.surfaceContainerHigh,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(16),
+              side: BorderSide(
+                color: selected ? cs.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              // 小样：一张卡片 + 一个胶囊按钮
+              Container(
+                height: 34,
+                padding: const EdgeInsets.all(6),
+                alignment: Alignment.bottomRight,
+                decoration: ShapeDecoration(
+                  color: cs.surface,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: shapes.borderRadius(12),
+                  ),
+                ),
+                child: Container(
+                  width: 22,
+                  height: 10,
+                  decoration: ShapeDecoration(
+                    color: cs.primary,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: shapes.borderRadius(9999),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.labelMedium?.copyWith(
+                  color: selected ? cs.onSecondaryContainer : cs.onSurface,
+                ),
+              ),
+              if (caption != null)
+                Text(
+                  caption!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+            ],
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
@@ -70,7 +71,7 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
   @override
   Widget build(BuildContext context) {
     final layout = widget.layout;
-    final cardRadius = BorderRadius.circular(10);
+    final cardRadius = context.shapes.borderRadius(10);
     final theme = Theme.of(context);
     final bgColor = widget.isSelected
         ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
@@ -325,7 +326,7 @@ class _RenderTopicCard extends RenderBox
       canvas.drawRSuperellipse(
         RSuperellipse.fromRectAndRadius(
           l.categoryDotRect.shift(offset),
-          const Radius.circular(2),
+          UiShapes.current.radius(2),
         ),
         Paint()..color = l.categoryDotColor!,
       );

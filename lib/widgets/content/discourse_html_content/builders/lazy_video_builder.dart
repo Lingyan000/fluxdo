@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -154,7 +155,7 @@ class _LazyVideoWidgetState extends State<_LazyVideoWidget> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.shapes.borderRadius(8),
         child: Container(
           color: Colors.black,
           child: Column(
@@ -199,7 +200,7 @@ class _LazyVideoWidgetState extends State<_LazyVideoWidget> {
                       decoration: ShapeDecoration(
                         color: attrs.brandColor.withValues(alpha: 0.9),
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: context.shapes.borderRadius(8),
                         ),
                       ),
                       child: const Icon(
@@ -279,7 +280,7 @@ class _LazyVideoWidgetState extends State<_LazyVideoWidget> {
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: ClipRSuperellipse(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
           child: IframeWidget(attributes: iframeAttrs),
         ),
       ),

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, PointerHoverEvent;
 import 'package:flutter/material.dart';
@@ -257,7 +258,7 @@ class _ComposerBlockHoverState extends State<ComposerBlockHover> {
             padding: const EdgeInsets.all(5),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: context.shapes.borderRadius(6),
             ),
             foregroundColor: picker ? colors.primary : colors.onSurfaceVariant,
           ),
@@ -288,7 +289,7 @@ class _ComposerBlockHoverState extends State<ComposerBlockHover> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               foregroundColor: colors.onSurfaceVariant,
               shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: context.shapes.borderRadius(7),
               ),
             ),
             onPressed: target == null

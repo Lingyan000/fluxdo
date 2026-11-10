@@ -13,6 +13,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/settings/definitions/appearance_defs.dart';
 import 'package:fluxdo/settings/settings_renderer.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
+import 'package:fluxdo/theme/shape_presets.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -23,6 +24,7 @@ const _sectionIds = {
   'themeGallery',
   'themeOptions',
   'black',
+  'shapePreset',
 };
 
 List<ThemeSpec> _loadAssets() => [
@@ -51,13 +53,14 @@ Widget _app(ProviderContainer container, {ThemeMode mode = ThemeMode.light}) {
             variant: state.schemeVariant,
             accentId: state.accentFor(state.themeSpec),
           );
+          final shapes = state.effectiveShapes;
           ThemeData data(ColorScheme scheme, colors) => ThemeData(
             colorScheme: scheme,
             // 截图导出时用真实字体，常规断言保持测试默认字体
             fontFamily: const String.fromEnvironment('THEME_PREVIEW_DIR').isEmpty
                 ? null
                 : 'MiSans',
-            extensions: [colors, colors.render],
+            extensions: [colors, colors.render, shapes, shapes.render],
           );
           return MaterialApp(
             locale: const Locale('zh'),
@@ -162,6 +165,29 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('圆角风格：跟随主题显示主题推荐档，可指定与恢复跟随', (tester) async {
+    tester.view.physicalSize = const Size(420, 3600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final c = await container({'theme_id': 'terminal'});
+    addTearDown(c.dispose);
+    await tester.pumpWidget(_app(c));
+    await tester.pumpAndSettle();
+    expect(find.text('跟随主题'), findsOneWidget);
+    // 终端主题推荐方正：「跟随主题」下方标注 + 「方正」选项本身
+    expect(find.text('方正'), findsNWidgets(2));
+    expect(c.read(themeProvider).effectiveShapePreset, ShapePreset.sharp);
+
+    await tester.tap(find.text('标准'));
+    await tester.pumpAndSettle();
+    expect(c.read(themeProvider).shapeOverride, ShapePreset.standard);
+
+    await tester.tap(find.text('跟随主题'));
+    await tester.pumpAndSettle();
+    expect(c.read(themeProvider).shapeOverride, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   // 视觉自查：THEME_PREVIEW_DIR=<目录> 时导出明暗两张截图
   testWidgets('导出主题区块截图', (tester) async {
     const dir = String.fromEnvironment('THEME_PREVIEW_DIR');
@@ -186,6 +212,7 @@ void main() {
     for (final (themeId, mode) in [
       ('catppuccin-mocha', ThemeMode.dark),
       ('paper', ThemeMode.light),
+      ('terminal', ThemeMode.dark),
     ]) {
       final c = await container({'theme_id': themeId});
       await tester.pumpWidget(_app(c, mode: mode));

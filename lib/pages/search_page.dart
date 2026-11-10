@@ -858,7 +858,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     alpha: 0.5,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: context.shapes.borderRadius(20),
                   ),
                 ),
                 // Hero child 需要 Material 语境（飞行时脱离原位）。
@@ -1097,7 +1097,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         _onSearch(cleanQuery);
       },
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: context.shapes.borderRadius(8),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),

@@ -762,14 +762,14 @@ class _CreateTopicButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: ShapeDecoration(
             color: bgColor,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: context.shapes.borderRadius(8),
             ),
           ),
           child: Row(

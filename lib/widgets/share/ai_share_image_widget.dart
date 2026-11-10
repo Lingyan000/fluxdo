@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -220,7 +221,7 @@ class AiShareImageWidget extends StatelessWidget {
       decoration: ShapeDecoration(
         color: cardColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: context.shapes.borderRadius(8),
         ),
       ),
       child:

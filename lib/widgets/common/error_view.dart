@@ -1,4 +1,4 @@
-import 'package:common_ui/common_ui.dart' show InteractionPageRoute;
+import 'package:common_ui/common_ui.dart' show InteractionPageRoute, UiShapesContext;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -349,7 +349,7 @@ class InlineErrorView extends StatelessWidget {
             ? theme.colorScheme.error.withValues(alpha: 0.08)
             : theme.colorScheme.errorContainer.withValues(alpha: 0.4),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: context.shapes.borderRadius(12),
         ),
       ),
       child: Row(
@@ -422,7 +422,7 @@ class _ErrorIconBadge extends StatelessWidget {
       decoration: ShapeDecoration(
         color: bgColor,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: context.shapes.borderRadius(22),
         ),
       ),
       child: Icon(icon, size: 36, color: fgColor),
@@ -446,8 +446,8 @@ class _PrimaryButton extends StatelessWidget {
       child: FilledButton(
         onPressed: onPressed,
         style: FilledButton.styleFrom(
-          shape: const RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.all(Radius.circular(9999)),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(context.shapes.radius(9999)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 36),
           textStyle: theme.textTheme.bodyLarge?.copyWith(
@@ -482,7 +482,7 @@ class _HelperAction extends StatelessWidget {
     return InkWell(
       onTap: onPressed,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: context.shapes.borderRadius(12),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

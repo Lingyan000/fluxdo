@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog;
+import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -697,11 +697,11 @@ document.close();
                           ),
                         ],
                         shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: context.shapes.borderRadius(20),
                         ),
                       ),
                       child: ClipRSuperellipse(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: context.shapes.borderRadius(20),
                         child: Column(
                           children: [
                             _Header(onClose: _finishCanceled, scheme: scheme),

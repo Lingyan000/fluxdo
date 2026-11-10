@@ -1342,7 +1342,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                 decoration: ShapeDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
                                   shape: RoundedSuperellipseBorder(
-                                    borderRadius: BorderRadius.circular(20),
+                                    borderRadius: context.shapes.borderRadius(20),
                                   ),
                                 ),
                                 child: Text(

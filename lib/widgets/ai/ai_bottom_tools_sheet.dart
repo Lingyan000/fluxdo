@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -135,12 +136,12 @@ class _ToolCard extends StatelessWidget {
         child: Material(
           color: baseColor,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: context.shapes.borderRadius(14),
           ),
           child: InkWell(
             onTap: onTap,
             customBorder: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: context.shapes.borderRadius(14),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

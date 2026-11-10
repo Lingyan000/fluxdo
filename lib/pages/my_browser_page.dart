@@ -130,7 +130,7 @@ class _AddressBarState extends State<_AddressBar> {
           alpha: 0.5,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: context.shapes.borderRadius(28),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -180,7 +180,7 @@ class _EntryTile extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: iconColor.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: context.shapes.borderRadius(10),
                 ),
               ),
               child: Icon(icon, color: iconColor, size: 20),
@@ -568,7 +568,7 @@ class _HistoryCard extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: context.appColors.purple.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Icon(
@@ -652,7 +652,7 @@ class _BookmarkCard extends StatelessWidget {
               decoration: ShapeDecoration(
                 color: theme.colorScheme.primary.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Icon(

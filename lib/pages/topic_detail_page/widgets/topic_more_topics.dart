@@ -157,11 +157,11 @@ class _MoreTopicsTab extends StatelessWidget {
       color: selected
           ? theme.colorScheme.secondaryContainer
           : Colors.transparent,
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
       child: InkWell(
         onTap: selected ? null : onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -407,7 +407,7 @@ class _BrowseMoreLine extends StatelessWidget {
             ),
           ),
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: context.shapes.borderRadius(6),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),

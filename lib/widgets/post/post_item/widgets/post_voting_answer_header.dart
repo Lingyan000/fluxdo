@@ -3,6 +3,7 @@
 /// 答案帖上方,把问题区与答案区隔开。
 library;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../l10n/s.dart';
@@ -28,7 +29,7 @@ class PostVotingAnswerHeader extends StatelessWidget {
     return InkWell(
       onTap: selected ? null : onTap,
       customBorder: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: UiShapes.current.borderRadius(14),
       ),
       child: Container(
         height: 28,
@@ -38,7 +39,7 @@ class PostVotingAnswerHeader extends StatelessWidget {
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
               : Colors.transparent,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: UiShapes.current.borderRadius(14),
           ),
         ),
         alignment: Alignment.center,

@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -491,8 +492,8 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
               foregroundColor: theme.colorScheme.onPrimaryContainer,
               minimumSize: const Size(0, 56),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: const RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.all(Radius.circular(9999)),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.all(context.shapes.radius(9999)),
               ),
               textStyle: theme.textTheme.labelLarge,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,

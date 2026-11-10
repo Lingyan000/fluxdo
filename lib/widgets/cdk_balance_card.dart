@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -136,7 +137,7 @@ class CdkBalanceCard extends ConsumerWidget {
           elevation: 0,
           color: theme.colorScheme.surfaceContainerLow,
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
             side: BorderSide(
               color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
             ),
@@ -195,7 +196,7 @@ class CdkBalanceCard extends ConsumerWidget {
         elevation: 8,
         shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: context.shapes.borderRadius(24),
         ),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
@@ -231,7 +232,7 @@ class CdkBalanceCard extends ConsumerWidget {
                           decoration: ShapeDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: context.shapes.borderRadius(12),
                             ),
                           ),
                           child: const Icon(
@@ -401,7 +402,7 @@ class CdkBalanceCard extends ConsumerWidget {
             ? theme.colorScheme.errorContainer.withValues(alpha: 0.3)
             : theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: isExpired
                 ? theme.colorScheme.error.withValues(alpha: 0.3)
@@ -469,7 +470,7 @@ class CdkBalanceCard extends ConsumerWidget {
       shadowColor: isExpired
           ? theme.colorScheme.error.withValues(alpha: 0.3)
           : theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -512,7 +513,7 @@ class CdkBalanceCard extends ConsumerWidget {
                         decoration: ShapeDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
                           shape: RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: context.shapes.borderRadius(12),
                           ),
                         ),
                         child: Icon(
@@ -642,7 +643,7 @@ class CdkBalanceCard extends ConsumerWidget {
         elevation: 0,
         color: theme.colorScheme.surfaceContainerLow,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: context.shapes.borderRadius(16),
           side: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
           ),
@@ -683,7 +684,7 @@ class CdkBalanceCard extends ConsumerWidget {
     return Card(
       elevation: 8,
       shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -702,7 +703,7 @@ class CdkBalanceCard extends ConsumerWidget {
               decoration: ShapeDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: const Icon(

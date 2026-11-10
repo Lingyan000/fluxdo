@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -226,7 +227,7 @@ class _RecordKeyDialogState extends State<_RecordKeyDialog> {
                   alpha: 0.5,
                 ),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: context.shapes.borderRadius(12),
                   side: BorderSide(
                     color: _conflict != null
                         ? theme.colorScheme.error.withValues(alpha: 0.5)
@@ -371,7 +372,7 @@ class _ShortcutMetaChip extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.1),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: context.shapes.borderRadius(999),
           side: BorderSide(color: color.withValues(alpha: 0.18)),
         ),
       ),

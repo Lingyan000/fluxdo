@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/dialog_utils.dart';
@@ -83,7 +84,7 @@ class _LoadingDialogContent extends StatelessWidget {
             ),
           ],
           shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: context.shapes.borderRadius(16),
           ),
         ),
         child: Column(
