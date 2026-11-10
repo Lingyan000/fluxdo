@@ -1,0 +1,82 @@
+{
+  "id": "terminal",
+  "name": {
+    "zh": "终端",
+    "zh_HK": "終端",
+    "zh_TW": "終端",
+    "en": "Terminal"
+  },
+  "kind": "fixed",
+  "group": "terminal",
+  "order": 300,
+  "supportsPureBlack": true,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#F5F5F0",
+    "fg": "#1A1A1A",
+    "fgMuted": "#5A5A5A",
+    "border": "#DADAD2",
+    "hues": {
+      "red": "#C4001E",
+      "orange": "#B35900",
+      "yellow": "#8F7A00",
+      "green": "#0A7A2F",
+      "cyan": "#00708A",
+      "blue": "#1F4FCC",
+      "purple": "#8A1FA8"
+    }
+  },
+  "dark": {
+    "bg": "#0A0E0A",
+    "fg": "#D6E2D6",
+    "fgMuted": "#8FA88F",
+    "border": "#1F2A1F",
+    "hues": {
+      "red": "#FF5555",
+      "orange": "#FFAA33",
+      "yellow": "#FFFF55",
+      "green": "#55FF55",
+      "cyan": "#55FFFF",
+      "blue": "#5599FF",
+      "purple": "#FF55FF"
+    }
+  },
+  "accents": [
+    {
+      "id": "phosphor",
+      "name": {
+        "zh": "荧光绿",
+        "en": "Phosphor"
+      },
+      "light": "#0A7A2F",
+      "dark": "#33FF66"
+    },
+    {
+      "id": "amber",
+      "name": {
+        "zh": "琥珀",
+        "en": "Amber"
+      },
+      "light": "#9A6200",
+      "dark": "#FFB000"
+    },
+    {
+      "id": "cyan",
+      "name": {
+        "zh": "青",
+        "en": "Cyan"
+      },
+      "light": "#00708A",
+      "dark": "#00E5FF"
+    },
+    {
+      "id": "mono",
+      "name": {
+        "zh": "单色",
+        "en": "Mono"
+      },
+      "light": "#333333",
+      "dark": "#E0E0E0"
+    }
+  ]
+}

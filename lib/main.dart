@@ -96,6 +96,7 @@ import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'theme/app_colors.dart';
+import 'theme/theme_registry.dart';
 import 'theme/theme_resolver.dart';
 import 'widgets/common/app_background_layer.dart';
 import 'utils/time_utils.dart';
@@ -294,6 +295,8 @@ Future<void> main() async {
     CsrfTokenService().init(),
     BackgroundNotificationService().initialize(),
     TimeUtils.initialize(),
+    // 内置固定配色主题（JSON 资产），需在 themeProvider 首次读取前就绪
+    ThemeRegistry.loadBuiltins(),
     // 把 compat polyfill asset 读到内存，让 WebView 同步 getter 直接拿。
     // 失败不阻塞启动，仅影响老 WebView 兼容性。
     WebViewSettings.preloadPolyfill(),
@@ -842,6 +845,7 @@ class MainApp extends ConsumerWidget {
         // 动态色路径只取系统动态色 primary 当种子，不用 OEM 原始 scheme。
         final resolvedTheme = ThemeResolver.resolve(
           spec: themeState.themeSpec,
+          accentId: themeState.accentFor(themeState.themeSpec),
           mode: themeState.mode,
           black: themeState.blackEnabled,
           transparent: themeState.isTransparentActive,

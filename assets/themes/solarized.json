@@ -1,0 +1,120 @@
+{
+  "id": "solarized",
+  "name": {
+    "zh": "Solarized",
+    "en": "Solarized"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "order": 130,
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#FDF6E3",
+    "fg": "#586E75",
+    "fgMuted": "#657B83",
+    "border": "#EEE8D5",
+    "error": "#DC322F",
+    "hues": {
+      "red": "#DC322F",
+      "orange": "#CB4B16",
+      "yellow": "#B58900",
+      "green": "#859900",
+      "cyan": "#2AA198",
+      "blue": "#268BD2",
+      "purple": "#6C71C4",
+      "pink": "#D33682"
+    }
+  },
+  "dark": {
+    "bg": "#002B36",
+    "fg": "#93A1A1",
+    "fgMuted": "#839496",
+    "border": "#073642",
+    "error": "#DC322F",
+    "hues": {
+      "red": "#DC322F",
+      "orange": "#CB4B16",
+      "yellow": "#B58900",
+      "green": "#859900",
+      "cyan": "#2AA198",
+      "blue": "#268BD2",
+      "purple": "#6C71C4",
+      "pink": "#D33682"
+    }
+  },
+  "accents": [
+    {
+      "id": "blue",
+      "name": {
+        "zh": "蓝",
+        "en": "Blue"
+      },
+      "light": "#268BD2",
+      "dark": "#268BD2"
+    },
+    {
+      "id": "cyan",
+      "name": {
+        "zh": "青",
+        "en": "Cyan"
+      },
+      "light": "#2AA198",
+      "dark": "#2AA198"
+    },
+    {
+      "id": "green",
+      "name": {
+        "zh": "绿",
+        "en": "Green"
+      },
+      "light": "#859900",
+      "dark": "#859900"
+    },
+    {
+      "id": "yellow",
+      "name": {
+        "zh": "黄",
+        "en": "Yellow"
+      },
+      "light": "#B58900",
+      "dark": "#B58900"
+    },
+    {
+      "id": "orange",
+      "name": {
+        "zh": "橙",
+        "en": "Orange"
+      },
+      "light": "#CB4B16",
+      "dark": "#CB4B16"
+    },
+    {
+      "id": "red",
+      "name": {
+        "zh": "红",
+        "en": "Red"
+      },
+      "light": "#DC322F",
+      "dark": "#DC322F"
+    },
+    {
+      "id": "magenta",
+      "name": {
+        "zh": "品红",
+        "en": "Magenta"
+      },
+      "light": "#D33682",
+      "dark": "#D33682"
+    },
+    {
+      "id": "violet",
+      "name": {
+        "zh": "紫",
+        "en": "Violet"
+      },
+      "light": "#6C71C4",
+      "dark": "#6C71C4"
+    }
+  ]
+}

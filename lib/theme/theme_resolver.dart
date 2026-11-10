@@ -105,7 +105,8 @@ class ThemeResolver {
   /// 解析整套主题。
   ///
   /// - [seed] 是生成式主题的种子色；固定配色主题用 [accentId] 选中的
-  ///   自带强调色，找不到时取第一个；
+  ///   自带强调色（找不到时取第一个），主题允许自定义时 `#RRGGBB` 形式
+  ///   的 [accentId] 直接作为强调色；
   /// - [black] 只作用于深色一侧，且只对声明了
   ///   [ThemeSpec.supportsPureBlack] 的主题生效，主题模式选择不变；
   /// - [transparent] 在对应亮度的中性层上叠加透明版本，让用户背景图
@@ -191,13 +192,18 @@ class ThemeResolver {
     );
     // tertiary 取强调色列表里的下一个，让三色都来自主题自己的色板
     final accents = spec.accents;
+    final custom = spec.allowCustomAccent && (accentId?.startsWith('#') ?? false)
+        ? ThemeSpecColor.tryParse(accentId)
+        : null;
     final accent = spec.accentOf(accentId);
-    final next = accents.length > 1
+    final next = custom != null
+        ? accents.first
+        : accents.length > 1
         ? accents[(accents.indexOf(accent) + 1) % accents.length]
         : null;
     final scheme = resolveColorScheme(
       accent: AccentColors.fromFixed(
-        accent: accent.of(brightness),
+        accent: custom ?? accent.of(brightness),
         brightness: brightness,
         bg: ramp.surface,
         fg: ramp.onSurface,

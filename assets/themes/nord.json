@@ -1,0 +1,100 @@
+{
+  "id": "nord",
+  "name": {
+    "zh": "Nord",
+    "en": "Nord"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "order": 110,
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#ECEFF4",
+    "fg": "#2E3440",
+    "fgMuted": "#4C566A",
+    "border": "#D8DEE9",
+    "hues": {
+      "red": "#BF616A",
+      "orange": "#D08770",
+      "yellow": "#C29A3E",
+      "green": "#7E9B5E",
+      "cyan": "#5E9BB0",
+      "blue": "#5E81AC",
+      "purple": "#9A6E94",
+      "teal": "#5F9A99"
+    }
+  },
+  "dark": {
+    "bg": "#2E3440",
+    "fg": "#ECEFF4",
+    "fgMuted": "#C1C7D3",
+    "border": "#434C5E",
+    "hues": {
+      "red": "#BF616A",
+      "orange": "#D08770",
+      "yellow": "#EBCB8B",
+      "green": "#A3BE8C",
+      "cyan": "#88C0D0",
+      "blue": "#81A1C1",
+      "purple": "#B48EAD",
+      "teal": "#8FBCBB"
+    }
+  },
+  "accents": [
+    {
+      "id": "frost",
+      "name": {
+        "zh": "霜蓝",
+        "en": "Frost"
+      },
+      "light": "#5E81AC",
+      "dark": "#88C0D0"
+    },
+    {
+      "id": "glacier",
+      "name": {
+        "zh": "冰川",
+        "en": "Glacier"
+      },
+      "light": "#5E9BB0",
+      "dark": "#81A1C1"
+    },
+    {
+      "id": "aurora-green",
+      "name": {
+        "zh": "极光绿",
+        "en": "Aurora Green"
+      },
+      "light": "#7E9B5E",
+      "dark": "#A3BE8C"
+    },
+    {
+      "id": "aurora-purple",
+      "name": {
+        "zh": "极光紫",
+        "en": "Aurora Purple"
+      },
+      "light": "#9A6E94",
+      "dark": "#B48EAD"
+    },
+    {
+      "id": "aurora-orange",
+      "name": {
+        "zh": "极光橙",
+        "en": "Aurora Orange"
+      },
+      "light": "#C0704F",
+      "dark": "#D08770"
+    },
+    {
+      "id": "aurora-red",
+      "name": {
+        "zh": "极光红",
+        "en": "Aurora Red"
+      },
+      "light": "#BF616A",
+      "dark": "#BF616A"
+    }
+  ]
+}

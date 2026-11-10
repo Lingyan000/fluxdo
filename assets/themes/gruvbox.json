@@ -1,0 +1,111 @@
+{
+  "id": "gruvbox",
+  "name": {
+    "zh": "Gruvbox",
+    "en": "Gruvbox"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "order": 120,
+  "supportsPureBlack": true,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#FBF1C7",
+    "fg": "#3C3836",
+    "fgMuted": "#7C6F64",
+    "border": "#D5C4A1",
+    "error": "#9D0006",
+    "hues": {
+      "red": "#9D0006",
+      "orange": "#AF3A03",
+      "yellow": "#B57614",
+      "green": "#79740E",
+      "cyan": "#427B58",
+      "blue": "#076678",
+      "purple": "#8F3F71",
+      "teal": "#427B58"
+    }
+  },
+  "dark": {
+    "bg": "#282828",
+    "fg": "#EBDBB2",
+    "fgMuted": "#A89984",
+    "border": "#3C3836",
+    "error": "#FB4934",
+    "hues": {
+      "red": "#FB4934",
+      "orange": "#FE8019",
+      "yellow": "#FABD2F",
+      "green": "#B8BB26",
+      "cyan": "#8EC07C",
+      "blue": "#83A598",
+      "purple": "#D3869B",
+      "teal": "#8EC07C"
+    }
+  },
+  "accents": [
+    {
+      "id": "orange",
+      "name": {
+        "zh": "橙",
+        "en": "Orange"
+      },
+      "light": "#AF3A03",
+      "dark": "#FE8019"
+    },
+    {
+      "id": "yellow",
+      "name": {
+        "zh": "黄",
+        "en": "Yellow"
+      },
+      "light": "#B57614",
+      "dark": "#FABD2F"
+    },
+    {
+      "id": "green",
+      "name": {
+        "zh": "绿",
+        "en": "Green"
+      },
+      "light": "#79740E",
+      "dark": "#B8BB26"
+    },
+    {
+      "id": "aqua",
+      "name": {
+        "zh": "水绿",
+        "en": "Aqua"
+      },
+      "light": "#427B58",
+      "dark": "#8EC07C"
+    },
+    {
+      "id": "blue",
+      "name": {
+        "zh": "蓝",
+        "en": "Blue"
+      },
+      "light": "#076678",
+      "dark": "#83A598"
+    },
+    {
+      "id": "purple",
+      "name": {
+        "zh": "紫",
+        "en": "Purple"
+      },
+      "light": "#8F3F71",
+      "dark": "#D3869B"
+    },
+    {
+      "id": "red",
+      "name": {
+        "zh": "红",
+        "en": "Red"
+      },
+      "light": "#9D0006",
+      "dark": "#FB4934"
+    }
+  ]
+}

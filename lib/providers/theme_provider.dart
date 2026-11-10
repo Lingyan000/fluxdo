@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
@@ -43,6 +45,10 @@ class ThemeState {
   /// 当前主题 id（见 [ThemeRegistry]），与模式正交
   final String themeId;
 
+  /// 固定配色主题按族记忆的强调色：主题自带强调色 id，或 `#RRGGBB`
+  /// 自定义色（主题允许时）。生成式主题的强调色见 [accentSource]。
+  final Map<String, String> themeAccents;
+
   /// 纯黑开关（AMOLED）：深色模式下的纯黑表面质感，只作用于
   /// 深色一侧，不改变主题模式选择
   final bool blackEnabled;
@@ -79,6 +85,7 @@ class ThemeState {
   const ThemeState({
     required this.mode,
     this.themeId = ThemeRegistry.materialId,
+    this.themeAccents = const {},
     this.blackEnabled = false,
     this.transparentEnabled = false,
     this.accentSource = AccentSource.palette,
@@ -98,6 +105,9 @@ class ThemeState {
 
   /// 当前主题
   ThemeSpec get themeSpec => ThemeRegistry.byId(themeId);
+
+  /// [spec] 所在主题族记忆的强调色选择（null = 主题默认）
+  String? accentFor(ThemeSpec spec) => themeAccents[spec.familyId];
 
   /// 当前生效的种子色（色卡预览、主题合成、预热等场景使用）
   Color get effectiveSeedColor => switch (accentSource) {
@@ -119,6 +129,7 @@ class ThemeState {
   ThemeState copyWith({
     ThemeMode? mode,
     String? themeId,
+    Map<String, String>? themeAccents,
     bool? blackEnabled,
     bool? transparentEnabled,
     AccentSource? accentSource,
@@ -134,6 +145,7 @@ class ThemeState {
     return ThemeState(
       mode: mode ?? this.mode,
       themeId: themeId ?? this.themeId,
+      themeAccents: themeAccents ?? this.themeAccents,
       blackEnabled: blackEnabled ?? this.blackEnabled,
       transparentEnabled: transparentEnabled ?? this.transparentEnabled,
       accentSource: accentSource ?? this.accentSource,
@@ -153,6 +165,7 @@ class ThemeState {
 class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _themeModeKey = 'theme_mode';
   static const String _themeIdKey = 'theme_id';
+  static const String _themeAccentsKey = 'theme_accents';
   static const String _blackKey = 'theme_black';
   static const String _transparentKey = 'theme_transparent';
   static const String _accentSourceKey = 'accent_source';
@@ -261,6 +274,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     return ThemeState(
       mode: mode,
       themeId: themeId,
+      themeAccents: _decodeAccents(prefs.getString(_themeAccentsKey)),
       blackEnabled: prefs.getBool(_blackKey) ?? false,
       transparentEnabled: prefs.getBool(_transparentKey) ?? false,
       accentSource: accentSource,
@@ -284,6 +298,23 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       value = 'dark';
     }
     await _prefs.setString(_themeModeKey, value);
+  }
+
+  static Map<String, String> _decodeAccents(String? raw) {
+    if (raw == null) return const {};
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return {for (final e in map.entries) e.key: e.value as String};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// 为主题族 [familyId] 选择强调色（主题自带 id 或 `#RRGGBB`）。
+  Future<void> setThemeAccent(String familyId, String selection) async {
+    final accents = {...state.themeAccents, familyId: selection};
+    state = state.copyWith(themeAccents: accents);
+    await _prefs.setString(_themeAccentsKey, jsonEncode(accents));
   }
 
   Future<void> setThemeId(String themeId) async {

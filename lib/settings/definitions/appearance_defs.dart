@@ -80,6 +80,7 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             // 卡片预览实时反映主题与纯黑开关（透明不影响卡片预览）
             final preview = ThemeResolver.resolve(
               spec: themeState.themeSpec,
+              accentId: themeState.accentFor(themeState.themeSpec),
               mode: currentMode,
               black: themeState.blackEnabled,
               transparent: false,

@@ -1,0 +1,166 @@
+{
+  "id": "catppuccin-frappe",
+  "name": {
+    "zh": "Catppuccin",
+    "en": "Catppuccin"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "family": "catppuccin",
+  "variantName": {
+    "en": "Frappé"
+  },
+  "order": 100,
+  "supportsPureBlack": true,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#EFF1F5",
+    "fg": "#4C4F69",
+    "fgMuted": "#6C6F85",
+    "border": "#CCD0DA",
+    "error": "#D20F39",
+    "hues": {
+      "red": "#D20F39",
+      "orange": "#FE640B",
+      "yellow": "#DF8E1D",
+      "green": "#40A02B",
+      "cyan": "#04A5E5",
+      "blue": "#1E66F5",
+      "purple": "#8839EF",
+      "pink": "#EA76CB",
+      "teal": "#179299"
+    }
+  },
+  "dark": {
+    "bg": "#303446",
+    "fg": "#C6D0F5",
+    "fgMuted": "#A5ADCE",
+    "border": "#414559",
+    "error": "#E78284",
+    "hues": {
+      "red": "#E78284",
+      "orange": "#EF9F76",
+      "yellow": "#E5C890",
+      "green": "#A6D189",
+      "cyan": "#99D1DB",
+      "blue": "#8CAAEE",
+      "purple": "#CA9EE6",
+      "pink": "#F4B8E4",
+      "teal": "#81C8BE"
+    }
+  },
+  "accents": [
+    {
+      "id": "mauve",
+      "name": {
+        "en": "Mauve"
+      },
+      "light": "#8839EF",
+      "dark": "#CA9EE6"
+    },
+    {
+      "id": "blue",
+      "name": {
+        "en": "Blue"
+      },
+      "light": "#1E66F5",
+      "dark": "#8CAAEE"
+    },
+    {
+      "id": "lavender",
+      "name": {
+        "en": "Lavender"
+      },
+      "light": "#7287FD",
+      "dark": "#BABBF1"
+    },
+    {
+      "id": "sapphire",
+      "name": {
+        "en": "Sapphire"
+      },
+      "light": "#209FB5",
+      "dark": "#85C1DC"
+    },
+    {
+      "id": "sky",
+      "name": {
+        "en": "Sky"
+      },
+      "light": "#04A5E5",
+      "dark": "#99D1DB"
+    },
+    {
+      "id": "teal",
+      "name": {
+        "en": "Teal"
+      },
+      "light": "#179299",
+      "dark": "#81C8BE"
+    },
+    {
+      "id": "green",
+      "name": {
+        "en": "Green"
+      },
+      "light": "#40A02B",
+      "dark": "#A6D189"
+    },
+    {
+      "id": "yellow",
+      "name": {
+        "en": "Yellow"
+      },
+      "light": "#DF8E1D",
+      "dark": "#E5C890"
+    },
+    {
+      "id": "peach",
+      "name": {
+        "en": "Peach"
+      },
+      "light": "#FE640B",
+      "dark": "#EF9F76"
+    },
+    {
+      "id": "maroon",
+      "name": {
+        "en": "Maroon"
+      },
+      "light": "#E64553",
+      "dark": "#EA999C"
+    },
+    {
+      "id": "red",
+      "name": {
+        "en": "Red"
+      },
+      "light": "#D20F39",
+      "dark": "#E78284"
+    },
+    {
+      "id": "pink",
+      "name": {
+        "en": "Pink"
+      },
+      "light": "#EA76CB",
+      "dark": "#F4B8E4"
+    },
+    {
+      "id": "flamingo",
+      "name": {
+        "en": "Flamingo"
+      },
+      "light": "#DD7878",
+      "dark": "#EEBEBE"
+    },
+    {
+      "id": "rosewater",
+      "name": {
+        "en": "Rosewater"
+      },
+      "light": "#DC8A78",
+      "dark": "#F2D5CF"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "id": "dracula",
+  "name": {
+    "zh": "Dracula",
+    "en": "Dracula"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "order": 150,
+  "supportsPureBlack": true,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#FFFBEB",
+    "fg": "#1F1F1F",
+    "fgMuted": "#6C664B",
+    "border": "#CFCFDE",
+    "error": "#CB3A2A",
+    "hues": {
+      "red": "#CB3A2A",
+      "orange": "#A34D14",
+      "yellow": "#846E15",
+      "green": "#14710A",
+      "cyan": "#036A96",
+      "blue": "#3A5FCD",
+      "purple": "#644AC9",
+      "pink": "#A3144D"
+    }
+  },
+  "dark": {
+    "bg": "#282A36",
+    "fg": "#F8F8F2",
+    "fgMuted": "#B6B9CE",
+    "border": "#44475A",
+    "error": "#FF5555",
+    "hues": {
+      "red": "#FF5555",
+      "orange": "#FFB86C",
+      "yellow": "#F1FA8C",
+      "green": "#50FA7B",
+      "cyan": "#8BE9FD",
+      "blue": "#6272A4",
+      "purple": "#BD93F9",
+      "pink": "#FF79C6"
+    }
+  },
+  "accents": [
+    {
+      "id": "purple",
+      "name": {
+        "zh": "紫",
+        "en": "Purple"
+      },
+      "light": "#644AC9",
+      "dark": "#BD93F9"
+    },
+    {
+      "id": "pink",
+      "name": {
+        "zh": "粉",
+        "en": "Pink"
+      },
+      "light": "#A3144D",
+      "dark": "#FF79C6"
+    },
+    {
+      "id": "cyan",
+      "name": {
+        "zh": "青",
+        "en": "Cyan"
+      },
+      "light": "#036A96",
+      "dark": "#8BE9FD"
+    },
+    {
+      "id": "green",
+      "name": {
+        "zh": "绿",
+        "en": "Green"
+      },
+      "light": "#14710A",
+      "dark": "#50FA7B"
+    },
+    {
+      "id": "orange",
+      "name": {
+        "zh": "橙",
+        "en": "Orange"
+      },
+      "light": "#A34D14",
+      "dark": "#FFB86C"
+    },
+    {
+      "id": "red",
+      "name": {
+        "zh": "红",
+        "en": "Red"
+      },
+      "light": "#CB3A2A",
+      "dark": "#FF5555"
+    }
+  ]
+}

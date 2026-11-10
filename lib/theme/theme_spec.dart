@@ -13,6 +13,27 @@ enum ThemeColorKind {
   fixed,
 }
 
+/// 主题在画廊中的分组。
+enum ThemeGroup {
+  /// 取色（Material / 简约）
+  generated,
+
+  /// 经典配色（Catppuccin、Nord……）
+  classic,
+
+  /// 阅读（纸质、豆沙绿）
+  reading,
+
+  /// 终端
+  terminal,
+
+  /// 用户自定义 / 导入
+  custom,
+
+  /// 节日（不出现在画廊）
+  festival,
+}
+
 /// 生成式主题的表面策略。
 enum GeneratedSurface {
   /// 表面随种子色染色（完整 fromSeed），即一直以来的默认外观。
@@ -163,6 +184,10 @@ class ThemeSpec {
     required this.id,
     required this.kind,
     this.name = const {},
+    this.group = ThemeGroup.custom,
+    this.family,
+    this.variantName = const {},
+    this.order = 1000,
     this.surface = GeneratedSurface.tinted,
     this.light,
     this.dark,
@@ -176,7 +201,11 @@ class ThemeSpec {
     required this.id,
     required this.surface,
     this.name = const {},
+    this.order = 0,
   }) : kind = ThemeColorKind.generated,
+       group = ThemeGroup.generated,
+       family = null,
+       variantName = const {},
        light = null,
        dark = null,
        accents = const [],
@@ -190,6 +219,23 @@ class ThemeSpec {
   final Map<String, String> name;
 
   final ThemeColorKind kind;
+
+  /// 画廊分组。
+  final ThemeGroup group;
+
+  /// 主题族：同族主题在画廊里合并成一张卡，以 [variantName] 区分
+  /// （如 Catppuccin 的 Frappé / Macchiato / Mocha）。强调色选择按族
+  /// 记忆。缺省自成一族。
+  final String? family;
+
+  /// 族内变体名（按语言代码）。
+  final Map<String, String> variantName;
+
+  /// 画廊内排序，小的在前。
+  final int order;
+
+  /// 强调色记忆与画廊合并用的族标识。
+  String get familyId => family ?? id;
 
   /// 生成式主题的表面策略（固定配色主题忽略）。
   final GeneratedSurface surface;
@@ -238,7 +284,12 @@ class ThemeSpec {
       if (surface == null) {
         throw FormatException('主题 $id 的 surface 无效: ${json['surface']}');
       }
-      return ThemeSpec.generated(id: id, surface: surface, name: name);
+      return ThemeSpec.generated(
+        id: id,
+        surface: surface,
+        name: name,
+        order: json['order'] as int? ?? 0,
+      );
     }
 
     final lightJson = json['light'];
@@ -259,10 +310,18 @@ class ThemeSpec {
     if (ids.length != accents.length) {
       throw FormatException('主题 $id 的强调色 id 重复');
     }
+    final group = ThemeGroup.values.asNameMap()[json['group']];
+    if (json['group'] != null && group == null) {
+      throw FormatException('主题 $id 的 group 无效: ${json['group']}');
+    }
     return ThemeSpec(
       id: id,
       kind: kind,
       name: name,
+      group: group ?? ThemeGroup.custom,
+      family: json['family'] as String?,
+      variantName: _parseName(json['variantName']),
+      order: json['order'] as int? ?? 1000,
       light: ThemePalette.fromJson(lightJson),
       dark: ThemePalette.fromJson(darkJson),
       accents: accents,
@@ -275,6 +334,10 @@ class ThemeSpec {
     'id': id,
     if (name.isNotEmpty) 'name': name,
     'kind': kind.name,
+    if (!isGenerated) 'group': group.name,
+    if (family != null) 'family': family,
+    if (variantName.isNotEmpty) 'variantName': variantName,
+    if (order != (isGenerated ? 0 : 1000)) 'order': order,
     if (isGenerated) 'surface': surface.name,
     if (!isGenerated) ...{
       'light': light!.toJson(),
@@ -284,6 +347,15 @@ class ThemeSpec {
       'supportsPureBlack': supportsPureBlack,
     },
   };
+}
+
+/// 按语言取本地化名字：完整标签（zh_HK）→ 语言（zh）→ en → [fallback]。
+String localizedName(Map<String, String> names, Locale locale, String fallback) {
+  final tag = [
+    locale.languageCode,
+    if (locale.countryCode case final c? when c.isNotEmpty) c,
+  ].join('_');
+  return names[tag] ?? names[locale.languageCode] ?? names['en'] ?? fallback;
 }
 
 /// 可选颜色：缺省为 null，给了就必须合法（不静默吞掉拼错的值）。

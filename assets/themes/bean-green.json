@@ -1,0 +1,82 @@
+{
+  "id": "bean-green",
+  "name": {
+    "zh": "豆沙绿",
+    "zh_HK": "豆沙綠",
+    "zh_TW": "豆沙綠",
+    "en": "Bean Green"
+  },
+  "kind": "fixed",
+  "group": "reading",
+  "order": 210,
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#C7EDCC",
+    "fg": "#1F2A21",
+    "fgMuted": "#4A5D4D",
+    "border": "#A9D3AF",
+    "hues": {
+      "red": "#A23B33",
+      "orange": "#A85F25",
+      "yellow": "#8C7A1E",
+      "green": "#2E7D5B",
+      "cyan": "#2A7A7A",
+      "blue": "#2F5F7A",
+      "purple": "#6A4C86"
+    }
+  },
+  "dark": {
+    "bg": "#1B2620",
+    "fg": "#D7E8DA",
+    "fgMuted": "#9DB5A2",
+    "border": "#2F4036",
+    "hues": {
+      "red": "#E39A90",
+      "orange": "#E2AE7E",
+      "yellow": "#D6C77C",
+      "green": "#8FD1A8",
+      "cyan": "#86CFC9",
+      "blue": "#93BEDD",
+      "purple": "#BFA6DA"
+    }
+  },
+  "accents": [
+    {
+      "id": "pine",
+      "name": {
+        "zh": "松绿",
+        "en": "Pine"
+      },
+      "light": "#2E7D5B",
+      "dark": "#7FC9A3"
+    },
+    {
+      "id": "indigo",
+      "name": {
+        "zh": "黛蓝",
+        "en": "Indigo"
+      },
+      "light": "#2F5F7A",
+      "dark": "#8DB8D6"
+    },
+    {
+      "id": "ochre",
+      "name": {
+        "zh": "赭石",
+        "en": "Ochre"
+      },
+      "light": "#8A5A2B",
+      "dark": "#D9B07F"
+    },
+    {
+      "id": "plum",
+      "name": {
+        "zh": "梅紫",
+        "en": "Plum"
+      },
+      "light": "#6A4C86",
+      "dark": "#BFA6DA"
+    }
+  ]
+}

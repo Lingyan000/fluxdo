@@ -1,0 +1,100 @@
+{
+  "id": "tokyo-night",
+  "name": {
+    "zh": "Tokyo Night",
+    "en": "Tokyo Night"
+  },
+  "kind": "fixed",
+  "group": "classic",
+  "order": 140,
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#E1E2E7",
+    "fg": "#3760BF",
+    "fgMuted": "#6172B0",
+    "border": "#C4C8DA",
+    "hues": {
+      "red": "#F52A65",
+      "orange": "#B15C00",
+      "yellow": "#8C6C3E",
+      "green": "#587539",
+      "cyan": "#007197",
+      "blue": "#2E7DE9",
+      "purple": "#9854F1",
+      "teal": "#118C74"
+    }
+  },
+  "dark": {
+    "bg": "#1A1B26",
+    "fg": "#C0CAF5",
+    "fgMuted": "#A9B1D6",
+    "border": "#292E42",
+    "hues": {
+      "red": "#F7768E",
+      "orange": "#FF9E64",
+      "yellow": "#E0AF68",
+      "green": "#9ECE6A",
+      "cyan": "#7DCFFF",
+      "blue": "#7AA2F7",
+      "purple": "#BB9AF7",
+      "teal": "#73DACA"
+    }
+  },
+  "accents": [
+    {
+      "id": "blue",
+      "name": {
+        "zh": "蓝",
+        "en": "Blue"
+      },
+      "light": "#2E7DE9",
+      "dark": "#7AA2F7"
+    },
+    {
+      "id": "purple",
+      "name": {
+        "zh": "紫",
+        "en": "Purple"
+      },
+      "light": "#9854F1",
+      "dark": "#BB9AF7"
+    },
+    {
+      "id": "cyan",
+      "name": {
+        "zh": "青",
+        "en": "Cyan"
+      },
+      "light": "#007197",
+      "dark": "#7DCFFF"
+    },
+    {
+      "id": "green",
+      "name": {
+        "zh": "绿",
+        "en": "Green"
+      },
+      "light": "#587539",
+      "dark": "#9ECE6A"
+    },
+    {
+      "id": "orange",
+      "name": {
+        "zh": "橙",
+        "en": "Orange"
+      },
+      "light": "#B15C00",
+      "dark": "#FF9E64"
+    },
+    {
+      "id": "red",
+      "name": {
+        "zh": "红",
+        "en": "Red"
+      },
+      "light": "#F52A65",
+      "dark": "#F7768E"
+    }
+  ]
+}

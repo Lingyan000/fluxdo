@@ -41,6 +41,26 @@ void main() {
     expect(notifier.state.themeSpec, ThemeRegistry.material);
   });
 
+  test('强调色按主题族记忆并持久化', () async {
+    final notifier = await load({});
+    await notifier.setThemeAccent('catppuccin', 'peach');
+    await notifier.setThemeAccent('nord', '#E91E63');
+    final reloaded = await load({
+      'theme_accents': (await SharedPreferences.getInstance()).getString(
+        'theme_accents',
+      )!,
+    });
+    expect(reloaded.state.themeAccents, {
+      'catppuccin': 'peach',
+      'nord': '#E91E63',
+    });
+  });
+
+  test('强调色存储损坏时回退为空', () async {
+    final notifier = await load({'theme_accents': 'not json'});
+    expect(notifier.state.themeAccents, isEmpty);
+  });
+
   test('setThemeId 持久化到新键', () async {
     final notifier = await load({'theme_neutral': true});
     await notifier.setThemeId(ThemeRegistry.materialId);

@@ -1,0 +1,91 @@
+{
+  "id": "paper",
+  "name": {
+    "zh": "纸质",
+    "zh_HK": "紙質",
+    "zh_TW": "紙質",
+    "en": "Paper"
+  },
+  "kind": "fixed",
+  "group": "reading",
+  "order": 200,
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#F4EEDF",
+    "fg": "#2F2A24",
+    "fgMuted": "#6B6257",
+    "border": "#E0D6C2",
+    "hues": {
+      "red": "#B23A2E",
+      "orange": "#B5652A",
+      "yellow": "#A88420",
+      "green": "#3C6E47",
+      "cyan": "#2E7A7A",
+      "blue": "#2F5D8A",
+      "purple": "#6E4A8A"
+    }
+  },
+  "dark": {
+    "bg": "#1F1C18",
+    "fg": "#E8DFCF",
+    "fgMuted": "#A99F90",
+    "border": "#3A342C",
+    "hues": {
+      "red": "#E08A7E",
+      "orange": "#E3A06F",
+      "yellow": "#D9BF73",
+      "green": "#8FC19A",
+      "cyan": "#86C2BF",
+      "blue": "#8DB3DA",
+      "purple": "#B9A0D2"
+    }
+  },
+  "accents": [
+    {
+      "id": "ink-blue",
+      "name": {
+        "zh": "墨蓝",
+        "en": "Ink Blue"
+      },
+      "light": "#2F5D8A",
+      "dark": "#8DB3DA"
+    },
+    {
+      "id": "vermilion",
+      "name": {
+        "zh": "朱红",
+        "en": "Vermilion"
+      },
+      "light": "#B23A2E",
+      "dark": "#E08A7E"
+    },
+    {
+      "id": "ink-green",
+      "name": {
+        "zh": "墨绿",
+        "en": "Ink Green"
+      },
+      "light": "#3C6E47",
+      "dark": "#8FC19A"
+    },
+    {
+      "id": "ochre",
+      "name": {
+        "zh": "赭石",
+        "en": "Ochre"
+      },
+      "light": "#9A5B2E",
+      "dark": "#D9A271"
+    },
+    {
+      "id": "ink",
+      "name": {
+        "zh": "墨色",
+        "en": "Ink"
+      },
+      "light": "#3A342C",
+      "dark": "#D8CFC0"
+    }
+  ]
+}
