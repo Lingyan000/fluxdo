@@ -293,6 +293,22 @@ class CookieLogger {
     });
   }
 
+  /// 区分平台读取超时与 Sentinel 等待锁超时，不包含 Cookie 内容。
+  static void readTimeout({required String url, required Duration elapsed}) {
+    final host = Uri.parse(url).host;
+    final msg = 'cookie_store_read_timeout: $host';
+    debugPrint('[Cookie:Read] $msg');
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'warning',
+      'type': 'cookie_engine',
+      'event': 'cookie_store_read_timeout',
+      'message': msg,
+      'host': host,
+      'elapsedMs': elapsed.inMilliseconds,
+    });
+  }
+
   /// Sentinel per-name Lock 超时事件
   static void lockTimeout({
     required String name,

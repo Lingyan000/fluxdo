@@ -13,6 +13,46 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+  testWidgets('平台读取无响应时释放共享快照，迟到结果不覆盖下一次读取', (tester) async {
+    final stale = Completer<Object?>();
+    var reads = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'getAllCookieInfos');
+          if (++reads == 1) return stale.future;
+          return [
+            {'name': '_t', 'value': 'new', 'domain': 'linux.do', 'path': '/'},
+          ];
+        });
+    final first = writer.getAllCookieInfos('https://linux.do');
+    final count = writer.countCookiesByName('https://linux.do', '_t');
+    final firstFailed = expectLater(
+      first,
+      throwsA(isA<CookieStoreReadTimeout>()),
+    );
+    final countFailed = expectLater(
+      count,
+      throwsA(isA<CookieStoreReadTimeout>()),
+    );
+    await tester.pump(const Duration(seconds: 5));
+    await firstFailed;
+    await countFailed;
+    expect(reads, 1);
+    expect(
+      (await writer.getAllCookieInfos('https://linux.do')).single.value,
+      'new',
+    );
+    stale.complete([
+      {'name': '_t', 'value': 'old', 'domain': 'linux.do', 'path': '/'},
+    ]);
+    await tester.pump();
+    expect(
+      (await writer.getAllCookieInfos('https://linux.do')).single.value,
+      'new',
+    );
+    expect(reads, 3);
+  });
+
   test('并发计数与枚举共用原生读取，完成后重新读取', () async {
     var reads = 0;
     final released = Completer<void>();

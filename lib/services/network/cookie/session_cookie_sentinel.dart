@@ -169,6 +169,8 @@ class SessionCookieSentinel {
         name,
         () => _syncFromJarLocked(url, name, session),
       );
+    } on CookieStoreReadTimeout catch (error) {
+      return _handleReadTimeout(name, error);
     } on TimeoutException {
       return _handleLockTimeout(name);
     }
@@ -378,6 +380,8 @@ class SessionCookieSentinel {
         name,
         () => _sweepInternal(url, name, intent, entryGen),
       );
+    } on CookieStoreReadTimeout catch (error) {
+      return _handleReadTimeout(name, error);
     } on TimeoutException {
       return _handleLockTimeout(name);
     } catch (e, s) {
@@ -1207,6 +1211,18 @@ class SessionCookieSentinel {
       variantsBefore: 0,
       variantsAfter: 0,
       elapsed: _lockTimeout,
+    );
+  }
+
+  SweepResult _handleReadTimeout(String name, CookieStoreReadTimeout error) {
+    // RawCookieWriter has already logged the read failure. It is not lock
+    // contention and must not increment the consecutive lock-timeout counter.
+    return SweepResult(
+      name: name,
+      status: SweepStatus.failed,
+      variantsBefore: 0,
+      variantsAfter: 0,
+      elapsed: error.duration ?? Duration.zero,
     );
   }
 

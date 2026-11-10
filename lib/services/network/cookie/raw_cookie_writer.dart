@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' as io;
 
 import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
@@ -5,7 +6,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'cookie_full_info.dart';
+import 'cookie_logger.dart';
 import 'raw_cookie_writer_fallback.dart';
+
+/// A read can be abandoned safely: a late snapshot never mutates the store.
+class CookieStoreReadTimeout extends TimeoutException {
+  CookieStoreReadTimeout(Duration timeout)
+    : super('Cookie store read timed out', timeout);
+}
 
 /// 通过原生平台通道写入 / 读取 / 删除 WebView cookie store。
 ///
@@ -30,6 +38,7 @@ class RawCookieWriter {
   static final instance = RawCookieWriter._();
 
   static const _channel = MethodChannel('com.fluxdo/raw_cookie');
+  static const _readTimeout = Duration(seconds: 5);
   final Map<String, Future<List<CookieFullInfo>>> _reads = {};
 
   void invalidateReads() => _reads.clear();
@@ -302,7 +311,16 @@ class RawCookieWriter {
     final key = uri.replace(query: '', fragment: '').toString();
     final existing = _reads[key];
     if (existing != null) return existing;
-    final read = _readAllCookieInfos(url);
+    // Keep this shorter than Sentinel's lock-acquisition timeout. A stalled
+    // platform read must not hold a per-name lock or the shared read forever.
+    // Writes/deletes deliberately do not use this timeout: they can finish late.
+    final read = _readAllCookieInfos(url).timeout(
+      _readTimeout,
+      onTimeout: () {
+        CookieLogger.readTimeout(url: url, elapsed: _readTimeout);
+        throw CookieStoreReadTimeout(_readTimeout);
+      },
+    );
     _reads[key] = read;
     try {
       return await read;
