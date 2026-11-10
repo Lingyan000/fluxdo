@@ -8,11 +8,99 @@ import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
 import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/widgets/layout/master_detail_layout.dart';
+import 'package:fluxdo/widgets/topics/topics_fab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  for (final floating in [false, true]) {
+    testWidgets('手机底栏将内容和 FAB 的避让高度传入主面板 floating=$floating', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(375, 815));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues({
+        'pref_bottom_nav_floating': floating,
+        'pref_bottom_nav_labelless': true,
+        'pref_hide_bar_on_scroll': true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+      addTearDown(container.dispose);
+      MediaQueryData? contentMedia;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(375, 815),
+                  padding: EdgeInsets.only(bottom: 24),
+                  viewPadding: EdgeInsets.only(bottom: 24),
+                ),
+                child: AdaptiveScaffold(
+                  selectedIndex: 0,
+                  onDestinationSelected: (_) {},
+                  destinations: const [
+                    AdaptiveDestination(
+                      id: 'home',
+                      icon: Icon(Icons.home),
+                      selectedIcon: Icon(Icons.home),
+                      label: '首页',
+                    ),
+                    AdaptiveDestination(
+                      id: 'chat',
+                      icon: Icon(Icons.chat),
+                      selectedIcon: Icon(Icons.chat),
+                      label: '聊天',
+                    ),
+                  ],
+                  body: MasterDetailLayout(
+                    master: Builder(
+                      builder: (context) {
+                        contentMedia = MediaQuery.of(context);
+                        return const SizedBox.expand();
+                      },
+                    ),
+                    masterFloatingActionButton: TopicsFab(
+                      canCreate: true,
+                      isActive: true,
+                      onRefresh: () {},
+                      onCreateTopic: () {},
+                      onOpenDrafts: () {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bar = tester.getRect(find.byType(AdaptiveBottomNavigation));
+      final fab = find.byKey(const ValueKey('topics-create-menu'));
+      final fabBottom = tester.getBottomRight(fab).dy;
+      final fabCenter = tester.getCenter(fab).dy;
+      expect(contentMedia!.padding.bottom, closeTo(bar.height, 1));
+      expect(fabBottom, lessThanOrEqualTo(bar.top - 16));
+      final bodyHeight = tester
+          .getSize(find.byKey(const ValueKey('master-pane')))
+          .height;
+      container.read(barVisibilityProvider.notifier).state = 0;
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(fab).dy - fabCenter, closeTo(bar.height - 24, 1));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('master-pane'))).height,
+        bodyHeight,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets('桌面窄窗口保留侧栏和广场入口，不挂移动端下拉层或底栏', (tester) async {
     PlatformUtils.debugDesktopOverride = true;

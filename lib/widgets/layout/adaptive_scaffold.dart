@@ -96,10 +96,6 @@ class AdaptiveScaffold extends ConsumerWidget {
     return BrowserDockContentLayout(
       leftInset: overlayLeftInset,
       builder: (context, dockInset) {
-        final contentMedia = browserDockContentMedia(
-          MediaQuery.of(context),
-          dockInset,
-        );
         final content = Stack(
           children: [
             Scaffold(
@@ -192,16 +188,25 @@ class AdaptiveScaffold extends ConsumerWidget {
                     // 直接丢失,只剩瞬切。
                     child: Padding(
                       padding: EdgeInsets.only(bottom: dockInset),
-                      child: MediaQuery(
-                        data: contentMedia,
-                        child: Material(
-                          type: useAcrylicRail
-                              ? MaterialType.canvas
-                              : MaterialType.transparency,
-                          color: useAcrylicRail
-                              ? Theme.of(context).colorScheme.surface
-                              : null,
-                          child: body,
+                      child: Builder(
+                        builder: (bodyContext) => MediaQuery(
+                          // 在 Scaffold 的 body 内读取，保留 extendBody 注入的底栏高度。
+                          // 系统安全区来自外层，避免 body 的 removePadding 将其清零。
+                          data: browserDockContentMedia(
+                            MediaQuery.of(bodyContext).copyWith(
+                              viewPadding: MediaQuery.viewPaddingOf(context),
+                            ),
+                            dockInset,
+                          ),
+                          child: Material(
+                            type: useAcrylicRail
+                                ? MaterialType.canvas
+                                : MaterialType.transparency,
+                            color: useAcrylicRail
+                                ? Theme.of(context).colorScheme.surface
+                                : null,
+                            child: body,
+                          ),
                         ),
                       ),
                     ),
