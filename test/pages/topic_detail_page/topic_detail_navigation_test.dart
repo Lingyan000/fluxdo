@@ -18,6 +18,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/topic_detail_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,7 +45,8 @@ TopicDetail _detail(int first, int last) => TopicDetail.fromJson({
 class _DetailNotifier extends TopicDetailNotifier {
   _DetailNotifier(super.arg);
   bool previousEnabled = false;
-  int get firstLoadedPost => state.requireValue.postStream.posts.first.postNumber;
+  int get firstLoadedPost =>
+      state.requireValue.postStream.posts.first.postNumber;
 
   @override
   Future<TopicDetail> build() async {
@@ -58,7 +60,7 @@ class _DetailNotifier extends TopicDetailNotifier {
   }
 
   @override
-  bool get hasMoreBefore => previousEnabled;
+  bool get hasMoreBefore => previousEnabled && super.hasMoreBefore;
   @override
   bool get hasMoreAfter => false;
 
@@ -191,7 +193,7 @@ void main() {
     await disposePage(tester);
   });
 
-  testWidgets('真实向上分页在页首等待时可见 loading，落地保持楼层且不连翻', (tester) async {
+  testWidgets('连续向上分页每轮 loading 可见，落地保持楼层且不连翻', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(375, 815);
     addTearDown(tester.view.reset);
@@ -209,6 +211,10 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
       }
       final indicator = find.byKey(const ValueKey('load-previous'));
+      final spinner = find.descendant(
+        of: indicator,
+        matching: find.byType(LoadingSpinner),
+      );
       expect(
         indicator,
         findsOneWidget,
@@ -218,6 +224,8 @@ void main() {
       final viewport = tester.getRect(find.byType(TopicPostList));
       expect(tester.getRect(indicator).overlaps(viewport), isTrue);
       expect(tester.getSize(indicator).height, greaterThan(0));
+      expect(spinner, findsOneWidget);
+      expect(viewport.contains(tester.getCenter(spinner)), isTrue);
       await tester.pump(const Duration(seconds: 1));
       expect(service.previousCalls, 1);
       final before = tester.getTopLeft(floor(40)).dy;
@@ -233,7 +241,8 @@ void main() {
             .first
             .postNumber,
         20,
-        reason: 'providerFirst=${notifier.firstLoadedPost}, loading=${notifier.isLoadingPrevious}, failed=${notifier.isLoadPreviousFailed}',
+        reason:
+            'providerFirst=${notifier.firstLoadedPost}, loading=${notifier.isLoadingPrevious}, failed=${notifier.isLoadPreviousFailed}',
       );
       expect(floor(40), findsOneWidget);
       expect(tester.getTopLeft(floor(40)).dy, closeTo(before, 1));
@@ -249,6 +258,102 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(service.previousCalls, 1);
+      for (final (page, first, nextFirst) in [(2, 20, 10), (3, 10, 1)]) {
+        final nextGesture = await tester.startGesture(const Offset(180, 300));
+        for (
+          var frame = 0;
+          frame < 150 && list.scrollController.offset > 0;
+          frame++
+        ) {
+          await nextGesture.moveBy(const Offset(0, 80));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(service.previousCalls, page);
+        expect(notifier.isLoadingPrevious, isTrue);
+        expect(
+          indicator,
+          findsOneWidget,
+          reason:
+              'page=$page pixels=${list.scrollController.offset} anchor=${list.listController.anchor} extent=${list.listController.extentForIndex(0)}',
+        );
+        expect(tester.getSize(indicator).height, greaterThan(0));
+        expect(
+          tester.getRect(indicator).overlaps(viewport),
+          isTrue,
+          reason: '第 $page 次向上加载时指示器应在视口内',
+        );
+        expect(spinner, findsOneWidget);
+        expect(viewport.contains(tester.getCenter(spinner)), isTrue);
+        await tester.pump(const Duration(seconds: 1));
+        expect(service.previousCalls, page);
+        final nextBefore = tester.getTopLeft(floor(first)).dy;
+        service.previous.complete(_detail(nextFirst, first - 1).postStream);
+        await tester.pump();
+        await tester.pump();
+        expect(notifier.firstLoadedPost, nextFirst);
+        expect(spinner, findsNothing);
+        expect(tester.getTopLeft(floor(first)).dy, closeTo(nextBefore, 1));
+        await nextGesture.up();
+        await tester.pumpAndSettle();
+        expect(service.previousCalls, page);
+      }
+      expect(tester.takeException(), isNull);
+    } finally {
+      await disposePage(tester);
+    }
+  });
+
+  testWidgets('向上加载行被回收后失败提示和重试 loading 仍可见', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(375, 815);
+    addTearDown(tester.view.reset);
+    enablePrevious = true;
+    try {
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+      final list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+      list.scrollController.jumpTo(150);
+      await tester.pump();
+      expect(service.previousCalls, 1);
+      service.previous.complete(_detail(20, 39).postStream);
+      await tester.pumpAndSettle();
+
+      list.scrollController.jumpTo(150);
+      await tester.pump();
+      expect(service.previousCalls, 2);
+      list.scrollController.jumpTo(1500);
+      await tester.pump();
+      final indicator = find.byKey(const ValueKey('load-previous'));
+      expect(indicator, findsNothing);
+      service.previous.completeError(StateError('Previous page failed'));
+      await tester.pumpAndSettle();
+      expect(notifier.isLoadPreviousFailed, isTrue);
+
+      list.scrollController.jumpTo(0);
+      await tester.pumpAndSettle();
+      final retry = find.text(S.current.topicDetail_loadFailedTapRetry);
+      expect(retry.hitTestable(), findsOneWidget);
+      expect(service.previousCalls, 2);
+      await tester.tap(retry);
+      await tester.pump();
+      expect(service.previousCalls, 3);
+      expect(notifier.isLoadingPrevious, isTrue);
+      final spinner = find.descendant(
+        of: indicator,
+        matching: find.byType(LoadingSpinner),
+      );
+      expect(spinner, findsOneWidget);
+      expect(
+        tester
+            .getRect(find.byType(TopicPostList))
+            .contains(tester.getCenter(spinner)),
+        isTrue,
+      );
+      service.previous.complete(_detail(10, 19).postStream);
+      await tester.pumpAndSettle();
+      expect(notifier.firstLoadedPost, 10);
+      expect(spinner, findsNothing);
+      expect(notifier.isLoadPreviousFailed, isFalse);
       expect(tester.takeException(), isNull);
     } finally {
       await disposePage(tester);

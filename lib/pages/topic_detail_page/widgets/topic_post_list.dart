@@ -258,6 +258,7 @@ class _TopicPostListState extends State<TopicPostList> {
   void initState() {
     super.initState();
     widget.listController.itemPositions.addListener(_onItemPositionsChanged);
+    _listenToPreviousLoading();
     // 首帧渲染后触发一次可见性检测，确保进入页面时即上报阅读状态
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -270,6 +271,36 @@ class _TopicPostListState extends State<TopicPostList> {
     // 事件经 FrameJankMonitor 汇入诊断时间轴(监控关闭时零输出),
     // listener 本体每帧只做几次数值比较,release 常驻注册无碍。
     widget.scrollController.addListener(_scrollJumpProbe);
+  }
+
+  late Listenable _previousLoadingChanges;
+
+  void _listenToPreviousLoading() {
+    _previousLoadingChanges = Listenable.merge([
+      widget.loadingPreviousListenable,
+      widget.loadPreviousFailedListenable,
+    ]);
+    _previousLoadingChanges.addListener(_onPreviousLoadingChanged);
+  }
+
+  void _onPreviousLoadingChanged() {
+    final controller = widget.listController;
+    if (!controller.isAttached || controller.numberOfItems == 0) return;
+    // 空闲时页首行高度为 0，离开缓存后可能不再挂载。
+    // 从列表外使高度缓存失效，下一轮加载和失败重试才能重新显示。
+    controller.invalidateExtent(0);
+  }
+
+  @override
+  void didUpdateWidget(covariant TopicPostList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.loadingPreviousListenable !=
+            oldWidget.loadingPreviousListenable ||
+        widget.loadPreviousFailedListenable !=
+            oldWidget.loadPreviousFailedListenable) {
+      _previousLoadingChanges.removeListener(_onPreviousLoadingChanged);
+      _listenToPreviousLoading();
+    }
   }
 
   double? _probeLastPixels;
@@ -336,6 +367,7 @@ class _TopicPostListState extends State<TopicPostList> {
 
   @override
   void dispose() {
+    _previousLoadingChanges.removeListener(_onPreviousLoadingChanged);
     widget.listController.itemPositions.removeListener(_onItemPositionsChanged);
     widget.scrollController.removeListener(_scrollJumpProbe);
     _parseWarmUpRetry?.cancel();
