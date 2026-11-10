@@ -50,6 +50,7 @@ class TopicTocController extends ChangeNotifier {
   /// 点击跳转进行中的目标 id:跳转动画期间 spy 不重算激活项,避免
   /// 高亮沿路径狂闪;落地后恢复。
   String? _jumpTargetId;
+  int _jumpGeneration = 0;
 
   String? _activeHeadingId;
   Set<String> _activeAncestorIds = const {};
@@ -145,6 +146,7 @@ class TopicTocController extends ChangeNotifier {
   void debugSetTocData(TocData data) => _apply(data);
 
   void _clear() {
+    _jumpGeneration++;
     _tocData = null;
     _tocSignature = 0;
     _entryById = const {};
@@ -158,17 +160,23 @@ class TopicTocController extends ChangeNotifier {
   /// 点击目录项跳转:先段级粗定位(短帖 null chunk → 整帖段),
   /// 等两帧让标题挂载,再按 reveal 几何精确对齐到视口顶。
   Future<void> scrollToHeading(TocEntry entry, List<Post> posts) async {
+    final generation = ++_jumpGeneration;
     _jumpTargetId = entry.id;
     _setActive(entry.id);
     try {
-      await detailController.scrollToPostChunk(1, entry.chunkIndex, posts);
+      final positioned = await detailController.scrollToPostChunk(
+        1,
+        entry.chunkIndex,
+        posts,
+      );
+      if (!positioned || generation != _jumpGeneration) return;
       // 等两帧:目标段构建、HeadingAnchorRegistrar 完成注册
       // (同 _scrollToHeroTagSource 的节奏)
       await WidgetsBinding.instance.endOfFrame;
       await WidgetsBinding.instance.endOfFrame;
-      _preciseAlign(entry.anchorKey);
+      if (generation == _jumpGeneration) _preciseAlign(entry.anchorKey);
     } finally {
-      _jumpTargetId = null;
+      if (generation == _jumpGeneration) _jumpTargetId = null;
     }
   }
 
@@ -256,6 +264,7 @@ class TopicTocController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _jumpGeneration++;
     _spyThrottle?.cancel();
     super.dispose();
   }

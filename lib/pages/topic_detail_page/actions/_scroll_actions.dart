@@ -18,6 +18,15 @@ extension _ScrollActions on _TopicDetailPageState {
 
     if (detailAsync.isLoading) return;
 
+    // 数据通知与列表重建之间可能隔一帧，先等待该批数据完成布局，
+    // 再用新的视口边界判断是否需要下一页。
+    final detail = detailAsync.value;
+    if (detail != null &&
+        _controller.displayedPostCount !=
+            _filteredDetail(detail).postStream.posts.length) {
+      return;
+    }
+
     final notifier = ref.read(topicDetailProvider(params).notifier);
 
     if (_controller.shouldLoadPrevious(
@@ -166,26 +175,7 @@ extension _ScrollActions on _TopicDetailPageState {
     if (detail != null &&
         detail.postStream.posts.isNotEmpty &&
         detail.postStream.posts.first.postNumber == 1) {
-      final posts = detail.postStream.posts;
-      // 顶部可平滑滚达的条件（观测而非预测）：
-      // - center 就是首段（before 侧为空，min 恒为真实值），或
-      // - segment 0 已挂载 ⇒ before 列表末端子项已 build ⇒ 列表总高
-      //   已钉死为真实值（SliverList 对已实现的尾项返回精确 extent）。
-      // 此时 minScrollExtent 精确且动画期间稳定，animateTo 可准确到顶。
-      final centerAtFirstSegment =
-          _controller.findCenterPostIndex(posts) == 0 &&
-          _controller.scrollIndexForPostIndex(0) == 0;
-      if (centerAtFirstSegment ||
-          _controller.scrollController.tagMap.containsKey(0)) {
-        _controller.scrollToTop();
-      } else {
-        // 远距：min 是对未构建区的估算，animateTo 会停在过期目标上。
-        // 与页内远跳同机制：center 重锚到 1 楼，offset 0 构造性即顶部
-        // （centerPostIndex==0 分支会把 header 一并编入 center 组）
-        _controller.jumpToPostLocally(1);
-        _controller.skipNextJumpHighlight = true; // 回顶不高亮 1 楼
-        if (mounted) setState(() {});
-      }
+      await _controller.scrollToTop();
       return;
     }
 
@@ -393,7 +383,7 @@ extension _ScrollActions on _TopicDetailPageState {
       if (postNumber == 1 &&
           minRenderedScrollIndex == segmentRange.firstScrollIndex) {
         // 1 楼顶部再往上只放行到列表最顶（露出 header）；
-        // center 坐标系下列表顶是 minScrollExtent 而非 0
+        // 页面滚动限制在当前列表提供的实际范围内。
         offsetDelta = math.max(
           offsetDelta,
           scrollController.position.minScrollExtent - scrollController.offset,
@@ -407,7 +397,7 @@ extension _ScrollActions on _TopicDetailPageState {
 
     if (offsetDelta == null) return false;
 
-    // center 坐标系下 before 区是负 offset，下界必须用真实 minScrollExtent
+    // 按实际滚动边界截断翻屏距离。
     final targetOffset = (scrollController.offset + offsetDelta).clamp(
       scrollController.position.minScrollExtent,
       scrollController.position.maxScrollExtent,
@@ -430,8 +420,7 @@ extension _ScrollActions on _TopicDetailPageState {
     if (rawDetail == null) return;
     _controller.selectKeyboardPostNumber(postNumber);
 
-    // postIndex 供 isPostRendered/scrollToPost 查滚动映射表，映射表由
-    // TopicPostList 基于过滤后列表构建，这里必须用同一份数据
+    // 用过滤后列表确认目标存在；滚动索引按已显示快照的楼层号查找。
     final detail = _filteredDetail(rawDetail);
     final posts = detail.postStream.posts;
     final postIndex = posts.indexWhere((p) => p.postNumber == postNumber);
@@ -454,39 +443,16 @@ extension _ScrollActions on _TopicDetailPageState {
       return;
     }
 
-    // 计算距离，如果距离过大直接使用本地跳转
-    bool forceLocalJump = false;
-    final stream = detail.postStream.stream;
-    final currentVisibleIndex = _controller.currentVisibleStreamIndex;
-
-    final targetPost = posts.firstWhere(
-      (p) => p.postNumber == postNumber,
-      orElse: () => posts.first,
-    );
-    final targetStreamIndex = stream.indexOf(targetPost.id);
-
-    if (currentVisibleIndex != -1 && targetStreamIndex != -1) {
-      if ((targetStreamIndex - currentVisibleIndex).abs() > 15) {
-        forceLocalJump = true;
-      }
+    final positionRevision = _controller.positionRevision;
+    final positioned = await _controller.scrollToPost(postNumber, posts);
+    if (!mounted ||
+        _controller.keyboardSelectedPostNumber != postNumber ||
+        _controller.positionRevision != positionRevision) {
+      return;
     }
-
-    if (!forceLocalJump && _controller.isPostRendered(postIndex)) {
-      final positioned = await _controller.scrollToPost(postNumber, posts);
-      forceLocalJump = !positioned;
-      if (!positioned) {
-        FrameJankMonitor.logEvent(
-          'SCROLL-FUSE',
-          'scrollToPost 未收敛，切换本地锚点：post=$postNumber index=$postIndex',
-          persistWhenStopped: true,
-        );
-      }
-    }
-    if (forceLocalJump || !_controller.isPostRendered(postIndex)) {
-      // 换 center 锚点到目标帖，首帧即构造性定位（收尾贴底见
-      // _finalizeInitialPosition，由 build 里的初始定位块统一触发）
+    if (!positioned) {
       _controller.jumpToPostLocally(postNumber);
-      if (mounted) setState(() {});
+      setState(() {});
     }
     _controller.triggerHighlight(postNumber);
   }
@@ -505,38 +471,16 @@ extension _ScrollActions on _TopicDetailPageState {
       final post = posts[postIndex];
       _controller.selectKeyboardPostNumber(post.postNumber);
 
-      bool forceLocalJump = false;
-      final currentVisibleIndex = _controller.currentVisibleStreamIndex;
-      final targetStreamIndex = detail.postStream.stream.indexOf(postId);
-
-      if (currentVisibleIndex != -1 && targetStreamIndex != -1) {
-        if ((targetStreamIndex - currentVisibleIndex).abs() > 15) {
-          forceLocalJump = true;
-        }
+      final positionRevision = _controller.positionRevision;
+      final positioned = await _controller.scrollToPost(post.postNumber, posts);
+      if (!mounted ||
+          _controller.keyboardSelectedPostNumber != post.postNumber ||
+          _controller.positionRevision != positionRevision) {
+        return;
       }
-
-      if (!forceLocalJump && _controller.isPostRendered(postIndex)) {
-        // 同 _scrollToPost：走 jumpTo 而非 animateTo，避免触底回弹；
-        // jumpTo 后仍复查是否收敛，未收敛降级本地锚点（SCROLL-FUSE）
-        final scrollIndex = _controller.scrollIndexForPostIndex(postIndex);
-        await _controller.scrollController.jumpToRenderedScrollIndex(
-          scrollIndex,
-        );
-        forceLocalJump = !_controller.scrollController
-            .isIndexStateInLayoutRange(scrollIndex);
-        if (forceLocalJump) {
-          FrameJankMonitor.logEvent(
-            'SCROLL-FUSE',
-            'scrollToPostById 未收敛，切换本地锚点：'
-                'post=${post.postNumber} index=$scrollIndex',
-            persistWhenStopped: true,
-          );
-        }
-      }
-      if (forceLocalJump || !_controller.isPostRendered(postIndex)) {
-        // 同 _scrollToPost：center 换锚构造性定位
+      if (!positioned) {
         _controller.jumpToPostLocally(post.postNumber);
-        if (mounted) setState(() {});
+        setState(() {});
       }
       _controller.triggerHighlight(post.postNumber);
       return;
@@ -581,63 +525,20 @@ extension _ScrollActions on _TopicDetailPageState {
     }
   }
 
-  /// 初始定位收尾（center 已锚定目标帖，首帧即 offset 0 = 目标顶对齐）
-  ///
-  /// 定位本身由 CustomScrollView 的 center 锚点在布局期构造性完成，
-  /// 不存在"滚过去"的过程；本方法只在首帧后做三件事：
-  /// 1. 页内跳转换锚后 pixels 残值归零（旧坐标系下的 offset 无意义）；
-  /// 2. 目标下方内容不足一屏时按真实几何调整视口 anchor（见
-  ///    [_updateBottomAnchorIfNeeded]），使 offset 0 即"底边贴齐"，
-  ///    底部空白被排除在滚动范围外；
-  /// 3. markPositioned 揭开 Opacity 门 + 触发高亮 + 回放被抑制的 eyeline。
-  /// 全程无 animateTo（无 ballistic），机制上不会出现触底回弹。
+  /// 列表在布局期完成初始定位，帧后揭开内容并恢复阅读上报。
   void _finalizeInitialPosition({
     int? highlightPostNumber,
     int retryCount = 0,
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-
-      final scrollController = _controller.scrollController;
-      if (!scrollController.hasClients) {
-        if (retryCount < 5) {
-          _finalizeInitialPosition(
-            highlightPostNumber: highlightPostNumber,
-            retryCount: retryCount + 1,
-          );
-        } else {
-          _markInitialPositionDone(highlightPostNumber: null);
-        }
-        return;
-      }
-
-      // 嵌套视图等无 center 锚点的列表：定位机制不适用，直接收尾，
-      // 不动滚动位置（与旧行为一致，且不再空转等待 scrollToIndex 超时）
-      if (_centerKey.currentContext == null) {
-        _markInitialPositionDone(highlightPostNumber: highlightPostNumber);
-        return;
-      }
-
-      // 页内跳转场景：center 换锚后旧 pixels 是上一个坐标系下的残值，
-      // 归零后等下一帧以新锚点布局，再做贴底观测
-      if (scrollController.position.pixels.abs() > 0.5 && retryCount < 5) {
-        scrollController.jumpTo(0);
+      if (!_controller.postListController.isAttached && retryCount < 5) {
         _finalizeInitialPosition(
           highlightPostNumber: highlightPostNumber,
           retryCount: retryCount + 1,
         );
         return;
       }
-
-      // anchor 变更触发了重建，下一帧以新 anchor 布局后复核直至稳定
-      if (_updateBottomAnchorIfNeeded() && retryCount < 5) {
-        _finalizeInitialPosition(
-          highlightPostNumber: highlightPostNumber,
-          retryCount: retryCount + 1,
-        );
-        return;
-      }
-
       _markInitialPositionDone(highlightPostNumber: highlightPostNumber);
     });
   }
@@ -673,83 +574,5 @@ extension _ScrollActions on _TopicDetailPageState {
         }
       });
     }
-  }
-
-  /// 目标下方内容不足一屏时，按真实几何抬高视口 anchor；返回是否发生变更
-  ///
-  /// 纯观测、零预测：maxScrollExtent == 0 意味着 center 及其后所有
-  /// sliver 都已完整真实布局（SliverList 铺不满视口 ⇒ 已铺完），此时
-  /// 求和 geometry.scrollExtent 是精确值，不含任何估算。
-  ///
-  /// 设 anchor = (视口高 − after 侧真实高) / 视口高 后，center 的零点
-  /// 从视口顶下移，offset 0 即"内容底边贴视口底边"，且
-  /// maxScrollExtent = max(0, after − 视口×(1−anchor)) = 0 —— 底部空白
-  /// 直接被排除在滚动范围之外，而非仅仅修正一次落点。之后 after 侧
-  /// 有新帖长高时，最大可滚位置依旧数学上恒等于"底边贴齐"。
-  bool _updateBottomAnchorIfNeeded() {
-    final scrollController = _controller.scrollController;
-    if (!scrollController.hasClients) return false;
-    final position = scrollController.position;
-
-    double newAnchor = 0.0;
-
-    final notifier = ref.read(topicDetailProvider(_params).notifier);
-    // maxScrollExtent 按当前 anchor 下的 after 富余度计算；仅在窗口已
-    // 到话题末尾且 after 侧铺不满（max ≈ 0 ⇒ 全部真实布局）时抬 anchor。
-    // 半像素容差：anchor 生效后 max 因浮点会残留 1e-13 级正值，
-    // 用 <= 0 判断会把 anchor 弹回 0 造成振荡
-    if (!notifier.hasMoreAfter && position.maxScrollExtent <= 0.5) {
-      final centerContext = _centerKey.currentContext;
-      if (centerContext != null) {
-        // center key 可能挂在 SliverMainAxisGroup 上，向上找 viewport 直属 sliver
-        RenderObject? sliver = centerContext.findRenderObject();
-        while (sliver is RenderSliver && sliver.parent is RenderSliver) {
-          sliver = sliver.parent;
-        }
-        final viewport = sliver is RenderSliver ? sliver.parent : null;
-        if (sliver is RenderSliver && viewport is RenderViewport) {
-          // center 及其后所有兄弟 sliver 的真实内容总高
-          // （typing 指示器、底部 80px padding 都在其中，自然计入）
-          double afterExtent = sliver.geometry?.scrollExtent ?? 0;
-          for (
-            RenderSliver? child = viewport.childAfter(sliver);
-            child != null;
-            child = viewport.childAfter(child)
-          ) {
-            afterExtent += child.geometry?.scrollExtent ?? 0;
-          }
-
-          final viewportHeight = position.viewportDimension;
-          if (viewportHeight > 0 && afterExtent < viewportHeight) {
-            // before 侧可能含未构建子项的估算值；若因此选错分支，
-            // 新 anchor 会让 before 进入构建范围，下一轮复核即以
-            // 真实值收敛（调用方的重试循环保证）
-            double beforeExtent = 0;
-            for (
-              RenderSliver? child = viewport.childBefore(sliver);
-              child != null;
-              child = viewport.childBefore(child)
-            ) {
-              beforeExtent += child.geometry?.scrollExtent ?? 0;
-            }
-            if (beforeExtent + afterExtent <= viewportHeight) {
-              // 整个话题装得下一屏：anchor = before/视口 使
-              // min = max = 0，滚动被锁死且整体顶对齐（同旧行为，
-              // 但底部空白不再处于可滚范围内）
-              newAnchor = (beforeExtent / viewportHeight).clamp(0.0, 1.0);
-            } else {
-              // 内容超一屏但 after 侧不足：offset 0 = 底边贴齐，
-              // max = 0，向上仍可滚完 before 侧全部内容
-              newAnchor = ((viewportHeight - afterExtent) / viewportHeight)
-                  .clamp(0.0, 1.0);
-            }
-          }
-        }
-      }
-    }
-
-    if ((newAnchor - _viewportAnchor).abs() < 0.001) return false;
-    setState(() => _viewportAnchor = newAnchor);
-    return true;
   }
 }

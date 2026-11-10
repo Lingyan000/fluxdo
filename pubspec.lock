@@ -1665,6 +1665,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.4.0"
+  positioned_sliver_list:
+    dependency: "direct main"
+    description:
+      name: positioned_sliver_list
+      sha256: "5d3e07d0772bb81ef6e309b3124dd44650bd193cc97bc4a63d3401b62c6231d5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.5"
   posix:
     dependency: transitive
     description:

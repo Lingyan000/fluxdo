@@ -1654,12 +1654,9 @@ extension _UserActions on _TopicDetailPageState {
 
   /// 整流刷新(reload_topic refresh_stream / 积压坍缩)落地后按锚点重定位。
   ///
-  /// 与手动刷新 [_handleRefresh] 对齐：刷新只替换数据而不重定位时，
-  /// center 由陈旧的 initialCenterPostNumber（初次定位楼层，阅读中不
-  /// 更新）计算，大概率错锚到新窗口首/末帖 —— 视口被甩到窗口边缘，
-  /// eyeline 随即上报错误楼层，进度条跳到顶部/底部，跳幅是窗口偏移
-  /// 量而非实际阅读位移。state 落地与 prepareRefresh 的标脏在同一
-  /// 微任务链内，合并为一帧 build，错锚帧不会上屏。
+  /// 与手动刷新 [_handleRefresh] 对齐，替换加载窗口时发起新的首帧
+  /// 索引定位。state 落地与 prepareRefresh 的标脏在同一微任务链内，
+  /// 列表重建按当前阅读楼层定位，避免沿用旧窗口的像素偏移。
   Future<void> _reloadStreamKeepingViewport(
     TopicDetailNotifier notifier,
     int anchor,

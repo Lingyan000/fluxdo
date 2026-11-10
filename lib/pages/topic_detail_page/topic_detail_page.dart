@@ -6,7 +6,6 @@ import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderSliver, RenderViewport;
 import 'package:flutter/services.dart';
 
 import '../../utils/idle_task.dart';
@@ -23,7 +22,6 @@ import '../../utils/html_to_markdown.dart';
 import '../../utils/code_selection_context.dart';
 import '../../utils/link_launcher.dart';
 import '../../utils/quote_builder.dart';
-import '../../utils/scroll_jump.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
     show SelectionCoordinator, TocEntry;
@@ -213,12 +211,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   // UI State
   final GlobalKey _headerKey = GlobalKey();
-  final GlobalKey _centerKey = GlobalKey();
-
-  /// 视口 anchor（center 零点在视口内的位置，0 = 顶部）。
-  /// 目标帖下方内容不足一屏时由 _updateBottomAnchorIfNeeded 按真实几何
-  /// 抬高，使 offset 0 = 底边贴齐，底部空白被排除在滚动范围之外
-  double _viewportAnchor = 0.0;
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
@@ -3012,7 +3004,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     TopicDetailNotifier notifier,
     bool isLoggedIn,
   ) {
-    // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（centerPostIndex/
+    // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（initialPostIndex/
     // dividerPostIndex/滚动映射）都基于同一份过滤后列表，语义天然一致。
     // watch 保证名单变化时整页重建。
     final blockedUsernames = ref.watch(
@@ -3059,10 +3051,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       }
     }
 
-    // 初始定位：center 直接锚在目标帖，首帧布局即 offset 0 = 目标顶对齐，
-    // 无爬行、无估算。收尾（贴底 anchor + markPositioned）在帧后完成。
-    // _viewportAnchor 不在此处重置：残留值由 _finalizeInitialPosition
-    // 按真实几何重新评估（避免刷新场景闪一帧顶对齐）。
+    // 目标楼层转换为分块索引，列表引擎在首帧布局时完成精确定位。
     if (!_isNestedView && !_controller.hasInitialScrolled && posts.isNotEmpty) {
       final target = _resolveInitialTarget(posts, dividerPostIndex);
       _controller.markInitialScrolled(
@@ -3087,7 +3076,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       }
     }
 
-    final centerPostIndex = _controller.findCenterPostIndex(posts);
+    final initialPostIndex = _controller.findInitialPostIndex(posts);
 
     // 嵌套视图模式
     if (_isNestedView) {
@@ -3223,8 +3212,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             return TopicPostList(
               detail: detail,
               scrollController: _controller.scrollController,
-              centerKey: _centerKey,
-              viewportAnchor: _viewportAnchor,
+              listController: _controller.postListController,
+              positionRevision: _controller.positionRevision,
               headerKey: _headerKey,
               hideHeaderTitle: widget.hideInlineHeaderTitle,
               canAssignPost:
@@ -3259,11 +3248,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   notifier.loadPreviousFailedListenable,
               onRetryLoadMore: () => notifier.retryLoadMore(),
               onRetryLoadPrevious: () => notifier.retryLoadPrevious(),
-              centerPostIndex: centerPostIndex,
+              initialPostIndex: initialPostIndex,
               dividerPostIndex: dividerPostIndex,
               onFirstVisiblePostChanged: _updateStreamIndexForPostNumber,
               onVisiblePostsChanged: _updateVisiblePosts,
-              onScrollIndexMappingChanged: _controller.updateScrollIndexMapping,
+              onScrollIndexMappingChanged: (mapping) =>
+                  _controller.updateScrollIndexMapping(mapping, posts),
               onScrollIndexToPostNumberChanged:
                   _controller.updateScrollIndexToPostNumber,
               onPostSegmentRangesChanged: _controller.updatePostSegmentRanges,
@@ -3280,6 +3270,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onQuoteSelection: isLoggedIn ? _handleQuoteSelection : null,
               onQuoteImage: isLoggedIn ? _handleImageQuote : null,
               onScrollNotification: _controller.handleScrollNotification,
+              onLayoutChanged: _onScroll,
               onPointerScroll: _controller.handlePointerScroll,
               onFillGapBefore: (postId) => notifier.fillGapBefore(postId),
               onFillGapAfter: (postId) => notifier.fillGapAfter(postId),

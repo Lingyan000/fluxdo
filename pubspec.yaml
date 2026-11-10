@@ -75,6 +75,7 @@ dependencies:
   flutter_displaymode: ^0.7.0  # Android 高刷新率支持
   dynamic_color: ^1.8.1
   scroll_to_index: ^3.0.1
+  positioned_sliver_list: 0.2.5
   visibility_detector: ^0.4.0+2
   markdown: ^7.3.1
   emoji_extension: ^1.3.0
