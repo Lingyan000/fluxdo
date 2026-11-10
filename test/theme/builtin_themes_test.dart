@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluxdo/services/fonts/font_catalog.dart';
 import 'package:fluxdo/theme/color_contrast.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
@@ -37,6 +38,21 @@ void main() {
       expect(spec.name['zh'], isNotNull, reason: '${spec.id} 缺中文名');
       expect(spec.name['en'], isNotNull, reason: '${spec.id} 缺英文名');
       expect(spec.group, isNot(ThemeGroup.custom), reason: spec.id);
+    }
+  });
+
+  test('主题推荐的字体都在字体目录里', () {
+    final fonts = FontCatalog.parse(
+      File(FontCatalog.assetPath).readAsStringSync(),
+    );
+    final ids = {for (final f in fonts) f.id: f.slot};
+    for (final spec in specs) {
+      if (spec.fontBody case final id?) {
+        expect(ids[id], FontSlot.body, reason: '${spec.id} 正文字体 $id');
+      }
+      if (spec.fontMono case final id?) {
+        expect(ids[id], FontSlot.mono, reason: '${spec.id} 等宽字体 $id');
+      }
     }
   });
 

@@ -57,7 +57,6 @@ dependencies:
   enhanced_cookie_jar:
     path: packages/enhanced_cookie_jar
   re_highlight: ^0.0.3
-  google_fonts: ^8.0.0
   share_plus: ^12.0.1
   cross_file: ^0.3.4+2
   open_filex: ^4.7.0
@@ -245,14 +244,8 @@ flutter:
     - assets/polyfill/
     - assets/cook/
     - assets/themes/
+    - assets/fonts/catalog.json
 
-  fonts:
-    - family: MiSans
-      fonts:
-        # MiSans Variable Font，单文件覆盖 100-900 全部 weight。
-        # Flutter 3.41+ FontWeight 会映射到 wght variation axis，因此即使
-        # 不显式声明 weight，TextStyle(fontWeight: FontWeight.wXXX) 也能精准命中。
-        - asset: assets/fonts/MiSansVF.ttf
 
 
 

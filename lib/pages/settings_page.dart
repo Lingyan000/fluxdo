@@ -85,7 +85,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 趁界面静止把外观页首帧的一次性开销（MiSans 字体懒加载、种子配色计算）
+    // 趁界面静止把外观页首帧的一次性开销（主题与种子配色计算）
     // 提前做掉，否则首次进入外观页会明显顿一下。
     AppearanceWarmup.schedule(
       themeState: ref.read(themeProvider),

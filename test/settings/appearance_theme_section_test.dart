@@ -18,6 +18,8 @@ import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/preview_fonts.dart';
+
 const _sectionIds = {
   'themePreview',
   'themeMode',
@@ -192,9 +194,7 @@ void main() {
   testWidgets('导出主题区块截图', (tester) async {
     const dir = String.fromEnvironment('THEME_PREVIEW_DIR');
     if (dir.isEmpty) return;
-    await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'))).load();
+    await loadPreviewCjkFont();
     final manifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
     for (final entry in manifest) {

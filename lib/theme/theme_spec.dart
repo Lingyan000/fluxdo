@@ -190,6 +190,8 @@ class ThemeSpec {
     this.variantName = const {},
     this.order = 1000,
     this.shape = ShapePreset.standard,
+    this.fontBody,
+    this.fontMono,
     this.surface = GeneratedSurface.tinted,
     this.light,
     this.dark,
@@ -209,6 +211,8 @@ class ThemeSpec {
        family = null,
        variantName = const {},
        shape = ShapePreset.standard,
+       fontBody = null,
+       fontMono = null,
        light = null,
        dark = null,
        accents = const [],
@@ -239,6 +243,11 @@ class ThemeSpec {
 
   /// 主题推荐的圆角风格（用户可在外观设置中覆盖）。
   final ShapePreset shape;
+
+  /// 主题推荐的正文 / 等宽字体（字体目录 id），用户选「跟随主题」时
+  /// 生效；字体未下载时回退系统字体。
+  final String? fontBody;
+  final String? fontMono;
 
   /// 强调色记忆与画廊合并用的族标识。
   String get familyId => family ?? id;
@@ -335,6 +344,8 @@ class ThemeSpec {
       variantName: _parseName(json['variantName']),
       order: json['order'] as int? ?? 1000,
       shape: shape,
+      fontBody: (json['font'] as Map?)?['body'] as String?,
+      fontMono: (json['font'] as Map?)?['mono'] as String?,
       light: ThemePalette.fromJson(lightJson),
       dark: ThemePalette.fromJson(darkJson),
       accents: accents,
@@ -352,6 +363,8 @@ class ThemeSpec {
     if (variantName.isNotEmpty) 'variantName': variantName,
     if (order != (isGenerated ? 0 : 1000)) 'order': order,
     if (shape != ShapePreset.standard) 'shape': shape.name,
+    if (fontBody != null || fontMono != null)
+      'font': {'body': ?fontBody, 'mono': ?fontMono},
     if (isGenerated) 'surface': surface.name,
     if (!isGenerated) ...{
       'light': light!.toJson(),

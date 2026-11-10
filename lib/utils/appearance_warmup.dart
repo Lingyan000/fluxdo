@@ -9,16 +9,9 @@ import 'seed_color_scheme.dart';
 
 /// 外观设置页首帧开销的预热。
 ///
-/// 首次进入外观设置页会一次性付两笔昂贵开销，叠加起来明显掉帧；再次进入
-/// 时因引擎与 [SeedColorScheme] 都已缓存，所以只有第一次会顿：
-///
-/// 1. **MiSans 懒加载** — 引擎读 `FontManifest.json` 时只登记
-///    family → asset 映射（`AssetManagerFontProvider::RegisterAsset`），真正
-///    读取并解析 asset 字体发生在首次匹配该 family 时。字体分组里那行
-///    `TextStyle(fontFamily: 'MiSans')` 是用户未选 MiSans 时全 App 唯一的
-///    MiSans 用点，于是 19MB 可变字体的读取与 typeface 创建全落在这一帧，
-///    实测约 35ms。
-/// 2. **色卡网格的种子配色计算** — 原因见 [SeedColorScheme]。
+/// 首次进入外观设置页要为色卡网格、配色风格卡、主题模式卡与主题画廊
+/// 计算几十套配色（原因见 [SeedColorScheme]、[ThemePreviewCache]），集中
+/// 在首帧会明显掉帧；再次进入时都已缓存，所以只有第一次会顿。
 ///
 /// 预热挂在进入设置页时：此时界面静止，且用户还要再点一次才进外观页，
 /// 用 idle 优先级逐项排队（每项 1~2ms），既不与转场动画抢帧，也来得及做完。
@@ -58,8 +51,6 @@ class AppearanceWarmup {
     final scheduler = SchedulerBinding.instance;
     void queue(void Function() task) =>
         scheduler.scheduleTask(task, Priority.idle);
-
-    queue(_warmUpMiSansTypeface);
 
     // 色卡网格：动态色卡 + 内置调色板（跟随当前配色风格）
     for (final seed in <Color>{
@@ -122,18 +113,5 @@ class AppearanceWarmup {
         ),
       );
     }
-  }
-
-  /// 排版一次 MiSans 文本，触发字体 asset 的读取与 typeface 创建。
-  static void _warmUpMiSansTypeface() {
-    TextPainter(
-        text: const TextSpan(
-          text: 'MiSans',
-          style: TextStyle(fontFamily: 'MiSans'),
-        ),
-        textDirection: TextDirection.ltr,
-      )
-      ..layout()
-      ..dispose();
   }
 }

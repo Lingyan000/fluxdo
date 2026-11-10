@@ -15,13 +15,18 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../../l10n/s.dart';
 import '../../pages/topic_card_style_settings_page.dart';
 import '../../providers/app_icon_provider.dart';
+import '../../providers/font_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/app_background_service.dart';
 import '../../services/discourse_cache_manager.dart'
     show BlobImageCache, BlobImageProvider;
+import '../../services/data_management/cache_size_service.dart';
 import '../../services/emoji_handler.dart';
+import '../../services/fonts/font_catalog.dart';
+import '../../services/fonts/font_download_service.dart';
+import '../../services/fonts/font_sources.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_palettes.dart';
@@ -37,6 +42,7 @@ import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
+part 'appearance_font_section.dart';
 part 'appearance_theme_section.dart';
 
 /// 外观设置数据声明
@@ -306,41 +312,19 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       icon: Symbols.font_download_rounded,
       items: [
         CustomModel(
-          id: 'font',
-          title: l10n.appearance_font,
-          builder: (context, ref) {
-            final fontFamily = ref.watch(
-              themeProvider.select((s) => s.fontFamily),
-            );
-            final l10n = context.l10n;
-            final options = <(String, AppFontFamily)>[
-              (l10n.appearance_fontSystem, AppFontFamily.system),
-              ('MiSans', AppFontFamily.miSans),
-            ];
-
-            return RadioGroup<AppFontFamily>(
-              groupValue: fontFamily,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(themeProvider.notifier).setFontFamily(value);
-                }
-              },
-              child: Column(
-                children: [
-                  for (final (label, ff) in options)
-                    RadioListTile<AppFontFamily>(
-                      title: Text(
-                        label,
-                        style: ff == AppFontFamily.miSans
-                            ? const TextStyle(fontFamily: 'MiSans')
-                            : null,
-                      ),
-                      value: ff,
-                    ),
-                ],
-              ),
-            );
-          },
+          id: 'fontBody',
+          title: l10n.appearance_fontBody,
+          builder: (context, ref) => const _FontSlotSection(FontSlot.body),
+        ),
+        CustomModel(
+          id: 'fontMono',
+          title: l10n.appearance_fontMono,
+          builder: (context, ref) => const _FontSlotSection(FontSlot.mono),
+        ),
+        CustomModel(
+          id: 'fontSource',
+          title: l10n.appearance_fontSource,
+          builder: (context, ref) => const _FontSourceTile(),
         ),
       ],
     ),

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:re_highlight/languages/all.dart';
 import 'package:re_highlight/re_highlight.dart';
 
@@ -199,8 +198,14 @@ class HighlighterService {
   static const _maxConcurrentRequests = 3;
   final _pendingQueue = <Completer<void>>[];
 
-  // 预加载的字体 TextStyle
-  TextStyle? _firaCodeStyle;
+  /// 代码等宽样式：字族名与字体目录里的 Fira Code 一致，下载后自动生效，
+  /// 未下载时回退系统等宽字体（不再运行时从外网拉取字体）。
+  static const TextStyle _firaCodeStyle = TextStyle(
+    fontFamily: 'FiraCode',
+    fontFamilyFallback: ['monospace', 'Menlo', 'Courier'],
+    fontSize: 13,
+    height: 1.5,
+  );
 
   HighlighterService._();
 
@@ -209,16 +214,14 @@ class HighlighterService {
     return _instance!;
   }
 
-  /// 初始化服务（预加载字体和 Isolate Worker）
+  /// 初始化服务（预热 Isolate Worker）
   Future<void> initialize() async {
-    // 预加载 FiraCode 字体
-    _firaCodeStyle = GoogleFonts.firaCode(fontSize: 13, height: 1.5);
     // 预热 Isolate Worker
     await _HighlightWorker.instance.ensureInitialized();
   }
 
   /// 获取预加载的字体样式
-  TextStyle get firaCodeStyle => _firaCodeStyle ?? GoogleFonts.firaCode(fontSize: 13, height: 1.5);
+  TextStyle get firaCodeStyle => _firaCodeStyle;
 
   String _cacheKey(String code, String? language) => '${language ?? 'auto'}:${code.hashCode}';
 

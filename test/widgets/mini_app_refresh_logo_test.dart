@@ -10,6 +10,8 @@ import 'package:fluxdo/modules/mini_apps/mini_app_refresh_logo.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 
+import '../helpers/preview_fonts.dart';
+
 void main() {
   testWidgets(
     'release preserves the pull frame and completion freezes the flow',
@@ -180,9 +182,7 @@ void main() {
       tester.view.physicalSize = const Size(640, 440);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
-      final fonts = FontLoader('MiSans')
-        ..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'));
-      await fonts.load();
+      await loadPreviewCjkFont();
       final themes = ThemeResolver.resolve(
         spec: ThemeRegistry.material,
         mode: ThemeMode.system,

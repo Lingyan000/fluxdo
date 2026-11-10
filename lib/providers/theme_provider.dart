@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/fonts/font_catalog.dart';
+import '../services/fonts/font_download_service.dart';
 import '../services/launch_splash_handoff.dart';
 import '../theme/accent_colors.dart';
 import '../theme/app_background.dart';
@@ -16,13 +19,13 @@ import '../theme/shape_presets.dart';
 import '../theme/theme_registry.dart';
 import '../theme/theme_spec.dart';
 
-/// 内置字体选项
-enum AppFontFamily {
-  /// 跟随系统默认字体
-  system,
+/// 字体选择的特殊取值；其余取值为字体目录 id（见 [FontCatalog]）。
+abstract final class FontChoice {
+  /// 跟随主题推荐（主题未推荐时用系统字体）
+  static const String follow = 'follow';
 
-  /// 内置 MiSans 字体
-  miSans,
+  /// 系统字体
+  static const String system = 'system';
 }
 
 /// 强调色来源。
@@ -80,7 +83,14 @@ class ThemeState {
   /// 系统动态色原始 primary（由 DynamicColorBuilder 提供）
   final Color? dynamicPrimary;
 
-  final AppFontFamily fontFamily;
+  /// 正文字体选择（[FontChoice] 或字体目录 id）
+  final String bodyFont;
+
+  /// 等宽字体选择（[FontChoice] 或字体目录 id）
+  final String monoFont;
+
+  /// 已注册给引擎、可以直接使用的字体 id
+  final Set<String> loadedFonts;
 
   /// M3E 组件风格总开关（加载动画/进度条/滑块/按钮形变/下拉刷新）
   final bool m3eEnabled;
@@ -101,7 +111,9 @@ class ThemeState {
     this.schemeVariant = DynamicSchemeVariant.tonalSpot,
     this.customColors = const [],
     this.dynamicPrimary,
-    this.fontFamily = AppFontFamily.system,
+    this.bodyFont = FontChoice.follow,
+    this.monoFont = FontChoice.follow,
+    this.loadedFonts = const {},
     this.m3eEnabled = true,
     this.background = const AppBackground(),
   });
@@ -129,14 +141,27 @@ class ThemeState {
     AccentSource.custom => seedColor,
   };
 
-  /// 获取实际用于 ThemeData 的 fontFamily 字符串
+  static String? _resolveFont(String choice, String? suggestion) =>
+      switch (choice) {
+        FontChoice.follow => suggestion,
+        FontChoice.system => null,
+        _ => choice,
+      };
+
+  /// 当前生效的正文字体 id（null = 系统字体）
+  String? get effectiveBodyFontId =>
+      _resolveFont(bodyFont, themeSpec.fontBody);
+
+  /// 当前生效的等宽字体 id（null = 系统等宽）
+  String? get effectiveMonoFontId =>
+      _resolveFont(monoFont, themeSpec.fontMono);
+
+  /// 实际用于 ThemeData 的 fontFamily：选中的字体已下载并注册时才生效，
+  /// 否则回退系统字体
   String? get fontFamilyName {
-    switch (fontFamily) {
-      case AppFontFamily.miSans:
-        return 'MiSans';
-      case AppFontFamily.system:
-        return null;
-    }
+    final id = effectiveBodyFontId;
+    if (id == null || !loadedFonts.contains(id)) return null;
+    return FontCatalog.byId(id)?.family;
   }
 
   ThemeState copyWith({
@@ -152,7 +177,9 @@ class ThemeState {
     DynamicSchemeVariant? schemeVariant,
     List<Color>? customColors,
     Color? dynamicPrimary,
-    AppFontFamily? fontFamily,
+    String? bodyFont,
+    String? monoFont,
+    Set<String>? loadedFonts,
     bool? m3eEnabled,
     AppBackground? background,
   }) {
@@ -171,7 +198,9 @@ class ThemeState {
       schemeVariant: schemeVariant ?? this.schemeVariant,
       customColors: customColors ?? this.customColors,
       dynamicPrimary: dynamicPrimary ?? this.dynamicPrimary,
-      fontFamily: fontFamily ?? this.fontFamily,
+      bodyFont: bodyFont ?? this.bodyFont,
+      monoFont: monoFont ?? this.monoFont,
+      loadedFonts: loadedFonts ?? this.loadedFonts,
       m3eEnabled: m3eEnabled ?? this.m3eEnabled,
       background: background ?? this.background,
     );
@@ -191,7 +220,8 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _seedColorKey = 'seed_color';
   static const String _schemeVariantKey = 'scheme_variant';
   static const String _customColorsKey = 'custom_colors';
-  static const String _fontFamilyKey = 'font_family';
+  static const String _fontBodyKey = 'font_body';
+  static const String _fontMonoKey = 'font_mono';
   static const String _m3eEnabledKey = 'm3e_enabled';
   static const String _bgImagePathKey = 'bg_image_path';
   static const String _bgScrimLightKey = 'bg_scrim_light';
@@ -202,12 +232,21 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _legacyDynamicColorKey = 'use_dynamic_color';
   static const String _legacyNeutralKey = 'theme_neutral';
 
+  /// 旧版字体键：只有「system / miSans」二选一（MiSans 曾随安装包内置）
+  static const String legacyFontFamilyKey = 'font_family';
+
   final SharedPreferences _prefs;
 
   ThemeNotifier(this._prefs) : super(_loadTheme(_prefs)) {
     // 启动时对齐一次：覆盖升级等未经设置页切换的情况
     LaunchSplashHandoff.syncNightMode(state.mode);
+    _fontInstalledSub = FontDownloadService.instance.onInstalled.listen(
+      (_) => syncFonts(),
+    );
+    unawaited(syncFonts());
   }
+
+  StreamSubscription<FontEntry>? _fontInstalledSub;
 
   static ThemeState _loadTheme(SharedPreferences prefs) {
     // ── 主题模式 ──
@@ -272,12 +311,15 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
         .map((v) => Color(v!))
         .toList();
 
-    // Load Font Family
-    final savedFontFamily = prefs.getString(_fontFamilyKey);
-    AppFontFamily fontFamily = AppFontFamily.system;
-    if (savedFontFamily == 'miSans') {
-      fontFamily = AppFontFamily.miSans;
-    }
+    // ── 字体：新键优先，缺省时从旧版二选一迁移 ──
+    final bodyFont =
+        prefs.getString(_fontBodyKey) ??
+        switch (prefs.getString(legacyFontFamilyKey)) {
+          'miSans' => 'misans',
+          'system' => FontChoice.system,
+          _ => FontChoice.follow,
+        };
+    final monoFont = prefs.getString(_fontMonoKey) ?? FontChoice.follow;
 
     // ── 透明模式与背景配置 ──
     final background = AppBackground(
@@ -303,7 +345,12 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       seedColor: seedColor,
       schemeVariant: schemeVariant,
       customColors: customColors,
-      fontFamily: fontFamily,
+      bodyFont: bodyFont,
+      monoFont: monoFont,
+      loadedFonts: {
+        for (final font in FontCatalog.all)
+          if (FontDownloadService.instance.isRegistered(font)) font.id,
+      },
       m3eEnabled: prefs.getBool(_m3eEnabledKey) ?? true,
       background: background,
     );
@@ -351,6 +398,8 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   Future<void> setThemeId(String themeId) async {
     state = state.copyWith(themeId: themeId);
     await _prefs.setString(_themeIdKey, themeId);
+    // 「跟随主题」的字体随主题变化
+    await syncFonts();
   }
 
   Future<void> setBlackEnabled(bool value) async {
@@ -451,14 +500,53 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     );
   }
 
-  Future<void> setFontFamily(AppFontFamily fontFamily) async {
-    state = state.copyWith(fontFamily: fontFamily);
-    switch (fontFamily) {
-      case AppFontFamily.miSans:
-        await _prefs.setString(_fontFamilyKey, 'miSans');
-      case AppFontFamily.system:
-        await _prefs.setString(_fontFamilyKey, 'system');
+  Future<void> setBodyFont(String choice) async {
+    state = state.copyWith(bodyFont: choice);
+    await _prefs.setString(_fontBodyKey, choice);
+    await syncFonts();
+  }
+
+  Future<void> setMonoFont(String choice) async {
+    state = state.copyWith(monoFont: choice);
+    await _prefs.setString(_fontMonoKey, choice);
+    await syncFonts();
+  }
+
+  /// 把当前生效、已下载的字体注册给引擎并刷新主题（下载完成、切换主题
+  /// 或字体选择时调用）。
+  Future<void> syncFonts() async {
+    final loaded = {...state.loadedFonts};
+    final wanted = {state.effectiveBodyFontId, state.effectiveMonoFontId};
+    for (final id in wanted.nonNulls) {
+      final entry = FontCatalog.byId(id);
+      if (entry == null || loaded.contains(id)) continue;
+      if (await FontDownloadService.instance.register(entry)) loaded.add(id);
     }
+    if (mounted && loaded.length != state.loadedFonts.length) {
+      state = state.copyWith(loadedFonts: loaded);
+    }
+  }
+
+  /// 冷启动在 runApp 前注册已选字体，避免首帧先用系统字体再切换。
+  static Future<void> preloadFonts(SharedPreferences prefs) async {
+    final state = _loadTheme(prefs);
+    final watch = Stopwatch()..start();
+    for (final id in {
+      state.effectiveBodyFontId,
+      state.effectiveMonoFontId,
+    }.nonNulls) {
+      final entry = FontCatalog.byId(id);
+      if (entry != null) await FontDownloadService.instance.register(entry);
+    }
+    if (watch.elapsedMilliseconds > 0) {
+      debugPrint('[Fonts] 启动注册字体耗时 ${watch.elapsedMilliseconds}ms');
+    }
+  }
+
+  @override
+  void dispose() {
+    _fontInstalledSub?.cancel();
+    super.dispose();
   }
 }
 

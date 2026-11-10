@@ -61,7 +61,10 @@ import 'services/network/vpn_auto_toggle_service.dart';
 import 'services/network/doh_proxy/proxy_certificate.dart';
 import 'services/cf_challenge_logger.dart';
 import 'services/browser_trust_coordinator.dart';
+import 'services/fonts/font_catalog.dart';
+import 'services/fonts/font_download_service.dart';
 import 'services/update_service.dart';
+import 'widgets/fonts/font_migration_dialog.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
@@ -298,6 +301,8 @@ Future<void> main() async {
     TimeUtils.initialize(),
     // 内置固定配色主题（JSON 资产），需在 themeProvider 首次读取前就绪
     ThemeRegistry.loadBuiltins(),
+    // 可下载字体目录（随包内置），字体注册依赖它
+    FontCatalog.load(),
     // 把 compat polyfill asset 读到内存，让 WebView 同步 getter 直接拿。
     // 失败不阻塞启动，仅影响老 WebView 兼容性。
     WebViewSettings.preloadPolyfill(),
@@ -310,6 +315,9 @@ Future<void> main() async {
   final results = await Future.wait(futures);
   final prefs = results[0] as SharedPreferences;
   await AuthIssueNoticeService.instance.initialize(prefs);
+  // 已下载字体：扫描安装目录，并在首帧前注册已选字体，避免先闪系统字体
+  await FontDownloadService.instance.initialize(prefs);
+  await ThemeNotifier.preloadFonts(prefs);
 
   // release 下按设置开关启用性能监控(debug/profile 已在上方无条件启用)
   if (kReleaseMode && (prefs.getBool(FrameJankMonitor.prefKey) ?? false)) {
@@ -1317,6 +1325,10 @@ class _MainPageState extends ConsumerState<MainPage>
   Future<void> _runStartupUiTasks() async {
     // 启动弹窗先于剪贴板提示，避免 SnackBar 被弹窗遮挡后仍被记为已提示。
     await _autoCheckUpdate();
+    if (!mounted) return;
+
+    // MiSans 已移出安装包：旧版选了它的用户引导下载（只弹一次）
+    await FontMigrationPrompt.maybeShow(context, ref);
     if (!mounted) return;
 
     // 一次性数据收集告知（仅 Android）

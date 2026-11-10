@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "fonts": [
+    {
+      "id": "misans",
+      "family": "MiSans",
+      "slot": "body",
+      "name": {
+        "zh": "MiSans",
+        "en": "MiSans"
+      },
+      "license": "MiSans 字体知识产权许可协议",
+      "package": "@fontpkg/mi-sans-vf",
+      "version": "4.3.0",
+      "file": "MiSans VF.ttf",
+      "size": 20000736,
+      "sha256": "5daf8d5447bfd423cfdec94a0e07c53b205892223ccc6ea21b7b8a37248b44d9",
+      "tarball": {
+        "size": 14381462,
+        "integrity": "sha512-t3idW4H4S+/5uIX3aJsuzKIovaCGmUHkiQYmF4vOVjqOmiE0VxmilM71CIDOXchCWvgB7FyTBZRhHJFYIOvyIQ=="
+      }
+    },
+    {
+      "id": "lxgw-wenkai",
+      "family": "LXGW WenKai",
+      "slot": "body",
+      "name": {
+        "zh": "霞鹜文楷",
+        "zh_HK": "霞鶩文楷",
+        "zh_TW": "霞鶩文楷",
+        "en": "LXGW WenKai"
+      },
+      "license": "OFL-1.1",
+      "package": "@fontpkg/lxgw-wen-kai",
+      "version": "1.520.0",
+      "file": "LXGWWenKai-Regular.ttf",
+      "size": 24744500,
+      "sha256": "8d6ba638ac9553413354cfaab97637c1cd778444e259441ea1e5f8fb2c697fba",
+      "tarball": {
+        "size": 38466627,
+        "integrity": "sha512-IPLyfVTKz0sjgU6mMRmjxLBRZo7lgG2xVg1Aha2gPv5wp66M/Gvv2W7sHEDaEgv6zAO63xFtRuvxviInJBKWOg=="
+      }
+    },
+    {
+      "id": "lxgw-neoxihei",
+      "family": "LXGW Neo XiHei",
+      "slot": "body",
+      "name": {
+        "zh": "霞鹜新晰黑",
+        "zh_HK": "霞鶩新晰黑",
+        "zh_TW": "霞鶩新晰黑",
+        "en": "LXGW Neo XiHei"
+      },
+      "license": "IPA-1.0",
+      "package": "@fontpkg/lxgw-neo-xi-hei",
+      "version": "1.110.0",
+      "file": "LXGWNeoXiHei.ttf",
+      "size": 5470824,
+      "sha256": "e8a78acfc94904273fb1ce690a44b6992c0c010f17a700c83028d26d55eec87e",
+      "tarball": {
+        "size": 3465616,
+        "integrity": "sha512-9p4qzVfXEq2O9DDbAxw0OTeYIqtVE+NEl8RrHPDq74WaY6JcyE7Xb1vZz2OucBMMdC0rmb11En5Laz6uKIv5Sw=="
+      }
+    },
+    {
+      "id": "source-han-serif",
+      "family": "Source Han Serif SC",
+      "slot": "body",
+      "name": {
+        "zh": "思源宋体",
+        "zh_HK": "思源宋體",
+        "zh_TW": "思源宋體",
+        "en": "Source Han Serif"
+      },
+      "license": "OFL-1.1",
+      "package": "@fontpkg/source-han-serif-sc-vf",
+      "version": "2.3.3",
+      "file": "SourceHanSerifSC-VF.ttf",
+      "size": 59925144,
+      "sha256": "78b3620b612554d6811ede71614ea100e5af4cd7a4ca26c570704061f8b176a9",
+      "tarball": {
+        "size": 53329814,
+        "integrity": "sha512-7j+QQH/uP/pr+uXGxK67nztE2U633hxxkuqk25DA+NOPnvaBKFFxQeyKAmTY/HY6nWEHeagQc07UxYfgocbLCQ=="
+      }
+    },
+    {
+      "id": "firacode",
+      "family": "FiraCode",
+      "slot": "mono",
+      "name": {
+        "zh": "Fira Code",
+        "en": "Fira Code"
+      },
+      "license": "OFL-1.1",
+      "package": "firacode",
+      "version": "6.2.0",
+      "file": "distr/variable_ttf/FiraCode-VF.ttf",
+      "size": 286320,
+      "sha256": "04149681350f161aca538858b88d17443c586cacca83c165939a13423fe91a26",
+      "tarball": {
+        "size": 2457000,
+        "integrity": "sha512-t5R3aO2BmhRXnYtKXbImLVNsILuCIbJ/XlDzBufjpi3il8P/CVdpWco83Ud3r2Tl0gitAmyP4o1fbJ52ozV1jw=="
+      }
+    }
+  ]
+}

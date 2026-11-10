@@ -36,6 +36,81 @@
   "appearance_emojiStyleStandard": "标准",
   "appearance_font": "字体",
   "appearance_fontSystem": "系统默认",
+  "appearance_fontBody": "正文字体",
+  "appearance_fontMono": "等宽字体",
+  "appearance_fontFollowTheme": "跟随主题",
+  "appearance_fontThemeSuggests": "主题推荐：{name}",
+  "@appearance_fontThemeSuggests": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontThemeNone": "主题未指定，使用系统字体",
+  "appearance_fontMonoSystem": "系统等宽",
+  "appearance_fontNotDownloaded": "未下载 · {size}",
+  "@appearance_fontNotDownloaded": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontQueued": "等待下载",
+  "appearance_fontDownloading": "下载中 {percent}%",
+  "@appearance_fontDownloading": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontVerifying": "校验中…",
+  "appearance_fontReady": "已就绪 · {size}",
+  "@appearance_fontReady": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontDownload": "下载",
+  "appearance_fontDelete": "删除字体",
+  "appearance_fontCancel": "取消下载",
+  "appearance_fontRetry": "重试",
+  "appearance_fontNetworkError": "网络连接失败",
+  "appearance_fontCorrupted": "下载内容校验失败",
+  "appearance_fontInvalidSource": "自定义镜像地址无效",
+  "appearance_fontStorageError": "无法写入本地存储",
+  "appearance_fontPinnedSourceFailed": "指定的下载源不可用，可改用「自动」重试",
+  "appearance_fontSource": "字体下载源",
+  "appearance_fontSourceAuto": "自动（测速选最快）",
+  "appearance_fontSourceNpmmirror": "npmmirror（国内推荐）",
+  "appearance_fontSourceCustom": "自定义镜像",
+  "appearance_fontSourceCustomHint": "镜像地址模板，需包含包名、版本与文件路径占位",
+  "appearance_fontSourceTest": "测速",
+  "appearance_fontSourceUnreachable": "不可达",
+  "appearance_fontChangeSource": "换源",
+  "appearance_fontMigrationTitle": "需要下载 MiSans 字体",
+  "appearance_fontMigrationBody": "MiSans 不再随安装包内置。下载后（约 {size}）即可继续使用，下载完成前暂用系统字体。",
+  "@appearance_fontMigrationBody": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_fontMigrationLater": "先用系统字体",
+  "appearance_fontMigrationBackground": "后台下载",
+  "appearance_fontReadyToast": "{name} 已就绪",
+  "@appearance_fontReadyToast": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "appearance_glass": "玻璃效果",
   "appearance_glassEnabled": "启用玻璃效果",
   "appearance_glassScope": "统一控制底栏与编辑工具岛的玻璃效果，不影响顶栏、弹窗模糊或壁纸模糊。关闭后使用实色表面。",

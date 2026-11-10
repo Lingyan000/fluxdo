@@ -1,4 +1,5 @@
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,4 +69,60 @@ void main() {
     expect(prefs.getString('theme_id'), ThemeRegistry.materialId);
     expect(notifier.state.themeId, ThemeRegistry.materialId);
   });
+
+  group('字体选择迁移', () {
+    test('旧版选了 MiSans 迁移为下载版 MiSans', () async {
+      final notifier = await load({'font_family': 'miSans'});
+      expect(notifier.state.bodyFont, 'misans');
+      expect(notifier.state.effectiveBodyFontId, 'misans');
+      // 未下载未注册时回退系统字体
+      expect(notifier.state.fontFamilyName, isNull);
+    });
+
+    test('旧版明确选了系统字体保持系统字体', () async {
+      final notifier = await load({'font_family': 'system'});
+      expect(notifier.state.bodyFont, FontChoice.system);
+    });
+
+    test('未设置过默认跟随主题，取主题推荐', () async {
+      ThemeRegistry.setFixed([
+        ThemeSpec.fromJson({
+          'id': 'p',
+          'kind': 'fixed',
+          'font': {'body': 'lxgw-wenkai', 'mono': 'firacode'},
+          'light': _side,
+          'dark': _side,
+          'accents': [
+            {'id': 'a', 'light': '#1E66F5', 'dark': '#89B4FA'},
+          ],
+        }),
+      ]);
+      addTearDown(() => ThemeRegistry.setFixed(const []));
+      final notifier = await load({'theme_id': 'p'});
+      expect(notifier.state.bodyFont, FontChoice.follow);
+      expect(notifier.state.effectiveBodyFontId, 'lxgw-wenkai');
+      expect(notifier.state.effectiveMonoFontId, 'firacode');
+
+      await notifier.setBodyFont(FontChoice.system);
+      expect(notifier.state.effectiveBodyFontId, isNull);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('font_body'), FontChoice.system);
+    });
+  });
 }
+
+const _side = {
+  'bg': '#FFFFFF',
+  'fg': '#000000',
+  'fgMuted': '#444444',
+  'border': '#DDDDDD',
+  'hues': {
+    'red': '#D20F39',
+    'orange': '#FE640B',
+    'yellow': '#DF8E1D',
+    'green': '#40A02B',
+    'cyan': '#04A5E5',
+    'blue': '#1E66F5',
+    'purple': '#8839EF',
+  },
+};

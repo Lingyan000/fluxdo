@@ -10,6 +10,7 @@
   "group": "reading",
   "order": 200,
   "shape": "compact",
+  "font": {"body": "lxgw-wenkai"},
   "supportsPureBlack": false,
   "allowCustomAccent": true,
   "light": {

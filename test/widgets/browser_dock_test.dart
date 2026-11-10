@@ -14,6 +14,8 @@ import 'package:fluxdo/widgets/browser/browser_tab_overview.dart';
 import 'package:fluxdo/widgets/browser/browser_page_route.dart';
 import 'package:fluxdo/widgets/browser/browser_dock_motion.dart';
 
+import '../helpers/preview_fonts.dart';
+
 class _ExternalTab extends BrowserTabSession {
   _ExternalTab() : super(url: 'about:blank', title: '外部会话');
 }
@@ -384,9 +386,7 @@ void main() {
 
   testWidgets('多页概览明暗主题与窄屏预览', (tester) async {
     if (!const bool.fromEnvironment('BROWSER_PREVIEW')) return;
-    await (FontLoader(
-      'MiSans',
-    )..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'))).load();
+    await loadPreviewCjkFont();
     final fontManifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
     for (final entry in fontManifest) {

@@ -10,6 +10,7 @@
   "group": "terminal",
   "order": 300,
   "shape": "sharp",
+  "font": {"mono": "firacode"},
   "supportsPureBlack": true,
   "allowCustomAccent": true,
   "light": {
