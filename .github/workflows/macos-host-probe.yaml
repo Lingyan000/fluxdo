@@ -20,7 +20,8 @@ jobs:
         run: |
           mkdir -p build/mac-probe
           PROBE_ROOT="$PWD"
-          openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' 2>/dev/null
+          echo '127.0.0.1 community.miniapp-probe.test' | sudo tee -a /etc/hosts
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=community.miniapp-probe.test' -addext 'subjectAltName=DNS:community.miniapp-probe.test,IP:127.0.0.1' 2>/dev/null
           python3 tool/mac_host_probe/server.py > build/mac-probe/server.log 2>&1 &
           SERVER_PID=$!
           trap 'cat "$PROBE_ROOT/build/mac-probe/server.log"; kill "$SERVER_PID" 2>/dev/null || true' EXIT

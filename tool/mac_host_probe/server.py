@@ -6,7 +6,7 @@ import ssl
 import hashlib
 
 app_id = "01a1b02d-04ed-7342-baa5-769b244b7b9a"
-origin = "https://localhost:8765"
+origin = "https://community.miniapp-probe.test:8765"
 entry = origin + "/apps/" + app_id + "?embed_mode=true&room=42#invite"
 hash_value = "a" * 64
 assets = {key: "/plugins/discourse-mini-app/runtime/" + stem + "-" + hash_value + "." + ext for key, stem, ext in [

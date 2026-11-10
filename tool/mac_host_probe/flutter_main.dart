@@ -11,7 +11,7 @@ import 'mini_app_lightweight_host.dart';
 import 'mini_app_url.dart';
 
 const id = '01a1b02d-04ed-7342-baa5-769b244b7b9a';
-final entry = Uri.parse('https://localhost:8765/apps/$id?embed_mode=true&room=42#invite');
+final entry = Uri.parse('https://community.miniapp-probe.test:8765/apps/$id?embed_mode=true&room=42#invite');
 late final String html, compat;
 void report(String event, Object? value) => print(jsonEncode({'event': event, 'value': value}));
 Future<void> main() async {
@@ -55,7 +55,7 @@ class Probe extends StatelessWidget {
     onLoadStop:(c,u) async {report('flutter-stop',u.toString());await c.injectCSSCode(source:MiniAppHostAdapter.css);},
     onReceivedError:(c,r,e)=>report('flutter-error',{'type':e.type.toString(),'description':e.description,'main':r.isForMainFrame}),
     onConsoleMessage:(c,m)=>report('flutter-console',m.message),
-    onReceivedServerTrustAuthRequest:(c,challenge) async => challenge.protectionSpace.host=='localhost'?ServerTrustAuthResponse(action:ServerTrustAuthResponseAction.PROCEED):null,
+    onReceivedServerTrustAuthRequest:(c,challenge) async => challenge.protectionSpace.host=='community.miniapp-probe.test'?ServerTrustAuthResponse(action:ServerTrustAuthResponseAction.PROCEED):null,
     shouldOverrideUrlLoading:(c,a) async {
       final uri=a.request.url;
       var allow=uri==null;

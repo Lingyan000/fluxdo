@@ -8,7 +8,7 @@ final class Probe: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     var index = 0
     var finished = false
     let modes = ["loadData", "loadSimulatedRequest", "loadRequest"]
-    let entry = URL(string: "https://localhost:8765/apps/01a1b02d-04ed-7342-baa5-769b244b7b9a?embed_mode=true&room=42#invite")!
+    let entry = URL(string: "https://community.miniapp-probe.test:8765/apps/01a1b02d-04ed-7342-baa5-769b244b7b9a?embed_mode=true&room=42#invite")!
 
     func record(_ fields: [String: Any]) {
         let data = try! JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
@@ -31,7 +31,7 @@ final class Probe: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         window = NSWindow(contentRect: webView.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = webView
         window.orderFront(nil)
-        let cookie = HTTPCookie(properties: [.domain: "localhost", .path: "/", .name: "probe_session", .value: "synthetic", .secure: "TRUE", .sameSitePolicy: HTTPCookieStringPolicy.sameSiteLax])!
+        let cookie = HTTPCookie(properties: [.domain: "community.miniapp-probe.test", .path: "/", .name: "probe_session", .value: "synthetic", .secure: "TRUE", .sameSitePolicy: HTTPCookieStringPolicy.sameSiteLax])!
         configuration.websiteDataStore.httpCookieStore.setCookie(cookie) {
             let html = try! Data(contentsOf: URL(fileURLWithPath: "build/mac-probe/host.html"))
             self.record(["mode": self.modes[self.index], "event": "start", "os": ProcessInfo.processInfo.operatingSystemVersionString])
@@ -57,7 +57,7 @@ final class Probe: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     }
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         // Accept only this disposable loopback fixture certificate.
-        if challenge.protectionSpace.host == "localhost", let trust = challenge.protectionSpace.serverTrust {
+        if challenge.protectionSpace.host == "community.miniapp-probe.test", let trust = challenge.protectionSpace.serverTrust {
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else { completionHandler(.performDefaultHandling, nil) }
     }
