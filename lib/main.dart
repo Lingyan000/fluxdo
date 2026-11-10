@@ -283,7 +283,7 @@ Future<void> main() async {
   // 阶段 1：并行执行所有不相互依赖的初始化
   final futures = <Future<dynamic>>[
     SharedPreferences.getInstance(),
-    AppConstants.initUserAgent(),
+    if (!Platform.isWindows) AppConstants.initUserAgent(),
     LogWriter.init(),
     ProxyCertificate.initialize(),
     // Windows 深链协议注册(discourse:// / fluxdo://):写 HKCU 免管理员,
@@ -406,6 +406,7 @@ Future<void> main() async {
   // 早就 complete 了,创建时直接读到确定值,不用再赌超时。
   if (Platform.isWindows) {
     await WindowsWebViewEnvironmentService.instance.initialize();
+    await AppConstants.initUserAgent();
   }
   VpnAutoToggleService.instance.initialize(prefs);
   try {

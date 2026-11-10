@@ -64,6 +64,16 @@ void InAppWebViewManager::HandleMethodCall(FlMethodChannel* channel, FlMethodCal
 void InAppWebViewManager::HandleMethodCallImpl(FlMethodCall* method_call) {
   const gchar* method = fl_method_call_get_name(method_call);
 
+  if (strcmp(method, "getDefaultUserAgent") == 0) {
+    // 默认设置即可生成 UA，无需创建页面、渲染器或导航。
+    WebKitSettings* settings = webkit_settings_new();
+    const gchar* user_agent = webkit_settings_get_user_agent(settings);
+    g_autoptr(FlValue) result = fl_value_new_string(user_agent ? user_agent : "");
+    fl_method_call_respond_success(method_call, result, nullptr);
+    g_object_unref(settings);
+    return;
+  }
+
   if (strcmp(method, "createInAppWebView") == 0) {
     CreateInAppWebView(method_call);
     return;

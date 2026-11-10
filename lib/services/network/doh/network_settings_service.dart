@@ -459,6 +459,9 @@ class NetworkSettingsService {
       }
 
       final fingerprintCachePath = await _fingerprintCachePath();
+      final fingerprintUserAgent = Platform.isWindows
+          ? AppConstants.initializedUserAgent
+          : await AppConstants.getUserAgent();
       final started = await _coreService.start(
         NetCoreConfig(
           bindPort:
@@ -480,7 +483,9 @@ class NetworkSettingsService {
           http3CachePath: fingerprintCachePath == null
               ? null
               : '${File(fingerprintCachePath).parent.path}/http3_services.json',
-          fingerprintUserAgent: await AppConstants.getUserAgent(),
+          // Windows 的 UA 读取需要本次代理对应的 Environment。
+          // 核心先启动并确定代理地址，随后由现有采样流程核对真实 UA。
+          fingerprintUserAgent: fingerprintUserAgent,
           fingerprintPreset:
               current.fingerprintPreset == FingerprintPreset.automatic
               ? null
@@ -516,7 +521,14 @@ class NetworkSettingsService {
       // 直连模式下 WebView 不经过核心，指纹只能靠探针采样
       if (port != null &&
           current.fingerprintPreset == FingerprintPreset.automatic) {
-        unawaited(FingerprintTemplateService.instance.ensure(port));
+        final validation = FingerprintTemplateService.instance.ensure(port);
+        if (Platform.isWindows && fingerprintUserAgent == null) {
+          // 首次启动先确定代理，再获取真实 UA 并核对已有模板。
+          // 复用同一个采样任务，避免首个业务请求抢在版本校验前使用旧模板。
+          await validation;
+        } else {
+          unawaited(validation);
+        }
       }
     } finally {
       _applyDepth--;

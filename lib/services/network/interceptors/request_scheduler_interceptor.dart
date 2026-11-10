@@ -206,7 +206,9 @@ class RequestSchedulerInterceptor extends Interceptor {
       }
     }
 
+    final trustWait = Stopwatch()..start();
     await _waitForBrowserTrustIfNeeded(options);
+    options.extra['_browserTrustWaitMs'] = trustWait.elapsedMilliseconds;
 
     final state = _stateFor(options);
     final priority = _inferPriority(options);

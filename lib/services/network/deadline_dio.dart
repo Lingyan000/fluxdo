@@ -14,35 +14,55 @@ class DeadlineDio extends DioForNative {
   final Duration? defaultCallTimeout;
 
   static const _contextKey = '_logicalCallDeadline';
+  static const _timingKey = '_logicalCallTiming';
+
+  static int? elapsedMilliseconds(RequestOptions options) =>
+      (options.extra[_timingKey] as _CallTiming?)?.watch.elapsedMilliseconds;
+
+  static Duration? exceededDeadline(RequestOptions options) {
+    final context = options.extra[_contextKey];
+    return context is _CallDeadline && context.expired ? context.limit : null;
+  }
 
   @override
   Future<Response<T>> fetch<T>(RequestOptions requestOptions) async {
-    final inherited = requestOptions.extra[_contextKey];
-    if (inherited is _CallDeadline && !inherited.finished) {
-      inherited.throwIfCancelled(requestOptions);
-      return super.fetch<T>(requestOptions);
+    final previous = requestOptions.extra[_timingKey] as _CallTiming?;
+    final ownsTiming = previous == null || previous.finished;
+    final timing = ownsTiming ? _CallTiming() : previous;
+    requestOptions.extra[_timingKey] = timing;
+    try {
+      final inherited = requestOptions.extra[_contextKey];
+      if (inherited is _CallDeadline && !inherited.finished) {
+        inherited.throwIfCancelled(requestOptions);
+        return await super.fetch<T>(requestOptions);
+      }
+      final override = requestOptions.spec.callTimeout;
+      final ordinaryRead = const {
+        'GET',
+        'HEAD',
+        'OPTIONS',
+      }.contains(requestOptions.method.toUpperCase());
+      final limit =
+          override ??
+          (ordinaryRead &&
+                  requestOptions.responseType != ResponseType.stream &&
+                  !requestOptions.spec.recoveryDisabled
+              ? defaultCallTimeout
+              : null);
+      if (limit == null || limit <= Duration.zero) {
+        return await super.fetch<T>(requestOptions);
+      }
+      return await withDeadline(
+        requestOptions,
+        limit,
+        (options) => super.fetch<T>(options),
+      );
+    } finally {
+      if (ownsTiming) {
+        timing.finished = true;
+        timing.watch.stop();
+      }
     }
-    final override = requestOptions.spec.callTimeout;
-    final ordinaryRead = const {
-      'GET',
-      'HEAD',
-      'OPTIONS',
-    }.contains(requestOptions.method.toUpperCase());
-    final limit =
-        override ??
-        (ordinaryRead &&
-                requestOptions.responseType != ResponseType.stream &&
-                !requestOptions.spec.recoveryDisabled
-            ? defaultCallTimeout
-            : null);
-    if (limit == null || limit <= Duration.zero) {
-      return super.fetch<T>(requestOptions);
-    }
-    return withDeadline(
-      requestOptions,
-      limit,
-      (options) => super.fetch<T>(options),
-    );
   }
 
   /// 下载队列也可置于同一调用边界内；内部 fetch 继承上下文，不另起预算。
@@ -178,4 +198,9 @@ class _CallDeadline {
     finished = true;
     _timer.cancel();
   }
+}
+
+class _CallTiming {
+  final Stopwatch watch = Stopwatch()..start();
+  bool finished = false;
 }

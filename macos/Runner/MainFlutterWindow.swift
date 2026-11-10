@@ -183,6 +183,25 @@ class MainFlutterWindow: NSWindow {
       // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.4
       // 与 iOS AppDelegate.swift 实现一致 (WKHTTPCookieStore + HTTPCookieStorage.shared 跨 Apple 平台共享)
 
+      case "clearSharedAuthCookieCopies":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString),
+              let names = args["names"] as? [String] else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing cookie scope", details: nil))
+          return
+        }
+        let authNames = Set(names).intersection(["_t", "_forum_session"])
+        let host = (url.host ?? "").lowercased()
+        let storage = HTTPCookieStorage.shared
+        for cookie in storage.cookies ?? [] where authNames.contains(cookie.name) {
+          let domain = (cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain).lowercased()
+          if host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)) {
+            storage.deleteCookie(cookie)
+          }
+        }
+        result(nil)
+
       case "nukeAllVariants":
         guard let args = call.arguments as? [String: Any],
               let urlString = args["url"] as? String,
@@ -344,7 +363,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       CookieStoreObserverHandler.shared.beginInternalWrite()
@@ -368,7 +387,7 @@ class MainFlutterWindow: NSWindow {
           let cookieDomain = (cookie.domain.hasPrefix(".")
             ? String(cookie.domain.dropFirst())
             : cookie.domain).lowercased()
-          if host == cookieDomain || host.hasSuffix("." + cookieDomain) {
+          if host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain)) {
             storage.deleteCookie(cookie)
           }
         }
@@ -435,7 +454,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       let infos: [[String: Any?]] = applicable.map { cookie in
@@ -467,7 +486,7 @@ class MainFlutterWindow: NSWindow {
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }.count
 
       DispatchQueue.main.async {

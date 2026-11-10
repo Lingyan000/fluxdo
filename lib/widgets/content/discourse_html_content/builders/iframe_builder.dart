@@ -16,6 +16,9 @@ import '../../../../services/navigation/app_route_observer.dart';
 import '../../../../services/embedded_browser_controller_pool.dart';
 import '../../../../services/dynamic_content_suspension_service.dart';
 import '../../../../services/webview_settings.dart';
+import '../../../../services/auth_session.dart';
+import '../../../../services/network/cookie/cookie_jar_service.dart';
+import '../../../../services/network/cookie/webview_cookie_priming.dart';
 import '../../../../services/windows_webview_environment_service.dart';
 
 /// 是否需要交互遮罩（macOS 上 WebView 会捕获滚动事件）
@@ -153,6 +156,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   bool _hasError = false;
   bool _didLockLayout = false;
   bool _webViewActivated = false;
+  int _webViewEpoch = 0;
   EmbeddedBrowserLease? _browserLease;
 
   /// 桌面平台：是否进入交互模式
@@ -228,6 +232,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
 
   void _deactivateWindowsWebView() {
     if (!mounted || !_webViewActivated) return;
+    _webViewEpoch++;
     // release() 幂等:onRevoked 路径 pool 已释放,重复调用无害;
     // 挂起路径(_handleDynamicContentSuspension)必须在此归还,否则槽位泄漏。
     _browserLease?.release();
@@ -304,6 +309,9 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
   @override
   Widget build(BuildContext context) {
     final attrs = widget.attributes;
+    final requiresCookieSync = CookieJarService.matchesAppHost(
+      Uri.tryParse(attrs.fullUrl)?.host,
+    );
     final theme = Theme.of(context);
     final deferWindowsWebView =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
@@ -320,17 +328,43 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
             Offstage(
               offstage: _routeOverlayed,
               child: InAppWebView(
+                key: ValueKey(attrs.fullUrl),
                 webViewEnvironment: deferWindowsWebView
                     ? WindowsWebViewEnvironmentService.instance.environment
                     : null,
-                initialUrlRequest: URLRequest(
-                  url: WebUri(attrs.fullUrl),
-                  headers: {'Referer': AppConstants.baseUrl},
-                ),
+                initialUrlRequest: requiresCookieSync
+                    ? null
+                    : URLRequest(
+                        url: WebUri(attrs.fullUrl),
+                        headers: {'Referer': AppConstants.baseUrl},
+                      ),
                 initialSettings: _buildSettings(attrs),
                 initialUserScripts: WebViewSettings.compatPolyfillScripts,
-                onWebViewCreated: (controller) {
+                onWebViewCreated: (controller) async {
+                  final epoch = ++_webViewEpoch;
                   WebViewSettings.registerJsErrorReporter(controller);
+                  if (!requiresCookieSync) return;
+                  final generation = AuthSession().generation;
+                  try {
+                    await WebViewCookiePriming.instance.prime(attrs.fullUrl);
+                    if (!mounted ||
+                        epoch != _webViewEpoch ||
+                        widget.attributes.fullUrl != attrs.fullUrl ||
+                        !AuthSession().isValid(generation)) {
+                      return;
+                    }
+                    await controller.loadUrl(
+                      urlRequest: URLRequest(
+                        url: WebUri(attrs.fullUrl),
+                        headers: {'Referer': AppConstants.baseUrl},
+                      ),
+                    );
+                  } catch (error) {
+                    debugPrint('[Iframe] Cookie 准备或页面导航失败: $error');
+                    if (mounted && epoch == _webViewEpoch) {
+                      setState(() => _hasError = true);
+                    }
+                  }
                 },
                 onReceivedServerTrustAuthRequest: (_, challenge) =>
                     WebViewSettings.handleServerTrustAuthRequest(challenge),

@@ -9,13 +9,20 @@ import '../../auth_session.dart';
 import '../../log/log_writer.dart';
 import '../flux_request_spec.dart';
 import 'cookie_jar_service.dart';
-import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
 
 /// App-specific CookieManager.
 /// Avoids saving Set-Cookie into redirect target domains by default.
 class AppCookieManager extends Interceptor {
-  AppCookieManager(this.cookieJar, {this.saveRedirectedCookies = false});
+  AppCookieManager(
+    this.cookieJar, {
+    this.saveRedirectedCookies = false,
+    void Function(String, Iterable<String>)? scheduleWebViewSync,
+  }) : _scheduleWebViewSync =
+           scheduleWebViewSync ??
+           SessionCookieSentinel.instance.scheduleSyncFromJar;
+
+  final void Function(String, Iterable<String>) _scheduleWebViewSync;
 
   /// The cookie jar used to load and save cookies.
   final CookieJar cookieJar;
@@ -103,15 +110,6 @@ class AppCookieManager extends Interceptor {
     if (!identical(cookieJar, service.cookieJar)) return;
 
     await service.enforceAuthCookiePolicy(reason: reason, names: authNames);
-  }
-
-  Future<String?> _canonicalAuthSetCookieHeaderIfManaged(String name) async {
-    if (!CookieJarService.hostOnlyCookieNames.contains(name)) return null;
-    final service = CookieJarService();
-    if (!service.isInitialized) return null;
-    if (!identical(cookieJar, service.cookieJar)) return null;
-    final canonical = await service.getCanonicalCookie(name);
-    return canonical?.toSetCookieHeader();
   }
 
   /// Select cookies for a request.
@@ -657,6 +655,10 @@ class AppCookieManager extends Interceptor {
       headersToSaveToJar.add(filteredSetCookieHeaders[i]);
     }
 
+    if (requestGeneration != null &&
+        !AuthSession().isValid(requestGeneration)) {
+      return;
+    }
     if (cookiesToSaveToJar.isNotEmpty) {
       if (enhancedJar != null) {
         // dio 响应的 Set-Cookie 是服务器直发的权威值，标记 trusted 让它升 version，
@@ -669,6 +671,10 @@ class AppCookieManager extends Interceptor {
       } else {
         await cookieJar.saveFromResponse(resolvedUri, cookiesToSaveToJar);
       }
+    }
+    if (requestGeneration != null &&
+        !AuthSession().isValid(requestGeneration)) {
+      return;
     }
     final authIntents = _finalAuthCookieIntents(cookiesToSaveToJar);
     await _deleteAuthCookieVariantsIfManaged(
@@ -691,43 +697,38 @@ class AppCookieManager extends Interceptor {
       );
     }
 
-    // dio→WebView 增量同步（仅路径 A）：critical cookie 的新值立即推 WebView。
-    // 破除 "WV 只有 1 份旧值 → sweep ensureUnique 直接 noop 不更新" 的死角，
-    // 避免必须重启 priming 才同步（用户反馈的 dio→WV 不及时）。删除指令交给
-    // 下面的 sweep delete 处理。
-    if (!isPathB) {
-      for (var i = 0; i < filteredCookies.length; i++) {
-        final cookie = filteredCookies[i];
-        if (!criticalNames.contains(cookie.name)) continue;
-        // cf_clearance 只在 WebView 中由 CF 更新,Dio 侧永远不产新值——
-        // 绝不从 Dio 侧回推它到 WebView(会丢 Partitioned 造非分区副本)。
-        if (cookie.name == 'cf_clearance') continue;
-        if (_intentForCookie(cookie) == SweepIntent.delete) continue;
-        final rawSetCookie =
-            await _canonicalAuthSetCookieHeaderIfManaged(cookie.name) ??
-            filteredSetCookieHeaders[i];
-        await RawCookieWriter.instance.setRawCookie(
-          resolvedUri.toString(),
-          rawSetCookie,
-          writeSharedStorage: cookie.name != 'cf_clearance',
-        );
-      }
+    if (requestGeneration != null &&
+        !AuthSession().isValid(requestGeneration)) {
+      return;
     }
-
-    // 对响应里 *所有* cookie 触发 sweep (不再按 critical 过滤):
-    // - 路径 A: sweep 内部从 jar 读 winner 写 WV (保证两端一致)
-    // - 路径 B: sweep 内部从 WV 读 winner 反向写 jar (WV 已自写)
-    // 全量 sweep 是为了不漏掉新业务 cookie (如 LDC/CDK 等)。
-    // 同步等所有 sweep 完成,保证 next handler 时两端一致。
-    if (filteredCookies.isNotEmpty) {
-      final sweepFutures = filteredCookies.map((cookie) {
-        return SessionCookieSentinel.instance.sweep(
-          resolvedUri.toString(),
-          cookie.name,
-          intent: _intentForCookie(cookie),
-        );
-      }).toList();
-      await Future.wait(sweepFutures);
+    if (!isPathB) {
+      // 客户端凭证已持久化。浏览器回写合并执行，WebView 入口由 priming
+      // 验证就绪，原生 HTTP 的完成不再等待 WebKit 的原生回调。
+      final changes = <String, Set<String>>{};
+      for (final cookie in filteredCookies) {
+        // 读取/删除必须覆盖 Set-Cookie 自己的 Path，响应 URL 可能在另一目录。
+        final cookiePath = cookie.path;
+        final target = cookiePath != null && cookiePath.startsWith('/')
+            ? resolvedUri.replace(path: cookiePath, query: '', fragment: '')
+            : resolvedUri.resolve('.').replace(query: '', fragment: '');
+        changes
+            .putIfAbsent(target.toString(), () => <String>{})
+            .add(cookie.name);
+      }
+      for (final change in changes.entries) {
+        _scheduleWebViewSync(change.key, change.value);
+      }
+    } else if (filteredCookies.isNotEmpty) {
+      // WebView 发起的请求保留浏览器到 jar 的同步语义。
+      await Future.wait(
+        filteredCookies.map(
+          (cookie) => SessionCookieSentinel.instance.sweep(
+            resolvedUri.toString(),
+            cookie.name,
+            intent: _intentForCookie(cookie),
+          ),
+        ),
+      );
     }
 
     // Optionally save cookies for redirected locations.

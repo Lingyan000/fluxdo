@@ -18,6 +18,9 @@ class NetworkLogInterceptor extends Interceptor {
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
     options.extra['attemptId'] = LogPolicy.newTraceId();
+    options.extra['_networkLog_preRequestMs'] = DeadlineDio.elapsedMilliseconds(
+      options,
+    );
     options.extra[_startTimeKey] = Stopwatch()..start();
     handler.next(options);
   }
@@ -41,7 +44,9 @@ class NetworkLogInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    final deadlineExceeded = err.error is CallDeadlineExceeded;
+    final deadlineExceeded =
+        err.error is CallDeadlineExceeded ||
+        DeadlineDio.exceededDeadline(err.requestOptions) != null;
     if (err.requestOptions.spec.skipNetworkLog &&
         err.type == DioExceptionType.cancel &&
         !deadlineExceeded) {
@@ -102,6 +107,12 @@ class NetworkLogInterceptor extends Interceptor {
       'url': sanitizedUrl,
       'statusCode': statusCode,
       'duration': duration,
+      if (DeadlineDio.elapsedMilliseconds(options) case final int total)
+        'totalDurationMs': total,
+      if (options.extra['_networkLog_preRequestMs'] case final int before)
+        'preRequestMs': before,
+      if (options.extra['_browserTrustWaitMs'] case final int wait)
+        'browserTrustWaitMs': wait,
     };
     if (uri.path == '/topics/timings') {
       entry.addAll(_timingsDiagnostics(options));
@@ -144,12 +155,11 @@ class NetworkLogInterceptor extends Interceptor {
       entry['ttfbMs'] = connection['ttfbMs'];
     }
     if (error != null && error.type != DioExceptionType.badResponse) {
-      entry['errorType'] = error.error is CallDeadlineExceeded
-          ? 'call_deadline'
-          : error.type.name;
-      if (error.error case CallDeadlineExceeded(:final limit)) {
-        entry['callTimeoutMs'] = limit.inMilliseconds;
-      }
+      final limit = error.error is CallDeadlineExceeded
+          ? (error.error as CallDeadlineExceeded).limit
+          : DeadlineDio.exceededDeadline(options);
+      entry['errorType'] = limit != null ? 'call_deadline' : error.type.name;
+      if (limit != null) entry['callTimeoutMs'] = limit.inMilliseconds;
       final reason = error.error?.toString() ?? error.message;
       if (reason != null && reason.isNotEmpty) {
         entry['error'] = reason;

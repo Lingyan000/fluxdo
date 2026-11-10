@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'session_cookie_sentinel.dart';
+import 'raw_cookie_writer.dart';
 
 /// 监听 WV cookie store 的外部变化,触发 sweep。
 ///
@@ -27,6 +28,8 @@ class CookieStoreObserver {
   static const Duration _debounceWindow = Duration(milliseconds: 500);
 
   bool _attached = false;
+  bool _sweeping = false;
+  bool _dirty = false;
   Timer? _debounce;
   final Set<String> _knownUrls = {};
 
@@ -65,7 +68,7 @@ class CookieStoreObserver {
   /// 通常在 Priming 时调用 (priming 的 url 就是 WV 主域)。
   void registerUrl(String url) {
     if (url.isEmpty) return;
-    _knownUrls.add(url);
+    _knownUrls.add(Uri.parse(url).origin);
   }
 
   /// 仅测试用。
@@ -75,6 +78,8 @@ class CookieStoreObserver {
     _debounce = null;
     _knownUrls.clear();
     _attached = false;
+    _dirty = false;
+    _sweeping = false;
   }
 
   Future<dynamic> _handleNativeCall(MethodCall call) async {
@@ -85,11 +90,29 @@ class CookieStoreObserver {
   }
 
   void _onCookiesChanged() {
+    RawCookieWriter.instance.invalidateReads();
     _debounce?.cancel();
     _debounce = Timer(_debounceWindow, _doSweep);
   }
 
   Future<void> _doSweep() async {
+    if (_sweeping) {
+      _dirty = true;
+      return;
+    }
+    _sweeping = true;
+    try {
+      await _sweepKnownUrls();
+    } finally {
+      _sweeping = false;
+      if (_dirty) {
+        _dirty = false;
+        _onCookiesChanged();
+      }
+    }
+  }
+
+  Future<void> _sweepKnownUrls() async {
     final urls = _knownUrls.toList(growable: false);
     if (urls.isEmpty) return;
     debugPrint(
@@ -100,8 +123,7 @@ class CookieStoreObserver {
         final results = await SessionCookieSentinel.instance.sweepAll(url);
         final mismatch = results
             .where(
-              (r) => r.variantsBefore != r.variantsAfter ||
-                  r.variantsAfter > 1,
+              (r) => r.variantsBefore != r.variantsAfter || r.variantsAfter > 1,
             )
             .toList();
         if (mismatch.isNotEmpty) {

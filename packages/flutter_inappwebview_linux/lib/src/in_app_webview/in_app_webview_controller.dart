@@ -48,6 +48,12 @@ class LinuxInAppWebViewController extends PlatformInAppWebViewController
     with ChannelController {
   static final MethodChannel _staticChannel = IN_APP_WEBVIEW_STATIC_CHANNEL;
 
+  @override
+  Future<String> getDefaultUserAgent() async {
+    return await _staticChannel.invokeMethod<String>('getDefaultUserAgent') ??
+        '';
+  }
+
   // List of properties to be saved and restored for keep alive feature
   Map<String, Function> _javaScriptHandlersMap = HashMap<String, Function>();
   Map<UserScriptInjectionTime, List<UserScript>> _userScripts = {

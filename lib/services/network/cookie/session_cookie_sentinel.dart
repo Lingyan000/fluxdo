@@ -11,6 +11,8 @@ import 'cookie_jar_service.dart';
 import 'cookie_logger.dart';
 import 'raw_cookie_writer.dart';
 
+typedef _CookieSession = ({int generation, int cancellation});
+
 /// Cookie 变体清扫内核（"Sweep" 操作）。
 ///
 /// 核心职责：保证 WV 中每个 critical cookie name 的变体数 ≤ 1
@@ -64,8 +66,272 @@ class SessionCookieSentinel {
   final Map<String, DateTime> _lastSweptAt = {};
   final Map<String, int> _consecutiveLockTimeouts = {};
 
-  /// 登出时设为 true，所有 in-flight sweep 在下个 CHECK 点退出。
-  bool _globalCancelled = false;
+  /// 每次取消递增，原生操作晚于取消返回时仍能识别旧任务。
+  int _cancellationGeneration = 0;
+  final Set<Future<dynamic>> _operations = {};
+  final Map<(String, String), Future<void>> _pendingSync = {};
+  final Map<(String, String), (Set<String>, _CookieSession)> _dirtySync = {};
+
+  _CookieSession get _session =>
+      (generation: _auth.generation, cancellation: _cancellationGeneration);
+
+  Future<T> _exclusive<T>(String name, Future<T> Function() action) async {
+    final lock = _locks.putIfAbsent(name, () => Lock());
+    final operation = lock.synchronized(action, timeout: _lockTimeout);
+    _operations.add(operation);
+    try {
+      return await operation;
+    } finally {
+      _operations.remove(operation);
+    }
+  }
+
+  /// 清理账号数据前等待已经发出的原生操作归还，避免迟到写入恢复旧登录态。
+  Future<void> drain() async {
+    while (_operations.isNotEmpty || _pendingSync.isNotEmpty) {
+      await Future.wait(
+        [..._operations, ..._pendingSync.values].map(
+          (operation) => operation.then<void>(
+            (_) {},
+            onError: (Object _, StackTrace _) {},
+          ),
+        ),
+      );
+    }
+  }
+
+  /// 原生响应已经落入 jar 后，按站点和名称合并 WebView 回写。
+  /// 任务执行时读取最新 jar，同一名称最多保留一个在途任务和一次待处理更新。
+  void scheduleSyncFromJar(String url, Iterable<String> names) {
+    for (final name in names.toSet()) {
+      if (name == 'cf_clearance') continue;
+      final key = (Uri.parse(url).origin, name);
+      final session = _session;
+      final queued = _dirtySync[key];
+      final urls = queued?.$2 == session ? queued!.$1 : <String>{};
+      urls.add(url);
+      _dirtySync[key] = (urls, session);
+      if (_pendingSync.containsKey(key)) continue;
+      late final Future<void> pending;
+      pending =
+          Future<void>(() async {
+                while (_dirtySync.containsKey(key)) {
+                  final update = _dirtySync.remove(key)!;
+                  if (_isCancelled(update.$2)) continue;
+                  for (final targetUrl in update.$1) {
+                    if (_isCancelled(update.$2)) break;
+                    final result = await _syncFromJar(
+                      targetUrl,
+                      name,
+                      update.$2,
+                    );
+                    if (result.status == SweepStatus.failed) {
+                      CookieLogger.sweep(
+                        event: 'failed',
+                        url: targetUrl,
+                        name: name,
+                        intent: 'syncFromJar',
+                        elapsedMs: result.elapsed.inMilliseconds,
+                      );
+                    }
+                  }
+                }
+              })
+              .catchError((Object error, StackTrace stack) {
+                debugPrint('[Sentinel] 后台 Cookie 同步失败: $error');
+              })
+              .whenComplete(() {
+                if (identical(_pendingSync[key], pending)) {
+                  _pendingSync.remove(key);
+                  // 最后一次循环结束与 Future 收尾之间仍可能收到一次更新。
+                  final queued = _dirtySync.remove(key);
+                  if (queued != null && !_isCancelled(queued.$2)) {
+                    for (final targetUrl in queued.$1) {
+                      scheduleSyncFromJar(targetUrl, [name]);
+                    }
+                  }
+                }
+              });
+      _pendingSync[key] = pending;
+    }
+  }
+
+  Future<SweepResult> syncFromJar(String url, String name) =>
+      _syncFromJar(url, name, _session);
+
+  Future<SweepResult> _syncFromJar(
+    String url,
+    String name,
+    _CookieSession session,
+  ) async {
+    try {
+      return await _exclusive(
+        name,
+        () => _syncFromJarLocked(url, name, session),
+      );
+    } on TimeoutException {
+      return _handleLockTimeout(name);
+    }
+  }
+
+  /// 对齐整个名称的现存作用域，避免清理根路径时丢掉同名的路径 Cookie。
+  Future<List<CanonicalCookie>> _cookiesForHost(String url, String name) async {
+    final host = Uri.parse(url).host.toLowerCase();
+    final all = await _jar.loadAllCanonicalCookies();
+    return all
+        .where((cookie) {
+          if (cookie.name != name || cookie.value.isEmpty || cookie.isExpired) {
+            return false;
+          }
+          final domain = cookie.normalizedDomain ?? host;
+          return host == domain ||
+              (!cookie.hostOnly && host.endsWith('.$domain'));
+        })
+        .toList(growable: false);
+  }
+
+  static bool _pathMatches(String requestPath, String cookiePath) =>
+      requestPath == cookiePath ||
+      (requestPath.startsWith(cookiePath) &&
+          (cookiePath.endsWith('/') ||
+              requestPath.substring(cookiePath.length).startsWith('/')));
+
+  /// Android 旧内核可能只提供名称和值，已提供的作用域字段必须一致。
+  static bool matchesCanonical(
+    CookieFullInfo actual,
+    CanonicalCookie expected, {
+    bool compareValue = true,
+  }) {
+    final domain = actual.domain;
+    return actual.name == expected.name &&
+        (!compareValue ||
+            actual.value == expected.value ||
+            actual.value == CookieValueCodec.decode(expected.value)) &&
+        (actual.path == null || actual.path == expected.path) &&
+        (domain == null ||
+            domain.isEmpty ||
+            (domain.replaceFirst(RegExp(r'^\.'), '').toLowerCase() ==
+                    expected.normalizedDomain &&
+                (!expected.hostOnly || !domain.startsWith('.')))) &&
+        (actual.isSecure == null || actual.isSecure == expected.secure) &&
+        (actual.isHttpOnly == null || actual.isHttpOnly == expected.httpOnly) &&
+        (actual.sameSite == null ||
+            expected.sameSite == CookieSameSite.unspecified ||
+            actual.sameSite!.toLowerCase() == expected.sameSite.name) &&
+        (actual.isPartitioned == null ||
+            actual.isPartitioned == expected.partitioned);
+  }
+
+  static bool matchesSnapshot(
+    String url,
+    List<CookieFullInfo> stored,
+    List<CanonicalCookie> expected, {
+    bool compareValues = true,
+  }) {
+    final uri = Uri.parse(url);
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    final applicable = expected
+        .where((cookie) => _pathMatches(path, cookie.path))
+        .toList();
+    final remaining = stored
+        .where(
+          (cookie) => cookie.path == null || _pathMatches(path, cookie.path!),
+        )
+        .toList();
+    if (remaining.length != applicable.length) return false;
+    for (final cookie in applicable) {
+      final index = remaining.indexWhere(
+        (actual) =>
+            matchesCanonical(actual, cookie, compareValue: compareValues),
+      );
+      if (index < 0) return false;
+      remaining.removeAt(index);
+    }
+    return true;
+  }
+
+  Future<SweepResult> _syncFromJarLocked(
+    String url,
+    String name,
+    _CookieSession session,
+  ) async {
+    final watch = Stopwatch()..start();
+    var before = 0;
+    var after = 0;
+    if (_isCancelled(session)) return _emitCancelled(url, name, session, watch);
+    await _writer.clearSharedAuthCookieCopies(url, [name]);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (_isCancelled(session)) {
+        return _emitCancelled(url, name, session, watch);
+      }
+      final stored = (await _writer.getAllCookieInfos(url))
+          .where((cookie) => cookie.name == name)
+          .toList();
+      final expected = await _cookiesForHost(url, name);
+      if (_isCancelled(session)) {
+        return _emitCancelled(url, name, session, watch);
+      }
+      before = stored.length;
+      if (name == 'cf_clearance' || matchesSnapshot(url, stored, expected)) {
+        return SweepResult(
+          name: name,
+          status: SweepStatus.noop,
+          variantsBefore: before,
+          variantsAfter: before,
+          elapsed: watch.elapsed,
+        );
+      }
+      // 相同作用域的正常轮换直接覆盖。元数据不一致或覆盖验证失败才清理。
+      final canOverwrite =
+          attempt == 0 &&
+          matchesSnapshot(url, stored, expected, compareValues: false);
+      if (stored.isNotEmpty && !canOverwrite) {
+        await _executeDelete(url, name, session);
+      }
+      // 删除与读取都可能等待原生回调，写入前重新取得当前 canonical。
+      final fresh = await _cookiesForHost(url, name);
+      if (_isCancelled(session)) {
+        return _emitCancelled(url, name, session, watch);
+      }
+      var written = true;
+      for (final cookie in fresh) {
+        if (_isCancelled(session)) {
+          return _emitCancelled(url, name, session, watch);
+        }
+        written =
+            await _writer.setRawCookie(url, cookie.toSetCookieHeader()) &&
+            written;
+      }
+      if (_isCancelled(session)) {
+        return _emitCancelled(url, name, session, watch);
+      }
+      final observed = (await _writer.getAllCookieInfos(url))
+          .where((cookie) => cookie.name == name)
+          .toList();
+      final latest = await _cookiesForHost(url, name);
+      if (_isCancelled(session)) {
+        return _emitCancelled(url, name, session, watch);
+      }
+      after = observed.length;
+      if (written && matchesSnapshot(url, observed, latest)) {
+        _markSweepSuccess(name);
+        return SweepResult(
+          name: name,
+          status: SweepStatus.swept,
+          variantsBefore: before,
+          variantsAfter: after,
+          elapsed: watch.elapsed,
+        );
+      }
+    }
+    return SweepResult(
+      name: name,
+      status: SweepStatus.failed,
+      variantsBefore: before,
+      variantsAfter: after,
+      elapsed: watch.elapsed,
+    );
+  }
 
   final StreamController<SweepEvent> _eventController =
       StreamController<SweepEvent>.broadcast();
@@ -103,15 +369,14 @@ class SessionCookieSentinel {
         elapsed: Duration.zero,
       );
     }
-    final entryGen = _auth.generation;
-    final lock = _locks.putIfAbsent(name, () => Lock());
+    final entryGen = _session;
 
     try {
       // package:synchronized 3.4.0 的 synchronized<T> 支持 timeout 参数
       // (验证项 V11 已在 Phase 3 验证)
-      return await lock.synchronized<SweepResult>(
+      return await _exclusive(
+        name,
         () => _sweepInternal(url, name, intent, entryGen),
-        timeout: _lockTimeout,
       );
     } on TimeoutException {
       return _handleLockTimeout(name);
@@ -132,6 +397,7 @@ class SessionCookieSentinel {
   /// name 集合 = jar 中适用 cookie 的 name ∪ WV 中已有 cookie 的 name。
   /// 这样既同步 jar 已有的, 也清理 WV 中孤儿/重复的。
   Future<List<SweepResult>> sweepAll(String url) async {
+    final entryGen = _session;
     final uri = Uri.parse(url);
     final names = <String>{};
     try {
@@ -146,101 +412,54 @@ class SessionCookieSentinel {
     } catch (e) {
       debugPrint('[Sentinel] sweepAll wv lookup failed: $e');
     }
-    if (names.isEmpty) return const [];
+    if (_isCancelled(entryGen) || names.isEmpty) return const [];
     final futures = names.map((name) => sweep(url, name, force: true));
     return await Future.wait(futures);
   }
 
-  /// 触发 Nuclear Reset：清空 WV 中 url 适用域下所有 cookie + 从 jar 重灌 + 校验。
-  ///
-  /// 不再按 criticalCookieNames 过滤,全量处理:
-  /// - 先 nuke jar+WV 联合 name set 的所有 variant
-  /// - 从 jar 把适用 cookie 全量重灌
-  /// - 校验每个 jar cookie 在 WV 中变体数 ≤ 1
+  /// 保留既有恢复入口，按名称锁核对并修复 jar 与 WV 的全部适用 Cookie。
+  /// 同步时保留合法的不同路径作用域，cf_clearance 由现有验证流程管理。
   Future<NuclearResetResult> nuclearReset(String url) async {
-    final stopwatch = Stopwatch()..start();
-    Duration? primingDuration;
+    final watch = Stopwatch()..start();
+    final entryGen = _session;
     try {
-      final uri = Uri.parse(url);
       await _jar.enforceAuthCookiePolicy(reason: 'nuclear_reset');
-      final jarCookies = await _jar.loadCanonicalCookiesForRequest(uri);
-
-      // 1. 清空 WV: jar+WV 联合 name set 的所有 variant
-      final namesToNuke = <String>{};
-      namesToNuke.addAll(jarCookies.map((c) => c.name));
-      try {
-        final wvCookies = await _writer.getAllCookieInfos(url);
-        namesToNuke.addAll(wvCookies.map((c) => c.name));
-      } catch (e) {
-        debugPrint('[Sentinel] nuclearReset wv lookup failed: $e');
-      }
-      for (final name in namesToNuke) {
-        await _executeDelete(url, name);
-      }
-
-      // 2. 从 jar 全量重灌
-      final primingStart = stopwatch.elapsed;
-      for (final cookie in jarCookies) {
-        if (cookie.value.isEmpty) continue;
-        if (cookie.expiresAt != null &&
-            cookie.expiresAt!.isBefore(DateTime.now())) {
-          continue;
-        }
-        // cf_clearance 单向流(WV→jar):它只在 WebView 中由 CF 签发/更新,
-        // Dio 侧不产新值。回灌经 toSetCookieHeader 会丢 Partitioned,在 WV
-        // 里复制出一枚 CF 从未签发的非分区副本(双变体来源),一律不回写。
-        if (cookie.name == 'cf_clearance') continue;
-        // 用 toSetCookieHeader 保留 hostOnly/Domain/SameSite, 避免与 WV
-        // 网络层写入的同名 cookie 共存 (详见 _writeWinnerToWebView 注释)
-        await _writer.setRawCookie(
-          url,
-          cookie.toSetCookieHeader(),
-          writeSharedStorage: cookie.name != 'cf_clearance',
-        );
-      }
-      primingDuration = stopwatch.elapsed - primingStart;
-
-      // 3. 校验：每个 jar cookie 在 WV 中变体数 ≤ 1
-      var allOk = true;
-      String? duplicatedName;
-      int? duplicatedCount;
-      for (final cookie in jarCookies) {
-        if (cookie.value.isEmpty) continue;
-        final count = await _writer.countCookiesByName(url, cookie.name);
-        if (count > 1) {
-          allOk = false;
-          duplicatedName = cookie.name;
-          duplicatedCount = count;
-          break;
-        }
-      }
-
-      return NuclearResetResult(
-        success: allOk,
-        elapsed: stopwatch.elapsed,
-        primingDuration: primingDuration,
-        error: allOk
-            ? null
-            : '$duplicatedName variants still $duplicatedCount after reset',
+      final expected = await _jar.loadCanonicalCookiesForRequest(
+        Uri.parse(url),
       );
-    } catch (e) {
+      final stored = await _writer.getAllCookieInfos(url);
+      final names = {
+        ...expected.map((cookie) => cookie.name),
+        ...stored.map((cookie) => cookie.name),
+      };
+      var success = true;
+      for (final name in names) {
+        if (_isCancelled(entryGen)) {
+          return NuclearResetResult(success: false, elapsed: watch.elapsed);
+        }
+        final result = await _syncFromJar(url, name, entryGen);
+        success =
+            success &&
+            result.status != SweepStatus.failed &&
+            result.status != SweepStatus.cancelled;
+      }
+      return NuclearResetResult(success: success, elapsed: watch.elapsed);
+    } catch (error) {
       return NuclearResetResult(
         success: false,
-        elapsed: stopwatch.elapsed,
-        primingDuration: primingDuration,
-        error: e,
+        elapsed: watch.elapsed,
+        error: error,
       );
     }
   }
 
   /// 取消所有进行中的 sweep。
   ///
-  /// 设置全局 cancelled flag。短暂等待让 in-flight sweep 在 CHECK 点退出，
-  /// 然后清除 flag（不影响后续 sweep）。
+  /// 推进取消代次，旧任务在下个检查点退出，新任务使用新代次。
   Future<void> cancelAllSweeps() async {
-    _globalCancelled = true;
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    _globalCancelled = false;
+    _cancellationGeneration++;
+    _dirtySync.clear();
+    _lastSweptAt.clear();
   }
 
   /// 该 name 最近 [within] 时长内是否 sweep 过。
@@ -256,7 +475,9 @@ class SessionCookieSentinel {
     _locks.clear();
     _lastSweptAt.clear();
     _consecutiveLockTimeouts.clear();
-    _globalCancelled = false;
+    _cancellationGeneration++;
+    _pendingSync.clear();
+    _dirtySync.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -267,7 +488,7 @@ class SessionCookieSentinel {
     String url,
     String name,
     SweepIntent intent,
-    int entryGen,
+    _CookieSession entryGen,
   ) async {
     final stopwatch = Stopwatch()..start();
     _eventController.add(SweepInvoked(url: url, name: name, intent: intent));
@@ -276,7 +497,7 @@ class SessionCookieSentinel {
       url: url,
       name: name,
       intent: intent.name,
-      entryGeneration: entryGen,
+      entryGeneration: entryGen.generation,
     );
 
     // CHECK 1: generation
@@ -285,6 +506,9 @@ class SessionCookieSentinel {
     }
 
     final variantsBefore = await _writer.countCookiesByName(url, name);
+    if (_isCancelled(entryGen)) {
+      return _emitCancelled(url, name, entryGen, stopwatch);
+    }
 
     if (intent == SweepIntent.delete) {
       return await _sweepDelete(
@@ -308,7 +532,7 @@ class SessionCookieSentinel {
   Future<SweepResult> _sweepDelete({
     required String url,
     required String name,
-    required int entryGen,
+    required _CookieSession entryGen,
     required int variantsBefore,
     required Stopwatch stopwatch,
   }) async {
@@ -332,7 +556,7 @@ class SessionCookieSentinel {
       return result;
     }
 
-    await _executeDelete(url, name);
+    await _executeDelete(url, name, entryGen);
 
     if (_isCancelled(entryGen)) {
       return _emitCancelled(url, name, entryGen, stopwatch);
@@ -361,22 +585,33 @@ class SessionCookieSentinel {
       return result;
     }
 
-    return await _doNuclearReset(
+    return await _retryCookieSync(
       url,
       name,
       SweepIntent.delete,
       variantsBefore,
       stopwatch,
+      entryGen,
     );
   }
 
   Future<SweepResult> _sweepEnsureUnique({
     required String url,
     required String name,
-    required int entryGen,
+    required _CookieSession entryGen,
     required int variantsBefore,
     required Stopwatch stopwatch,
   }) async {
+    // 浏览器自身可能刚轮换单个认证 Cookie，唯一性清理不抢占其反向同步。
+    // 客户端权威回写和页面就绪检查显式调用 syncFromJar。
+    if (variantsBefore > 1 &&
+        CookieJarService.authCookieNames.contains(name) &&
+        await _jar.getCanonicalCookie(name) != null) {
+      if (_isCancelled(entryGen)) {
+        return _emitCancelled(url, name, entryGen, stopwatch);
+      }
+      return _syncFromJarLocked(url, name, entryGen);
+    }
     if (variantsBefore <= 1) {
       _markSweepSuccess(name);
       final result = SweepResult(
@@ -409,6 +644,30 @@ class SessionCookieSentinel {
     final variants = allInfos
         .where((c) => c.name == name)
         .toList(growable: false);
+    // 同名 Cookie 可以合法属于不同 domain/path，按名称计数不能把它们
+    // 当成重复项。认证 Cookie 继续使用站点唯一性的既有约束。
+    final knownScopes = variants.every(
+      (cookie) => cookie.domain != null && cookie.path != null,
+    );
+    final scopes = variants
+        .map(
+          (cookie) => (
+            cookie.domain?.replaceFirst(RegExp(r'^\.'), '').toLowerCase(),
+            cookie.path,
+          ),
+        )
+        .toSet();
+    if (!CookieJarService.authCookieNames.contains(name) &&
+        knownScopes &&
+        scopes.length == variants.length) {
+      return SweepResult(
+        name: name,
+        status: SweepStatus.noop,
+        variantsBefore: variantsBefore,
+        variantsAfter: variants.length,
+        elapsed: stopwatch.elapsed,
+      );
+    }
     final winnerResult = await _pickWinner(name, variants);
 
     // CHECK 3: generation (在副作用前)
@@ -448,8 +707,21 @@ class SessionCookieSentinel {
       return result;
     }
 
-    await _executeDelete(url, name);
-
+    await _executeDelete(url, name, entryGen);
+    if (_isCancelled(entryGen)) {
+      return _emitCancelled(url, name, entryGen, stopwatch);
+    }
+    final newest = await _jar.getCanonicalCookie(name);
+    if (_isCancelled(entryGen)) {
+      return _emitCancelled(url, name, entryGen, stopwatch);
+    }
+    if (newest?.toSetCookieHeader() !=
+        winnerResult?.canonical?.toSetCookieHeader()) {
+      return _syncFromJarLocked(url, name, entryGen);
+    }
+    if (winnerResult?.source == 'jar') {
+      return _syncFromJarLocked(url, name, entryGen);
+    }
     if (winnerResult != null) {
       await _writeWinnerToWebView(url, winnerResult);
     }
@@ -485,12 +757,13 @@ class SessionCookieSentinel {
       return result;
     }
 
-    return await _doNuclearReset(
+    return await _retryCookieSync(
       url,
       name,
       SweepIntent.ensureUnique,
       variantsBefore,
       stopwatch,
+      entryGen,
     );
   }
 
@@ -531,7 +804,11 @@ class SessionCookieSentinel {
   }
 
   /// 执行删除：穷举 (domain, path) 组合。
-  Future<int> _executeDelete(String url, String name) async {
+  Future<int> _executeDelete(
+    String url,
+    String name,
+    _CookieSession entryGen,
+  ) async {
     final uri = Uri.parse(url);
     final host = uri.host.toLowerCase();
 
@@ -552,6 +829,7 @@ class SessionCookieSentinel {
       debugPrint('[Sentinel] _executeDelete jar lookup failed: $e');
     }
 
+    if (_isCancelled(entryGen)) return 0;
     return _writer.nukeAllVariants(
       url: url,
       name: name,
@@ -814,34 +1092,44 @@ class SessionCookieSentinel {
     }
   }
 
-  /// 升级 Nuclear Reset，并构造 SweepResult。
-  Future<SweepResult> _doNuclearReset(
+  /// 单名称校验失败时重新处理该名称，避免持锁期间触发跨名称重置。
+  Future<SweepResult> _retryCookieSync(
     String url,
     String name,
     SweepIntent intent,
     int variantsBefore,
     Stopwatch stopwatch,
+    _CookieSession entryGen,
   ) async {
-    debugPrint('[Sentinel] nuclear reset for $name @ $url');
-    CookieLogger.nuclearReset(
-      event: 'triggered',
+    if (_isCancelled(entryGen)) {
+      return _emitCancelled(url, name, entryGen, stopwatch);
+    }
+    CookieLogger.sweep(
+      event: 'retry',
       url: url,
-      reason: 'sweep verify failed for $name',
+      name: name,
+      intent: intent.name,
+      reason: 'native verification mismatch',
     );
-    final nuclear = await nuclearReset(url);
-    CookieLogger.nuclearReset(
-      event: 'completed',
-      url: url,
-      primingDurationMs: nuclear.primingDuration?.inMilliseconds,
-      totalElapsedMs: nuclear.elapsed.inMilliseconds,
-    );
-    final after = await _writer.countCookiesByName(url, name);
-    final expectedMaxAfter = intent == SweepIntent.delete ? 0 : 1;
-    final targetSatisfied =
-        after <= expectedMaxAfter || await _residualIsAcceptable(url, name, expectedMaxAfter);
-    final status = targetSatisfied
-        ? SweepStatus.nuclearReset
-        : SweepStatus.failed;
+    late final SweepStatus status;
+    late final int after;
+    if (intent == SweepIntent.delete) {
+      await _executeDelete(url, name, entryGen);
+      if (_isCancelled(entryGen)) {
+        return _emitCancelled(url, name, entryGen, stopwatch);
+      }
+      after = await _writer.countCookiesByName(url, name);
+      status = after == 0 || await _residualIsAcceptable(url, name, 0)
+          ? SweepStatus.swept
+          : SweepStatus.failed;
+    } else {
+      final result = await _syncFromJarLocked(url, name, entryGen);
+      after = result.variantsAfter;
+      status = result.status;
+    }
+    if (_isCancelled(entryGen)) {
+      return _emitCancelled(url, name, entryGen, stopwatch);
+    }
     final result = SweepResult(
       name: name,
       status: status,
@@ -850,44 +1138,28 @@ class SessionCookieSentinel {
       elapsed: stopwatch.elapsed,
     );
     _eventController.add(SweepCompleted(result: result));
-    if (targetSatisfied) {
-      CookieLogger.sweep(
-        event: 'swept',
-        url: url,
-        name: name,
-        intent: intent.name,
-        variantsBefore: variantsBefore,
-        variantsAfter: after,
-        reason: nuclear.success
-            ? 'nuclear reset restored target'
-            : 'target restored; global reset check failed: ${nuclear.error}',
-        elapsedMs: stopwatch.elapsedMilliseconds,
-      );
-    } else {
-      CookieLogger.sweep(
-        event: 'failed',
-        url: url,
-        name: name,
-        intent: intent.name,
-        variantsBefore: variantsBefore,
-        variantsAfter: after,
-        reason:
-            'target variants after reset=$after, expected <= $expectedMaxAfter'
-            '${nuclear.error != null ? '; global error: ${nuclear.error}' : ''}',
-        elapsedMs: stopwatch.elapsedMilliseconds,
-      );
-    }
+    CookieLogger.sweep(
+      event: status.name,
+      url: url,
+      name: name,
+      intent: intent.name,
+      variantsBefore: variantsBefore,
+      variantsAfter: after,
+      elapsedMs: stopwatch.elapsedMilliseconds,
+      reason: 'single-cookie retry',
+    );
     return result;
   }
 
-  /// 是否被取消（_globalCancelled 或 generation 不匹配）。
-  bool _isCancelled(int entryGen) =>
-      _globalCancelled || !_auth.isValid(entryGen);
+  /// 会话或取消代次变化时，旧操作不能继续修改存储。
+  bool _isCancelled(_CookieSession entryGen) =>
+      _cancellationGeneration != entryGen.cancellation ||
+      !_auth.isValid(entryGen.generation);
 
   SweepResult _emitCancelled(
     String url,
     String name,
-    int entryGen,
+    _CookieSession entryGen,
     Stopwatch stopwatch,
   ) {
     final cur = _auth.generation;
@@ -895,7 +1167,7 @@ class SessionCookieSentinel {
       SweepCancelled(
         url: url,
         name: name,
-        entryGeneration: entryGen,
+        entryGeneration: entryGen.generation,
         currentGeneration: cur,
       ),
     );
@@ -903,7 +1175,7 @@ class SessionCookieSentinel {
       event: 'cancelled',
       url: url,
       name: name,
-      entryGeneration: entryGen,
+      entryGeneration: entryGen.generation,
       currentGeneration: cur,
       elapsedMs: stopwatch.elapsedMilliseconds,
     );
@@ -1010,7 +1282,7 @@ class SweepResult {
   final SweepStatus status;
   final int variantsBefore;
 
-  /// ensureUnique 时必然 ≤ 1；delete 时必然 == 0；除非 failed。
+  /// 对齐后的数量。普通业务 Cookie 可在不同 domain/path 合法共存。
   final int variantsAfter;
 
   /// winner 来源：'jar' / 'webview' / null。

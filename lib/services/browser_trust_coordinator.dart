@@ -76,6 +76,25 @@ Future<T?> runBrowserTrustTaskWithSafeTimeout<T>({
   }
 }
 
+/// 一轮同步只有一个等待预算，迟到完成也不会改变已发布的超时结果。
+@visibleForTesting
+class BrowserTrustRequestGate {
+  BrowserTrustRequestGate({
+    required Duration timeout,
+    required bool Function() onTimeout,
+  }) {
+    future = _ready.future.timeout(timeout, onTimeout: onTimeout);
+  }
+
+  final Completer<bool> _ready = Completer<bool>();
+  late final Future<bool> future;
+  bool get isCompleted => _ready.isCompleted;
+
+  void complete(bool ready) {
+    if (!_ready.isCompleted) _ready.complete(ready);
+  }
+}
+
 /// 浏览器信任编排器。
 ///
 /// 负责启动/恢复阶段的浏览器态准备，避免 WebView priming、session bootstrap、
@@ -205,7 +224,16 @@ class BrowserTrustCoordinator {
       if (active != null) return active;
     }
 
-    final gateCompleter = Completer<bool>();
+    final gateCompleter = BrowserTrustRequestGate(
+      timeout: _requestGateTimeout,
+      onTimeout: () {
+        _log(
+          'browser trust request gate expired reason=$reason',
+          level: 'warning',
+        );
+        return false;
+      },
+    );
     late final Future<bool> gateFuture;
     gateFuture = gateCompleter.future.whenComplete(() {
       if (identical(_activeBrowserTrustGate, gateFuture)) {
@@ -360,7 +388,7 @@ class BrowserTrustCoordinator {
 
   Future<bool> _ensureBrowserTrustInternal({
     required String reason,
-    Completer<bool>? requestGate,
+    BrowserTrustRequestGate? requestGate,
     required bool forceSessionSync,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -511,7 +539,7 @@ class BrowserTrustCoordinator {
     }
   }
 
-  void _completeRequestGate(Completer<bool>? gate, bool ready) {
+  void _completeRequestGate(BrowserTrustRequestGate? gate, bool ready) {
     if (gate == null || gate.isCompleted) return;
     gate.complete(ready);
   }

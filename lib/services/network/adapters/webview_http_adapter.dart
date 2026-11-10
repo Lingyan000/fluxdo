@@ -153,11 +153,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
         // 3. mark as path B: 让 onResponse 走路径 B 处理 (跳过 jar 写入,
         //    sweep 反向同步)
         final cookiePrepWatch = Stopwatch()..start();
-        try {
-          await WebViewCookiePriming.instance.prime(url);
-        } catch (e) {
-          debugPrint('[WebViewAdapter] priming failed (continuing): $e');
-        }
+        await WebViewCookiePriming.instance.prime(url);
         if (syncAppCookies) {
           await SessionCookieSentinel.instance.sweepAll(url);
         }

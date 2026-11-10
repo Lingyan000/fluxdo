@@ -20,10 +20,19 @@ import 'raw_cookie_writer_fallback.dart';
 /// - Windows / Linux: Dart 层 [RawCookieWriterFallback] 包装
 ///   flutter_inappwebview 的 CookieManager (无需 native)
 class RawCookieWriter {
-  RawCookieWriter._();
+  RawCookieWriter._() : _forceNativeChannel = false;
+
+  /// 单元测试通过模拟 MethodChannel 验证共享读取，避免依赖宿主平台插件。
+  @visibleForTesting
+  RawCookieWriter.forTesting() : _forceNativeChannel = true;
+
+  final bool _forceNativeChannel;
   static final instance = RawCookieWriter._();
 
   static const _channel = MethodChannel('com.fluxdo/raw_cookie');
+  final Map<String, Future<List<CookieFullInfo>>> _reads = {};
+
+  void invalidateReads() => _reads.clear();
   static const _sharedStorageIsolatedCookieNames = {
     'cf_clearance',
     '_t',
@@ -32,13 +41,34 @@ class RawCookieWriter {
 
   /// 当前平台是否有 native method channel 实现。
   bool get _hasNativeChannel =>
-      io.Platform.isAndroid || io.Platform.isIOS || io.Platform.isMacOS;
+      _forceNativeChannel ||
+      io.Platform.isAndroid ||
+      io.Platform.isIOS ||
+      io.Platform.isMacOS;
 
   /// 当前平台是否走 Dart fallback (flutter_inappwebview CookieManager)。
-  bool get _hasDartFallback => io.Platform.isWindows || io.Platform.isLinux;
+  bool get _hasDartFallback =>
+      !_forceNativeChannel && (io.Platform.isWindows || io.Platform.isLinux);
 
   /// 是否支持当前平台 (native 或 Dart fallback 任一可用即支持)。
   bool get isSupported => _hasNativeChannel || _hasDartFallback;
+
+  /// 认证 Cookie 由 WK store 持有。清理 Foundation 中的旧副本，避免
+  /// sharedCookiesEnabled 在创建页面时把它们重新导入。
+  Future<void> clearSharedAuthCookieCopies(
+    String url,
+    Iterable<String> names,
+  ) async {
+    if (!io.Platform.isMacOS && !io.Platform.isIOS) return;
+    final authNames = names
+        .where((name) => name == '_t' || name == '_forum_session')
+        .toSet();
+    if (authNames.isEmpty) return;
+    await _channel.invokeMethod<void>('clearSharedAuthCookieCopies', {
+      'url': url,
+      'names': authNames.toList(),
+    });
+  }
 
   /// 通过原始 Set-Cookie 头字符串写入 cookie。
   ///
@@ -51,10 +81,27 @@ class RawCookieWriter {
   ///   默认同时写入 `HTTPCookieStorage.shared`；[writeSharedStorage] 可关闭
   ///   shared storage 写入，用于避免 Apple 平台对特定 HttpOnly domain cookie
   ///   产生双份 WK 变体。
-  ///   `cf_clearance` 会强制 WK-only 写入，防止 shared storage 与 WK store
-  ///   双写后在 WebKit 中出现两个同名变体。
+  ///   `cf_clearance`、`_t`、`_forum_session` 仅写入 WK store，避免
+  ///   Foundation 副本在创建页面时重新导入旧值或重复变体。
   /// - Linux: `soup_cookie_jar_set_cookie(jar, uri, rawSetCookie)`
   Future<bool> setRawCookie(
+    String url,
+    String rawSetCookie, {
+    bool writeSharedStorage = true,
+  }) async {
+    invalidateReads();
+    try {
+      return await _setRawCookie(
+        url,
+        rawSetCookie,
+        writeSharedStorage: writeSharedStorage,
+      );
+    } finally {
+      invalidateReads();
+    }
+  }
+
+  Future<bool> _setRawCookie(
     String url,
     String rawSetCookie, {
     bool writeSharedStorage = true,
@@ -142,6 +189,25 @@ class RawCookieWriter {
     required List<String?> domainCandidates,
     required List<String> pathCandidates,
   }) async {
+    invalidateReads();
+    try {
+      return await _nukeAllVariants(
+        url: url,
+        name: name,
+        domainCandidates: domainCandidates,
+        pathCandidates: pathCandidates,
+      );
+    } finally {
+      invalidateReads();
+    }
+  }
+
+  Future<int> _nukeAllVariants({
+    required String url,
+    required String name,
+    required List<String?> domainCandidates,
+    required List<String> pathCandidates,
+  }) async {
     if (_hasDartFallback) {
       return RawCookieWriterFallback.instance.nukeAllVariants(
         url: url,
@@ -174,6 +240,25 @@ class RawCookieWriter {
   ///
   /// 验证项：V1（iOS HTTPCookie host-only 行为）。
   Future<bool> deleteExactCookie({
+    required String url,
+    required String name,
+    required String? domain,
+    required String path,
+  }) async {
+    invalidateReads();
+    try {
+      return await _deleteExactCookie(
+        url: url,
+        name: name,
+        domain: domain,
+        path: path,
+      );
+    } finally {
+      invalidateReads();
+    }
+  }
+
+  Future<bool> _deleteExactCookie({
     required String url,
     required String name,
     required String? domain,
@@ -213,6 +298,20 @@ class RawCookieWriter {
   ///
   /// 验证项：V12（flutter_inappwebview Android getCookies 实际行为）。
   Future<List<CookieFullInfo>> getAllCookieInfos(String url) async {
+    final uri = Uri.parse(url);
+    final key = uri.replace(query: '', fragment: '').toString();
+    final existing = _reads[key];
+    if (existing != null) return existing;
+    final read = _readAllCookieInfos(url);
+    _reads[key] = read;
+    try {
+      return await read;
+    } finally {
+      if (identical(_reads[key], read)) _reads.remove(key);
+    }
+  }
+
+  Future<List<CookieFullInfo>> _readAllCookieInfos(String url) async {
     if (_hasDartFallback) {
       return RawCookieWriterFallback.instance.getAllCookieInfos(url);
     }
@@ -237,6 +336,14 @@ class RawCookieWriter {
               isPartitioned: map['partitioned'] as bool?,
             );
           })
+          .where((cookie) {
+            // Apple 的原生枚举按域名返回，补上 host-only 对子域的隔离。
+            if (!io.Platform.isMacOS && !io.Platform.isIOS) return true;
+            final domain = cookie.domain;
+            return domain == null ||
+                domain.startsWith('.') ||
+                domain.toLowerCase() == Uri.parse(url).host.toLowerCase();
+          })
           .toList(growable: false);
     } on PlatformException catch (e) {
       debugPrint('[RawCookieWriter] getAllCookieInfos failed: $e');
@@ -252,23 +359,9 @@ class RawCookieWriter {
   /// 在 Android 上基于 `CookieManager.getCookie(url)` 拼接字符串拆分计数。
   /// 在 iOS 上基于 `getAllCookies` 过滤。
   ///
-  /// 比 [getAllCookieInfos] 更轻量，仅返回数量不返回内容。
+  /// 复用并发的完整快照，在 Dart 侧计数，避免逐名称发起原生枚举。
   Future<int> countCookiesByName(String url, String name) async {
-    if (_hasDartFallback) {
-      return RawCookieWriterFallback.instance.countCookiesByName(url, name);
-    }
-    try {
-      final result = await _channel.invokeMethod<int>('countCookiesByName', {
-        'url': url,
-        'name': name,
-      });
-      return result ?? 0;
-    } on PlatformException catch (e) {
-      debugPrint('[RawCookieWriter] countCookiesByName failed: $e');
-      return 0;
-    } on MissingPluginException {
-      debugPrint('[RawCookieWriter] Platform channel not available');
-      return 0;
-    }
+    final snapshot = await getAllCookieInfos(url);
+    return snapshot.where((cookie) => cookie.name == name).length;
   }
 }

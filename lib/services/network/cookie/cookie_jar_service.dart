@@ -10,6 +10,8 @@ import 'package:path/path.dart' as path;
 import '../../../constants.dart';
 import '../../windows_webview_environment_service.dart';
 import 'cookie_logger.dart';
+import 'session_cookie_sentinel.dart';
+import 'raw_cookie_writer.dart';
 import 'cookie_value_codec.dart';
 import 'strategy/platform_cookie_strategy.dart';
 
@@ -439,7 +441,48 @@ class CookieJarService {
     if (jar is EnhancedPersistCookieJar) {
       return jar.readAllCookies();
     }
+    if (jar is DefaultCookieJar) return canonicalCookiesFromMemoryJar(jar);
     return const [];
+  }
+
+  /// 持久化初始化失败时，内存 jar 也保留全部 domain/path 作用域。
+  @visibleForTesting
+  static List<CanonicalCookie> canonicalCookiesFromMemoryJar(
+    DefaultCookieJar jar,
+  ) {
+    final result = <CanonicalCookie>[];
+    for (final (hostOnly, domains) in [
+      (true, jar.hostCookies),
+      (false, jar.domainCookies),
+    ]) {
+      for (final domain in domains.entries) {
+        for (final path in domain.value.entries) {
+          for (final stored in path.value.values) {
+            if (!jar.ignoreExpires && stored.isExpired()) continue;
+            final cookie = stored.cookie;
+            result.add(
+              CanonicalCookie(
+                name: cookie.name,
+                value: CookieValueCodec.decode(cookie.value),
+                domain: domain.key,
+                path: path.key,
+                hostOnly: hostOnly,
+                expiresAt: cookie.expires?.toUtc(),
+                maxAge: cookie.maxAge,
+                creationTime: DateTime.fromMillisecondsSinceEpoch(
+                  stored.createTimeStamp * 1000,
+                  isUtc: true,
+                ),
+                secure: cookie.secure,
+                httpOnly: cookie.httpOnly,
+                persistent: cookie.expires != null || cookie.maxAge != null,
+              ),
+            );
+          }
+        }
+      }
+    }
+    return result;
   }
 
   /// 设置 Cookie
@@ -558,12 +601,19 @@ class CookieJarService {
       final baseHost = Uri.parse(AppConstants.baseUrl).host;
       final knownHosts = await getKnownHostsForDomain(baseHost);
 
+      await SessionCookieSentinel.instance.cancelAllSweeps();
       await _cookieJar!.deleteAll();
+      await SessionCookieSentinel.instance.drain();
 
-      // WebView cookie store 清理（平台策略处理差异）
-      await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
-      for (final name in authCookieNames) {
-        await _deleteWebViewCookieVariants(name, knownHosts);
+      // 直接清理平台存储也必须使在途快照失效。
+      RawCookieWriter.instance.invalidateReads();
+      try {
+        await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
+        for (final name in authCookieNames) {
+          await _deleteWebViewCookieVariants(name, knownHosts);
+        }
+      } finally {
+        RawCookieWriter.instance.invalidateReads();
       }
 
       CookieLogger.delete(name: '*', source: 'clearAll');

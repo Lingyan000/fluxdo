@@ -227,6 +227,25 @@ import workmanager_apple
       // v0.4.0 Cookie 引擎新增原语
       // 设计依据: docs/cookie-sync-design-v0.4.0.md §5.4
 
+      case "clearSharedAuthCookieCopies":
+        guard let args = call.arguments as? [String: Any],
+              let urlString = args["url"] as? String,
+              let url = URL(string: urlString),
+              let names = args["names"] as? [String] else {
+          result(FlutterError(code: "invalid_arguments", message: "Missing cookie scope", details: nil))
+          return
+        }
+        let authNames = Set(names).intersection(["_t", "_forum_session"])
+        let host = (url.host ?? "").lowercased()
+        let storage = HTTPCookieStorage.shared
+        for cookie in storage.cookies ?? [] where authNames.contains(cookie.name) {
+          let domain = (cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain).lowercased()
+          if host == domain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + domain)) {
+            storage.deleteCookie(cookie)
+          }
+        }
+        result(nil)
+
       case "nukeAllVariants":
         guard let args = call.arguments as? [String: Any],
               let urlString = args["url"] as? String,
@@ -514,7 +533,7 @@ import workmanager_apple
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       CookieStoreObserverHandler.shared.beginInternalWrite()
@@ -539,7 +558,7 @@ import workmanager_apple
           let cookieDomain = (cookie.domain.hasPrefix(".")
             ? String(cookie.domain.dropFirst())
             : cookie.domain).lowercased()
-          if host == cookieDomain || host.hasSuffix("." + cookieDomain) {
+          if host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain)) {
             storage.deleteCookie(cookie)
           }
         }
@@ -611,7 +630,7 @@ import workmanager_apple
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }
 
       let infos: [[String: Any?]] = applicable.map { cookie in
@@ -644,7 +663,7 @@ import workmanager_apple
         let cookieDomain = (cookie.domain.hasPrefix(".")
           ? String(cookie.domain.dropFirst())
           : cookie.domain).lowercased()
-        return host == cookieDomain || host.hasSuffix("." + cookieDomain)
+        return host == cookieDomain || (cookie.domain.hasPrefix(".") && host.hasSuffix("." + cookieDomain))
       }.count
 
       DispatchQueue.main.async {

@@ -329,9 +329,8 @@ class WebViewSessionCookieRefreshService {
       try {
         await WebViewCookiePriming.instance.prime(AppConstants.baseUrl);
       } catch (error) {
-        debugPrint(
-          '[WebViewSessionSync] Cookie priming 失败，继续 bootstrap: $error',
-        );
+        debugPrint('[WebViewSessionSync] Cookie priming 失败，等待下次同步: $error');
+        return const SessionBootstrapResult.failure(phase: 'cookie_priming');
       }
       if (!lease.isCurrent) {
         return const SessionBootstrapResult.failure(phase: 'cancelled');
