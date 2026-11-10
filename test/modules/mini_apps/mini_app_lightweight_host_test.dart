@@ -218,6 +218,42 @@ void main() {
     expect(jsonEncode(window), isNot(contains('secret')));
   });
 
+  test('状态读取超时单独记警告，独立窗口保留诊断阶段且过滤任意正文', () {
+    final report = MiniAppLaunchReport.nativeFailure({
+      'appId': id,
+      'engine': 'lightweight',
+      'phase': 'state_read',
+      'errorName': 'TimeoutException',
+      'operation': 'evaluate_js',
+      'hostReady': true,
+      'message': 'secret',
+    }, id)!;
+    expect(report['event'], 'mini_app_state_read_failed');
+    expect(report['level'], 'warning');
+    expect(report['hostReady'], true);
+    expect(report['operation'], 'evaluate_js');
+    expect(jsonEncode(report), isNot(contains('secret')));
+    final window = MiniAppLaunchReport.fromWindow(report, id)!;
+    expect(window['event'], 'mini_app_state_read_failed');
+    expect(window['level'], 'warning');
+    expect(window['independentWindow'], true);
+    expect(window['hostReady'], true);
+    expect(window['operation'], 'evaluate_js');
+    final unknown = MiniAppLaunchReport.nativeFailure({
+      ...report,
+      'operation': 'secret',
+      'hostReady': 'secret',
+    }, id)!;
+    expect(unknown.containsKey('operation'), false);
+    expect(unknown.containsKey('hostReady'), false);
+    final timeout = MiniAppLaunchReport.nativeFailure({
+      ...report,
+      'phase': 'timeout',
+    }, id)!;
+    expect(timeout['event'], 'mini_app_native_boot_failed');
+    expect(timeout['level'], 'error');
+  });
+
   test('执行轻量宿主：最新运行器、登录绑定、声音、销毁和异步取消', () async {
     final folder = await Directory.systemTemp.createTemp('mini-app-host-test-');
     try {

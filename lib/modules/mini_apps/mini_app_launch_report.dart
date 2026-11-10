@@ -1,6 +1,7 @@
 /// 只接收加载计时、缓存来源和受限的宿主错误诊断，不落盘任意页面数据。
 abstract final class MiniAppLaunchReport {
-  /// 原生初始化/状态读取失败也要保留原因类型，但不记录任意错误文本或 URL。
+  /// 状态探测失败只是诊断；启动失败由加载错误或启动截止时间判定。
+  /// 不记录任意错误文本或 URL。
   static Map<String, Object?>? nativeFailure(Object? value, String appId) {
     if (value is! Map ||
         value['appId'] != appId ||
@@ -18,12 +19,23 @@ abstract final class MiniAppLaunchReport {
     final code = value['code'];
     return {
       'type': 'mini_app',
-      'event': 'mini_app_native_boot_failed',
-      'level': 'error',
+      'event': value['phase'] == 'state_read'
+          ? 'mini_app_state_read_failed'
+          : 'mini_app_native_boot_failed',
+      'level': value['phase'] == 'state_read' ? 'warning' : 'error',
       'appId': appId,
       'engine': value['engine'],
       'phase': value['phase'],
       'errorName': value['errorName'],
+      if (value['phase'] == 'state_read') ...{
+        if ({
+          'get_url',
+          'evaluate_js',
+          'state_apply',
+        }.contains(value['operation']))
+          'operation': value['operation'],
+        if (value['hostReady'] is bool) 'hostReady': value['hostReady'],
+      },
       if (code is String && RegExp(r'^[A-Z_0-9.-]{1,80}$').hasMatch(code))
         'code': code,
     };
@@ -113,7 +125,10 @@ abstract final class MiniAppLaunchReport {
       final failure = hostFailure(value, appId);
       return failure == null ? null : {...failure, 'independentWindow': true};
     }
-    if (value['event'] == 'mini_app_native_boot_failed') {
+    if ({
+      'mini_app_native_boot_failed',
+      'mini_app_state_read_failed',
+    }.contains(value['event'])) {
       final failure = nativeFailure(value, appId);
       return failure == null ? null : {...failure, 'independentWindow': true};
     }

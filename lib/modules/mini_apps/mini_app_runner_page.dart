@@ -817,10 +817,14 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     );
   }
 
-  Future<Object?> _evaluate(String source) async {
+  Future<Object?> _evaluate(
+    String source, {
+    void Function(String operation)? onOperation,
+  }) async {
     final controller = _controller;
     final epoch = _documentEpoch;
     if (controller == null || !AuthSession().isValid(_generation)) return null;
+    onOperation?.call('get_url');
     final url = await controller.getUrl();
     final uri = url == null
         ? null
@@ -832,6 +836,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         _controller != controller) {
       return null;
     }
+    onOperation?.call('evaluate_js');
     return controller.evaluateJavascript(source: source);
   }
 
@@ -866,9 +871,35 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     final epoch = _documentEpoch;
     final permissionRevision = _permissionRevision;
     _pollingEpoch = epoch;
+    var operation = 'get_url';
+    void reportReadFailure(Object error) {
+      if (mounted &&
+          epoch == _documentEpoch &&
+          permissionRevision == _permissionRevision &&
+          _active &&
+          widget.visible &&
+          !_covered &&
+          !_backgrounded &&
+          AuthSession().isValid(_generation) &&
+          _reportedStateReadEpoch != epoch) {
+        _reportedStateReadEpoch = epoch;
+        _reportNativeFailure('state_read', error, operation: operation);
+      }
+    }
+
+    // A Future timeout does not cancel WebView IPC. Retain the in-flight guard
+    // until it completes so a slow page cannot accumulate one call every 3s.
+    // The separate boot deadline still reports an actual startup failure.
+    final readDeadline = Timer(const Duration(seconds: 3), () {
+      reportReadFailure(TimeoutException('Mini app state read delayed'));
+    });
     try {
-      final raw = await _evaluate(MiniAppHostAdapter.snapshot)
-          .timeout(const Duration(seconds: 3));
+      final raw = await _evaluate(
+        MiniAppHostAdapter.snapshot,
+        onOperation: (value) => operation = value,
+      );
+      readDeadline.cancel();
+      operation = 'state_apply';
       if (!mounted ||
           epoch != _documentEpoch ||
           permissionRevision != _permissionRevision ||
@@ -1070,14 +1101,9 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       }
     } catch (error) {
       // 导航或销毁会使待处理的 DOM 读取失效。
-      if (mounted &&
-          epoch == _documentEpoch &&
-          AuthSession().isValid(_generation) &&
-          _reportedStateReadEpoch != epoch) {
-        _reportedStateReadEpoch = epoch;
-        _reportBootError('state_read', error);
-      }
+      reportReadFailure(error);
     } finally {
+      readDeadline.cancel();
       if (_pollingEpoch == epoch) _pollingEpoch = null;
     }
   }
@@ -1213,17 +1239,21 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
           viewEpoch == _viewEpoch &&
           AuthSession().isValid(_generation)) {
         final error = TimeoutException('Mini app host startup timed out');
-        _reportBootError('timeout', error);
+        _reportNativeFailure('timeout', error);
         setState(() => _error = error);
       }
     });
   }
 
-  void _reportBootError(String phase, Object error) {
+  void _reportNativeFailure(String phase, Object error, {String? operation}) {
     final report = MiniAppLaunchReport.nativeFailure({
       'appId': _details.app.id,
       'engine': _engine.name,
       'phase': phase,
+      if (phase == 'state_read') ...{
+        'operation': operation,
+        'hostReady': _hostReady,
+      },
       'errorName': switch (error) {
         PlatformException() => 'PlatformException',
         TimeoutException() => 'TimeoutException',
@@ -1235,7 +1265,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       if (error is WebResourceError) 'code': error.type.toString(),
     }, _details.app.id);
     if (report == null) return;
-    debugPrint('[MiniApp] boot-failed ${jsonEncode(report)}');
+    debugPrint('[MiniApp] ${report['event']} ${jsonEncode(report)}');
     if (MiniAppWindowSession.current case final session?) {
       unawaited(
         session.request('launchReport', report).catchError((_) => null),
@@ -2096,7 +2126,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                           if (mounted &&
                                               viewEpoch == _viewEpoch) {
                                             _bootTimer?.cancel();
-                                            _reportBootError(
+                                            _reportNativeFailure(
                                               'document_load',
                                               e,
                                             );
@@ -2204,7 +2234,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                             viewEpoch == _viewEpoch &&
                                             request.isForMainFrame == true) {
                                           _bootTimer?.cancel();
-                                          _reportBootError(
+                                          _reportNativeFailure(
                                             'document_load',
                                             error,
                                           );
