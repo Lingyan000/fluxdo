@@ -8,15 +8,13 @@ import 'preheat_logo_motion.g.dart';
 /// 启动页 logo
 ///
 /// 描线动画由 [entry] 驱动，几何与时间线来自生成的规格（与 Android 原生
-/// 启动屏同源）。logo 完整呈现（[shown]）后主题色光晕淡入并缓慢呼吸；
-/// 退场时 [merge] 驱动内部部件并入圆体，光晕随之淡出。
+/// 启动屏同源）。logo 完整呈现（[shown]）后主题色光晕淡入并缓慢呼吸。
 class PreheatLogo extends StatefulWidget {
   final AppIconStyle style;
   final Animation<double> entry;
 
   /// logo 已完整呈现给用户（描线完成且原生启动屏已撤下）
   final ValueListenable<bool> shown;
-  final Animation<double>? merge;
 
   final double size;
 
@@ -25,7 +23,6 @@ class PreheatLogo extends StatefulWidget {
     required this.style,
     required this.entry,
     required this.shown,
-    this.merge,
     this.size = logoMotionLogoSize,
   });
 
@@ -98,16 +95,12 @@ class _PreheatLogoState extends State<PreheatLogo>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final spec = PreheatLogo.specOf(widget.style);
-    final merge = widget.merge ?? kAlwaysDismissedAnimation;
-
     return AnimatedBuilder(
-      animation: Listenable.merge([widget.entry, merge, _glowIn, _glow]),
+      animation: Listenable.merge([widget.entry, _glowIn, _glow]),
       builder: (context, _) {
         final breathe = Curves.easeInOutSine.transform(_glow.value);
         final glowAlpha =
-            Curves.easeIn.transform(_glowIn.value) *
-            (1 - merge.value) *
-            (0.12 + 0.10 * breathe);
+            Curves.easeIn.transform(_glowIn.value) * (0.12 + 0.10 * breathe);
 
         return CustomPaint(
           painter: _GlowPainter(
@@ -122,7 +115,6 @@ class _PreheatLogoState extends State<PreheatLogo>
                 spec: spec,
                 progress: widget.entry.value,
                 brightness: theme.brightness,
-                merge: merge.value,
               ),
             ),
           ),

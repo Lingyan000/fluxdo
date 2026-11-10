@@ -249,16 +249,17 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
         if (showHome)
           KeyedSubtree(
             key: const ValueKey('content'),
-            child: AnimatedBuilder(
-              animation: _exit,
-              child: widget.child,
-              builder: (context, child) => Transform.scale(
-                scale: _ExitTimeline.windowReveal
-                    ? _ExitTimeline.homeScale(_exit.value)
-                    : 1,
-                child: child,
-              ),
-            ),
+            child: _ExitTimeline.opaqueBackdrop
+                ? widget.child
+                // 桌面启动页底色透明，首页随退场淡入，不在第一帧突然整页透出
+                : AnimatedBuilder(
+                    animation: _exit,
+                    child: widget.child,
+                    builder: (context, child) => Opacity(
+                      opacity: 1 - _ExitTimeline.veil(_exit.value),
+                      child: child,
+                    ),
+                  ),
           ),
         if (_phase != _GatePhase.done)
           _PreheatLoading(
@@ -275,48 +276,22 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
   }
 }
 
-/// 退场时间线（占 [duration] 的比例）：
-/// 0 ~ [mergeEnd] 内部部件并入圆体，角标与文字淡出；
-/// ~ [squeezeEnd] 圆体收缩蓄力；之后圆体化作窗口加速放大，首页从窗内显现。
+/// 退场时间线：logo、角标与文字在第一帧撤下，随后启动页底色匀速淡出，
+/// 首页始终在最终位置、不缩放。没有蓄力和中间形态，只有一次短促的淡出。
+/// 桌面亚克力窗口底色透明，没有可淡出的底色：改为首页同步淡入。
 abstract final class _ExitTimeline {
-  static Duration get duration =>
-      Duration(milliseconds: windowReveal ? 900 : 650);
-  static const mergeDuration = Duration(milliseconds: 180);
-  static double get mergeEnd =>
-      mergeDuration.inMicroseconds / duration.inMicroseconds;
-  static const squeezeEnd = 0.33;
-  static const squeezeScale = 0.85;
-
-  /// 桌面亚克力窗口底色透明，开窗无从遮挡，退场改为整体淡出
-  static bool get windowReveal =>
+  static bool get opaqueBackdrop =>
       defaultTargetPlatform != TargetPlatform.macOS &&
       defaultTargetPlatform != TargetPlatform.windows;
 
-  static double _seg(double t, double a, double b) =>
-      ((t - a) / (b - a)).clamp(0.0, 1.0);
+  static const duration = Duration(milliseconds: 200);
 
-  static double grow(double t) => _seg(t, squeezeEnd, 1);
+  /// logo 撤下后隔约一帧再开始淡出底色
+  static const _veilStart = 40 / 200;
 
-  /// 窗口半径（圆体半径 [r] 的倍数换算前，单位与 [r]、[maxR] 一致）
-  static double windowRadius(double t, double r, double maxR) {
-    if (t < squeezeEnd) {
-      final s = Curves.easeOut.transform(_seg(t, mergeEnd, squeezeEnd));
-      return r * (1 - (1 - squeezeScale) * s);
-    }
-    final r0 = r * squeezeScale;
-    return r0 + (maxR - r0) * Curves.easeIn.transform(grow(t));
-  }
-
-  /// 窗内圆体色的不透明度：放大初段淡出，首页显现
-  static double bodyAlpha(double t) => 1 - _seg(grow(t), 0.15, 0.3);
-
-  /// 首页从微放大回落到 1:1
-  static double homeScale(double t) =>
-      1.1 - 0.1 * Curves.easeOut.transform(grow(t));
-
-  /// 标题、状态、版本号等文字的不透明度
-  static double uiOpacity(double t) =>
-      1 - _seg(t, 0, 135 / duration.inMilliseconds);
+  /// 启动页底色的不透明度
+  static double veil(double t) =>
+      1 - ((t - _veilStart) / (1 - _veilStart)).clamp(0.0, 1.0);
 }
 
 /// 只在退场（动画反向）时淡出，入场直接不透明。
@@ -409,9 +384,6 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   final _coordinator = BrowserTrustCoordinator.instance;
   final _cf = CfChallengeService();
 
-  late final Animation<double> _merge = widget.exit.drive(
-    CurveTween(curve: Interval(0, _ExitTimeline.mergeEnd)),
-  );
   _PreheatStatus? _paintedStatus;
   _PreheatStatus? _exitStatus;
 
@@ -523,13 +495,12 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final brightness = theme.brightness;
-    final windowReveal = _ExitTimeline.windowReveal;
+    final opaqueBackdrop = _ExitTimeline.opaqueBackdrop;
     final status = _status;
     _paintedStatus = status;
     final statusVisible = _statusVisible;
     final spec = PreheatLogo.specOf(widget.iconStyle);
-    final bodyColor = spec.body.fillFor(brightness)!;
-    // 与原生启动屏同一底色：主题底色只从退场窗口里透进来
+    // 与原生启动屏同一底色：主题底色在退场时随底色淡出透出
     final background = brightness == Brightness.dark
         ? logoMotionBackgroundDark
         : logoMotionBackgroundLight;
@@ -553,152 +524,85 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
         ? colorScheme.onErrorContainer
         : colorScheme.onPrimaryContainer;
 
-    Widget fadeWithExit(Widget child) => AnimatedBuilder(
-      animation: widget.exit,
-      child: child,
-      builder: (context, child) => Opacity(
-        opacity: _ExitTimeline.uiOpacity(widget.exit.value),
-        child: child,
-      ),
-    );
-
     final page = Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (windowReveal)
+          if (opaqueBackdrop)
             CustomPaint(
               painter: _LaunchBackdropPainter(
                 exit: widget.exit,
                 background: background,
-                body: bodyColor,
-                bodyRadius: spec.bodyRadiusRatio * _logoSize,
               ),
             ),
-          // 上下等分留白，logo 严格居中，与原生启动屏同位；
-          // 标题与状态挂在下半区，出现/变化都不推动 logo
-          Column(
-            children: [
-              const Spacer(),
-              SizedBox.square(
-                dimension: _logoSize,
-                child: Stack(
-                  clipBehavior: Clip.none,
+          // logo、角标与文字在退场第一帧撤下
+          Opacity(
+            opacity: widget.exiting ? 0 : 1,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 上下等分留白，logo 严格居中，与原生启动屏同位；
+                // 标题与状态挂在下半区，出现/变化都不推动 logo
+                Column(
                   children: [
-                    // 部件融合完成后圆体交给底层画布，作为窗口继续动画
-                    AnimatedBuilder(
-                      animation: widget.exit,
-                      child: PreheatLogo(
-                        style: widget.iconStyle,
-                        entry: widget.entry,
-                        shown: widget.logoShown,
-                        merge: _merge,
-                        size: _logoSize,
-                      ),
-                      builder: (context, child) => Opacity(
-                        opacity:
-                            windowReveal &&
-                                widget.exit.value >= _ExitTimeline.mergeEnd
-                            ? 0
-                            : 1,
-                        child: child,
-                      ),
-                    ),
-                    Positioned(
-                      left: badgeCenter.dx - _badgeSize / 2,
-                      top: badgeCenter.dy - _badgeSize / 2,
-                      width: _badgeSize,
-                      height: _badgeSize,
-                      child: ValueListenableBuilder<bool>(
-                        valueListenable: widget.logoShown,
-                        builder: (context, shown, child) => AnimatedOpacity(
-                          opacity: shown && statusVisible && !widget.exiting
-                              ? 1
-                              : 0,
-                          duration: badgeFadeDuration,
-                          curve: Curves.easeInOut,
-                          child: child,
-                        ),
-                        child: AnimatedContainer(
-                          duration: badgeFadeDuration,
-                          decoration: BoxDecoration(
-                            color: badgeColor,
-                            shape: BoxShape.circle,
+                    const Spacer(),
+                    SizedBox.square(
+                      dimension: _logoSize,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          PreheatLogo(
+                            style: widget.iconStyle,
+                            entry: widget.entry,
+                            shown: widget.logoShown,
+                            size: _logoSize,
                           ),
-                          child: Center(
-                            child: AnimatedSwitcher(
-                              duration: badgeFadeDuration,
-                              transitionBuilder: (child, animation) =>
-                                  FadeTransition(
-                                    opacity: animation,
+                          Positioned(
+                            left: badgeCenter.dx - _badgeSize / 2,
+                            top: badgeCenter.dy - _badgeSize / 2,
+                            width: _badgeSize,
+                            height: _badgeSize,
+                            child: ValueListenableBuilder<bool>(
+                              valueListenable: widget.logoShown,
+                              builder: (context, shown, child) =>
+                                  AnimatedOpacity(
+                                    opacity:
+                                        shown &&
+                                            statusVisible &&
+                                            !widget.exiting
+                                        ? 1
+                                        : 0,
+                                    duration: badgeFadeDuration,
+                                    curve: Curves.easeInOut,
                                     child: child,
                                   ),
-                              child: status.icon == null
-                                  ? CloudflareMark(
-                                      key: ValueKey(status),
-                                      width: 19,
-                                    )
-                                  : Icon(
-                                      status.icon,
-                                      key: ValueKey(status),
-                                      size: 16,
-                                      color: iconColor,
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
-                    child: fadeWithExit(
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 原生启动屏只有 logo，标题在接管后淡入
-                          ValueListenableBuilder<bool>(
-                            valueListenable: widget.logoShown,
-                            builder: (context, shown, child) =>
-                                TweenAnimationBuilder<double>(
-                                  tween: Tween(
-                                    begin: 0,
-                                    // 快速加载完成时直接退场，避免标题刚出现就消失。
-                                    end: shown && !widget.exiting ? 1 : 0,
-                                  ),
-                                  duration: const Duration(milliseconds: 500),
-                                  curve: Curves.easeOut,
-                                  builder: (context, value, child) =>
-                                      Opacity(opacity: value, child: child),
-                                  child: child,
+                              child: AnimatedContainer(
+                                duration: badgeFadeDuration,
+                                decoration: BoxDecoration(
+                                  color: badgeColor,
+                                  shape: BoxShape.circle,
                                 ),
-                            child: Text(
-                              'FluxDO',
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                color: colorScheme.onSurface,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          AnimatedOpacity(
-                            opacity: statusVisible ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 300),
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 250),
-                              child: Text(
-                                status.label(context),
-                                key: ValueKey(status),
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                                child: Center(
+                                  child: AnimatedSwitcher(
+                                    duration: badgeFadeDuration,
+                                    transitionBuilder: (child, animation) =>
+                                        FadeTransition(
+                                          opacity: animation,
+                                          child: child,
+                                        ),
+                                    child: status.icon == null
+                                        ? CloudflareMark(
+                                            key: ValueKey(status),
+                                            width: 19,
+                                          )
+                                        : Icon(
+                                            status.icon,
+                                            key: ValueKey(status),
+                                            size: 16,
+                                            color: iconColor,
+                                          ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -706,58 +610,113 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
                         ],
                       ),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              child: fadeWithExit(
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 跳过按钮常驻树中,超时后淡入上移出现
-                    IgnorePointer(
-                      ignoring: !_showSkip || widget.exiting,
-                      child: AnimatedOpacity(
-                        opacity: _showSkip ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 400),
-                        curve: Curves.easeOut,
-                        child: AnimatedSlide(
-                          offset: _showSkip
-                              ? Offset.zero
-                              : const Offset(0, 0.4),
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeOutCubic,
-                          child: TextButton(
-                            onPressed: widget.onSkip,
-                            child: Text(
-                              context.l10n.common_skip,
-                              style: TextStyle(
-                                color: colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // 原生启动屏只有 logo，标题在接管后淡入
+                              ValueListenableBuilder<bool>(
+                                valueListenable: widget.logoShown,
+                                builder: (context, shown, child) =>
+                                    TweenAnimationBuilder<double>(
+                                      tween: Tween(
+                                        begin: 0,
+                                        // 快速加载完成时直接退场，避免标题刚出现就消失。
+                                        end: shown && !widget.exiting ? 1 : 0,
+                                      ),
+                                      duration: const Duration(
+                                        milliseconds: 500,
+                                      ),
+                                      curve: Curves.easeOut,
+                                      builder: (context, value, child) =>
+                                          Opacity(opacity: value, child: child),
+                                      child: child,
+                                    ),
+                                child: Text(
+                                  'FluxDO',
+                                  style: theme.textTheme.headlineMedium
+                                      ?.copyWith(
+                                        color: colorScheme.onSurface,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 1.5,
+                                      ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              AnimatedOpacity(
+                                opacity: statusVisible ? 1.0 : 0.0,
+                                duration: const Duration(milliseconds: 300),
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 250),
+                                  child: Text(
+                                    status.label(context),
+                                    key: ValueKey(status),
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _version != null ? 'v$_version' : '',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                   ],
                 ),
-              ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 跳过按钮常驻树中,超时后淡入上移出现
+                        IgnorePointer(
+                          ignoring: !_showSkip || widget.exiting,
+                          child: AnimatedOpacity(
+                            opacity: _showSkip ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeOut,
+                            child: AnimatedSlide(
+                              offset: _showSkip
+                                  ? Offset.zero
+                                  : const Offset(0, 0.4),
+                              duration: const Duration(milliseconds: 400),
+                              curve: Curves.easeOutCubic,
+                              child: TextButton(
+                                onPressed: widget.onSkip,
+                                child: Text(
+                                  context.l10n.common_skip,
+                                  style: TextStyle(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _version != null ? 'v$_version' : '',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.6,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -765,65 +724,31 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
     );
 
     // 退场期间不再接收点击（下层首页尚未完全显现）
-    final interactive = IgnorePointer(ignoring: widget.exiting, child: page);
-    if (windowReveal) return interactive;
-    // 桌面亚克力：用平缓曲线衔接融合与整体淡出。
-    return AnimatedBuilder(
-      animation: widget.exit,
-      child: interactive,
-      builder: (context, child) => Opacity(
-        opacity: 1 - Curves.easeInOutSine.transform(widget.exit.value),
-        child: child,
-      ),
-    );
+    return IgnorePointer(ignoring: widget.exiting, child: page);
   }
 }
 
-/// 启动页底色。退场时圆体化作窗口：底色上开出圆洞，洞内先是圆体色，
-/// 随后淡出露出下层首页。底色与原生启动屏一致。
+/// 启动页底色，与原生启动屏一致；退场时匀速淡出露出下层首页。
 class _LaunchBackdropPainter extends CustomPainter {
-  _LaunchBackdropPainter({
-    required this.exit,
-    required this.background,
-    required this.body,
-    required this.bodyRadius,
-  }) : super(repaint: exit);
+  _LaunchBackdropPainter({required this.exit, required this.background})
+    : super(repaint: exit);
 
   final Animation<double> exit;
   final Color background;
-  final Color body;
-  final double bodyRadius;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final t = exit.value;
-    final rect = Offset.zero & size;
-    if (t < _ExitTimeline.mergeEnd) {
-      canvas.drawRect(rect, Paint()..color = background);
-      return;
-    }
-    final center = size.center(Offset.zero);
-    final maxR = size.center(Offset.zero).distance;
-    final r = _ExitTimeline.windowRadius(t, bodyRadius, maxR);
-    final window = Rect.fromCircle(center: center, radius: r);
-    canvas.drawPath(
-      Path()
-        ..fillType = PathFillType.evenOdd
-        ..addRect(rect)
-        ..addOval(window),
-      Paint()..color = background,
+    final alpha = _ExitTimeline.veil(exit.value);
+    if (alpha <= 0) return;
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = background.withValues(alpha: background.a * alpha),
     );
-    final alpha = _ExitTimeline.bodyAlpha(t);
-    if (alpha > 0) {
-      canvas.drawOval(window, Paint()..color = body.withValues(alpha: alpha));
-    }
   }
 
   @override
   bool shouldRepaint(covariant _LaunchBackdropPainter oldDelegate) =>
-      oldDelegate.background != background ||
-      oldDelegate.body != body ||
-      oldDelegate.bodyRadius != bodyRadius;
+      oldDelegate.background != background;
 }
 
 class _PreheatFailed extends StatelessWidget {

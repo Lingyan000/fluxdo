@@ -77,7 +77,6 @@ class LogoMotionPainter extends CustomPainter {
     required this.spec,
     required this.progress,
     required this.brightness,
-    this.merge = 0,
   });
 
   final LogoMotionSpec spec;
@@ -85,9 +84,6 @@ class LogoMotionPainter extends CustomPainter {
   /// 描线进度 0..1
   final double progress;
   final Brightness brightness;
-
-  /// 退场时内部部件并入圆体的进度 0..1
-  final double merge;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -97,7 +93,6 @@ class LogoMotionPainter extends CustomPainter {
     canvas.scale(scale);
     canvas.translate(-viewBox.left, -viewBox.top);
 
-    final shrink = 1 - Curves.easeInCubic.transform(merge.clamp(0.0, 1.0));
     for (final shape in spec.shapes) {
       final path = shape.fillPath;
       final color = shape.fillFor(brightness);
@@ -106,16 +101,7 @@ class LogoMotionPainter extends CustomPainter {
         _segment(progress, shape.fillStart, shape.fillEnd),
       );
       if (alpha <= 0) continue;
-      if (!shape.isBody && shrink <= 0) continue;
-      final merging = !shape.isBody && shrink < 1;
-      if (merging) {
-        canvas.save();
-        canvas.translate(spec.bodyCenter.dx, spec.bodyCenter.dy);
-        canvas.scale(shrink);
-        canvas.translate(-spec.bodyCenter.dx, -spec.bodyCenter.dy);
-      }
       canvas.drawPath(path, Paint()..color = color.withValues(alpha: alpha));
-      if (merging) canvas.restore();
     }
 
     final strokeAlpha =
@@ -172,6 +158,5 @@ class LogoMotionPainter extends CustomPainter {
   bool shouldRepaint(covariant LogoMotionPainter oldDelegate) =>
       oldDelegate.spec != spec ||
       oldDelegate.progress != progress ||
-      oldDelegate.brightness != brightness ||
-      oldDelegate.merge != merge;
+      oldDelegate.brightness != brightness;
 }
