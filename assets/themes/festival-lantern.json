@@ -1,0 +1,62 @@
+{
+  "id": "festival-lantern",
+  "name": {
+    "zh": "元宵",
+    "en": "Lantern Festival"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 901,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#FFF4E8",
+    "fg": "#3B2116",
+    "fgMuted": "#7D5340",
+    "border": "#F1D8C4",
+    "hues": {
+      "red": "#C62828",
+      "orange": "#D9480F",
+      "yellow": "#F9A825",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#22140F",
+    "fg": "#F6E5D6",
+    "fgMuted": "#CBAA92",
+    "border": "#47291D",
+    "hues": {
+      "red": "#EF9A9A",
+      "orange": "#FF9A62",
+      "yellow": "#FFE082",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "lantern",
+      "name": {
+        "zh": "灯笼红",
+        "en": "Lantern"
+      },
+      "light": "#D9480F",
+      "dark": "#FF8A5B"
+    },
+    {
+      "id": "glow",
+      "name": {
+        "zh": "灯火",
+        "en": "Glow"
+      },
+      "light": "#B7791F",
+      "dark": "#F2C46B"
+    }
+  ]
+}

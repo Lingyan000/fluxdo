@@ -1,0 +1,62 @@
+{
+  "id": "festival-midautumn",
+  "name": {
+    "zh": "中秋",
+    "en": "Mid-Autumn"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 904,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#F7F3E8",
+    "fg": "#23252E",
+    "fgMuted": "#5C5F6B",
+    "border": "#E5DFCC",
+    "hues": {
+      "red": "#C62828",
+      "orange": "#E65100",
+      "yellow": "#B07A12",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#3D5A80",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#111725",
+    "fg": "#EAE7DE",
+    "fgMuted": "#AEB2BE",
+    "border": "#253049",
+    "hues": {
+      "red": "#EF9A9A",
+      "orange": "#FFB74D",
+      "yellow": "#F2C14E",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#9DB4D8",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "osmanthus",
+      "name": {
+        "zh": "桂金",
+        "en": "Osmanthus"
+      },
+      "light": "#B07A12",
+      "dark": "#F2C14E"
+    },
+    {
+      "id": "night",
+      "name": {
+        "zh": "夜蓝",
+        "en": "Night"
+      },
+      "light": "#3D5A80",
+      "dark": "#9DB4D8"
+    }
+  ]
+}

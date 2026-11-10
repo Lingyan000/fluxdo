@@ -1,0 +1,62 @@
+{
+  "id": "festival-winter",
+  "name": {
+    "zh": "冬至",
+    "en": "Winter Solstice"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 907,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#F2F6FA",
+    "fg": "#1C2530",
+    "fgMuted": "#4E5C6C",
+    "border": "#D6E0EA",
+    "hues": {
+      "red": "#C62828",
+      "orange": "#E65100",
+      "yellow": "#F9A825",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#3B6EA5",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#0F151D",
+    "fg": "#E3EAF2",
+    "fgMuted": "#A2B0C0",
+    "border": "#223040",
+    "hues": {
+      "red": "#EF9A9A",
+      "orange": "#FFB74D",
+      "yellow": "#FFE082",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#8DB8E8",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "frost",
+      "name": {
+        "zh": "霜蓝",
+        "en": "Frost"
+      },
+      "light": "#3B6EA5",
+      "dark": "#8DB8E8"
+    },
+    {
+      "id": "ember",
+      "name": {
+        "zh": "炉火",
+        "en": "Ember"
+      },
+      "light": "#B5502A",
+      "dark": "#F0A07A"
+    }
+  ]
+}

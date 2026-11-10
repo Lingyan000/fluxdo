@@ -57,6 +57,7 @@ dependencies:
   enhanced_cookie_jar:
     path: packages/enhanced_cookie_jar
   re_highlight: ^0.0.3
+  lunar: ^1.7.9  # 农历与节气（节日主题判定）
   share_plus: ^12.0.1
   cross_file: ^0.3.4+2
   open_filex: ^4.7.0
@@ -245,6 +246,7 @@ flutter:
     - assets/cook/
     - assets/themes/
     - assets/fonts/catalog.json
+    - assets/festivals/
 
 
 

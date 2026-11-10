@@ -1,0 +1,71 @@
+{
+  "id": "festival-dragonboat",
+  "name": {
+    "zh": "端午",
+    "en": "Dragon Boat"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 902,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#F1F6EC",
+    "fg": "#1F2A1C",
+    "fgMuted": "#4E5E48",
+    "border": "#D3E2C8",
+    "hues": {
+      "red": "#C62828",
+      "orange": "#E65100",
+      "yellow": "#F9A825",
+      "green": "#3F7D3A",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#131D15",
+    "fg": "#DDEBD8",
+    "fgMuted": "#A3B89E",
+    "border": "#2A3A2B",
+    "hues": {
+      "red": "#EF9A9A",
+      "orange": "#FFB74D",
+      "yellow": "#FFE082",
+      "green": "#86C77F",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "reed",
+      "name": {
+        "zh": "粽叶绿",
+        "en": "Reed"
+      },
+      "light": "#3F7D3A",
+      "dark": "#86C77F"
+    },
+    {
+      "id": "mugwort",
+      "name": {
+        "zh": "艾草",
+        "en": "Mugwort"
+      },
+      "light": "#6B7A2E",
+      "dark": "#B9C77A"
+    },
+    {
+      "id": "silk",
+      "name": {
+        "zh": "五彩丝",
+        "en": "Silk"
+      },
+      "light": "#B23A48",
+      "dark": "#F08A96"
+    }
+  ]
+}

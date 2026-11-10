@@ -15,6 +15,7 @@ import '../theme/app_background.dart';
 import 'package:common_ui/common_ui.dart' show UiShapes;
 
 import '../theme/app_palettes.dart';
+import '../theme/festival_calendar.dart';
 import '../theme/shape_presets.dart';
 import '../theme/theme_registry.dart';
 import '../theme/theme_spec.dart';
@@ -92,6 +93,18 @@ class ThemeState {
   /// 已注册给引擎、可以直接使用的字体 id
   final Set<String> loadedFonts;
 
+  /// 节日主题开关：传统节日期间自动换上节日配色
+  final bool festivalEnabled;
+
+  /// 节日期间首次打开时的问候提示
+  final bool festivalGreetingEnabled;
+
+  /// 已跳过（「本次关闭」或节日期间手动换了主题）的节日窗口键
+  final Set<String> festivalSkipped;
+
+  /// 今天所处的节日窗口（与开关、跳过无关）
+  final FestivalOccurrence? festival;
+
   /// M3E 组件风格总开关（加载动画/进度条/滑块/按钮形变/下拉刷新）
   final bool m3eEnabled;
 
@@ -114,6 +127,10 @@ class ThemeState {
     this.bodyFont = FontChoice.follow,
     this.monoFont = FontChoice.follow,
     this.loadedFonts = const {},
+    this.festivalEnabled = false,
+    this.festivalGreetingEnabled = true,
+    this.festivalSkipped = const {},
+    this.festival,
     this.m3eEnabled = true,
     this.background = const AppBackground(),
   });
@@ -124,6 +141,25 @@ class ThemeState {
 
   /// 当前主题
   ThemeSpec get themeSpec => ThemeRegistry.byId(themeId);
+
+  /// 当前生效的节日（开关打开、处于窗口内且本次未跳过）
+  FestivalOccurrence? get activeFestival {
+    final f = festival;
+    if (!festivalEnabled || f == null || festivalSkipped.contains(f.key)) {
+      return null;
+    }
+    // 节日配色主题缺失（资产损坏）时不生效
+    return ThemeRegistry.byId(f.festival.themeId).id == f.festival.themeId
+        ? f
+        : null;
+  }
+
+  /// 实际用于配色的主题：节日生效时为节日配色，否则为用户选择的主题。
+  /// 圆角与字体始终跟随用户选择的主题（[themeSpec]）。
+  ThemeSpec get effectiveColorSpec {
+    final f = activeFestival;
+    return f == null ? themeSpec : ThemeRegistry.byId(f.festival.themeId);
+  }
 
   /// 当前生效的圆角风格：用户指定优先，否则取主题推荐
   ShapePreset get effectiveShapePreset => shapeOverride ?? themeSpec.shape;
@@ -180,6 +216,10 @@ class ThemeState {
     String? bodyFont,
     String? monoFont,
     Set<String>? loadedFonts,
+    bool? festivalEnabled,
+    bool? festivalGreetingEnabled,
+    Set<String>? festivalSkipped,
+    FestivalOccurrence? Function()? festival,
     bool? m3eEnabled,
     AppBackground? background,
   }) {
@@ -201,6 +241,11 @@ class ThemeState {
       bodyFont: bodyFont ?? this.bodyFont,
       monoFont: monoFont ?? this.monoFont,
       loadedFonts: loadedFonts ?? this.loadedFonts,
+      festivalEnabled: festivalEnabled ?? this.festivalEnabled,
+      festivalGreetingEnabled:
+          festivalGreetingEnabled ?? this.festivalGreetingEnabled,
+      festivalSkipped: festivalSkipped ?? this.festivalSkipped,
+      festival: festival != null ? festival() : this.festival,
       m3eEnabled: m3eEnabled ?? this.m3eEnabled,
       background: background ?? this.background,
     );
@@ -221,6 +266,9 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _schemeVariantKey = 'scheme_variant';
   static const String _customColorsKey = 'custom_colors';
   static const String _fontBodyKey = 'font_body';
+  static const String _festivalEnabledKey = 'festival_enabled';
+  static const String _festivalGreetingKey = 'festival_greeting';
+  static const String _festivalSkippedKey = 'festival_skipped';
   static const String _fontMonoKey = 'font_mono';
   static const String _m3eEnabledKey = 'm3e_enabled';
   static const String _bgImagePathKey = 'bg_image_path';
@@ -247,6 +295,62 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   }
 
   StreamSubscription<FontEntry>? _fontInstalledSub;
+  AppLifecycleListener? _lifecycle;
+  Timer? _midnightTimer;
+
+  /// 启动节日窗口的自动判定：回到前台与跨过零点时重新判定。由应用启动
+  /// 流程调用（不放在构造里：测试里的通知器不应常驻计时器）。
+  void startFestivalClock() {
+    if (_lifecycle != null) return;
+    _lifecycle = AppLifecycleListener(onResume: refreshFestival);
+    refreshFestival();
+    _scheduleMidnight();
+  }
+
+  void _scheduleMidnight() {
+    _midnightTimer?.cancel();
+    final now = FestivalCalendar.clock();
+    _midnightTimer = Timer(
+      FestivalCalendar.nextMidnight(now).difference(now) +
+          const Duration(seconds: 1),
+      () {
+        refreshFestival();
+        _scheduleMidnight();
+      },
+    );
+  }
+
+  /// 按当前日期重新判定节日窗口。
+  void refreshFestival() {
+    if (!mounted) return;
+    final festival = FestivalCalendar.activeOn(FestivalCalendar.clock());
+    if (festival != state.festival) {
+      state = state.copyWith(festival: () => festival);
+    }
+  }
+
+  Future<void> setFestivalEnabled(bool value) async {
+    state = state.copyWith(festivalEnabled: value);
+    await _prefs.setBool(_festivalEnabledKey, value);
+  }
+
+  Future<void> setFestivalGreetingEnabled(bool value) async {
+    state = state.copyWith(festivalGreetingEnabled: value);
+    await _prefs.setBool(_festivalGreetingKey, value);
+  }
+
+  /// 本次节日不再使用节日配色（窗口结束后自然失效）。
+  Future<void> skipCurrentFestival() async {
+    final f = state.festival;
+    if (f == null) return;
+    // 只保留最近若干条，避免无限增长
+    final skipped = [...state.festivalSkipped, f.key];
+    final kept = skipped.length > 20
+        ? skipped.sublist(skipped.length - 20)
+        : skipped;
+    state = state.copyWith(festivalSkipped: kept.toSet());
+    await _prefs.setStringList(_festivalSkippedKey, kept);
+  }
 
   static ThemeState _loadTheme(SharedPreferences prefs) {
     // ── 主题模式 ──
@@ -351,6 +455,10 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
         for (final font in FontCatalog.all)
           if (FontDownloadService.instance.isRegistered(font)) font.id,
       },
+      festivalEnabled: prefs.getBool(_festivalEnabledKey) ?? false,
+      festivalGreetingEnabled: prefs.getBool(_festivalGreetingKey) ?? true,
+      festivalSkipped: {...?prefs.getStringList(_festivalSkippedKey)},
+      festival: FestivalCalendar.activeOn(FestivalCalendar.clock()),
       m3eEnabled: prefs.getBool(_m3eEnabledKey) ?? true,
       background: background,
     );
@@ -396,6 +504,8 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   }
 
   Future<void> setThemeId(String themeId) async {
+    // 节日期间手动换主题：本次节日不再抢用户的设置
+    if (state.activeFestival != null) await skipCurrentFestival();
     state = state.copyWith(themeId: themeId);
     await _prefs.setString(_themeIdKey, themeId);
     // 「跟随主题」的字体随主题变化
@@ -546,6 +656,8 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   @override
   void dispose() {
     _fontInstalledSub?.cancel();
+    _lifecycle?.dispose();
+    _midnightTimer?.cancel();
     super.dispose();
   }
 }

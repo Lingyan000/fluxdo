@@ -65,6 +65,7 @@ import 'services/fonts/font_catalog.dart';
 import 'services/fonts/font_download_service.dart';
 import 'services/update_service.dart';
 import 'widgets/fonts/font_migration_dialog.dart';
+import 'widgets/festival_greeting.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
@@ -99,6 +100,7 @@ import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
 import 'theme/app_colors.dart';
+import 'theme/festival_calendar.dart';
 import 'theme/shape_presets.dart';
 import 'theme/theme_registry.dart';
 import 'theme/theme_resolver.dart';
@@ -303,6 +305,8 @@ Future<void> main() async {
     ThemeRegistry.loadBuiltins(),
     // 可下载字体目录（随包内置），字体注册依赖它
     FontCatalog.load(),
+    // 节日表（随包内置），节日主题判定依赖它
+    FestivalCalendar.load(),
     // 把 compat polyfill asset 读到内存，让 WebView 同步 getter 直接拿。
     // 失败不阻塞启动，仅影响老 WebView 兼容性。
     WebViewSettings.preloadPolyfill(),
@@ -859,9 +863,11 @@ class MainApp extends ConsumerWidget {
         // 主题与纯黑/透明修饰由 ThemeResolver 合成（Material 主题默认走
         // 完整 fromSeed，表面带种子色相）。
         // 动态色路径只取系统动态色 primary 当种子，不用 OEM 原始 scheme。
+        // 配色取生效主题（节日期间为节日配色），圆角与字体仍跟随用户主题
+        final colorSpec = themeState.effectiveColorSpec;
         final resolvedTheme = ThemeResolver.resolve(
-          spec: themeState.themeSpec,
-          accentId: themeState.accentFor(themeState.themeSpec),
+          spec: colorSpec,
+          accentId: themeState.accentFor(colorSpec),
           mode: themeState.mode,
           black: themeState.blackEnabled,
           transparent: themeState.isTransparentActive,
@@ -1330,6 +1336,10 @@ class _MainPageState extends ConsumerState<MainPage>
     // MiSans 已移出安装包：旧版选了它的用户引导下载（只弹一次）
     await FontMigrationPrompt.maybeShow(context, ref);
     if (!mounted) return;
+
+    // 节日主题：开启跨零点 / 回前台判定，节日期间首次打开问候一次
+    ref.read(themeProvider.notifier).startFestivalClock();
+    FestivalGreeting.maybeShow(context, ref);
 
     // 一次性数据收集告知（仅 Android）
     if (Platform.isAndroid) {

@@ -1,0 +1,62 @@
+{
+  "id": "festival-qixi",
+  "name": {
+    "zh": "七夕",
+    "en": "Qixi"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 903,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#F8F3FB",
+    "fg": "#2A1F35",
+    "fgMuted": "#625370",
+    "border": "#E4D8EE",
+    "hues": {
+      "red": "#C2185B",
+      "orange": "#E65100",
+      "yellow": "#F9A825",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#7E4BAA"
+    }
+  },
+  "dark": {
+    "bg": "#16122A",
+    "fg": "#ECE6F7",
+    "fgMuted": "#B3A8CB",
+    "border": "#2E2850",
+    "hues": {
+      "red": "#F48FB1",
+      "orange": "#FFB74D",
+      "yellow": "#FFE082",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#C3A1F0"
+    }
+  },
+  "accents": [
+    {
+      "id": "galaxy",
+      "name": {
+        "zh": "星河紫",
+        "en": "Galaxy"
+      },
+      "light": "#7E4BAA",
+      "dark": "#C3A1F0"
+    },
+    {
+      "id": "magpie",
+      "name": {
+        "zh": "鹊桥粉",
+        "en": "Magpie"
+      },
+      "light": "#C2185B",
+      "dark": "#F39BC0"
+    }
+  ]
+}

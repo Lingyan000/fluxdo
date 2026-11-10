@@ -1,0 +1,62 @@
+{
+  "id": "festival-chongyang",
+  "name": {
+    "zh": "重阳",
+    "en": "Double Ninth"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 905,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#FBF6E8",
+    "fg": "#2E2614",
+    "fgMuted": "#6A5D3F",
+    "border": "#EDE2C3",
+    "hues": {
+      "red": "#A63A2B",
+      "orange": "#E65100",
+      "yellow": "#B97F06",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#1D1810",
+    "fg": "#F2EAD6",
+    "fgMuted": "#BDAF8E",
+    "border": "#3A3020",
+    "hues": {
+      "red": "#E88A7A",
+      "orange": "#FFB74D",
+      "yellow": "#F0B93C",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "chrysanthemum",
+      "name": {
+        "zh": "菊黄",
+        "en": "Chrysanthemum"
+      },
+      "light": "#B97F06",
+      "dark": "#F0B93C"
+    },
+    {
+      "id": "dogwood",
+      "name": {
+        "zh": "茱萸红",
+        "en": "Dogwood"
+      },
+      "light": "#A63A2B",
+      "dark": "#E88A7A"
+    }
+  ]
+}

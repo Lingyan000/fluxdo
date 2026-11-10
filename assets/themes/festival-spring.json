@@ -1,0 +1,62 @@
+{
+  "id": "festival-spring",
+  "name": {
+    "zh": "春节",
+    "en": "Spring Festival"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 900,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#FFF5EE",
+    "fg": "#3A1A14",
+    "fgMuted": "#7A4A3E",
+    "border": "#F2D6C9",
+    "hues": {
+      "red": "#C8102E",
+      "orange": "#E65100",
+      "yellow": "#B8860B",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#22100D",
+    "fg": "#F7E4D6",
+    "fgMuted": "#C9A898",
+    "border": "#4A2620",
+    "hues": {
+      "red": "#FF6B5E",
+      "orange": "#FFB74D",
+      "yellow": "#E8B64C",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "vermilion",
+      "name": {
+        "zh": "中国红",
+        "en": "Vermilion"
+      },
+      "light": "#C8102E",
+      "dark": "#FF6B5E"
+    },
+    {
+      "id": "gold",
+      "name": {
+        "zh": "鎏金",
+        "en": "Gold"
+      },
+      "light": "#A87810",
+      "dark": "#E8B64C"
+    }
+  ]
+}

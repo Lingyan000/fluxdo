@@ -154,6 +154,23 @@
   "appearance_shapeStandard": "标准",
   "appearance_shapeCompact": "适中",
   "appearance_shapeSharp": "方正",
+  "appearance_festival": "节日主题",
+  "appearance_festivalDesc": "春节、端午、中秋等传统节日期间自动换上节日配色",
+  "appearance_festivalGreeting": "节日问候",
+  "appearance_festivalGreetingDesc": "节日期间首次打开时显示一次问候",
+  "appearance_festivalActive": "{name}主题生效中 · 至 {date}",
+  "@appearance_festivalActive": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_festivalSkip": "本次关闭",
+  "appearance_festivalApplied": "已换上节日配色",
   "appearance_panguSpacing": "阅读混排优化",
   "appearance_panguSpacingDesc": "浏览帖子时自动优化中英文间距",
   "appearance_reading": "阅读",

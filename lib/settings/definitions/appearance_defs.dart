@@ -38,6 +38,7 @@ import '../../theme/theme_resolver.dart';
 import '../../theme/theme_spec.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
+import '../../widgets/common/emoji_text.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
@@ -171,6 +172,11 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       wrapInCard: false,
       items: [
         CustomModel(
+          id: 'festivalBanner',
+          title: l10n.appearance_festival,
+          builder: (context, ref) => const _FestivalBanner(),
+        ),
+        CustomModel(
           id: 'themeGallery',
           title: l10n.appearance_theme,
           builder: (context, ref) => const _ThemeGallery(),
@@ -182,6 +188,33 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             padding: EdgeInsets.only(top: 16),
             child: _ThemeOptionsSection(),
           ),
+        ),
+      ],
+    ),
+
+    // ── 节日主题 ───────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_festival,
+      icon: Symbols.celebration_rounded,
+      items: [
+        SwitchModel(
+          id: 'festivalEnabled',
+          title: l10n.appearance_festival,
+          subtitle: l10n.appearance_festivalDesc,
+          icon: Symbols.festival_rounded,
+          getValue: (ref) => ref.watch(themeProvider).festivalEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalEnabled(v),
+        ),
+        SwitchModel(
+          id: 'festivalGreeting',
+          title: l10n.appearance_festivalGreeting,
+          subtitle: l10n.appearance_festivalGreetingDesc,
+          icon: Symbols.waving_hand_rounded,
+          enabledWhen: (ref) => ref.watch(themeProvider).festivalEnabled,
+          getValue: (ref) => ref.watch(themeProvider).festivalGreetingEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalGreetingEnabled(v),
         ),
       ],
     ),

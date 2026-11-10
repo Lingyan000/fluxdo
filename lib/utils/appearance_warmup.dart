@@ -5,6 +5,7 @@ import '../providers/theme_provider.dart';
 import '../theme/app_palettes.dart';
 import '../theme/theme_preview_cache.dart';
 import '../theme/theme_registry.dart';
+import '../theme/theme_spec.dart';
 import 'seed_color_scheme.dart';
 
 /// 外观设置页首帧开销的预热。
@@ -101,7 +102,9 @@ class AppearanceWarmup {
 
     // 主题画廊：每个主题一张缩略图（同族只画当前或族内第一个，这里
     // 全族预热，多出的几项代价可忽略）
-    for (final spec in ThemeRegistry.all) {
+    for (final spec in ThemeRegistry.all.where(
+      (s) => s.group != ThemeGroup.festival,
+    )) {
       queue(
         () => ThemePreviewCache.schemeOf(
           spec: spec,

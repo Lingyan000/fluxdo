@@ -1,0 +1,62 @@
+{
+  "id": "festival-laba",
+  "name": {
+    "zh": "腊八",
+    "en": "Laba"
+  },
+  "kind": "fixed",
+  "group": "festival",
+  "order": 906,
+  "supportsPureBlack": false,
+  "allowCustomAccent": false,
+  "light": {
+    "bg": "#F8F1E6",
+    "fg": "#33261A",
+    "fgMuted": "#6E5A47",
+    "border": "#EADCC7",
+    "hues": {
+      "red": "#C62828",
+      "orange": "#9C5B2E",
+      "yellow": "#F9A825",
+      "green": "#2E7D32",
+      "cyan": "#00838F",
+      "blue": "#1565C0",
+      "purple": "#6A1B9A"
+    }
+  },
+  "dark": {
+    "bg": "#1E1712",
+    "fg": "#F1E6D8",
+    "fgMuted": "#BCA994",
+    "border": "#3A2D22",
+    "hues": {
+      "red": "#EF9A9A",
+      "orange": "#D9A06B",
+      "yellow": "#FFE082",
+      "green": "#A5D6A7",
+      "cyan": "#80DEEA",
+      "blue": "#90CAF9",
+      "purple": "#CE93D8"
+    }
+  },
+  "accents": [
+    {
+      "id": "congee",
+      "name": {
+        "zh": "粥暖",
+        "en": "Congee"
+      },
+      "light": "#9C5B2E",
+      "dark": "#D9A06B"
+    },
+    {
+      "id": "jujube",
+      "name": {
+        "zh": "红枣",
+        "en": "Jujube"
+      },
+      "light": "#9E2B25",
+      "dark": "#E08A80"
+    }
+  ]
+}

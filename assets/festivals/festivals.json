@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "festivals": [
+    {
+      "id": "spring",
+      "themeId": "festival-spring",
+      "emoji": "red_envelope",
+      "emojiChar": "🧧",
+      "name": {
+        "zh": "春节",
+        "zh_HK": "春節",
+        "zh_TW": "春節",
+        "en": "Spring Festival"
+      },
+      "greeting": {
+        "zh": "春节快乐",
+        "zh_HK": "新春快樂",
+        "zh_TW": "新春快樂",
+        "en": "Happy Spring Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 1,
+        "day": 1
+      },
+      "window": [
+        -1,
+        6
+      ],
+      "priority": 10
+    },
+    {
+      "id": "lantern",
+      "themeId": "festival-lantern",
+      "emoji": "izakaya_lantern",
+      "emojiChar": "🏮",
+      "name": {
+        "zh": "元宵",
+        "zh_HK": "元宵",
+        "zh_TW": "元宵",
+        "en": "Lantern Festival"
+      },
+      "greeting": {
+        "zh": "元宵快乐",
+        "zh_HK": "元宵快樂",
+        "zh_TW": "元宵快樂",
+        "en": "Happy Lantern Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 1,
+        "day": 15
+      },
+      "window": [
+        -1,
+        0
+      ],
+      "priority": 9
+    },
+    {
+      "id": "dragonboat",
+      "themeId": "festival-dragonboat",
+      "emoji": "dragon",
+      "emojiChar": "🐉",
+      "name": {
+        "zh": "端午",
+        "zh_HK": "端午",
+        "zh_TW": "端午",
+        "en": "Dragon Boat Festival"
+      },
+      "greeting": {
+        "zh": "端午安康",
+        "zh_HK": "端午安康",
+        "zh_TW": "端午安康",
+        "en": "Happy Dragon Boat Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 5,
+        "day": 5
+      },
+      "window": [
+        -1,
+        0
+      ],
+      "priority": 8
+    },
+    {
+      "id": "qixi",
+      "themeId": "festival-qixi",
+      "emoji": "milky_way",
+      "emojiChar": "🌌",
+      "name": {
+        "zh": "七夕",
+        "zh_HK": "七夕",
+        "zh_TW": "七夕",
+        "en": "Qixi"
+      },
+      "greeting": {
+        "zh": "七夕快乐",
+        "zh_HK": "七夕快樂",
+        "zh_TW": "七夕快樂",
+        "en": "Happy Qixi"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 7,
+        "day": 7
+      },
+      "window": [
+        0,
+        0
+      ],
+      "priority": 7
+    },
+    {
+      "id": "midautumn",
+      "themeId": "festival-midautumn",
+      "emoji": "moon_cake",
+      "emojiChar": "🥮",
+      "name": {
+        "zh": "中秋",
+        "zh_HK": "中秋",
+        "zh_TW": "中秋",
+        "en": "Mid-Autumn Festival"
+      },
+      "greeting": {
+        "zh": "中秋快乐",
+        "zh_HK": "中秋快樂",
+        "zh_TW": "中秋快樂",
+        "en": "Happy Mid-Autumn Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 8,
+        "day": 15
+      },
+      "window": [
+        -1,
+        1
+      ],
+      "priority": 8
+    },
+    {
+      "id": "chongyang",
+      "themeId": "festival-chongyang",
+      "emoji": "blossom",
+      "emojiChar": "🌼",
+      "name": {
+        "zh": "重阳",
+        "zh_HK": "重陽",
+        "zh_TW": "重陽",
+        "en": "Double Ninth Festival"
+      },
+      "greeting": {
+        "zh": "重阳安康",
+        "zh_HK": "重陽安康",
+        "zh_TW": "重陽安康",
+        "en": "Happy Double Ninth Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 9,
+        "day": 9
+      },
+      "window": [
+        0,
+        0
+      ],
+      "priority": 6
+    },
+    {
+      "id": "laba",
+      "themeId": "festival-laba",
+      "emoji": "bowl_with_spoon",
+      "emojiChar": "🥣",
+      "name": {
+        "zh": "腊八",
+        "zh_HK": "臘八",
+        "zh_TW": "臘八",
+        "en": "Laba Festival"
+      },
+      "greeting": {
+        "zh": "腊八快乐",
+        "zh_HK": "臘八快樂",
+        "zh_TW": "臘八快樂",
+        "en": "Happy Laba Festival"
+      },
+      "rule": {
+        "type": "lunar",
+        "month": 12,
+        "day": 8
+      },
+      "window": [
+        0,
+        0
+      ],
+      "priority": 5
+    },
+    {
+      "id": "winter",
+      "themeId": "festival-winter",
+      "emoji": "dumpling",
+      "emojiChar": "🥟",
+      "name": {
+        "zh": "冬至",
+        "zh_HK": "冬至",
+        "zh_TW": "冬至",
+        "en": "Winter Solstice"
+      },
+      "greeting": {
+        "zh": "冬至安康",
+        "zh_HK": "冬至安康",
+        "zh_TW": "冬至安康",
+        "en": "Happy Winter Solstice"
+      },
+      "rule": {
+        "type": "solarTerm",
+        "name": "冬至",
+        "month": 12
+      },
+      "window": [
+        0,
+        0
+      ],
+      "priority": 5
+    }
+  ]
+}

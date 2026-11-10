@@ -726,3 +726,59 @@ class _ShapeChoiceCard extends StatelessWidget {
     );
   }
 }
+
+/// 节日主题生效时的横幅：节日表情 + 生效时段 +「本次关闭」。
+class _FestivalBanner extends ConsumerWidget {
+  const _FestivalBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final occurrence = ref.watch(themeProvider.select((s) => s.activeFestival));
+    if (occurrence == null) return const SizedBox.shrink();
+    final l10n = context.l10n;
+    final cs = Theme.of(context).colorScheme;
+    final festival = occurrence.festival;
+    final name = localizedName(
+      festival.name,
+      Localizations.localeOf(context),
+      festival.id,
+    );
+    final until = MaterialLocalizations.of(
+      context,
+    ).formatShortMonthDay(occurrence.end);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        decoration: ShapeDecoration(
+          color: cs.primaryContainer,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(20),
+          ),
+        ),
+        child: Row(
+          children: [
+            EmojiText(
+              ':${festival.emoji}:',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                l10n.appearance_festivalActive(name, until),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  ref.read(themeProvider.notifier).skipCurrentFestival(),
+              child: Text(l10n.appearance_festivalSkip),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
