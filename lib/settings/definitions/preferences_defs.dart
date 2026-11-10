@@ -13,6 +13,7 @@ import '../../providers/ai_translation_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/render_crash_provider.dart';
 import '../../providers/secret_store_provider.dart';
+import '../../services/app_link_service.dart';
 import '../../services/crypto/crypto_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
@@ -68,6 +69,22 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           onChanged: (ref, v) => ref
               .read(preferencesProvider.notifier)
               .setClipboardTopicLinkDetection(v),
+        ),
+        PlatformConditionalModel(
+          condition: () => AppLinkService.supportsDefaultLinkSettings,
+          inner: ActionModel(
+            id: 'defaultLinkSettings',
+            title: l10n.settings_defaultLinks,
+            subtitle: l10n.settings_defaultLinksDesc,
+            icon: Symbols.link_rounded,
+            wrapSubtitle: true,
+            onTap: (context, ref) async {
+              final opened = await AppLinkService.openDefaultLinkSettings();
+              if (!opened && context.mounted) {
+                ToastService.showError(context.l10n.settings_defaultLinksFailed);
+              }
+            },
+          ),
         ),
       ],
     ),

@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -309,6 +310,7 @@ class MainActivity : FlutterActivity() {
         ConversationShortcutChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "openDefaultLinkSettings" -> result.success(openDefaultLinkSettings())
                 "openInBrowser" -> {
                     val url = call.argument<String>("url")
                     if (url != null) {
@@ -1041,6 +1043,28 @@ class MainActivity : FlutterActivity() {
             e.printStackTrace()
             return false
         }
+    }
+
+    /** Android 12+ 直达链接关联页；旧版或未提供该页的系统回退应用详情。 */
+    private fun openDefaultLinkSettings(): Boolean {
+        val packageUri = Uri.fromParts("package", packageName, null)
+        val actions = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS)
+            }
+            add(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        }
+        for (action in actions) {
+            try {
+                startActivity(Intent(action, packageUri))
+                return true
+            } catch (_: ActivityNotFoundException) {
+                // 部分厂商 ROM 未实现专用页面，继续尝试应用详情页。
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Cannot open link settings: $action", e)
+            }
+        }
+        return false
     }
 
     /** 解析 URL 为 Intent */
