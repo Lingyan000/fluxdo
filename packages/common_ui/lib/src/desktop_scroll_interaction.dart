@@ -150,8 +150,16 @@ class DesktopScrollInteractionBehavior extends ScrollBehavior {
   MultitouchDragStrategy getMultitouchDragStrategy(BuildContext context) =>
       delegate.getMultitouchDragStrategy(context);
   @override
-  GestureVelocityTrackerBuilder velocityTrackerBuilder(BuildContext context) =>
-      delegate.velocityTrackerBuilder(context);
+  GestureVelocityTrackerBuilder velocityTrackerBuilder(BuildContext context) {
+    final builder = delegate.velocityTrackerBuilder(context);
+    return (event) {
+      final tracker = builder(event);
+      return tracker is IOSScrollViewFlingVelocityTracker
+          ? _OrderedScrollVelocityTracker(tracker)
+          : tracker;
+    };
+  }
+
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
       delegate.getScrollPhysics(context);
@@ -163,6 +171,30 @@ class DesktopScrollInteractionBehavior extends ScrollBehavior {
   bool shouldNotify(covariant DesktopScrollInteractionBehavior oldDelegate) =>
       delegate.runtimeType != oldDelegate.delegate.runtimeType ||
       delegate.shouldNotify(oldDelegate.delegate);
+}
+
+/// Apple pointer packets can contain a late sample. Keep delivering the actual
+/// drag event, but exclude older samples from fling velocity estimation. The
+/// delegate retains the platform's velocity model and custom scroll policies.
+class _OrderedScrollVelocityTracker extends VelocityTracker {
+  _OrderedScrollVelocityTracker(this._delegate)
+    : super.withKind(_delegate.kind);
+
+  final VelocityTracker _delegate;
+  Duration? _lastTime;
+
+  @override
+  void addPosition(Duration time, Offset position) {
+    if (_lastTime != null && time < _lastTime!) return;
+    _lastTime = time;
+    _delegate.addPosition(time, position);
+  }
+
+  @override
+  VelocityEstimate? getVelocityEstimate() => _delegate.getVelocityEstimate();
+
+  @override
+  Velocity getVelocity() => _delegate.getVelocity();
 }
 
 class _ScrollInteractionBoundary extends SingleChildRenderObjectWidget {
