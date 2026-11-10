@@ -12,11 +12,12 @@ import 'mini_app_url.dart';
 
 const id = '01a1b02d-04ed-7342-baa5-769b244b7b9a';
 final entry = Uri.parse('https://community.miniapp-probe.test:8765/apps/$id?embed_mode=true&room=42#invite');
+final mode = Platform.environment['PROBE_MODE'] ?? 'data';
 late final String html, compat;
 void report(String event, Object? value) => print(jsonEncode({'event': event, 'value': value}));
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  Timer(const Duration(seconds: 45), () => exit(1));
+  Timer(const Duration(seconds: 20), () {report('probe-timeout',mode); exit(1);});
   final config = jsonDecode(await rootBundle.loadString('assets/configuration.json')) as Map<String, dynamic>;
   html = MiniAppLightweightHost.build(details: MiniAppDetails(const MiniApp(id:id,name:'Fixture'),entry.toString(),configuration:config),entry:entry,site:entry.origin,background:'#ffffff',foreground:'#111111',primary:'#123456',expectedUserId:2,failureMessage:'Host failed',preparingMessage:'Preparing');
   compat = await rootBundle.loadString('assets/compat-polyfill.js');
@@ -38,14 +39,21 @@ class Probe extends StatelessWidget {
     onWebViewCreated:(controller) async {
       try {
         await CookieManager.instance().setCookie(url:WebUri(entry.origin),name:'probe_session',value:'synthetic',isSecure:true,sameSite:HTTPCookieSameSitePolicy.LAX);
-        await controller.loadData(data:html,baseUrl:WebUri(entry.toString()),historyUrl:WebUri(entry.toString()));
-        report('flutter-load-started',true);
+        report('probe-mode',mode);
+        if(mode=='network') {
+          await controller.loadUrl(urlRequest:URLRequest(url:WebUri(entry.toString())));
+        } else if(mode=='simulated') {
+          await controller.loadSimulatedRequest(urlRequest:URLRequest(url:WebUri(entry.toString())),data:Uint8List.fromList(utf8.encode(html)));
+        } else {
+          await controller.loadData(data:html,baseUrl:WebUri(entry.toString()),historyUrl:WebUri(entry.toString()));
+        }
+        report('flutter-load-started',mode);
         Timer.periodic(const Duration(seconds:2),(timer) async {
           try {
             report('flutter-url',(await controller.getUrl()).toString());
             final state=await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot);
             report('flutter-snapshot',state);
-            if(state is Map && state['engineMounted']==true && state['detail']=='EXPECTED_FIXTURE_DENIAL') exit(0);
+            if(state is Map && state['engineMounted']==true && state['detail']=='EXPECTED_FIXTURE_DENIAL') {report('probe-passed',mode);exit(0);}
           }
           catch(e){report('flutter-snapshot-error',e.toString());}
         });

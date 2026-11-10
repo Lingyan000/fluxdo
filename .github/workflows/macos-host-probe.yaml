@@ -43,6 +43,12 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :com.apple.security.network.client bool true' macos/Runner/DebugProfile.entitlements
           flutter build macos --debug
           cd ../..
-          build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee build/mac-probe/flutter-result.log
-          grep -q 'EXPECTED_FIXTURE_DENIAL' build/mac-probe/flutter-result.log
+          for PROBE_MODE in data simulated network; do
+            PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/untrusted-$PROBE_MODE.log" || true
+          done
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain build/mac-probe/cert.pem
+          for PROBE_MODE in data simulated network; do
+            PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/trusted-$PROBE_MODE.log" || true
+          done
+          grep -q 'probe-passed' build/mac-probe/trusted-data.log
           cat build/mac-probe/server.log
