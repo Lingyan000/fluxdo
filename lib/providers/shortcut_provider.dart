@@ -360,7 +360,7 @@ class ShortcutScopeBinding {
       owner: _owner,
       route: route,
       callbacks: callbacks,
-      enabled: enabled,
+      enabled: () => !_disposed && (enabled?.call() ?? true),
     );
   }
 
@@ -372,14 +372,16 @@ class ShortcutScopeBinding {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _registry.unregister(scope: scope, owner: _owner);
+    // 页面 unmount 仍处于元素树锁定期间。立即停用回调，当前同步栈结束后再
+    // 通知 provider；整个 ProviderScope 一起销毁时无需再注销。
+    Future.microtask(() {
+      if (_registry.mounted) {
+        _registry.unregister(scope: scope, owner: _owner);
+      }
+    });
   }
 
-  void disposeDeferred() {
-    if (_disposed) return;
-    final disposeNow = dispose;
-    Future(disposeNow);
-  }
+  void disposeDeferred() => dispose();
 }
 
 // 「普通全屏路由 ESC 可关」不再需要页面显式接入:全屏 PageRoute 由
