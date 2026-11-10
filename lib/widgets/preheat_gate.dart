@@ -62,6 +62,9 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
   final ValueNotifier<bool> _logoShown = ValueNotifier(false);
 
   _GatePhase _phase = _GatePhase.loading;
+
+  /// 首页已垫在启动页下：退场开始前先完成首次构建
+  bool _homeMounted = false;
   Object? _error;
   late final AppIconStyle _iconStyle;
 
@@ -138,7 +141,13 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
       setState(() => _phase = _GatePhase.failed);
       return;
     }
+    // 首页首次构建很重，与退场同帧会让这一帧吞掉动画开头：
+    // 先垫在启动页下构建，等它画完首帧再开始计时
+    setState(() => _homeMounted = true);
     await _waitLogoShown();
+    if (!mounted || attempt != _attempt) return;
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
     if (!mounted || attempt != _attempt) return;
     try {
       setState(() => _phase = _GatePhase.exiting);
@@ -200,7 +209,10 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
 
   void _retry() {
     _exit.value = 0;
-    setState(() => _phase = _GatePhase.loading);
+    setState(() {
+      _phase = _GatePhase.loading;
+      _homeMounted = false;
+    });
     _run();
   }
 
@@ -242,15 +254,18 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
   /// 首页在底层，启动页在上层；退场时启动页淡出露出首页。
   /// 首页始终挂在同一位置，退场结束移除上层时不会重建。
   Widget _buildLaunch() {
-    final showHome = _phase == _GatePhase.exiting || _phase == _GatePhase.done;
     return Stack(
       key: const ValueKey('launch'),
       fit: StackFit.expand,
       children: [
-        if (showHome)
+        if (_homeMounted)
           KeyedSubtree(
             key: const ValueKey('content'),
-            child: _ExitHome(exit: _exit, child: widget.child),
+            // 垫在启动页下等待期间不接收输入
+            child: IgnorePointer(
+              ignoring: _phase == _GatePhase.loading,
+              child: _ExitHome(exit: _exit, child: widget.child),
+            ),
           ),
         if (_phase != _GatePhase.done)
           _PreheatLoading(
