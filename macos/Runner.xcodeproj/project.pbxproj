@@ -28,6 +28,7 @@
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
+		A1B2C3D400000001000NET01 /* NetCoreLibraryHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */; };
 		A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */; };
 		A1B2C3D400000001000PASTE /* SyntheticPasteFix.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */; };
 		A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */; };
@@ -64,6 +65,7 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
+		A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetCoreLibraryHost.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DohProxyCertHandler.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticPasteFix.swift; sourceTree = "<group>"; };
 		A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTranscodeHandler.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */,
 				A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */,
 				A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */,
 				A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */,
@@ -466,6 +469,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
+				A1B2C3D400000001000NET01 /* NetCoreLibraryHost.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */,

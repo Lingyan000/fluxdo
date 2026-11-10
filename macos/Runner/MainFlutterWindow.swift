@@ -1,5 +1,4 @@
 import Cocoa
-import Darwin
 import FlutterMacOS
 import WebKit
 import window_manager
@@ -9,21 +8,8 @@ import desktop_multi_window
 /// Dart 的 dispose/main 都无法覆盖回调地址失效前的这个窗口。
 class NetworkFlutterViewController: FlutterViewController {
   override func onPreEngineRestart() {
-    detachNetworkHost()
+    NetCoreLibraryHost.shared.detachHost()
     super.onPreEngineRestart()
-  }
-
-  private func detachNetworkHost() {
-    guard let frameworks = Bundle.main.privateFrameworksURL else { return }
-    let libraryPath = frameworks.appendingPathComponent("libfluxdo_net.dylib").path
-    // 只取得已经加载的库；未启动网络核心时无需在热重启期间加载它。
-    guard let library = dlopen(libraryPath, RTLD_NOW | RTLD_NOLOAD) else { return }
-    defer { dlclose(library) }
-    guard let symbol = dlsym(library, "fluxdo_net_detach_host") else {
-      preconditionFailure("网络核心版本过旧，请执行 dart tool/project_tasks.dart native:prepare macos --debug 后重新构建")
-    }
-    let detach = unsafeBitCast(symbol, to: (@convention(c) () -> Void).self)
-    detach()
   }
 }
 
@@ -44,6 +30,8 @@ class MainFlutterWindow: NSWindow {
   }
 
   override func awakeFromNib() {
+    // 必须先加载为全局符号，再创建会启动 Dart 的 FlutterViewController。
+    _ = NetCoreLibraryHost.shared
     let flutterViewController = NetworkFlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController

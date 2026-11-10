@@ -320,11 +320,23 @@ class NetCoreBindings {
         return DynamicLibrary.open('libfluxdo_net.so');
       }
       if (Platform.isMacOS) {
-        return _loadBundled(
-          'libfluxdo_net.dylib',
-          bundleDirs: const ['../Frameworks', '../Resources/native'],
-          sourceDirs: const ['macos/Runner/native'],
-        );
+        // Runner 在启动 Dart 前加载并固定持有网络库。热重启不能再次按路径打开：
+        // 开发构建可能已替换该路径的文件，dyld 会加载出另一份静态状态。
+        final process = DynamicLibrary.process();
+        if (process.providesSymbol('fluxdo_net_init')) {
+          NetworkLogger.log('[Core] 复用 macOS 原生宿主持有的网络核心');
+          return process;
+        }
+        // flutter_tester 没有 Runner；真实 FFI 测试仍自行加载本机编译产物。
+        if (Platform.environment['FLUTTER_TEST'] == 'true') {
+          return _loadBundled(
+            'libfluxdo_net.dylib',
+            bundleDirs: const ['../Frameworks', '../Resources/native'],
+            sourceDirs: const ['macos/Runner/native'],
+          );
+        }
+        _recordInitError('macOS 原生宿主未加载网络核心，请完整停止并重新运行应用');
+        return null;
       }
       if (Platform.isWindows) {
         return _loadBundled(
