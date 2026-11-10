@@ -25,7 +25,7 @@ sdk_path = Path('build/mac-probe/official-sdk.js')
 sdk = sdk_path.read_bytes() if sdk_path.exists() else b"export const fixture=true;"
 configuration.update({"sdkUrl": origin + "/sdk.js", "sdkSha256": hashlib.sha256(sdk).hexdigest(), "sdkByteLength": len(sdk)})
 manifest = {"id": app_id, "name": "Fixture", "format": 1, "version": "1.0.0", "entry": "index.html", "script": "app.js", "style": "app.css", "permissions": []}
-files = {"manifest.json": json.dumps(manifest), "index.html": '<p id="fixture">Synthetic app</p>', "app.css": 'body{background:#ddeeff}', "app.js": 'miniApp.ready().then(()=>miniApp.rendered());', "strings.json": '{}'}
+files = {"manifest.json": json.dumps(manifest), "index.html": '<p id="fixture">Synthetic app</p>', "app.css": 'body{background:#ddeeff}', "app.js": 'miniApp.lifecycle.ready();', "strings.json": '{}'}
 release = {"id": 1, "app_id": app_id, "name": "Fixture", "description": "Synthetic", "version": "1.0.0", "release_notes": "", "channel": "production", "manifest": manifest, "permissions": [], "package_url": origin + '/package.bin', "package_size": 128, "package_password": "synthetic", "public_key": {}, "zip_sha256": 'b' * 64}
 boot = {"configuration": configuration, "entry": entry,
         "prefix": "", "expectedUserId": 2, "failureMessage": "Host failed"}
