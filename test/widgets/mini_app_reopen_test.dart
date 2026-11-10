@@ -1486,9 +1486,23 @@ void main() {
     first.viewParams.onReceivedError!(
       first.wrapped,
       WebResourceRequest(url: WebUri(first.url), isForMainFrame: true),
-      WebResourceError(type: WebResourceErrorType.UNKNOWN, description: '启动失败'),
+      WebResourceError(
+        type: WebResourceErrorType.UNKNOWN,
+        description: 'WebKit 测试加载错误',
+      ),
     );
     await tester.pump();
+    expect(
+      find.text('WebKit 测试加载错误'),
+      findsOneWidget,
+      reason: '轻量引擎失败页不能用泛化提示覆盖原生加载错误',
+    );
+    await tester.pump(const Duration(seconds: 31));
+    expect(
+      find.text('WebKit 测试加载错误'),
+      findsOneWidget,
+      reason: '启动计时器不能覆盖已经收到的实际加载错误',
+    );
     await tester.tap(find.text(t.miniApp_engineFallback));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));

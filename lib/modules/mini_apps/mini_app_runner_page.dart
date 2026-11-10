@@ -256,6 +256,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
   final _launchClock = Stopwatch();
   int? _createdMs, _cookiesReadyMs;
   num? _reportedStart;
+  int? _reportedHostFailureEpoch;
   late MiniAppDetails _details;
   Uri? _entry;
   late final int _generation;
@@ -298,6 +299,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
   Completer<bool>? _permissionAnswer;
   int _permissionRevision = 0;
   Object? _error;
+  int? _reportedStateReadEpoch;
   bool get _fullscreen =>
       _nativeFullscreen || _documentFullscreen || _platformFullscreen;
   final _systemUi = MiniAppFullscreen(
@@ -880,6 +882,24 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       if (raw['engineMounted'] == true || raw['failed'] == true) {
         _bootTimer?.cancel();
       }
+      if (_engine == MiniAppEngine.lightweight &&
+          _reportedHostFailureEpoch != epoch) {
+        final failure = MiniAppLaunchReport.hostFailure(
+          raw['bootFailure'],
+          _details.app.id,
+        );
+        if (failure != null) {
+          _reportedHostFailureEpoch = epoch;
+          debugPrint('[MiniApp] host-failed ${jsonEncode(failure)}');
+          if (MiniAppWindowSession.current case final session?) {
+            unawaited(
+              session.request('launchReport', failure).catchError((_) => null),
+            );
+          } else {
+            LogWriter.instance.write(failure);
+          }
+        }
+      }
       final report = MiniAppLaunchReport.parse(
         raw['performance'],
         _details.app.id,
@@ -1048,8 +1068,15 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
           unawaited(_openHostLink(id, url, epoch, permissionRevision));
         }
       }
-    } catch (_) {
+    } catch (error) {
       // 导航或销毁会使待处理的 DOM 读取失效。
+      if (mounted &&
+          epoch == _documentEpoch &&
+          AuthSession().isValid(_generation) &&
+          _reportedStateReadEpoch != epoch) {
+        _reportedStateReadEpoch = epoch;
+        _reportBootError('state_read', error);
+      }
     } finally {
       if (_pollingEpoch == epoch) _pollingEpoch = null;
     }
@@ -1185,12 +1212,46 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       if (mounted &&
           viewEpoch == _viewEpoch &&
           AuthSession().isValid(_generation)) {
-        setState(
-          () => _error = StateError(context.l10n.miniApp_engineBootFailed),
-        );
+        final error = TimeoutException('Mini app host startup timed out');
+        _reportBootError('timeout', error);
+        setState(() => _error = error);
       }
     });
   }
+
+  void _reportBootError(String phase, Object error) {
+    final report = MiniAppLaunchReport.nativeFailure({
+      'appId': _details.app.id,
+      'engine': _engine.name,
+      'phase': phase,
+      'errorName': switch (error) {
+        PlatformException() => 'PlatformException',
+        TimeoutException() => 'TimeoutException',
+        FormatException() => 'FormatException',
+        StateError() => 'StateError',
+        _ => 'Error',
+      },
+      if (error is PlatformException) 'code': error.code,
+      if (error is WebResourceError) 'code': error.type.toString(),
+    }, _details.app.id);
+    if (report == null) return;
+    debugPrint('[MiniApp] boot-failed ${jsonEncode(report)}');
+    if (MiniAppWindowSession.current case final session?) {
+      unawaited(
+        session.request('launchReport', report).catchError((_) => null),
+      );
+    } else {
+      LogWriter.instance.write(report);
+    }
+  }
+
+  String _bootErrorDetail() => switch (_error) {
+    TimeoutException() => context.l10n.error_requestTimeoutRetry,
+    StateError(:final message) => message.toString(),
+    PlatformException(:final message, :final code) => message ?? code,
+    FormatException() => context.l10n.error_unrecognizedDataFormat,
+    _ => context.l10n.miniApp_engineBootFailed,
+  };
 
   Future<void> _loadEntry(
     InAppWebViewController controller,
@@ -2034,6 +2095,11 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                         } catch (e) {
                                           if (mounted &&
                                               viewEpoch == _viewEpoch) {
+                                            _bootTimer?.cancel();
+                                            _reportBootError(
+                                              'document_load',
+                                              e,
+                                            );
                                             setState(() => _error = e);
                                           }
                                         }
@@ -2137,6 +2203,11 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                         if (mounted &&
                                             viewEpoch == _viewEpoch &&
                                             request.isForMainFrame == true) {
+                                          _bootTimer?.cancel();
+                                          _reportBootError(
+                                            'document_load',
+                                            error,
+                                          );
                                           setState(
                                             () => _error = StateError(
                                               error.description,
@@ -2271,9 +2342,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                         ? MiniAppLaunchSurface(
                                             app: _details.app,
                                             failed: true,
-                                            detail: context
-                                                .l10n
-                                                .miniApp_engineBootFailed,
+                                            detail: _bootErrorDetail(),
                                             onRetry: () =>
                                                 _restartEngine(_engine),
                                             onUseWebEngine: () =>

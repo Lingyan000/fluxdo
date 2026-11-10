@@ -131,6 +131,77 @@ void main() {
     expect(MiniAppEngine.parse('future-engine'), MiniAppEngine.lightweight);
   });
 
+  test('宿主启动诊断区分阶段，只保留错误枚举、状态码及来源校验结果', () {
+    final raw = {
+      'appId': id,
+      'phase': 'session',
+      'code': 'ACCESS_DENIED',
+      'errorName': 'Error',
+      'httpStatus': 403,
+      'sameOrigin': true,
+      'secureContext': true,
+      'entryMatches': true,
+      'message': 'token=secret',
+      'url': 'https://linux.do/?secret',
+      'response': {'csrf': 'secret'},
+    };
+    final report = MiniAppLaunchReport.hostFailure(raw, id)!;
+    expect(report['phase'], 'session');
+    expect(report['httpStatus'], 403);
+    expect(report['sameOrigin'], true);
+    expect(jsonEncode(report), isNot(contains('secret')));
+    expect(MiniAppLaunchReport.hostFailure(raw, 'other'), isNull);
+    expect(
+      MiniAppLaunchReport.hostFailure({...raw, 'phase': 'secret'}, id),
+      isNull,
+    );
+    final sanitized = MiniAppLaunchReport.hostFailure({
+      ...raw,
+      'errorName': 'secret',
+      'httpStatus': 900,
+      'sameOrigin': 'secret',
+    }, id)!;
+    expect(sanitized.containsKey('errorName'), false);
+    expect(sanitized.containsKey('httpStatus'), false);
+    expect(sanitized.containsKey('sameOrigin'), false);
+    final window = MiniAppLaunchReport.fromWindow({
+      ...report,
+      'message': 'secret',
+    }, id)!;
+    expect(window['event'], 'mini_app_host_failed');
+    expect(window['independentWindow'], true);
+    expect(jsonEncode(window), isNot(contains('secret')));
+  });
+
+  test('原生启动失败保留可定位的阶段与枚举，跨窗口丢弃任意错误正文', () {
+    final raw = {
+      'appId': id,
+      'engine': 'lightweight',
+      'phase': 'document_load',
+      'errorName': 'PlatformException',
+      'code': 'NSURLErrorDomain -999',
+      'message': 'token=secret',
+      'url': 'https://linux.do/?secret',
+    };
+    final report = MiniAppLaunchReport.nativeFailure(raw, id)!;
+    expect(report['phase'], 'document_load');
+    expect(report.containsKey('code'), false);
+    expect(jsonEncode(report), isNot(contains('secret')));
+    expect(MiniAppLaunchReport.nativeFailure(raw, 'other'), isNull);
+    expect(
+      MiniAppLaunchReport.nativeFailure({...raw, 'phase': 'unknown'}, id),
+      isNull,
+    );
+    final window = MiniAppLaunchReport.fromWindow({
+      ...report,
+      'code': 'TIMED_OUT',
+      'message': 'secret',
+    }, id)!;
+    expect(window['code'], 'TIMED_OUT');
+    expect(window['independentWindow'], true);
+    expect(jsonEncode(window), isNot(contains('secret')));
+  });
+
   test('执行轻量宿主：最新运行器、登录绑定、声音、销毁和异步取消', () async {
     final folder = await Directory.systemTemp.createTemp('mini-app-host-test-');
     try {
@@ -156,7 +227,8 @@ const _fixture = r'''
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const settle = async () => { for(let i=0;i<12;i++) await new Promise(setImmediate); };
-async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=false,anonymous=false}={}) {
+async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=false,anonymous=false,
+  requestFailure=null,importFailure=false,mountFailure=false,insecure=false}={}) {
   const calls=[], imports=[], lifecycle={}, listeners={}, links=[];
   const stage={textContent:''},detail={textContent:''},progress={},retry={hidden:true};
   const loading={hidden:false,querySelector:s=>s==='progress'?progress:null};
@@ -167,9 +239,9 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   const page={setAttribute:(name,value)=>page[name]=value};
   const audio={disabled:true,setAttribute:(name,value)=>audio[name]=value,
     addEventListener:(event,fn)=>listeners[event]=fn};
-  const release={textContent:''},csrfMeta={content:''};
+  const release={textContent:''},bootFailure={textContent:''},csrfMeta={content:''};
   const document={head:{append:link=>links.push(link)},createElement:()=>({}),
-    getElementById:()=>release,
+    getElementById:id=>id==='fluxdo-mini-app-boot-failure'?bootFailure:release,
     querySelector:s=>({'.mini-app-loader':root,'.mini-app-page':page,
       '.mini-app-page__audio-trigger':audio,'meta[name="csrf-token"]':csrfMeta})[s]};
   let runtime,options,providerOptions,disposed=0,providerDisposed=0,resolveFetch;
@@ -186,11 +258,16 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   const location=new URL(badOrigin?'https://evil.example/':entry);
   const context=vm.createContext({
     boot:{configuration:{...configuration,anonymous},entry,prefix:'',expectedUserId:2,failureMessage:'失败'},
-    document,window,location,isSecureContext:true,URL,AbortController,AbortSignal,
+    document,window,location,isSecureContext:!insecure,URL,AbortController,AbortSignal,
     history:{replaceState(_state,_title,value){ location.href=value; }},
     fetch:async(path,request)=>{
       calls.push({path,request});
       if(delay) await gate;
+      if(requestFailure && path===requestFailure.path) {
+        if(requestFailure.status) return {ok:false,status:requestFailure.status};
+        if(requestFailure.json) return {ok:true,json:async()=>{throw new SyntaxError('secret-response');}};
+        throw new TypeError('secret-url');
+      }
       const data=path.includes('runtime-assets')?assets:path.includes('csrf')?{csrf:'test-csrf'}:
         path.includes('user-cards')?{users:[{id:3,username:'other'}]}:
         {current_user:{id:wrongUser?9:2,username:'me',avatar_template:'/avatar/{size}.png'}};
@@ -203,6 +280,7 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
       return {getCurrent:opts.getCurrentUser,destroy(){providerDisposed++;}};
     });
     this.setExport('mountLoader',(element,opts)=>{
+      if(mountFailure) throw Object.assign(new Error('secret-runtime'), {name:'NotSupportedError'});
       assert.equal(element,root); options=opts;
       runtime={destroy(){disposed++;},async setAudioMuted(value){opts.onAudioStateChange(value);}};
       opts.onAudioStateChange(true);
@@ -211,13 +289,31 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     });
   },{context});
   await module.link(()=>{});await module.evaluate();
-  new vm.Script(hostScript,{importModuleDynamically:async url=>{imports.push(url);return module;}}).runInContext(context);
+  new vm.Script(hostScript,{importModuleDynamically:async url=>{
+    if(importFailure) throw new SyntaxError('secret-loader');
+    imports.push(url);return module;
+  }}).runInContext(context);
   await settle();
   if(delay){window.fluxdoMiniAppHost.destroy();resolveFetch();await settle();
     assert.equal(imports.length,0);assert.equal(disposed,0);return;}
-  if(badOrigin||badAsset||wrongUser){
-    assert.equal(imports.length,0);assert.equal(retry.hidden,false);assert.equal(stage.textContent,'失败');return;
+  if(badOrigin||badAsset||wrongUser||requestFailure||importFailure||mountFailure||insecure){
+    assert.equal(imports.length,mountFailure?1:0);
+    assert.equal(retry.hidden,false);assert.equal(stage.textContent,'失败');
+    const diagnostic=JSON.parse(bootFailure.textContent);
+    assert.equal(diagnostic.appId,configuration.appId);
+    assert.equal(diagnostic.phase,requestFailure?.phase || (importFailure?'loader_import':
+      mountFailure?'loader_mount':badOrigin||insecure?'environment':badAsset?'runtime_assets':'identity'));
+    assert.equal(diagnostic.sameOrigin,!badOrigin);
+    assert.equal(diagnostic.secureContext,!insecure);
+    assert.equal(detail.textContent.includes(diagnostic.phase),true);
+    assert.equal(detail.textContent.includes('secret'),false);
+    if(requestFailure?.status) assert.equal(diagnostic.httpStatus,requestFailure.status);
+    if(requestFailure?.json||importFailure) assert.equal(diagnostic.errorName,'SyntaxError');
+    if(requestFailure && !requestFailure.status && !requestFailure.json) assert.equal(diagnostic.errorName,'TypeError');
+    assert.equal(bootFailure.textContent.includes('secret'),false);
+    return;
   }
+  assert.equal(bootFailure.textContent,'');
   assert.equal(imports.length,1,detail.textContent);
   assert.equal(imports[0],'https://linux.do/plugins/discourse-mini-app/runtime/loader-'+hash+'.js');
   assert.equal(page['data-fluxdo-mounted'],'');
@@ -247,5 +343,9 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
 (async()=>{
   await scenario();await scenario({anonymous:true});await scenario({badOrigin:true});
   await scenario({badAsset:true});await scenario({wrongUser:true});await scenario({delay:true});
+  await scenario({insecure:true});await scenario({importFailure:true});await scenario({mountFailure:true});
+  await scenario({requestFailure:{path:'/session/current.json',phase:'session',status:403}});
+  await scenario({requestFailure:{path:'/session/csrf',phase:'csrf',json:true}});
+  await scenario({requestFailure:{path:'/mini-app-api/runtime-assets.json',phase:'runtime_assets'}});
 })().catch(error=>{console.error(error);process.exitCode=1;});
 ''';

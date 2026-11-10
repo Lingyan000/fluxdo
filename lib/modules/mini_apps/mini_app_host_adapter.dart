@@ -180,11 +180,17 @@ abstract final class MiniAppHostAdapter {
       const text = document.getElementById?.('fluxdo-mini-app-release')?.textContent;
       if (text && text.length < 65536) release = JSON.parse(text);
     } catch {}
+    let bootFailure = null;
+    try {
+      const text = document.getElementById?.('fluxdo-mini-app-boot-failure')?.textContent;
+      if (text && text.length < 2048) bootFailure = JSON.parse(text);
+    } catch {}
     const measures = globalThis.performance?.getEntriesByName?.('discourse-mini-app:load') || [];
     const measure = measures[measures.length - 1];
     return { compatible: !!header,
       externalLink: globalThis.fluxdoMiniAppLinks?.peek() || null,
       release,
+      bootFailure,
       performance: measure ? {startTime:measure.startTime, ...measure.detail} : null,
       engineMounted: document.querySelector('.mini-app-page')?.hasAttribute('data-fluxdo-mounted') || false,
       muted: audio ? audio.getAttribute('aria-pressed') !== 'true' :

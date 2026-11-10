@@ -92,6 +92,7 @@ ${MiniAppHostAdapter.css}
 <button type="button" data-action="retry" hidden>Retry</button></div>
 <div class="mini-app-loader__frame" inert></div></div><div class="mini-app-loader__media"></div>
 </section></main><script type="application/json" id="fluxdo-mini-app-release"></script>
+<script type="application/json" id="fluxdo-mini-app-boot-failure"></script>
 <script>const boot = $boot;
 $script
 </script></body></html>''';
@@ -149,6 +150,7 @@ $script
   const audio = document.querySelector('.mini-app-page__audio-trigger');
   const lifetime = new AbortController();
   let runtime, provider, muted = true, closed = false;
+  let phase = 'environment';
   let suspended = false, resumeMuted = true, mediaQueue = Promise.resolve();
   function setSuspended(value) {
     // 仅主宿主可调用；保留用户原先的声音选择，快速收起/恢复按顺序执行。
@@ -187,17 +189,24 @@ $script
     return url.href;
   }
   async function json(path, signal = lifetime.signal) {
-    active();
-    const response = await fetch(boot.prefix + path, {
-      credentials:'same-origin', cache:'no-store', redirect:'error',
-      headers:{'X-Requested-With':'XMLHttpRequest'},
-      signal:AbortSignal.any([signal, lifetime.signal, AbortSignal.timeout(20000)]),
-    });
-    active();
-    if (!response.ok) throw Object.assign(invalid(
-      response.status === 401 || response.status === 403 ? 'ACCESS_DENIED' : 'REQUEST_FAILED'),
-      {status:response.status});
-    return response.json();
+    const requestPhase = path === '/mini-app-api/runtime-assets.json' ? 'runtime_assets' :
+      path === '/session/current.json' ? 'session' : path === '/session/csrf' ? 'csrf' : 'user';
+    try {
+      active();
+      const response = await fetch(boot.prefix + path, {
+        credentials:'same-origin', cache:'no-store', redirect:'error',
+        headers:{'X-Requested-With':'XMLHttpRequest'},
+        signal:AbortSignal.any([signal, lifetime.signal, AbortSignal.timeout(20000)]),
+      });
+      active();
+      if (!response.ok) throw Object.assign(invalid(
+        response.status === 401 || response.status === 403 ? 'ACCESS_DENIED' : 'REQUEST_FAILED'),
+        {status:response.status});
+      return await response.json();
+    } catch (error) {
+      // 不记录请求地址、响应正文或异常 message；它们可能含启动参数与凭据。
+      throw {code:error?.code, name:error?.name, status:error?.status, phase:requestPhase};
+    }
   }
   function fail(error) {
     if (closed) return;
@@ -211,8 +220,20 @@ $script
     root.querySelector('[data-role="stage"]').textContent = boot.failureMessage;
     const code = ['ACCESS_DENIED','BROWSER_UNSUPPORTED','INVALID_RUNTIME_ASSET',
       'INVALID_USER','REQUEST_FAILED'].includes(error?.code) ? error.code : 'START_FAILED';
+    const expected = new URL(boot.entry);
+    const diagnostic = {
+      appId:boot.configuration.appId, code, phase:error?.phase || phase,
+      errorName:error?.name, httpStatus:error?.status,
+      secureContext:isSecureContext, sameOrigin:location.origin === expected.origin,
+      entryMatches:location.href === expected.href,
+    };
+    document.getElementById('fluxdo-mini-app-boot-failure').textContent = JSON.stringify(diagnostic);
     root.querySelector('[data-role="detail"]').textContent =
-      boot.configuration.translations?.errors?.[code] || code;
+      (boot.configuration.translations?.errors?.[code] || code) + '\n' +
+      '[' + diagnostic.phase + (Number.isInteger(diagnostic.httpStatus) ?
+        ' · HTTP ' + diagnostic.httpStatus : '') +
+      (['TypeError','SyntaxError','ReferenceError','SecurityError','AbortError','TimeoutError',
+        'NotSupportedError'].includes(diagnostic.errorName) ? ' · ' + diagnostic.errorName : '') + ']';
     root.querySelector('[data-action="retry"]').hidden = false;
   }
   async function start() {
@@ -221,6 +242,7 @@ $script
     // WKWebView 的 HTML 加载保留源，但可能忽略查询/锚点；恢复本次启动参数。
     if (location.href !== expected.href) history.replaceState(null, '', expected.href);
     if (location.href !== expected.href) throw invalid('BROWSER_UNSUPPORTED');
+    phase = 'bootstrap';
     const config = {...boot.configuration};
     const anonymous = config.anonymous === true;
     const assetsPromise = json('/mini-app-api/runtime-assets.json');
@@ -228,12 +250,14 @@ $script
     const csrfPromise = anonymous ? Promise.resolve(null) : json('/session/csrf');
     const [assets, session, csrf] = await Promise.all([assetsPromise, sessionPromise, csrfPromise]);
     active();
+    phase = 'identity';
     const current = anonymous ? null : session?.current_user;
     if (!anonymous && (!Number.isSafeInteger(current?.id) ||
         typeof current?.username !== 'string' ||
         (boot.expectedUserId != null && current.id !== boot.expectedUserId))) throw invalid('INVALID_USER');
     if (!anonymous && (typeof csrf?.csrf !== 'string' || !csrf.csrf)) throw invalid('ACCESS_DENIED');
     document.querySelector('meta[name="csrf-token"]').content = csrf?.csrf || '';
+    phase = 'runtime_assets';
     for (const key of ['runtimeAssets','sdkUrl','sdkSha256','sdkFallbackUrl','sdkByteLength']) {
       if (Object.hasOwn(assets, key)) config[key] = assets[key];
     }
@@ -246,11 +270,13 @@ $script
       link.rel = 'stylesheet'; link.href = asset(runtimeAssets?.[key], kind, false, 'css');
       document.head.append(link);
     }
+    phase = 'loader_import';
     const loader = await import(loaderUrl);
     active();
     if (typeof loader.mountLoader !== 'function' || typeof loader.createUserDataProvider !== 'function') {
       throw invalid('INVALID_RUNTIME_ASSET');
     }
+    phase = 'loader_mount';
     provider = loader.createUserDataProvider({
       getCurrentUser: () => { active(); return current; },
       isActive: () => !closed,
