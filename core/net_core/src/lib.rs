@@ -22,6 +22,7 @@ pub mod ech_dns_policy;
 pub mod egress;
 pub mod error;
 pub mod ffi;
+mod host_callback;
 pub mod listener;
 pub mod log;
 pub mod mirror;

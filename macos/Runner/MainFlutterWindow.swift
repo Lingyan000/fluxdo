@@ -1,8 +1,31 @@
 import Cocoa
+import Darwin
 import FlutterMacOS
 import WebKit
 import window_manager
 import desktop_multi_window
+
+/// Flutter 会同步等待此钩子结束，再销毁旧 isolate。
+/// Dart 的 dispose/main 都无法覆盖回调地址失效前的这个窗口。
+class NetworkFlutterViewController: FlutterViewController {
+  override func onPreEngineRestart() {
+    detachNetworkHost()
+    super.onPreEngineRestart()
+  }
+
+  private func detachNetworkHost() {
+    guard let frameworks = Bundle.main.privateFrameworksURL else { return }
+    let libraryPath = frameworks.appendingPathComponent("libfluxdo_net.dylib").path
+    // 只取得已经加载的库；未启动网络核心时无需在热重启期间加载它。
+    guard let library = dlopen(libraryPath, RTLD_NOW | RTLD_NOLOAD) else { return }
+    defer { dlclose(library) }
+    guard let symbol = dlsym(library, "fluxdo_net_detach_host") else {
+      preconditionFailure("网络核心版本过旧，请执行 dart tool/project_tasks.dart native:prepare macos --debug 后重新构建")
+    }
+    let detach = unsafeBitCast(symbol, to: (@convention(c) () -> Void).self)
+    detach()
+  }
+}
 
 class MainFlutterWindow: NSWindow {
   /// CGEvent 注入式 Cmd+V 的粘贴补丁(语音输入法/剪贴板管理器兼容)。
@@ -21,7 +44,7 @@ class MainFlutterWindow: NSWindow {
   }
 
   override func awakeFromNib() {
-    let flutterViewController = FlutterViewController()
+    let flutterViewController = NetworkFlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)

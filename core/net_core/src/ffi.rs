@@ -32,6 +32,7 @@ use crate::client::{ExchangeInfo, HttpEgressClient};
 use crate::core::Core;
 use crate::dns::DnsResolver;
 use crate::error::NetError;
+use crate::host_callback::HostCallback;
 
 /// 事件类型，与 Dart 侧约定的取值。
 #[repr(u8)]
@@ -66,9 +67,26 @@ type EventCallback = extern "C" fn(u64, u8, *mut u8, usize);
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static CORE: Mutex<Option<Arc<Core>>> = Mutex::new(None);
-static CALLBACK: Mutex<Option<EventCallback>> = Mutex::new(None);
+static CALLBACK: HostCallback<EventCallback> = HostCallback::new();
 static REQUESTS: Mutex<Option<HashMap<u64, RequestHandle>>> = Mutex::new(None);
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+static HOST_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// 请求始终属于发起它的 isolate，普通网络核心 stop/start 不改变这个归属。
+#[derive(Clone, Copy)]
+struct RequestEvents {
+    id: u64,
+    host_generation: u64,
+}
+
+impl RequestEvents {
+    fn new(id: u64) -> Self {
+        Self {
+            id,
+            host_generation: HOST_GENERATION.load(Ordering::Acquire),
+        }
+    }
+}
 
 /// 一个在途请求的控制面。
 struct RequestHandle {
@@ -97,25 +115,30 @@ fn requests() -> parking_lot::MappedMutexGuard<'static, HashMap<u64, RequestHand
 }
 
 /// 把载荷交给宿主。缓冲区所有权随之移交，宿主负责调用 [`fluxdo_net_buffer_free`]。
-fn emit(id: u64, kind: EventKind, payload: Vec<u8>) {
-    emit_with_permit(id, kind, payload, None);
+fn emit(events: RequestEvents, kind: EventKind, payload: Vec<u8>) {
+    emit_with_permit(events, kind, payload, None);
 }
 
 fn emit_with_permit(
-    id: u64,
+    events: RequestEvents,
     kind: EventKind,
     payload: Vec<u8>,
     permit: Option<OwnedSemaphorePermit>,
 ) {
-    let Some(callback) = *CALLBACK.lock() else {
-        return;
-    };
-    if matches!(kind, EventKind::Done) {
-        callback(id, kind as u8, std::ptr::null_mut(), 0);
-        return;
-    }
-    let (ptr, len) = transfer_payload(payload, permit);
-    callback(id, kind as u8, ptr, len);
+    CALLBACK.with(|callback| {
+        // 旧任务即使稍后才退出，也不能投递给新 isolate。
+        // 普通 shutdown 仍需向当前 isolate 投递取消错误，不能用请求表是否清空判断。
+        if events.host_generation != HOST_GENERATION.load(Ordering::Acquire) {
+            return;
+        }
+        let id = events.id;
+        if matches!(kind, EventKind::Done) {
+            callback(id, kind as u8, std::ptr::null_mut(), 0);
+            return;
+        }
+        let (ptr, len) = transfer_payload(payload, permit);
+        callback(id, kind as u8, ptr, len);
+    });
 }
 
 fn transfer_payload(payload: Vec<u8>, permit: Option<OwnedSemaphorePermit>) -> (*mut u8, usize) {
@@ -131,12 +154,12 @@ fn transfer_payload(payload: Vec<u8>, permit: Option<OwnedSemaphorePermit>) -> (
     (ptr, len)
 }
 
-fn emit_error(id: u64, error: &NetError) {
+fn emit_error(events: RequestEvents, error: &NetError) {
     let payload = serde_json::json!({
         "kind": error.kind(),
         "message": error.to_string(),
     });
-    emit(id, EventKind::Error, payload.to_string().into_bytes());
+    emit(events, EventKind::Error, payload.to_string().into_bytes());
 }
 
 /// 宿主发起请求时给出的元信息。
@@ -305,11 +328,11 @@ pub extern "C" fn fluxdo_net_android_ready() -> c_int {
     i32::from(ANDROID_READY.load(std::sync::atomic::Ordering::Acquire))
 }
 
-/// 注册事件回调。宿主用 `NativeCallable.listener` 注册一次即可。
+/// 每个 Dart isolate 用 `NativeCallable.listener` 注册一次，销毁前必须解除回调。
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_set_event_callback(callback: Option<EventCallback>) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
-        *CALLBACK.lock() = callback;
+        CALLBACK.set(callback);
     }));
 }
 
@@ -370,6 +393,19 @@ pub extern "C" fn fluxdo_net_shutdown() {
         for (_, handle) in requests().drain() {
             handle.cancel.cancel();
         }
+    }));
+}
+
+/// 在旧 Dart isolate 销毁前由原生宿主同步调用，不能等新 main() 启动后再清理。
+/// 先断开两个回调出口并等待正在投递的调用退出，再取消请求和停止监听。
+/// Tokio runtime 可以复用；新 isolate 会重新注册回调并启动核心。
+#[unsafe(no_mangle)]
+pub extern "C" fn fluxdo_net_detach_host() {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        CALLBACK.set(None);
+        HOST_GENERATION.fetch_add(1, Ordering::AcqRel);
+        crate::log::set_callback(None);
+        fluxdo_net_shutdown();
     }));
 }
 
@@ -568,6 +604,7 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
         };
 
         let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        let events = RequestEvents::new(id);
         let cancel = CancellationToken::new();
         // 请求体分块缓冲：宿主写得快时在这里排队，不会丢
         let (body_tx, body_rx) = if meta.has_body {
@@ -594,7 +631,7 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
                 let outcome = tokio::select! {
                     biased;
                     () = cancel.cancelled() => Err(NetError::Cancelled),
-                    outcome = run_request(id, client, meta, body_rx, paused_rx) => outcome,
+                    outcome = run_request(events, client, meta, body_rx, paused_rx) => outcome,
                 };
                 match &outcome {
                     Ok(()) => {}
@@ -612,7 +649,7 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
                     ),
                 }
                 if let Err(error) = outcome {
-                    emit_error(id, &error);
+                    emit_error(events, &error);
                 }
                 requests().remove(&id);
             }
@@ -624,12 +661,13 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
 }
 
 async fn run_request(
-    id: u64,
+    events: RequestEvents,
     client: Arc<HttpEgressClient>,
     meta: RequestMeta,
     body_rx: Option<mpsc::Receiver<Vec<u8>>>,
     mut paused: watch::Receiver<bool>,
 ) -> Result<(), NetError> {
+    let id = events.id;
     let connect_timeout = meta.connect_timeout();
     let receive_timeout = meta.receive_timeout();
     let send_timeout = meta
@@ -759,7 +797,7 @@ async fn run_request(
             .collect(),
     };
     emit(
-        id,
+        events,
         EventKind::Head,
         serde_json::to_vec(&head).map_err(|e| NetError::Parse(e.to_string()))?,
     );
@@ -806,9 +844,9 @@ async fn run_request(
             .await
             .map_err(|_| NetError::Cancelled)?;
         wait_until_resumed(&mut paused).await?;
-        emit_with_permit(id, EventKind::Data, payload, Some(permit));
+        emit_with_permit(events, EventKind::Data, payload, Some(permit));
     }
-    emit(id, EventKind::Done, Vec::new());
+    emit(events, EventKind::Done, Vec::new());
     Ok(())
 }
 
@@ -931,6 +969,75 @@ pub extern "C" fn fluxdo_net_request_cancel(id: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
+
+    extern "C" fn capture_event(_: u64, _: u8, ptr: *mut u8, len: usize) {
+        EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
+        unsafe { fluxdo_net_buffer_free(ptr, len) };
+    }
+
+    fn insert_test_request() -> (u64, CancellationToken) {
+        let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        let cancel = CancellationToken::new();
+        let (paused, _) = watch::channel(false);
+        requests().insert(
+            id,
+            RequestHandle {
+                body: None,
+                cancel: cancel.clone(),
+                paused,
+            },
+        );
+        (id, cancel)
+    }
+
+    #[test]
+    fn host_detach_cancels_old_requests_and_new_host_can_receive_events() {
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        EVENT_COUNT.store(0, Ordering::Relaxed);
+        fluxdo_net_set_event_callback(Some(capture_event));
+        let (old_id, cancelled) = insert_test_request();
+        let old_events = RequestEvents::new(old_id);
+        emit(old_events, EventKind::Data, vec![1]);
+        assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
+
+        fluxdo_net_detach_host();
+        assert!(cancelled.is_cancelled());
+        assert!(!requests().contains_key(&old_id));
+        assert!(CALLBACK.with(|_| ()).is_none());
+        // 清理可重复调用，且不会销毁进程级 runtime。
+        fluxdo_net_detach_host();
+
+        fluxdo_net_set_event_callback(Some(capture_event));
+        // 旧任务晚到的数据必须直接丢弃，并归还尚未转移给宿主的字节预算。
+        let budget = Arc::new(Semaphore::new(4096));
+        let permit = budget.clone().try_acquire_many_owned(4096).unwrap();
+        emit_with_permit(old_events, EventKind::Data, vec![2], Some(permit));
+        assert_eq!(budget.available_permits(), 4096);
+        assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
+
+        let (new_id, _) = insert_test_request();
+        let new_events = RequestEvents::new(new_id);
+        emit(new_events, EventKind::Data, vec![3]);
+        emit(new_events, EventKind::Done, Vec::new());
+        assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 3);
+        fluxdo_net_detach_host();
+    }
+
+    #[test]
+    fn ordinary_shutdown_still_delivers_cancellation_to_current_host() {
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        EVENT_COUNT.store(0, Ordering::Relaxed);
+        fluxdo_net_set_event_callback(Some(capture_event));
+        let (id, cancelled) = insert_test_request();
+        let events = RequestEvents::new(id);
+        fluxdo_net_shutdown();
+        assert!(cancelled.is_cancelled());
+        emit_error(events, &NetError::Cancelled);
+        assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
+        fluxdo_net_detach_host();
+    }
 
     #[tokio::test]
     async fn callback_payload_budget_is_released_only_when_host_frees_buffer() {

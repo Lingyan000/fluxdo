@@ -54,7 +54,7 @@ class NetCoreBindings {
   _setLogCallback;
   late final void Function(int) _setLogLevel;
 
-  /// 持有引用：回调在进程生命周期内一直被核心调用
+  /// 持有当前 isolate 的回调；原生宿主必须在热重启前解除它。
   // ignore: unused_field
   NativeCallable<NetCoreLogCallback>? _logCallback;
   late final void Function(Pointer<NativeFunction<NetCoreEventCallback>>)

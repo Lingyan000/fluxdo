@@ -41,7 +41,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
   final Set<int> _ownedRequests = {};
   bool _closed = false;
 
-  /// 注册事件回调。整个进程只注册一次，回调在 Dart 事件循环上执行。
+  /// 每个 isolate 注册一次；原生宿主必须在热重启前解除旧回调。
   static void _ensureCallback(NetCoreBindings bindings) {
     if (_callback != null) return;
     final callback = NativeCallable<NetCoreEventCallback>.listener(_onEvent);

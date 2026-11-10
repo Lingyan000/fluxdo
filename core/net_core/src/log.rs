@@ -6,6 +6,8 @@
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use crate::host_callback::HostCallback;
+#[cfg(test)]
 use parking_lot::Mutex;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
@@ -17,12 +19,12 @@ use tracing_subscriber::{Layer, registry::LookupSpan};
 /// `fluxdo_net_buffer_free` 归还。级别：1 error、2 warn、3 info、4 debug。
 pub type LogCallback = extern "C" fn(u8, *mut u8, usize);
 
-static CALLBACK: Mutex<Option<LogCallback>> = Mutex::new(None);
+static CALLBACK: HostCallback<LogCallback> = HostCallback::new();
 /// 交给宿主的最低级别，取值同回调级别；0 表示不交给宿主。
 static HOST_LEVEL: AtomicU8 = AtomicU8::new(3);
 
 pub fn set_callback(callback: Option<LogCallback>) {
-    *CALLBACK.lock() = callback;
+    CALLBACK.set(callback);
 }
 
 pub fn set_host_level(level: u8) {
@@ -60,33 +62,32 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for HostLayer {
         if code > HOST_LEVEL.load(Ordering::Relaxed) {
             return;
         }
-        let Some(callback) = *CALLBACK.lock() else {
-            return;
-        };
-        let mut visitor = MessageVisitor::default();
-        event.record(&mut visitor);
-        let mut fields = serde_json::Map::new();
-        if let Some(scope) = ctx.event_scope(event) {
-            for span in scope.from_root() {
-                if let Some(values) = span
-                    .extensions()
-                    .get::<serde_json::Map<String, serde_json::Value>>()
-                {
-                    fields.extend(values.clone());
+        CALLBACK.with(|callback| {
+            let mut visitor = MessageVisitor::default();
+            event.record(&mut visitor);
+            let mut fields = serde_json::Map::new();
+            if let Some(scope) = ctx.event_scope(event) {
+                for span in scope.from_root() {
+                    if let Some(values) = span
+                        .extensions()
+                        .get::<serde_json::Map<String, serde_json::Value>>()
+                    {
+                        fields.extend(values.clone());
+                    }
                 }
             }
-        }
-        fields.extend(visitor.values.clone());
-        let payload = serde_json::json!({
-            "target": metadata.target(),
-            "fields": fields,
-            "message": visitor.finish(),
-        })
-        .to_string();
-        let mut payload = payload.into_bytes().into_boxed_slice();
-        let (ptr, len) = (payload.as_mut_ptr(), payload.len());
-        std::mem::forget(payload);
-        callback(code, ptr, len);
+            fields.extend(visitor.values.clone());
+            let payload = serde_json::json!({
+                "target": metadata.target(),
+                "fields": fields,
+                "message": visitor.finish(),
+            })
+            .to_string();
+            let mut payload = payload.into_bytes().into_boxed_slice();
+            let (ptr, len) = (payload.as_mut_ptr(), payload.len());
+            std::mem::forget(payload);
+            callback(code, ptr, len);
+        });
     }
 }
 
@@ -149,6 +150,7 @@ mod tests {
 
     #[test]
     fn forwards_events_at_or_above_host_level() {
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
         let subscriber = tracing_subscriber::registry().with(HostLayer);
         set_callback(Some(capture));
         set_host_level(3);
