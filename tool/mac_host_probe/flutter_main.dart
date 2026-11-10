@@ -13,6 +13,7 @@ import 'mini_app_url.dart';
 const id = '01a1b02d-04ed-7342-baa5-769b244b7b9a';
 final entry = Uri.parse('https://community.miniapp-probe.test:8765/apps/$id?embed_mode=true&room=42#invite');
 final mode = Platform.environment['PROBE_MODE'] ?? 'data';
+final expectFailure = Platform.environment['EXPECT_FRAME_FAILURE'] == 'true';
 late final String html, compat;
 void report(String event, Object? value) => print(jsonEncode({'event': event, 'value': value}));
 Future<void> main() async {
@@ -54,7 +55,11 @@ class Probe extends StatelessWidget {
             final state=await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot);
             report('flutter-snapshot',state);
             final sandbox=await controller.evaluateJavascript(source:'window.sandboxProbeResults || null');
-            if(sandbox!=null && state is Map && (state['failed']==true || state['loading']==false)) {report('sandbox-results',sandbox);report('probe-completed',mode);exit(0);}
+            if(sandbox!=null && state is Map && (state['failed']==true || state['loading']==false)) {
+              final passed=expectFailure ? state['failed']==true && state['bootFailure'] is Map &&
+                state['bootFailure']['frameHost']=='invalid_marker' && (state['detail'] as String).contains('SANDBOX_UNAVAILABLE') : state['ready']==true;
+              report('sandbox-results',sandbox);report(passed?'probe-passed':'probe-failed',mode);exit(passed?0:1);
+            }
           }
           catch(e){report('flutter-snapshot-error',e.toString());}
         });

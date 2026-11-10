@@ -48,6 +48,11 @@ jobs:
           cd ../..
           for PROBE_MODE in data simulated network; do
             PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/trusted-$PROBE_MODE.log" || true
+            grep -q 'probe-passed' "build/mac-probe/trusted-$PROBE_MODE.log"
           done
-          grep -q 'probe-completed' build/mac-probe/trusted-data.log
+          touch build/mac-probe/bad-frame
+          for PROBE_MODE in data simulated network; do
+            EXPECT_FRAME_FAILURE=true PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/failed-$PROBE_MODE.log" || true
+            grep -q 'probe-passed' "build/mac-probe/failed-$PROBE_MODE.log"
+          done
           cat build/mac-probe/server.log

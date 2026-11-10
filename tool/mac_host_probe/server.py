@@ -83,6 +83,8 @@ return {destroy(){},setAudioMuted:async value=>options.onAudioStateChange(value)
         elif self.path == configuration['frameHostUrl']:
             headers['Content-Security-Policy'] = "default-src 'none'; style-src 'self'; frame-src 'self'; frame-ancestors 'self'"
             body, mime = b'<!doctype html><html><head><meta name="discourse-mini-app-host" content="1"></head><body></body></html>', 'text/html'
+            if Path('build/mac-probe/bad-frame').exists():
+                body, status = b'<!doctype html><html><body>Fixture error page</body></html>', 403
         elif self.path.startswith(configuration['runtimeUrl']):
             headers['Content-Security-Policy'] = "sandbox allow-scripts; script-src 'unsafe-inline'; default-src 'none'"
             body, mime = b'''<!doctype html><script>{const instance=location.hash.slice(1);const channel=new MessageChannel();channel.port1.onmessage=e=>{if(e.data.type==='mount-package'&&e.data.instance===instance){document.open();document.write(e.data.html);document.close();}};parent.postMessage({type:'runtime-ready',instance},'*',[channel.port2]);}</script>''', 'text/html'
