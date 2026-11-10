@@ -1,0 +1,24 @@
+name: macOS lightweight host probe
+on:
+  push:
+    branches: [codex/macos-mini-app-probe-20261110]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run isolated WKWebView fixture
+        run: |
+          mkdir -p build/mac-probe
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' 2>/dev/null
+          python3 tool/mac_host_probe/server.py > build/mac-probe/server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          swiftc tool/mac_host_probe/probe.swift -o build/mac-probe/probe
+          build/mac-probe/probe | tee build/mac-probe/result.log
+          cat build/mac-probe/server.log
