@@ -3,6 +3,8 @@ import 'package:flutter/scheduler.dart';
 
 import '../providers/theme_provider.dart';
 import '../theme/app_palettes.dart';
+import '../theme/theme_preview_cache.dart';
+import '../theme/theme_registry.dart';
 import 'seed_color_scheme.dart';
 
 /// 外观设置页首帧开销的预热。
@@ -25,13 +27,14 @@ import 'seed_color_scheme.dart';
 /// 一致，否则白预热还占缓存：
 /// - 色卡网格（调色板/动态色/自定义色）：跟随当前 schemeVariant；
 /// - 主题模式卡：当前生效种子 × 亮/暗两种预览；
-/// - 配色风格卡：当前生效种子 × 9 种风格。
+/// - 配色风格卡：当前生效种子 × 9 种风格；
+/// - 主题画廊：全部主题的缩略图配色（[ThemePreviewCache]）。
 class AppearanceWarmup {
   AppearanceWarmup._();
 
-  /// 上次预热依据的 (来源, 种子色, 配色风格, 亮暗)，用于避免重复排任务；
-  /// 主题变更后签名不同，会按新配色重新预热。
-  static (int, int, int, int)? _lastSignature;
+  /// 上次预热依据的配色签名，用于避免重复排任务；主题、强调色等变更
+  /// 后签名不同，会按新配色重新预热。
+  static Object? _lastSignature;
 
   static void schedule({
     required ThemeState themeState,
@@ -43,6 +46,11 @@ class AppearanceWarmup {
       themeState.effectiveSeedColor.toARGB32(),
       variant.index,
       brightness.index,
+      themeState.themeId,
+      Object.hashAllUnordered(
+        themeState.themeAccents.entries.map((e) => '${e.key}=${e.value}'),
+      ),
+      themeState.blackEnabled,
     );
     if (signature == _lastSignature) return;
     _lastSignature = signature;
@@ -96,6 +104,21 @@ class AppearanceWarmup {
           seedColor: themeState.effectiveSeedColor,
           brightness: brightness,
           variant: previewVariant,
+        ),
+      );
+    }
+
+    // 主题画廊：每个主题一张缩略图（同族只画当前或族内第一个，这里
+    // 全族预热，多出的几项代价可忽略）
+    for (final spec in ThemeRegistry.all) {
+      queue(
+        () => ThemePreviewCache.schemeOf(
+          spec: spec,
+          brightness: brightness,
+          accentId: themeState.accentFor(spec),
+          seed: themeState.effectiveSeedColor,
+          variant: variant,
+          black: themeState.blackEnabled,
         ),
       );
     }

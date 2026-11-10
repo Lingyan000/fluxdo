@@ -25,13 +25,18 @@ import '../../services/emoji_handler.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_palettes.dart';
+import '../../theme/color_contrast.dart';
 import '../../theme/theme_registry.dart';
+import '../../theme/theme_preview_cache.dart';
 import '../../theme/theme_resolver.dart';
+import '../../theme/theme_spec.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
+
+part 'appearance_theme_section.dart';
 
 /// 外观设置数据声明
 List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
@@ -68,6 +73,14 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       icon: Symbols.brightness_6_rounded,
       wrapInCard: false,
       items: [
+        CustomModel(
+          id: 'themePreview',
+          title: l10n.appearance_theme,
+          builder: (context, ref) => const Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: _ThemeLivePreview(),
+          ),
+        ),
         CustomModel(
           id: 'themeMode',
           title: l10n.appearance_themeMode,
@@ -144,31 +157,41 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       ],
     ),
 
+    // ── 主题 ───────────────────────────────────────────────────────
+    SettingsGroup(
+      title: l10n.appearance_theme,
+      icon: Symbols.color_lens_rounded,
+      wrapInCard: false,
+      items: [
+        CustomModel(
+          id: 'themeGallery',
+          title: l10n.appearance_theme,
+          builder: (context, ref) => const _ThemeGallery(),
+        ),
+        CustomModel(
+          id: 'themeOptions',
+          title: l10n.appearance_themeAccent,
+          builder: (context, ref) => const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: _ThemeOptionsSection(),
+          ),
+        ),
+      ],
+    ),
+
     // ── 表面质感 ───────────────────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_surfaceStyle,
       icon: Symbols.contrast_rounded,
       items: [
         SwitchModel(
-          id: 'neutral',
-          title: l10n.appearance_neutral,
-          subtitle: l10n.appearance_neutralDesc,
-          icon: Symbols.format_color_reset_rounded,
-          // 过渡期：开关外观保留，背后切换简约 / Material 主题；
-          // 主题画廊上线后由主题选择替代
-          getValue: (ref) =>
-              ref.watch(themeProvider).themeId == ThemeRegistry.minimalId,
-          onChanged: (ref, v) => ref
-              .read(themeProvider.notifier)
-              .setThemeId(
-                v ? ThemeRegistry.minimalId : ThemeRegistry.materialId,
-              ),
-        ),
-        SwitchModel(
           id: 'black',
           title: l10n.appearance_modeBlack,
           subtitle: l10n.appearance_blackDesc,
           icon: Symbols.dark_mode_rounded,
+          // 固定配色主题的深色底往往就是主题特色，由主题声明是否支持
+          enabledWhen: (ref) =>
+              ref.watch(themeProvider).themeSpec.supportsPureBlack,
           getValue: (ref) => ref.watch(themeProvider).blackEnabled,
           onChanged: (ref, v) =>
               ref.read(themeProvider.notifier).setBlackEnabled(v),
@@ -186,20 +209,6 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           id: 'customBackground',
           title: l10n.appearance_customBackground,
           builder: (context, ref) => const _BackgroundSection(),
-        ),
-      ],
-    ),
-
-    // ── 主题色 ────────────────────────────────────────────────────
-    SettingsGroup(
-      title: l10n.appearance_themeColor,
-      icon: Symbols.color_lens_rounded,
-      wrapInCard: false,
-      items: [
-        CustomModel(
-          id: 'themeColor',
-          title: l10n.appearance_themeColor,
-          builder: (context, ref) => const _ThemeColorSection(),
         ),
       ],
     ),
@@ -1556,7 +1565,7 @@ class _SliderRow extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════
 
 class _ThemeColorSection extends ConsumerStatefulWidget {
-  const _ThemeColorSection();
+  const _ThemeColorSection({super.key});
 
   @override
   ConsumerState<_ThemeColorSection> createState() => _ThemeColorSectionState();
@@ -1765,7 +1774,13 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                     child: Padding(
                       padding: const EdgeInsets.all(4),
                       child: IconButton.filledTonal(
-                        onPressed: () => _showColorPicker(context),
+                        onPressed: () async {
+                          final color = await _showSeedColorPicker(context, ref);
+                          if (color == null) return;
+                          final notifier = ref.read(themeProvider.notifier);
+                          await notifier.addCustomColor(color);
+                          await notifier.selectCustomColor(color);
+                        },
                         iconSize: 28,
                         icon: Icon(Symbols.add_rounded, color: cs.primary),
                       ),
@@ -1776,255 +1791,6 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           },
         ),
       ],
-    );
-  }
-
-  // ── 自定义取色弹框 ──
-
-  void _showColorPicker(BuildContext context) {
-    double hue = 0;
-    double saturation = 0.8;
-    double value = 0.9;
-    final hexController = TextEditingController(text: 'E57373');
-
-    void syncHex() {
-      final color = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
-      hexController.text = color
-          .toARGB32()
-          .toRadixString(16)
-          .substring(2)
-          .toUpperCase();
-    }
-
-    syncHex();
-
-    showAppBottomSheet<Color>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final color = HSVColor.fromAHSV(
-              1.0,
-              hue,
-              saturation,
-              value,
-            ).toColor();
-            final variant = ref.read(themeProvider).schemeVariant;
-            // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
-            // 免得把色卡网格常用的那些配色挤出去。
-            final scheme = ColorScheme.fromSeed(
-              seedColor: color,
-              dynamicSchemeVariant: variant,
-              brightness: Theme.of(context).brightness,
-            );
-
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 配色预览 + HEX
-                    Row(
-                      children: [
-                        // 迷你色卡（与网格色卡完全一致的比例和样式）
-                        Container(
-                          width: 60,
-                          height: 60,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: ShapeDecoration(
-                            color: scheme.surfaceContainerLow,
-                            shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(color: scheme.primary, width: 2),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                flex: 7,
-                                child: ColoredBox(color: scheme.primary),
-                              ),
-                              Expanded(
-                                flex: 3,
-                                child: Center(
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _miniDot(scheme.primary),
-                                      const SizedBox(width: 5),
-                                      _miniDot(scheme.secondary),
-                                      const SizedBox(width: 5),
-                                      _miniDot(scheme.tertiary),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // HEX 输入
-                              Row(
-                                children: [
-                                  Text(
-                                    '#',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w500,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: hexController,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            fontFamily: 'monospace',
-                                          ),
-                                      decoration: const InputDecoration(
-                                        isDense: true,
-                                        border: InputBorder.none,
-                                        contentPadding: EdgeInsets.zero,
-                                      ),
-                                      onSubmitted: (hex) {
-                                        final parsed = int.tryParse(
-                                          'FF$hex',
-                                          radix: 16,
-                                        );
-                                        if (parsed != null) {
-                                          final c = Color(parsed);
-                                          final hsv = HSVColor.fromColor(c);
-                                          setSheetState(() {
-                                            hue = hsv.hue;
-                                            saturation = hsv.saturation;
-                                            value = hsv.value;
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'H:${hue.round()}\u00B0  '
-                                'S:${(saturation * 100).round()}%  '
-                                'B:${(value * 100).round()}%',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 色相条
-                    _HueBar(
-                      hue: hue,
-                      onChanged: (h) {
-                        setSheetState(() => hue = h);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 饱和度
-                    _GradientSlider(
-                      label: 'S',
-                      value: saturation,
-                      thumbColor: HSVColor.fromAHSV(
-                        1,
-                        hue,
-                        saturation,
-                        1,
-                      ).toColor(),
-                      gradientColors: [
-                        HSVColor.fromAHSV(1, hue, 0, value).toColor(),
-                        HSVColor.fromAHSV(1, hue, 1, value).toColor(),
-                      ],
-                      onChanged: (s) {
-                        setSheetState(() => saturation = s);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-
-                    // 明度
-                    _GradientSlider(
-                      label: 'B',
-                      value: value,
-                      thumbColor: HSVColor.fromAHSV(
-                        1,
-                        hue,
-                        saturation,
-                        value,
-                      ).toColor(),
-                      gradientColors: [
-                        HSVColor.fromAHSV(1, hue, saturation, 0).toColor(),
-                        HSVColor.fromAHSV(1, hue, saturation, 1).toColor(),
-                      ],
-                      onChanged: (v) {
-                        setSheetState(() => value = v);
-                        syncHex();
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(sheetContext, color),
-                        child: Text(context.l10n.common_confirm),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).then((color) {
-      if (color != null) {
-        ref.read(themeProvider.notifier).addCustomColor(color);
-        ref.read(themeProvider.notifier).selectCustomColor(color);
-      }
-      // 延迟释放 controller，等待退场动画结束
-      // （.then 在 didPop 时触发，此时退场动画仍在进行，
-      //  主题重建会导致弹窗中的 TextField 重建并访问 controller）
-      Future.delayed(const Duration(milliseconds: 350), () {
-        hexController.dispose();
-      });
-    });
-  }
-
-  static Widget _miniDot(Color color) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 
@@ -2043,6 +1809,253 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
     };
   }
 }
+
+// ── 自定义取色弹框（返回所选颜色，用途由调用方决定）──
+
+Future<Color?> _showSeedColorPicker(BuildContext context, WidgetRef ref) {
+  double hue = 0;
+  double saturation = 0.8;
+  double value = 0.9;
+  final hexController = TextEditingController(text: 'E57373');
+
+  void syncHex() {
+    final color = HSVColor.fromAHSV(1.0, hue, saturation, value).toColor();
+    hexController.text = color
+        .toARGB32()
+        .toRadixString(16)
+        .substring(2)
+        .toUpperCase();
+  }
+
+  syncHex();
+
+  return showAppBottomSheet<Color>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return StatefulBuilder(
+        builder: (context, setSheetState) {
+          final color = HSVColor.fromAHSV(
+            1.0,
+            hue,
+            saturation,
+            value,
+          ).toColor();
+          final variant = ref.read(themeProvider).schemeVariant;
+          // 拖动滑块会连续产生一次性种子色，刻意不走 SeedColorScheme 缓存，
+          // 免得把色卡网格常用的那些配色挤出去。
+          final scheme = ColorScheme.fromSeed(
+            seedColor: color,
+            dynamicSchemeVariant: variant,
+            brightness: Theme.of(context).brightness,
+          );
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 配色预览 + HEX
+                  Row(
+                    children: [
+                      // 迷你色卡（与网格色卡完全一致的比例和样式）
+                      Container(
+                        width: 60,
+                        height: 60,
+                        clipBehavior: Clip.antiAlias,
+                        decoration: ShapeDecoration(
+                          color: scheme.surfaceContainerLow,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(color: scheme.primary, width: 2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 7,
+                              child: ColoredBox(color: scheme.primary),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _miniDot(scheme.primary),
+                                    const SizedBox(width: 5),
+                                    _miniDot(scheme.secondary),
+                                    const SizedBox(width: 5),
+                                    _miniDot(scheme.tertiary),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // HEX 输入
+                            Row(
+                              children: [
+                                Text(
+                                  '#',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: TextField(
+                                    controller: hexController,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w500,
+                                          fontFamily: 'monospace',
+                                        ),
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      border: InputBorder.none,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                    onSubmitted: (hex) {
+                                      final parsed = int.tryParse(
+                                        'FF$hex',
+                                        radix: 16,
+                                      );
+                                      if (parsed != null) {
+                                        final c = Color(parsed);
+                                        final hsv = HSVColor.fromColor(c);
+                                        setSheetState(() {
+                                          hue = hsv.hue;
+                                          saturation = hsv.saturation;
+                                          value = hsv.value;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'H:${hue.round()}\u00B0  '
+                              'S:${(saturation * 100).round()}%  '
+                              'B:${(value * 100).round()}%',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 色相条
+                  _HueBar(
+                    hue: hue,
+                    onChanged: (h) {
+                      setSheetState(() => hue = h);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 饱和度
+                  _GradientSlider(
+                    label: 'S',
+                    value: saturation,
+                    thumbColor: HSVColor.fromAHSV(
+                      1,
+                      hue,
+                      saturation,
+                      1,
+                    ).toColor(),
+                    gradientColors: [
+                      HSVColor.fromAHSV(1, hue, 0, value).toColor(),
+                      HSVColor.fromAHSV(1, hue, 1, value).toColor(),
+                    ],
+                    onChanged: (s) {
+                      setSheetState(() => saturation = s);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 明度
+                  _GradientSlider(
+                    label: 'B',
+                    value: value,
+                    thumbColor: HSVColor.fromAHSV(
+                      1,
+                      hue,
+                      saturation,
+                      value,
+                    ).toColor(),
+                    gradientColors: [
+                      HSVColor.fromAHSV(1, hue, saturation, 0).toColor(),
+                      HSVColor.fromAHSV(1, hue, saturation, 1).toColor(),
+                    ],
+                    onChanged: (v) {
+                      setSheetState(() => value = v);
+                      syncHex();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext, color),
+                      child: Text(context.l10n.common_confirm),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  ).whenComplete(() {
+    // 延迟释放 controller，等待退场动画结束
+    // （完成回调在 didPop 时触发，此时退场动画仍在进行，
+    //  主题重建会导致弹窗中的 TextField 重建并访问 controller）
+    Future.delayed(const Duration(milliseconds: 350), () {
+      hexController.dispose();
+    });
+  });
+}
+
+
+Widget _miniDot(Color color) {
+  return Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+}
+
 
 /// 调色板名字（色卡 tooltip 用）。
 String _paletteLabel(BuildContext context, String paletteId) {
