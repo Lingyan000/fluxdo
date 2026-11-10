@@ -23,6 +23,8 @@ jobs:
           echo '127.0.0.1 community.miniapp-probe.test' | sudo tee -a /etc/hosts
           openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=community.miniapp-probe.test' -addext 'subjectAltName=DNS:community.miniapp-probe.test,IP:127.0.0.1' 2>/dev/null
           sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain build/mac-probe/cert.pem
+          curl --fail --max-time 30 -sS https://cdn.ldstatic.com/plugins/discourse-mini-app/sdk-5665d8b1184d73c5e6dd392d45da35346d779bb7463c1e3b8db2d6530883aadd.js -o build/mac-probe/official-sdk.js
+          echo '5665d8b1184d73c5e6dd392d45da35346d779bb7463c1e3b8db2d6530883aadd  build/mac-probe/official-sdk.js' | shasum -a 256 -c
           python3 tool/mac_host_probe/server.py > build/mac-probe/server.log 2>&1 &
           SERVER_PID=$!
           trap 'cat "$PROBE_ROOT/build/mac-probe/server.log"; kill "$SERVER_PID" 2>/dev/null || true' EXIT

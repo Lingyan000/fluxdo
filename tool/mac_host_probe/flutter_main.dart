@@ -54,7 +54,7 @@ class Probe extends StatelessWidget {
             final state=await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot);
             report('flutter-snapshot',state);
             final sandbox=await controller.evaluateJavascript(source:'window.sandboxProbeResults || null');
-            if(sandbox!=null) {report('sandbox-results',sandbox);report('probe-completed',mode);exit(0);}
+            if(sandbox!=null && state is Map && (state['failed']==true || state['loading']==false)) {report('sandbox-results',sandbox);report('probe-completed',mode);exit(0);}
           }
           catch(e){report('flutter-snapshot-error',e.toString());}
         });

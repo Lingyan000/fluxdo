@@ -21,8 +21,12 @@ for action in ["launch", "check", "runtime", "usage"]:
     configuration[action + "Url"] = "/mini-app-api/production/" + app_id + "/" + action
 configuration["httpAuthorizationUrl"] = "/mini-app-api/production/" + app_id + "/http-authorization"
 configuration["webSocketAuthorizationUrl"] = "/mini-app-api/production/" + app_id + "/websocket-authorization"
-sdk = b"export const fixture=true;"
+sdk_path = Path('build/mac-probe/official-sdk.js')
+sdk = sdk_path.read_bytes() if sdk_path.exists() else b"export const fixture=true;"
 configuration.update({"sdkUrl": origin + "/sdk.js", "sdkSha256": hashlib.sha256(sdk).hexdigest(), "sdkByteLength": len(sdk)})
+manifest = {"id": app_id, "name": "Fixture", "format": 1, "version": "1.0.0", "entry": "index.html", "script": "app.js", "style": "app.css", "permissions": []}
+files = {"manifest.json": json.dumps(manifest), "index.html": '<p id="fixture">Synthetic app</p>', "app.css": 'body{background:#ddeeff}', "app.js": 'miniApp.ready().then(()=>miniApp.rendered());', "strings.json": '{}'}
+release = {"id": 1, "app_id": app_id, "name": "Fixture", "description": "Synthetic", "version": "1.0.0", "release_notes": "", "channel": "production", "manifest": manifest, "permissions": [], "package_url": origin + '/package.bin', "package_size": 128, "package_password": "synthetic", "public_key": {}, "zip_sha256": 'b' * 64}
 boot = {"configuration": configuration, "entry": entry,
         "prefix": "", "expectedUserId": 2, "failureMessage": "Host failed"}
 source = Path("lib/modules/mini_apps/mini_app_lightweight_host.dart").read_text(encoding="utf-8")
@@ -71,8 +75,19 @@ export function mountLoader(root, options) {window.fixtureMounted=true;root.clas
 return {destroy(){},setAudioMuted:async value=>options.onAudioStateChange(value)};}'''
         elif self.path == "/sdk.js":
             body, mime = sdk, "application/javascript"
+        elif self.path == assets['packageWorker']:
+            # Only replaces cryptographic package processing in this isolated fixture.
+            body, mime = ('onmessage=()=>postMessage({type:"complete",files:' + json.dumps(files) + '});').encode(), 'application/javascript'
+        elif self.path == '/package.bin':
+            body, mime = bytes(128), 'application/octet-stream'
+        elif self.path == configuration['frameHostUrl']:
+            headers['Content-Security-Policy'] = "default-src 'none'; style-src 'self'; frame-src 'self'; frame-ancestors 'self'"
+            body, mime = b'<!doctype html><html><head><meta name="discourse-mini-app-host" content="1"></head><body></body></html>', 'text/html'
+        elif self.path.startswith(configuration['runtimeUrl']):
+            headers['Content-Security-Policy'] = "sandbox allow-scripts; script-src 'unsafe-inline'; default-src 'none'"
+            body, mime = b'''<!doctype html><script>{const instance=location.hash.slice(1);const channel=new MessageChannel();channel.port1.onmessage=e=>{if(e.data.type==='mount-package'&&e.data.instance===instance){document.open();document.write(e.data.html);document.close();}};parent.postMessage({type:'runtime-ready',instance},'*',[channel.port2]);}</script>''', 'text/html'
         elif self.path == configuration["launchUrl"]:
-            body, status = b'{"error":"ACCESS_DENIED"}', 403
+            body = json.dumps({"release": release, "runtime_token": "synthetic", "runtime_context": 'c' * 64}).encode()
         elif self.path.endswith(".css"):
             body, mime = b"", "text/css"
         else:
