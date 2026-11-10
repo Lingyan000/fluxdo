@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'mini_app.dart';
 import 'mini_app_host_adapter.dart';
 import 'mini_app_lightweight_host.dart';
+import 'mini_app_url.dart';
 
 const id = '01a1b02d-04ed-7342-baa5-769b244b7b9a';
 final entry = Uri.parse('https://localhost:8765/apps/$id?embed_mode=true&room=42#invite');
@@ -55,6 +56,15 @@ class Probe extends StatelessWidget {
     onReceivedError:(c,r,e)=>report('flutter-error',{'type':e.type.toString(),'description':e.description,'main':r.isForMainFrame}),
     onConsoleMessage:(c,m)=>report('flutter-console',m.message),
     onReceivedServerTrustAuthRequest:(c,challenge) async => challenge.protectionSpace.host=='localhost'?ServerTrustAuthResponse(action:ServerTrustAuthResponseAction.PROCEED):null,
-    shouldOverrideUrlLoading:(c,a) async {report('flutter-navigation',{'url':a.request.url.toString(),'main':a.isForMainFrame});return NavigationActionPolicy.ALLOW;},
+    shouldOverrideUrlLoading:(c,a) async {
+      final uri=a.request.url;
+      var allow=uri==null;
+      if(uri!=null && {'https','http','about','blob','data'}.contains(uri.scheme)) {
+        final appUri=MiniAppUrl.parse(uri.toString(),entry.origin);
+        allow=a.isForMainFrame!=true || (appUri!=null && MiniAppUrl.appId(appUri)==id) || uri.toString()=='about:blank';
+      }
+      report('flutter-navigation',{'url':uri.toString(),'main':a.isForMainFrame,'allow':allow});
+      return allow?NavigationActionPolicy.ALLOW:NavigationActionPolicy.CANCEL;
+    },
   ));
 }
