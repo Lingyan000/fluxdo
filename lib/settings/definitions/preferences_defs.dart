@@ -23,6 +23,7 @@ import '../../widgets/ai/ai_model_select_sheet.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/sticker_market_service.dart';
 import '../settings_model.dart';
+import 'language_setting.dart';
 
 /// 功能设置数据声明
 List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
@@ -32,6 +33,7 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
       title: l10n.preferences_basic,
       icon: Symbols.tune_rounded,
       items: [
+        buildLanguageSetting(context),
         SwitchModel(
           id: 'anonymousShare',
           title: l10n.preferences_anonymousShare,
@@ -81,7 +83,9 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             onTap: (context, ref) async {
               final opened = await AppLinkService.openDefaultLinkSettings();
               if (!opened && context.mounted) {
-                ToastService.showError(context.l10n.settings_defaultLinksFailed);
+                ToastService.showError(
+                  context.l10n.settings_defaultLinksFailed,
+                );
               }
             },
           ),

@@ -16,6 +16,7 @@ import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/shape_presets.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/preview_fonts.dart';
@@ -29,11 +30,17 @@ const _sectionIds = {
   'shapePreset',
 };
 
+Finder _choice(String label) => find.byWidgetPredicate(
+  (widget) =>
+      widget is Semantics &&
+      widget.properties.button == true &&
+      widget.properties.label == label,
+);
+
 List<ThemeSpec> _loadAssets() => [
-  for (final f
-      in Directory('assets/themes').listSync().whereType<File>().where(
-        (f) => f.path.endsWith('.json'),
-      ))
+  for (final f in Directory(
+    'assets/themes',
+  ).listSync().whereType<File>().where((f) => f.path.endsWith('.json')))
     ThemeSpec.fromJson(
       jsonDecode(f.readAsStringSync()) as Map<String, dynamic>,
     ),
@@ -59,7 +66,8 @@ Widget _app(ProviderContainer container, {ThemeMode mode = ThemeMode.light}) {
           ThemeData data(ColorScheme scheme, colors) => ThemeData(
             colorScheme: scheme,
             // 截图导出时用真实字体，常规断言保持测试默认字体
-            fontFamily: const String.fromEnvironment('THEME_PREVIEW_DIR').isEmpty
+            fontFamily:
+                const String.fromEnvironment('THEME_PREVIEW_DIR').isEmpty
                 ? null
                 : 'MiSans',
             extensions: [colors, colors.render, shapes, shapes.render],
@@ -78,7 +86,7 @@ Widget _app(ProviderContainer container, {ThemeMode mode = ThemeMode.light}) {
             home: Scaffold(
               body: Builder(
                 builder: (context) {
-                  final items = buildAppearanceGroups(context)
+                  final items = buildAppearanceSearchGroups(context)
                       .expand((g) => g.items)
                       .where((i) => _sectionIds.contains(i.id))
                       .where((i) => i.isVisible(ref))
@@ -134,13 +142,16 @@ void main() {
     expect(find.text('配色风格'), findsOneWidget);
     expect(find.text('口味'), findsNothing);
 
-    await tester.tap(find.text('Catppuccin'));
+    await tester.tap(_choice('Catppuccin'));
     await tester.pumpAndSettle();
     expect(c.read(themeProvider).themeSpec.familyId, 'catppuccin');
     expect(find.text('口味'), findsOneWidget);
     expect(find.text('强调色'), findsOneWidget);
     expect(find.text('配色风格'), findsNothing);
+    expect(find.byType(M3eButtonGroup<String>), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Mocha'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Mocha'));
     await tester.pumpAndSettle();
     expect(c.read(themeProvider).themeId, 'catppuccin-mocha');
@@ -167,7 +178,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('圆角风格：跟随主题显示主题推荐档，可指定与恢复跟随', (tester) async {
+  testWidgets('圆角风格：跟随项只显示名称，可指定与恢复跟随', (tester) async {
     tester.view.physicalSize = const Size(420, 3600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -176,15 +187,15 @@ void main() {
     await tester.pumpWidget(_app(c));
     await tester.pumpAndSettle();
     expect(find.text('跟随主题'), findsOneWidget);
-    // 终端主题推荐方正：「跟随主题」下方标注 + 「方正」选项本身
-    expect(find.text('方正'), findsNWidgets(2));
+    // 跟随项保留形状小样，不再重复显示推荐档的文字。
+    expect(find.text('方正'), findsOneWidget);
     expect(c.read(themeProvider).effectiveShapePreset, ShapePreset.sharp);
 
-    await tester.tap(find.text('标准'));
+    await tester.tap(_choice('标准'));
     await tester.pumpAndSettle();
     expect(c.read(themeProvider).shapeOverride, ShapePreset.standard);
 
-    await tester.tap(find.text('跟随主题'));
+    await tester.tap(_choice('跟随主题'));
     await tester.pumpAndSettle();
     expect(c.read(themeProvider).shapeOverride, isNull);
     expect(tester.takeException(), isNull);
@@ -223,9 +234,8 @@ void main() {
       await tester.runAsync(() async {
         final image = await boundary.toImage(pixelRatio: 1);
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-        File(
-          '$dir/theme_section_$themeId.png',
-        ).writeAsBytesSync(bytes!.buffer.asUint8List());
+        File('$dir/theme_section_$themeId.png')
+            .writeAsBytesSync(bytes!.buffer.asUint8List());
       });
       c.dispose();
     }

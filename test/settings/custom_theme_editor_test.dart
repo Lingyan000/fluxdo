@@ -15,9 +15,18 @@ import 'package:fluxdo/settings/settings_renderer.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
+import 'package:fluxdo/theme/shape_presets.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/preview_fonts.dart';
+
+Finder _choice(String label) => find.byWidgetPredicate(
+  (widget) =>
+      widget is Semantics &&
+      widget.properties.button == true &&
+      widget.properties.label == label,
+);
 
 List<ThemeSpec> _themes() => [
   for (final f in Directory(
@@ -59,11 +68,12 @@ void main() {
   Future<ProviderContainer> pump(
     WidgetTester tester, {
     Map<String, Object> prefs = const {},
+    bool preview = false,
   }) async {
-    tester.view.physicalSize = previewDir.isEmpty
-        ? const Size(480, 3200)
-        : const Size(840, 2000);
-    tester.view.devicePixelRatio = previewDir.isEmpty ? 1 : 2;
+    tester.view.physicalSize = preview
+        ? const Size(840, 2000)
+        : const Size(480, 3200);
+    tester.view.devicePixelRatio = preview ? 2 : 1;
     addTearDown(tester.view.reset);
     LocaleSettings.setLocale(AppLocale.zh);
     SharedPreferences.setMockInitialValues(prefs);
@@ -91,6 +101,7 @@ void main() {
               return RepaintBoundary(
                 key: const ValueKey('app'),
                 child: MaterialApp(
+                  debugShowCheckedModeBanner: false,
                   themeMode: ThemeMode.dark,
                   darkTheme: ThemeData(
                     colorScheme: resolved.dark,
@@ -109,7 +120,7 @@ void main() {
                       builder: (context) => ListView(
                         children: [
                           for (final item
-                              in buildAppearanceGroups(context)
+                              in buildAppearanceSearchGroups(context)
                                   .expand((g) => g.items)
                                   .where((i) => i.id == 'themeGallery'))
                             SettingsRenderer(model: item),
@@ -128,23 +139,45 @@ void main() {
     return c;
   }
 
-  testWidgets('新建主题：编辑名称并保存后自动选中', (tester) async {
+  testWidgets('新建主题：通过按钮组切换明暗和圆角，保存后自动选中', (tester) async {
     final c = await pump(tester);
     expect(find.text('我的主题'), findsOneWidget);
-    await tester.tap(find.text('新建主题'));
+    await tester.tap(_choice('新建主题'));
     await tester.pumpAndSettle();
 
     expect(find.text('编辑主题'), findsOneWidget);
     // 底稿名默认为「当前主题 副本」
     expect(find.text('Material 副本'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '晨雾');
+    await tester.tap(find.text('浅色'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<M3eButtonGroup<Brightness>>(
+            find.byType(M3eButtonGroup<Brightness>),
+          )
+          .selected,
+      Brightness.light,
+    );
     await tester.tap(find.text('深色'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<M3eButtonGroup<Brightness>>(
+            find.byType(M3eButtonGroup<Brightness>),
+          )
+          .selected,
+      Brightness.dark,
+    );
+    await tester.ensureVisible(find.text('方正'));
+    await tester.tap(find.text('方正'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
     final state = c.read(themeProvider);
     expect(state.customThemes.single.name['zh'], '晨雾');
+    expect(state.customThemes.single.shape, ShapePreset.sharp);
     expect(state.themeId, state.customThemes.single.id);
     expect(find.text('晨雾'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -152,19 +185,19 @@ void main() {
 
   testWidgets('长按自定义主题可复制代码与删除', (tester) async {
     final c = await pump(tester);
-    await tester.tap(find.text('新建主题'));
+    await tester.tap(_choice('新建主题'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '待删');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.text('待删'));
+    await tester.longPress(_choice('待删'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('复制主题代码'));
     await tester.pumpAndSettle();
     expect(jsonDecode(clipboard!)['name']['zh'], '待删');
 
-    await tester.longPress(find.text('待删'));
+    await tester.longPress(_choice('待删'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除').last);
     await tester.pumpAndSettle();
@@ -193,10 +226,10 @@ void main() {
         await loader.load();
       }
     });
-    await pump(tester, prefs: {'theme_id': 'catppuccin-mocha'});
+    await pump(tester, prefs: {'theme_id': 'catppuccin-mocha'}, preview: true);
     await tester.ensureVisible(find.text('新建主题'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('新建主题'));
+    await tester.tap(_choice('新建主题'));
     await tester.pumpAndSettle();
     final boundary = tester.renderObject<RenderRepaintBoundary>(
       find.byKey(const ValueKey('app')),
@@ -206,6 +239,20 @@ void main() {
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       File('$previewDir/theme_editor.png')
           .writeAsBytesSync(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+    await tester.scrollUntilVisible(
+      find.byType(M3eButtonGroup<ShapePreset>),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: 1);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('$previewDir/theme_editor_shape.png')
+          .writeAsBytesSync(bytes!.buffer.asUint8List());
+      image.dispose();
     });
   });
 

@@ -64,9 +64,7 @@ Future<void> _importThemeFromClipboard(
     return;
   }
   try {
-    final spec = await ref
-        .read(themeProvider.notifier)
-        .importCustomTheme(code);
+    final spec = await ref.read(themeProvider.notifier).importCustomTheme(code);
     if (!context.mounted) return;
     ToastService.showSuccess(
       l10n.appearance_customThemeImported(_themeName(context, spec)),
@@ -301,22 +299,23 @@ class _CustomThemeEditorPageState
             ),
           ),
           const SizedBox(height: 16),
-          Center(
-            child: SegmentedButton<Brightness>(
-              segments: [
-                ButtonSegment(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: M3eButtonGroup<Brightness>(
+              items: [
+                M3eButtonGroupItem(
                   value: Brightness.light,
                   icon: const Icon(Symbols.light_mode_rounded),
                   label: Text(l10n.appearance_modeLight),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: Brightness.dark,
                   icon: const Icon(Symbols.dark_mode_rounded),
                   label: Text(l10n.appearance_modeDark),
                 ),
               ],
-              selected: {side},
-              onSelectionChanged: (s) => setState(() => _side = s.first),
+              selected: side,
+              onSelected: (value) => setState(() => _side = value),
             ),
           ),
           sectionTitle(l10n.appearance_themeEditorBase),
@@ -440,24 +439,24 @@ class _CustomThemeEditorPageState
           sectionTitle(l10n.appearance_shape),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SegmentedButton<ShapePreset>(
-              segments: [
-                ButtonSegment(
+            child: M3eButtonGroup<ShapePreset>(
+              items: [
+                M3eButtonGroupItem(
                   value: ShapePreset.standard,
                   label: Text(l10n.appearance_shapeStandard),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: ShapePreset.compact,
                   label: Text(l10n.appearance_shapeCompact),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: ShapePreset.sharp,
                   label: Text(l10n.appearance_shapeSharp),
                 ),
               ],
-              selected: {_spec.shape},
-              onSelectionChanged: (s) =>
-                  setState(() => _spec = _spec.copyWith(shape: s.first)),
+              selected: _spec.shape,
+              onSelected: (value) =>
+                  setState(() => _spec = _spec.copyWith(shape: value)),
             ),
           ),
         ],
@@ -499,8 +498,10 @@ class _NewThemeCard extends ConsumerWidget {
       child: Semantics(
         button: true,
         label: label,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: _AppearancePressSurface(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(21),
+          ),
           onTap: () =>
               _createThemeFrom(context, ref, ref.read(themeProvider).themeSpec),
           child: Column(
@@ -517,7 +518,11 @@ class _NewThemeCard extends ConsumerWidget {
                         side: BorderSide(color: cs.outlineVariant),
                       ),
                     ),
-                    child: Icon(Symbols.add_rounded, color: cs.primary, size: 32),
+                    child: Icon(
+                      Symbols.add_rounded,
+                      color: cs.primary,
+                      size: 32,
+                    ),
                   ),
                 ),
               ),
@@ -526,9 +531,8 @@ class _NewThemeCard extends ConsumerWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
+                style: Theme.of(context).textTheme.labelMedium
+                    ?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
           ),

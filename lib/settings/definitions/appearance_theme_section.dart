@@ -28,6 +28,17 @@ String _themeName(BuildContext context, ThemeSpec spec) {
   };
 }
 
+/// 当前选择需要区分同族版本，画廊卡片仍只显示主题族名。
+String _themeFullName(BuildContext context, ThemeSpec spec) {
+  final name = _themeName(context, spec);
+  final variant = localizedName(
+    spec.variantName,
+    Localizations.localeOf(context),
+    '',
+  );
+  return variant.isEmpty ? name : '$name · $variant';
+}
+
 String _groupName(BuildContext context, ThemeGroup group) {
   final l10n = context.l10n;
   return switch (group) {
@@ -41,34 +52,100 @@ String _groupName(BuildContext context, ThemeGroup group) {
 }
 
 /// 当前主题的实时预览：一张缩略首页，主题切换时随 ThemeData 一起过渡。
-class _ThemeLivePreview extends StatelessWidget {
+class _ThemeLivePreview extends ConsumerWidget {
   const _ThemeLivePreview();
 
-  static const double _phoneWidth = 150;
-
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final shapes = context.shapes;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      alignment: Alignment.center,
-      decoration: ShapeDecoration(
-        color: scheme.surfaceContainer,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(28),
-        ),
-      ),
-      child: SizedBox(
-        width: _phoneWidth,
-        child: AspectRatio(
-          aspectRatio: 9 / 17,
-          child: _MiniScreen(
-            scheme: scheme,
-            shapes: shapes,
-            cornerRadius: 22,
+    final state = ref.watch(themeProvider);
+    final mono = FontCatalog.byId(state.effectiveMonoFontId);
+    return ClipRSuperellipse(
+      borderRadius: shapes.borderRadius(20),
+      child: Stack(
+        children: [
+          if (state.isTransparentActive)
+            Positioned.fill(
+              child: AppBackgroundLayer(background: state.background),
+            ),
+          Container(
+            color: scheme.surfaceContainer,
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                ExcludeSemantics(
+                  child: SizedBox(
+                    width: 60,
+                    height: 108,
+                    child: _MiniScreen(
+                      scheme: scheme,
+                      shapes: shapes,
+                      cornerRadius: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Tooltip(
+                        message: _themeFullName(
+                          context,
+                          state.effectiveColorSpec,
+                        ),
+                        child: Text(
+                          _themeFullName(context, state.effectiveColorSpec),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        context.l10n.appearance_previewText,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFamily: state.fontFamilyName,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: ShapeDecoration(
+                          color: scheme.surfaceContainerHighest,
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: shapes.borderRadius(8),
+                          ),
+                        ),
+                        child: Text(
+                          'final theme = Theme.of(context);',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontFamily:
+                                mono != null &&
+                                    state.loadedFonts.contains(mono.id)
+                                ? mono.family
+                                : 'monospace',
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -182,17 +259,32 @@ class _MiniHomePainter extends CustomPainter {
       );
       final textLeft = cx + h * 0.05;
       rrect(
-        Rect.fromLTWH(textLeft, card.top + cardH * 0.22, card.width * 0.5, line),
+        Rect.fromLTWH(
+          textLeft,
+          card.top + cardH * 0.22,
+          card.width * 0.5,
+          line,
+        ),
         line / 2,
         scheme.onSurface,
       );
       rrect(
-        Rect.fromLTWH(cx, card.top + cardH * 0.55, card.width * 0.78, line * 0.8),
+        Rect.fromLTWH(
+          cx,
+          card.top + cardH * 0.55,
+          card.width * 0.78,
+          line * 0.8,
+        ),
         line / 2,
         scheme.onSurfaceVariant.withValues(alpha: 0.45),
       );
       rrect(
-        Rect.fromLTWH(cx, card.top + cardH * 0.74, card.width * 0.46, line * 0.8),
+        Rect.fromLTWH(
+          cx,
+          card.top + cardH * 0.74,
+          card.width * 0.46,
+          line * 0.8,
+        ),
         line / 2,
         scheme.onSurfaceVariant.withValues(alpha: 0.45),
       );
@@ -357,6 +449,7 @@ class _ThemeGallery extends ConsumerWidget {
 
 class _ThemeCard extends StatelessWidget {
   const _ThemeCard({
+    super.key,
     required this.width,
     required this.name,
     required this.scheme,
@@ -364,9 +457,11 @@ class _ThemeCard extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.onMore,
+    this.previewHeight,
   });
 
   final double width;
+  final double? previewHeight;
   final String name;
   final ColorScheme scheme;
   final UiShapes shapes;
@@ -378,77 +473,21 @@ class _ThemeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final preview = _MiniScreen(
+      scheme: scheme,
+      shapes: shapes,
+      cornerRadius: 10,
+    );
     return SizedBox(
       width: width,
-      child: Semantics(
-        button: true,
-        selected: selected,
+      child: _AppearanceChoiceCard(
         label: name,
-        child: GestureDetector(
-          onTap: onTap,
-          onLongPress: onMore,
-          onSecondaryTap: onMore,
-          behavior: HitTestBehavior.opaque,
-          child: Column(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.all(3),
-                decoration: ShapeDecoration(
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(21),
-                    side: BorderSide(
-                      color: selected ? cs.primary : Colors.transparent,
-                      width: 2.5,
-                    ),
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 9 / 14,
-                      child: _MiniScreen(
-                        scheme: scheme,
-                        shapes: shapes,
-                        cornerRadius: 18,
-                      ),
-                    ),
-                    if (selected)
-                      Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: cs.primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Symbols.check_rounded,
-                            size: 14,
-                            color: cs.onPrimary,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.labelMedium?.copyWith(
-                  color: selected ? cs.primary : cs.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w600 : null,
-                ),
-              ),
-            ],
-          ),
-        ),
+        selected: selected,
+        onTap: onTap,
+        onMore: onMore,
+        preview: previewHeight != null
+            ? SizedBox(height: previewHeight, child: preview)
+            : AspectRatio(aspectRatio: 9 / 14, child: preview),
       ),
     );
   }
@@ -509,17 +548,18 @@ class _FixedThemeOptions extends ConsumerWidget {
       children: [
         if (family.length > 1) ...[
           label(context.l10n.appearance_themeVariant),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
+          M3eButtonGroup<String>(
+            key: ValueKey('theme-variants-${spec.familyId}'),
+            scrollable: true,
+            selected: spec.id,
+            onSelected: notifier.setThemeId,
+            items: [
               for (final variant in family)
-                ChoiceChip(
+                M3eButtonGroupItem(
+                  value: variant.id,
                   label: Text(
                     localizedName(variant.variantName, locale, variant.id),
                   ),
-                  selected: variant.id == spec.id,
-                  onSelected: (_) => notifier.setThemeId(variant.id),
                 ),
             ],
           ),
@@ -572,12 +612,14 @@ class _AccentDot extends StatelessWidget {
     required this.tooltip,
     required this.selected,
     required this.onTap,
+    this.icon,
   });
 
   final Color color;
   final String tooltip;
   final bool selected;
   final VoidCallback onTap;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -593,7 +635,8 @@ class _AccentDot extends StatelessWidget {
         button: true,
         selected: selected,
         label: tooltip,
-        child: GestureDetector(
+        child: _AppearancePressSurface(
+          shape: const CircleBorder(),
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -611,6 +654,8 @@ class _AccentDot extends StatelessWidget {
               decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               child: selected
                   ? Icon(Symbols.check_rounded, size: 20, color: onColor)
+                  : icon != null
+                  ? Icon(icon, size: 18, color: onColor)
                   : null,
             ),
           ),
@@ -639,23 +684,25 @@ class _ShapeSelector extends ConsumerWidget {
       (null, l10n.appearance_shapeFollow, themePreset),
       for (final p in ShapePreset.values) (p, presetName(p), p),
     ];
-    return Row(
-      children: [
-        for (var i = 0; i < choices.length; i++) ...[
-          if (i > 0) const SizedBox(width: 10),
-          Expanded(
-            child: _ShapeChoiceCard(
-              label: choices[i].$2,
-              caption: choices[i].$1 == null ? presetName(themePreset) : null,
-              shapes: choices[i].$3.shapes,
-              selected: choices[i].$1 == override,
-              onTap: () => ref
-                  .read(themeProvider.notifier)
-                  .setShapeOverride(choices[i].$1),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < choices.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(
+              child: _ShapeChoiceCard(
+                label: choices[i].$2,
+                shapes: choices[i].$3.shapes,
+                selected: choices[i].$1 == override,
+                onTap: () => ref
+                    .read(themeProvider.notifier)
+                    .setShapeOverride(choices[i].$1),
+              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -663,7 +710,6 @@ class _ShapeSelector extends ConsumerWidget {
 class _ShapeChoiceCard extends StatelessWidget {
   const _ShapeChoiceCard({
     required this.label,
-    required this.caption,
     required this.shapes,
     required this.selected,
     required this.onTap,
@@ -671,8 +717,6 @@ class _ShapeChoiceCard extends StatelessWidget {
 
   final String label;
 
-  /// 「跟随主题」下显示主题推荐的那一档
-  final String? caption;
   final UiShapes shapes;
   final bool selected;
   final VoidCallback onTap;
@@ -680,72 +724,34 @@ class _ShapeChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Semantics(
-      button: true,
-      selected: selected,
+    return _AppearanceChoiceCard(
       label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
-          decoration: ShapeDecoration(
-            color: selected
-                ? cs.secondaryContainer
-                : cs.surfaceContainerHigh,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: context.shapes.borderRadius(16),
-              side: BorderSide(
-                color: selected ? cs.primary : Colors.transparent,
-                width: 2,
+      selected: selected,
+      onTap: onTap,
+      preview: SizedBox(
+        height: 56,
+        child: Center(
+          // 小样：一张卡片 + 一个胶囊按钮，形状跟随各档预设。
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.all(6),
+            alignment: Alignment.bottomRight,
+            decoration: ShapeDecoration(
+              color: cs.surfaceContainerHighest,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: shapes.borderRadius(12),
               ),
             ),
-          ),
-          child: Column(
-            children: [
-              // 小样：一张卡片 + 一个胶囊按钮
-              Container(
-                height: 34,
-                padding: const EdgeInsets.all(6),
-                alignment: Alignment.bottomRight,
-                decoration: ShapeDecoration(
-                  color: cs.surface,
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: shapes.borderRadius(12),
-                  ),
-                ),
-                child: Container(
-                  width: 22,
-                  height: 10,
-                  decoration: ShapeDecoration(
-                    color: cs.primary,
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: shapes.borderRadius(9999),
-                    ),
-                  ),
+            child: Container(
+              width: 22,
+              height: 10,
+              decoration: ShapeDecoration(
+                color: cs.primary,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: shapes.borderRadius(9999),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.labelMedium?.copyWith(
-                  color: selected ? cs.onSecondaryContainer : cs.onSurface,
-                ),
-              ),
-              if (caption != null)
-                Text(
-                  caption!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -769,9 +775,8 @@ class _FestivalBanner extends ConsumerWidget {
       Localizations.localeOf(context),
       festival.id,
     );
-    final until = MaterialLocalizations.of(
-      context,
-    ).formatShortMonthDay(occurrence.end);
+    final until = MaterialLocalizations.of(context)
+        .formatShortMonthDay(occurrence.end);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
@@ -792,9 +797,8 @@ class _FestivalBanner extends ConsumerWidget {
             Expanded(
               child: Text(
                 l10n.appearance_festivalActive(name, until),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: cs.onPrimaryContainer,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: cs.onPrimaryContainer),
               ),
             ),
             TextButton(

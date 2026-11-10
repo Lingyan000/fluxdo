@@ -1,4 +1,11 @@
 {
+  "appearance_themeLibrary": "全部主題",
+  "appearance_interface": "介面",
+  "appearance_backgroundEffects": "背景與效果",
+  "appearance_previewText": "讓閱讀更合你的習慣",
+  "appearance_colorSettings": "配色與風格",
+  "appearance_bgNone": "未設定背景",
+  "appearance_fontPreview": "目前字型與程式碼預覽",
   "@@locale": "zh_TW",
   "appearance_appIcon": "應用圖示",
   "appearance_bgBlur": "背景模糊",

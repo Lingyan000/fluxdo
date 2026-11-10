@@ -74,15 +74,16 @@ void main() {
               body: Builder(
                 builder: (context) => ListView(
                   children: [
-                    for (final item in buildAppearanceGroups(context)
-                        .expand((g) => g.items)
-                        .where(
-                          (i) => {
-                            'fontBody',
-                            'fontMono',
-                            'fontSource',
-                          }.contains(i.id),
-                        ))
+                    for (final item
+                        in buildAppearanceSearchGroups(context)
+                            .expand((g) => g.items)
+                            .where(
+                              (i) => {
+                                'fontBody',
+                                'fontMono',
+                                'fontSource',
+                              }.contains(i.id),
+                            ))
                       SettingsRenderer(model: item),
                   ],
                 ),

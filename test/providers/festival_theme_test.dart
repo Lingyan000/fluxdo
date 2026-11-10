@@ -17,11 +17,12 @@ import 'package:fluxdo/widgets/festival_greeting.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 List<ThemeSpec> _themes() => [
-  for (final f
-      in Directory('assets/themes').listSync().whereType<File>().where(
-        (f) => f.path.endsWith('.json'),
-      ))
-    ThemeSpec.fromJson(jsonDecode(f.readAsStringSync()) as Map<String, dynamic>),
+  for (final f in Directory(
+    'assets/themes',
+  ).listSync().whereType<File>().where((f) => f.path.endsWith('.json')))
+    ThemeSpec.fromJson(
+      jsonDecode(f.readAsStringSync()) as Map<String, dynamic>,
+    ),
 ];
 
 void main() {
@@ -132,19 +133,21 @@ void main() {
                 body: Consumer(
                   builder: (context, ref, _) => ListView(
                     children: [
-                      for (final item in buildAppearanceGroups(context)
-                          .expand((g) => g.items)
-                          .where(
-                            (i) => {
-                              'festivalBanner',
-                              'festivalEnabled',
-                              'festivalGreeting',
-                            }.contains(i.id),
-                          )
-                          .where((i) => i.isVisible(ref)))
+                      for (final item
+                          in buildAppearanceSearchGroups(context)
+                              .expand((g) => g.items)
+                              .where(
+                                (i) => {
+                                  'festivalBanner',
+                                  'festivalEnabled',
+                                  'festivalGreeting',
+                                }.contains(i.id),
+                              )
+                              .where((i) => i.isVisible(ref)))
                         SettingsRenderer(model: item),
                       TextButton(
-                        onPressed: () => FestivalGreeting.maybeShow(context, ref),
+                        onPressed: () =>
+                            FestivalGreeting.maybeShow(context, ref),
                         child: const Text('greet'),
                       ),
                     ],

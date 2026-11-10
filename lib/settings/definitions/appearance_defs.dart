@@ -9,14 +9,12 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../pages/topic_card_style_settings_page.dart';
 import '../../providers/app_icon_provider.dart';
 import '../../providers/font_provider.dart';
-import '../../providers/locale_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/app_background_service.dart';
@@ -39,7 +37,8 @@ import '../../theme/theme_preview_cache.dart';
 import '../../theme/theme_resolver.dart';
 import '../../theme/theme_spec.dart';
 import '../../utils/dialog_utils.dart';
-import '../../widgets/common/app_bottom_sheet.dart';
+import '../../widgets/common/app_background_layer.dart';
+import '../../widgets/settings/settings_group_page.dart';
 import '../../widgets/common/emoji_text.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
@@ -48,36 +47,14 @@ import '../settings_model.dart';
 part 'appearance_custom_theme_editor.dart';
 part 'appearance_font_section.dart';
 part 'appearance_theme_section.dart';
+part 'appearance_layout.dart';
+part 'appearance_press_surface.dart';
+part 'appearance_choice_card.dart';
 
-/// 外观设置数据声明
-List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
+/// 完整外观设置目录，供搜索索引、主页面和详情页面复用。
+List<SettingsGroup> buildAppearanceSearchGroups(BuildContext context) {
   final l10n = context.l10n;
   return [
-    // ── 语言 ──────────────────────────────────────────────────────
-    SettingsGroup(
-      title: l10n.appearance_language,
-      icon: Symbols.language_rounded,
-      items: [
-        CustomModel(
-          id: 'language',
-          title: l10n.appearance_language,
-          builder: (context, ref) {
-            final locale = ref.watch(localeProvider);
-            final label = _localeLabel(context.l10n, locale);
-            return ListTile(
-              leading: Icon(
-                Symbols.translate_rounded,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              title: Text(label),
-              trailing: const Icon(Symbols.chevron_right_rounded),
-              onTap: () => _showLanguagePicker(context, ref, locale),
-            );
-          },
-        ),
-      ],
-    ),
-
     // ── 主题模式 ───────────────────────────────────────────────────
     SettingsGroup(
       title: l10n.appearance_themeMode,
@@ -87,10 +64,7 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
         CustomModel(
           id: 'themePreview',
           title: l10n.appearance_theme,
-          builder: (context, ref) => const Padding(
-            padding: EdgeInsets.only(bottom: 16),
-            child: _ThemeLivePreview(),
-          ),
+          builder: (context, ref) => const _ThemeLivePreview(),
         ),
         CustomModel(
           id: 'themeMode',
@@ -98,7 +72,6 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           builder: (context, ref) {
             final themeState = ref.watch(themeProvider);
             final currentMode = themeState.mode;
-            final theme = Theme.of(context);
             final l10n = context.l10n;
 
             // 卡片预览实时反映主题与纯黑开关（透明不影响卡片预览）
@@ -115,53 +88,30 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             final darkScheme = preview.dark;
 
             final modes = [
-              (
-                ThemeMode.system,
-                Symbols.auto_mode_rounded,
-                l10n.appearance_modeAuto,
-                null,
-              ),
-              (
-                ThemeMode.light,
-                Symbols.light_mode_rounded,
-                l10n.appearance_modeLight,
-                lightScheme,
-              ),
-              (
-                ThemeMode.dark,
-                Symbols.dark_mode_rounded,
-                l10n.appearance_modeDark,
-                darkScheme,
-              ),
+              (ThemeMode.system, l10n.appearance_modeAuto, null),
+              (ThemeMode.light, l10n.appearance_modeLight, lightScheme),
+              (ThemeMode.dark, l10n.appearance_modeDark, darkScheme),
             ];
 
-            return Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Row(
-                  children: [
-                    for (int i = 0; i < modes.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 12),
-                      Expanded(
-                        child: _ThemeModeCard(
-                          mode: modes[i].$1,
-                          icon: modes[i].$2,
-                          label: modes[i].$3,
-                          previewScheme: modes[i].$4,
-                          lightScheme: lightScheme,
-                          darkScheme: darkScheme,
-                          isSelected: modes[i].$1 == currentMode,
-                          currentTheme: theme,
-                          onTap: () => ref
-                              .read(themeProvider.notifier)
-                              .setThemeMode(modes[i].$1),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            return Row(
+              children: [
+                for (int i = 0; i < modes.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(
+                    child: _ThemeModeCard(
+                      mode: modes[i].$1,
+                      label: modes[i].$2,
+                      previewScheme: modes[i].$3,
+                      lightScheme: lightScheme,
+                      darkScheme: darkScheme,
+                      isSelected: modes[i].$1 == currentMode,
+                      onTap: () => ref
+                          .read(themeProvider.notifier)
+                          .setThemeMode(modes[i].$1),
+                    ),
+                  ),
+                ],
+              ],
             );
           },
         ),
@@ -304,16 +254,16 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                 ),
               ];
 
-              // 与主题模式卡片同宽（400 宽放 3 张 → 2 张为 264）
-              return Align(
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 264),
-                  child: Row(
+              // 沿用主题模式的三列宽度，两个图标选项靠左排列。
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 24) / 3;
+                  return Row(
                     children: [
                       for (int i = 0; i < options.length; i++) ...[
                         if (i > 0) const SizedBox(width: 12),
-                        Expanded(
+                        SizedBox(
+                          width: width,
                           child: _AppIconCard(
                             label: options[i].$2,
                             assetPath: options[i].$3,
@@ -333,8 +283,8 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
                         ),
                       ],
                     ],
-                  ),
-                ),
+                  );
+                },
               );
             },
           ),
@@ -548,50 +498,6 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
 }
 
 // ── 语言选择器辅助函数 ───────────────────────────────────────────
-
-void _showLanguagePicker(
-  BuildContext context,
-  WidgetRef ref,
-  Locale? currentLocale,
-) {
-  final l10n = context.l10n;
-  final options = <(String, Locale?)>[
-    (l10n.appearance_languageSystem, null),
-    (l10n.appearance_languageZhCN, const Locale('zh', 'CN')),
-    (l10n.appearance_languageZhTW, const Locale('zh', 'TW')),
-    (l10n.appearance_languageZhHK, const Locale('zh', 'HK')),
-    (l10n.appearance_languageEn, const Locale('en', 'US')),
-  ];
-
-  AppBottomSheet.show<void>(
-    context: context,
-    contentPadding: EdgeInsets.zero,
-    builder: (sheetContext) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (label, locale) in options)
-            ListTile(
-              title: Text(label),
-              trailing: _localeKey(locale) == _localeKey(currentLocale)
-                  ? Icon(
-                      Symbols.check_rounded,
-                      color: Theme.of(sheetContext).colorScheme.primary,
-                    )
-                  : null,
-              onTap: () {
-                ref.read(localeProvider.notifier).setLocale(locale);
-                final effectiveLocale =
-                    locale ?? WidgetsBinding.instance.platformDispatcher.locale;
-                AiL10n.configureLocale(effectiveLocale);
-                Navigator.pop(sheetContext);
-              },
-            ),
-        ],
-      );
-    },
-  );
-}
 
 // ── 表情风格 ─────────────────────────────────────────────────────
 
@@ -847,29 +753,6 @@ class _DisplayModeData {
   _DisplayModeData({required this.modes, required this.active});
 }
 
-String _localeLabel(AppLocalizations l10n, Locale? locale) {
-  if (locale == null) return l10n.appearance_languageSystem;
-  switch ('${locale.languageCode}_${locale.countryCode}') {
-    case 'zh_CN':
-      return l10n.appearance_languageZhCN;
-    case 'zh_TW':
-      return l10n.appearance_languageZhTW;
-    case 'zh_HK':
-      return l10n.appearance_languageZhHK;
-    case 'en_US':
-      return l10n.appearance_languageEn;
-    default:
-      return l10n.appearance_languageSystem;
-  }
-}
-
-String _localeKey(Locale? locale) {
-  if (locale == null) return 'system';
-  return locale.countryCode != null
-      ? '${locale.languageCode}_${locale.countryCode}'
-      : locale.languageCode;
-}
-
 // ── 应用图标选择卡片 ─────────────────────────────────────────────
 
 /// 图标设计稿背景：细网格 + 中心十字线 + keyline 参考形状（圆 / 圆角方），
@@ -952,15 +835,13 @@ class _IconKeylinePainter extends CustomPainter {
   }
 }
 
-/// 应用图标选择卡片，样式与 [_ThemeModeCard] 保持一致：
-/// 顶部为迷你"设计稿"预览（keyline 网格线稿 + 悬浮应用图标），
-/// 底部显示勾选 + 文字，选中态高亮边框 + 容器底色。
+/// 复用统一选择卡，保留网格线稿和完整的启动器图标预览。
 class _AppIconCard extends StatelessWidget {
   final String label;
   final String assetPath;
   final bool isSelected;
   final bool isChanging;
-  final VoidCallback onTap;
+  final FutureOr<void> Function() onTap;
 
   const _AppIconCard({
     required this.label,
@@ -972,119 +853,48 @@ class _AppIconCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
 
-    return GestureDetector(
+    return _AppearanceChoiceCard(
+      label: label,
+      selected: isSelected,
       onTap: isChanging ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        decoration: ShapeDecoration(
-          color: isSelected
-              ? cs.secondaryContainer.withValues(alpha: 0.5)
-              : cs.surfaceContainerLow,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(16),
-            side: BorderSide(
-              color: isSelected
-                  ? cs.primary
-                  : cs.outlineVariant.withValues(alpha: 0.3),
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            // 迷你设计稿：keyline 网格背景 + 悬浮图标
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              child: ClipRSuperellipse(
-                borderRadius: context.shapes.borderRadius(10),
-                child: SizedBox(
-                  height: 64,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CustomPaint(
-                        painter: _IconKeylinePainter(
-                          backgroundColor: cs.surfaceContainerHighest
-                              .withValues(alpha: 0.35),
-                          gridColor: cs.outline,
-                          accentColor: isSelected ? cs.primary : cs.outline,
-                        ),
-                      ),
-                      Center(
-                        child: AnimatedScale(
-                          scale: isSelected ? 1.0 : 0.88,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutBack,
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            clipBehavior: Clip.antiAlias,
-                            decoration: ShapeDecoration(
-                              shadows: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(
-                                    alpha: isSelected ? 0.25 : 0.15,
-                                  ),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                              shape: RoundedSuperellipseBorder(
-                                borderRadius: context.shapes.borderRadius(10),
-                              ),
-                            ),
-                            child: Image.asset(assetPath, fit: BoxFit.cover),
-                          ),
-                        ),
-                      ),
-                      if (isChanging && isSelected)
-                        Container(
-                          color: Colors.black26,
-                          child: const Center(
-                            child: LoadingSpinner(
-                              size: 24,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                    ],
+      preview: ClipRSuperellipse(
+        borderRadius: context.shapes.borderRadius(10),
+        child: SizedBox(
+          height: 80,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CustomPaint(
+                painter: _IconKeylinePainter(
+                  backgroundColor: cs.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
+                  gridColor: cs.outline,
+                  accentColor: isSelected ? cs.primary : cs.outline,
+                ),
+              ),
+              Center(
+                // 启动器图标外沿不跟随应用圆角；选中前后保持同样的尺寸。
+                child: ClipOval(
+                  child: Image.asset(
+                    assetPath,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // 勾选 + 文字（与主题模式卡片同款底部行）
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (isSelected) ...[
-                    Icon(
-                      Symbols.check_circle_rounded,
-                      size: 14,
-                      fill: 1,
-                      color: cs.primary,
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  Text(
-                    label,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                      fontWeight: isSelected
-                          ? FontWeight.w500
-                          : FontWeight.normal,
-                    ),
+              if (isChanging && isSelected)
+                Container(
+                  color: Colors.black26,
+                  child: const Center(
+                    child: LoadingSpinner(size: 24, color: Colors.white),
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1097,7 +907,6 @@ class _AppIconCard extends StatelessWidget {
 
 class _ThemeModeCard extends StatelessWidget {
   final ThemeMode mode;
-  final IconData icon;
   final String label;
 
   /// 该模式对应的配色方案，system 模式为 null（需同时展示 light + dark）
@@ -1105,81 +914,30 @@ class _ThemeModeCard extends StatelessWidget {
   final ColorScheme lightScheme;
   final ColorScheme darkScheme;
   final bool isSelected;
-  final ThemeData currentTheme;
   final VoidCallback onTap;
 
   const _ThemeModeCard({
     required this.mode,
-    required this.icon,
     required this.label,
     required this.previewScheme,
     required this.lightScheme,
     required this.darkScheme,
     required this.isSelected,
-    required this.currentTheme,
     required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final cs = currentTheme.colorScheme;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        decoration: ShapeDecoration(
-          color: isSelected
-              ? cs.secondaryContainer.withValues(alpha: 0.5)
-              : cs.surfaceContainerLow,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(16),
-            side: BorderSide(
-              color: isSelected
-                  ? cs.primary
-                  : cs.outlineVariant.withValues(alpha: 0.3),
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            // 迷你屏幕预览
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              child: _buildPreview(),
-            ),
-            const SizedBox(height: 8),
-            // 图标 + 文字
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    size: 14,
-                    color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    label,
-                    style: currentTheme.textTheme.labelSmall?.copyWith(
-                      color: isSelected ? cs.primary : cs.onSurfaceVariant,
-                      fontWeight: isSelected
-                          ? FontWeight.w500
-                          : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => _AppearanceChoiceCard(
+    label: label,
+    labelIcon: switch (mode) {
+      ThemeMode.system => Symbols.auto_mode_rounded,
+      ThemeMode.light => Symbols.light_mode_rounded,
+      ThemeMode.dark => Symbols.dark_mode_rounded,
+    },
+    preview: _buildPreview(),
+    selected: isSelected,
+    onTap: onTap,
+  );
 
   /// 绘制迷你屏幕预览
   Widget _buildPreview() {
@@ -1188,7 +946,7 @@ class _ThemeModeCard extends StatelessWidget {
       return ClipRSuperellipse(
         borderRadius: UiShapes.current.borderRadius(10),
         child: SizedBox(
-          height: 64,
+          height: 56,
           child: CustomPaint(
             painter: _SplitThemePreviewPainter(
               lightScheme: lightScheme,
@@ -1202,7 +960,7 @@ class _ThemeModeCard extends StatelessWidget {
 
     return ClipRSuperellipse(
       borderRadius: UiShapes.current.borderRadius(10),
-      child: SizedBox(height: 64, child: _buildMiniScreen(previewScheme!)),
+      child: SizedBox(height: 56, child: _buildMiniScreen(previewScheme!)),
     );
   }
 
@@ -1244,7 +1002,7 @@ class _ThemeModeCard extends StatelessWidget {
           _buildContentLine(scheme, 0.7),
           const SizedBox(height: 2),
           _buildContentLine(scheme, 0.5),
-          const SizedBox(height: 2),
+          const Spacer(),
           // 模拟按钮
           Align(
             alignment: Alignment.centerRight,
@@ -1349,7 +1107,7 @@ class _SplitThemePreviewPainter extends CustomPainter {
     // ── 按钮 ──
     final btnW = 14.0;
     final btnH = 6.0;
-    final btnY = y2 + 8;
+    final btnY = size.height - pad - btnH;
     _drawSplitRRect(
       canvas,
       size,
@@ -1411,28 +1169,41 @@ class _SplitThemePreviewPainter extends CustomPainter {
 
 /// 透明模式是独立功能：开启时若没有背景图先拉起选图，
 /// 用户取消则保持关闭；开启后展开背景控制项。
-class _BackgroundSection extends ConsumerWidget {
+class _BackgroundSection extends ConsumerStatefulWidget {
   const _BackgroundSection();
 
-  Future<void> _onTransparentChanged(WidgetRef ref, bool value) async {
-    final notifier = ref.read(themeProvider.notifier);
-    if (!value) {
-      await notifier.setTransparentEnabled(false);
-      return;
-    }
-    if (ref.read(themeProvider).background.hasImage) {
-      await notifier.setTransparentEnabled(true);
-      return;
-    }
-    final path = await AppBackgroundService.importFromGallery();
-    if (path != null) {
+  @override
+  ConsumerState<_BackgroundSection> createState() => _BackgroundSectionState();
+}
+
+class _BackgroundSectionState extends ConsumerState<_BackgroundSection> {
+  bool _changing = false;
+
+  Future<void> _onTransparentChanged(bool value) async {
+    if (_changing) return;
+    setState(() => _changing = true);
+    try {
+      final notifier = ref.read(themeProvider.notifier);
+      if (!value) {
+        await notifier.setTransparentEnabled(false);
+        return;
+      }
+      final background = ref.read(themeProvider).background;
+      if (background.hasImage && File(background.imagePath!).existsSync()) {
+        await notifier.setTransparentEnabled(true);
+        return;
+      }
+      final path = await AppBackgroundService.importFromGallery();
+      if (path == null || !mounted) return;
       await notifier.setBackgroundImage(path);
       await notifier.setTransparentEnabled(true);
+    } finally {
+      if (mounted) setState(() => _changing = false);
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = context.l10n;
     final transparent = ref.watch(themeProvider).transparentEnabled;
@@ -1442,10 +1213,12 @@ class _BackgroundSection extends ConsumerWidget {
     return Material(
       color: cs.surfaceContainerLow,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Column(
         children: [
-          SwitchListTile(
+          M3eSwitchListTile(
             secondary: Icon(
               Symbols.opacity_rounded,
               color: transparent ? cs.primary : cs.onSurfaceVariant,
@@ -1453,10 +1226,12 @@ class _BackgroundSection extends ConsumerWidget {
             title: Text(l10n.appearance_styleTransparent),
             subtitle: Text(l10n.appearance_transparentDesc),
             value: transparent,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              _onTransparentChanged(ref, v);
-            },
+            onChanged: _changing
+                ? null
+                : (v) {
+                    HapticFeedback.selectionClick();
+                    _onTransparentChanged(v);
+                  },
           ),
           if (transparent)
             const Padding(
@@ -1473,9 +1248,9 @@ class _BackgroundSection extends ConsumerWidget {
 class _BackgroundControls extends ConsumerWidget {
   const _BackgroundControls();
 
-  Future<void> _changeImage(WidgetRef ref) async {
+  Future<void> _changeImage(BuildContext context, WidgetRef ref) async {
     final path = await AppBackgroundService.importFromGallery();
-    if (path == null) return;
+    if (path == null || !context.mounted) return;
     final old = ref.read(themeProvider).background.imagePath;
     await ref.read(themeProvider.notifier).setBackgroundImage(path);
     // 旧文件异步清理，失败也无碍
@@ -1530,7 +1305,7 @@ class _BackgroundControls extends ConsumerWidget {
               ),
             ),
             TextButton(
-              onPressed: () => _changeImage(ref),
+              onPressed: () => _changeImage(context, ref),
               child: Text(l10n.appearance_bgChange),
             ),
           ],
@@ -1539,7 +1314,8 @@ class _BackgroundControls extends ConsumerWidget {
         // ── 遮罩透明度（按当前亮度调节，明暗分开记忆）──
         _SliderRow(
           icon: Symbols.opacity_rounded,
-          label: l10n.appearance_bgScrim,
+          label:
+              '${l10n.appearance_bgScrim} · ${brightness == Brightness.dark ? l10n.appearance_modeDark : l10n.appearance_modeLight}',
           value: background.scrimFor(brightness),
           max: 1,
           onChanged: (v) => ref
@@ -1578,17 +1354,30 @@ class _SliderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: cs.onSurfaceVariant),
-        const SizedBox(width: 12),
-        Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        Expanded(
-          child: Slider(
-            value: value.clamp(0.0, max),
-            max: max,
-            onChanged: onChanged,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 20, color: cs.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              max == 1 ? '${(value * 100).round()}%' : value.toStringAsFixed(0),
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ],
+        ),
+        Slider(
+          value: value.clamp(0.0, max),
+          max: max,
+          label: max == 1
+              ? '${(value * 100).round()}%'
+              : value.toStringAsFixed(0),
+          onChanged: onChanged,
         ),
       ],
     );
@@ -1810,7 +1599,10 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
                       padding: const EdgeInsets.all(4),
                       child: IconButton.filledTonal(
                         onPressed: () async {
-                          final color = await _showSeedColorPicker(context, ref);
+                          final color = await _showSeedColorPicker(
+                            context,
+                            ref,
+                          );
                           if (color == null) return;
                           final notifier = ref.read(themeProvider.notifier);
                           await notifier.addCustomColor(color);
@@ -1947,9 +1739,7 @@ Future<Color?> _showSeedColorPicker(
                               children: [
                                 Text(
                                   '#',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
+                                  style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(
                                         fontWeight: FontWeight.w500,
                                         color: Theme.of(context)
@@ -2087,7 +1877,6 @@ Future<Color?> _showSeedColorPicker(
   });
 }
 
-
 Widget _miniDot(Color color) {
   return Container(
     width: 8,
@@ -2095,7 +1884,6 @@ Widget _miniDot(Color color) {
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
-
 
 /// 调色板名字（色卡 tooltip 用）。
 String _paletteLabel(BuildContext context, String paletteId) {
@@ -2147,7 +1935,10 @@ class _VariantChip extends StatelessWidget {
       brightness: Theme.of(context).brightness,
     );
 
-    return GestureDetector(
+    return _AppearancePressSurface(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -2256,7 +2047,10 @@ class _ColorSwatchCard extends StatelessWidget {
       brightness: Theme.of(context).brightness,
     );
 
-    final card = GestureDetector(
+    final card = _AppearancePressSurface(
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       onTap: onTap,
       onLongPress: onLongPress,
       onSecondaryTap: PlatformUtils.isDesktop ? onLongPress : null,

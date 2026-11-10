@@ -34,7 +34,7 @@ void main() {
             home: Scaffold(
               body: Builder(
                 builder: (context) {
-                  final groups = buildAppearanceGroups(context);
+                  final groups = buildAppearanceSearchGroups(context);
                   final group = groups.firstWhere(
                     (g) => g.items.any((i) => i.id == 'glassEnabled'),
                   );
@@ -44,9 +44,9 @@ void main() {
                         .any((i) => i.id == 'dialogBlur'),
                     isTrue,
                   );
-                  final bottomItems = buildBottomNavGroups(
-                    context,
-                  ).expand((g) => g.items).toList();
+                  final bottomItems = buildBottomNavGroups(context)
+                      .expand((g) => g.items)
+                      .toList();
                   expect(
                     bottomItems.any((i) => i.id == 'bottomNavFloatingBlur'),
                     isFalse,

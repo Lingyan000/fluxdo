@@ -11,11 +11,15 @@ class SettingsGroup {
   /// 对于自定义布局的 section（如主题色网格、图标选择器），设为 false。
   final bool wrapInCard;
 
+  /// 可选的分组操作，例如在「主题」标题同行打开完整画廊。
+  final Widget? trailing;
+
   const SettingsGroup({
     required this.title,
     required this.icon,
     required this.items,
     this.wrapInCard = true,
+    this.trailing,
   });
 }
 
@@ -30,11 +34,7 @@ sealed class SettingsModel {
   /// 搜索副标题
   final String? subtitle;
 
-  const SettingsModel({
-    required this.id,
-    required this.title,
-    this.subtitle,
-  });
+  const SettingsModel({required this.id, required this.title, this.subtitle});
 
   /// 搜索匹配
   bool matchesQuery(String query) {
@@ -172,10 +172,8 @@ final class PlatformConditionalModel extends SettingsModel {
   final SettingsModel inner;
   final bool Function() condition;
 
-  PlatformConditionalModel({
-    required this.inner,
-    required this.condition,
-  }) : super(id: inner.id, title: inner.title, subtitle: inner.subtitle);
+  PlatformConditionalModel({required this.inner, required this.condition})
+    : super(id: inner.id, title: inner.title, subtitle: inner.subtitle);
 
   bool get shouldShow => condition();
 

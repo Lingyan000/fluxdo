@@ -1,4 +1,11 @@
 {
+  "appearance_themeLibrary": "All themes",
+  "appearance_interface": "Interface",
+  "appearance_backgroundEffects": "Background and effects",
+  "appearance_previewText": "Make reading feel like you",
+  "appearance_colorSettings": "Colors and style",
+  "appearance_bgNone": "No background",
+  "appearance_fontPreview": "Current text and code preview",
   "@@locale": "en",
   "appearance_appIcon": "App icon",
   "appearance_bgBlur": "Background blur",

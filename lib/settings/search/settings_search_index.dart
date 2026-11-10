@@ -56,13 +56,15 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
           if (item is PlatformConditionalModel) return item.shouldShow;
           return true;
         })
-        .map((item) => SettingsSearchResult(
-              model: item is PlatformConditionalModel ? item.inner : item,
-              categoryName: categoryName,
-              categoryIcon: categoryIcon,
-              categoryColor: categoryColor,
-              pageBuilder: pageBuilder,
-            ))
+        .map(
+          (item) => SettingsSearchResult(
+            model: item is PlatformConditionalModel ? item.inner : item,
+            categoryName: categoryName,
+            categoryIcon: categoryIcon,
+            categoryColor: categoryColor,
+            pageBuilder: pageBuilder,
+          ),
+        )
         .toList();
   }
 
@@ -80,8 +82,7 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
       categoryName: l10n.settings_preferences,
       categoryIcon: Symbols.tune_rounded,
       categoryColor: context.appColors.deepPurple,
-      pageBuilder: ({highlightId}) =>
-          PreferencesPage(highlightId: highlightId),
+      pageBuilder: ({highlightId}) => PreferencesPage(highlightId: highlightId),
     ),
     ...fromGroups(
       buildBottomNavGroups(context),
@@ -92,12 +93,18 @@ List<SettingsSearchResult> buildSearchIndex(BuildContext context) {
           BottomNavSettingsPage(highlightId: highlightId),
     ),
     ...fromGroups(
-      buildAppearanceGroups(context),
+      buildAppearanceSearchGroups(context),
       categoryName: l10n.settings_appearance,
       categoryIcon: Symbols.color_lens_rounded,
       categoryColor: context.appColors.teal,
       pageBuilder: ({highlightId}) =>
-          AppearancePage(highlightId: highlightId),
+          switch (appearanceSectionForSetting(highlightId)) {
+            final section? => AppearanceSectionPage(
+              section: section,
+              highlightId: highlightId,
+            ),
+            null => AppearancePage(highlightId: highlightId),
+          },
     ),
     ...fromGroups(
       buildNetworkGroups(context),

@@ -1,4 +1,11 @@
 {
+  "appearance_themeLibrary": "全部主题",
+  "appearance_interface": "界面",
+  "appearance_backgroundEffects": "背景与效果",
+  "appearance_previewText": "让阅读更合你的习惯",
+  "appearance_colorSettings": "配色与风格",
+  "appearance_bgNone": "未设置背景",
+  "appearance_fontPreview": "当前字体与代码预览",
   "@@locale": "zh",
   "appearance_appIcon": "应用图标",
   "appearance_bgBlur": "背景模糊",

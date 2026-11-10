@@ -8,7 +8,11 @@ String _fontName(BuildContext context, FontEntry entry) =>
     localizedName(entry.name, Localizations.localeOf(context), entry.id);
 
 /// 字体安装状态的一行描述。
-String _fontStatusText(BuildContext context, FontEntry entry, FontInstallState state) {
+String _fontStatusText(
+  BuildContext context,
+  FontEntry entry,
+  FontInstallState state,
+) {
   final l10n = context.l10n;
   final size = CacheSizeService.formatSize(entry.size);
   return switch (state) {
@@ -30,7 +34,9 @@ String _fontFailureText(BuildContext context, FontFailure reason) {
   final pinned = FontDownloadService.instance.sourceKind != FontSourceKind.auto;
   return switch (reason) {
     FontFailure.network =>
-      pinned ? l10n.appearance_fontPinnedSourceFailed : l10n.appearance_fontNetworkError,
+      pinned
+          ? l10n.appearance_fontPinnedSourceFailed
+          : l10n.appearance_fontNetworkError,
     FontFailure.corrupted => l10n.appearance_fontCorrupted,
     FontFailure.invalidSource => l10n.appearance_fontInvalidSource,
     FontFailure.storage => l10n.appearance_fontStorageError,
@@ -65,7 +71,9 @@ class _FontSlotSection extends ConsumerWidget {
       onChanged: (value) async {
         if (value == null) return;
         await select(value);
-        final entry = FontCatalog.byId(value) ?? (value == FontChoice.follow ? suggestion : null);
+        final entry =
+            FontCatalog.byId(value) ??
+            (value == FontChoice.follow ? suggestion : null);
         // 选中未下载的字体：直接开始下载，完成后自动生效
         if (entry != null && service.stateOf(entry) is! FontInstalled) {
           unawaited(service.install(entry));
@@ -78,9 +86,8 @@ class _FontSlotSection extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
               isBody ? l10n.appearance_fontBody : l10n.appearance_fontMono,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: cs.onSurfaceVariant),
             ),
           ),
           RadioListTile<String>(
@@ -97,7 +104,9 @@ class _FontSlotSection extends ConsumerWidget {
           RadioListTile<String>(
             value: FontChoice.system,
             title: Text(
-              isBody ? l10n.appearance_fontSystem : l10n.appearance_fontMonoSystem,
+              isBody
+                  ? l10n.appearance_fontSystem
+                  : l10n.appearance_fontMonoSystem,
             ),
           ),
           for (final entry in FontCatalog.ofSlot(slot))
@@ -122,7 +131,7 @@ class _FontEntryTile extends StatelessWidget {
     final failed = state is FontFailed && state.reason != FontFailure.cancelled;
 
     final Widget action = switch (state) {
-      FontInstalled() => PopupMenuButton<void>(
+      FontInstalled() => SwipeDismissiblePopupMenuButton<void>(
         icon: const Icon(Symbols.more_vert_rounded),
         itemBuilder: (_) => [
           PopupMenuItem(
@@ -144,7 +153,9 @@ class _FontEntryTile extends StatelessWidget {
         ),
       ),
       _ => IconButton(
-        tooltip: failed ? l10n.appearance_fontRetry : l10n.appearance_fontDownload,
+        tooltip: failed
+            ? l10n.appearance_fontRetry
+            : l10n.appearance_fontDownload,
         onPressed: () => service.install(entry),
         icon: Icon(
           failed ? Symbols.refresh_rounded : Symbols.download_rounded,
@@ -162,9 +173,21 @@ class _FontEntryTile extends StatelessWidget {
             ? TextStyle(fontFamily: entry.family)
             : null,
       ),
-      subtitle: Text(
-        _fontStatusText(context, entry, state),
-        style: failed ? TextStyle(color: cs.error) : null,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _fontStatusText(context, entry, state),
+            style: failed ? TextStyle(color: cs.error) : null,
+          ),
+          if (service.isRegistered(entry))
+            Text(
+              entry.slot == FontSlot.mono
+                  ? 'Aa 0123 != => {}'
+                  : context.l10n.appearance_previewText,
+              style: TextStyle(fontFamily: entry.family),
+            ),
+        ],
       ),
       secondary: action,
       controlAffinity: ListTileControlAffinity.leading,
