@@ -12,6 +12,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          cache: true
       - name: Run isolated WKWebView fixture
         run: |
           mkdir -p build/mac-probe
@@ -21,4 +25,17 @@ jobs:
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           swiftc tool/mac_host_probe/probe.swift -o build/mac-probe/probe
           build/mac-probe/probe | tee build/mac-probe/result.log
+          curl --fail --max-time 30 -sS https://cdn.ldstatic.com/plugins/discourse-mini-app/runtime/loader-825168982ff65bbb3332ffbbbded3d5719cd39946967aa70bdb65dc71176cce3.js -o build/mac-probe/official-loader.js
+          echo '825168982ff65bbb3332ffbbbded3d5719cd39946967aa70bdb65dc71176cce3  build/mac-probe/official-loader.js' | shasum -a 256 -c
+          touch build/mac-probe/use-official
+          build/mac-probe/probe | tee build/mac-probe/official-result.log
+          flutter create --platforms=macos --project-name host_probe build/host_probe
+          cd build/host_probe
+          flutter pub add flutter_inappwebview:6.2.0-beta.3
+          cp ../../tool/mac_host_probe/flutter_main.dart lib/main.dart
+          cp ../../lib/modules/mini_apps/{mini_app.dart,mini_app_url.dart,mini_app_host_adapter.dart,mini_app_lightweight_host.dart} lib/
+          /usr/libexec/PlistBuddy -c 'Add :com.apple.security.network.client bool true' macos/Runner/DebugProfile.entitlements
+          flutter build macos --debug
+          cd ../..
+          build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee build/mac-probe/flutter-result.log
           cat build/mac-probe/server.log
