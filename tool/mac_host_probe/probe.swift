@@ -68,6 +68,7 @@ final class Probe: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
           (()=>({href:location.href,origin:location.origin,secure:isSecureContext,
           mounted:window.fixtureMounted===true,stage:document.querySelector('[data-role=stage]')?.textContent||'',
           detail:document.querySelector('[data-role=detail]')?.textContent||'',
+          sandbox:window.sandboxProbeResults||null,
           crypto:!!crypto.subtle,deflateRaw:(()=>{try{return !!new DecompressionStream('deflate-raw').readable}catch{return false}})()}))()
           """) { value, error in
             self.record(["mode": self.modes[self.index], "event": "result", "value": value ?? NSNull(), "error": error.map(String.init(describing:)) ?? ""])

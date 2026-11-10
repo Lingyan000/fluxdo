@@ -35,6 +35,7 @@ html = '''<!doctype html><html><head><meta charset="utf-8"><meta name="csrf-toke
 <div class="mini-app-loader__frame" inert></div></div><div class="mini-app-loader__media"></div></section></main>
 <script type="application/json" id="fluxdo-mini-app-release"></script><script type="application/json" id="fluxdo-mini-app-boot-failure"></script>
 <script>const boot = BOOT; SCRIPT</script></body></html>'''.replace("BOOT", json.dumps(boot)).replace("SCRIPT", script)
+html = html.replace('</body>', '<script src="/sandbox-probe.js"></script></body>')
 Path("build/mac-probe/host.html").write_text(html, encoding="utf-8")
 Path("build/mac-probe/configuration.json").write_text(json.dumps(configuration), encoding="utf-8")
 
@@ -43,8 +44,21 @@ class Handler(BaseHTTPRequestHandler):
         cookie_ok = "probe_session=synthetic" in self.headers.get("Cookie", "")
         print(json.dumps({"path": self.path, "cookiePresent": cookie_ok}), flush=True)
         status, mime = 200, "application/json"
+        headers = {}
         if self.path.startswith("/apps/"):
             body, mime = html.encode(), "text/html; charset=utf-8"
+        elif self.path == '/sandbox-probe.js':
+            body, mime = Path('tool/mac_host_probe/sandbox-probe.js').read_bytes(), 'application/javascript'
+        elif self.path.startswith('/probe-frame?policy='):
+            policy = self.path.split('=')[-1]
+            if policy in ('csp', 'both'):
+                headers['Content-Security-Policy'] = "default-src 'none'; style-src 'self'; frame-src 'self'; frame-ancestors 'self'"
+            if policy in ('xfo', 'both'):
+                headers['X-Frame-Options'] = 'SAMEORIGIN'
+            body, mime = b'<!doctype html><html><head><meta name="discourse-mini-app-host" content="1"></head><body></body></html>', 'text/html'
+        elif self.path == '/probe-runtime':
+            headers['Content-Security-Policy'] = "sandbox allow-scripts; script-src 'unsafe-inline'; default-src 'none'"
+            body, mime = b'''<!doctype html><script>const channel = new MessageChannel();parent.postMessage({type:'fixture-ready'},'*',[channel.port2]);</script>''', 'text/html'
         elif self.path == "/mini-app-api/runtime-assets.json":
             body = json.dumps({"runtimeAssets": assets, **{k: v for k, v in configuration.items() if k.startswith("sdk")}}).encode()
         elif self.path in ("/session/current.json", "/session/csrf"):
@@ -66,6 +80,8 @@ return {destroy(){},setAudioMuted:async value=>options.onAudioStateChange(value)
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(body)))
+        for name, value in headers.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
     def do_POST(self):

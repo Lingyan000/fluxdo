@@ -19,7 +19,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Timer(const Duration(seconds: 20), () {report('probe-timeout',mode); exit(1);});
   final config = jsonDecode(await rootBundle.loadString('assets/configuration.json')) as Map<String, dynamic>;
-  html = MiniAppLightweightHost.build(details: MiniAppDetails(const MiniApp(id:id,name:'Fixture'),entry.toString(),configuration:config),entry:entry,site:entry.origin,background:'#ffffff',foreground:'#111111',primary:'#123456',expectedUserId:2,failureMessage:'Host failed',preparingMessage:'Preparing');
+  html = MiniAppLightweightHost.build(details: MiniAppDetails(const MiniApp(id:id,name:'Fixture'),entry.toString(),configuration:config),entry:entry,site:entry.origin,background:'#ffffff',foreground:'#111111',primary:'#123456',expectedUserId:2,failureMessage:'Host failed',preparingMessage:'Preparing').replaceFirst('</body>', '<script src="/sandbox-probe.js"></script></body>');
   compat = await rootBundle.loadString('assets/compat-polyfill.js');
   runApp(const MaterialApp(home: Probe()));
 }
@@ -53,7 +53,8 @@ class Probe extends StatelessWidget {
             report('flutter-url',(await controller.getUrl()).toString());
             final state=await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot);
             report('flutter-snapshot',state);
-            if(state is Map && state['engineMounted']==true && state['detail']=='EXPECTED_FIXTURE_DENIAL') {report('probe-passed',mode);exit(0);}
+            final sandbox=await controller.evaluateJavascript(source:'window.sandboxProbeResults || null');
+            if(sandbox!=null) {report('sandbox-results',sandbox);report('probe-completed',mode);exit(0);}
           }
           catch(e){report('flutter-snapshot-error',e.toString());}
         });

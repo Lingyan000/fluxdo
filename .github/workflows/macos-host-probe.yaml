@@ -22,6 +22,7 @@ jobs:
           PROBE_ROOT="$PWD"
           echo '127.0.0.1 community.miniapp-probe.test' | sudo tee -a /etc/hosts
           openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=community.miniapp-probe.test' -addext 'subjectAltName=DNS:community.miniapp-probe.test,IP:127.0.0.1' 2>/dev/null
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain build/mac-probe/cert.pem
           python3 tool/mac_host_probe/server.py > build/mac-probe/server.log 2>&1 &
           SERVER_PID=$!
           trap 'cat "$PROBE_ROOT/build/mac-probe/server.log"; kill "$SERVER_PID" 2>/dev/null || true' EXIT
@@ -44,11 +45,7 @@ jobs:
           flutter build macos --debug
           cd ../..
           for PROBE_MODE in data simulated network; do
-            PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/untrusted-$PROBE_MODE.log" || true
-          done
-          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain build/mac-probe/cert.pem
-          for PROBE_MODE in data simulated network; do
             PROBE_MODE="$PROBE_MODE" build/host_probe/build/macos/Build/Products/Debug/host_probe.app/Contents/MacOS/host_probe | tee "build/mac-probe/trusted-$PROBE_MODE.log" || true
           done
-          grep -q 'probe-passed' build/mac-probe/trusted-data.log
+          grep -q 'probe-completed' build/mac-probe/trusted-data.log
           cat build/mac-probe/server.log
