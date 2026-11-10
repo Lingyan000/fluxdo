@@ -71,5 +71,33 @@
   "oauth_noRedirectResponse": "授权服务未返回重定向",
   "onboarding_guestAccess": "游客访问",
   "onboarding_networkSettings": "网络设置",
-  "onboarding_slogan": "真诚 · 友善 · 团结 · 专业"
+  "onboarding_slogan": "真诚 · 友善 · 团结 · 专业",
+  "login_identifier": "用户名 / 邮箱",
+  "login_password": "密码",
+  "login_showPassword": "显示密码",
+  "login_hidePassword": "隐藏密码",
+  "login_rememberPassword": "记住密码",
+  "login_forgotPassword": "忘记密码？",
+  "login_clearSavedCredentials": "清除保存的账号",
+  "login_savedCredentialsCleared": "已清除保存的账号密码",
+  "login_or": "或",
+  "login_browserAuth": "浏览器授权登录",
+  "login_otherMethods": "其他方式登录 (OAuth / Passkey / 注册)",
+  "login_cfIncomplete": "Cloudflare 验证未完成，请重试",
+  "login_totpHint": "请输入身份验证器 App 显示的 6 位验证码",
+  "login_secondFactorRequired": "此账号需要二步验证",
+  "login_invalidCredentials": "用户名或密码错误",
+  "login_secondFactorFailed": "二步验证失败",
+  "login_notActivated": "账号未激活，请到邮箱 {email} 完成激活",
+  "login_notApproved": "账号尚未通过审核",
+  "login_passwordExpired": "密码已过期，请用浏览器登录重设密码",
+  "login_networkError": "网络异常",
+  "login_failed": "登录失败",
+  "@login_notActivated": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  }
 }

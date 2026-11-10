@@ -64,5 +64,33 @@
   "oauth_noRedirectResponse": "授權服務未返回重定向",
   "onboarding_guestAccess": "遊客訪問",
   "onboarding_networkSettings": "網路設定",
-  "onboarding_slogan": "真誠 · 友善 · 團結 · 專業"
+  "onboarding_slogan": "真誠 · 友善 · 團結 · 專業",
+  "login_identifier": "使用者名稱 / 電郵",
+  "login_password": "密碼",
+  "login_showPassword": "顯示密碼",
+  "login_hidePassword": "隱藏密碼",
+  "login_rememberPassword": "記住密碼",
+  "login_forgotPassword": "忘記密碼？",
+  "login_clearSavedCredentials": "清除儲存的帳號",
+  "login_savedCredentialsCleared": "已清除儲存的帳號密碼",
+  "login_or": "或",
+  "login_browserAuth": "瀏覽器授權登入",
+  "login_otherMethods": "其他方式登入 (OAuth / Passkey / 註冊)",
+  "login_cfIncomplete": "Cloudflare 驗證未完成，請重試",
+  "login_totpHint": "請輸入驗證器 App 顯示的 6 位驗證碼",
+  "login_secondFactorRequired": "此帳號需要兩步驗證",
+  "login_invalidCredentials": "使用者名稱或密碼錯誤",
+  "login_secondFactorFailed": "兩步驗證失敗",
+  "login_notActivated": "帳號未啟用，請到信箱 {email} 完成啟用",
+  "login_notApproved": "帳號尚未通過審核",
+  "login_passwordExpired": "密碼已過期，請用瀏覽器登入重設密碼",
+  "login_networkError": "網路異常",
+  "login_failed": "登入失敗",
+  "@login_notActivated": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  }
 }

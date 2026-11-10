@@ -117,7 +117,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // 首次会懒生成 RSA 密钥对(isolate),可能耗时数秒
       final launched = await UserApiKeyLoginFlow.instance.start();
       if (!launched && mounted) {
-        ToastService.showError('无法打开浏览器,请重试');
+        ToastService.showError(context.l10n.common_cannotOpenBrowser);
       }
     } finally {
       if (mounted) setState(() => _browserAuthLaunching = false);
@@ -187,7 +187,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     // 直接 403 (TLS 指纹不对). 没有就弹 CF 手动验证页让用户人机过一次。
     if (!await _ensureCfClearance()) {
       if (mounted) {
-        ToastService.showError('Cloudflare 验证未完成,请重试');
+        ToastService.showError(context.l10n.login_cfIncomplete);
       }
       return false;
     }
@@ -213,7 +213,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       hcaptchaCreateEndpoint: hcaptchaEndpoint,
       onNeedSecondFactor: (need) => showTwoFactorDialog(
         context,
-        hint: need.totpEnabled ? '请输入身份验证器 App 显示的 6 位验证码' : '此账号需要二步验证',
+        hint: need.totpEnabled
+            ? context.l10n.login_totpHint
+            : context.l10n.login_secondFactorRequired,
         onUseBackupCode: () => _loginWithWebView(),
       ),
     );
@@ -252,13 +254,17 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   void _showFailureToast(LoginFailure f) {
     final msg = switch (f.kind) {
-      LoginErrorKind.invalidCredentials => '用户名或密码错误',
-      LoginErrorKind.secondFactorRequired => f.message ?? '二步验证失败',
-      LoginErrorKind.notActivated => '账号未激活,请到邮箱 ${f.sentToEmail ?? ''} 完成激活',
-      LoginErrorKind.notApproved => '账号尚未通过审核',
-      LoginErrorKind.passwordExpired => '密码已过期,请用浏览器登录重设密码',
-      LoginErrorKind.network => f.message ?? '网络异常',
-      LoginErrorKind.unknown => f.message ?? '登录失败',
+      LoginErrorKind.invalidCredentials =>
+        context.l10n.login_invalidCredentials,
+      LoginErrorKind.secondFactorRequired =>
+        f.message ?? context.l10n.login_secondFactorFailed,
+      LoginErrorKind.notActivated => context.l10n.login_notActivated(
+        f.sentToEmail ?? '',
+      ),
+      LoginErrorKind.notApproved => context.l10n.login_notApproved,
+      LoginErrorKind.passwordExpired => context.l10n.login_passwordExpired,
+      LoginErrorKind.network => f.message ?? context.l10n.login_networkError,
+      LoginErrorKind.unknown => f.message ?? context.l10n.login_failed,
     };
     ToastService.showError(msg);
   }
@@ -281,7 +287,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       _savedUsername = null;
       _savedPassword = null;
     });
-    ToastService.showSuccess('已清除保存的账号密码');
+    ToastService.showSuccess(context.l10n.login_savedCredentialsCleared);
   }
 
   @override
@@ -304,7 +310,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                     0,
                     AmbientIconButton(
                       icon: Symbols.arrow_back_rounded,
-                      tooltip: '返回',
+                      tooltip: context.l10n.common_back,
                       onPressed: () => Navigator.of(context).maybePop(),
                     ),
                   ),
@@ -318,7 +324,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                       0,
                       AmbientIconButton(
                         icon: Symbols.delete_rounded,
-                        tooltip: '清除保存的账号',
+                        tooltip: context.l10n.login_clearSavedCredentials,
                         onPressed: _clearSavedCredentials,
                       ),
                     ),
@@ -451,7 +457,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _DividerWithLabel(label: '或'),
+        _DividerWithLabel(label: context.l10n.login_or),
         const SizedBox(height: 16),
         OutlinedButton.icon(
           onPressed: _loginWithQrScan,
@@ -477,7 +483,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   child: LoadingSpinner(size: 20),
                 )
               : const Icon(Symbols.verified_user_rounded, size: 20),
-          label: const Text('浏览器授权登录'),
+          label: Text(context.l10n.login_browserAuth),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedSuperellipseBorder(
@@ -492,7 +498,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         OutlinedButton.icon(
           onPressed: () => _loginWithWebView(),
           icon: const Icon(Symbols.open_in_browser_rounded, size: 20),
-          label: const Text('其他方式登录 (OAuth / Passkey / 注册)'),
+          label: Text(context.l10n.login_otherMethods),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedSuperellipseBorder(
@@ -517,8 +523,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   /// 扫码登录:跳转扫码页,成功后 pop 登录页
   Future<void> _loginWithQrScan() async {
-    final result = await Navigator.of(context)
-        .push<bool>(InteractionPageRoute(builder: (_) => const QrLoginScanPage()));
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(InteractionPageRoute(builder: (_) => const QrLoginScanPage()));
     if (result == true && mounted) {
       Navigator.of(context).pop(true);
     }
