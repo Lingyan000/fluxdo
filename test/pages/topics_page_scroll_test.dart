@@ -27,6 +27,9 @@ import 'package:fluxdo/utils/paged_async_notifier.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/widgets/topic/topic_list_update_banner.dart';
+import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
+import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Topic topic(int id, {String? title}) => Topic(
@@ -133,6 +136,7 @@ void main() {
   Future<void> mount(
     WidgetTester tester, {
     Size size = const Size(1400, 800),
+    bool withBottomNavigation = false,
   }) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -154,7 +158,34 @@ void main() {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            home: const Scaffold(body: TopicsPage()),
+            home: withBottomNavigation
+                ? MediaQuery(
+                    data: MediaQueryData(
+                      size: size,
+                      padding: const EdgeInsets.only(bottom: 24),
+                      viewPadding: const EdgeInsets.only(bottom: 24),
+                    ),
+                    child: AdaptiveScaffold(
+                      selectedIndex: 0,
+                      onDestinationSelected: (_) {},
+                      destinations: const [
+                        AdaptiveDestination(
+                          id: 'home',
+                          icon: Icon(Icons.home),
+                          selectedIcon: Icon(Icons.home),
+                          label: '首页',
+                        ),
+                        AdaptiveDestination(
+                          id: 'chat',
+                          icon: Icon(Icons.chat),
+                          selectedIcon: Icon(Icons.chat),
+                          label: '聊天',
+                        ),
+                      ],
+                      body: const TopicsPage(),
+                    ),
+                  )
+                : const Scaffold(body: TopicsPage()),
           ),
         ),
       ),
@@ -203,6 +234,40 @@ void main() {
 
   void nextTopic(WidgetTester tester) =>
       invokeShortcut(tester, ShortcutAction.nextItem);
+
+  testWidgets('手机滚到列表末端时页尾加载指示器保持可见', (tester) async {
+    PlatformUtils.debugDesktopOverride = false;
+    await container
+        .read(preferencesProvider.notifier)
+        .setHideBarOnScroll(false);
+    await mount(tester, size: const Size(375, 815), withBottomNavigation: true);
+    topics.page = Completer();
+    topics.publish(topics.items.take(20).toList(), hasMore: true);
+    await tester.pump();
+    final scroll = list(tester).scrollController;
+    scroll.jumpTo(scroll.position.maxScrollExtent - 100);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(topics.loadMoreCalls, 1);
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pump();
+    final spinner = find.descendant(
+      of: find.byType(TopicsPage),
+      matching: find.byType(LoadingSpinner),
+    );
+    expect(spinner, findsOneWidget);
+    final bar = tester.getRect(find.byType(AdaptiveBottomNavigation));
+    expect(tester.getRect(spinner).bottom, lessThan(bar.top));
+    await tester.pump(const Duration(seconds: 2));
+    expect(spinner, findsOneWidget);
+    expect(topics.loadMoreCalls, 1);
+    topics.page!.complete([for (var n = 60; n < 80; n++) topic(n)]);
+    await tester.pump();
+    expect(list(tester).itemKeys, contains('topic-60'));
+    await tester.pumpAndSettle();
+    expect(spinner, findsNothing);
+    await dispose(tester);
+  });
 
   testWidgets('新话题提示出现及批量插入后保持当前卡片位置', (tester) async {
     await mount(tester);

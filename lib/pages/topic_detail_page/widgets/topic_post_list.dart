@@ -210,7 +210,6 @@ class _TopicPostListState extends State<TopicPostList> {
   }
 
   int? _lastReportedPostNumber;
-  bool _isThrottled = false;
 
   /// TYPING 诊断日志去重:上次记录的 typing 人数(见 build 内 Consumer)
   int? _lastLoggedTypingCount;
@@ -501,26 +500,10 @@ class _TopicPostListState extends State<TopicPostList> {
     }
   }
 
-  /// 处理滚动通知，同时更新可见帖子
+  /// 可见性由引擎布局后的 itemPositions 统一更新。
   bool _handleScrollNotification(ScrollNotification notification) {
-    // 先调用原有的滚动通知处理
     final result = onScrollNotification(notification);
-
-    // 在滚动更新时检测可见帖子（节流 16ms）
-    if (notification is ScrollUpdateNotification && !_isThrottled) {
-      _isThrottled = true;
-      Future.delayed(const Duration(milliseconds: 16), () {
-        if (mounted) {
-          _isThrottled = false;
-          _updateFirstVisiblePost();
-        }
-      });
-    } else if (notification is ScrollEndNotification) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _updateFirstVisiblePost();
-        }
-      });
+    if (notification is ScrollEndNotification) {
       _scheduleChunkWarmUp();
     }
 
@@ -1008,6 +991,7 @@ class _TopicPostListState extends State<TopicPostList> {
               _renderSegments.isEmpty,
             ),
             itemKeys: itemKeys,
+            firstAnchorIndex: hasMoreBefore ? topicPostListLeadingItemCount : 0,
             fallbackAnchorKeys: {
               for (final segment in previousSegments)
                 _segmentKey(segment): 'post-${segment.post.id}',

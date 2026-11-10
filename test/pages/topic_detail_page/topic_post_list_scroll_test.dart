@@ -78,6 +78,7 @@ void main() {
   var retryCount = 0;
   var textScale = 1.0;
   Set<int> visiblePosts = {};
+  var visibleReportCount = 0;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -100,6 +101,7 @@ void main() {
     retryCount = 0;
     textScale = 1;
     visiblePosts = {};
+    visibleReportCount = 0;
   });
 
   tearDown(() {
@@ -159,7 +161,10 @@ void main() {
               ),
               dividerPostIndex: null,
               onFirstVisiblePostChanged: reported.add,
-              onVisiblePostsChanged: (posts) => visiblePosts = posts,
+              onVisiblePostsChanged: (posts) {
+                visiblePosts = posts;
+                visibleReportCount++;
+              },
               onScrollIndexMappingChanged: (mapping) => controller
                   .updateScrollIndexMapping(mapping, detail.postStream.posts),
               onScrollIndexToPostNumberChanged:
@@ -197,6 +202,108 @@ void main() {
     await tester.pumpAndSettle();
     expect(await done, isTrue);
   }
+
+  testWidgets('持续滚动每帧只测量和上报一次可见帖子', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(const Offset(400, 300));
+    for (var frame = 0; frame < 12; frame++) {
+      visibleReportCount = 0;
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        visibleReportCount,
+        lessThanOrEqualTo(1),
+        reason: '同一帧重复遍历帖子几何会增加滚动开销',
+      );
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await disposeList(tester);
+  });
+
+  testWidgets('向上翻到加载边界后前插帖子，保持原楼层和拖动连续性', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(375, 815);
+    addTearDown(tester.view.reset);
+    initialFloor = 40;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    loading.value = true;
+    await tester.pump();
+    final gesture = await tester.startGesture(const Offset(180, 300));
+    for (var n = 0; n < 8; n++) {
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final indicator = find.byKey(const ValueKey('load-previous'));
+    final indicatorRect = tester.getRect(indicator);
+    expect(
+      indicatorRect.bottom,
+      greaterThan(24),
+      reason: '到达上边界时页首 loading 应可见',
+    );
+    final before = tester.getTopLeft(floor(40)).dy;
+    details.value = topic([
+      for (var n = 20; n < 40; n++) post(n),
+      ...details.value.postStream.posts,
+    ]);
+    loading.value = false;
+    await tester.pump();
+    expect(
+      tester.getTopLeft(floor(40)).dy,
+      closeTo(before, 1),
+      reason: '加载指示器不能成为前插数据后的阅读锚点',
+    );
+    expect(
+      controller.scrollController.position.isScrollingNotifier.value,
+      isTrue,
+    );
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+    expect(tester.getTopLeft(floor(40)).dy, closeTo(before + 40, 1));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await disposeList(tester);
+  });
+
+  testWidgets('快速上翻回弹期间旧楼层落地保持内容位置和惯性', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(375, 815);
+    addTearDown(tester.view.reset);
+    initialFloor = 40;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    loading.value = true;
+    await tester.pump();
+    controller.scrollController.jumpTo(180);
+    await tester.pump();
+    await tester.fling(
+      find.byType(PositionedStreamList),
+      const Offset(0, 400),
+      2000,
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      controller.scrollController.position.isScrollingNotifier.value,
+      isTrue,
+    );
+    final before = tester.getTopLeft(floor(40)).dy;
+    details.value = topic([
+      for (var n = 20; n < 40; n++)
+        post(n, cooked: '<p>${'Earlier content<br>' * (n % 5 + 1)}</p>'),
+      ...details.value.postStream.posts,
+    ]);
+    loading.value = false;
+    await tester.pump();
+    expect(tester.getTopLeft(floor(40)).dy, closeTo(before, 1));
+    expect(
+      controller.scrollController.position.isScrollingNotifier.value,
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    await disposeList(tester);
+  });
 
   testWidgets('真实帖子从中间定位并分页，首帧保位且继续按楼层号跳转', (tester) async {
     await tester.pumpWidget(app());

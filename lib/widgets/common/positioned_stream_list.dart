@@ -27,6 +27,7 @@ class PositionedStreamList extends StatefulWidget {
     ),
     this.addAutomaticKeepAlives = true,
     this.reverse = false,
+    this.firstAnchorIndex = 0,
   });
 
   final ScrollController scrollController;
@@ -40,6 +41,9 @@ class PositionedStreamList extends StatefulWidget {
   final ScrollPhysics physics;
   final bool addAutomaticKeepAlives;
   final bool reverse;
+
+  /// 结构更新时从内容行保位，跳过加载提示等临时前缀。
+  final int firstAnchorIndex;
 
   @override
   State<PositionedStreamList> createState() => _PositionedStreamListState();
@@ -78,11 +82,18 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
 
     final anchor = widget.listController.anchor;
     if (anchor == null || anchor.index >= oldWidget.itemKeys.length) return;
-    final anchorKey = oldWidget.itemKeys[anchor.index];
+    var anchorIndex = anchor.index;
+    var anchorOffset = anchor.offsetInItem;
+    while (anchorIndex < oldWidget.firstAnchorIndex &&
+        anchorIndex + 1 < oldWidget.itemKeys.length) {
+      anchorOffset -= widget.listController.extentForIndex(anchorIndex).$1;
+      anchorIndex++;
+    }
+    final anchorKey = oldWidget.itemKeys[anchorIndex];
     final newIndex = _indices[anchorKey];
     if (newIndex != null) {
       // 增删数量相抵时索引可能不变，上方内容的排列和高度仍已变化。
-      _restoreDuringLayout(newIndex, anchor.offsetInItem);
+      _restoreDuringLayout(newIndex, anchorOffset);
       return;
     }
 
@@ -94,7 +105,7 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
     }
 
     // 当前项被删除时保留其后最近的存活项，避免误锚到复用同索引的帖子。
-    for (var i = anchor.index + 1; i < oldWidget.itemKeys.length; i++) {
+    for (var i = anchorIndex + 1; i < oldWidget.itemKeys.length; i++) {
       final survivingIndex = _indices[oldWidget.itemKeys[i]];
       if (survivingIndex != null) {
         _restoreDuringLayout(survivingIndex, 0);
