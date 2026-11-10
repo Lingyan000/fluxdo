@@ -25,7 +25,17 @@
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('handshake-timeout')), 3000);
         const listener = event => {
-          if (event.source !== inner.contentWindow || event.data?.type !== 'fixture-ready') return;
+          if (event.source !== inner.contentWindow) return;
+          if (event.data?.type === 'fixture-ready') {
+            const restriction = doc.createElement('meta');
+            restriction.httpEquiv = 'Content-Security-Policy';
+            restriction.content = "frame-src 'none'";
+            doc.head.append(restriction);
+            event.ports[0].postMessage({html:'<!doctype html><html><body><script>const channel=new MessageChannel();parent.postMessage({type:"app-ready"},"*",[channel.port2]);<\/script></body></html>'});
+            event.ports[0].close();
+            return;
+          }
+          if (event.data?.type !== 'app-ready') return;
           result.sandboxOrigin = event.origin;
           result.ports = event.ports.length;
           event.ports[0].postMessage('ack');

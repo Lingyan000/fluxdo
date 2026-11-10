@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
             body, mime = b'<!doctype html><html><head><meta name="discourse-mini-app-host" content="1"></head><body></body></html>', 'text/html'
         elif self.path == '/probe-runtime':
             headers['Content-Security-Policy'] = "sandbox allow-scripts; script-src 'unsafe-inline'; default-src 'none'"
-            body, mime = b'''<!doctype html><script>const channel = new MessageChannel();parent.postMessage({type:'fixture-ready'},'*',[channel.port2]);</script>''', 'text/html'
+            body, mime = b'''<!doctype html><script>{const channel = new MessageChannel();channel.port1.onmessage=e=>{document.open();document.write(e.data.html);document.close();};parent.postMessage({type:'fixture-ready'},'*',[channel.port2]);}</script>''', 'text/html'
         elif self.path == "/mini-app-api/runtime-assets.json":
             body = json.dumps({"runtimeAssets": assets, **{k: v for k, v in configuration.items() if k.startswith("sdk")}}).encode()
         elif self.path in ("/session/current.json", "/session/csrf"):
