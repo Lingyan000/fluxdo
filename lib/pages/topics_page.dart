@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
 import '../models/topic.dart';
 import '../modules/mini_apps/home_mini_apps_layer.dart';
@@ -26,7 +27,7 @@ import 'topic_detail_page/topic_detail_page.dart';
 import 'search_page.dart';
 import '../models/search_filter.dart';
 import '../widgets/common/notification_icon_button.dart';
-import '../widgets/common/anchor_guard_sliver.dart';
+import '../widgets/common/positioned_stream_list.dart';
 import '../widgets/topic/topic_list_skeleton.dart';
 import '../widgets/topic/keyword_filter_hint_bar.dart';
 import '../widgets/topic/topic_list_update_banner.dart';
@@ -192,13 +193,15 @@ class _HeaderCollapseController extends ChangeNotifier {
                 1000.0)
             .clamp(0.0, 0.05);
     final target = _morphTarget;
-    // 临界阻尼弹簧半隐式积分（ω=√(stiffness/mass)，与全局弹簧
-    // _kHeaderSpring 同参 kHeaderMotionSpring）：a = ω²·(target-x) − 2ω·v
-    const omega = 22.4; // sqrt(kHeaderMotionSpring.stiffness / 1)
-    final accel =
-        omega * omega * (target - _morph) - 2 * omega * _morphVelocity;
-    _morphVelocity += accel * dt;
-    _morph = (_morph + _morphVelocity * dt).clamp(0.0, 1.0);
+    // 使用同族弹簧的解析解，帧间隔较大时也能收敛，并延续当前速度。
+    final spring = SpringSimulation(
+      _kHeaderSpring,
+      _morph,
+      target,
+      _morphVelocity,
+    );
+    _morph = spring.x(dt).clamp(0.0, 1.0);
+    _morphVelocity = spring.dx(dt);
     if ((target - _morph).abs() < 0.003 && _morphVelocity.abs() < 0.05) {
       _morph = target;
       _morphVelocity = 0.0;
@@ -2506,6 +2509,14 @@ typedef _TopicListPresentation = ({
   bool loadingUpdates,
 });
 
+class _TopicRevealRequest {
+  _TopicRevealRequest(this.topicId, this.scrollIndex, this.done);
+
+  final int topicId;
+  int scrollIndex;
+  Future<void> done;
+}
+
 class _TopicListState extends ConsumerState<_TopicList>
     with
         AutomaticKeepAliveClientMixin,
@@ -2539,38 +2550,26 @@ class _TopicListState extends ConsumerState<_TopicList>
   static const _pillKeyValue = 'topics-pill';
   static const _filterHintKeyValue = 'topics-filter-hint';
   static const _footerKeyValue = 'topics-footer';
+  static const _topInsetKeyValue = 'topics-top-inset';
+  static const _bottomInsetKeyValue = 'topics-bottom-inset';
+  static const _topicRowOffset = 3;
+  final _listController = ListController();
+  _TopicRevealRequest? _pendingKeyboardReveal;
 
-  /// topic.id → 可见列表 index,供 findChildIndexCallback O(1) 反查。
-  /// 行 key 化 + 该回调是列表版"锚定"的身份基础:顶部插入新话题 / pill
-  /// 出现导致全列表 index 平移时,Element/RenderObject 跟随 topic.id
-  /// 迁移而不是按 index 换内容(无 key 时视口内每行会"换脸"成上一条),
-  /// 迁移残留的布局位移再由列表尾部的 AnchorGuardSliver 同帧修正。
+  /// 稳定话题 ID 到当前可见索引的映射，供键盘导航和缓存淘汰使用。
   List<Topic>? _visibleIndexSource;
   Map<int, int> _topicIdToVisibleIndex = const {};
 
-  /// 上次 build 的列表头部行数(pill/过滤提示),变化 = 行 index 平移
-  int? _lastHeaderOffset;
-
-  Map<int, int> _visibleIndexMapFor(List<Topic> topics) {
-    if (!identical(_visibleIndexSource, topics)) {
-      final hadPrevious = _visibleIndexSource != null;
-      _visibleIndexSource = topics;
-      _topicIdToVisibleIndex = <int, int>{
-        for (var i = 0; i < topics.length; i++) topics[i].id: i,
-      };
-      // 只保留仍存在的数据，并限制缓存规模。缓存的是 Widget 配置而非
-      // RenderObject；64 条足够覆盖数屏父层 rebuild，同时避免数据越多
-      // TopicCard 配置和闭包永久累积、放大 GC 压力。
-      _topicItemCache.removeWhere(
-        (topicId, _) => !_topicIdToVisibleIndex.containsKey(topicId),
-      );
-      // 列表数据换代(顶部插入/全量替换/单行刷新):静默结构变化落地帧,
-      // 武装锚定哨兵补偿 keyed 迁移产生的位移。首建不武装。
-      if (hadPrevious) {
-        AnchorGuardSliver.arm();
-      }
-    }
-    return _topicIdToVisibleIndex;
+  void _syncVisibleTopics(List<Topic> topics) {
+    if (identical(_visibleIndexSource, topics)) return;
+    _visibleIndexSource = topics;
+    _topicIdToVisibleIndex = {
+      for (var i = 0; i < topics.length; i++) topics[i].id: i,
+    };
+    _topicItemCache.removeWhere(
+      (topicId, _) => !_topicIdToVisibleIndex.containsKey(topicId),
+    );
+    _remapKeyboardReveal();
   }
 
   Object? _cardEnvironment;
@@ -2668,24 +2667,79 @@ class _TopicListState extends ConsumerState<_TopicList>
     final topic = topics[newIndex];
     _openTopic(topic);
 
-    // 滚动到可见区域
-    if (_scrollController.hasClients) {
-      // 估算位置（顶部 inset + 每个 item 约 80px 高度）
-      final estimatedPosition = _headerInset + newIndex * 80.0;
-      final viewport = _scrollController.position.viewportDimension;
-      final current = _scrollController.position.pixels;
+    unawaited(_revealTopic(topic.id));
+  }
 
-      if (estimatedPosition < current ||
-          estimatedPosition > current + viewport - 80) {
-        _scrollController.animateTo(
-          estimatedPosition.clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+  double get _keyboardTopOffset =>
+      widget.headerController.visibleExtentFor(_headerInset) + 8;
+
+  Future<void> _revealTopic(int topicId) async {
+    if (!_listController.isAttached || !_scrollController.hasClients) return;
+    _pendingKeyboardReveal = null;
+    _listController.cancelPositioning();
+    final topicIndex = _topicIdToVisibleIndex[topicId];
+    if (topicIndex == null) return;
+    final index = topicIndex + _topicRowOffset;
+    final viewportHeight = _scrollController.position.viewportDimension;
+    final visible = _listController.computeItemPositions();
+    if (visible != null &&
+        visible.any(
+          (item) =>
+              item.index == index &&
+              item.itemLeadingEdge * viewportHeight >= _keyboardTopOffset &&
+              item.itemTrailingEdge <= 1,
+        )) {
+      return;
+    }
+
+    final request = _TopicRevealRequest(
+      topicId,
+      index,
+      _listController.scrollToIndex(
+        index,
+        offset: _keyboardTopOffset,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      ),
+    );
+    _pendingKeyboardReveal = request;
+    while (mounted && identical(_pendingKeyboardReveal, request)) {
+      final done = request.done;
+      await done;
+      if (!mounted || !identical(_pendingKeyboardReveal, request)) return;
+      if (identical(done, request.done)) {
+        _pendingKeyboardReveal = null;
+        if (_scrollController.hasClients) {
+          _loadMoreNearEnd(_scrollController.position);
+        }
+        return;
       }
+    }
+  }
+
+  void _remapKeyboardReveal() {
+    final request = _pendingKeyboardReveal;
+    if (request == null || !_listController.isAttached) return;
+    final topicIndex = _topicIdToVisibleIndex[request.topicId];
+    if (topicIndex == null) {
+      _pendingKeyboardReveal = null;
+      _listController.cancelPositioning();
+      return;
+    }
+    final index = topicIndex + _topicRowOffset;
+    if (index != request.scrollIndex) {
+      request.scrollIndex = index;
+      request.done = _listController.jumpToIndex(
+        index,
+        offset: _keyboardTopOffset,
+      );
+    }
+  }
+
+  void _loadMoreNearEnd(ScrollMetrics metrics) {
+    final distance = metrics.maxScrollExtent - metrics.pixels;
+    if (_loadMoreCoordinator.shouldTriggerForDistance(distance)) {
+      _triggerLoadMore(widget.categoryId);
     }
   }
 
@@ -2844,6 +2898,8 @@ class _TopicListState extends ConsumerState<_TopicList>
 
   @override
   void dispose() {
+    _pendingKeyboardReveal = null;
+    _listController.dispose();
     if (PlatformUtils.isDesktop) {
       _listShortcutBinding.disposeDeferred();
     }
@@ -2922,9 +2978,7 @@ class _TopicListState extends ConsumerState<_TopicList>
     } else {
       // stale 时直接显示 loading，滑动动画中就能看到骨架屏
       final isStale = ref.watch(staleTabsProvider).contains(widget.categoryId);
-      topicsAsync = isStale
-          ? const AsyncValue.loading()
-          : _topicsCache.cached;
+      topicsAsync = isStale ? const AsyncValue.loading() : _topicsCache.cached;
     }
 
     final keywords = ref.watch(
@@ -2948,14 +3002,11 @@ class _TopicListState extends ConsumerState<_TopicList>
       wholeWord,
       (blockedUsernames.toList()..sort()).join('\u0000'),
     );
-    final presentation = holdDuringRouteMotion(
-      (
-        topics: topicsAsync,
-        incomingCount: topicUpdateSnapshot.length,
-        loadingUpdates: isLoadingTopicUpdates,
-      ),
-      identity: presentationIdentity,
-    );
+    final presentation = holdDuringRouteMotion((
+      topics: topicsAsync,
+      incomingCount: topicUpdateSnapshot.length,
+      loadingUpdates: isLoadingTopicUpdates,
+    ), identity: presentationIdentity);
     topicsAsync = presentation.topics;
     final showFilterHint = ref.watch(
       preferencesProvider.select((p) => p.showFilterHint),
@@ -3014,16 +3065,8 @@ class _TopicListState extends ConsumerState<_TopicList>
       data: (topics) {
         final newTopicCount = presentation.incomingCount;
         final hasNewTopics = newTopicCount > 0 || presentation.loadingUpdates;
-        final newTopicOffset = hasNewTopics ? 1 : 0;
-        final hintOffset = (showFilterHint && hiddenCount > 0) ? 1 : 0;
-        final headerOffset = newTopicOffset + hintOffset;
-        final idToIndex = _visibleIndexMapFor(topics);
-        // pill/过滤提示行出现或消失 = 全列表行 index 平移(数据身份未变,
-        // _visibleIndexMapFor 检测不到),同样属于静默结构变化,武装哨兵
-        if (_lastHeaderOffset != null && _lastHeaderOffset != headerOffset) {
-          AnchorGuardSliver.arm();
-        }
-        _lastHeaderOffset = headerOffset;
+        final hasFilterHint = showFilterHint && hiddenCount > 0;
+        _syncVisibleTopics(topics);
 
         return TopicCardPrewarmScope(
           topics: topics,
@@ -3063,19 +3106,25 @@ class _TopicListState extends ConsumerState<_TopicList>
                   NotificationListener<ScrollUpdateNotification>(
                     onNotification: (notification) {
                       if (notification.depth == 0) {
-                        final distance =
-                            notification.metrics.maxScrollExtent -
-                            notification.metrics.pixels;
-                        if (_loadMoreCoordinator.shouldTriggerForDistance(
-                          distance,
-                        )) {
-                          _triggerLoadMore(providerKey);
-                        }
+                        _loadMoreNearEnd(notification.metrics);
                       }
                       return false;
                     },
-                    child: CustomScrollView(
-                      controller: _scrollController,
+                    child: PositionedStreamList(
+                      scrollController: _scrollController,
+                      listController: _listController,
+                      positionKey: ('topics', widget.categoryId),
+                      initialIndex: null,
+                      cacheExtent: 250,
+                      addAutomaticKeepAlives: false,
+                      itemKeys: [
+                        _topInsetKeyValue,
+                        _pillKeyValue,
+                        _filterHintKeyValue,
+                        for (final topic in topics) 'topic-${topic.id}',
+                        _footerKeyValue,
+                        _bottomInsetKeyValue,
+                      ],
                       // 顶带吸附下沉在弹道层（继承惯性速度的弹簧 + 起手
                       // 分治迟滞，见 _TopSnapScrollPhysics）
                       physics: miniAppPullEnabled
@@ -3094,168 +3143,76 @@ class _TopicListState extends ConsumerState<_TopicList>
                               controller: widget.headerController,
                               parent: const AlwaysScrollableScrollPhysics(),
                             ),
-                      slivers: [
-                        SliverPadding(
-                          // 底部让出 extendBody 注入的底栏高度（底栏滑出式后
-                          // 内容延伸到底栏后面）
-                          padding: EdgeInsets.only(
-                            top: _headerInset + 8,
-                            bottom: 12 + MediaQuery.paddingOf(context).bottom,
-                          ),
-                          sliver: SliverList.builder(
-                            itemCount: topics.length + headerOffset + 1,
-                            // 卡片无 keepalive 需求(无视频/表单/KeepAliveNotification
-                            // 使用者),默认的 AutomaticKeepAlive+_SelectionKeepAlive
-                            // 两层 State 对快滚单卡首建是纯税,关掉
-                            addAutomaticKeepAlives: false,
-                            // keyed reconcile:pill 出现/新话题插入/全量替换导致
-                            // index 平移时,已有行的 Element/RenderObject 按 key
-                            // 迁移,而不是按 index 复用"换脸"(无 key 时视口内
-                            // 每行会瞬间变成相邻一条的内容)。迁移残留的布局
-                            // 位移由列表尾部的 AnchorGuardSliver 同帧修正。
-                            findChildIndexCallback: (key) {
-                              if (key is! ValueKey<String>) return null;
-                              final value = key.value;
-                              if (value == _pillKeyValue) {
-                                return hasNewTopics ? 0 : null;
-                              }
-                              if (value == _filterHintKeyValue) {
-                                return hintOffset > 0 ? newTopicOffset : null;
-                              }
-                              if (value == _footerKeyValue) {
-                                return topics.length + headerOffset;
-                              }
-                              if (value.startsWith('topic-')) {
-                                final id = int.tryParse(value.substring(6));
-                                final topicIndex = id == null
-                                    ? null
-                                    : idToIndex[id];
-                                if (topicIndex != null) {
-                                  return topicIndex + headerOffset;
-                                }
-                              }
-                              return null;
-                            },
-                            itemBuilder: (context, index) {
-                              if (hasNewTopics && index == 0) {
-                                FrameJankMonitor.noteBuild('home:pill');
-                                return KeyedSubtree(
-                                  key: const ValueKey(_pillKeyValue),
-                                  child: _buildNewTopicIndicator(
-                                    context,
-                                    newTopicCount,
-                                    providerKey,
-                                  ),
-                                );
-                              }
-                              if (hintOffset > 0 && index == newTopicOffset) {
-                                return KeyedSubtree(
-                                  key: const ValueKey(_filterHintKeyValue),
-                                  child: KeywordFilterHintBar(
-                                    hiddenCount: hiddenCount,
-                                    hiddenByBlocked: hiddenByBlocked,
-                                  ),
-                                );
-                              }
-                              final topicIndex = index - headerOffset;
-                              if (topicIndex >= topics.length) {
-                                final notifier = ref.watch(
-                                  topicListProvider(providerKey).notifier,
-                                );
-                                return KeyedSubtree(
-                                  key: const ValueKey(_footerKeyValue),
-                                  child: PagedListFooter(
-                                    hasMore: notifier.hasMore,
-                                    isLoadingMore: notifier.isLoadingMore,
-                                    isLoadMoreFailed: notifier.isLoadMoreFailed,
-                                    onRetry: notifier.retryLoadMore,
-                                  ),
-                                );
-                              }
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return SizedBox(height: _headerInset + 8);
+                        }
+                        if (index == 1) {
+                          if (!hasNewTopics) return const SizedBox.shrink();
+                          FrameJankMonitor.noteBuild('home:pill');
+                          return _buildNewTopicIndicator(
+                            context,
+                            newTopicCount,
+                            providerKey,
+                          );
+                        }
+                        if (index == 2) {
+                          return hasFilterHint
+                              ? KeywordFilterHintBar(
+                                  hiddenCount: hiddenCount,
+                                  hiddenByBlocked: hiddenByBlocked,
+                                )
+                              : const SizedBox.shrink();
+                        }
+                        if (index == topics.length + _topicRowOffset + 1) {
+                          return SizedBox(
+                            height: 12 + MediaQuery.paddingOf(context).bottom,
+                          );
+                        }
+                        final topicIndex = index - _topicRowOffset;
+                        if (topicIndex >= topics.length) {
+                          final notifier = ref.watch(
+                            topicListProvider(providerKey).notifier,
+                          );
+                          return PagedListFooter(
+                            hasMore: notifier.hasMore,
+                            isLoadingMore: notifier.isLoadingMore,
+                            isLoadMoreFailed: notifier.isLoadMoreFailed,
+                            onRetry: notifier.retryLoadMore,
+                          );
+                        }
 
-                              final topic = topics[topicIndex];
-                              final rowKey = ValueKey('topic-${topic.id}');
-                              final shouldHighlight = _highlightedTopicIds
-                                  .contains(topic.id);
+                        final topic = topics[topicIndex];
+                        final shouldHighlight = _highlightedTopicIds.contains(
+                          topic.id,
+                        );
 
-                              if (shouldHighlight) {
-                                final theme = Theme.of(context);
-                                // 卡片正常背景色（需与 TopicCard / CompactTopicCard 的默认 color 一致）
-                                final normalColor = topic.pinned
-                                    ? theme.colorScheme.surfaceContainerLow
-                                          .withValues(alpha: 0.5)
-                                    : theme.cardTheme.color ??
-                                          theme
-                                              .colorScheme
-                                              .surfaceContainerHighest;
-                                final highlightColor = theme
-                                    .colorScheme
-                                    .primaryContainer
-                                    .withValues(alpha: 0.3);
-                                return KeyedSubtree(
-                                  key: rowKey,
-                                  child: TweenAnimationBuilder<Color?>(
-                                    tween: ColorTween(
-                                      begin: highlightColor,
-                                      end: normalColor,
-                                    ),
-                                    duration: const Duration(
-                                      milliseconds: 2000,
-                                    ),
-                                    curve: const Interval(
-                                      0.2,
-                                      1.0,
-                                      curve: Curves.easeOut,
-                                    ),
-                                    onEnd: () =>
-                                        _highlightedTopicIds.remove(topic.id),
-                                    builder: (context, color, _) {
-                                      return buildTopicItem(
-                                        context: context,
-                                        topic: topic,
-                                        isSelected: topic.id == selectedTopicId,
-                                        onTap: () {
-                                          _syncKeyboardFocusToTopicId(topic.id);
-                                          _openTopic(topic);
-                                        },
-                                        enableLongPress: enableLongPress,
-                                        highlightColor: color,
-                                        categoryMap: widget.categoryMap,
-                                        statsAvailableWidth:
-                                            statsAvailableWidth,
-                                      );
-                                    },
-                                  ),
-                                );
-                              }
-
-                              final signature = (
-                                topic: topic,
-                                isSelected: topic.id == selectedTopicId,
-                                enableLongPress: enableLongPress,
-                                category: _categorySignatureFor(topic),
-                                statsWidthTier: statsWidthTier,
-                                cardStyle: topicCardStyle,
-                                // 主题恒等进签名:自绘卡的文字颜色在排版期
-                                // 烤死,obtain 发生在缓存短路点之外 —— 不换
-                                // 代则深浅色切换后旧排版继续画(底色由
-                                // PaintedTopicCard 自身 Theme 依赖刷新,文字
-                                // 停留旧主题)。didChangeDependencies 清缓存
-                                // 兜不住:State 自身 context 未注册 Theme 依赖
-                                themeId: identityHashCode(Theme.of(context)),
-                              );
-                              final cached = _topicItemCache[topic.id];
-                              if (cached != null &&
-                                  cached.signature == signature) {
-                                // Map 保持插入顺序，命中后移到尾部作为轻量 LRU。
-                                _topicItemCache.remove(topic.id);
-                                _topicItemCache[topic.id] = cached;
-                                return KeyedSubtree(
-                                  key: rowKey,
-                                  child: cached.widget,
-                                );
-                              }
-                              final item = buildTopicItem(
+                        if (shouldHighlight) {
+                          final theme = Theme.of(context);
+                          // 卡片正常背景色（需与 TopicCard / CompactTopicCard 的默认 color 一致）
+                          final normalColor = topic.pinned
+                              ? theme.colorScheme.surfaceContainerLow
+                                    .withValues(alpha: 0.5)
+                              : theme.cardTheme.color ??
+                                    theme.colorScheme.surfaceContainerHighest;
+                          final highlightColor = theme
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.3);
+                          return TweenAnimationBuilder<Color?>(
+                            tween: ColorTween(
+                              begin: highlightColor,
+                              end: normalColor,
+                            ),
+                            duration: const Duration(milliseconds: 2000),
+                            curve: const Interval(
+                              0.2,
+                              1.0,
+                              curve: Curves.easeOut,
+                            ),
+                            onEnd: () => _highlightedTopicIds.remove(topic.id),
+                            builder: (context, color, _) {
+                              return buildTopicItem(
                                 context: context,
                                 topic: topic,
                                 isSelected: topic.id == selectedTopicId,
@@ -3264,29 +3221,58 @@ class _TopicListState extends ConsumerState<_TopicList>
                                   _openTopic(topic);
                                 },
                                 enableLongPress: enableLongPress,
+                                highlightColor: color,
                                 categoryMap: widget.categoryMap,
                                 statsAvailableWidth: statsAvailableWidth,
                               );
-                              _topicItemCache[topic.id] = (
-                                signature: signature,
-                                widget: item,
-                              );
-                              while (_topicItemCache.length >
-                                  _topicItemCacheCapacity) {
-                                _topicItemCache.remove(
-                                  _topicItemCache.keys.first,
-                                );
-                              }
-                              return KeyedSubtree(key: rowKey, child: item);
                             },
-                          ),
-                        ),
-                        // 滚动锚定哨兵:keyed 迁移会把"index 格子的旧账"分给新
-                        // 住户(framework 按 index 搬 layoutOffset),整窗因此
-                        // 平移约一行高 —— 在这里被同帧修正;贴顶时哨兵自带
-                        // 顶部抑制,pill/新话题自然推入视野(浏览器同款语义)。
-                        const AnchorGuardSliver(),
-                      ],
+                          );
+                        }
+
+                        final signature = (
+                          topic: topic,
+                          isSelected: topic.id == selectedTopicId,
+                          enableLongPress: enableLongPress,
+                          category: _categorySignatureFor(topic),
+                          statsWidthTier: statsWidthTier,
+                          cardStyle: topicCardStyle,
+                          // 主题恒等进签名:自绘卡的文字颜色在排版期
+                          // 烤死,obtain 发生在缓存短路点之外 —— 不换
+                          // 代则深浅色切换后旧排版继续画(底色由
+                          // PaintedTopicCard 自身 Theme 依赖刷新,文字
+                          // 停留旧主题)。didChangeDependencies 清缓存
+                          // 兜不住:State 自身 context 未注册 Theme 依赖
+                          themeId: identityHashCode(Theme.of(context)),
+                        );
+                        final cached = _topicItemCache[topic.id];
+                        if (cached != null && cached.signature == signature) {
+                          // Map 保持插入顺序，命中后移到尾部作为轻量 LRU。
+                          _topicItemCache.remove(topic.id);
+                          _topicItemCache[topic.id] = cached;
+                          return cached.widget;
+                        }
+                        final item = buildTopicItem(
+                          context: context,
+                          topic: topic,
+                          isSelected: topic.id == selectedTopicId,
+                          onTap: () {
+                            _syncKeyboardFocusToTopicId(topic.id);
+                            _openTopic(topic);
+                          },
+                          enableLongPress: enableLongPress,
+                          categoryMap: widget.categoryMap,
+                          statsAvailableWidth: statsAvailableWidth,
+                        );
+                        _topicItemCache[topic.id] = (
+                          signature: signature,
+                          widget: item,
+                        );
+                        while (_topicItemCache.length >
+                            _topicItemCacheCapacity) {
+                          _topicItemCache.remove(_topicItemCache.keys.first);
+                        }
+                        return item;
+                      },
                     ),
                   ),
                   // 顶部消隐纱：钉在头部下缘，内容被裁切时 bg→透明
