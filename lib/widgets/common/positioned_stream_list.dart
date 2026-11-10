@@ -26,6 +26,7 @@ class PositionedStreamList extends StatefulWidget {
       parent: BouncingScrollPhysics(),
     ),
     this.addAutomaticKeepAlives = true,
+    this.reverse = false,
   });
 
   final ScrollController scrollController;
@@ -38,6 +39,7 @@ class PositionedStreamList extends StatefulWidget {
   final Map<String, String> fallbackAnchorKeys;
   final ScrollPhysics physics;
   final bool addAutomaticKeepAlives;
+  final bool reverse;
 
   @override
   State<PositionedStreamList> createState() => _PositionedStreamListState();
@@ -62,6 +64,11 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
     if (widget.listController != oldWidget.listController ||
         !widget.listController.isAttached ||
         listEquals(widget.itemKeys, oldWidget.itemKeys)) {
+      return;
+    }
+
+    // 反向消息流贴底时，索引 0 始终代表最新一侧，由原点自然保持贴底。
+    if (widget.reverse && widget.listController.stickTarget?.isBottom == true) {
       return;
     }
 
@@ -114,6 +121,7 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
   Widget build(BuildContext context) {
     return CustomScrollView(
       controller: widget.scrollController,
+      reverse: widget.reverse,
       scrollCacheExtent: ScrollCacheExtent.pixels(widget.cacheExtent),
       physics: widget.physics,
       slivers: [

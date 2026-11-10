@@ -13,11 +13,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
+import '../../../widgets/common/positioned_stream_list.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../widgets/ai/ai_model_select_sheet.dart';
@@ -69,6 +71,16 @@ class AiChatPage extends ConsumerStatefulWidget {
 }
 
 class _AiChatPageState extends ConsumerState<AiChatPage> {
+  final ScrollController _scrollController = ScrollController();
+  final ListController _listController = ListController();
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   /// 已获取到的上下文帖子（按 postNumber 升序）
   final List<TopicPostContext> _contextPosts = [];
 
@@ -1003,56 +1015,74 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     TopicAiChatState chatState,
   ) {
     final messages = chatState.messages;
-    return ListView.builder(
-      reverse: true,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: messages.length,
-      itemBuilder: (context, index) {
-        final message = messages[messages.length - 1 - index];
-        return AiChatMessageItem(
-          message: message,
-          onRetry: message.status == MessageStatus.error
-              ? () {
-                  final scope = ref.read(
-                    topicAiContextScopeProvider(widget.topicId),
-                  );
-                  final model = _currentModel();
-                  if (model == null) return;
-                  _rememberModel(model);
-                  ref
-                      .read(topicAiChatProvider(widget.topicId).notifier)
-                      .retryLastMessage(
-                        scope,
-                        selectedModel: model,
-                        // 透传当前 thinking 配置,否则重试会用 ThinkingConfig.off
-                        // 默认值,跟原请求不一致(用户感觉「重试就好」其实是
-                        // thinking 被静默关掉了,不是上游恢复)。
-                        thinkingConfig: ref.read(aiThinkingConfigProvider),
-                      );
-                }
-              : null,
-          onShareAsImage:
-              message.status == MessageStatus.completed &&
-                  message.content.isNotEmpty
-              ? () => _shareMessageAsImage(message)
-              : null,
-          onCopyText:
-              message.status == MessageStatus.completed &&
-                  message.content.isNotEmpty
-              ? () => _copyMessageText(message)
-              : null,
-          onReplyImage:
-              widget.onReplyToTopic != null &&
-                  message.status == MessageStatus.completed
-              ? (att) => _replyImageToTopic(att)
-              : null,
-          selectionMode: _selectionMode,
-          isSelected: _selectedMessageIds.contains(message.id),
-          onSelectionToggle: _selectionMode
-              ? () => _toggleMessageSelection(message.id)
-              : null,
-        );
-      },
+    final positionKey = (widget.topicId, chatState.currentSessionId);
+    return StickToTarget(
+      key: ValueKey(positionKey),
+      scrollController: _scrollController,
+      listController: _listController,
+      target: const StickTarget.bottom(),
+      child: PositionedStreamList(
+        scrollController: _scrollController,
+        listController: _listController,
+        positionKey: positionKey,
+        initialIndex: null,
+        reverse: true,
+        cacheExtent: 300,
+        itemKeys: [
+          'bottom-inset',
+          for (final message in messages.reversed) 'message-${message.id}',
+          'top-inset',
+        ],
+        itemBuilder: (context, index) {
+          if (index == 0 || index == messages.length + 1) {
+            return const SizedBox(height: 8);
+          }
+          final message = messages[messages.length - index];
+          return AiChatMessageItem(
+            message: message,
+            onRetry: message.status == MessageStatus.error
+                ? () {
+                    final scope = ref.read(
+                      topicAiContextScopeProvider(widget.topicId),
+                    );
+                    final model = _currentModel();
+                    if (model == null) return;
+                    _rememberModel(model);
+                    ref
+                        .read(topicAiChatProvider(widget.topicId).notifier)
+                        .retryLastMessage(
+                          scope,
+                          selectedModel: model,
+                          // 透传当前 thinking 配置,否则重试会用 ThinkingConfig.off
+                          // 默认值,跟原请求不一致(用户感觉「重试就好」其实是
+                          // thinking 被静默关掉了,不是上游恢复)。
+                          thinkingConfig: ref.read(aiThinkingConfigProvider),
+                        );
+                  }
+                : null,
+            onShareAsImage:
+                message.status == MessageStatus.completed &&
+                    message.content.isNotEmpty
+                ? () => _shareMessageAsImage(message)
+                : null,
+            onCopyText:
+                message.status == MessageStatus.completed &&
+                    message.content.isNotEmpty
+                ? () => _copyMessageText(message)
+                : null,
+            onReplyImage:
+                widget.onReplyToTopic != null &&
+                    message.status == MessageStatus.completed
+                ? (att) => _replyImageToTopic(att)
+                : null,
+            selectionMode: _selectionMode,
+            isSelected: _selectedMessageIds.contains(message.id),
+            onSelectionToggle: _selectionMode
+                ? () => _toggleMessageSelection(message.id)
+                : null,
+          );
+        },
+      ),
     );
   }
 
