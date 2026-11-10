@@ -38,6 +38,7 @@
    ```bash
    just run -- -d windows
    just run -- -d macos
+   just run -- -d linux
    just run -- --dart-define=cronetHttpNoPlay=true
    ```
 
@@ -106,6 +107,62 @@ just release -- patch --dry-run
 - 原生产物准备统一走 `just native -- ...` 或 `dart run tool/project_tasks.dart native:prepare ...`
 - Windows / iOS 平台工程已移除内置 cargo / shell build hook，只消费仓库脚本预先落盘的 native 产物
 - macOS 保留一个轻量级 bundle copy/sign 阶段，只负责拷贝和签名已准备好的 native 产物
+
+## Linux 桌面开发（Arch / Omarchy）
+
+使用 `.fvmrc` 固定的 Flutter 版本，以及 Rust 1.96 或更新的稳定版。
+先把 Flutter 的 `bin/` 和 `$HOME/.cargo/bin` 加入 `PATH`。
+
+安装构建和运行依赖：
+
+```bash
+sudo pacman -S --needed base-devel clang cmake ninja pkgconf python git curl xz \
+  gtk3 libepoxy libsecret wayland wpewebkit alsa-lib mpv \
+  gst-plugins-base gst-plugins-good gst-libav just
+flutter doctor -v
+just run -- -d linux
+```
+
+`flutter doctor` 的 Linux toolchain 应通过；只开发 Linux 桌面时不需要配置
+Android SDK 或 Chrome。项目启动入口会自动准备依赖、国际化代码、证书和
+`linux/runner/native/libfluxdo_net.so`，不要跳过原生库准备而直接运行 `flutter run`。
+
+新版 Arch 的 `wpewebkit` 提供 WPEPlatform 和 headless 后端，已不再提供旧的
+`libwpe` / `wpebackend-fdo` 包。项目会优先使用 WPEPlatform；旧发行版使用
+FDO 后端时仍需要这两个旧库。音频依赖 GStreamer，视频依赖系统 `libmpv`，
+仅安装 Flutter 工具链不足以运行完整应用。
+
+在 Try Omarchy 中开发时，建议把 Windows 共享目录中的源码同步到 Linux
+主目录再构建，并排除 `.dart_tool/`、`build/`、`.fvm/`、`.pub-cache/`、
+`core/net_core/target/` 和各平台的原生产物。Windows 生成的路径、插件链接和
+二进制不能直接用于 Linux；也不要让两个系统同时写同一套构建缓存。
+通过 SSH 启动图形应用时，需要使用当前桌面会话的 `DISPLAY`、
+`WAYLAND_DISPLAY`、`XDG_RUNTIME_DIR` 和 D-Bus 环境。
+
+内存较小的虚拟机可减少首次 Rust 调试构建的资源消耗：
+
+```bash
+CARGO_BUILD_JOBS=3 CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 just run -- -d linux
+```
+
+验证 Linux WebView 的 SSL 回调与本地 HTTPS 加载（需要 `openssl` 和图形会话）：
+
+```bash
+flutter test packages/flutter_inappwebview_linux/test/server_trust_callback_test.dart
+FLUXDO_LIVE=1 flutter test test/services/network/core/net_core_webview_trust_test.dart
+dart tool/flutterw.dart run -d linux -t tool/linux_webview_smoke.dart
+```
+
+冒烟入口会创建临时自签名证书和仅监听回环地址的 HTTPS 服务，验证拒绝证书、
+异步允许证书后的首次加载重试、DER 证书传递、JavaScript 和 Cookie 互通，
+以及可见 `InAppWebView` 的 HTTPS origin、keepAlive 卸载恢复、iframe 重定向与
+消息交互、主页面离站拦截。
+WPE 的导航动作只提供目标窗口名称，无法可靠区分主页面和无名 iframe；Linux
+小程序使用 `onNavigationResponse` 的主框架标记处理离站，避免把 `frame-host`
+当作外部链接。此检查在收到响应后、提交文档前执行。
+它不会安装系统证书或使用论坛账号，结束时清理临时文件并退出；结果输出为
+`FLUXDO_WEBVIEW_SMOKE` JSON，可用环境变量 `FLUXDO_SMOKE_REPORT` 指定报告路径。
+完成后使用 `just run -- -d linux` 恢复正常应用入口。
 
 ## macOS 代码签名
 

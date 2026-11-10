@@ -32,15 +32,18 @@ ${SUDO} pacman -S --noconfirm --needed \
   curl \
   file \
   git \
+  gst-libav \
+  gst-plugins-base \
+  gst-plugins-good \
   gtk3 \
+  alsa-lib \
   libepoxy \
   libsecret \
-  libwpe \
+  mpv \
   ninja \
   pkgconf \
   python \
   wayland \
-  wpebackend-fdo \
   wpewebkit \
   xz
 

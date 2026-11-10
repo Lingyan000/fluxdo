@@ -266,11 +266,12 @@ class LinuxInAppWebViewWidget extends PlatformInAppWebViewWidget {
   }
 
   void _onPlatformViewCreated(int id) {
+    // Retained Linux views keep their texture and native method channel.
+    // keepAlive.id is only the manager's cache key, not a channel ID.
     dynamic viewId = id;
     if (params.headlessWebView?.isRunning() ?? false) {
       viewId = params.headlessWebView?.id;
     }
-    viewId = params.keepAlive?.id ?? viewId ?? id;
 
     _controller = LinuxInAppWebViewController(
       PlatformInAppWebViewControllerCreationParams(

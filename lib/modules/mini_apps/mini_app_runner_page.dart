@@ -1431,6 +1431,26 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     }
   }
 
+  NavigationActionPolicy _navigationPolicy(
+    WebUri? uri, {
+    required bool isForMainFrame,
+  }) {
+    if (uri == null) return NavigationActionPolicy.ALLOW;
+    if (!{'https', 'http', 'about', 'blob', 'data'}.contains(uri.scheme)) {
+      return NavigationActionPolicy.CANCEL;
+    }
+    if (!isForMainFrame) return NavigationActionPolicy.ALLOW;
+    final appUri = MiniAppUrl.parse(uri.toString(), AppConstants.baseUrl);
+    if (appUri != null && MiniAppUrl.appId(appUri) == _details.app.id) {
+      return NavigationActionPolicy.ALLOW;
+    }
+    if (uri.toString() == 'about:blank') return NavigationActionPolicy.ALLOW;
+    if ({'https', 'http'}.contains(uri.scheme)) {
+      unawaited(_openLink(uri.toString()));
+    }
+    return NavigationActionPolicy.CANCEL;
+  }
+
   Future<void> _openLink(String url) async {
     final epoch = _documentEpoch;
     final answer = _permissionAnswer;
@@ -2302,52 +2322,38 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                               return NavigationActionPolicy
                                                   .CANCEL;
                                             }
-                                            final uri = action.request.url;
-                                            if (uri == null) {
-                                              return NavigationActionPolicy
-                                                  .ALLOW;
-                                            }
-                                            if (!{
-                                              'https',
-                                              'http',
-                                              'about',
-                                              'blob',
-                                              'data',
-                                            }.contains(uri.scheme)) {
-                                              return NavigationActionPolicy
-                                                  .CANCEL;
-                                            }
-                                            if (action.isForMainFrame != true) {
-                                              return NavigationActionPolicy
-                                                  .ALLOW;
-                                            }
-                                            final appUri = MiniAppUrl.parse(
-                                              uri.toString(),
-                                              AppConstants.baseUrl,
+                                            // WPE 的 navigation action 只提供 target 名称，
+                                            // 无法区分无名 iframe 与主页面。Linux 在响应
+                                            // 阶段检查主页面跳转，避免把官方 frame-host 外开。
+                                            return _navigationPolicy(
+                                              action.request.url,
+                                              isForMainFrame:
+                                                  !Platform.isLinux &&
+                                                  action.isForMainFrame,
                                             );
-                                            if (appUri != null &&
-                                                MiniAppUrl.appId(appUri) ==
-                                                    _details.app.id) {
-                                              return NavigationActionPolicy
-                                                  .ALLOW;
-                                            }
-                                            if (uri.toString() ==
-                                                'about:blank') {
-                                              return NavigationActionPolicy
-                                                  .ALLOW;
-                                            }
-                                            if (mounted &&
-                                                {
-                                                  'https',
-                                                  'http',
-                                                }.contains(uri.scheme)) {
-                                              unawaited(
-                                                _openLink(uri.toString()),
-                                              );
-                                            }
-                                            return NavigationActionPolicy
-                                                .CANCEL;
                                           },
+                                      onNavigationResponse: Platform.isLinux
+                                          ? (_, response) async {
+                                              if (!mounted ||
+                                                  viewEpoch != _viewEpoch) {
+                                                return NavigationResponseAction
+                                                    .CANCEL;
+                                              }
+                                              return _navigationPolicy(
+                                                        response.response?.url,
+                                                        isForMainFrame:
+                                                            response
+                                                                .isForMainFrame ==
+                                                            true,
+                                                      ) ==
+                                                      NavigationActionPolicy
+                                                          .ALLOW
+                                                  ? NavigationResponseAction
+                                                        .ALLOW
+                                                  : NavigationResponseAction
+                                                        .CANCEL;
+                                            }
+                                          : null,
                                     ),
                                   ),
                                 ),

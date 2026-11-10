@@ -88,6 +88,7 @@ ZIP 便携版仍通过发布页手动更新。首次使用自更新，需要先�
    ```bash
    just run -- -d windows
    just run -- -d macos
+   just run -- -d linux
    just run -- --dart-define=cronetHttpNoPlay=true
    ```
 

@@ -124,10 +124,10 @@ if(NOT HAVE_WPE_PLATFORM AND NOT HAVE_WPE_FDO)
                       "See WPE_BACKEND.md for installation instructions.")
 endif()
 
-# Check for libwpe
-pkg_check_modules(LIBWPE QUIET IMPORTED_TARGET wpe-1.0)
-if(NOT LIBWPE_FOUND)
-  message(FATAL_ERROR "libwpe (wpe-1.0) not found. Please install libwpe-1.0-dev.")
+# libwpe 仅供旧 FDO 后端使用；新版 WPEPlatform 已不依赖它，
+# 当前 Arch 的 WPE WebKit 也不再提供 wpe-1.0。
+if(HAVE_WPE_FDO)
+  pkg_check_modules(LIBWPE REQUIRED IMPORTED_TARGET wpe-1.0)
 endif()
 
 # Check for libsecret for secure credential storage
@@ -305,7 +305,9 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::EPOXY)
 target_link_libraries(${PLUGIN_NAME} PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::WPE_WEBKIT)
-target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::LIBWPE)
+if(HAVE_WPE_FDO)
+  target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::LIBWPE)
+endif()
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::WAYLAND_SERVER)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::LIBSECRET)
 
@@ -374,8 +376,10 @@ list(REMOVE_DUPLICATES WPE_LIB_DIRS)
 # Find WPE WebKit library
 find_and_add_library("libWPEWebKit-2.0" "${WPE_LIB_DIRS}" WPE_BUNDLED_LIBS)
 
-# Find libwpe library  
-find_and_add_library("libwpe-1.0" "${WPE_LIB_DIRS}" WPE_BUNDLED_LIBS)
+# 只有旧 FDO 后端需要随包携带 libwpe。
+if(HAVE_WPE_FDO)
+  find_and_add_library("libwpe-1.0" "${WPE_LIB_DIRS}" WPE_BUNDLED_LIBS)
+endif()
 
 # WPEPlatform is built into libWPEWebKit-2.0 on modern builds, so there are
 # no separate libWPEPlatform*.so files to bundle.
@@ -438,7 +442,9 @@ target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::GTK)
 target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::EPOXY)
 target_link_libraries(${TEST_RUNNER} PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::WPE_WEBKIT)
-target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::LIBWPE)
+if(HAVE_WPE_FDO)
+  target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::LIBWPE)
+endif()
 target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::WAYLAND_SERVER)
 target_link_libraries(${TEST_RUNNER} PRIVATE PkgConfig::LIBSECRET)
 if(HAVE_WPE_PLATFORM)
