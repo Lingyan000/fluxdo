@@ -608,6 +608,55 @@ void main() {
     },
   );
 
+  testWidgets('应用广场切换收藏只在选中后震动，最近使用区变化保留按钮组状态', (tester) async {
+    final feedback = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') {
+        feedback.add(call.arguments as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.pumpWidget(wrap(const MiniAppGalleryPage()));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MiniAppGalleryPage)),
+    );
+    container.read(miniAppRecentsProvider).record(_app);
+    await tester.pumpAndSettle();
+    expect(find.byType(MiniAppRecentSection), findsOneWidget);
+    final group = find.byType(M3eButtonGroup<bool>);
+    final original = tester.state(group);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('已收藏')),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(feedback, isEmpty);
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(feedback, isEmpty);
+    await tester.tap(find.text('已收藏'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<M3eButtonGroup<bool>>(group).selected, isTrue);
+    expect(find.byType(MiniAppRecentSection), findsNothing);
+    expect(feedback, ['HapticFeedbackType.selectionClick']);
+    expect(tester.state(group), same(original));
+    await tester.tap(find.text('已收藏'));
+    await tester.pumpAndSettle();
+    expect(feedback, hasLength(1));
+    await tester.tap(find.byIcon(Symbols.explore_rounded));
+    await tester.pumpAndSettle();
+    expect(tester.widget<M3eButtonGroup<bool>>(group).selected, isFalse);
+    expect(find.byType(MiniAppRecentSection), findsOneWidget);
+    expect(feedback, hasLength(2));
+    expect(tester.state(group), same(original));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'shared sort menu preserves query and favorites; report dropdown selects type',
     (tester) async {

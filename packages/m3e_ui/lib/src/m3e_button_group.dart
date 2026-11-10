@@ -30,6 +30,9 @@ class M3eButtonGroupItem<T> {
 class M3eButtonGroup<T> extends StatefulWidget {
   final List<M3eButtonGroupItem<T>> items;
   final T selected;
+
+  /// 请求切换选中项。异步更新必须返回对应的 Future，组件才能在等待期间
+  /// 识别生效的 [selected] 并触发选中震动；未生效的选择不触发反馈。
   final FutureOr<void> Function(T value) onSelected;
   final EdgeInsetsGeometry itemPadding;
 

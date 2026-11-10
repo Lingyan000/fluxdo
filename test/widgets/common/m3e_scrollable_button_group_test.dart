@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -29,6 +30,17 @@ Finder get _group => find.byType(M3eButtonGroup<int>);
 Finder get _scroll =>
     find.descendant(of: _group, matching: find.byType(Scrollable));
 
+class _SelectionNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void select(int value) => state = value;
+}
+
+final _selectionProvider = NotifierProvider<_SelectionNotifier, int>(
+  _SelectionNotifier.new,
+);
+
 void _expectVisible(WidgetTester tester, int value) {
   final viewport = tester.getRect(_group);
   final label = tester.getRect(find.text('Variant $value'));
@@ -37,6 +49,54 @@ void _expectVisible(WidgetTester tester, int value) {
 }
 
 void main() {
+  testWidgets('Provider 驱动的按钮组在新选中项生效后震动一次', (tester) async {
+    final feedback = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') {
+        feedback.add(call.arguments as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    for (final enabled in [true, false]) {
+      for (final scrollable in [false, true]) {
+        feedback.clear();
+        await tester.pumpWidget(
+          ProviderScope(
+            key: ValueKey('$enabled-$scrollable'),
+            child: _host(
+              Consumer(
+                builder: (context, ref, child) => SizedBox(
+                  width: 360,
+                  child: M3eButtonGroup<int>(
+                    scrollable: scrollable,
+                    items: _items(2),
+                    selected: ref.watch(_selectionProvider),
+                    onSelected: ref.read(_selectionProvider.notifier).select,
+                  ),
+                ),
+              ),
+              enabled: enabled,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Variant 1'));
+        await tester.pumpAndSettle();
+        expect(tester.widget<M3eButtonGroup<int>>(_group).selected, 1);
+        expect(feedback, ['HapticFeedbackType.selectionClick']);
+        await tester.tap(find.text('Variant 1'));
+        await tester.pumpAndSettle();
+        expect(feedback, hasLength(1));
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
   testWidgets('只在点击后的新选中状态生效时震动，按下、取消、重复和拒绝不震动', (tester) async {
     final feedback = <String>[];
     final messenger =

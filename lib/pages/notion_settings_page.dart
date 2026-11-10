@@ -424,11 +424,9 @@ class _NotionSettingsPageState extends ConsumerState<NotionSettingsPage> {
                           ),
                         ],
                         selected: cfg.syncScope,
-                        onSelected: (scope) {
-                          ref
-                              .read(notionConfigProvider.notifier)
-                              .update(cfg.copyWith(syncScope: scope));
-                        },
+                        onSelected: (scope) => ref
+                            .read(notionConfigProvider.notifier)
+                            .update(cfg.copyWith(syncScope: scope)),
                       ),
                     ],
                   ),

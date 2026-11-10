@@ -308,6 +308,8 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                               ),
                             ),
                           SliverPadding(
+                            // 最近使用区会随收藏筛选显隐，保留按钮组的选中反馈状态。
+                            key: const ValueKey('mini-app-directory-filters'),
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                             sliver: SliverToBoxAdapter(
                               child: Column(
