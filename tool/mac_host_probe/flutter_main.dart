@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'mini_app.dart';
 import 'mini_app_host_adapter.dart';
@@ -14,10 +15,10 @@ late final String html, compat;
 void report(String event, Object? value) => print(jsonEncode({'event': event, 'value': value}));
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final config = jsonDecode(File('build/mac-probe/configuration.json').readAsStringSync()) as Map<String, dynamic>;
+  Timer(const Duration(seconds: 45), () => exit(1));
+  final config = jsonDecode(await rootBundle.loadString('assets/configuration.json')) as Map<String, dynamic>;
   html = MiniAppLightweightHost.build(details: MiniAppDetails(const MiniApp(id:id,name:'Fixture'),entry.toString(),configuration:config),entry:entry,site:entry.origin,background:'#ffffff',foreground:'#111111',primary:'#123456',expectedUserId:2,failureMessage:'Host failed',preparingMessage:'Preparing');
-  compat = File('assets/polyfill/compat-polyfill.js').readAsStringSync();
-  Timer(const Duration(seconds: 25), () => exit(0));
+  compat = await rootBundle.loadString('assets/compat-polyfill.js');
   runApp(const MaterialApp(home: Probe()));
 }
 class Probe extends StatelessWidget {
@@ -30,7 +31,7 @@ class Probe extends StatelessWidget {
     initialUserScripts: UnmodifiableListView([
       UserScript(source:'window.__fluxdoErudaInited=true;',injectionTime:UserScriptInjectionTime.AT_DOCUMENT_START,forMainFrameOnly:true),
       UserScript(source:compat,injectionTime:UserScriptInjectionTime.AT_DOCUMENT_START,forMainFrameOnly:true),
-      UserScript(source:MiniAppHostAdapter.frameViewportScript(entry),injectionTime:UserScriptInjectionTime.AT_DOCUMENT_START,forMainFrameOnly:false),
+      UserScript(source:MiniAppHostAdapter.frameViewportScript(Uri.parse(entry.origin)),injectionTime:UserScriptInjectionTime.AT_DOCUMENT_START,forMainFrameOnly:false),
       UserScript(source:MiniAppHostAdapter.navigationScript(entry),injectionTime:UserScriptInjectionTime.AT_DOCUMENT_START,forMainFrameOnly:true),
     ]),
     onWebViewCreated:(controller) async {
@@ -39,7 +40,12 @@ class Probe extends StatelessWidget {
         await controller.loadData(data:html,baseUrl:WebUri(entry.toString()),historyUrl:WebUri(entry.toString()));
         report('flutter-load-started',true);
         Timer.periodic(const Duration(seconds:2),(timer) async {
-          try {report('flutter-url',(await controller.getUrl()).toString());report('flutter-snapshot',await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot));}
+          try {
+            report('flutter-url',(await controller.getUrl()).toString());
+            final state=await controller.evaluateJavascript(source:MiniAppHostAdapter.snapshot);
+            report('flutter-snapshot',state);
+            if(state is Map && state['engineMounted']==true && state['detail']=='EXPECTED_FIXTURE_DENIAL') exit(0);
+          }
           catch(e){report('flutter-snapshot-error',e.toString());}
         });
       } catch(e){report('flutter-load-error',e.toString());}

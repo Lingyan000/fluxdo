@@ -57,6 +57,8 @@ export function mountLoader(root, options) {window.fixtureMounted=true;root.clas
 return {destroy(){},setAudioMuted:async value=>options.onAudioStateChange(value)};}'''
         elif self.path == "/sdk.js":
             body, mime = sdk, "application/javascript"
+        elif self.path == configuration["launchUrl"]:
+            body, status = b'{"error":"ACCESS_DENIED"}', 403
         elif self.path.endswith(".css"):
             body, mime = b"", "text/css"
         else:

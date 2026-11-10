@@ -22,7 +22,7 @@ jobs:
           openssl req -x509 -newkey rsa:2048 -nodes -keyout build/mac-probe/key.pem -out build/mac-probe/cert.pem -days 1 -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' 2>/dev/null
           python3 tool/mac_host_probe/server.py > build/mac-probe/server.log 2>&1 &
           SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          trap 'cat build/mac-probe/server.log; kill "$SERVER_PID" 2>/dev/null || true' EXIT
           swiftc tool/mac_host_probe/probe.swift -o build/mac-probe/probe
           build/mac-probe/probe | tee build/mac-probe/result.log
           curl --fail --max-time 30 -sS https://cdn.ldstatic.com/plugins/discourse-mini-app/runtime/loader-825168982ff65bbb3332ffbbbded3d5719cd39946967aa70bdb65dc71176cce3.js -o build/mac-probe/official-loader.js
@@ -34,6 +34,10 @@ jobs:
           flutter pub add flutter_inappwebview:6.2.0-beta.3
           cp ../../tool/mac_host_probe/flutter_main.dart lib/main.dart
           cp ../../lib/modules/mini_apps/{mini_app.dart,mini_app_url.dart,mini_app_host_adapter.dart,mini_app_lightweight_host.dart} lib/
+          mkdir -p assets
+          cp ../mac-probe/configuration.json assets/
+          cp ../../assets/polyfill/compat-polyfill.js assets/
+          python3 -c "from pathlib import Path; p=Path('pubspec.yaml'); p.write_text(p.read_text().replace('flutter:\\n', 'flutter:\\n  assets:\\n    - assets/\\n'))"
           /usr/libexec/PlistBuddy -c 'Add :com.apple.security.network.client bool true' macos/Runner/DebugProfile.entitlements
           flutter build macos --debug
           cd ../..
