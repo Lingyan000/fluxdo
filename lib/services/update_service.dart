@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../l10n/s.dart';
+import '../l10n/app_localizations.dart';
 
 /// APK 资源信息
 class ApkAsset {
@@ -25,19 +25,55 @@ class ApkAsset {
   });
 
   Map<String, dynamic> toJson() => {
-        'downloadUrl': downloadUrl,
-        'sha256Url': sha256Url,
-        'architecture': architecture,
-        'size': size,
-        'name': name,
-      };
+    'downloadUrl': downloadUrl,
+    'sha256Url': sha256Url,
+    'architecture': architecture,
+    'size': size,
+    'name': name,
+  };
 
   factory ApkAsset.fromJson(Map<String, dynamic> json) => ApkAsset(
-        downloadUrl: json['downloadUrl'] as String,
-        sha256Url: json['sha256Url'] as String?,
-        architecture: json['architecture'] as String,
-        size: json['size'] as int,
+    downloadUrl: json['downloadUrl'] as String,
+    sha256Url: json['sha256Url'] as String?,
+    architecture: json['architecture'] as String,
+    size: json['size'] as int,
+    name: json['name'] as String,
+  );
+}
+
+/// Windows Inno Setup 安装包。digest 来自 GitHub API，优先于镜像校验文件。
+class WindowsUpdateAsset {
+  final String name;
+  final String downloadUrl;
+  final String? sha256Url;
+  final String? sha256;
+  final int size;
+
+  const WindowsUpdateAsset({
+    required this.name,
+    required this.downloadUrl,
+    required this.size,
+    this.sha256Url,
+    this.sha256,
+  });
+
+  bool get canVerify => sha256 != null || sha256Url != null;
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'downloadUrl': downloadUrl,
+    'size': size,
+    'sha256Url': sha256Url,
+    'sha256': sha256,
+  };
+
+  factory WindowsUpdateAsset.fromJson(Map<String, dynamic> json) =>
+      WindowsUpdateAsset(
         name: json['name'] as String,
+        downloadUrl: json['downloadUrl'] as String,
+        size: json['size'] as int,
+        sha256Url: json['sha256Url'] as String?,
+        sha256: json['sha256'] as String?,
       );
 }
 
@@ -49,6 +85,7 @@ class UpdateInfo {
   final String releaseNotes;
   final bool hasUpdate;
   final List<ApkAsset> apkAssets;
+  final WindowsUpdateAsset? windowsAsset;
 
   UpdateInfo({
     required this.currentVersion,
@@ -57,28 +94,36 @@ class UpdateInfo {
     required this.releaseNotes,
     required this.hasUpdate,
     this.apkAssets = const [],
+    this.windowsAsset,
   });
 
   Map<String, dynamic> toJson() => {
-        'currentVersion': currentVersion,
-        'remoteVersion': remoteVersion,
-        'releaseUrl': releaseUrl,
-        'releaseNotes': releaseNotes,
-        'hasUpdate': hasUpdate,
-        'apkAssets': apkAssets.map((e) => e.toJson()).toList(),
-      };
+    'currentVersion': currentVersion,
+    'remoteVersion': remoteVersion,
+    'releaseUrl': releaseUrl,
+    'releaseNotes': releaseNotes,
+    'hasUpdate': hasUpdate,
+    'apkAssets': apkAssets.map((e) => e.toJson()).toList(),
+    'windowsAsset': windowsAsset?.toJson(),
+  };
 
   factory UpdateInfo.fromJson(Map<String, dynamic> json) => UpdateInfo(
-        currentVersion: json['currentVersion'] as String,
-        remoteVersion: json['remoteVersion'] as String,
-        releaseUrl: json['releaseUrl'] as String,
-        releaseNotes: json['releaseNotes'] as String,
-        hasUpdate: json['hasUpdate'] as bool,
-        apkAssets: (json['apkAssets'] as List<dynamic>?)
-                ?.map((e) => ApkAsset.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-      );
+    currentVersion: json['currentVersion'] as String,
+    remoteVersion: json['remoteVersion'] as String,
+    releaseUrl: json['releaseUrl'] as String,
+    releaseNotes: json['releaseNotes'] as String,
+    hasUpdate: json['hasUpdate'] as bool,
+    apkAssets:
+        (json['apkAssets'] as List<dynamic>?)
+            ?.map((e) => ApkAsset.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    windowsAsset: json['windowsAsset'] == null
+        ? null
+        : WindowsUpdateAsset.fromJson(
+            json['windowsAsset'] as Map<String, dynamic>,
+          ),
+  );
 }
 
 /// 应用更新检查服务
@@ -99,8 +144,8 @@ class UpdateService {
   final SharedPreferences? _prefs;
 
   UpdateService({Dio? dio, SharedPreferences? prefs})
-      : _dio = dio ?? Dio(),
-        _prefs = prefs;
+    : _dio = dio ?? Dio(),
+      _prefs = prefs;
 
   /// 获取自动检查更新设置
   bool getAutoCheckUpdate() {
@@ -249,12 +294,16 @@ class UpdateService {
 
       // 304 Not Modified - 使用缓存
       if (response.statusCode == 304) {
-        final cachedInfo =
-            _getCachedUpdateInfo(currentVersion, ignoreExpiry: true);
+        final cachedInfo = _getCachedUpdateInfo(
+          currentVersion,
+          ignoreExpiry: true,
+        );
         if (cachedInfo != null) {
           // 更新缓存时间
           await _prefs?.setInt(
-              _cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+            _cacheTimeKey,
+            DateTime.now().millisecondsSinceEpoch,
+          );
           return cachedInfo;
         }
       }
@@ -275,20 +324,24 @@ class UpdateService {
     } on DioException catch (e) {
       // 403/429 速率限制时尝试使用缓存
       if (e.response?.statusCode == 403 || e.response?.statusCode == 429) {
-        final cachedInfo =
-            _getCachedUpdateInfo(currentVersion, ignoreExpiry: true);
+        final cachedInfo = _getCachedUpdateInfo(
+          currentVersion,
+          ignoreExpiry: true,
+        );
         if (cachedInfo != null) {
           return cachedInfo;
         }
-        throw Exception(S.current.update_rateLimited);
+        throw Exception(t.update_rateLimited);
       }
       rethrow;
     }
   }
 
   /// 从缓存获取更新信息
-  UpdateInfo? _getCachedUpdateInfo(String currentVersion,
-      {bool ignoreExpiry = false}) {
+  UpdateInfo? _getCachedUpdateInfo(
+    String currentVersion, {
+    bool ignoreExpiry = false,
+  }) {
     if (_prefs == null) return null;
 
     final cacheJson = _prefs.getString(_cacheKey);
@@ -305,11 +358,13 @@ class UpdateService {
     }
 
     try {
-      final cached =
-          UpdateInfo.fromJson(jsonDecode(cacheJson) as Map<String, dynamic>);
+      final cached = UpdateInfo.fromJson(
+        jsonDecode(cacheJson) as Map<String, dynamic>,
+      );
 
       // 重新计算 hasUpdate（因为当前版本可能已变化）
-      final hasUpdate = _compareVersions(cached.remoteVersion, currentVersion) > 0;
+      final hasUpdate =
+          _compareVersions(cached.remoteVersion, currentVersion) > 0;
 
       return UpdateInfo(
         currentVersion: currentVersion,
@@ -318,6 +373,7 @@ class UpdateService {
         releaseNotes: cached.releaseNotes,
         hasUpdate: hasUpdate,
         apkAssets: cached.apkAssets,
+        windowsAsset: cached.windowsAsset,
       );
     } catch (e) {
       return null;
@@ -333,7 +389,10 @@ class UpdateService {
   }
 
   /// 解析更新信息
-  UpdateInfo _parseUpdateInfo(Map<String, dynamic> data, String currentVersion) {
+  UpdateInfo _parseUpdateInfo(
+    Map<String, dynamic> data,
+    String currentVersion,
+  ) {
     final remoteVersion = (data['tag_name'] as String).replaceAll('v', '');
     final releaseUrl = data['html_url'] as String;
     var releaseNotes = data['body'] as String? ?? '';
@@ -359,6 +418,31 @@ class UpdateService {
       releaseNotes: releaseNotes,
       hasUpdate: hasUpdate,
       apkAssets: apkAssets,
+      windowsAsset: _parseWindowsAsset(assets),
+    );
+  }
+
+  WindowsUpdateAsset? _parseWindowsAsset(List<dynamic> assets) {
+    const installerName = 'fluxdo-windows-x86_64-setup.exe';
+    Map<String, dynamic>? installer;
+    String? checksumUrl;
+    for (final value in assets) {
+      final asset = value as Map<String, dynamic>;
+      if (asset['name'] == installerName) installer = asset;
+      if (asset['name'] == '$installerName.sha256') {
+        checksumUrl = asset['browser_download_url'] as String?;
+      }
+    }
+    if (installer == null) return null;
+    final digest = installer['digest'] as String?;
+    final match = RegExp(r'^sha256:([a-fA-F0-9]{64})$')
+        .firstMatch(digest ?? '');
+    return WindowsUpdateAsset(
+      name: installerName,
+      downloadUrl: installer['browser_download_url'] as String,
+      size: installer['size'] as int? ?? 0,
+      sha256Url: checksumUrl,
+      sha256: match?.group(1)?.toLowerCase(),
     );
   }
 
@@ -386,13 +470,15 @@ class UpdateService {
       final architecture = _extractArchitecture(name);
       if (architecture == null) continue;
 
-      apkAssets.add(ApkAsset(
-        downloadUrl: asset['browser_download_url'] as String,
-        sha256Url: sha256Map[name],
-        architecture: architecture,
-        size: asset['size'] as int? ?? 0,
-        name: name,
-      ));
+      apkAssets.add(
+        ApkAsset(
+          downloadUrl: asset['browser_download_url'] as String,
+          sha256Url: sha256Map[name],
+          architecture: architecture,
+          size: asset['size'] as int? ?? 0,
+          name: name,
+        ),
+      );
     }
 
     return apkAssets;

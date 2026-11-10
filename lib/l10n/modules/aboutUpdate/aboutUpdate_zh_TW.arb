@@ -50,5 +50,9 @@
   "update_notification_downloading": "正在下載新版本",
   "update_notification_ready": "新版本已下載完成，點選安裝",
   "update_now": "立即更新",
+  "update_windowsInstallRestart": "安裝並重新啟動",
+  "update_windowsReady": "新版本已下載並驗證完成。安裝將關閉並重新啟動 FluxDO，請先儲存正在編輯的內容。",
+  "update_windowsInstalling": "正在啟動安裝程式。準備完成後，FluxDO 將關閉並在更新後重新啟動。",
+  "update_windowsInstallFailed": "安裝未完成或已取消。你可以重試，或前往發佈頁手動下載安裝。",
   "update_rateLimited": "GitHub API 請求過於頻繁，請稍後再試"
 }

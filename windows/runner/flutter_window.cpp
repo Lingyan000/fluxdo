@@ -5,6 +5,7 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
 #include "mini_app_window.h"
+#include "windows_update.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -30,6 +31,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterWindowsUpdate(flutter_controller_->engine()->messenger(), GetHandle());
   DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
     auto* child = reinterpret_cast<flutter::FlutterViewController*>(controller);
     RegisterMiniAppWindowPlugins(child->engine());

@@ -8,12 +8,16 @@ import '../providers/apk_update_provider.dart';
 import '../utils/dialog_utils.dart';
 import '../widgets/download_progress_dialog.dart';
 import '../widgets/update_dialog.dart';
+import '../widgets/windows_update_dialog.dart';
 import 'update_service.dart';
+import 'windows_update_service.dart';
 
 /// 更新检查助手类
 ///
 /// 负责处理自动更新检查的 UI 逻辑
 class UpdateCheckerHelper {
+  static bool _windowsUpdateOpen = false;
+
   /// 在应用启动时自动检查更新
   ///
   /// 如果发现新版本，会显示更新对话框
@@ -29,15 +33,45 @@ class UpdateCheckerHelper {
 
   /// 处理用户点击"立即更新"后的下载/跳转逻辑
   ///
-  /// Android：拉起应用内下载 + 系统通知；iOS/桌面：回退浏览器
+  /// Android / Windows 安装版使用应用内更新，其他分发方式打开发布页。
   static Future<void> handleUpdate(
     BuildContext context,
     UpdateInfo updateInfo,
   ) async {
     if (Platform.isAndroid) {
       await _startInAppDownload(context, updateInfo);
+    } else if (Platform.isWindows) {
+      await _startWindowsUpdate(context, updateInfo);
     } else {
       _openInBrowser(updateInfo.releaseUrl);
+    }
+  }
+
+  static Future<void> _startWindowsUpdate(
+    BuildContext context,
+    UpdateInfo updateInfo,
+  ) async {
+    if (_windowsUpdateOpen) return;
+    _windowsUpdateOpen = true;
+    try {
+      final asset = updateInfo.windowsAsset;
+      if (asset == null ||
+          !asset.canVerify ||
+          !await WindowsUpdateService.isInstalled()) {
+        _openInBrowser(updateInfo.releaseUrl);
+        return;
+      }
+      if (!context.mounted) return;
+      await showAppDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => WindowsUpdateDialog(
+          asset: asset,
+          releaseUrl: updateInfo.releaseUrl,
+        ),
+      );
+    } finally {
+      _windowsUpdateOpen = false;
     }
   }
 
@@ -49,19 +83,19 @@ class UpdateCheckerHelper {
   ) {
     return showAppDialog<void>(
       context: context,
-      builder: (context) => UpdateDialog(
+      builder: (dialogContext) => UpdateDialog(
         updateInfo: updateInfo,
         onUpdate: () {
-          Navigator.of(context).pop();
+          Navigator.of(dialogContext).pop();
           handleUpdate(context, updateInfo);
         },
-        onCancel: () => Navigator.of(context).pop(),
+        onCancel: () => Navigator.of(dialogContext).pop(),
         onIgnore: () {
           updateService.setAutoCheckUpdate(false);
-          Navigator.of(context).pop();
+          Navigator.of(dialogContext).pop();
         },
         onOpenReleasePage: () {
-          Navigator.of(context).pop();
+          Navigator.of(dialogContext).pop();
           _openInBrowser(updateInfo.releaseUrl);
         },
       ),

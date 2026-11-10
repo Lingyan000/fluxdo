@@ -36,5 +36,9 @@
   "update_notification_downloading": "Downloading new version",
   "update_notification_ready": "New version ready, tap to install",
   "update_now": "Update now",
+  "update_windowsInstallRestart": "Install and restart",
+  "update_windowsReady": "The update has been downloaded and verified. Installation will close and restart FluxDO. Save your work first.",
+  "update_windowsInstalling": "Starting the installer. FluxDO will close when the installer is ready and restart after updating.",
+  "update_windowsInstallFailed": "Installation did not finish or was cancelled. Retry or download the installer from the release page.",
   "update_rateLimited": "GitHub API rate limited, try later"
 }

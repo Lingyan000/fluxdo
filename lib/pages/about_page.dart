@@ -149,15 +149,15 @@ class _AboutPageState extends State<AboutPage> {
       if (updateInfo.hasUpdate) {
         showAppDialog(
           context: context,
-          builder: (context) => UpdateDialog(
+          builder: (dialogContext) => UpdateDialog(
             updateInfo: updateInfo,
             onUpdate: () {
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
               UpdateCheckerHelper.handleUpdate(context, updateInfo);
             },
-            onCancel: () => Navigator.of(context).pop(),
+            onCancel: () => Navigator.of(dialogContext).pop(),
             onOpenReleasePage: () {
-              Navigator.of(context).pop();
+              Navigator.of(dialogContext).pop();
               _openInBrowser(updateInfo.releaseUrl);
             },
           ),

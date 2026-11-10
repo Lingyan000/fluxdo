@@ -276,6 +276,10 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/setup-nasm@v1
 
+      - name: Test Windows updater
+        if: matrix.platform == 'windows'
+        run: dart tool/flutterw.dart test test/services/windows_update_service_test.dart
+
       - name: Build Windows
         if: matrix.platform == 'windows'
         run: |
