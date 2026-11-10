@@ -298,21 +298,38 @@ class _ThemeGallery extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final group in _groups)
-              if (cardsByGroup[group] case final cards?) ...[
+              // 「我的主题」即使为空也显示：承载新建与导入入口
+              if (cardsByGroup[group] != null ||
+                  group == ThemeGroup.custom) ...[
                 Padding(
                   padding: const EdgeInsets.only(top: 8, bottom: 10),
-                  child: Text(
-                    _groupName(context, group),
-                    style: textTheme.titleSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _groupName(context, group),
+                          style: textTheme.titleSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      if (group == ThemeGroup.custom)
+                        TextButton.icon(
+                          onPressed: () =>
+                              _importThemeFromClipboard(context, ref),
+                          icon: const Icon(Symbols.content_paste_rounded),
+                          label: Text(
+                            context.l10n.appearance_customThemeImport,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 Wrap(
                   spacing: spacing,
                   runSpacing: spacing,
                   children: [
-                    for (final spec in cards)
+                    for (final spec in cardsByGroup[group] ?? const [])
                       _ThemeCard(
                         width: itemWidth,
                         name: _themeName(context, spec),
@@ -323,7 +340,10 @@ class _ThemeGallery extends ConsumerWidget {
                           if (spec.familyId == current.familyId) return;
                           ref.read(themeProvider.notifier).setThemeId(spec.id);
                         },
+                        onMore: () => _showThemeActions(context, ref, spec),
                       ),
+                    if (group == ThemeGroup.custom)
+                      _NewThemeCard(width: itemWidth),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -343,6 +363,7 @@ class _ThemeCard extends StatelessWidget {
     required this.shapes,
     required this.selected,
     required this.onTap,
+    this.onMore,
   });
 
   final double width;
@@ -351,6 +372,9 @@ class _ThemeCard extends StatelessWidget {
   final UiShapes shapes;
   final bool selected;
   final VoidCallback onTap;
+
+  /// 长按 / 右键：主题操作菜单
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -364,6 +388,8 @@ class _ThemeCard extends StatelessWidget {
         label: name,
         child: GestureDetector(
           onTap: onTap,
+          onLongPress: onMore,
+          onSecondaryTap: onMore,
           behavior: HitTestBehavior.opaque,
           child: Column(
             children: [

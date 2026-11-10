@@ -25,7 +25,8 @@ class ThemePreviewCache {
     required bool black,
   }) {
     final key = [
-      spec.id,
+      // 自定义主题编辑后 id 不变，带上实例身份避免取到旧配色
+      '${spec.id}#${identityHashCode(spec)}',
       brightness.index,
       black,
       if (spec.isGenerated) ...[seed.toARGB32(), variant.index] else accentId,

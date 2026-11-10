@@ -15,6 +15,7 @@ import '../theme/app_background.dart';
 import 'package:common_ui/common_ui.dart' show UiShapes;
 
 import '../theme/app_palettes.dart';
+import '../theme/custom_themes.dart';
 import '../theme/festival_calendar.dart';
 import '../theme/shape_presets.dart';
 import '../theme/theme_registry.dart';
@@ -105,6 +106,9 @@ class ThemeState {
   /// 今天所处的节日窗口（与开关、跳过无关）
   final FestivalOccurrence? festival;
 
+  /// 用户自定义主题（与 [ThemeRegistry.custom] 同步，变化时触发重建）
+  final List<ThemeSpec> customThemes;
+
   /// M3E 组件风格总开关（加载动画/进度条/滑块/按钮形变/下拉刷新）
   final bool m3eEnabled;
 
@@ -131,6 +135,7 @@ class ThemeState {
     this.festivalGreetingEnabled = true,
     this.festivalSkipped = const {},
     this.festival,
+    this.customThemes = const [],
     this.m3eEnabled = true,
     this.background = const AppBackground(),
   });
@@ -220,6 +225,7 @@ class ThemeState {
     bool? festivalGreetingEnabled,
     Set<String>? festivalSkipped,
     FestivalOccurrence? Function()? festival,
+    List<ThemeSpec>? customThemes,
     bool? m3eEnabled,
     AppBackground? background,
   }) {
@@ -246,6 +252,7 @@ class ThemeState {
           festivalGreetingEnabled ?? this.festivalGreetingEnabled,
       festivalSkipped: festivalSkipped ?? this.festivalSkipped,
       festival: festival != null ? festival() : this.festival,
+      customThemes: customThemes ?? this.customThemes,
       m3eEnabled: m3eEnabled ?? this.m3eEnabled,
       background: background ?? this.background,
     );
@@ -339,6 +346,46 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     await _prefs.setBool(_festivalGreetingKey, value);
   }
 
+  /// 保存（新增或按 id 覆盖）自定义主题。
+  Future<void> saveCustomTheme(ThemeSpec spec) async {
+    final list = [...state.customThemes];
+    final index = list.indexWhere((s) => s.id == spec.id);
+    if (index >= 0) {
+      list[index] = spec;
+    } else {
+      list.add(spec);
+    }
+    await _setCustomThemes(list);
+  }
+
+  /// 删除自定义主题；正在使用时回退 Material。
+  Future<void> deleteCustomTheme(String id) async {
+    final list = state.customThemes.where((s) => s.id != id).toList();
+    await _setCustomThemes(list);
+    if (state.themeId == id) await setThemeId(ThemeRegistry.materialId);
+    if (state.themeAccents.containsKey(id)) {
+      final accents = {...state.themeAccents}..remove(id);
+      state = state.copyWith(themeAccents: accents);
+      await _prefs.setString(_themeAccentsKey, jsonEncode(accents));
+    }
+  }
+
+  /// 从主题代码导入并保存，返回导入的主题。格式不合法抛 FormatException。
+  Future<ThemeSpec> importCustomTheme(String code) async {
+    final spec = CustomThemes.importFrom(
+      code,
+      existingIds: {for (final s in ThemeRegistry.all) s.id},
+    );
+    await saveCustomTheme(spec);
+    return spec;
+  }
+
+  Future<void> _setCustomThemes(List<ThemeSpec> list) async {
+    ThemeRegistry.setCustom(list);
+    state = state.copyWith(customThemes: List.unmodifiable(list));
+    await _prefs.setString(CustomThemes.prefsKey, CustomThemes.encode(list));
+  }
+
   /// 本次节日不再使用节日配色（窗口结束后自然失效）。
   Future<void> skipCurrentFestival() async {
     final f = state.festival;
@@ -389,6 +436,12 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
         paletteId = AppPalettes.defaultId;
       }
     }
+
+    // ── 自定义主题：先注册，主题 id 才能解析到它们 ──
+    final customThemes = CustomThemes.decode(
+      prefs.getString(CustomThemes.prefsKey),
+    );
+    ThemeRegistry.setCustom(customThemes);
 
     // ── 主题：新键优先，缺省时从旧的中性开关迁移（开 = 简约） ──
     final themeId =
@@ -459,6 +512,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       festivalGreetingEnabled: prefs.getBool(_festivalGreetingKey) ?? true,
       festivalSkipped: {...?prefs.getStringList(_festivalSkippedKey)},
       festival: FestivalCalendar.activeOn(FestivalCalendar.clock()),
+      customThemes: customThemes,
       m3eEnabled: prefs.getBool(_m3eEnabledKey) ?? true,
       background: background,
     );

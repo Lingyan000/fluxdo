@@ -29,8 +29,10 @@ import '../../services/fonts/font_download_service.dart';
 import '../../services/fonts/font_sources.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
+import '../../theme/app_colors.dart' show AppHue;
 import '../../theme/app_palettes.dart';
 import '../../theme/color_contrast.dart';
+import '../../theme/custom_themes.dart';
 import '../../theme/theme_registry.dart';
 import '../../theme/shape_presets.dart';
 import '../../theme/theme_preview_cache.dart';
@@ -43,6 +45,7 @@ import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
+part 'appearance_custom_theme_editor.dart';
 part 'appearance_font_section.dart';
 part 'appearance_theme_section.dart';
 
@@ -1844,10 +1847,15 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
 
 // ── 自定义取色弹框（返回所选颜色，用途由调用方决定）──
 
-Future<Color?> _showSeedColorPicker(BuildContext context, WidgetRef ref) {
-  double hue = 0;
-  double saturation = 0.8;
-  double value = 0.9;
+Future<Color?> _showSeedColorPicker(
+  BuildContext context,
+  WidgetRef ref, {
+  Color? initial,
+}) {
+  final start = initial == null ? null : HSVColor.fromColor(initial);
+  double hue = start?.hue ?? 0;
+  double saturation = start?.saturation ?? 0.8;
+  double value = start?.value ?? 0.9;
   final hexController = TextEditingController(text: 'E57373');
 
   void syncHex() {

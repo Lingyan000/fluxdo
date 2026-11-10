@@ -149,6 +149,53 @@
   "appearance_themeVariant": "口味",
   "appearance_themeAccent": "强调色",
   "appearance_themeCustomAccent": "自定义",
+  "appearance_customThemeNew": "新建主题",
+  "appearance_customThemeDuplicate": "复制并编辑",
+  "appearance_customThemeCopyCode": "复制主题代码",
+  "appearance_customThemeCodeCopied": "主题代码已复制",
+  "appearance_customThemeImport": "从剪贴板导入",
+  "appearance_customThemeImported": "已导入「{name}」",
+  "@appearance_customThemeImported": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_customThemeImportFailed": "剪贴板里没有可用的主题代码",
+  "appearance_customThemeDeleteConfirm": "删除主题「{name}」？",
+  "@appearance_customThemeDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_customThemeName": "主题名称",
+  "appearance_customThemeCopyName": "{name} 副本",
+  "@appearance_customThemeCopyName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "appearance_themeEditorTitle": "编辑主题",
+  "appearance_themeEditorBase": "基础色",
+  "appearance_themeEditorBg": "背景",
+  "appearance_themeEditorFg": "文字",
+  "appearance_themeEditorFgMuted": "次要文字",
+  "appearance_themeEditorBorder": "分割线",
+  "appearance_themeEditorHues": "色相",
+  "appearance_themeEditorAccentHint": "点按修改，长按删除",
+  "appearance_themeEditorAdjusted": "对比度不足，显示时已自动调整",
+  "appearance_hueRed": "红",
+  "appearance_hueOrange": "橙",
+  "appearance_hueYellow": "黄",
+  "appearance_hueGreen": "绿",
+  "appearance_hueCyan": "青",
+  "appearance_hueBlue": "蓝",
+  "appearance_huePurple": "紫",
   "appearance_shape": "圆角风格",
   "appearance_shapeFollow": "跟随主题",
   "appearance_shapeStandard": "标准",

@@ -123,6 +123,23 @@ class ThemePalette {
     );
   }
 
+  ThemePalette copyWith({
+    Color? bg,
+    Color? fg,
+    Color? fgMuted,
+    Color? border,
+    Map<AppHue, Color>? hues,
+  }) => ThemePalette(
+    bg: bg ?? this.bg,
+    fg: fg ?? this.fg,
+    fgMuted: fgMuted ?? this.fgMuted,
+    border: border ?? this.border,
+    hues: hues ?? this.hues,
+    outline: outline,
+    error: error,
+    roles: roles,
+  );
+
   Map<String, dynamic> toJson() => {
     'bg': ThemeSpecColor.format(bg),
     'fg': ThemeSpecColor.format(fg),
@@ -281,6 +298,35 @@ class ThemeSpec {
     }
     return accents.first;
   }
+
+  /// 复制为用户自定义主题（脱离原主题族，分组归为「我的主题」）。
+  ThemeSpec copyWith({
+    String? id,
+    Map<String, String>? name,
+    ThemeGroup? group,
+    ThemePalette? light,
+    ThemePalette? dark,
+    List<ThemeAccent>? accents,
+    ShapePreset? shape,
+    bool clearFamily = false,
+  }) => ThemeSpec(
+    id: id ?? this.id,
+    kind: kind,
+    name: name ?? this.name,
+    group: group ?? this.group,
+    family: clearFamily ? null : family,
+    variantName: clearFamily ? const {} : variantName,
+    order: order,
+    shape: shape ?? this.shape,
+    fontBody: fontBody,
+    fontMono: fontMono,
+    surface: surface,
+    light: light ?? this.light,
+    dark: dark ?? this.dark,
+    accents: accents ?? this.accents,
+    allowCustomAccent: allowCustomAccent,
+    supportsPureBlack: supportsPureBlack,
+  );
 
   /// 解析并校验主题 JSON，格式不合法时抛 [FormatException]。
   factory ThemeSpec.fromJson(Map<String, dynamic> json) {
