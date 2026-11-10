@@ -14,6 +14,8 @@ import 'package:fluxdo/providers/nested_topic_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/nested/nested_post_card.dart';
+import 'package:fluxdo/widgets/nested/nested_reading_scope.dart';
+import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 
@@ -41,6 +43,7 @@ final _detail = TopicDetail.fromJson({
 class _Nested extends NestedTopicNotifier {
   _Nested(this.preset) : super(const NestedTopicParams(topicId: 1));
   final NestedTopicState preset;
+  void replace(NestedTopicState value) => state = AsyncData(value);
   void deliver(NestedChildCreatedEvent event) {
     state = AsyncData(state.requireValue.copyWith(lastChildCreated: event));
   }
@@ -108,29 +111,39 @@ Future<void> _pump(
               textScaler: TextScaler.linear(scale),
             ),
             child: Scaffold(
-              body: NestedPostList(
-                nestedState: state,
-                params: const NestedTopicParams(topicId: 1),
-                detail: _detail,
-                blockedUsernames: const {},
-                topicId: 1,
-                scrollController: scroll,
-                headerKey: GlobalKey(),
-                isLoggedIn: false,
-                session: session,
-                restorePosition: restore,
-                resumePosition: const NestedReadingPosition(
-                  postNumber: 20,
-                  rootPostNumber: 2,
+              body: Consumer(
+                builder: (context, ref, _) => NestedPostList(
+                  nestedState:
+                      ref
+                          .watch(
+                            nestedTopicProvider(
+                              const NestedTopicParams(topicId: 1),
+                            ),
+                          )
+                          .value ??
+                      state,
+                  params: const NestedTopicParams(topicId: 1),
+                  detail: _detail,
+                  blockedUsernames: const {},
+                  topicId: 1,
+                  scrollController: scroll,
+                  headerKey: GlobalKey(),
+                  isLoggedIn: false,
+                  session: session,
+                  restorePosition: restore,
+                  resumePosition: const NestedReadingPosition(
+                    postNumber: 20,
+                    rootPostNumber: 2,
+                  ),
+                  onResume: onResume,
+                  onVisiblePostsChanged: onVisible,
+                  onReply: (_, {initialContent}) {},
+                  onEdit: (_) {},
+                  onRefreshPost: (_) {},
+                  onJumpToPost: (_) {},
+                  onVoteChanged: (_, _) {},
+                  onScrollNotification: (_) => false,
                 ),
-                onResume: onResume,
-                onVisiblePostsChanged: onVisible,
-                onReply: (_, {initialContent}) {},
-                onEdit: (_) {},
-                onRefreshPost: (_) {},
-                onJumpToPost: (_) {},
-                onVoteChanged: (_, _) {},
-                onScrollNotification: (_) => false,
               ),
             ),
           ),
@@ -142,6 +155,80 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('同一分支内上方正文增高时保持当前子回复的位置', (tester) async {
+    final session = NestedReadingSession();
+    NestedTopicState state({bool expandedBody = false}) => NestedTopicState(
+      contextMode: true,
+      targetPostNumber: 20,
+      contextChain: NestedNode(
+        post: _post(2, long: expandedBody),
+        children: [NestedNode(post: _post(20, long: true))],
+      ),
+    );
+    final notifier = _Nested(state());
+    await _pump(
+      tester,
+      state: state(),
+      notifier: notifier,
+      session: session,
+      restore: const NestedReadingPosition(
+        postNumber: 20,
+        rootPostNumber: 2,
+        offset: -120,
+      ),
+    );
+    final viewport = tester
+        .widget<NestedReadingScope>(find.byType(NestedReadingScope))
+        .controller;
+    final before = viewport.topOf(20)!;
+    notifier.replace(state(expandedBody: true));
+    await tester.pump();
+    expect(viewport.topOf(20), closeTo(before, 1));
+    await tester.pumpAndSettle();
+    expect(viewport.topOf(20), closeTo(before, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('拖动期间插入主回复和新回复提示保持锚点并继续响应手势', (tester) async {
+    final roots = [for (var n = 2; n < 80; n++) NestedNode(post: _post(n))];
+    final state = NestedTopicState(roots: roots);
+    final notifier = _Nested(state);
+    final scroll = AutoScrollController();
+    await _pump(tester, state: state, notifier: notifier, controller: scroll);
+    final list = tester.widget<PositionedStreamList>(
+      find.byType(PositionedStreamList),
+    );
+    final jump = list.listController.jumpToIndex(
+      list.itemKeys.indexOf('root-40'),
+    );
+    await tester.pumpAndSettle();
+    await jump;
+    final gesture = await tester.startGesture(const Offset(180, 450));
+    await gesture.moveBy(const Offset(0, -60));
+    await tester.pump();
+    final viewport = tester
+        .widget<NestedReadingScope>(find.byType(NestedReadingScope))
+        .controller;
+    final before = viewport.topOf(40)!;
+    notifier.replace(
+      state.copyWith(
+        roots: [
+          NestedNode(post: _post(100, long: true)),
+          ...roots,
+        ],
+        newRootPostIds: [200],
+      ),
+    );
+    await tester.pump();
+    expect(viewport.topOf(40), closeTo(before, 1));
+    await gesture.moveBy(const Offset(0, -70));
+    await tester.pump();
+    expect(viewport.topOf(40), closeTo(before - 70, 1));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('新回复等待主动加载，页面重建保留提示和折叠状态', (tester) async {
     final session = NestedReadingSession()..expanded[2] = false;
     final state = NestedTopicState(

@@ -2,13 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:scroll_to_index/scroll_to_index.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
+
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/nested_reading_position.dart';
+import '../../../widgets/common/positioned_stream_list.dart';
 import '../../../widgets/nested/nested_reading_scope.dart';
 import '../../../models/topic.dart';
 import '../../../providers/nested_topic_provider.dart';
@@ -118,6 +120,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   late final NestedReadingSession _session;
   Map<int, bool> get _expansionState => _session.expanded;
   final NestedViewportController _viewport = NestedViewportController();
+  final ListController _listController = ListController();
+  Map<int, int> _postRowIndices = const {};
+  HeaderAnchorHandle? _readingAnchor;
+  RenderNestedPostAnchor? _anchoredPost;
   GlobalKey _contextTargetKey = GlobalKey();
   int? _scrolledToTarget;
   int? _highlightTarget;
@@ -139,6 +145,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     _session.sort = widget.nestedState.sort;
     _expandContextPath();
     _viewport.onSample = _onSample;
+    _listController.itemPositions.addListener(_viewport.scheduleSample);
     _viewport.onOverlaySample = (visible, position, interacted) {
       if (!widget.active) return;
       widget.onVisiblePostsChanged?.call(visible);
@@ -189,17 +196,6 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       _contextTargetKey = GlobalKey();
       unawaited(_positionContext());
     }
-    if (!_restoring &&
-        widget.nestedState.sort == oldWidget.nestedState.sort &&
-        (widget.nestedState.newRootPostIds.length !=
-                oldWidget.nestedState.newRootPostIds.length ||
-            widget.nestedState.lastChildCreated !=
-                oldWidget.nestedState.lastChildCreated)) {
-      final anchor = _lastPosition;
-      if (anchor != null) {
-        unawaited(_alignPost(anchor.postNumber, anchor.offset));
-      }
-    }
     if (widget.active != oldWidget.active) _viewport.scheduleSample();
   }
 
@@ -235,34 +231,69 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     await _nextFrame();
     if (!mounted) return;
     if (position != null) {
-      await _alignPost(position.postNumber, position.offset);
+      await _alignPost(
+        position.postNumber,
+        position.offset,
+        rootPostNumber: position.rootPostNumber,
+      );
     }
-    _restoring = false;
+    if (!mounted) return;
+    setState(() => _restoring = false);
     _viewport.scheduleSample();
   }
 
-  Future<void> _alignPost(int target, double offset) async {
-    // 真实正文几何定位，图片加载改变高度时复核几帧，用户拖动即停止。
+  Future<void> _alignPost(
+    int target,
+    double offset, {
+    int? rootPostNumber,
+  }) async {
     final operation = _operation;
-    for (var attempt = 0; attempt < 8; attempt++) {
-      await _nextFrame();
-      if (!mounted ||
-          operation != _operation ||
-          !widget.scrollController.hasClients) {
-        return;
-      }
-      final top = _viewport.topOf(target);
-      if (top == null) continue;
-      final position = widget.scrollController.position;
-      final delta = top - offset;
-      if (delta.abs() < 1) return;
-      widget.scrollController.jumpTo(
-        (position.pixels + delta).clamp(
-          position.minScrollExtent,
-          position.maxScrollExtent,
-        ),
-      );
+    _cancelReadingAnchor();
+    await _nextFrame();
+    if (!mounted || operation != _operation || !_listController.isAttached) {
+      return;
     }
+    final root =
+        rootPostNumber ??
+        _viewport.find(target)?.rootPostNumber ??
+        (widget.nestedState.contextMode
+            ? widget.nestedState.contextChain?.post.postNumber
+            : null) ??
+        target;
+    final index = _postRowIndices[root];
+    if (index == null) return;
+    // 目标分支按索引物化后，在绘制前直接定位其内部的正文锚点。
+    await _listController.jumpToIndex(
+      index,
+      offset: offset,
+      targetRectResolver: (_, item) {
+        final post = _viewport.find(target);
+        if (post == null) return null;
+        final dy = post.localToGlobal(Offset.zero, ancestor: item).dy;
+        return Rect.fromLTWH(0, dy, item.size.width, 0);
+      },
+    );
+  }
+
+  void _cancelReadingAnchor() {
+    _readingAnchor?.cancel();
+    _readingAnchor = null;
+    _anchoredPost = null;
+  }
+
+  void _anchorReadingPost(int postNumber) {
+    if (!_listController.isAttached ||
+        !widget.scrollController.hasClients ||
+        widget.scrollController.position.isScrollingNotifier.value) {
+      return;
+    }
+    final post = _viewport.find(postNumber);
+    if (post == null ||
+        (identical(post, _anchoredPost) && _readingAnchor?.isActive == true)) {
+      return;
+    }
+    _anchoredPost = post;
+    _readingAnchor = _listController.preserveHeader(post);
   }
 
   Future<void> _positionContext() async {
@@ -281,7 +312,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     await _alignPost(target, restore?.offset ?? 160);
     if (!mounted || operation != _operation) return;
     _scrolledToTarget = target;
-    _restoring = false;
+    setState(() => _restoring = false);
     _viewport.scheduleSample();
   }
 
@@ -328,19 +359,11 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         (node) => node.post.postNumber == root,
       );
       if (index < 0) throw StateError('Target branch unavailable');
-      if (index >= 0 &&
-          _viewport.find(target) == null &&
-          widget.scrollController is AutoScrollController) {
-        await (widget.scrollController as AutoScrollController).scrollToIndex(
-          index,
-          preferPosition: AutoScrollPosition.begin,
-          duration: const Duration(milliseconds: 1),
-        );
-      }
       if (!mounted || operation != _operation) return;
       await _alignPost(
         target,
         (desired ?? widget.restorePosition)?.offset ?? 80,
+        rootPostNumber: root,
       );
       if (mounted &&
           operation == _operation &&
@@ -380,6 +403,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       expanded: Map.of(_expansionState),
     );
     _lastPosition = saved;
+    _anchorReadingPost(saved.postNumber);
     _currentRoot.value = saved.rootPostNumber;
     widget.onViewportPostChanged?.call(saved.postNumber);
     _session
@@ -418,10 +442,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   }
 
   Future<void> _loadNewRoots() async {
-    final anchor = _lastPosition;
     await ref.read(nestedTopicProvider(widget.params).notifier).loadNewRoots();
-    if (!mounted || anchor == null) return;
-    await _alignPost(anchor.postNumber, anchor.offset);
   }
 
   Future<void> _nextRoot() async {
@@ -444,19 +465,15 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       widget.blockedUsernames,
     ).elementAtOrNull(index + 1);
     if (next == null) return;
-    if (_viewport.find(next.post.postNumber) == null &&
-        widget.scrollController is AutoScrollController) {
-      await (widget.scrollController as AutoScrollController).scrollToIndex(
-        index + 1,
-        preferPosition: AutoScrollPosition.begin,
-      );
-    }
     if (mounted) await _alignPost(next.post.postNumber, 24);
   }
 
   @override
   void dispose() {
     ++_operation;
+    _cancelReadingAnchor();
+    _listController.itemPositions.removeListener(_viewport.scheduleSample);
+    _listController.dispose();
     widget.scrollController.removeListener(_onScroll);
     _viewport.dispose();
     _currentRoot.dispose();
@@ -508,12 +525,237 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     final contextChain = contextMode ? ns.contextChain : null;
     final p = widget.params;
 
+    final rows = <({String key, WidgetBuilder builder})>[
+      (
+        key: 'header',
+        builder: (context) => TopicDetailHeader(
+          detail: widget.detail,
+          headerKey: widget.headerKey,
+          showTitle: !widget.hideHeaderTitle,
+          onVoteChanged: widget.onVoteChanged,
+          onNotificationLevelChanged: widget.onNotificationLevelChanged,
+          onJumpToPost: widget.onJumpToPost,
+        ),
+      ),
+
+      if (!contextMode &&
+          widget.resumePosition != null &&
+          widget.onResume != null)
+        (
+          key: 'resume',
+          builder: (context) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                key: const ValueKey('nested-resume-reading'),
+                icon: const Icon(Icons.history_rounded),
+                onPressed: widget.onResume,
+                label: Text(
+                  context.l10n.nested_resumeReading(
+                    widget.resumePosition!.postNumber,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      if (opPost != null)
+        (
+          key: 'op',
+          builder: (context) => NestedPostAnchor(
+            controller: _viewport,
+            postNumber: opPost.postNumber,
+            rootPostNumber: opPost.postNumber,
+            child: PostItem(
+              post: opPost,
+              topicId: widget.topicId,
+              categoryId: widget.detail.categoryId,
+              isTopicOwner: true,
+              topicHasAcceptedAnswer: widget.detail.hasAcceptedAnswer,
+              acceptedAnswers: widget.detail.acceptedAnswers,
+              onReply: widget.isLoggedIn
+                  ? ({initialContent}) =>
+                        widget.onReply(null, initialContent: initialContent)
+                  : null,
+              onMentionUser: widget.isLoggedIn
+                  ? (u) => widget.onReply(null, initialContent: '@$u ')
+                  : null,
+              onEdit: widget.isLoggedIn && ns.opPost!.canEdit
+                  ? () => widget.onEdit(ns.opPost!)
+                  : null,
+              onRefreshPost: widget.onRefreshPost,
+              onJumpToPost: widget.onJumpToPost,
+              onSolutionChanged: widget.onSolutionChanged,
+              onQuoteSelection: widget.onQuoteSelection,
+              topicTitle: widget.detail.title,
+              isPrivateMessageTopic: widget.detail.isPrivateMessage,
+              isPmWithNonHumanUser: widget.detail.pmWithNonHumanUser,
+              hideRepliesButton: true,
+              opTopSlot: widget.detail.sharedIssueVisible
+                  ? SharedIssueButton(
+                      topic: widget.detail,
+                      onChanged: widget.onSharedIssueChanged,
+                    )
+                  : null,
+            ),
+          ),
+        ),
+
+      if (opPost != null &&
+          PrivateMessageParticipants.shouldShow(widget.detail))
+        (
+          key: 'pm-first',
+          builder: (context) => _buildPrivateMessageParticipants(
+            PrivateMessageParticipantsLocation.firstPost,
+          ),
+        ),
+
+      (
+        key: 'sort',
+        builder: (context) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _SortChip(
+                label: context.l10n.nested_sortTop,
+                value: 'top',
+                current: ns.sort,
+                onTap: () => _changeSort('top'),
+              ),
+              _SortChip(
+                label: context.l10n.nested_sortNew,
+                value: 'new',
+                current: ns.sort,
+                onTap: () => _changeSort('new'),
+              ),
+              _SortChip(
+                label: context.l10n.nested_sortOld,
+                value: 'old',
+                current: ns.sort,
+                onTap: () => _changeSort('old'),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      if (contextMode && contextChain == null)
+        (
+          key: 'context-banner',
+          builder: (context) => _buildContextBanner(context),
+        ),
+
+      if (!contextMode && ns.newRootPostIds.isNotEmpty)
+        (
+          key: 'new-roots',
+          builder: (context) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: FilledButton.tonal(
+              onPressed: _loadNewRoots,
+              child: Text(
+                context.l10n.nested_newReplies(ns.newRootPostIds.length),
+              ),
+            ),
+          ),
+        ),
+
+      if (contextMode && contextChain != null)
+        (
+          key: 'context',
+          builder: (context) => NestedPostCard(
+            node: contextChain,
+            topicId: widget.topicId,
+            detail: widget.detail,
+            params: p,
+            depth: 0,
+            maxDepth: maxDepth,
+            isLastChild: true,
+            isLoggedIn: widget.isLoggedIn,
+            blockedUsernames: widget.blockedUsernames,
+            onReply: widget.onReply,
+            onEdit: widget.onEdit,
+            onRefreshPost: widget.onRefreshPost,
+            onJumpToPost: widget.onJumpToPost,
+            onSolutionChanged: widget.onSolutionChanged,
+            onQuoteSelection: widget.onQuoteSelection,
+            expansionState: _expansionState,
+            highlightPostNumber: ns.targetPostNumber,
+            highlightKey: _contextTargetKey,
+          ),
+        )
+      else
+        for (var index = 0; index < roots.length; index++)
+          (
+            key: 'root-${roots[index].post.id}',
+            builder: (context) => NestedPostCard(
+              key: ValueKey(roots[index].post.id),
+              node: roots[index],
+              topicId: widget.topicId,
+              detail: widget.detail,
+              params: p,
+              depth: 0,
+              maxDepth: maxDepth,
+              isLastChild: index == roots.length - 1,
+              isLoggedIn: widget.isLoggedIn,
+              blockedUsernames: widget.blockedUsernames,
+              onReply: widget.onReply,
+              onEdit: widget.onEdit,
+              onRefreshPost: widget.onRefreshPost,
+              onJumpToPost: widget.onJumpToPost,
+              onSolutionChanged: widget.onSolutionChanged,
+              onQuoteSelection: widget.onQuoteSelection,
+              expansionState: _expansionState,
+              highlightPostNumber: _highlightTarget,
+            ),
+          ),
+
+      if ((!contextMode || contextChain == null) &&
+          (ns.hasMoreRoots || ns.isLoadingMore))
+        (key: 'load-more', builder: _buildLoadMore),
+
+      // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现;
+      // context 定位模式只展示局部,不放推荐区)
+      if (!contextMode && !ns.hasMoreRoots)
+        (
+          key: 'suggested',
+          builder: (context) => MoreTopicsSection(detail: widget.detail),
+        ),
+
+      if (!ns.hasMoreRoots &&
+          PrivateMessageParticipants.shouldShowAtBottom(widget.detail))
+        (
+          key: 'pm-bottom',
+          builder: (context) => _buildPrivateMessageParticipants(
+            PrivateMessageParticipantsLocation.bottom,
+          ),
+        ),
+
+      (
+        key: 'bottom-inset',
+        builder: (context) =>
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 100),
+      ),
+    ];
+    final indices = {for (var i = 0; i < rows.length; i++) rows[i].key: i};
+    _postRowIndices = {
+      if (opPost != null) opPost.postNumber: indices['op']!,
+      if (contextMode && contextChain != null)
+        contextChain.post.postNumber: indices['context']!
+      else
+        for (final root in roots)
+          root.post.postNumber: indices['root-${root.post.id}']!,
+    };
+
     return NestedReadingScope(
       controller: _viewport,
       session: _session,
       targetBanner: contextMode ? _buildContextBanner(context) : null,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
+          if (notification is ScrollStartNotification) _cancelReadingAnchor();
           if (notification is ScrollStartNotification &&
                   notification.dragDetails != null ||
               notification is UserScrollNotification &&
@@ -521,7 +763,8 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
             _hasInteracted = true;
             if (_restoring) {
               ++_operation;
-              _restoring = false;
+              _listController.cancelPositioning();
+              setState(() => _restoring = false);
             }
           }
           if (notification is ScrollEndNotification) _viewport.scheduleSample();
@@ -529,243 +772,15 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         },
         child: Stack(
           children: [
-            CustomScrollView(
+            PositionedStreamList(
               key: _viewport.viewportKey,
-              controller: widget.scrollController,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: TopicDetailHeader(
-                    detail: widget.detail,
-                    headerKey: widget.headerKey,
-                    showTitle: !widget.hideHeaderTitle,
-                    onVoteChanged: widget.onVoteChanged,
-                    onNotificationLevelChanged:
-                        widget.onNotificationLevelChanged,
-                    onJumpToPost: widget.onJumpToPost,
-                  ),
-                ),
-
-                if (!contextMode &&
-                    widget.resumePosition != null &&
-                    widget.onResume != null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: TextButton.icon(
-                          key: const ValueKey('nested-resume-reading'),
-                          icon: const Icon(Icons.history_rounded),
-                          onPressed: widget.onResume,
-                          label: Text(
-                            context.l10n.nested_resumeReading(
-                              widget.resumePosition!.postNumber,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                if (opPost != null)
-                  SliverToBoxAdapter(
-                    child: NestedPostAnchor(
-                      controller: _viewport,
-                      postNumber: opPost.postNumber,
-                      rootPostNumber: opPost.postNumber,
-                      child: PostItem(
-                        post: opPost,
-                        topicId: widget.topicId,
-                        categoryId: widget.detail.categoryId,
-                        isTopicOwner: true,
-                        topicHasAcceptedAnswer: widget.detail.hasAcceptedAnswer,
-                        acceptedAnswers: widget.detail.acceptedAnswers,
-                        onReply: widget.isLoggedIn
-                            ? ({initialContent}) => widget.onReply(
-                                null,
-                                initialContent: initialContent,
-                              )
-                            : null,
-                        onMentionUser: widget.isLoggedIn
-                            ? (u) =>
-                                  widget.onReply(null, initialContent: '@$u ')
-                            : null,
-                        onEdit: widget.isLoggedIn && ns.opPost!.canEdit
-                            ? () => widget.onEdit(ns.opPost!)
-                            : null,
-                        onRefreshPost: widget.onRefreshPost,
-                        onJumpToPost: widget.onJumpToPost,
-                        onSolutionChanged: widget.onSolutionChanged,
-                        onQuoteSelection: widget.onQuoteSelection,
-                        topicTitle: widget.detail.title,
-                        isPrivateMessageTopic: widget.detail.isPrivateMessage,
-                        isPmWithNonHumanUser: widget.detail.pmWithNonHumanUser,
-                        hideRepliesButton: true,
-                        opTopSlot: widget.detail.sharedIssueVisible
-                            ? SharedIssueButton(
-                                topic: widget.detail,
-                                onChanged: widget.onSharedIssueChanged,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-
-                if (opPost != null &&
-                    PrivateMessageParticipants.shouldShow(widget.detail))
-                  SliverToBoxAdapter(
-                    child: _buildPrivateMessageParticipants(
-                      PrivateMessageParticipantsLocation.firstPost,
-                    ),
-                  ),
-
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _SortChip(
-                          label: context.l10n.nested_sortTop,
-                          value: 'top',
-                          current: ns.sort,
-                          onTap: () => _changeSort('top'),
-                        ),
-                        _SortChip(
-                          label: context.l10n.nested_sortNew,
-                          value: 'new',
-                          current: ns.sort,
-                          onTap: () => _changeSort('new'),
-                        ),
-                        _SortChip(
-                          label: context.l10n.nested_sortOld,
-                          value: 'old',
-                          current: ns.sort,
-                          onTap: () => _changeSort('old'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                if (contextMode && contextChain == null)
-                  SliverToBoxAdapter(child: _buildContextBanner(context)),
-
-                if (!contextMode && ns.newRootPostIds.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      child: FilledButton.tonal(
-                        onPressed: _loadNewRoots,
-                        child: Text(
-                          context.l10n.nested_newReplies(
-                            ns.newRootPostIds.length,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                if (contextMode && contextChain != null)
-                  SliverToBoxAdapter(
-                    child: NestedPostCard(
-                      node: contextChain,
-                      topicId: widget.topicId,
-                      detail: widget.detail,
-                      params: p,
-                      depth: 0,
-                      maxDepth: maxDepth,
-                      isLastChild: true,
-                      isLoggedIn: widget.isLoggedIn,
-                      blockedUsernames: widget.blockedUsernames,
-                      onReply: widget.onReply,
-                      onEdit: widget.onEdit,
-                      onRefreshPost: widget.onRefreshPost,
-                      onJumpToPost: widget.onJumpToPost,
-                      onSolutionChanged: widget.onSolutionChanged,
-                      onQuoteSelection: widget.onQuoteSelection,
-                      expansionState: _expansionState,
-                      highlightPostNumber: ns.targetPostNumber,
-                      highlightKey: _contextTargetKey,
-                    ),
-                  )
-                else
-                  SliverList.builder(
-                    findChildIndexCallback: (key) => key is ValueKey<int>
-                        ? roots.indexWhere((node) => node.post.id == key.value)
-                        : null,
-                    itemCount:
-                        roots.length +
-                        (ns.hasMoreRoots || ns.isLoadingMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= roots.length) {
-                        return _buildLoadMore(context);
-                      }
-                      final card = NestedPostCard(
-                        key: ValueKey(roots[index].post.id),
-                        node: roots[index],
-                        topicId: widget.topicId,
-                        detail: widget.detail,
-                        params: p,
-                        depth: 0,
-                        maxDepth: maxDepth,
-                        isLastChild: index == roots.length - 1,
-                        isLoggedIn: widget.isLoggedIn,
-                        blockedUsernames: widget.blockedUsernames,
-                        onReply: widget.onReply,
-                        onEdit: widget.onEdit,
-                        onRefreshPost: widget.onRefreshPost,
-                        onJumpToPost: widget.onJumpToPost,
-                        onSolutionChanged: widget.onSolutionChanged,
-                        onQuoteSelection: widget.onQuoteSelection,
-                        expansionState: _expansionState,
-                        highlightPostNumber: _highlightTarget,
-                      );
-                      return widget.scrollController is AutoScrollController
-                          ? AutoScrollTag(
-                              key: ValueKey(roots[index].post.id),
-                              controller:
-                                  widget.scrollController
-                                      as AutoScrollController,
-                              index: index,
-                              child: card,
-                            )
-                          : card;
-                    },
-                  ),
-
-                // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现;
-                // context 定位模式只展示局部,不放推荐区)
-                if (!contextMode && !ns.hasMoreRoots)
-                  SliverToBoxAdapter(
-                    child: MoreTopicsSection(detail: widget.detail),
-                  ),
-
-                if (!ns.hasMoreRoots &&
-                    PrivateMessageParticipants.shouldShowAtBottom(
-                      widget.detail,
-                    ))
-                  SliverToBoxAdapter(
-                    child: _buildPrivateMessageParticipants(
-                      PrivateMessageParticipantsLocation.bottom,
-                    ),
-                  ),
-
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).padding.bottom + 100,
-                  ),
-                ),
-              ],
+              scrollController: widget.scrollController,
+              listController: _listController,
+              positionKey: (widget.topicId, contextMode, ns.sort),
+              initialIndex: null,
+              cacheExtent: Responsive.isMobile(context) ? 300 : 500,
+              itemKeys: rows.map((row) => row.key).toList(),
+              itemBuilder: (context, index) => rows[index].builder(context),
             ),
             if (_restoring)
               const Positioned(
