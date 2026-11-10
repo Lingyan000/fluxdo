@@ -11,9 +11,16 @@ import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
+import 'package:fluxdo/widgets/topic/painted_topic_card.dart';
+import 'package:fluxdo/widgets/topic/topic_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Topic _topic({required int id, required String title, String? bookmarkName}) {
+Topic _topic({
+  required int id,
+  required String title,
+  String? bookmarkName,
+  bool pinned = false,
+}) {
   return Topic(
     id: id,
     title: title,
@@ -24,6 +31,7 @@ Topic _topic({required int id, required String title, String? bookmarkName}) {
     likeCount: 0,
     categoryId: '1',
     bookmarkName: bookmarkName,
+    pinned: pinned,
   );
 }
 
@@ -53,6 +61,35 @@ void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
+  });
+
+  testWidgets('置顶话题的书签使用普通卡片，并保留书签元信息', (tester) async {
+    await _pumpList(
+      tester,
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          categoryMapProvider.overrideWith(
+            (ref) => const AsyncValue.data(<int, Category>{}),
+          ),
+        ],
+        child: const _BookmarksListTestHost(
+          topics: [
+            _BookmarkSeed(
+              id: 1,
+              title: 'Pinned bookmark',
+              bookmarkName: '收藏备注',
+              pinned: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(find.byType(CompactTopicCard), findsNothing);
+    final card = tester.widget<PaintedTopicCard>(find.byType(PaintedTopicCard));
+    expect(card.layout.band, isNotNull, reason: '置顶话题也必须保留书签名称色带');
+    expect(_findBookmarkInList(1), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('汇总条只统计非空名称并按数量降序展示', (tester) async {
@@ -416,11 +453,13 @@ class _BookmarkSeed {
     required this.id,
     required this.title,
     this.bookmarkName,
+    this.pinned = false,
   });
 
   final int id;
   final String title;
   final String? bookmarkName;
+  final bool pinned;
 }
 
 class _BookmarksListTestHost extends StatefulWidget {
@@ -459,6 +498,7 @@ class _BookmarksListTestHostState extends State<_BookmarksListTestHost> {
             id: item.id,
             title: item.title,
             bookmarkName: item.bookmarkName,
+            pinned: item.pinned,
           ),
         )
         .toList();

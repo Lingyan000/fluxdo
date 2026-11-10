@@ -38,6 +38,7 @@ import '../widgets/common/search_capsule.dart';
 import '../widgets/topic/category_drawer.dart';
 import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
+import '../widgets/topic/pinned_topics_header.dart';
 import '../widgets/common/tag_selection_sheet.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../navigation/nav_action_bus.dart';
@@ -47,6 +48,7 @@ import '../utils/load_more_coordinator.dart';
 import '../utils/async_presentation_cache.dart';
 import '../utils/motion_springs.dart';
 import '../utils/topic_keyword_filter.dart';
+import '../utils/pinned_topics.dart';
 import '../utils/frame_jank_monitor.dart';
 import '../utils/responsive.dart';
 import '../widgets/layout/master_detail_layout.dart';
@@ -2552,7 +2554,10 @@ class _TopicListState extends ConsumerState<_TopicList>
   static const _footerKeyValue = 'topics-footer';
   static const _topInsetKeyValue = 'topics-top-inset';
   static const _bottomInsetKeyValue = 'topics-bottom-inset';
-  static const _topicRowOffset = 3;
+  static const _pinnedHeaderKeyValue = 'topics-pinned-header';
+  static const _topicRowOffset = 4;
+  final _pinnedTopics = PinnedTopicsController();
+  bool _markingPinnedRead = false;
   final _listController = ListController();
   _TopicRevealRequest? _pendingKeyboardReveal;
 
@@ -2896,6 +2901,23 @@ class _TopicListState extends ConsumerState<_TopicList>
     );
   }
 
+  Future<void> _markPinnedTopicsRead() async {
+    if (_markingPinnedRead) return;
+    final targets = List<Topic>.of(_pinnedTopics.pinned);
+    setState(() => _markingPinnedRead = true);
+    try {
+      await ref
+          .read(topicListProvider(widget.categoryId).notifier)
+          .markPinnedTopicsRead(targets);
+    } catch (error) {
+      if (mounted) {
+        ToastService.showError(context.l10n.topics_markPinnedReadFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _markingPinnedRead = false);
+    }
+  }
+
   @override
   void dispose() {
     _pendingKeyboardReveal = null;
@@ -3023,7 +3045,8 @@ class _TopicListState extends ConsumerState<_TopicList>
       );
       hiddenCount = hidden;
       hiddenByBlocked = byBlocked;
-      return visible;
+      _pinnedTopics.update(visible, identity: presentationIdentity);
+      return _pinnedTopics.visible;
     });
     final miniAppPullEnabled =
         ref.watch(miniAppPullEnabledProvider) &&
@@ -3070,6 +3093,7 @@ class _TopicListState extends ConsumerState<_TopicList>
 
         return TopicCardPrewarmScope(
           topics: topics,
+          compactPinned: true,
           categoryMap: widget.categoryMap,
           statsAvailableWidth: statsAvailableWidth,
           child: DesktopRefreshIndicator(
@@ -3121,6 +3145,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                         _topInsetKeyValue,
                         _pillKeyValue,
                         _filterHintKeyValue,
+                        _pinnedHeaderKeyValue,
                         for (final topic in topics) 'topic-${topic.id}',
                         _footerKeyValue,
                         _bottomInsetKeyValue,
@@ -3164,6 +3189,23 @@ class _TopicListState extends ConsumerState<_TopicList>
                                 )
                               : const SizedBox.shrink();
                         }
+                        if (index == 3) {
+                          if (_pinnedTopics.pinned.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return PinnedTopicsHeader(
+                            count: _pinnedTopics.pinned.length,
+                            unreadCount: _pinnedTopics.unreadCount,
+                            expanded: _pinnedTopics.expanded,
+                            markingRead: _markingPinnedRead,
+                            onToggle: () => setState(_pinnedTopics.toggle),
+                            onMarkRead:
+                                ref.watch(currentUserProvider).value != null &&
+                                    _pinnedTopics.unreadCount > 0
+                                ? _markPinnedTopicsRead
+                                : null,
+                          );
+                        }
                         if (index == topics.length + _topicRowOffset + 1) {
                           return SizedBox(
                             height: 12 + MediaQuery.paddingOf(context).bottom,
@@ -3183,6 +3225,11 @@ class _TopicListState extends ConsumerState<_TopicList>
                         }
 
                         final topic = topics[topicIndex];
+                        final itemStyle = !topic.pinned
+                            ? TopicItemStyle.standard
+                            : topicIndex == _pinnedTopics.pinned.length - 1
+                            ? TopicItemStyle.lastGroupedPinned
+                            : TopicItemStyle.groupedPinned;
                         final shouldHighlight = _highlightedTopicIds.contains(
                           topic.id,
                         );
@@ -3190,11 +3237,9 @@ class _TopicListState extends ConsumerState<_TopicList>
                         if (shouldHighlight) {
                           final theme = Theme.of(context);
                           // 卡片正常背景色（需与 TopicCard / CompactTopicCard 的默认 color 一致）
-                          final normalColor = topic.pinned
-                              ? theme.colorScheme.surfaceContainerLow
-                                    .withValues(alpha: 0.5)
-                              : theme.cardTheme.color ??
-                                    theme.colorScheme.surfaceContainerHighest;
+                          final normalColor =
+                              theme.cardTheme.color ??
+                              theme.colorScheme.surfaceContainerLow;
                           final highlightColor = theme
                               .colorScheme
                               .primaryContainer
@@ -3215,6 +3260,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                               return buildTopicItem(
                                 context: context,
                                 topic: topic,
+                                style: itemStyle,
                                 isSelected: topic.id == selectedTopicId,
                                 onTap: () {
                                   _syncKeyboardFocusToTopicId(topic.id);
@@ -3231,6 +3277,7 @@ class _TopicListState extends ConsumerState<_TopicList>
 
                         final signature = (
                           topic: topic,
+                          itemStyle: itemStyle,
                           isSelected: topic.id == selectedTopicId,
                           enableLongPress: enableLongPress,
                           category: _categorySignatureFor(topic),
@@ -3254,6 +3301,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                         final item = buildTopicItem(
                           context: context,
                           topic: topic,
+                          style: itemStyle,
                           isSelected: topic.id == selectedTopicId,
                           onTap: () {
                             _syncKeyboardFocusToTopicId(topic.id);

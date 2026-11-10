@@ -500,6 +500,44 @@ class TopicListNotifier extends AsyncNotifier<List<Topic>>
     }
   }
 
+  /// 忽略尚未读过的置顶话题，与分组未读计数使用同一规则。
+  /// 已读过话题里的未读回复不在此操作范围内。
+  Future<void> markPinnedTopicsRead(List<Topic> topics) async {
+    final userId = ref.read(currentUserProvider).value?.id;
+    if (userId == null) return;
+    final targets = topics
+        .where((topic) => topic.pinned && topic.isUnseenTopic)
+        .toList();
+    if (targets.isEmpty) return;
+    final changedIds = await ref.read(discourseServiceProvider).dismissTopicIds(
+      targets.map((topic) => topic.id).toList(),
+      dismissPosts: false,
+    );
+    if (!ref.mounted || ref.read(currentUserProvider).value?.id != userId) {
+      return;
+    }
+    final requested = targets.map((topic) => topic.id).toSet();
+    final changed = changedIds.where(requested.contains).toSet();
+    final tracking = ref.read(topicTrackingStateProvider.notifier);
+    for (final topic in targets.where((topic) => changed.contains(topic.id))) {
+      if (!ref.read(topicTrackingStateProvider).containsKey(topic.id)) {
+        tracking.syncFromTopicList([topic]);
+      }
+    }
+    final current = state.value;
+    if (current != null) {
+      state = AsyncValue.data([
+        for (final topic in current)
+          if (changed.contains(topic.id))
+            topic.copyWith(unseen: false)
+          else
+            topic,
+      ]);
+    }
+    // 只清除 NEW 标记，保留真实阅读位置及未读回复。
+    tracking.dismissNewTopicIds(changed);
+  }
+
   /// 忽略全部（新话题或未读话题）
   Future<void> dismissAll() async {
     final service = ref.read(discourseServiceProvider);

@@ -486,6 +486,7 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage>
 
     return TopicCardPrewarmScope(
       topics: visible,
+      compactPinned: true,
       child: DesktopRefreshIndicator(
       onRefresh: _loadTopics,
       child: ListView.builder(
@@ -542,6 +543,9 @@ class _TagTopicsPageState extends ConsumerState<TagTopicsPage>
           return buildTopicItem(
             context: context,
             topic: topic,
+            style: topic.pinned
+                ? TopicItemStyle.compact
+                : TopicItemStyle.standard,
             isSelected: topic.id == selectedTopicId,
             onTap: () => _openTopic(topic),
             enableLongPress: enableLongPress,

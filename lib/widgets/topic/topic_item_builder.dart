@@ -32,6 +32,9 @@ double topicCardWidthFor(BuildContext context) {
 /// (验收期保险丝;稳定后与 widget 分支一并清理)
 const bool kUsePaintedTopicCard = true;
 
+/// 展示形态由列表选择，不由话题的站点置顶状态决定。
+enum TopicItemStyle { standard, compact, groupedPinned, lastGroupedPinned }
+
 /// 普通/私信话题卡的排版取用单一入口:[buildTopicItem] 挂载路径与
 /// [TopicCardPrewarmer] 空闲预热路径共用,保证 identity/宽度/theme/
 /// category/statsAvailableWidth 全部同源 —— 预热建的缓存挂载帧必命中
@@ -59,10 +62,10 @@ TopicCardLayout obtainTopicItemLayout({
 
 /// 话题卡片渲染公共函数
 ///
-/// 处理 pinned/normal 卡片选择、自绘/widget 路由、长按预览、响应式
+/// 处理列表指定的卡片样式、自绘/widget 路由、长按预览、响应式
 /// 宽度包装。普通/私信话题卡默认走自绘(单渲染对象,挂载帧纯绘制,
 /// 见 [TopicCardLayout]);带自定义 topWidget/middleWidget 的调用方
-/// (书签有专用自绘接线)与置顶卡走 widget 版。
+/// (书签有专用自绘接线)与显式指定的紧凑卡走 widget 版。
 Widget buildTopicItem({
   required BuildContext context,
   required Topic topic,
@@ -70,6 +73,7 @@ Widget buildTopicItem({
   required VoidCallback onTap,
   VoidCallback? onMiddleClick,
   required bool enableLongPress,
+  TopicItemStyle style = TopicItemStyle.standard,
   Color? highlightColor,
   Widget? topWidget,
   Widget? middleWidget,
@@ -80,13 +84,20 @@ Widget buildTopicItem({
   WidgetBuilder? previewCustomActionPanelBuilder,
 }) {
   final isMobile = Responsive.isMobile(context);
+  final compact = style != TopicItemStyle.standard;
+  final grouped =
+      style == TopicItemStyle.groupedPinned ||
+      style == TopicItemStyle.lastGroupedPinned;
+  final lastInGroup = style == TopicItemStyle.lastGroupedPinned;
 
   // 一镜到底锚点底色:与各分支卡片外壳底色一致(置顶紧凑卡是半透明
   // surfaceContainerLow,普通卡是 cardTheme.color;落地高亮瞬时值优先)
   final theme = Theme.of(context);
   final anchorColor =
       highlightColor ??
-      (topic.pinned
+      (grouped
+          ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
+          : compact
           ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
           : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow);
 
@@ -141,7 +152,7 @@ Widget buildTopicItem({
       kUsePaintedTopicCard &&
       topWidget == null &&
       effectiveMiddleWidget == null;
-  final paintedLayout = usePainted && !topic.pinned
+  final paintedLayout = usePainted && !compact
       ? obtainTopicItemLayout(
           context: context,
           topic: topic,
@@ -156,9 +167,9 @@ Widget buildTopicItem({
   // 类名 —— 各列表页均已传)
   final Widget child = MorphingDialogAnchor(
     enabled: enableLongPress,
-    bottomGap: topic.pinned ? 6 : 8,
+    bottomGap: grouped ? (lastInGroup ? 8 : 0) : (compact ? 6 : 8),
     builder: (cardContext) {
-      if (topic.pinned) {
+      if (compact) {
         return CompactTopicCard(
           topic: topic,
           onTap: onTap,
@@ -168,6 +179,8 @@ Widget buildTopicItem({
           isSelected: isSelected,
           highlightColor: highlightColor,
           categoryMap: categoryMap,
+          grouped: grouped,
+          lastInGroup: lastInGroup,
         );
       }
       if (paintedLayout != null) {

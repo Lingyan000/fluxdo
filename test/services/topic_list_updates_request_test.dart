@@ -4,6 +4,44 @@ import 'package:fluxdo/services/discourse/discourse_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('置顶一键已读按指定 ID 批量忽略，不调用阅读上报接口', () async {
+    final service = DiscourseService();
+    final requests = <RequestOptions>[];
+    final interceptor = InterceptorsWrapper(
+      onRequest: (request, handler) {
+        requests.add(request);
+        handler.resolve(
+          Response(
+            requestOptions: request,
+            statusCode: 200,
+            data: {
+              'topic_ids': [42, 99],
+            },
+          ),
+        );
+      },
+    );
+    service.dio.interceptors.insert(0, interceptor);
+    addTearDown(() => service.dio.interceptors.remove(interceptor));
+    expect(await service.dismissTopicIds([42, 43, 42], dismissPosts: false), [
+      42,
+    ]);
+    expect(requests.single.method, 'PUT');
+    expect(requests.single.path, '/topics/bulk.json');
+    expect(requests.single.data, {
+      'topic_ids': [42, 43],
+      'operation': {'type': 'dismiss_topics'},
+    });
+    await service.dismissTopicIds([42], dismissPosts: true);
+    expect(requests.last.data, {
+      'topic_ids': [42],
+      'operation': {'type': 'dismiss_posts'},
+    });
+    expect(await service.dismissTopicIds([], dismissPosts: true), isEmpty);
+    expect(requests.length, 2);
+    expect(requests.every((r) => r.path == '/topics/bulk.json'), isTrue);
+  });
+
   test('增量加载保留列表路径、子集、标签与排序参数', () async {
     final service = DiscourseService();
     final requests = <RequestOptions>[];

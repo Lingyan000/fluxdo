@@ -448,8 +448,14 @@ class TopicTrackingStateNotifier extends Notifier<Map<int, TrackedTopicState>> {
     final topicIds = payload?['topic_ids'] as List?;
     if (topicIds == null || topicIds.isEmpty) return;
 
+    dismissNewTopicIds(topicIds.whereType<int>());
+  }
+
+  /// 本地主动忽略指定新话题，与 MessageBus dismiss_new 使用相同语义。
+  void dismissNewTopicIds(Iterable<int> topicIds) {
+    if (topicIds.isEmpty) return;
     final newState = Map<int, TrackedTopicState>.from(state);
-    for (final id in topicIds.whereType<int>()) {
+    for (final id in topicIds) {
       final existing = newState[id];
       if (existing != null) {
         newState[id] = existing.copyWith(isSeen: true);

@@ -283,5 +283,15 @@
       }
     }
   },
-  "topic_keywordFilter_manage": "管理"
+  "topic_keywordFilter_manage": "管理",
+  "topics_pinnedCount": "置頂話題 · {count}",
+  "@topics_pinnedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topics_markPinnedRead": "置頂話題全部標為已讀",
+  "topics_markPinnedReadFailed": "置頂話題標為已讀失敗，請重試"
 }

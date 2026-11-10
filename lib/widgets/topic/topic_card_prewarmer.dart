@@ -190,6 +190,7 @@ class TopicCardPrewarmScope extends StatelessWidget {
     this.categoryMap,
     this.statsAvailableWidth,
     this.messageStyle = false,
+    this.compactPinned = false,
     required this.child,
   });
 
@@ -197,6 +198,9 @@ class TopicCardPrewarmScope extends StatelessWidget {
   final Map<int, Category>? categoryMap;
   final double? statsAvailableWidth;
   final bool messageStyle;
+
+  /// 仅话题发现列表使用紧凑置顶；历史、书签等列表照常预热普通卡片。
+  final bool compactPinned;
   final Widget child;
 
   @override
@@ -209,12 +213,13 @@ class TopicCardPrewarmScope extends StatelessWidget {
         topicCardWidthFor(context),
         statsAvailableWidth,
         messageStyle,
+        compactPinned,
         identityHashCode(categoryMap),
         TopicCardStyleScope.current,
       ),
       warmItem: (context, topic) {
-        // 置顶走 CompactTopicCard(widget 版),无排版缓存可热
-        if (topic.pinned) return null;
+        // 只有列表显式选用紧凑置顶时，才跳过对应的普通卡片预热。
+        if (compactPinned && topic.pinned) return null;
         return obtainTopicItemLayout(
           context: context,
           topic: topic,

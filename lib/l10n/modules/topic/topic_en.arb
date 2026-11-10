@@ -174,5 +174,15 @@
   "topics_unreadTopics": "Unread topics",
   "topics_viewNewTopics": "View {count} new or updated topics",
   "topic_keywordFilter_hiddenCount": "{count} topics hidden",
-  "topic_keywordFilter_manage": "Manage"
+  "topic_keywordFilter_manage": "Manage",
+  "topics_pinnedCount": "Pinned topics · {count}",
+  "@topics_pinnedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "topics_markPinnedRead": "Mark pinned topics as read",
+  "topics_markPinnedReadFailed": "Could not mark pinned topics as read. Please try again."
 }

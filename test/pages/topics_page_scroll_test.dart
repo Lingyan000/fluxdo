@@ -27,12 +27,19 @@ import 'package:fluxdo/utils/paged_async_notifier.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/widgets/topic/topic_list_update_banner.dart';
+import 'package:fluxdo/widgets/topic/pinned_topics_header.dart';
+import 'package:fluxdo/widgets/topic/topic_card.dart';
 import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
 import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Topic topic(int id, {String? title}) => Topic(
+Topic topic(
+  int id, {
+  String? title,
+  bool pinned = false,
+  bool unseen = false,
+}) => Topic(
   id: id,
   title: title ?? '话题 $id ${'长标题内容 ' * (id % 4 * 8)}',
   slug: 'topic-$id',
@@ -41,6 +48,8 @@ Topic topic(int id, {String? title}) => Topic(
   views: 120,
   likeCount: 5,
   categoryId: '2',
+  pinned: pinned,
+  unseen: unseen,
 );
 
 class _Topics extends TopicListNotifier {
@@ -477,5 +486,158 @@ void main() {
     expect(frames, lessThan(50));
     expect(tester.binding.hasScheduledFrame, isFalse);
     await dispose(tester);
+  });
+  testWidgets('置顶折叠分组保持在新增普通话题前，已读后自动收起', (tester) async {
+    await mount(tester);
+    topics.publish([
+      topic(41),
+      topic(40, pinned: true, unseen: true),
+      topic(42),
+    ]);
+    await tester.pumpAndSettle();
+    expect(
+      list(tester).itemKeys.indexOf('topic-40'),
+      lessThan(list(tester).itemKeys.indexOf('topic-41')),
+    );
+    expect(row(40), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pinned-topics-toggle')));
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    topics.publish([
+      topic(43),
+      topic(41),
+      topic(40, pinned: true, unseen: true),
+      topic(42),
+    ]);
+    await tester.pumpAndSettle();
+    expect(
+      list(tester).itemKeys,
+      isNot(contains('topic-40')),
+      reason: '普通新话题不应重置手动折叠',
+    );
+    await tester.tap(find.byKey(const ValueKey('pinned-topics-toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      list(tester).itemKeys.indexOf('topic-40'),
+      lessThan(list(tester).itemKeys.indexOf('topic-43')),
+    );
+    topics.publish([topic(40, pinned: true), topic(43), topic(41), topic(42)]);
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    expect(find.byKey(const ValueKey('pinned-topics-toggle')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄屏已读置顶默认折叠，可手动查看，再有未读自动展开', (tester) async {
+    await mount(tester, size: const Size(375, 812));
+    topics.publish([topic(40, pinned: true), topic(41)]);
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    await tester.tap(find.byKey(const ValueKey('pinned-topics-toggle')));
+    await tester.pumpAndSettle();
+    expect(row(40), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pinned-topics-toggle')));
+    await tester.pumpAndSettle();
+    topics.publish([topic(41), topic(40, pinned: true, unseen: true)]);
+    await tester.pumpAndSettle();
+    expect(row(40), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('读过置顶主帖即自动折叠，未读回复不会重新展开', (tester) async {
+    await mount(tester);
+    final pin = topic(40, title: '置顶话题', pinned: true, unseen: true);
+    topics.publish([pin, topic(41)]);
+    await tester.pumpAndSettle();
+    expect(row(40), findsOneWidget);
+    topics.publish([
+      pin.copyWith(
+        unseen: false,
+        unread: 9,
+        lastReadPostNumber: 1,
+        highestPostNumber: 10,
+      ),
+      topic(41),
+    ]);
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    topics.publish([
+      pin.copyWith(
+        unseen: false,
+        unread: 10,
+        lastReadPostNumber: 1,
+        highestPostNumber: 11,
+      ),
+      topic(41),
+    ]);
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分组折叠判定不影响卡片原有的未读回复数和标题样式', (tester) async {
+    await mount(tester);
+    topics.publish([
+      topic(
+        40,
+        title: '已读置顶',
+        pinned: true,
+      ).copyWith(unread: 2, lastReadPostNumber: 3, highestPostNumber: 10),
+      topic(41),
+    ]);
+    await tester.pumpAndSettle();
+    expect(list(tester).itemKeys, isNot(contains('topic-40')));
+    await tester.tap(find.byKey(const ValueKey('pinned-topics-toggle')));
+    await tester.pumpAndSettle();
+    expect(row(40), findsOneWidget);
+    final title = tester.widget<Text>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Text &&
+            widget.textSpan?.toPlainText().contains('已读置顶') == true,
+      ),
+    );
+    expect(title.textSpan!.style!.fontWeight, FontWeight.w500);
+    expect(
+      find.descendant(of: row(40), matching: find.text('2')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('展开的置顶标题与条目连续衔接，末行与普通话题保持间距', (tester) async {
+    await mount(tester, size: const Size(375, 812));
+    topics.publish([
+      topic(40, title: '置顶一', pinned: true, unseen: true),
+      topic(41, title: '置顶二', pinned: true),
+      topic(42, title: '普通话题'),
+    ]);
+    await tester.pumpAndSettle();
+    final header = find.byType(PinnedTopicsHeader);
+    expect(
+      tester.getRect(header).bottom,
+      closeTo(tester.getRect(row(40)).top, 0.1),
+    );
+    expect(
+      tester.getRect(row(40)).bottom,
+      closeTo(tester.getRect(row(41)).top, 0.1),
+    );
+    final cards = tester
+        .widgetList<CompactTopicCard>(find.byType(CompactTopicCard))
+        .toList();
+    expect(cards.every((card) => card.grouped), isTrue);
+    expect(cards[0].lastInGroup, isFalse);
+    expect(cards[1].lastInGroup, isTrue);
+    // 再新增一条置顶时，旧末行缓存必须切换为中间行。
+    topics.publish([
+      topic(40, title: '置顶一', pinned: true, unseen: true),
+      topic(41, title: '置顶二', pinned: true),
+      topic(43, title: '置顶三', pinned: true),
+      topic(42, title: '普通话题'),
+    ]);
+    await tester.pumpAndSettle();
+    final second = tester.widget<CompactTopicCard>(
+      find.descendant(of: row(41), matching: find.byType(CompactTopicCard)),
+    );
+    expect(second.lastInGroup, isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

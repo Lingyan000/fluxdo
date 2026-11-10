@@ -257,7 +257,7 @@ class BookmarksListContent extends ConsumerWidget {
         // ── 自绘卡路径(默认):整卡 1 个 RenderObject,排版在
         // TopicCardLayout 全局缓存里一次算死,挂载帧纯绘制 1~2ms。
         // widget 版路径保留在 else 分支(kUsePaintedCard=false 一键回退)
-        if (kUsePaintedTopicCard && !topic.pinned) {
+        if (kUsePaintedTopicCard) {
           final isMobile = Responsive.isMobile(context);
           final cardWidth = topicCardWidthFor(context);
           final layout = _obtainBookmarkLayout(
@@ -385,14 +385,12 @@ class BookmarksListContent extends ConsumerWidget {
           identityHashCode(categoryMap),
           TopicCardStyleScope.current,
         ),
-        warmItem: (context, topic) => topic.pinned
-            ? null
-            : _obtainBookmarkLayout(
-                context,
-                topic,
-                categoryMap,
-                statsAvailableWidth,
-              ),
+        warmItem: (context, topic) => _obtainBookmarkLayout(
+          context,
+          topic,
+          categoryMap,
+          statsAvailableWidth,
+        ),
         child: listView,
       ),
     );

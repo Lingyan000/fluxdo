@@ -364,6 +364,10 @@ class Topic {
   final int highestPostNumber; // 最高帖子编号
   final int? notificationLevel; // 话题通知级别（无用户数据时为 null）
 
+  /// 话题本身尚未读过或忽略；未读回复不影响此状态。
+  /// 已有阅读位置时，服务端暂未清除的 unseen 也不能让话题重新变为未读。
+  bool get isUnseenTopic => unseen && (lastReadPostNumber ?? 0) == 0;
+
   // 书签相关（从书签列表 API 获取）
   final int? bookmarkedPostNumber; // 帖子书签对应的帖子编号（bookmarkable_type 为 Post 时有值）
   final int? bookmarkId; // 书签 ID（用于编辑/删除）
@@ -487,7 +491,9 @@ class Topic {
       lastPostedAt: TimeUtils.parseUtcTime(json['last_posted_at'] as String?),
       lastPosterUsername: json['last_poster_username'] as String?,
       categoryId: (json['category_id'] ?? 0).toString(),
-      pinned: json['pinned'] as bool? ?? false,
+      // unpinned 表示用户读过后取消了个人置顶，站点本身仍置顶。
+      // 首页通过折叠收纳已读置顶，避免读完后掉进普通话题流。
+      pinned: json['pinned'] == true || json['unpinned'] == true,
       visible: json['visible'] as bool? ?? true,
       closed: json['closed'] as bool? ?? false,
       archived: json['archived'] as bool? ?? false,

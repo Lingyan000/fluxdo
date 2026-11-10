@@ -400,6 +400,26 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     );
   }
 
+  /// 对齐官方批量忽略：新话题清除 NEW，未读回复推进已读位置。
+  /// 显式限制 topic_ids，不影响其他话题或全局的新话题时间范围。
+  Future<List<int>> dismissTopicIds(
+    List<int> topicIds, {
+    required bool dismissPosts,
+  }) async {
+    if (topicIds.isEmpty) return [];
+    final ids = topicIds.toSet();
+    final response = await _dio.put(
+      '/topics/bulk.json',
+      data: {
+        'topic_ids': ids.toList(),
+        'operation': {'type': dismissPosts ? 'dismiss_posts' : 'dismiss_topics'},
+      },
+    );
+    // 只采纳服务端确认的成功项，不能把请求中的全部话题直接当作已读。
+    final changed = response.data['topic_ids'] as List;
+    return changed.whereType<int>().where(ids.contains).toList();
+  }
+
   /// 设置话题订阅级别
   Future<void> setTopicNotificationLevel(int topicId, TopicNotificationLevel level) async {
     await _dio.post(
