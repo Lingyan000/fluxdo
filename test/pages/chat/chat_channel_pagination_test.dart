@@ -232,6 +232,7 @@ Future<ScrollController> _pumpPage(
   TargetPlatform platform = TargetPlatform.android,
   ThemeData? theme,
   TextScaler textScaler = TextScaler.noScaling,
+  int? initialMessageId,
 }) async {
   final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
@@ -240,7 +241,11 @@ Future<ScrollController> _pumpPage(
         sharedPreferencesProvider.overrideWithValue(prefs),
         currentUserProvider.overrideWith(_CurrentUser.new),
         chatChannelsProvider.overrideWith(_Channels.new),
-        chatMessagesProvider(_streamKey).overrideWith(() => messages),
+        chatMessagesProvider((
+          channelId: 1,
+          threadId: 1,
+          targetMessageId: initialMessageId,
+        )).overrideWith(() => messages),
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -257,7 +262,11 @@ Future<ScrollController> _pumpPage(
             GlobalCupertinoLocalizations.delegate,
           ],
           supportedLocales: AppLocaleUtils.supportedLocales,
-          home: const ChatChannelPage(channelId: 1, threadId: 1),
+          home: ChatChannelPage(
+            channelId: 1,
+            threadId: 1,
+            initialMessageId: initialMessageId,
+          ),
         ),
       ),
     ),
@@ -309,6 +318,18 @@ void main() {
   });
 
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('通知从历史消息进入时准确定位且不触发分页', (tester) async {
+    final messages = _Messages(count: 200, variedHeights: true);
+    await _pumpPage(tester, messages, initialMessageId: 120);
+    final target = find.byKey(const ValueKey('chat_msg_120'));
+    expect(target, findsOneWidget);
+    final viewport = tester.getRect(find.byType(CustomScrollView));
+    expect(tester.getTopLeft(target).dy, closeTo(viewport.top, 1));
+    expect(messages.pastCalls, 0);
+    expect(messages.futureCalls, 0);
+    await _disposePage(tester);
+  });
 
   testWidgets('引用定位与新消息同帧到达时仍落到原目标', (tester) async {
     final messages = _Messages(

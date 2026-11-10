@@ -1585,9 +1585,6 @@ extension _UserActions on _TopicDetailPageState {
   }
 
   void _applyPostUpdate(TopicDetailNotifier notifier, PostUpdate update) {
-    // 锚定哨兵的武装(AnchorGuardSliver.arm)不在这里做:acted/revised
-    // 等走异步 refreshPost,高度变化在响应落地帧,这里武装会错帧失效。
-    // 武装点在 provider 的落地方法(_updatePostById/_applyPostUpdate)。
     switch (update.type) {
       case TopicMessageType.created:
         notifier.onNewPostCreated(update.postId);

@@ -537,10 +537,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final scrolling = _idleFlushPosition?.isScrollingNotifier.value ?? true;
     if (scrolling) return;
     if (_deferredPostUpdates.isEmpty) return;
-    // 推迟一帧回放:isScrollingNotifier 翻 false 发生在惯性最后一个 tick
-    // 的同一帧,若同帧内直接回放,布局时 pixels 相对上一帧仍在变,
-    // AnchorGuardSliver 的"偏移与基线一致"守卫会判为不可比,回放引发的
-    // 高度位移就漏掉锚定修正。推一帧让更新落在纯空闲帧,位移被全额补偿。
+    // 在滚动通知结束后的下一帧合并回放更新。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // 帧间隙内可能又开始滚动:保持冻结,等下一次滚停

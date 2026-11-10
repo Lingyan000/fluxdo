@@ -31,7 +31,6 @@ import 'services/highlighter_service.dart';
 import 'services/launch_splash_handoff.dart';
 import 'widgets/common/notification_icon_button.dart';
 import 'widgets/common/app_glass_settings.dart';
-import 'widgets/common/anchor_guard_sliver.dart';
 import 'widgets/common/fullscreen_swipe_back.dart';
 
 import 'package:common_ui/common_ui.dart';
@@ -66,7 +65,7 @@ import 'services/update_service.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, FoldShiftHook, ParagraphLayoutCache;
+    show FlattenCache, ParagraphLayoutCache;
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -478,12 +477,6 @@ Future<void> main() async {
 
   // 注入 hashtag 药丸的图标解析与点击导航(fluxdo_render 注入点)
   installHashtagHandlers();
-
-  // 折叠块(details/callout)展开动画帧武装滚动锚定哨兵:center 双向
-  // 列表的 reverse 半场里子项向上生长,不锚定的话点击展开会把头部顶出
-  // 视口(视觉 = 跳到内容底部)。forward 半场锚位移为 0,修正自动
-  // no-op,"展开再收起逐像素复原"不受影响。
-  FoldShiftHook.onFrame = AnchorGuardSliver.arm;
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {

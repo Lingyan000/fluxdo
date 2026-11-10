@@ -7,7 +7,6 @@ import '../../../services/image_decode_spec_memo.dart';
 import '../../../services/media_geometry_memo.dart';
 import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/image_paint_gate.dart';
-import '../../common/anchor_guard_sliver.dart';
 import '../../common/first_paint_probe.dart';
 import '../../common/hero_image.dart';
 import '../svg_view.dart';
@@ -111,9 +110,6 @@ class _LazyImageState extends State<LazyImage> {
   ImageStream? _ratioStream;
   ImageStreamListener? _ratioListener;
 
-  /// 无声明尺寸的图,首帧落地会把占位换成真实高度 —— 只武装一次哨兵
-  bool _armedForFirstFrame = false;
-
   /// 首绘闸门:首帧解码完成后是否已获准真正上屏(见 [ImagePaintGate],
   /// 摊平多图同帧集中纹理上传的 raster 尖峰)。缓存同步命中不走闸门。
   bool _paintAdmitted = false;
@@ -200,12 +196,6 @@ class _LazyImageState extends State<LazyImage> {
         // 缓存命中的同步回调发生在首次 build 前,直接赋值即可
         _resolvedRatio = ratio;
       } else if (mounted) {
-        // 200 占位 → 真实比例的布局变化帧:武装哨兵,视口上方的图
-        // 加载完成不把内容拉走
-        if (!_armedForFirstFrame) {
-          _armedForFirstFrame = true;
-          AnchorGuardSliver.arm();
-        }
         setState(() => _resolvedRatio = ratio);
       }
     }

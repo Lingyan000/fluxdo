@@ -7,7 +7,6 @@ import 'package:video_player/video_player.dart';
 import '../../../services/dynamic_content_suspension_service.dart';
 import '../../../services/media/playback_position_store.dart';
 import '../../../services/navigation/app_route_observer.dart';
-import '../../common/anchor_guard_sliver.dart';
 import '../controls/media_controls_overlay.dart';
 import 'fullscreen_video_page.dart';
 import 'video_player_session.dart';
@@ -72,7 +71,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   Object? _error;
 
   /// 展示用宽高比:构建期 = 记忆值 ?? widget.aspectRatio;autoResize
-  /// 时初始化完成后在安全时机(静止帧,武装锚定哨兵)更新为实测值
+  /// 时初始化完成后在静止帧更新为实测值
   late double _displayAspectRatio;
 
   /// 等待滚停再展开真实比例的一次性监听(见 [_maybeApplyRealAspectRatio])
@@ -243,11 +242,9 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
   /// 初始化完成后把展示比例安全地展开为实测比例。
   ///
   /// - 记忆命中(比例差 < 1%):零布局变化,什么都不用做;
-  /// - 静止:武装锚定哨兵后立即展开,视口上方视频的高度变化被同帧补偿;
+  /// - 静止:更新为实测比例，由列表引擎处理阅读位置;
   /// - 滚动中:保持占位比例(视频暂以 letterbox 居中显示,不变形),
-  ///   滚停后推迟一帧再展开 —— 与 msgbus 滚停回放同一哲学:滚动中
-  ///   不动布局;推迟一帧是因为 isScrollingNotifier 翻 false 与惯性
-  ///   末 tick 同帧,当帧 pixels 仍在变,哨兵无法比较基线。
+  ///   滚停后下一帧再更新，避免在滚动通知期间触发布局。
   void _maybeApplyRealAspectRatio() {
     if (!widget.autoResize || !mounted) return;
     final real = _controller?.value.aspectRatio;
@@ -282,8 +279,6 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     final real = _controller?.value.aspectRatio;
     if (real == null || real <= 0) return;
     if ((real - _displayAspectRatio).abs() < 0.01) return;
-    // 静默布局变化落地:武装哨兵,上方视频的比例展开被同帧补偿
-    AnchorGuardSliver.arm();
     setState(() => _displayAspectRatio = real);
   }
 
@@ -356,9 +351,7 @@ class _DiscourseVideoPlayerState extends State<DiscourseVideoPlayer>
     }
 
     // 展示比例由 [_displayAspectRatio] 统一供给:初始 = 记忆值/占位值,
-    // 真实比例的展开时机由 [_maybeApplyRealAspectRatio] 治理(静止帧 +
-    // 武装哨兵),不在 build 里直接追 controller 的实测值 —— 那会让
-    // 初始化完成瞬间高度突变,滚动路径上方的视频把内容拉断。
+    // 真实比例由 [_maybeApplyRealAspectRatio] 在滚动结束后应用。
     return AspectRatio(aspectRatio: _displayAspectRatio, child: child);
   }
 }

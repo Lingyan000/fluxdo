@@ -8,7 +8,6 @@ import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../plugins/plugins.dart';
 import '../services/preloaded_data_service.dart';
-import '../widgets/common/anchor_guard_sliver.dart';
 import 'bookmark_sync_controller.dart';
 import 'core_providers.dart';
 import 'message_bus/models.dart';
@@ -162,12 +161,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     // 数据没变则跳过，避免触发不必要的 rebuild
     if (oldPost == newPost) return;
 
-    // 单帖状态落地(msgbus liked/boost 本地更新等):武装锚定哨兵,
-    // 视口上方帖子的高度位移在下一帧被同帧补偿。用户主动操作(自己
-    // 点赞/书签)也会经过这里 —— 无害:被操作的帖子必然可见,高度
-    // 变化发生在锚(视口上沿 segment)的盒内或下方,锚不动、不修正。
-    AnchorGuardSliver.arm();
-
     final newPosts = [...currentPosts];
     newPosts[index] = newPost;
 
@@ -192,7 +185,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     final latestDetail = state.value;
     if (latestDetail == null || latestDetail.id != currentDetail.id) return;
 
-    AnchorGuardSliver.arm();
     state = AsyncValue.data(
       latestDetail.copyWith(
         allowedUsers: latestDetail.allowedUsers
@@ -214,7 +206,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     final latestDetail = state.value;
     if (latestDetail == null || latestDetail.id != currentDetail.id) return;
 
-    AnchorGuardSliver.arm();
     state = AsyncValue.data(
       latestDetail.copyWith(
         allowedGroups: latestDetail.allowedGroups
@@ -275,7 +266,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
         .map((group) => group.name)
         .toSet();
 
-    AnchorGuardSliver.arm();
     state = AsyncValue.data(
       latestDetail.copyWith(
         allowedUsers: [
@@ -316,7 +306,6 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
       return archive;
     }
 
-    AnchorGuardSliver.arm();
     state = AsyncValue.data(latestDetail.copyWith(messageArchived: archive));
     return archive;
   }
