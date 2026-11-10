@@ -309,7 +309,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
                                   : context.l10n.topicsScreen_createTopic,
                               elevation: _expanded ? 0 : 3,
                               shape: RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.circular(16 + 8 * t),
+                                borderRadius: context.shapes.borderRadius(
+                                  16 + 8 * t,
+                                ),
                               ),
                               backgroundColor: Color.lerp(
                                 scheme.primaryContainer,

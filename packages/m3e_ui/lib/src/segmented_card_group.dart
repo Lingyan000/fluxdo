@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 
 import 'm3e_flags.dart';
 
@@ -10,10 +11,10 @@ import 'm3e_flags.dart';
 class SegmentedCardGroup extends StatefulWidget {
   final List<Widget> children;
 
-  /// 组首/组尾的大圆角
+  /// 组首/组尾的大圆角设计值，按当前 UiShapes 换算。
   final double outerRadius;
 
-  /// 相邻条目之间的小圆角
+  /// 相邻条目之间的小圆角设计值，按当前 UiShapes 换算。
   final double innerRadius;
 
   /// 条目间距
@@ -264,8 +265,8 @@ class SegmentedCardItem extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(index == 0 ? outerRadius : innerRadius),
-          bottom: Radius.circular(
+          top: context.shapes.radius(index == 0 ? outerRadius : innerRadius),
+          bottom: context.shapes.radius(
             index == count - 1 ? outerRadius : innerRadius,
           ),
         ),

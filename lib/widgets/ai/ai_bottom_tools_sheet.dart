@@ -120,10 +120,9 @@ class _ToolCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final baseColor = active
         ? theme.colorScheme.primaryContainer
-        : (isDark ? Colors.white10 : const Color(0xFFF2F3F5));
+        : theme.colorScheme.surfaceContainerHigh;
     final fg = active
         ? theme.colorScheme.onPrimaryContainer
         : (dimmed

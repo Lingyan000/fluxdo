@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -91,7 +92,9 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
               visualDensity: VisualDensity.standard,
               tapTargetSize: MaterialTapTargetSize.padded,
               padding: EdgeInsets.zero,
-              shape: const CircleBorder(),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(9999),
+              ),
               disabledBackgroundColor: widget.busy ? colors.primary : null,
               disabledForegroundColor: widget.busy ? colors.onPrimary : null,
             ),

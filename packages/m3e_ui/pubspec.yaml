@@ -9,6 +9,8 @@ environment:
 resolution: workspace
 
 dependencies:
+  common_ui:
+    path: ../common_ui
   flutter:
     sdk: flutter
   # androidx.graphics.shapes 的 Dart 移植(RoundedPolygon/Morph/MaterialShapes),

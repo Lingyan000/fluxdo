@@ -451,7 +451,9 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                                   color: theme.colorScheme.primaryContainer
                                       .withValues(alpha: 0.4),
                                   shape: RoundedSuperellipseBorder(
-                                    borderRadius: context.shapes.borderRadius(8),
+                                    borderRadius: context.shapes.borderRadius(
+                                      8,
+                                    ),
                                   ),
                                 ),
                                 child: Text(
@@ -505,9 +507,8 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                                             .colorScheme
                                             .surfaceContainerHighest,
                                         shape: RoundedSuperellipseBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            3,
-                                          ),
+                                          borderRadius: context.shapes
+                                              .borderRadius(3),
                                         ),
                                       ),
                                     ),
@@ -523,9 +524,8 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                                         color: theme.colorScheme.primary
                                             .withValues(alpha: 0.5),
                                         shape: RoundedSuperellipseBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            3,
-                                          ),
+                                          borderRadius: context.shapes
+                                              .borderRadius(3),
                                         ),
                                       ),
                                     ),

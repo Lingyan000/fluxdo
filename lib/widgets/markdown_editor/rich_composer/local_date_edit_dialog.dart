@@ -9,6 +9,8 @@
 /// 立即 dispose 会崩,见 rich_composer_editor 的 _MarkdownInputDialog)。
 library;
 
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
+
 import 'package:flutter/material.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show LocalDateRun;
 
@@ -75,7 +77,8 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
     super.dispose();
   }
 
-  String get _dateStr => '${_date.year.toString().padLeft(4, '0')}-'
+  String get _dateStr =>
+      '${_date.year.toString().padLeft(4, '0')}-'
       '${_date.month.toString().padLeft(2, '0')}-'
       '${_date.day.toString().padLeft(2, '0')}';
 
@@ -84,7 +87,7 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       : _time == null
       ? null
       : '${_time!.hour.toString().padLeft(2, '0')}:'
-          '${_time!.minute.toString().padLeft(2, '0')}';
+            '${_time!.minute.toString().padLeft(2, '0')}';
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -101,7 +104,11 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       context: context,
       initialTime: _time ?? const TimeOfDay(hour: 12, minute: 0),
     );
-    if (picked != null) setState(() { _time = picked; _timeChanged = true; });
+    if (picked != null)
+      setState(() {
+        _time = picked;
+        _timeChanged = true;
+      });
   }
 
   bool _validEndDate() {
@@ -109,7 +116,9 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
     if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;
     final parts = value.split('-').map(int.parse).toList();
     final date = DateTime(parts[0], parts[1], parts[2]);
-    return date.year == parts[0] && date.month == parts[1] && date.day == parts[2];
+    return date.year == parts[0] &&
+        date.month == parts[1] &&
+        date.day == parts[2];
   }
 
   LocalDateRun _build() {
@@ -124,14 +133,17 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
       format: init?.format,
       displayedTimezone: init?.displayedTimezone,
       countdown: _countdown,
-      countdownRaw: _countdown == init?.countdown ? init?.countdownRaw : (_countdown ? 'true' : 'false'),
+      countdownRaw: _countdown == init?.countdown
+          ? init?.countdownRaw
+          : (_countdown ? 'true' : 'false'),
       recurring: init?.recurring,
       endDate: init?.endDate == null ? null : _endDateController.text.trim(),
-      endTime: _endTimeController.text.trim().isEmpty ? null : _endTimeController.text.trim(),
+      endTime: _endTimeController.text.trim().isEmpty
+          ? null
+          : _endTimeController.text.trim(),
       range: init?.range,
       // 编辑态显示文本:无服务端预渲染,拼本地可读串
-      fallbackText:
-          _timeStr == null ? _dateStr : '$_dateStr $_timeStr',
+      fallbackText: _timeStr == null ? _dateStr : '$_dateStr $_timeStr',
     );
   }
 
@@ -143,42 +155,55 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.calendar_today_outlined, size: 16),
-                label: Text(_dateStr),
-                onPressed: _pickDate,
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                  label: Text(_dateStr),
+                  onPressed: _pickDate,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.schedule_outlined, size: 16),
-                label: Text(_timeStr ?? '全天'),
-                onPressed: _pickTime,
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.schedule_outlined, size: 16),
+                  label: Text(_timeStr ?? '全天'),
+                  onPressed: _pickTime,
+                ),
               ),
-            ),
-            if (_time != null)
-              IconButton(
-                tooltip: '清除时间',
-                icon: const Icon(Icons.close, size: 16),
-                onPressed: () => setState(() { _time = null; _timeChanged = true; }),
-              ),
-          ]),
+              if (_time != null)
+                IconButton(
+                  tooltip: '清除时间',
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () => setState(() {
+                    _time = null;
+                    _timeChanged = true;
+                  }),
+                ),
+            ],
+          ),
           if (widget.initial?.endDate != null) ...[
             const SizedBox(height: 12),
-            TextField(controller: _endDateController, decoration: const InputDecoration(labelText: '结束日期（YYYY-MM-DD）')),
-            TextField(controller: _endTimeController, decoration: const InputDecoration(labelText: '结束时间（HH:mm，可留空）')),
+            TextField(
+              controller: _endDateController,
+              decoration: InputDecoration(labelText: '结束日期（YYYY-MM-DD）'),
+            ),
+            TextField(
+              controller: _endTimeController,
+              decoration: InputDecoration(labelText: '结束时间（HH:mm，可留空）'),
+            ),
           ],
           const SizedBox(height: 12),
           TextField(
             controller: _timezoneController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: '时区',
               hintText: 'Asia/Shanghai',
               isDense: true,
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -201,8 +226,11 @@ class _LocalDateEditDialogState extends State<_LocalDateEditDialog> {
           onPressed: () {
             if (widget.initial?.endDate != null &&
                 (!_validEndDate() ||
-                 (_endTimeController.text.trim().isNotEmpty && !RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$').hasMatch(_endTimeController.text.trim())))) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请填写有效的结束日期和时间')));
+                    (_endTimeController.text.trim().isNotEmpty &&
+                        !RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$')
+                            .hasMatch(_endTimeController.text.trim())))) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('请填写有效的结束日期和时间')));
               return;
             }
             Navigator.pop(context, _build());

@@ -154,10 +154,8 @@ class BrowserTabOverview extends StatelessWidget {
                                                     color: colors
                                                         .onSurfaceVariant
                                                         .withValues(alpha: .42),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          2,
-                                                        ),
+                                                    borderRadius: context.shapes
+                                                        .borderRadius(2),
                                                   ),
                                                 ),
                                               ),

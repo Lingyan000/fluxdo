@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -62,7 +63,7 @@ class TagBadge extends StatelessWidget {
         );
 
     Widget badge = ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(size.radius),
+      borderRadius: context.shapes.borderRadius(size.radius),
       child: Container(
         padding: size.padding,
         decoration: BoxDecoration(color: bg, border: border),
@@ -114,14 +115,14 @@ class RemovableTagBadge extends StatelessWidget {
       child: InkWell(
         onTap: onDeleted,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(size.radius),
+          borderRadius: context.shapes.borderRadius(size.radius),
         ),
         child: Container(
           padding: size.padding,
           decoration: ShapeDecoration(
             color: bg,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(size.radius),
+              borderRadius: context.shapes.borderRadius(size.radius),
             ),
           ),
           child: Row(
@@ -177,14 +178,14 @@ class RemovableCategoryBadge extends StatelessWidget {
       child: InkWell(
         onTap: onDeleted,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(size.radius),
+          borderRadius: context.shapes.borderRadius(size.radius),
         ),
         child: Container(
           padding: size.padding,
           decoration: ShapeDecoration(
             color: bg,
             shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.circular(size.radius),
+              borderRadius: context.shapes.borderRadius(size.radius),
             ),
           ),
           child: Row(
@@ -256,7 +257,7 @@ class CategoryBadge extends StatelessWidget {
       decoration: ShapeDecoration(
         color: categoryColor.withValues(alpha: 0.08),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(size.radius),
+          borderRadius: context.shapes.borderRadius(size.radius),
           side: BorderSide(
             color: categoryColor.withValues(alpha: 0.2),
             width: 1,

@@ -105,7 +105,8 @@ class MiniAppRunnerToolbar extends StatelessWidget
           padding: const EdgeInsets.only(left: 8, right: 8),
           child: Material(
             color: group,
-            shape: StadiumBorder(
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(9999),
               side: BorderSide(color: foreground.withValues(alpha: .12)),
             ),
             child: Row(

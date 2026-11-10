@@ -347,7 +347,9 @@ class UserActionItemSkeleton extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -430,7 +432,7 @@ class _SkeletonBoxWhite extends StatelessWidget {
       decoration: ShapeDecoration(
         color: Colors.white.withValues(alpha: 0.18),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
         ),
       ),
     );

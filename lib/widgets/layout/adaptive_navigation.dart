@@ -612,8 +612,8 @@ class _FloatingBottomBarShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final barHeight = itemHeight + _CapsuleMetrics.innerInset * 2;
-    final radius = barHeight / 2;
+    // 与内部选中胶囊使用相同的 full token；方正主题一并收角。
+    const radius = 9999.0;
 
     // 内容留白（最内层，玻璃/实色两种底色共用）
     final content = Padding(

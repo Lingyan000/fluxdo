@@ -9,6 +9,8 @@
 /// 状态自持有(预载 5 条为初值,加载/新增在本组件内追加)。
 library;
 
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -66,15 +68,16 @@ class _PostVotingCommentsViewState
   final FocusNode _composerFocus = FocusNode();
 
   /// 评论字数上限:站点 post_voting_comment_max_raw_length,缺省 600
-  late final int _maxLength = (PreloadedDataService()
-              .siteSettingsSync?['post_voting_comment_max_raw_length']
-          as num?)
+  late final int _maxLength =
+      (PreloadedDataService()
+                  .siteSettingsSync?['post_voting_comment_max_raw_length']
+              as num?)
           ?.toInt() ??
       600;
 
   /// 评论最短长度:站点 min_post_length,缺省 1
-  late final int _minLength = (PreloadedDataService()
-              .siteSettingsSync?['min_post_length'] as num?)
+  late final int _minLength =
+      (PreloadedDataService().siteSettingsSync?['min_post_length'] as num?)
           ?.toInt() ??
       1;
 
@@ -242,7 +245,9 @@ class _PostVotingCommentsViewState
                     child: Icon(
                       Symbols.arrow_upward_rounded,
                       size: 14,
-                      color: comment.userVoted ? context.appColors.green : muted,
+                      color: comment.userVoted
+                          ? context.appColors.green
+                          : muted,
                       weight: comment.userVoted ? 700 : null,
                     ),
                   ),
@@ -318,7 +323,9 @@ class _PostVotingCommentsViewState
               decoration: InputDecoration(
                 hintText: S.current.postVoting_commentHint,
                 isDense: true,
-                border: const OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: context.shapes.borderRadius(4),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),

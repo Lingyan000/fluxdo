@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -65,8 +67,8 @@ class MorphingDialogShell extends StatelessWidget {
               theme.colorScheme.surfaceContainerLow,
           color: theme.colorScheme.surface,
           sourceBackground: theme.scaffoldBackgroundColor,
-          anchorRadius: anchorRadius,
-          targetRadius: targetRadius,
+          anchorRadius: context.shapes.resolve(anchorRadius),
+          targetRadius: context.shapes.resolve(targetRadius),
           dialogWidth: dialogWidth,
           spatialCurve: M3eFlags.of(context).enabled
               ? Curves.easeInOutCubicEmphasized

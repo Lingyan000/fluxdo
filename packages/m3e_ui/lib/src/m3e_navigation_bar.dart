@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/physics.dart';
 
 import 'm3e_flags.dart';
@@ -111,11 +112,13 @@ class _M3eNavigationBarState extends State<M3eNavigationBar>
                             height: _kIndicatorHeight,
                             decoration: ShapeDecoration(
                               color: scheme.secondaryContainer,
-                              shape: const RoundedSuperellipseBorder(
-                                borderRadius: BorderRadius.all(
-                                  Radius.circular(9999),
-                                ),
-                              ),
+                              shape:
+                                  barTheme.indicatorShape ??
+                                  RoundedSuperellipseBorder(
+                                    borderRadius: context.shapes.borderRadius(
+                                      9999,
+                                    ),
+                                  ),
                             ),
                           ),
                         ),

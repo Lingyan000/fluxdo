@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
+
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
@@ -417,7 +419,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
                       horizontal: 14,
                       vertical: 8,
                     ),
-                    decoration: MediaOverlayStyle.pill(radius: 10),
+                    decoration: MediaOverlayStyle.pill(context, radius: 10),
                     child: _seekPreviewCancelArmed
                         ? Row(
                             mainAxisSize: MainAxisSize.min,
@@ -505,7 +507,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
                         horizontal: 10,
                         vertical: 6,
                       ),
-                      decoration: MediaOverlayStyle.pill(radius: 8),
+                      decoration: MediaOverlayStyle.pill(context, radius: 8),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -866,7 +868,7 @@ class _MediaControlsOverlayState extends State<MediaControlsOverlay>
           style: TextStyle(
             color: value.playbackSpeed == 1.0
                 ? MediaOverlayStyle.foreground
-                : MediaOverlayStyle.accent,
+                : MediaOverlayStyle.accent(context),
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -1070,7 +1072,7 @@ class _CenterPlayButtonState extends State<_CenterPlayButton> {
               decoration: ShapeDecoration(
                 color: const Color(0x8A000000),
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(radius),
+                  borderRadius: context.shapes.borderRadius(radius),
                   side: BorderSide(color: const Color(0x24FFFFFF)),
                 ),
               ),
@@ -1204,7 +1206,7 @@ class _FastForwardBadge extends StatelessWidget {
                   horizontal: 10,
                   vertical: 4,
                 ),
-                decoration: MediaOverlayStyle.pill(radius: 14),
+                decoration: MediaOverlayStyle.pill(context, radius: 14),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

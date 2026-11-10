@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'glass_surface.dart';
+import 'ui_shapes.dart';
 
 export 'glass_edge_painter.dart';
 
@@ -13,6 +14,8 @@ class GlassSurfaceFrame extends StatelessWidget {
     this.enabled = true,
     this.recipe = GlassRecipe.navigation,
   });
+
+  /// Design radius; converted once for the clip, shader and fallback border.
   final double radius;
   final Widget child;
   final bool enabled;
@@ -21,8 +24,9 @@ class GlassSurfaceFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final resolvedRadius = context.shapes.resolve(radius);
     final shape = RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: BorderRadius.circular(resolvedRadius),
     );
     return DecoratedBox(
       decoration: ShapeDecoration(
@@ -41,13 +45,13 @@ class GlassSurfaceFrame extends StatelessWidget {
         ],
       ),
       child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(resolvedRadius),
         child: GlassSurface(
           recipe: recipe,
           shape: shape,
           enabled: enabled,
           drawFallbackBorder: false,
-          fallbackBorderRadius: radius,
+          fallbackBorderRadius: resolvedRadius,
           child: child,
         ),
       ),

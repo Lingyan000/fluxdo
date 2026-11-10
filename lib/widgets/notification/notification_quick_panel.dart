@@ -356,7 +356,7 @@ class _SidebarNotificationPanelState
         visiblePanelWidth,
         panelHeight,
       ),
-      topRight: UiShapes.current.radius(20),
+      topRight: context.shapes.radius(20),
     );
 
     return Stack(
@@ -420,8 +420,8 @@ class _SidebarNotificationPanelState
         screenSize.width,
         visibleHeight,
       ),
-      topLeft: UiShapes.current.radius(20),
-      topRight: UiShapes.current.radius(20),
+      topLeft: context.shapes.radius(20),
+      topRight: context.shapes.radius(20),
     );
 
     return Stack(
@@ -747,7 +747,11 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Symbols.error_rounded, size: 48, color: context.appColors.grey),
+              Icon(
+                Symbols.error_rounded,
+                size: 48,
+                color: context.appColors.grey,
+              ),
               const SizedBox(height: 12),
               Text(
                 context.l10n.common_loadFailed,

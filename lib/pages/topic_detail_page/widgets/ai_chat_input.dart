@@ -441,10 +441,14 @@ class _PendingAttachmentTile extends StatelessWidget {
           right: -4,
           child: Material(
             color: Colors.black54,
-            shape: const CircleBorder(),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(9999),
+            ),
             child: InkWell(
               onTap: onRemove,
-              customBorder: const CircleBorder(),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(9999),
+              ),
               child: const Padding(
                 padding: EdgeInsets.all(2),
                 child: Icon(

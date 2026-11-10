@@ -144,7 +144,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
                 child: CustomPaint(
                   painter: _SpotlightPainter(
                     targetRect: widget.targetRect,
-                    borderRadius: widget.borderRadius,
+                    borderRadius: context.shapes.resolve(widget.borderRadius),
                   ),
                 ),
               ),
@@ -154,7 +154,7 @@ class _SpotlightWidgetState extends State<_SpotlightWidget>
                 rect: widget.targetRect,
                 child: IgnorePointer(
                   child: _PulsingBorder(
-                    borderRadius: widget.borderRadius,
+                    borderRadius: context.shapes.resolve(widget.borderRadius),
                     color: theme.colorScheme.primary.withValues(alpha: 0.6),
                   ),
                 ),

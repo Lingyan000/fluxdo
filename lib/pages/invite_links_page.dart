@@ -531,7 +531,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildSummaryCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -587,7 +589,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildAdvancedOptionsCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -605,7 +609,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
               maxLength: 100,
               decoration: InputDecoration(
                 labelText: context.l10n.invite_description,
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: context.shapes.borderRadius(4),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -616,7 +622,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
                 labelText: context.l10n.invite_restriction,
                 helperText: context.l10n.invite_restrictionHelper,
                 hintText: context.l10n.invite_restrictionHint,
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(
+                  borderRadius: context.shapes.borderRadius(4),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -672,8 +680,10 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildReadOnlyField(ThemeData theme, {required String value}) {
     return InputDecorator(
-      decoration: const InputDecoration(
-        border: OutlineInputBorder(),
+      decoration: InputDecoration(
+        border: OutlineInputBorder(
+          borderRadius: context.shapes.borderRadius(4),
+        ),
         contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
       ),
       child: Row(
@@ -695,7 +705,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
     final invite = _latestInvite!;
     final inviteLink = _effectiveInviteLink ?? invite.inviteLink;
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -778,7 +790,9 @@ class _InviteLinksPageState extends ConsumerState<InviteLinksPage> {
 
   Widget _buildEmptyStateCard(ThemeData theme) {
     return Card(
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Text(

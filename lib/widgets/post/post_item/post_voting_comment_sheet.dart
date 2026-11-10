@@ -352,10 +352,14 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
                       bottom: MediaQuery.of(context).padding.bottom + 8,
                       child: Material(
                         color: theme.colorScheme.surfaceContainerHighest,
-                        shape: const CircleBorder(),
+                        shape: RoundedSuperellipseBorder(
+                          borderRadius: context.shapes.borderRadius(9999),
+                        ),
                         elevation: 1,
                         child: InkWell(
-                          customBorder: const CircleBorder(),
+                          customBorder: RoundedSuperellipseBorder(
+                            borderRadius: context.shapes.borderRadius(9999),
+                          ),
                           onTap: _controller.text.isEmpty
                               ? null
                               : _deleteBackward,

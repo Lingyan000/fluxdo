@@ -186,7 +186,7 @@ class _MediaProgressBarState extends State<MediaProgressBar>
   Widget _timeBubble(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: MediaOverlayStyle.pill(radius: 6),
+      decoration: MediaOverlayStyle.pill(context, radius: 6),
       child: Text(
         text,
         style: const TextStyle(

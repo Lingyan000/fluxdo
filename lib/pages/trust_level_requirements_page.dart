@@ -1,3 +1,5 @@
+import '../theme/app_colors.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
@@ -484,16 +486,16 @@ class _TrustLevelRequirementsPageState
     Color badgeText;
     switch (_data!.badgeType) {
       case TlBadgeType.success:
-        badgeBg = const Color(0xFF22c55e).withValues(alpha: 0.1);
-        badgeText = const Color(0xFF22c55e);
+        badgeBg = context.appColors.green.withValues(alpha: 0.1);
+        badgeText = context.appColors.green;
         break;
       case TlBadgeType.danger:
-        badgeBg = const Color(0xFFef4444).withValues(alpha: 0.1);
-        badgeText = const Color(0xFFef4444);
+        badgeBg = context.appColors.red.withValues(alpha: 0.1);
+        badgeText = context.appColors.red;
         break;
       default:
-        badgeBg = const Color(0xFFf59e0b).withValues(alpha: 0.1);
-        badgeText = const Color(0xFFf59e0b);
+        badgeBg = context.appColors.orange.withValues(alpha: 0.1);
+        badgeText = context.appColors.orange;
         break;
     }
 
@@ -657,8 +659,8 @@ class _TrustLevelRequirementsPageState
     // met -> #22c55e, unmet -> #f59e0b
     // Increase size to match 88px ~ 80-90 logical pixels
     final color = ring.isMet
-        ? const Color(0xFF22c55e)
-        : const Color(0xFFf59e0b);
+        ? context.appColors.green
+        : context.appColors.orange;
 
     return Column(
       children: [
@@ -717,8 +719,8 @@ class _TrustLevelRequirementsPageState
     final colorScheme = theme.colorScheme;
 
     final labelColor = bar.isMet
-        ? const Color(0xFF22c55e)
-        : const Color(0xFFf59e0b);
+        ? context.appColors.green
+        : context.appColors.orange;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -758,16 +760,22 @@ class _TrustLevelRequirementsPageState
                   decoration: ShapeDecoration(
                     gradient: LinearGradient(
                       colors: bar.isMet
-                          ? [const Color(0xFF22c55e), const Color(0xFF4ade80)]
-                          : [const Color(0xFFf59e0b), const Color(0xFFfbbf24)],
+                          ? [
+                              context.appColors.green,
+                              context.appColors.green.shade300,
+                            ]
+                          : [
+                              context.appColors.orange,
+                              context.appColors.orange.shade300,
+                            ],
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
                     ),
                     shadows: [
                       BoxShadow(
                         color: bar.isMet
-                            ? const Color(0xFF22c55e).withValues(alpha: 0.4)
-                            : const Color(0xFFf59e0b).withValues(alpha: 0.4),
+                            ? context.appColors.green.withValues(alpha: 0.4)
+                            : context.appColors.orange.withValues(alpha: 0.4),
                         blurRadius: 6,
                         spreadRadius: 0,
                         offset: const Offset(0, 0),
@@ -820,22 +828,24 @@ class _TrustLevelRequirementsPageState
 
   Widget _buildQuotaCard(ThemeData theme, TlQuotaData quota) {
     final colorScheme = theme.colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Met: default card style
     // Unmet: red border, red bg tint
 
     final borderColor = quota.isMet
         ? colorScheme.outlineVariant.withValues(alpha: 0.4)
-        : const Color(0xFFef4444).withValues(alpha: 0.3);
+        : context.appColors.red.withValues(alpha: 0.3);
 
     final bgColor = quota.isMet
         ? colorScheme.surface
-        : (isDark ? const Color(0xFF2e0a0a) : const Color(0xFFfef2f2));
+        : (Color.alphaBlend(
+            context.appColors.red.withValues(alpha: .08),
+            theme.colorScheme.surface,
+          ));
 
     final textColor = quota.isMet
         ? colorScheme.onSurfaceVariant
-        : const Color(0xFFef4444);
+        : context.appColors.red;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -878,8 +888,8 @@ class _TrustLevelRequirementsPageState
               // Used slots are danger style, unused are success style
               final isUsed = index < quota.usedSlots;
               final color = isUsed
-                  ? const Color(0xFFef4444)
-                  : const Color(0xFF22c55e);
+                  ? context.appColors.red
+                  : context.appColors.green;
 
               return Expanded(
                 child: Container(
@@ -912,23 +922,27 @@ class _TrustLevelRequirementsPageState
     // If Met -> Green style
     // If Unmet -> Red style
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     Color bgColor;
     Color borderColor;
     Color iconBg;
     Color iconColor;
 
     if (veto.isMet) {
-      bgColor = isDark ? const Color(0xFF0a2e14) : const Color(0xFFf0fdf4);
-      borderColor = const Color(0xFF22c55e).withValues(alpha: 0.2);
-      iconBg = const Color(0xFF22c55e).withValues(alpha: 0.15);
-      iconColor = const Color(0xFF22c55e);
+      bgColor = Color.alphaBlend(
+        context.appColors.green.withValues(alpha: .08),
+        theme.colorScheme.surface,
+      );
+      borderColor = context.appColors.green.withValues(alpha: 0.2);
+      iconBg = context.appColors.green.withValues(alpha: 0.15);
+      iconColor = context.appColors.green;
     } else {
-      bgColor = isDark ? const Color(0xFF2e0a0a) : const Color(0xFFfef2f2);
-      borderColor = const Color(0xFFef4444).withValues(alpha: 0.2);
-      iconBg = const Color(0xFFef4444).withValues(alpha: 0.15);
-      iconColor = const Color(0xFFef4444);
+      bgColor = Color.alphaBlend(
+        context.appColors.red.withValues(alpha: .08),
+        theme.colorScheme.surface,
+      );
+      borderColor = context.appColors.red.withValues(alpha: 0.2);
+      iconBg = context.appColors.red.withValues(alpha: 0.15);
+      iconColor = context.appColors.red;
     }
 
     return Container(
@@ -991,8 +1005,8 @@ class _TrustLevelRequirementsPageState
 
   Widget _buildFooter(ThemeData theme) {
     final statusColor = _data!.isStatusMet
-        ? const Color(0xFF22c55e)
-        : const Color(0xFFef4444);
+        ? context.appColors.green
+        : context.appColors.red;
 
     return Column(
       children: [
@@ -1195,7 +1209,7 @@ class _TrustLevelRequirementsPageState
     final colorScheme = theme.colorScheme;
     final isMet = item.isMet;
     final progress = item.progress;
-    final color = isMet ? const Color(0xFF22c55e) : const Color(0xFFf59e0b);
+    final color = isMet ? context.appColors.green : context.appColors.orange;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

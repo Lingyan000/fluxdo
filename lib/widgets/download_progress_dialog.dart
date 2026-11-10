@@ -9,7 +9,6 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 import '../providers/apk_update_provider.dart';
 import '../services/apk_download_service.dart';
-import '../theme/app_colors.dart';
 
 /// APK 下载进度对话框
 ///
@@ -81,19 +80,16 @@ class DownloadProgressDialog extends ConsumerWidget {
   }
 
   Color _contentColor(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? Colors.white : const Color(0xFF1e293b);
+    return Theme.of(context).colorScheme.onSurface;
   }
 
   Color _subContentColor(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? Colors.white70 : const Color(0xFF64748b);
+    return Theme.of(context).colorScheme.onSurfaceVariant;
   }
 
   Widget _buildMainProgress(BuildContext context, ApkUpdateState state) {
     final status = state.status;
     final color = _contentColor(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (status == ApkDownloadStatus.downloading) {
       return Column(
@@ -132,7 +128,7 @@ class DownloadProgressDialog extends ConsumerWidget {
           break;
         case ApkDownloadStatus.error:
           icon = Symbols.error_rounded;
-          iconColor = isDark ? Colors.white : context.appColors.red.shade700;
+          iconColor = Theme.of(context).colorScheme.error;
           break;
         default:
           icon = Symbols.download_rounded;

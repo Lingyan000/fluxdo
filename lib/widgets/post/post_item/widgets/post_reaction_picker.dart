@@ -666,7 +666,9 @@ class _ReactionPickerOverlayState extends State<_ReactionPickerOverlay> {
     // 面板:从按钮胶囊形变到面板胶囊,起点与按钮重合所以先透明再显形
     final panelRect = Rect.lerp(ctrl.buttonRect, ctrl.pickerRect, m)!;
     final finalRadius = ctrl.rows == 1 ? 26.0 : 24.0;
-    final radius = lerpDouble(ctrl.buttonRect.height / 2, finalRadius, m)!;
+    final radius = context.shapes.resolve(
+      lerpDouble(ctrl.buttonRect.height / 2, finalRadius, m)!,
+    );
     final panelOpacity = (m / 0.35).clamp(0.0, 1.0);
 
     final items = <Widget>[];

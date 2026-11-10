@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -191,7 +192,9 @@ class _PageDialogTopButton extends StatelessWidget {
       padding: const EdgeInsetsDirectional.only(start: 8),
       child: Material(
         color: theme.colorScheme.surfaceContainerHigh,
-        shape: const CircleBorder(),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(9999),
+        ),
         clipBehavior: Clip.antiAlias,
         child: IconButton(
           tooltip: tooltip,
@@ -199,7 +202,7 @@ class _PageDialogTopButton extends StatelessWidget {
             icon,
             color: onPressed == null
                 ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.38)
-                : theme.colorScheme.onSurfaceVariant,
+                : theme.colorScheme.primary,
           ),
           onPressed: onPressed,
         ),

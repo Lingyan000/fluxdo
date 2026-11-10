@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
@@ -138,8 +139,8 @@ class M3eFabMenuState extends State<M3eFabMenu>
                       _kFabInitialSize -
                       (_kFabInitialSize - _kFabFinalSize) * t,
                   child: Material(
-                    shape: const RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(9999)),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(9999),
                     ),
                     color: t < 0.5 ? scheme.primaryContainer : scheme.primary,
                     elevation: 3,
@@ -203,8 +204,8 @@ class M3eFabMenuState extends State<M3eFabMenu>
         child: SizedBox(
           height: _kItemHeight,
           child: Material(
-            shape: const RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.all(Radius.circular(9999)),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(9999),
             ),
             color: scheme.primaryContainer,
             elevation: 2,

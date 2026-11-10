@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/material.dart';
 
 /// 骨架屏容器
@@ -232,7 +233,7 @@ class SkeletonBox extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withAlpha(100),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
         ),
       ),
     );

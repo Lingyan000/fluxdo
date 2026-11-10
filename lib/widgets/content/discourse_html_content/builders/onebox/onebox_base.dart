@@ -32,14 +32,14 @@ class OneboxContainer extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
           side: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
         ),
       ),
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
         ),
         child: Padding(padding: padding, child: child),
       ),
@@ -74,14 +74,14 @@ class OneboxContainerWithHeader extends StatelessWidget {
       decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
           side: BorderSide(color: borderColor, width: 1),
         ),
       ),
       child: InkWell(
         onTap: onTap,
         customBorder: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: context.shapes.borderRadius(borderRadius),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

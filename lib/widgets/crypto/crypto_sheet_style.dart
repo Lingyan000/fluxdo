@@ -22,15 +22,18 @@ InputDecoration cryptoSheetInputDecoration(
     fillColor: theme.colorScheme.surfaceContainerHigh,
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     border: OutlineInputBorder(
-      borderRadius: UiShapes.current.borderRadius(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide.none,
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: UiShapes.current.borderRadius(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide.none,
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: UiShapes.current.borderRadius(12),
+      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+          .borderRadius(12),
       borderSide: BorderSide(
         color: theme.colorScheme.primary.withValues(alpha: 0.6),
         width: 1.4,

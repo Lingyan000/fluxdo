@@ -347,7 +347,9 @@ class CategoryTrigger extends StatelessWidget {
 
     return Material(
       color: color.withValues(alpha: 0.1),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(8)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+      ),
       child: InkWell(
         onTap: () => _showPicker(context),
         customBorder: RoundedSuperellipseBorder(
@@ -696,7 +698,8 @@ class ComposerMetaBar extends StatelessWidget {
         child: InkWell(
           onTap: enabled ? onTap : null,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: UiShapes.current.borderRadius(20),
+            borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+                .borderRadius(20),
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
@@ -709,7 +712,11 @@ class ComposerMetaBar extends StatelessWidget {
                     alpha: .42,
                   ),
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.all(UiShapes.current.radius(9999)),
+                    borderRadius: BorderRadius.all(
+                      (theme.extension<UiShapes>() ?? UiShapes.standard).radius(
+                        9999,
+                      ),
+                    ),
                     side: BorderSide(
                       color:
                           borderColor ??
@@ -755,7 +762,8 @@ class ComposerMetaBar extends StatelessWidget {
             ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: .22)
             : Colors.transparent,
         shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+          borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+              .borderRadius(desktop ? 8 : 10),
           side: desktop
               ? BorderSide(
                   width: .6,
@@ -768,7 +776,8 @@ class ComposerMetaBar extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(desktop ? 8 : 10),
+            borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
+                .borderRadius(desktop ? 8 : 10),
           ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: desktop ? 36 : 48),

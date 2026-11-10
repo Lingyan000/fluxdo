@@ -784,7 +784,9 @@ class _SubmenuRoute extends PopupRoute<void>
     final PopupMenuThemeData popupMenuTheme = PopupMenuTheme.of(context);
     final ShapeBorder shape =
         popupMenuTheme.shape ??
-        RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20));
+        RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+        );
 
     final Widget panelContent = Column(
       mainAxisSize: MainAxisSize.min,
@@ -1051,7 +1053,9 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
     final menuShape =
         widget.route.shape ??
         popupMenuTheme.shape ??
-        RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16));
+        RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(16),
+        );
     final menuColor =
         widget.route.color ??
         popupMenuTheme.color ??
@@ -1232,6 +1236,7 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
               overlay.localToGlobal(anchor.bottomRight),
             ),
             shape: menuShape,
+            shapes: context.shapes,
             color: menuColor,
             shadowColor:
                 widget.route.shadowColor ??

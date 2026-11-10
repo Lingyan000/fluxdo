@@ -249,7 +249,9 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
           key: const ValueKey('mini-app-dock-glass'),
           recipe: recipe,
           shape: shape,
-          opticalShape: const StadiumBorder(),
+          opticalShape: context.shapes.isStandard
+              ? const StadiumBorder()
+              : shape,
           drawFallbackBorder: false,
           drawOpticalBorder: false,
         ),
@@ -309,7 +311,11 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
           _right,
         );
         final drop = _dropAmount * (1 - p);
-        final shape = drop > 0
+        final ShapeBorder shape = !context.shapes.isStandard
+            ? RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(24),
+              )
+            : drop > 0
             ? MiniAppDockLiquidShape(
                 arc: arc,
                 size: size,

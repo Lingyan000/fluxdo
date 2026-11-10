@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
+
 import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -939,7 +941,9 @@ class _EntryChipsEditorState extends State<_EntryChipsEditor> {
             hintText: widget.hintText,
             helperText: widget.helperText,
             helperMaxLines: 2,
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
           ),
           keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
@@ -970,7 +974,9 @@ void _showStickerBaseUrlDialog(BuildContext context, WidgetRef ref) {
             controller: controller,
             decoration: InputDecoration(
               hintText: context.l10n.preferences_enterUrl,
-              border: const OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
             keyboardType: TextInputType.url,
             autofocus: true,

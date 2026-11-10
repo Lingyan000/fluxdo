@@ -34,7 +34,8 @@ import 'package:flutter/foundation.dart'
         listEquals,
         visibleForTesting;
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiShapesContext;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -4715,9 +4716,11 @@ class _MarkdownInputDialogState extends State<_MarkdownInputDialog> {
           autofocus: true,
           maxLines: 10,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: '任意 Discourse markdown/bbcode…',
-            border: OutlineInputBorder(),
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
           ),
         ),
       ),
@@ -4767,7 +4770,11 @@ class _SingleLineInputDialogState extends State<_SingleLineInputDialog> {
       content: TextField(
         controller: _controller,
         autofocus: true,
-        decoration: const InputDecoration(border: OutlineInputBorder()),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(
+            borderRadius: context.shapes.borderRadius(4),
+          ),
+        ),
         onSubmitted: (v) => Navigator.pop(context, v),
       ),
       actions: [

@@ -285,14 +285,14 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
                     ),
                   ],
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(_kPopoverRadius),
+                    borderRadius: context.shapes.borderRadius(_kPopoverRadius),
                   ),
                 ),
                 // 边框走前景:decoration 的 border 画在子内容之下,
                 // 面板背景同被裁进圆角矩形会盖住描边(四角尤其明显)
                 foregroundDecoration: ShapeDecoration(
                   shape: RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(_kPopoverRadius),
+                    borderRadius: context.shapes.borderRadius(_kPopoverRadius),
                     side: BorderSide(
                       color: theme.colorScheme.outlineVariant.withValues(
                         alpha: isDark ? 0.6 : 0.5,

@@ -612,7 +612,7 @@ class _ToastViewState extends State<_ToastView> with TickerProviderStateMixin {
               // 浮在正文之上需要比导航更明显的落影
               decoration: ShapeDecoration(
                 shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(_radius),
+                  borderRadius: context.shapes.borderRadius(_radius),
                 ),
                 shadows: [
                   BoxShadow(

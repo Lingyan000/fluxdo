@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -371,7 +372,7 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                               decoration: ShapeDecoration(
                                 shape: RoundedSuperellipseBorder(
                                   borderRadius: BorderRadius.vertical(
-                                    top: Radius.circular(corner),
+                                    top: context.shapes.radius(corner),
                                   ),
                                 ),
                                 shadows: [
@@ -386,7 +387,7 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                               ),
                               child: ClipRSuperellipse(
                                 borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(corner),
+                                  top: context.shapes.radius(corner),
                                 ),
                                 child: Material(
                                   color: y > 0

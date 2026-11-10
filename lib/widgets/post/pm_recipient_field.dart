@@ -330,7 +330,9 @@ class _PmRecipientFieldState extends State<PmRecipientField> {
                       ),
                     )
                   : null,
-              border: const OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
             onChanged: _onTermChanged,
             // 回车 = 确认当前高亮候选(见 _handleKey)。**不再**把输入原样

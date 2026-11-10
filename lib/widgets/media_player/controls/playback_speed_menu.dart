@@ -45,7 +45,7 @@ Future<double?> showPlaybackSpeedMenu(
       ? MediaOverlayStyle.foreground
       : theme.colorScheme.onSurface;
   final Color checkColor = darkOverlay
-      ? MediaOverlayStyle.accent
+      ? MediaOverlayStyle.accent(context)
       : theme.colorScheme.primary;
 
   return showMenu<double>(
@@ -79,7 +79,7 @@ Future<double?> showPlaybackSpeedMenu(
                     : formatPlaybackSpeed(speed),
                 style: TextStyle(
                   color: speed == current && darkOverlay
-                      ? MediaOverlayStyle.accent
+                      ? MediaOverlayStyle.accent(context)
                       : itemColor,
                   fontSize: 14,
                   fontWeight: speed == current

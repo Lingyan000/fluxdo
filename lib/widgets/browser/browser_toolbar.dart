@@ -99,7 +99,7 @@ class BrowserToolbar extends StatelessWidget implements PreferredSizeWidget {
                                 color: editing
                                     ? theme.colorScheme.surfaceContainerHighest
                                     : theme.colorScheme.surfaceContainerLow,
-                                borderRadius: BorderRadius.circular(
+                                borderRadius: context.shapes.borderRadius(
                                   editing ? 24 : 16,
                                 ),
                               ),
@@ -146,9 +146,8 @@ class BrowserToolbar extends StatelessWidget implements PreferredSizeWidget {
                                         label: l10n.webview_editAddress,
                                         child: InkWell(
                                           onTap: onAddressTap,
-                                          borderRadius: BorderRadius.circular(
-                                            16,
-                                          ),
+                                          borderRadius: context.shapes
+                                              .borderRadius(16),
                                           child: Padding(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 12,

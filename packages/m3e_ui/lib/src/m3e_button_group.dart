@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
@@ -304,8 +305,8 @@ class _ConnectedButton extends StatelessWidget {
         final inner = 8 + (outer - 8) * amount;
         final shape = RoundedSuperellipseBorder(
           borderRadius: BorderRadiusDirectional.horizontal(
-            start: Radius.circular(first ? outer : inner),
-            end: Radius.circular(last ? outer : inner),
+            start: context.shapes.radius(first ? outer : inner),
+            end: context.shapes.radius(last ? outer : inner),
           ),
         );
         final foreground = Color.lerp(

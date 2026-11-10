@@ -41,7 +41,7 @@ class VolumeBrightnessIndicator extends StatelessWidget {
             curve: Curves.easeOutCubic,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: MediaOverlayStyle.pill(radius: 12),
+              decoration: MediaOverlayStyle.pill(context, radius: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

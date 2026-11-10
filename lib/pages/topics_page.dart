@@ -1278,6 +1278,7 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
           // 路由，rail/底栏任何布局形态下都可用）
           IconButton(
             icon: const Icon(Symbols.menu_rounded),
+            color: Theme.of(context).colorScheme.primary,
             onPressed: _openCategoryDrawer,
             tooltip: context.l10n.topics_browseCategories,
             visualDensity: VisualDensity.compact,

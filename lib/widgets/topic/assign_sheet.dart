@@ -380,7 +380,10 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
             else
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('尚未指定给任何人', style: TextStyle(color: context.appColors.grey)),
+                child: Text(
+                  '尚未指定给任何人',
+                  style: TextStyle(color: context.appColors.grey),
+                ),
               ),
             const Divider(height: 1),
             ListTile(
@@ -559,7 +562,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                     controller: controller,
                     focusNode: focusNode,
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: '受理人',
                       hintText: '搜索用户名/昵称',
                       suffixIcon: Icon(Icons.search_rounded),
@@ -619,7 +622,7 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             if (_assignStatusEnabled) ...[
               DropdownButtonFormField<String>(
                 initialValue: _status,
-                decoration: const InputDecoration(labelText: '状态(可选)'),
+                decoration: InputDecoration(labelText: '状态(可选)'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('不设置')),
                   // 现有指定的状态值可能已被站点从配置里删掉——仍要出现在
@@ -641,9 +644,11 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
                 borderRadius: context.shapes.borderRadius(4),
               ),
               child: InputDecorator(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: '备注(可选)',
-                  border: OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: context.shapes.borderRadius(4),
+                  ),
                   suffixIcon: Icon(Icons.edit_note_rounded),
                 ),
                 child: Text(

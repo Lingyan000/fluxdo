@@ -1504,7 +1504,9 @@ class _ThinkingButton extends StatelessWidget {
           autofocus: true,
           decoration: InputDecoration(
             hintText: '1024 - 64000',
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(4),
+            ),
             suffixText: 'tokens',
           ),
         ),

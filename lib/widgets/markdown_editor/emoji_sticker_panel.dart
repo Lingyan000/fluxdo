@@ -206,11 +206,15 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
               curve: Curves.easeInOut,
               child: Material(
                 color: theme.colorScheme.surface.withValues(alpha: 0.95),
-                shape: const CircleBorder(),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(9999),
+                ),
                 elevation: 2,
                 shadowColor: Colors.black.withValues(alpha: 0.1),
                 child: InkWell(
-                  customBorder: const CircleBorder(),
+                  customBorder: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(9999),
+                  ),
                   onTap: widget.onBackspace,
                   child: SizedBox(
                     width: 42,

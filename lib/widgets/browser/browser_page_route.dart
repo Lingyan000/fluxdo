@@ -308,10 +308,10 @@ class _BrowserRouteSurface extends StatelessWidget {
                     child: ClipRRect(
                       key: const ValueKey('browser-route-surface'),
                       borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(
+                        top: context.shapes.radius(
                           lerpDouble(16, 24, t)! * sheetAppearance,
                         ),
-                        bottom: Radius.circular(dock ? 16 * (1 - t) : 0),
+                        bottom: context.shapes.radius(dock ? 16 * (1 - t) : 0),
                       ),
                       child: Stack(
                         fit: StackFit.expand,
@@ -353,7 +353,9 @@ class _BrowserRouteSurface extends StatelessWidget {
                                         .colorScheme
                                         .onSurfaceVariant
                                         .withValues(alpha: .42),
-                                    borderRadius: context.shapes.borderRadius(2),
+                                    borderRadius: context.shapes.borderRadius(
+                                      2,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -442,7 +444,9 @@ class _BrowserDockTransitionState extends State<BrowserDockTransition> {
                   opacity: (t / .12).clamp(0.0, 1.0),
                   child: ClipRRect(
                     key: const ValueKey('browser-dock-transition'),
-                    borderRadius: BorderRadius.circular(lerpDouble(22, 0, t)!),
+                    borderRadius: context.shapes.borderRadius(
+                      lerpDouble(22, 0, t)!,
+                    ),
                     child: OverflowBox(
                       alignment: Alignment.topCenter,
                       minHeight: full.height,

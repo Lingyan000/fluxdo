@@ -756,7 +756,11 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
             ? _sourceRect
             : Rect.lerp(_sourceRect, target, liftT)!;
         final radius =
-            lerpDouble(widget.sourceRadius, _kPreviewTargetRadius, liftT) ??
+            lerpDouble(
+              context.shapes.resolve(widget.sourceRadius),
+              context.shapes.resolve(_kPreviewTargetRadius),
+              liftT,
+            ) ??
             _kPreviewTargetRadius;
 
         Widget stack = Stack(
@@ -860,8 +864,8 @@ class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
           key: _panelKey,
           color: colorScheme.surface,
           shape: RoundedSuperellipseBorder(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(_kPanelCornerRadius),
+            borderRadius: BorderRadius.vertical(
+              top: context.shapes.radius(_kPanelCornerRadius),
             ),
           ),
           clipBehavior: Clip.antiAlias,

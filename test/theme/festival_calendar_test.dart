@@ -84,7 +84,9 @@ void main() {
   test('运行时读取的主题、节日、字体资源都已在 pubspec 中声明', () {
     // 运行时经 rootBundle 读取；测试直接读磁盘文件，漏声明不会在其它
     // 用例里暴露
-    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final pubspec = File('pubspec.yaml')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
     for (final asset in [
       'assets/themes/',
       'assets/festivals/',

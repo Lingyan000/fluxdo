@@ -1,3 +1,5 @@
+import '../../theme/app_colors.dart';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter/material.dart';
@@ -513,7 +515,9 @@ class _ModelRow extends StatelessWidget {
       color: isCurrent
           ? theme.colorScheme.primaryContainer.withValues(alpha: 0.5)
           : Colors.transparent,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
@@ -569,7 +573,7 @@ class _ModelRow extends StatelessWidget {
                                     _CapabilityBadge(
                                       icon: Symbols.image_rounded,
                                       label: 'image',
-                                      color: const Color(0xFFEA580C),
+                                      color: context.appColors.orange,
                                     ),
                                   if (item.model.input.contains(Modality.image))
                                     _CapabilityBadge(

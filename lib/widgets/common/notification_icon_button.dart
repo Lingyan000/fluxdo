@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../l10n/s.dart';
 import '../../providers/message_bus/notification_providers.dart';
 import '../notification/notification_quick_panel.dart';
@@ -18,6 +19,7 @@ class NotificationIconButton extends ConsumerWidget {
       notificationCountStateProvider.select((s) => s.allUnread),
     );
     return IconButton(
+      color: Theme.of(context).colorScheme.primary,
       onPressed: () {
         NotificationQuickPanel.show(context);
       },

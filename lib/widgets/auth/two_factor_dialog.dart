@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/material.dart';
 import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:flutter/services.dart';
@@ -19,10 +20,8 @@ Future<String?> showTwoFactorDialog(
   return showInteractionDialog<String>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _TwoFactorDialog(
-      hint: hint,
-      onUseBackupCode: onUseBackupCode,
-    ),
+    builder: (_) =>
+        _TwoFactorDialog(hint: hint, onUseBackupCode: onUseBackupCode),
   );
 }
 
@@ -43,7 +42,9 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _focusNode.requestFocus(),
+    );
   }
 
   @override
@@ -78,14 +79,20 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
             autofillHints: const [AutofillHints.oneTimeCode],
-            style: const TextStyle(fontSize: 24, letterSpacing: 8, fontFeatures: [FontFeature.tabularFigures()]),
+            style: const TextStyle(
+              fontSize: 24,
+              letterSpacing: 8,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(6),
             ],
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: '000000',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(
+                borderRadius: context.shapes.borderRadius(4),
+              ),
             ),
             onChanged: (v) {
               if (v.length == 6) _submit();

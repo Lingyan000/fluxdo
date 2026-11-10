@@ -1,3 +1,7 @@
+import 'package:common_ui/common_ui.dart';
+
+import '../../../theme/color_contrast.dart';
+
 import 'package:flutter/material.dart';
 
 /// 媒体覆盖层的共享视觉令牌(黑底白字体系)。
@@ -6,8 +10,12 @@ import 'package:flutter/material.dart';
 /// 发丝白描边 + 柔投影 —— 有层次但不用 BackdropFilter(视频纹理上
 /// 每帧重做高斯模糊是已知卡顿源,浮层质感全部用零开销手段构成)。
 abstract final class MediaOverlayStyle {
-  /// 强调色(倍速非 1x、菜单选中项):暖琥珀,黑底上的唯一彩色信号。
-  static const Color accent = Color(0xFFFFD54F);
+  /// 强调色(倍速非 1x、菜单选中项):跟随主题强调色，并保证深色媒体底上的对比度。
+  static Color accent(BuildContext context) => ColorContrast.ensure(
+    Theme.of(context).colorScheme.primary,
+    const Color(0xFF1A1A1A),
+    ColorContrast.text,
+  );
 
   /// 主文字/图标。
   static const Color foreground = Colors.white;
@@ -16,16 +24,21 @@ abstract final class MediaOverlayStyle {
   static const Color foregroundDim = Colors.white54;
 
   /// 浮层胶囊统一装饰。
-  static ShapeDecoration pill({double radius = 10}) => ShapeDecoration(
-    color: const Color(0xD91A1A1A),
-    shadows: const [
-      BoxShadow(color: Color(0x59000000), blurRadius: 12, offset: Offset(0, 2)),
-    ],
-    shape: RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.circular(radius),
-      side: BorderSide(color: const Color(0x1FFFFFFF)),
-    ),
-  );
+  static ShapeDecoration pill(BuildContext context, {double radius = 10}) =>
+      ShapeDecoration(
+        color: const Color(0xD91A1A1A),
+        shadows: const [
+          BoxShadow(
+            color: Color(0x59000000),
+            blurRadius: 12,
+            offset: Offset(0, 2),
+          ),
+        ],
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(radius),
+          side: BorderSide(color: const Color(0x1FFFFFFF)),
+        ),
+      );
 
   /// 顶/底控制条 scrim:三段渐变,比两段的落差柔和。
   static const LinearGradient bottomScrim = LinearGradient(

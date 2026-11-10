@@ -55,6 +55,7 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
     required this.animation,
     required this.anchor,
     required this.shape,
+    required this.shapes,
     required this.color,
     required this.shadowColor,
     required this.elevation,
@@ -66,6 +67,7 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
   final Animation<double> animation;
   final Rect anchor;
   final ShapeBorder shape;
+  final UiShapes shapes;
   final Color color, shadowColor;
   final double elevation;
   final TextDirection textDirection;
@@ -138,7 +140,9 @@ class _RenderMenuMorph extends RenderProxyBox {
 
   ShapeBorder get _frameShape => ShapeBorder.lerp(
     RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.circular(_source.shortestSide / 2),
+      borderRadius: _configuration.shapes.borderRadius(
+        _source.shortestSide / 2,
+      ),
     ),
     _configuration.shape,
     _progress,
