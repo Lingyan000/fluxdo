@@ -835,12 +835,12 @@ class MainApp extends ConsumerWidget {
           ref.read(themeProvider.notifier).setDynamicPrimary(rawDynamicPrimary);
         });
 
-        // 默认走完整 fromSeed 方案（表面带种子色相）；中性/纯黑/透明
-        // 开关由 ThemeResolver 切换到"强调色 × 中性层"的合成路径。
+        // 主题与纯黑/透明修饰由 ThemeResolver 合成（Material 主题默认走
+        // 完整 fromSeed，表面带种子色相）。
         // 动态色路径只取系统动态色 primary 当种子，不用 OEM 原始 scheme。
         final resolvedTheme = ThemeResolver.resolve(
+          spec: themeState.themeSpec,
           mode: themeState.mode,
-          neutral: themeState.neutralEnabled,
           black: themeState.blackEnabled,
           transparent: themeState.isTransparentActive,
           seed: themeState.effectiveSeedColor,

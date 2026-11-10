@@ -38,6 +38,7 @@ import 'package:fluxdo/services/auth_session.dart';
 import 'package:fluxdo/services/blob_image_cache.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/keyboard_shortcut_handler.dart';
@@ -148,8 +149,8 @@ class _Api extends MiniAppService {
 void main() {
   const previewDirectory = String.fromEnvironment('MINI_APP_PREVIEW_DIR');
   final themes = ThemeResolver.resolve(
+    spec: ThemeRegistry.material,
     mode: ThemeMode.system,
-    neutral: false,
     black: false,
     transparent: false,
     seed: Colors.blue,

@@ -8,6 +8,8 @@ import '../services/launch_splash_handoff.dart';
 import '../theme/accent_colors.dart';
 import '../theme/app_background.dart';
 import '../theme/app_palettes.dart';
+import '../theme/theme_registry.dart';
+import '../theme/theme_spec.dart';
 
 /// 内置字体选项
 enum AppFontFamily {
@@ -20,8 +22,8 @@ enum AppFontFamily {
 
 /// 强调色来源。
 ///
-/// 只提供彩色 role；表面是否被种子色染色由"中性"开关决定
-/// （见 [ThemeState.neutralEnabled]）。
+/// 只对生成式主题（Material / 简约）生效，只提供彩色 role；表面是否
+/// 被种子色染色由主题决定（见 [ThemeState.themeId]）。
 enum AccentSource {
   /// 系统动态色（Android 12+ 壁纸取色；不支持时不展示入口）
   dynamic,
@@ -38,8 +40,8 @@ class ThemeState {
   /// 主题模式：浅色 / 深色 / 跟随系统
   final ThemeMode mode;
 
-  /// 中性开关：表面不随主题色彩染色（无色相中性灰），与模式正交
-  final bool neutralEnabled;
+  /// 当前主题 id（见 [ThemeRegistry]），与模式正交
+  final String themeId;
 
   /// 纯黑开关（AMOLED）：深色模式下的纯黑表面质感，只作用于
   /// 深色一侧，不改变主题模式选择
@@ -76,7 +78,7 @@ class ThemeState {
 
   const ThemeState({
     required this.mode,
-    this.neutralEnabled = false,
+    this.themeId = ThemeRegistry.materialId,
     this.blackEnabled = false,
     this.transparentEnabled = false,
     this.accentSource = AccentSource.palette,
@@ -93,6 +95,9 @@ class ThemeState {
   /// 透明模式当前是否真正生效（开了开关且有背景图才生效；
   /// 无图时回退普通表面，避免裸透明造成的可读性事故）
   bool get isTransparentActive => transparentEnabled && background.hasImage;
+
+  /// 当前主题
+  ThemeSpec get themeSpec => ThemeRegistry.byId(themeId);
 
   /// 当前生效的种子色（色卡预览、主题合成、预热等场景使用）
   Color get effectiveSeedColor => switch (accentSource) {
@@ -113,7 +118,7 @@ class ThemeState {
 
   ThemeState copyWith({
     ThemeMode? mode,
-    bool? neutralEnabled,
+    String? themeId,
     bool? blackEnabled,
     bool? transparentEnabled,
     AccentSource? accentSource,
@@ -128,7 +133,7 @@ class ThemeState {
   }) {
     return ThemeState(
       mode: mode ?? this.mode,
-      neutralEnabled: neutralEnabled ?? this.neutralEnabled,
+      themeId: themeId ?? this.themeId,
       blackEnabled: blackEnabled ?? this.blackEnabled,
       transparentEnabled: transparentEnabled ?? this.transparentEnabled,
       accentSource: accentSource ?? this.accentSource,
@@ -147,7 +152,7 @@ class ThemeState {
 /// App Theme Notifier
 class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _themeModeKey = 'theme_mode';
-  static const String _neutralKey = 'theme_neutral';
+  static const String _themeIdKey = 'theme_id';
   static const String _blackKey = 'theme_black';
   static const String _transparentKey = 'theme_transparent';
   static const String _accentSourceKey = 'accent_source';
@@ -164,6 +169,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
 
   // 旧版键：只读迁移，不再写入
   static const String _legacyDynamicColorKey = 'use_dynamic_color';
+  static const String _legacyNeutralKey = 'theme_neutral';
 
   final SharedPreferences _prefs;
 
@@ -210,6 +216,13 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       }
     }
 
+    // ── 主题：新键优先，缺省时从旧的中性开关迁移（开 = 简约） ──
+    final themeId =
+        prefs.getString(_themeIdKey) ??
+        ((prefs.getBool(_legacyNeutralKey) ?? false)
+            ? ThemeRegistry.minimalId
+            : ThemeRegistry.materialId);
+
     // Load Scheme Variant
     final savedVariant = prefs.getString(_schemeVariantKey);
     DynamicSchemeVariant schemeVariant = DynamicSchemeVariant.tonalSpot;
@@ -247,7 +260,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
 
     return ThemeState(
       mode: mode,
-      neutralEnabled: prefs.getBool(_neutralKey) ?? false,
+      themeId: themeId,
       blackEnabled: prefs.getBool(_blackKey) ?? false,
       transparentEnabled: prefs.getBool(_transparentKey) ?? false,
       accentSource: accentSource,
@@ -273,9 +286,9 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     await _prefs.setString(_themeModeKey, value);
   }
 
-  Future<void> setNeutralEnabled(bool value) async {
-    state = state.copyWith(neutralEnabled: value);
-    await _prefs.setBool(_neutralKey, value);
+  Future<void> setThemeId(String themeId) async {
+    state = state.copyWith(themeId: themeId);
+    await _prefs.setString(_themeIdKey, themeId);
   }
 
   Future<void> setBlackEnabled(bool value) async {

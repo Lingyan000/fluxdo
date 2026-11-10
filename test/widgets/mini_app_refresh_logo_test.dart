@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_refresh_logo.dart';
+import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 
 void main() {
@@ -183,8 +184,8 @@ void main() {
         ..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'));
       await fonts.load();
       final themes = ThemeResolver.resolve(
+        spec: ThemeRegistry.material,
         mode: ThemeMode.system,
-        neutral: false,
         black: false,
         transparent: false,
         seed: Colors.blue,

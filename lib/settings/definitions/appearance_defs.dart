@@ -25,6 +25,7 @@ import '../../services/emoji_handler.dart';
 import '../../services/toast_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_palettes.dart';
+import '../../theme/theme_registry.dart';
 import '../../theme/theme_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
@@ -76,10 +77,10 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
             final theme = Theme.of(context);
             final l10n = context.l10n;
 
-            // 卡片预览实时反映中性/纯黑开关（透明不影响卡片预览）
+            // 卡片预览实时反映主题与纯黑开关（透明不影响卡片预览）
             final preview = ThemeResolver.resolve(
+              spec: themeState.themeSpec,
               mode: currentMode,
-              neutral: themeState.neutralEnabled,
               black: themeState.blackEnabled,
               transparent: false,
               seed: themeState.effectiveSeedColor,
@@ -152,9 +153,15 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
           title: l10n.appearance_neutral,
           subtitle: l10n.appearance_neutralDesc,
           icon: Symbols.format_color_reset_rounded,
-          getValue: (ref) => ref.watch(themeProvider).neutralEnabled,
-          onChanged: (ref, v) =>
-              ref.read(themeProvider.notifier).setNeutralEnabled(v),
+          // 过渡期：开关外观保留，背后切换简约 / Material 主题；
+          // 主题画廊上线后由主题选择替代
+          getValue: (ref) =>
+              ref.watch(themeProvider).themeId == ThemeRegistry.minimalId,
+          onChanged: (ref, v) => ref
+              .read(themeProvider.notifier)
+              .setThemeId(
+                v ? ThemeRegistry.minimalId : ThemeRegistry.materialId,
+              ),
         ),
         SwitchModel(
           id: 'black',
