@@ -402,6 +402,14 @@ mixin _UsersMixin on _DiscourseServiceBase {
     return BadgeDetailResponse.fromJson(response.data);
   }
 
+  /// 切换个人资料页展示的徽章。成功后重新读取服务端的展示顺序与上限。
+  Future<void> toggleFavoriteUserBadge(int userBadgeId) async {
+    await _dio.put(
+      '/user_badges/$userBadgeId/toggle_favorite',
+      options: Options(extra: {FluxRequestKeys.noRecovery: true}),
+    );
+  }
+
   /// 获取徽章信息
   Future<Badge> getBadge({required int badgeId}) async {
     final response = await _dio.get('/badges/$badgeId.json');

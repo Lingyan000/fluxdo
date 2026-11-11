@@ -3,6 +3,7 @@ import '../l10n/s.dart';
 import '../utils/time_utils.dart';
 import '../utils/url_helper.dart';
 import 'badge.dart';
+import 'topic.dart' show TopicGroup;
 
 /// 用户数据模型
 class User {
@@ -15,6 +16,14 @@ class User {
   final String? bio;
   final String? bioCooked;
   final String? bioRaw;
+  final String? title;
+  final bool profileHidden;
+  final bool canEdit;
+  final int? profileViewCount;
+  final SummaryTopic? featuredTopic;
+  final User? invitedBy;
+  final List<TopicGroup> groups;
+  final Map<String, dynamic> userFields;
 
   // 背景图
   final String? cardBackgroundUploadUrl;
@@ -110,6 +119,14 @@ class User {
     this.bio,
     this.bioCooked,
     this.bioRaw,
+    this.title,
+    this.profileHidden = false,
+    this.canEdit = false,
+    this.profileViewCount,
+    this.featuredTopic,
+    this.invitedBy,
+    this.groups = const [],
+    this.userFields = const {},
     this.cardBackgroundUploadUrl,
     this.profileBackgroundUploadUrl,
     this.unreadNotifications = 0,
@@ -176,6 +193,14 @@ class User {
       bio: bio,
       bioCooked: bioCooked,
       bioRaw: bioRaw,
+      title: title,
+      profileHidden: profileHidden,
+      canEdit: canEdit,
+      profileViewCount: profileViewCount,
+      featuredTopic: featuredTopic,
+      invitedBy: invitedBy,
+      groups: groups,
+      userFields: userFields,
       cardBackgroundUploadUrl: cardBackgroundUploadUrl,
       profileBackgroundUploadUrl: profileBackgroundUploadUrl,
       unreadNotifications: unreadNotifications ?? this.unreadNotifications,
@@ -234,8 +259,8 @@ class User {
       if (html == null) return null;
       // 替换 src="/... 为 src="https://linux.do/...
       return html.replaceAllMapped(
-        RegExp(r'''src=["'](/[^"']+)["']'''), 
-        (match) => 'src="${UrlHelper.resolveUrlWithCdn(match.group(1)!)}"'
+        RegExp(r'''src=["'](/[^"']+)["']'''),
+        (match) => 'src="${UrlHelper.resolveUrlWithCdn(match.group(1)!)}"',
       );
     }
 
@@ -249,8 +274,31 @@ class User {
       bio: fixHtml(json['bio_cooked'] as String?) ?? json['bio_excerpt'] as String? ?? json['bio_raw'] as String?,
       bioCooked: fixHtml(json['bio_cooked'] as String?),
       bioRaw: json['bio_raw'] as String?,
-      cardBackgroundUploadUrl: resolve(json['card_background_upload_url'] as String?),
-      profileBackgroundUploadUrl: resolve(json['profile_background_upload_url'] as String?),
+      title: json['title'] as String?,
+      profileHidden: json['profile_hidden'] == true,
+      canEdit: json['can_edit'] == true,
+      profileViewCount: (json['profile_view_count'] as num?)?.toInt(),
+      featuredTopic: json['featured_topic'] is Map<String, dynamic>
+          ? SummaryTopic.fromJson(
+              json['featured_topic'] as Map<String, dynamic>,
+            )
+          : null,
+      invitedBy: json['invited_by'] is Map<String, dynamic>
+          ? User.fromJson(json['invited_by'] as Map<String, dynamic>)
+          : null,
+      groups: (json['groups'] as List? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicGroup.fromJson)
+          .toList(growable: false),
+      userFields: Map<String, dynamic>.from(
+        json['user_fields'] as Map? ?? const {},
+      ),
+      cardBackgroundUploadUrl: resolve(
+        json['card_background_upload_url'] as String?,
+      ),
+      profileBackgroundUploadUrl: resolve(
+        json['profile_background_upload_url'] as String?,
+      ),
       unreadNotifications: json['unread_notifications'] as int? ?? 0,
       unreadHighPriorityNotifications: json['unread_high_priority_notifications'] as int? ?? 0,
       allUnreadNotificationsCount: json['all_unread_notifications_count'] as int? ?? 0,
@@ -414,6 +462,8 @@ class UserStatus {
 
 /// 用户统计数据
 class UserSummary {
+  final bool canSeeSummaryStats;
+  final bool canSeeUserActions;
   final int daysVisited;
   final int postsReadCount;
   final int likesReceived;
@@ -436,6 +486,8 @@ class UserSummary {
   final List<Badge> badges;
 
   UserSummary({
+    this.canSeeSummaryStats = true,
+    this.canSeeUserActions = true,
     required this.daysVisited,
     required this.postsReadCount,
     required this.likesReceived,
@@ -480,6 +532,8 @@ class UserSummary {
     final badgesJson = json['badges'] as List<dynamic>? ?? [];
 
     return UserSummary(
+      canSeeSummaryStats: summary['can_see_summary_stats'] != false,
+      canSeeUserActions: summary['can_see_user_actions'] != false,
       daysVisited: summary['days_visited'] as int? ?? 0,
       postsReadCount: summary['posts_read_count'] as int? ?? 0,
       likesReceived: summary['likes_received'] as int? ?? 0,
@@ -503,6 +557,8 @@ class UserSummary {
 
   /// 序列化为缓存 JSON
   Map<String, dynamic> toCacheJson() => {
+    'can_see_summary_stats': canSeeSummaryStats,
+    'can_see_user_actions': canSeeUserActions,
     'days_visited': daysVisited,
     'posts_read_count': postsReadCount,
     'likes_received': likesReceived,
@@ -518,6 +574,8 @@ class UserSummary {
   /// 从缓存 JSON 恢复
   factory UserSummary.fromCacheJson(Map<String, dynamic> json) {
     return UserSummary(
+      canSeeSummaryStats: json['can_see_summary_stats'] != false,
+      canSeeUserActions: json['can_see_user_actions'] != false,
       daysVisited: json['days_visited'] as int? ?? 0,
       postsReadCount: json['posts_read_count'] as int? ?? 0,
       likesReceived: json['likes_received'] as int? ?? 0,

@@ -269,6 +269,7 @@ mixin _UploadsMixin on _DiscourseServiceBase {
   /// 请求体),契约见 test/services/network/recovery/non_replayable_body_test.dart。
   Future<UploadResult> uploadFile(
     String filePath, {
+    String uploadType = 'composer',
     String? filenameOverride,
     DioMediaType? contentTypeOverride,
     CancelToken? cancelToken,
@@ -296,12 +297,13 @@ mixin _UploadsMixin on _DiscourseServiceBase {
           data = await S3MultipartUpload(_dio, trace: uploadTrace).upload(
             File(filePath),
             fileName,
+            uploadType: uploadType,
             cancelToken: cancelToken,
             onProgress: onProgress,
           );
         } else {
           final formData = FormData.fromMap({
-            'upload_type': 'composer',
+            'upload_type': uploadType,
             'synchronous': true,
             'file': await MultipartFile.fromFile(
               filePath,

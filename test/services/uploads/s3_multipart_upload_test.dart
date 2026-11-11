@@ -140,6 +140,49 @@ void main() {
     });
   }
 
+  test('资料图片上传类型透传到分片创建请求', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'profile-upload-type',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = await File('${directory.path}/avatar.png')
+        .writeAsBytes([1, 2]);
+    final control = Dio(BaseOptions(baseUrl: 'https://forum.test'));
+    final storage = Dio();
+    addTearDown(control.close);
+    addTearDown(storage.close);
+    control.httpClientAdapter = _Adapter((options, stream) async {
+      if (options.path.contains('create-multipart')) {
+        expect(options.data['upload_type'], 'avatar');
+        return _json({
+          'external_upload_identifier': 'profile',
+          'unique_identifier': 'profile',
+        });
+      }
+      if (options.path.contains('presign')) {
+        return _json({
+          'presigned_urls': {'1': 'https://storage.test/part'},
+        });
+      }
+      return _json({'id': 42, 'url': '/uploads/avatar.png'});
+    });
+    storage.httpClientAdapter = _Adapter((options, stream) async {
+      await stream!.drain<void>();
+      return ResponseBody.fromString(
+        '',
+        200,
+        headers: {
+          'etag': ['avatar'],
+        },
+      );
+    });
+    final result = await S3MultipartUpload(
+      control,
+      storage: storage,
+    ).upload(file, 'avatar.png', uploadType: 'avatar');
+    expect(result['id'], 42);
+  });
+
   test('预先取消不会发请求', () async {
     final token = CancelToken()..cancel();
     final control = Dio()

@@ -82,6 +82,7 @@ class S3MultipartUpload {
   Future<Map<String, dynamic>> upload(
     File file,
     String filename, {
+    String uploadType = 'composer',
     CancelToken? cancelToken,
     UploadProgressCallback? onProgress,
   }) async {
@@ -111,7 +112,7 @@ class S3MultipartUpload {
       final created = await _post('create-multipart', {
         'file_name': filename,
         'file_size': size,
-        'upload_type': 'composer',
+        'upload_type': uploadType,
       }, cancelToken: cancelToken);
       externalId = _requiredString(created, 'external_upload_identifier');
       final identifier = _requiredString(created, 'unique_identifier');
