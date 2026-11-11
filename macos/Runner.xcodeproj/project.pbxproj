@@ -34,6 +34,8 @@
 		A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */; };
 		64ECB773246C7D295B20DA98 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3B821E2474ED1A6E7625611 /* Pods_Runner.framework */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		DA46BA4986314091A380A001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = DA46BA4986314091A380A002 /* Sparkle */; };
+		DA46BA4986314091A380A004 /* MacOSUpdateHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +88,7 @@
 		C6F9F4ACF8DF0AB27FB299D8 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		D1D9E374B50F7E2752E362F8 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
+		DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSUpdateHandler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +105,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
+				DA46BA4986314091A380A001 /* Sparkle in Frameworks */,
 				64ECB773246C7D295B20DA98 /* Pods_Runner.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -182,6 +186,7 @@
 				A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */,
 				A1B2C3D400000002000PASTE /* SyntheticPasteFix.swift */,
 				A1B2C3D400000002000AC001 /* MediaTranscodeHandler.swift */,
+				DA46BA4986314091A380A005 /* MacOSUpdateHandler.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -237,6 +242,7 @@
 		33CC10EC2044A3C60003C045 /* Runner */ = {
 			packageProductDependencies = (
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
+				DA46BA4986314091A380A002 /* Sparkle */,
 			);
 			isa = PBXNativeTarget;
 			buildConfigurationList = 33CC10FB2044A3C60003C045 /* Build configuration list for PBXNativeTarget "Runner" */;
@@ -265,6 +271,7 @@
 		33CC10E52044A3C60003C045 /* Project object */ = {
 			packageReferences = (
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			isa = PBXProject;
 			attributes = {
@@ -475,6 +482,7 @@
 				A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */,
 				A1B2C3D400000001000PASTE /* SyntheticPasteFix.swift in Sources */,
 				A1B2C3D400000001000AC001 /* MediaTranscodeHandler.swift in Sources */,
+				DA46BA4986314091A380A004 /* MacOSUpdateHandler.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -846,7 +854,19 @@
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};
 /* End XCLocalSwiftPackageReference section */
+/* Begin XCRemoteSwiftPackageReference section */
+		DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = { kind = exactVersion; version = 2.10.1; };
+		};
+/* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+		DA46BA4986314091A380A002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA46BA4986314091A380A003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FlutterGeneratedPluginSwiftPackage;

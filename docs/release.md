@@ -115,3 +115,87 @@ dart run tool/project_tasks.dart release:prepare
 dart run tool/project_tasks.dart native:prepare ios --release
 dart run tool/flutterw.dart build ios --release --no-codesign
 ```
+
+## macOS Sparkle 自更新
+
+macOS Release 构建通过 Sparkle 2.10.1 完成下载、签名校验、安装和重启。应用内的更新检查设置、
+发布说明和“立即更新”入口沿用现有 Flutter 流程，确认后进入 Sparkle 的原生更新界面。
+Debug 构建点击更新会打开发布页。
+
+- Sparkle 依赖通过 Swift Package Manager 锁定，原生桥位于 `macos/Runner/MacOSUpdateHandler.swift`。
+- 当前进程按 arm64 或 x86_64 选择对应 appcast，Rosetta 进程继续使用 x86_64 更新包。
+- 更新源与 DMG 下载接入 GitHub 反代设置。原生请求受 macOS App Transport Security 约束，反代使用 HTTPS。
+- 首次安装包含 Sparkle 的版本后，后续版本才能通过应用内更新安装。
+
+### 更新签名
+
+公钥保存在 `macos/Runner/Info.plist` 的 `SUPublicEDKey`，私钥保存在 macOS 钥匙串的
+Sparkle 条目中，账户名为 `com.github.lingyan000.fluxdo`。发布仓库的 GitHub Actions Secret
+使用 `SPARKLE_PRIVATE_KEY`。私钥长期保留，常规发版复用现有密钥。
+
+稳定版构建在 DMG 打包完成后运行 `scripts/ci/macos/generate_appcast.py`。脚本校验 tag 与应用版本，
+签名 DMG，验证签名与包内公钥配对，再生成并签名两个架构各自的 appcast。Sparkle 使用
+`CFBundleVersion` 比较构建版本，使用 `CFBundleShortVersionString` 展示版本号。
+
+GitHub Release 随安装包发布以下文件，应用通过 `releases/latest/download/` 获取对应更新源。
+
+- `appcast-macos-arm64.xml`
+- `appcast-macos-x86_64.xml`
+
+包签名和 appcast 签名均为必需。签名工具复用 Swift Package Manager 已锁定和校验的 Sparkle 依赖。Apple 应用代码签名
+继续沿用现有 CI 配置，Sparkle 的 Ed25519 密钥用于更新发布签名。
+
+### WinGet 与 Homebrew Cask
+
+稳定版发布流程会运行 `scripts/ci/generate_distribution_manifests.py`，使用本次发布的真实安装包
+计算 SHA-256，并将配置打包为 `fluxdo-package-managers.zip` 发布到 Release。
+
+- `winget/manifests/` 包含 `Lingyan000.FluxDO` 的版本、英文元数据和 Inno Setup 安装清单，默认范围为当前用户。
+  使用 WinGet 社区仓库当前推荐的 1.28.0 schema，并包含 schema 文件头。在 Windows 上验证安装、升级后，
+  向 `microsoft/winget-pkgs` 提交清单。社区仓库接收后可使用 `winget install --id Lingyan000.FluxDO -e`。
+- `homebrew/Casks/fluxdo.rb` 使用双架构 DMG，声明 `auto_updates true`，可放入维护者自己的 tap。
+  [Lingyan000/homebrew-tap](https://github.com/Lingyan000/homebrew-tap) 已配置每六小时同步最新稳定版清单，
+  并支持手动运行 `Sync FluxDO release`。工作流核验清单 ZIP 的 SHA-256，加载 Cask 后提交到 tap。
+  首次包含清单的稳定版同步后，可使用 `brew install --cask Lingyan000/tap/fluxdo`。
+  Homebrew 更新命令为 `brew upgrade --cask --greedy fluxdo`。官方 `homebrew/cask` 收录还要求产物通过 Gatekeeper 检查。
+
+清单需要同步到对应包源，完成后上述安装命令生效。
+
+### 分发配置 CI
+
+`Distribution checks` 在 `dev`、`main` 上的清单生成脚本或工作流改动时运行，也支持 PR 和手动触发。
+它使用测试文件调用正式清单生成入口，核验 SHA-256、预发布版本拒绝逻辑和微软官方 JSON schema，
+再分别在 macOS 上加载 Homebrew Cask、在 Windows 上执行 `winget validate`。
+测试清单只用于 CI 验证，正式发布清单由发版流程根据实际产物生成。
+
+### WinGet 首次提交
+
+稳定版发布后，下载并解压 `fluxdo-package-managers.zip`，在 Windows 上执行以下命令。
+将 `<版本目录>` 替换为解压后的 `winget/manifests/l/Lingyan000/FluxDO/<版本号>`。
+
+```powershell
+winget validate --manifest <版本目录>
+# 在管理员终端启用本地清单，再在普通用户终端执行安装验证。
+winget settings --enable LocalManifestFiles
+winget install --manifest <版本目录> --silent --accept-package-agreements --accept-source-agreements
+```
+
+检查当前用户安装范围、版本号、启动和卸载，并验证从上一版本升级。
+确认没有同版本重复 PR 后，安装官方 WinGet Manifest Creator 并提交。
+
+```powershell
+winget install --id Microsoft.WingetCreate -e
+wingetcreate submit --prtitle "New package: Lingyan000.FluxDO version <版本号>" --no-open <版本目录>
+```
+
+首次提交按工具提示完成 GitHub 登录，后续由微软社区验证流水线和维护者处理。
+若要求签署贡献者协议，由账户持有人完成。每个 PR 只提交一个版本的三份清单。
+普通仓库 `GITHUB_TOKEN` 的权限限定在当前仓库，当前流程通过提交工具完成跨仓库 PR。
+
+### 正式发版后验证
+
+- 检查两个架构的 DMG、签名 appcast 和清单 ZIP 均随 Release 发布，下载 URL 可访问。
+- 安装首个包含 Sparkle 的正式版本，再用更高构建号版本验证 FluxDO 下载、签名校验、替换和重启。
+  验证代理、跳过版本，以及应用升级后的登录和钥匙串访问。
+- 运行 tap 同步工作流，验证真实 Cask 的全新安装与 `brew upgrade --cask --greedy fluxdo`。
+- 在 Windows 上用真实 Release 清单验证静默安装和旧版本升级，提交 WinGet PR 后跟进官方验证。

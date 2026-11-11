@@ -28,6 +28,21 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Lingyan000/fluxdo/releases/latest/download/appcast-macos-arm64.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>CyslqMOIQ0Pq5x9VsKOH8FYzU30nY2R3RTrJZntxCIE=</string>
+	<!-- 更新检查时机沿用 Flutter 的设置和启动检查。 -->
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
 	<!-- Custom URL Scheme -->
 	<key>CFBundleURLTypes</key>
 	<array>

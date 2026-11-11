@@ -10,6 +10,7 @@ import '../widgets/download_progress_dialog.dart';
 import '../widgets/update_dialog.dart';
 import '../widgets/windows_update_dialog.dart';
 import 'update_service.dart';
+import 'macos_update_service.dart';
 import 'windows_update_service.dart';
 
 /// 更新检查助手类
@@ -27,13 +28,18 @@ class UpdateCheckerHelper {
   ) async {
     final updateInfo = await updateService.autoCheckUpdate();
     if (updateInfo != null && context.mounted) {
+      if (Platform.isMacOS &&
+          await MacOSUpdateService.isVersionSkipped(updateInfo.remoteVersion)) {
+        return;
+      }
+      if (!context.mounted) return;
       await _showAutoUpdateDialog(context, updateInfo, updateService);
     }
   }
 
   /// 处理用户点击"立即更新"后的下载/跳转逻辑
   ///
-  /// Android / Windows 安装版使用应用内更新，其他分发方式打开发布页。
+  /// Android / Windows 安装版及 macOS 使用应用内更新。
   static Future<void> handleUpdate(
     BuildContext context,
     UpdateInfo updateInfo,
@@ -42,6 +48,10 @@ class UpdateCheckerHelper {
       await _startInAppDownload(context, updateInfo);
     } else if (Platform.isWindows) {
       await _startWindowsUpdate(context, updateInfo);
+    } else if (Platform.isMacOS) {
+      if (!await MacOSUpdateService.checkForUpdates()) {
+        _openInBrowser(updateInfo.releaseUrl);
+      }
     } else {
       _openInBrowser(updateInfo.releaseUrl);
     }

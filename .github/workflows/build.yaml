@@ -229,6 +229,10 @@ jobs:
             'FLUXDO_APPLE_CODE_SIGN_STYLE = Manual' \
             'FLUXDO_APPLE_CODE_SIGNING_ALLOWED = YES' > apple/Local.xcconfig
 
+      - name: Test macOS updater bridge
+        if: matrix.platform == 'macos'
+        run: dart tool/flutterw.dart test test/services/macos_update_service_test.dart
+
       - name: Build macOS
         if: matrix.platform == 'macos'
         env:
@@ -242,6 +246,7 @@ jobs:
           test -f "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib"
           lipo -archs "$APP_PATH/Contents/MacOS/fluxdo" | grep -qw "${{ matrix.arch }}"
           lipo -archs "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib" | grep -qw "${{ matrix.arch }}"
+          codesign --verify --deep --strict "$APP_PATH"
           # 有证书时校验产物确实用自签证书签名(而非静默回退 adhoc)
           if [ "$HAS_CODESIGN_CERT" = "true" ]; then
             codesign -dvv "$APP_PATH" 2>&1 | grep "Authority=FluxDO Code Signing"
@@ -267,6 +272,17 @@ jobs:
           }
           DMGEOF
           appdmg dmg-config.json "dist/fluxdo-macos-${{ matrix.arch }}.dmg"
+
+      - name: Sign macOS update and generate Sparkle appcast
+        if: matrix.platform == 'macos' && env.IS_STABLE == 'true'
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          python3 scripts/ci/macos/generate_appcast.py \
+            --app build/macos/Build/Products/Release/fluxdo.app \
+            --dmg "dist/fluxdo-macos-${{ matrix.arch }}.dmg" \
+            --arch "${{ matrix.arch }}" \
+            --tag "${{ github.ref_name }}"
 
       - name: Setup NuGet
         if: matrix.platform == 'windows'
@@ -657,6 +673,12 @@ jobs:
       - name: Append release template
         run: |
           sed 's/VERSION/${{ steps.version.outputs.VERSION }}/g' .github/release_template.md >> release_notes.md
+
+      - name: Generate Homebrew and WinGet manifests
+        if: env.IS_STABLE == 'true'
+        run: |
+          python3 scripts/ci/generate_distribution_manifests.py \
+            --version "${{ steps.version.outputs.VERSION }}"
 
       - name: Generate SHA256 checksums
         if: env.IS_STABLE == 'true'

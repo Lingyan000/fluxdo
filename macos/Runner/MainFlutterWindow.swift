@@ -56,6 +56,7 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    MacOSUpdateHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
       if let window = controller.view.window {

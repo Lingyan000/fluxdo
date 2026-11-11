@@ -1,0 +1,53 @@
+name: Distribution checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - scripts/ci/*distribution_manifests.py
+      - .github/workflows/distribution-checks.yaml
+  pull_request:
+    paths:
+      - scripts/ci/*distribution_manifests.py
+      - .github/workflows/distribution-checks.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install schema validation dependencies
+        run: python -m pip install PyYAML==6.0.3 jsonschema==4.25.1
+      - name: Check generation and official schemas using fixtures
+        run: python scripts/ci/check_distribution_manifests.py --output "${{ runner.temp }}/distribution-fixtures"
+      - name: Load Homebrew Cask
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          CASK_FILE: ${{ runner.temp }}/distribution-fixtures/homebrew/Casks/fluxdo.rb
+        run: |
+          ruby -c "$CASK_FILE"
+          brew ruby -r cask/cask_loader -e 'cask = Cask::CaskLoader.from_content(File.read(ARGV.fetch(0))); abort "Unexpected Cask" unless cask.token == "fluxdo" && cask.version.to_s == "1.0.0"; puts "Cask DSL valid"' "$CASK_FILE"
+      - name: Set up WinGet
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Install-Module Microsoft.WinGet.Client -Repository PSGallery -Force -Scope CurrentUser
+          Repair-WinGetPackageManager -AllUsers
+      - name: Validate WinGet manifests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget validate --manifest "${{ runner.temp }}/distribution-fixtures/winget/manifests/l/Lingyan000/FluxDO/1.0.0"
+          if ($LASTEXITCODE -ne 0) { throw "WinGet manifest validation failed" }
