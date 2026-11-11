@@ -431,7 +431,7 @@ class _CustomThemeEditorPageState
                       );
                     });
                   }),
-                  icon: Icon(Symbols.add_rounded, color: cs.primary),
+                  icon: Icon(Symbols.add_rounded, color: context.emphasis.accent),
                 ),
               ],
             ),
@@ -520,7 +520,7 @@ class _NewThemeCard extends ConsumerWidget {
                     ),
                     child: Icon(
                       Symbols.add_rounded,
-                      color: cs.primary,
+                      color: context.emphasis.accent,
                       size: 32,
                     ),
                   ),

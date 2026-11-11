@@ -121,6 +121,7 @@
   "appearance_customThemeImport": "從剪貼簿匯入",
   "appearance_customThemeImported": "已匯入「{name}」",
   "appearance_customThemeImportFailed": "剪貼簿裡沒有可用的主題代碼",
+  "appearance_themeResetConfirm": "恢復預設的主題、強調色、配色風格和圓角？自訂的顏色與主題會保留。",
   "appearance_customThemeDeleteConfirm": "刪除主題「{name}」？",
   "appearance_customThemeName": "主題名稱",
   "appearance_customThemeCopyName": "{name} 副本",

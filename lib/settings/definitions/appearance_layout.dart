@@ -131,10 +131,16 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       title: l10n.appearance_theme,
       icon: Symbols.color_lens_rounded,
       wrapInCard: false,
-      trailing: TextButton(
-        onPressed: () =>
-            _openAppearanceSection(context, AppearanceSection.themes),
-        child: Text(l10n.appearance_themeLibrary),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const _ThemeResetButton(),
+          TextButton(
+            onPressed: () =>
+                _openAppearanceSection(context, AppearanceSection.themes),
+            child: Text(l10n.appearance_themeLibrary),
+          ),
+        ],
       ),
       items: [
         CustomModel(
@@ -197,6 +203,52 @@ List<SettingsGroup> buildAppearanceGroups(BuildContext context) {
       ],
     ),
   ];
+}
+
+/// 分组标题上的「重置」：只在主题外观偏离默认时出现，确认后恢复默认。
+class _ThemeResetButton extends ConsumerWidget {
+  const _ThemeResetButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDefault = ref.watch(
+      themeProvider.select((s) => s.isThemeLookDefault),
+    );
+    final l10n = context.l10n;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      transitionBuilder: (child, animation) =>
+          ScaleTransition(scale: animation, child: child),
+      child: isDefault
+          ? const SizedBox.shrink()
+          : IconButton(
+              tooltip: l10n.common_reset,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Symbols.restart_alt_rounded, size: 20),
+              onPressed: () async {
+                final confirmed = await showAppDialog<bool>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    content: Text(l10n.appearance_themeResetConfirm),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: Text(l10n.common_cancel),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                        child: Text(l10n.common_reset),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await ref.read(themeProvider.notifier).resetThemeLook();
+                }
+              },
+            ),
+    );
+  }
 }
 
 class _ThemeQuickGallery extends ConsumerWidget {
@@ -296,14 +348,13 @@ class _CompactThemeOptions extends ConsumerWidget {
             ),
           ],
         ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        const SizedBox(height: 4),
+        _AccentPanel(
           children: [
             _AccentDot(
               color: color(state.dynamicPrimary ?? state.seedColor),
               tooltip: l10n.appearance_modeAuto,
-              icon: Symbols.auto_awesome_rounded,
+              systemBadge: true,
               selected: state.accentSource == AccentSource.dynamic,
               onTap: notifier.selectDynamicColor,
             ),
@@ -321,23 +372,35 @@ class _CompactThemeOptions extends ConsumerWidget {
                 color: color(state.seedColor),
                 tooltip: l10n.appearance_themeCustomAccent,
                 selected: true,
-                onTap: () =>
-                    _openAppearanceSection(context, AppearanceSection.colors),
+                onTap: () {},
+                onEdit: () => _editCustomColor(context, ref, state.seedColor),
+                onDelete: () => notifier.removeCustomColor(state.seedColor),
               ),
-            IconButton.filledTonal(
+            _AccentAddButton(
               tooltip: l10n.appearance_themeCustomAccent,
-              onPressed: () async {
-                final color = await _showSeedColorPicker(context, ref);
-                if (color == null || !context.mounted) return;
-                final currentNotifier = ref.read(themeProvider.notifier);
-                await currentNotifier.addCustomColor(color);
-                await currentNotifier.selectCustomColor(color);
-              },
-              icon: const Icon(Symbols.add_rounded),
+              onTap: () => _addCustomColor(context, ref),
             ),
           ],
         ),
       ],
     );
   }
+}
+
+Future<void> _addCustomColor(BuildContext context, WidgetRef ref) async {
+  final color = await _showSeedColorPicker(context, ref);
+  if (color == null || !context.mounted) return;
+  final notifier = ref.read(themeProvider.notifier);
+  await notifier.addCustomColor(color);
+  await notifier.selectCustomColor(color);
+}
+
+Future<void> _editCustomColor(
+  BuildContext context,
+  WidgetRef ref,
+  Color from,
+) async {
+  final color = await _showSeedColorPicker(context, ref, initial: from);
+  if (color == null || !context.mounted) return;
+  await ref.read(themeProvider.notifier).replaceCustomColor(from, color);
 }

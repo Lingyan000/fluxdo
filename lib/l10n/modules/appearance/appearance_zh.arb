@@ -170,6 +170,7 @@
     }
   },
   "appearance_customThemeImportFailed": "剪贴板里没有可用的主题代码",
+  "appearance_themeResetConfirm": "恢复默认的主题、强调色、配色风格和圆角？自定义的颜色与主题会保留。",
   "appearance_customThemeDeleteConfirm": "删除主题「{name}」？",
   "@appearance_customThemeDeleteConfirm": {
     "placeholders": {

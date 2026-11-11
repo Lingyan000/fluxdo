@@ -159,7 +159,7 @@ class _FontEntryTile extends StatelessWidget {
         onPressed: () => service.install(entry),
         icon: Icon(
           failed ? Symbols.refresh_rounded : Symbols.download_rounded,
-          color: failed ? cs.error : cs.primary,
+          color: failed ? cs.error : context.emphasis.accent,
         ),
       ),
     };
@@ -217,7 +217,7 @@ class _FontSourceTile extends ConsumerWidget {
     return ListTile(
       leading: Icon(
         Symbols.cloud_download_rounded,
-        color: Theme.of(context).colorScheme.primary,
+        color: context.emphasis.accent,
       ),
       title: Text(context.l10n.appearance_fontSource),
       subtitle: Text(_fontSourceLabel(context, service.sourceKind)),

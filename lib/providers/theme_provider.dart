@@ -167,6 +167,15 @@ class ThemeState {
     return f == null ? themeSpec : ThemeRegistry.byId(f.festival.themeId);
   }
 
+  /// 主题、强调色、配色风格与圆角是否都是默认值（外观页据此显示「重置」）
+  bool get isThemeLookDefault =>
+      themeId == ThemeRegistry.materialId &&
+      accentSource == AccentSource.palette &&
+      paletteId == AppPalettes.defaultId &&
+      schemeVariant == DynamicSchemeVariant.tonalSpot &&
+      shapeOverride == null &&
+      themeAccents.isEmpty;
+
   /// 当前生效的界面风格：跟随用户选择的主题（节日只换配色）
   ThemeStyle get effectiveStyle => themeSpec.style;
 
@@ -653,6 +662,44 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     final newColors = [...state.customColors, color];
     state = state.copyWith(customColors: newColors);
     await _saveCustomColors(newColors);
+  }
+
+  /// 把自定义色 [from] 改成 [to]（保持位置）；正在使用 [from] 时一起切换。
+  Future<void> replaceCustomColor(Color from, Color to) async {
+    final newColors = [
+      for (final c in state.customColors)
+        c.toARGB32() == from.toARGB32() ? to : c,
+    ];
+    state = state.copyWith(customColors: newColors);
+    await _saveCustomColors(newColors);
+    if (state.accentSource == AccentSource.custom &&
+        state.seedColor.toARGB32() == from.toARGB32()) {
+      await selectCustomColor(to);
+    }
+  }
+
+  /// 主题、强调色、配色风格与圆角恢复默认。自定义色与自定义主题是用户
+  /// 创建的内容，保留不删。
+  Future<void> resetThemeLook() async {
+    state = state.copyWith(
+      themeId: ThemeRegistry.materialId,
+      accentSource: AccentSource.palette,
+      paletteId: AppPalettes.defaultId,
+      schemeVariant: DynamicSchemeVariant.tonalSpot,
+      shapeOverride: () => null,
+      themeAccents: const {},
+    );
+    for (final key in [
+      _themeIdKey,
+      _accentSourceKey,
+      _paletteIdKey,
+      _schemeVariantKey,
+      _shapePresetKey,
+      _themeAccentsKey,
+    ]) {
+      await _prefs.remove(key);
+    }
+    await syncFonts();
   }
 
   Future<void> removeCustomColor(Color color) async {

@@ -40,7 +40,6 @@ import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_background_layer.dart';
 import '../../widgets/settings/settings_group_page.dart';
 import '../../widgets/common/emoji_text.dart';
-import '../../utils/platform_utils.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
@@ -1221,7 +1220,7 @@ class _BackgroundSectionState extends ConsumerState<_BackgroundSection> {
           M3eSwitchListTile(
             secondary: Icon(
               Symbols.opacity_rounded,
-              color: transparent ? cs.primary : cs.onSurfaceVariant,
+              color: transparent ? context.emphasis.selected : cs.onSurfaceVariant,
             ),
             title: Text(l10n.appearance_styleTransparent),
             subtitle: Text(l10n.appearance_transparentDesc),
@@ -1396,7 +1395,6 @@ class _ThemeColorSection extends ConsumerStatefulWidget {
 }
 
 class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
-  Color? _removableColor;
   final ScrollController _variantScrollCtrl = ScrollController();
   bool _didInitialScroll = false;
 
@@ -1438,6 +1436,12 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
     final variant = themeState.schemeVariant;
     final customColors = themeState.customColors;
     final dynamicPrimary = themeState.dynamicPrimary;
+    // 色点显示种子色在当前配色风格下实际得到的强调色
+    Color primaryOf(Color seed) => SeedColorScheme.from(
+      seedColor: seed,
+      variant: variant,
+      brightness: theme.brightness,
+    ).primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1498,124 +1502,43 @@ class _ThemeColorSectionState extends ConsumerState<_ThemeColorSection> {
           const SizedBox(height: 24),
         ],
 
-        // ── 颜色网格 ──
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final maxWidth = constraints.maxWidth;
-            // 列数随宽度增长，保持色卡尺寸基本恒定，避免大屏上被拉得过大
-            final columns = math.max(3, (maxWidth / 88).floor());
-            const spacing = 14.0;
-            final itemWidth = (maxWidth - (columns - 1) * spacing) / columns;
-
-            return Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                // 动态色
-                _ColorSwatchCard(
-                  size: itemWidth,
-                  isSelected: isDynamic,
-                  isDynamic: true,
-                  dynamicPrimary: dynamicPrimary,
-                  variant: variant,
-                  onTap: () {
-                    setState(() => _removableColor = null);
-                    ref.read(themeProvider.notifier).selectDynamicColor();
-                  },
-                ),
-                // 内置调色板
-                for (final palette in AppPalettes.builtins)
-                  _ColorSwatchCard(
-                    size: itemWidth,
-                    seedColor: palette.seedColor,
-                    tooltip: _paletteLabel(context, palette.id),
-                    isSelected:
-                        source == AccentSource.palette &&
-                        themeState.paletteId == palette.id,
-                    variant: variant,
-                    onTap: () {
-                      setState(() => _removableColor = null);
-                      ref
-                          .read(themeProvider.notifier)
-                          .selectPalette(palette.id);
-                    },
-                  ),
-                // 自定义色
-                for (final color in customColors)
-                  SizedBox(
-                    width: itemWidth,
-                    height: itemWidth,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      clipBehavior: Clip.none,
-                      children: [
-                        _ColorSwatchCard(
-                          size: itemWidth,
-                          seedColor: color,
-                          isSelected:
-                              isCustom &&
-                              color.toARGB32() == currentColor.toARGB32(),
-                          variant: variant,
-                          onTap: () {
-                            setState(() => _removableColor = null);
-                            ref
-                                .read(themeProvider.notifier)
-                                .selectCustomColor(color);
-                          },
-                          onLongPress: () =>
-                              setState(() => _removableColor = color),
-                        ),
-                        if (_removableColor?.toARGB32() == color.toARGB32())
-                          Container(
-                            decoration: ShapeDecoration(
-                              color: Colors.black45,
-                              shape: RoundedSuperellipseBorder(
-                                borderRadius: context.shapes.borderRadius(16),
-                              ),
-                            ),
-                            child: IconButton.filledTonal(
-                              onPressed: () {
-                                ref
-                                    .read(themeProvider.notifier)
-                                    .removeCustomColor(color);
-                                setState(() => _removableColor = null);
-                              },
-                              iconSize: 28,
-                              icon: Icon(
-                                Symbols.delete_rounded,
-                                color: cs.primary,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                // 添加按钮
-                if (_removableColor == null)
-                  SizedBox(
-                    width: itemWidth,
-                    height: itemWidth,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: IconButton.filledTonal(
-                        onPressed: () async {
-                          final color = await _showSeedColorPicker(
-                            context,
-                            ref,
-                          );
-                          if (color == null) return;
-                          final notifier = ref.read(themeProvider.notifier);
-                          await notifier.addCustomColor(color);
-                          await notifier.selectCustomColor(color);
-                        },
-                        iconSize: 28,
-                        icon: Icon(Symbols.add_rounded, color: cs.primary),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
+        // ── 强调色 ──
+        _AccentPanel(
+          children: [
+            _AccentDot(
+              color: primaryOf(dynamicPrimary ?? cs.primary),
+              tooltip: context.l10n.appearance_modeAuto,
+              systemBadge: true,
+              selected: isDynamic,
+              onTap: () => ref.read(themeProvider.notifier).selectDynamicColor(),
+            ),
+            for (final palette in AppPalettes.builtins)
+              _AccentDot(
+                color: primaryOf(palette.seedColor),
+                tooltip: _paletteLabel(context, palette.id),
+                selected:
+                    source == AccentSource.palette &&
+                    themeState.paletteId == palette.id,
+                onTap: () =>
+                    ref.read(themeProvider.notifier).selectPalette(palette.id),
+              ),
+            for (final color in customColors)
+              _AccentDot(
+                color: primaryOf(color),
+                tooltip: context.l10n.appearance_themeCustomAccent,
+                selected:
+                    isCustom && color.toARGB32() == currentColor.toARGB32(),
+                onTap: () =>
+                    ref.read(themeProvider.notifier).selectCustomColor(color),
+                onEdit: () => _editCustomColor(context, ref, color),
+                onDelete: () =>
+                    ref.read(themeProvider.notifier).removeCustomColor(color),
+              ),
+            _AccentAddButton(
+              tooltip: context.l10n.appearance_themeCustomAccent,
+              onTap: () => _addCustomColor(context, ref),
+            ),
+          ],
         ),
       ],
     );
@@ -2004,144 +1927,6 @@ class _VariantChip extends StatelessWidget {
     return Container(
       width: d,
       height: d,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-// 色卡（选色网格中的单张色卡，上方 primary 填充，下方 3 配色圆点）
-// ══════════════════════════════════════════════════════════════════
-
-class _ColorSwatchCard extends StatelessWidget {
-  final double size;
-  final Color? seedColor;
-  final bool isSelected;
-  final bool isDynamic;
-  final Color? dynamicPrimary;
-  final DynamicSchemeVariant variant;
-  final String? tooltip;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-
-  const _ColorSwatchCard({
-    required this.size,
-    this.seedColor,
-    required this.isSelected,
-    this.isDynamic = false,
-    this.dynamicPrimary,
-    required this.variant,
-    this.tooltip,
-    required this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveSeed = isDynamic
-        ? (dynamicPrimary ?? Theme.of(context).colorScheme.primary)
-        : seedColor!;
-    final tileScheme = SeedColorScheme.from(
-      seedColor: effectiveSeed,
-      variant: variant,
-      brightness: Theme.of(context).brightness,
-    );
-
-    final card = _AppearancePressSurface(
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      onTap: onTap,
-      onLongPress: onLongPress,
-      onSecondaryTap: PlatformUtils.isDesktop ? onLongPress : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: size,
-        height: size,
-        clipBehavior: Clip.antiAlias,
-        decoration: ShapeDecoration(
-          color: tileScheme.surfaceContainerLow,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(16),
-          ),
-        ),
-        foregroundDecoration: ShapeDecoration(
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(16),
-            side: BorderSide(
-              color: isSelected
-                  ? tileScheme.primary
-                  : tileScheme.outlineVariant.withValues(alpha: 0.3),
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            // 上方 ~70%: primary 色填充
-            Expanded(
-              flex: 7,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ColoredBox(color: tileScheme.primary),
-                  if (isSelected)
-                    Container(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Symbols.check_circle_rounded,
-                        color: tileScheme.onPrimary,
-                        size: 26,
-                      ),
-                    ),
-                  // 动态色标识（右上角）
-                  if (isDynamic)
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: Icon(
-                        Symbols.auto_awesome_rounded,
-                        size: 14,
-                        color: tileScheme.onPrimary.withValues(alpha: 0.85),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            // 下方 ~30%: 配色圆点（所有色卡样式统一）
-            Expanded(
-              flex: 3,
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _colorDot(tileScheme.primary),
-                    const SizedBox(width: 5),
-                    _colorDot(tileScheme.secondary),
-                    const SizedBox(width: 5),
-                    _colorDot(tileScheme.tertiary),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    // 调色板色卡带名字提示；其余色卡无 tooltip 时直接返回
-    final tip = tooltip;
-    if (tip != null) {
-      return Tooltip(message: tip, child: card);
-    }
-    return card;
-  }
-
-  static Widget _colorDot(Color color) {
-    return Container(
-      width: 8,
-      height: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }

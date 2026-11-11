@@ -121,6 +121,7 @@
   "appearance_customThemeImport": "Import from clipboard",
   "appearance_customThemeImported": "Imported “{name}”",
   "appearance_customThemeImportFailed": "No valid theme code in the clipboard",
+  "appearance_themeResetConfirm": "Restore the default theme, accent, color style and corners? Your custom colors and themes are kept.",
   "appearance_customThemeDeleteConfirm": "Delete theme “{name}”?",
   "appearance_customThemeName": "Theme name",
   "appearance_customThemeCopyName": "{name} copy",

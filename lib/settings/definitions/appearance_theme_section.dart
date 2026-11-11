@@ -535,6 +535,12 @@ class _FixedThemeOptions extends ConsumerWidget {
         ? null
         : spec.accentOf(selection).id;
 
+    Future<void> pickCustom(Color? initial) async {
+      final color = await _showSeedColorPicker(context, ref, initial: initial);
+      if (color == null) return;
+      await notifier.setThemeAccent(spec.familyId, ThemeSpecColor.format(color));
+    }
+
     Widget label(String text) => Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
@@ -566,9 +572,7 @@ class _FixedThemeOptions extends ConsumerWidget {
           const SizedBox(height: 24),
         ],
         label(context.l10n.appearance_themeAccent),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
+        _AccentPanel(
           children: [
             for (final accent in spec.accents)
               _AccentDot(
@@ -583,21 +587,17 @@ class _FixedThemeOptions extends ConsumerWidget {
                 tooltip: context.l10n.appearance_themeCustomAccent,
                 selected: true,
                 onTap: () {},
+                onEdit: () => pickCustom(customAccent),
+                // 删除自定义强调色 = 回到主题默认强调色
+                onDelete: () => notifier.setThemeAccent(
+                  spec.familyId,
+                  spec.accents.first.id,
+                ),
               ),
             if (spec.allowCustomAccent)
-              Tooltip(
-                message: context.l10n.appearance_themeCustomAccent,
-                child: IconButton.filledTonal(
-                  onPressed: () async {
-                    final color = await _showSeedColorPicker(context, ref);
-                    if (color == null) return;
-                    await notifier.setThemeAccent(
-                      spec.familyId,
-                      ThemeSpecColor.format(color),
-                    );
-                  },
-                  icon: Icon(Symbols.add_rounded, color: cs.primary),
-                ),
+              _AccentAddButton(
+                tooltip: context.l10n.appearance_themeCustomAccent,
+                onTap: () => pickCustom(null),
               ),
           ],
         ),
@@ -606,25 +606,87 @@ class _FixedThemeOptions extends ConsumerWidget {
   }
 }
 
+/// 强调色色点：44px 点击区、32px 色点；选中时淡入同色外环、勾号回弹放大。
+///
+/// 给了 [onEdit] / [onDelete] 的色点（用户自己加的颜色）长按或右键弹出
+/// 编辑 / 删除菜单。
 class _AccentDot extends StatelessWidget {
   const _AccentDot({
     required this.color,
     required this.tooltip,
     required this.selected,
     required this.onTap,
-    this.icon,
+    this.systemBadge = false,
+    this.onEdit,
+    this.onDelete,
   });
+
+  static const double size = 44;
+  static const double dot = 32;
+  static const double _ring = 2.5;
+  static const _duration = Duration(milliseconds: 200);
 
   final Color color;
   final String tooltip;
   final bool selected;
   final VoidCallback onTap;
-  final IconData? icon;
+
+  /// 跟随系统取色：右下角显示取色器角标
+  final bool systemBadge;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  bool get _hasMenu => onEdit != null || onDelete != null;
+
+  Future<void> _showMenu(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final cs = Theme.of(context).colorScheme;
+    final l10n = context.l10n;
+    final action = await showMenu<Symbol>(
+      context: context,
+      position: RelativeRect.fromRect(
+        box.localToGlobal(Offset.zero, ancestor: overlay) & box.size,
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        if (onEdit != null)
+          PopupMenuItem(
+            value: #edit,
+            child: Row(
+              children: [
+                const Icon(Symbols.edit_rounded, size: 18),
+                const SizedBox(width: 10),
+                Text(l10n.common_edit),
+              ],
+            ),
+          ),
+        if (onDelete != null)
+          PopupMenuItem(
+            value: #delete,
+            child: Row(
+              children: [
+                Icon(Symbols.delete_rounded, size: 18, color: cs.error),
+                const SizedBox(width: 10),
+                Text(l10n.common_delete, style: TextStyle(color: cs.error)),
+              ],
+            ),
+          ),
+      ],
+    );
+    switch (action) {
+      case #edit:
+        onEdit?.call();
+      case #delete:
+        onDelete?.call();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final onColor = ColorContrast.onFilled(
+    final check = ColorContrast.onFilled(
       color,
       bg: const Color(0xFFFFFFFF),
       fg: const Color(0xFF000000),
@@ -635,31 +697,166 @@ class _AccentDot extends StatelessWidget {
         button: true,
         selected: selected,
         label: tooltip,
-        child: _AppearancePressSurface(
-          shape: const CircleBorder(),
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 44,
-            height: 44,
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? cs.onSurface : Colors.transparent,
-                width: 2,
+        child: Builder(
+          builder: (context) => SizedBox.square(
+            dimension: size,
+            child: _AppearancePressSurface(
+              shape: const CircleBorder(),
+              onTap: onTap,
+              onLongPress: _hasMenu ? () => _showMenu(context) : null,
+              onSecondaryTap: _hasMenu ? () => _showMenu(context) : null,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  AnimatedOpacity(
+                    opacity: selected ? 1 : 0,
+                    duration: _duration,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: CircleBorder(
+                          side: BorderSide(color: color, width: _ring),
+                        ),
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  SizedBox.square(
+                    dimension: dot,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  if (systemBadge)
+                    const Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: _EyedropperBadge(),
+                    ),
+                  AnimatedScale(
+                    scale: selected ? 1 : 0,
+                    duration: _duration,
+                    curve: Curves.easeOutBack,
+                    child: Icon(
+                      Symbols.check_rounded,
+                      size: 18,
+                      fill: 1,
+                      weight: 600,
+                      color: check,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              child: selected
-                  ? Icon(Symbols.check_rounded, size: 20, color: onColor)
-                  : icon != null
-                  ? Icon(icon, size: 18, color: onColor)
-                  : null,
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 「跟随系统取色」角标：页面底色描边的小圆 + 取色器图标。
+class _EyedropperBadge extends StatelessWidget {
+  const _EyedropperBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: 18,
+      height: 18,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        shape: BoxShape.circle,
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Symbols.colorize_rounded, size: 10, color: cs.onSurface),
+      ),
+    );
+  }
+}
+
+/// 添加颜色：与色点同尺寸的中性灰圆。
+class _AccentAddButton extends StatelessWidget {
+  const _AccentAddButton({required this.tooltip, required this.onTap});
+
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox.square(
+        dimension: _AccentDot.size,
+        child: _AppearancePressSurface(
+          shape: const CircleBorder(),
+          onTap: onTap,
+          child: Center(
+            child: Container(
+              width: _AccentDot.dot,
+              height: _AccentDot.dot,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Symbols.add_rounded,
+                size: 20,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 色点面板：浅色底板里按宽度均分间距排列，色点左缘与上下文字对齐。
+class _AccentPanel extends StatelessWidget {
+  const _AccentPanel({required this.children});
+
+  static const double _minGap = 6;
+
+  // 让色点（而不是外环）与分组内的文字对齐
+  static const double _inset = 16 - (_AccentDot.size - _AccentDot.dot) / 2;
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(_inset),
+      decoration: ShapeDecoration(
+        color: cs.surfaceContainerLow,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(20),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const cell = _AccentDot.size;
+          final width = constraints.maxWidth;
+          final columns = math.max(
+            1,
+            ((width + _minGap) / (cell + _minGap)).floor(),
+          );
+          final gap = columns > 1
+              ? ((width - columns * cell) / (columns - 1)).floorToDouble()
+              : 0.0;
+          return Wrap(spacing: gap, runSpacing: gap, children: children);
+        },
       ),
     );
   }
