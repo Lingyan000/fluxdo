@@ -17,13 +17,12 @@ ResolvedTheme _legacyResolve({
   required ThemeMode mode,
   required bool neutral,
   required bool black,
-  required bool transparent,
   required Color seed,
   required DynamicSchemeVariant variant,
 }) {
   ColorScheme schemeFor(Brightness brightness) {
     final useBlackRamp = black && brightness == Brightness.dark;
-    if (neutral || useBlackRamp || transparent) {
+    if (neutral || useBlackRamp) {
       final light = brightness == Brightness.light;
       final base = useBlackRamp
           ? NeutralRamp.black
@@ -38,7 +37,7 @@ ResolvedTheme _legacyResolve({
           brightness: brightness,
           variant: variant,
         ),
-        neutral: transparent ? NeutralRamp.transparent(base) : base,
+        neutral: base,
         brightness: brightness,
       );
     }
@@ -55,7 +54,6 @@ ResolvedTheme _legacyResolve({
     lightColors: AppColors.material(Brightness.light),
     darkColors: AppColors.material(Brightness.dark),
     mode: mode,
-    transparent: transparent,
   );
 }
 
@@ -120,32 +118,25 @@ void main() {
         for (final seed in seeds) {
           for (final variant in DynamicSchemeVariant.values) {
             for (final black in [false, true]) {
-              for (final transparent in [false, true]) {
-                final actual = ThemeResolver.resolve(
-                  spec: spec,
-                  mode: ThemeMode.system,
-                  black: black,
-                  transparent: transparent,
-                  seed: seed,
-                  variant: variant,
-                );
-                final expected = _legacyResolve(
-                  mode: ThemeMode.system,
-                  neutral: neutral,
-                  black: black,
-                  transparent: transparent,
-                  seed: seed,
-                  variant: variant,
-                );
-                final where =
-                    '${spec.id} seed=$seed $variant black=$black '
-                    'transparent=$transparent';
-                expect(actual.light, expected.light, reason: '$where light');
-                expect(actual.dark, expected.dark, reason: '$where dark');
-                expect(actual.transparent, expected.transparent);
-                expect(actual.lightColors, same(expected.lightColors));
-                expect(actual.darkColors, same(expected.darkColors));
-              }
+              final actual = ThemeResolver.resolve(
+                spec: spec,
+                mode: ThemeMode.system,
+                black: black,
+                seed: seed,
+                variant: variant,
+              );
+              final expected = _legacyResolve(
+                mode: ThemeMode.system,
+                neutral: neutral,
+                black: black,
+                seed: seed,
+                variant: variant,
+              );
+              final where = '${spec.id} seed=$seed $variant black=$black';
+              expect(actual.light, expected.light, reason: '$where light');
+              expect(actual.dark, expected.dark, reason: '$where dark');
+              expect(actual.lightColors, same(expected.lightColors));
+              expect(actual.darkColors, same(expected.darkColors));
             }
           }
         }
@@ -213,19 +204,15 @@ void main() {
   group('固定配色主题', () {
     final spec = ThemeSpec.fromJson(_fixedJson());
 
-    ResolvedTheme resolve({
-      String? accentId,
-      bool black = false,
-      bool transparent = false,
-    }) => ThemeResolver.resolve(
-      spec: spec,
-      mode: ThemeMode.system,
-      black: black,
-      transparent: transparent,
-      seed: Colors.blue,
-      variant: DynamicSchemeVariant.tonalSpot,
-      accentId: accentId,
-    );
+    ResolvedTheme resolve({String? accentId, bool black = false}) =>
+        ThemeResolver.resolve(
+          spec: spec,
+          mode: ThemeMode.system,
+          black: black,
+          seed: Colors.blue,
+          variant: DynamicSchemeVariant.tonalSpot,
+          accentId: accentId,
+        );
 
     void expectReadable(ColorScheme s, String where) {
       void check(Color fg, Color bg, double min, String pair) => expect(
@@ -278,7 +265,10 @@ void main() {
       final themes = resolve(accentId: 'mauve');
       expect(themes.dark.tertiary, const Color(0xFFFAB387));
       // 最后一个回绕到第一个
-      expect(resolve(accentId: 'yellow').dark.tertiary, const Color(0xFFCBA6F7));
+      expect(
+        resolve(accentId: 'yellow').dark.tertiary,
+        const Color(0xFFCBA6F7),
+      );
     });
 
     test('未知强调色回退第一个', () {
@@ -306,19 +296,25 @@ void main() {
         spec: noBlack,
         mode: ThemeMode.dark,
         black: true,
-        transparent: false,
         seed: Colors.blue,
         variant: DynamicSchemeVariant.tonalSpot,
       );
       expect(themes.dark.surface, const Color(0xFF1E1E2E));
     });
 
-    test('透明：表面带透明度，表面覆盖让位', () {
-      final themes = resolve(transparent: true);
-      expect(themes.transparent, isTrue);
-      expect(themes.light.isTransparentMode, isTrue);
-      expect(themes.dark.isTransparentMode, isTrue);
-      expect(themes.dark.surfaceContainerHigh.a, lessThan(1));
+    test('表面类 role 恒为不透明（自定义背景只铺在页面最底层）', () {
+      final themes = resolve();
+      for (final s in [themes.light, themes.dark]) {
+        for (final c in [
+          s.surface,
+          s.surfaceContainerLow,
+          s.surfaceContainer,
+          s.surfaceContainerHigh,
+          s.surfaceContainerHighest,
+        ]) {
+          expect(c.a, 1.0);
+        }
+      }
     });
 
     test('容器阶梯单调', () {
@@ -360,7 +356,6 @@ void main() {
         spec: ThemeSpec.fromJson(_fixedJson()),
         mode: ThemeMode.system,
         black: false,
-        transparent: false,
         seed: Colors.blue,
         variant: DynamicSchemeVariant.tonalSpot,
       );
@@ -383,7 +378,6 @@ void main() {
         spec: ThemeSpec.fromJson(_fixedJson()),
         mode: ThemeMode.system,
         black: false,
-        transparent: false,
         seed: Colors.blue,
         variant: DynamicSchemeVariant.tonalSpot,
       );

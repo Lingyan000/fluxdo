@@ -24,7 +24,7 @@ ThemeData _theme(
   preset.shapes,
   ThemeState(mode: ThemeMode.light, seedColor: Colors.teal, m3eEnabled: m3e),
   fullscreenSwipeBack: false,
-  transparent: false,
+  pageBackground: false,
 );
 
 BorderRadius _radius(ShapeBorder? shape) =>

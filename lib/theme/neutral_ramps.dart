@@ -250,38 +250,4 @@ class NeutralRamp {
       surfaceContainerHighest: highest,
     );
   }
-
-  /// 透明中性层：在 [base] 基础上给表面类 role 加透明度，
-  /// 让用户背景图透出来。
-  ///
-  /// 透明度分档有讲究：
-  /// - 卡片层（Low，帖子正文容器）保持 0.92 以上，保证阅读区可读性；
-  /// - 对话框/菜单层（High/Highest）接近不透明，浮层不能被背景干扰；
-  /// - scaffold 背景不在这里处理，由 ThemeData 单独设为全透明。
-  ///
-  /// 浮层根背景的用色约定：模态浮层（showAppBottomSheet/对话框，底下
-  /// 有 barrier 压暗内容）根背景用 surface，保持半透明质感；锚定面板
-  /// （通知快捷面板、搜索过滤面板，底下是未压暗的内容）用
-  /// `ColorScheme.overlaySurface`（theme_resolver.dart）——透明模式
-  /// 下取接近不透明的 containerHigh 避免透字，普通模式仍是 surface。
-  factory NeutralRamp.transparent(NeutralRamp base) => NeutralRamp(
-    surface: base.surface.withValues(alpha: 0.72),
-    onSurface: base.onSurface,
-    onSurfaceVariant: base.onSurfaceVariant,
-    outline: base.outline,
-    outlineVariant: base.outlineVariant,
-    inverseSurface: base.inverseSurface,
-    onInverseSurface: base.onInverseSurface,
-    shadow: base.shadow,
-    scrim: base.scrim,
-    surfaceDim: base.surfaceDim.withValues(alpha: 0.72),
-    surfaceBright: base.surfaceBright.withValues(alpha: 0.72),
-    surfaceContainerLowest: base.surfaceContainerLowest.withValues(alpha: 0.80),
-    surfaceContainerLow: base.surfaceContainerLow.withValues(alpha: 0.92),
-    surfaceContainer: base.surfaceContainer.withValues(alpha: 0.88),
-    surfaceContainerHigh: base.surfaceContainerHigh.withValues(alpha: 0.94),
-    surfaceContainerHighest: base.surfaceContainerHighest.withValues(
-      alpha: 0.95,
-    ),
-  );
 }

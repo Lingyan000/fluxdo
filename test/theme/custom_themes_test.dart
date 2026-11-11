@@ -19,7 +19,6 @@ ResolvedTheme _resolve(ThemeSpec spec) => ThemeResolver.resolve(
   spec: spec,
   mode: ThemeMode.system,
   black: false,
-  transparent: false,
   seed: Colors.blue,
   variant: DynamicSchemeVariant.tonalSpot,
 );

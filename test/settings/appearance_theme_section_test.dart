@@ -57,7 +57,6 @@ Widget _app(ProviderContainer container, {ThemeMode mode = ThemeMode.light}) {
             spec: state.themeSpec,
             mode: mode,
             black: state.blackEnabled,
-            transparent: false,
             seed: state.effectiveSeedColor,
             variant: state.schemeVariant,
             accentId: state.accentFor(state.themeSpec),

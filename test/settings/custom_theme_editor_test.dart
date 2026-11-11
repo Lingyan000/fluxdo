@@ -93,7 +93,6 @@ void main() {
                 spec: state.effectiveColorSpec,
                 mode: ThemeMode.dark,
                 black: false,
-                transparent: false,
                 seed: state.effectiveSeedColor,
                 variant: state.schemeVariant,
                 accentId: state.accentFor(state.effectiveColorSpec),

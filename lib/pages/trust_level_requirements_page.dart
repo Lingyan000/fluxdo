@@ -424,11 +424,8 @@ class _TrustLevelRequirementsPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
-    // Background color strictly following the theme surface
     return Scaffold(
-      backgroundColor: colorScheme.surface,
       body: _isLoading
           ? const TrustLevelSkeleton()
           : _error != null

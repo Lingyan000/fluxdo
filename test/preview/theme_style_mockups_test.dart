@@ -86,7 +86,6 @@ void main() {
         spec: spec,
         mode: ThemeMode.system,
         black: false,
-        transparent: false,
         seed: state.effectiveSeedColor,
         variant: state.schemeVariant,
       );
@@ -97,7 +96,7 @@ void main() {
         state.effectiveShapes,
         state,
         fullscreenSwipeBack: false,
-        transparent: false,
+        pageBackground: false,
         style: spec.style,
       );
       if (spec.style.texture == TextureStyle.paper) {

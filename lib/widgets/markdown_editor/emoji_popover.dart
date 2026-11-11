@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 
-import '../../theme/theme_resolver.dart';
 
 /// 桌面端表情悬浮弹层的固定尺寸
 const Size kEmojiPopoverSize = Size(440, 480);
@@ -266,7 +265,7 @@ class EmojiPopoverController with ChangeNotifier, WidgetsBindingObserver {
                 height: height,
                 clipBehavior: Clip.antiAlias,
                 decoration: ShapeDecoration(
-                  color: theme.colorScheme.overlaySurface,
+                  color: theme.colorScheme.surface,
                   shadows: [
                     BoxShadow(
                       color: Colors.black.withValues(

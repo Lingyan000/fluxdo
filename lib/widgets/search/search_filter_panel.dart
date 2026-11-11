@@ -9,7 +9,6 @@ import '../../l10n/s.dart';
 import '../../models/category.dart';
 import '../../models/search_filter.dart';
 import '../../providers/category_provider.dart';
-import '../../theme/theme_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/tag_icon_list.dart';
@@ -178,7 +177,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
 
     return Container(
       decoration: ShapeDecoration(
-        color: colorScheme.overlaySurface,
+        color: colorScheme.surface,
         shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),

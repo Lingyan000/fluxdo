@@ -14,7 +14,6 @@ import '../../services/app_error_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/toast_service.dart';
-import '../../theme/theme_resolver.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/platform_utils.dart';
@@ -718,7 +717,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
 
     final card = Container(
       decoration: ShapeDecoration(
-        color: theme.colorScheme.overlaySurface,
+        color: theme.colorScheme.surface,
         shadows: [
           // 桌面端无遮罩，靠更重的投影把卡片从背景中托起来
           BoxShadow(

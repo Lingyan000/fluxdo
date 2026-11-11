@@ -275,7 +275,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     return ClipRect(
       child: Container(
         decoration: ShapeDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
+          color: Theme.of(context).colorScheme.surface,
           shape: RoundedSuperellipseBorder(
             borderRadius: widget.compact
                 ? null

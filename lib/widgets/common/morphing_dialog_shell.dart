@@ -66,7 +66,7 @@ class MorphingDialogShell extends StatelessWidget {
               theme.cardTheme.color ??
               theme.colorScheme.surfaceContainerLow,
           color: theme.colorScheme.surface,
-          sourceBackground: theme.scaffoldBackgroundColor,
+          sourceBackground: theme.colorScheme.surface,
           anchorRadius: context.shapes.resolve(anchorRadius),
           targetRadius: context.shapes.resolve(targetRadius),
           dialogWidth: dialogWidth,

@@ -38,7 +38,6 @@ class ThemePreviewCache {
       spec: spec,
       mode: ThemeMode.system,
       black: black,
-      transparent: false,
       seed: seed,
       variant: variant,
       accentId: accentId,

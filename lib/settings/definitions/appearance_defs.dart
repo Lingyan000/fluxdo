@@ -79,7 +79,6 @@ List<SettingsGroup> buildAppearanceSearchGroups(BuildContext context) {
               accentId: themeState.accentFor(themeState.themeSpec),
               mode: currentMode,
               black: themeState.blackEnabled,
-              transparent: false,
               seed: themeState.effectiveSeedColor,
               variant: themeState.schemeVariant,
             );
@@ -1219,7 +1218,7 @@ class _BackgroundSectionState extends ConsumerState<_BackgroundSection> {
         children: [
           M3eSwitchListTile(
             secondary: Icon(
-              Symbols.opacity_rounded,
+              Symbols.wallpaper_rounded,
               color: transparent ? context.emphasis.selected : cs.onSurfaceVariant,
             ),
             title: Text(l10n.appearance_styleTransparent),

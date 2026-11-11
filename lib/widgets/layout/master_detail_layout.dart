@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import '../../l10n/s.dart';
@@ -25,7 +26,7 @@ import 'pane_filmstrip.dart';
 ///
 /// ## 平行视界接入约定（长版见 docs/parallel-view-conventions.md）
 ///
-/// - **背景**：detail 槽由本容器统一铺底（scaffoldBackgroundColor），
+/// - **背景**：detail 槽由本容器统一铺「页面底」（[PageBackdrop]），
 ///   页面不要自己包 ColoredBox；空态一律用 [MasterDetailEmptyState]，
 ///   只定制 icon/message。
 /// - **onBack**：detail 面板的返回回调标准写法是
@@ -271,19 +272,17 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
           ),
         );
 
-        // 层格统一铺底(scaffoldBackgroundColor):面板没有 Scaffold 时
+        // 层格统一铺「页面底」(PageBackdrop):面板没有 Scaffold 时
         // (切换过渡帧等)不铺底会透出 canvasColor/acrylic surface,与
-        // master 背景形成色差断层。格子身份 key 派生自内容 key(不直接
-        // 复用——同 key 双挂载会让 find.byKey/语义查找命中两个)。
+        // master 背景形成色差断层;有自定义背景时铺对齐的背景副本,
+        // 叠放的格子之间不会互相透出。格子身份 key 派生自内容 key(不
+        // 直接复用——同 key 双挂载会让 find.byKey/语义查找命中两个)。
         final theme = Theme.of(context);
         final wrappedPanes = <Widget>[
           for (var i = 0; i < panes.length; i++)
             KeyedSubtree(
               key: ValueKey(('pane-cell', panes[i].key ?? i)),
-              child: ColoredBox(
-                color: theme.scaffoldBackgroundColor,
-                child: panes[i],
-              ),
+              child: PageBackdrop(child: panes[i]),
             ),
         ];
 
@@ -295,8 +294,7 @@ class _MasterDetailLayoutState extends State<MasterDetailLayout> {
           master: masterCell,
           panes: narrowPlain ? const <Widget>[] : wrappedPanes,
           emptyPane: showBothPanes
-              ? ColoredBox(
-                  color: theme.scaffoldBackgroundColor,
+              ? PageBackdrop(
                   child: widget.emptyDetail ?? const _DefaultEmptyState(),
                 )
               : null,

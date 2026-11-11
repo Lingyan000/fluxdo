@@ -393,8 +393,8 @@ class _AnimatedBottomNav extends StatelessWidget {
   }
 }
 
-/// 底栏与内容的分界：色块风格靠底栏底色区分；描边 / 平铺风格底栏与
-/// 页面同色，在顶边补一道细线。
+/// 底栏的底与分界：有页面背景时垫背景副本；色块风格靠底栏底色区分，
+/// 描边 / 平铺风格底栏与页面同色，在顶边补一道细线。
 class _StyledBarEdge extends StatelessWidget {
   const _StyledBarEdge({required this.child});
 
@@ -402,7 +402,11 @@ class _StyledBarEdge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (context.themeStyle.surfaces == SurfaceStyle.filled) return child;
+    // 有页面背景时底栏透明（见主题），垫一层对齐的背景副本挡住下方内容
+    final bar = PageBackgroundScope.isActive(context)
+        ? PageBackdrop(child: child)
+        : child;
+    if (context.themeStyle.surfaces == SurfaceStyle.filled) return bar;
     return DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(
@@ -413,7 +417,7 @@ class _StyledBarEdge extends StatelessWidget {
           ),
         ),
       ),
-      child: child,
+      child: bar,
     );
   }
 }

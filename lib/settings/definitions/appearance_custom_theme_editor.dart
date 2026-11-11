@@ -29,7 +29,6 @@ Future<void> _createThemeFrom(
     spec: base,
     mode: ThemeMode.system,
     black: false,
-    transparent: false,
     seed: state.effectiveSeedColor,
     variant: state.schemeVariant,
     accentId: state.accentFor(base),
@@ -231,7 +230,6 @@ class _CustomThemeEditorPageState
       spec: _spec,
       mode: ThemeMode.system,
       black: false,
-      transparent: false,
       seed: Colors.blue,
       variant: DynamicSchemeVariant.tonalSpot,
     );

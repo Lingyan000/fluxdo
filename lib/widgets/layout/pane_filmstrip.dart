@@ -554,10 +554,10 @@ class _PaneFilmstripState extends State<PaneFilmstrip>
                   _controller.isAnimating ||
                   (widget.bandDrag?.value ?? 0) > 0,
               child: ClipRect(
-                child: ColoredBox(
-                  // 带底兜底铺色:格子运动/几何调整的任何瞬时缝隙都不
-                  // 透出窗口底(桌面 acrylic 半透明,露底=发透+水印)。
-                  color: Theme.of(context).scaffoldBackgroundColor,
+                // 带底兜底铺色:格子运动/几何调整的任何瞬时缝隙都不
+                // 透出窗口底(桌面 acrylic 半透明,露底=发透+水印)。
+                // 有自定义背景时铺对齐的背景副本
+                child: PageBackdrop(
                   child: Stack(
                     children: [
                       ...masterChildren,

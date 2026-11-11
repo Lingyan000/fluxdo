@@ -137,7 +137,7 @@ ThemeData buildAppTheme(
   UiShapes shapes,
   ThemeState themeState, {
   required bool fullscreenSwipeBack,
-  required bool transparent,
+  required bool pageBackground,
   ThemeStyle style = ThemeStyle.material,
 }) {
   final m3e = themeState.m3eEnabled;
@@ -157,8 +157,9 @@ ThemeData buildAppTheme(
     colorScheme: scheme,
     useMaterial3: true,
     fontFamily: themeState.fontFamilyName,
-    // 透明模式：脚手架让出背景，由各页面独立背景层的用户图片透出
-    scaffoldBackgroundColor: transparent ? Colors.transparent : null,
+    // 页面背景（自定义背景、主题纹理）：脚手架让出底色，由各页面独立的
+    // 背景层显示；阅读内容通过 PageBackgroundScope 选择透明填充
+    scaffoldBackgroundColor: pageBackground ? Colors.transparent : null,
     pageTransitionsTheme: fullscreenSwipeBack
         ? _fullscreenSwipePageTransitionsTheme
         : _pageTransitionsTheme,
@@ -265,9 +266,36 @@ ThemeData buildAppTheme(
       menuPadding: const EdgeInsets.symmetric(vertical: 8),
     ),
   );
-  return style.hasMaterialComponents
+  final themed = style.hasMaterialComponents
       ? base
       : _applyStyle(base, scheme, shapes, style, buttonStyle);
+  return pageBackground ? _revealPageBackground(themed, scheme) : themed;
+}
+
+/// 有页面背景时，页面级的栏让背景透出来：
+/// - 标题栏平时透明，内容滚到它下面时（scrolledUnder）才换成不透明底色，
+///   不会透出滚动内容；
+/// - 底部导航透明（底下由 [PageBackdrop] 垫一层对齐的背景副本）；
+/// - 侧边导航与内容并排、不重叠，直接透明。
+/// 阅读内容通过 PageBackgroundScope.contentColor 透出背景，面板、菜单
+/// 等覆盖内容的表面使用各自的组件主题。
+ThemeData _revealPageBackground(ThemeData theme, ColorScheme scheme) {
+  final opaque = theme.appBarTheme.backgroundColor ?? scheme.surface;
+  return theme.copyWith(
+    appBarTheme: theme.appBarTheme.copyWith(
+      backgroundColor: WidgetStateColor.resolveWith(
+        (states) => states.contains(WidgetState.scrolledUnder)
+            ? opaque
+            : Colors.transparent,
+      ),
+    ),
+    navigationBarTheme: theme.navigationBarTheme.copyWith(
+      backgroundColor: Colors.transparent,
+    ),
+    navigationRailTheme: theme.navigationRailTheme.copyWith(
+      backgroundColor: Colors.transparent,
+    ),
+  );
 }
 
 /// 标题字体的候选链：宋体 / 等宽 / 字体目录里的字体，带各平台回退。
@@ -508,9 +536,8 @@ ThemeData _applyStyle(
       ).merge(buttonStyle),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: ButtonStyle(
-        foregroundColor: WidgetStatePropertyAll(control),
-      ).merge(buttonStyle),
+      style: ButtonStyle(foregroundColor: WidgetStatePropertyAll(control))
+          .merge(buttonStyle),
     ),
     floatingActionButtonTheme: base.floatingActionButtonTheme.copyWith(
       backgroundColor: control,

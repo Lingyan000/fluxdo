@@ -111,7 +111,6 @@ Future<ProviderContainer> _pump(
               spec: state.effectiveColorSpec,
               mode: state.mode,
               black: state.blackEnabled,
-              transparent: state.isTransparentActive,
               seed: state.effectiveSeedColor,
               variant: state.schemeVariant,
               accentId: state.accentFor(state.effectiveColorSpec),
@@ -448,7 +447,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('透明使用统一开关，关闭再开启保留图片及两套遮罩参数', (tester) async {
+  testWidgets('背景图使用统一开关，关闭再开启保留图片及两套遮罩参数', (tester) async {
     final imagePath = await _background(tester);
     final container = await _pump(
       tester,
@@ -461,7 +460,7 @@ void main() {
       },
     );
     expect(find.byType(AppBackgroundLayer), findsNWidgets(2));
-    final tile = find.widgetWithText(M3eSwitchListTile, '透明');
+    final tile = find.widgetWithText(M3eSwitchListTile, '显示背景图');
     expect(tile, findsOneWidget);
     expect(
       find.descendant(of: tile, matching: find.byType(M3eSwitch)),
@@ -481,7 +480,7 @@ void main() {
     expect(state.background.scrimDark, 0.65);
     await container.read(themeProvider.notifier).setM3eEnabled(false);
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(SwitchListTile, '透明'), findsOneWidget);
+    expect(find.widgetWithText(SwitchListTile, '显示背景图'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

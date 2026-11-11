@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -129,16 +130,20 @@ void main() {
     // 空态本体使用统一组件
     expect(find.byType(MasterDetailEmptyState), findsOneWidget);
 
-    // 空态之下有 scaffoldBackgroundColor 的 ColoredBox 铺底(空态槽
-    // 自己一层 + 胶片带底兜底一层,双保险,至少一层即可)
+    // 空态槽和胶片带底通过 PageBackdrop 铺底，未启用背景时填页面底色。
     final context = tester.element(find.byType(MasterDetailEmptyState));
     final expected = Theme.of(context).scaffoldBackgroundColor;
     final backdrop = find.ancestor(
       of: find.byType(MasterDetailEmptyState),
+      matching: find.byType(PageBackdrop),
+    );
+    expect(backdrop, findsWidgets);
+    final fill = find.descendant(
+      of: backdrop,
       matching: find.byWidgetPredicate(
         (w) => w is ColoredBox && w.color == expected,
       ),
     );
-    expect(backdrop, findsWidgets);
+    expect(fill, findsWidgets);
   });
 }

@@ -1251,7 +1251,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (searchState.isSearchMode) {
       return AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: theme.colorScheme.surface,
         title: TextField(
           controller: _searchController,
           focusNode: _searchFocusNode,
@@ -1318,7 +1317,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 surfaceTintColor: theme.colorScheme.surfaceTint.withValues(
                   alpha: (1.0 - expandProgress).clamp(0.0, 1.0),
                 ),
-                backgroundColor: theme.colorScheme.surface,
+                // 有页面背景时平时透明，内容滚到下面才铺底
+                backgroundColor:
+                    isScrolledUnder || !PageBackgroundScope.isActive(context)
+                    ? theme.colorScheme.surface
+                    : Colors.transparent,
                 title: _buildAppBarTitle(
                   theme: theme,
                   detail: detail,
@@ -1437,7 +1440,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return MobileTopicWorkspaceAppBar(
       backButtonKey: const ValueKey('bookmark-workspace-mobile-back'),
       closeButtonKey: const ValueKey('bookmark-workspace-mobile-close'),
-      backgroundColor: theme.colorScheme.surface,
+      backgroundColor: elevation > 0 || !PageBackgroundScope.isActive(context)
+          ? theme.colorScheme.surface
+          : Colors.transparent,
       elevation: elevation,
       scrolledUnderElevation: elevation,
       shadowColor: Colors.transparent,

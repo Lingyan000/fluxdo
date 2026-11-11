@@ -65,66 +65,68 @@ class SortAndTagsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Row(
-        children: [
-          // 筛选下拉
-          FilterDropdown(
-            currentFilter: currentFilter,
-            isLoggedIn: isLoggedIn,
-            onFilterChanged: onFilterChanged,
-          ),
-          // 「新话题」子过滤下拉
-          if (currentFilter == TopicListFilter.newTopics) ...[
-            const SizedBox(width: 4),
-            NewSubsetDropdown(
-              currentSubset: currentSubset,
-              onSubsetChanged: onSubsetChanged,
+    // 吸顶条属于「页面底」：有自定义背景时画对齐的背景副本
+    return PageBackdrop(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            // 筛选下拉
+            FilterDropdown(
+              currentFilter: currentFilter,
+              isLoggedIn: isLoggedIn,
+              onFilterChanged: onFilterChanged,
             ),
-          ],
-          const SizedBox(width: 4),
-          // 排序下拉
-          OrderDropdown(
-            currentOrder: currentOrder,
-            ascending: ascending,
-            onOrderChanged: onOrderChanged,
-            onToggleAscending: onToggleAscending,
-          ),
-          const SizedBox(width: 8),
-          // 标签区域
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ...selectedTags.map(
-                    (tag) => Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: RemovableTagBadge(
-                        name: tag,
-                        onDeleted: () => onTagRemoved(tag),
-                        size: const BadgeSize(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+            // 「新话题」子过滤下拉
+            if (currentFilter == TopicListFilter.newTopics) ...[
+              const SizedBox(width: 4),
+              NewSubsetDropdown(
+                currentSubset: currentSubset,
+                onSubsetChanged: onSubsetChanged,
+              ),
+            ],
+            const SizedBox(width: 4),
+            // 排序下拉
+            OrderDropdown(
+              currentOrder: currentOrder,
+              ascending: ascending,
+              onOrderChanged: onOrderChanged,
+              onToggleAscending: onToggleAscending,
+            ),
+            const SizedBox(width: 8),
+            // 标签区域
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ...selectedTags.map(
+                      (tag) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: RemovableTagBadge(
+                          name: tag,
+                          onDeleted: () => onTagRemoved(tag),
+                          size: const BadgeSize(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            radius: 6,
+                            iconSize: 12,
+                            fontSize: 12,
                           ),
-                          radius: 6,
-                          iconSize: 12,
-                          fontSize: 12,
                         ),
                       ),
                     ),
-                  ),
-                  if (onAddTag != null)
-                    _AddTagButton(colorScheme: colorScheme, onTap: onAddTag!),
-                ],
+                    if (onAddTag != null)
+                      _AddTagButton(colorScheme: colorScheme, onTap: onAddTag!),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-        ],
+            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+          ],
+        ),
       ),
     );
   }

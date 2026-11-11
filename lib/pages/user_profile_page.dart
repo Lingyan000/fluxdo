@@ -567,7 +567,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           final theme = Theme.of(context);
           return Container(
             decoration: ShapeDecoration(
-              color: theme.scaffoldBackgroundColor,
+              color: theme.colorScheme.surface,
               shadows: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),
@@ -1374,20 +1374,22 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               children: [
                 // Tab 行与列表同一条限宽轴线,避免"标签顶在左上角、
                 // 内容居中"的错位感。
-                Material(
-                  color: theme.scaffoldBackgroundColor,
-                  child: SafeArea(
-                    bottom: false,
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: Breakpoints.maxContentWidth,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 8, bottom: 4),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _buildTabBar(theme),
+                PageBackdrop(
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: SafeArea(
+                      bottom: false,
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: Breakpoints.maxContentWidth,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 4),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _buildTabBar(theme),
+                            ),
                           ),
                         ),
                       ),
@@ -1477,7 +1479,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           flairSize: 34,
                           flairRight: -8,
                           flairBottom: -4,
-                          borderColor: theme.scaffoldBackgroundColor,
+                          borderColor: theme.colorScheme.surface,
                           borderWidth: 4,
                         ),
                       ),
@@ -2045,9 +2047,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             ),
           ),
           clipBehavior: Clip.antiAlias,
-          child: Material(
-            color: Theme.of(context).scaffoldBackgroundColor,
-            child: _buildTabBar(theme),
+          child: PageBackdrop(
+            child: Material(
+              type: MaterialType.transparency,
+              child: _buildTabBar(theme),
+            ),
           ),
         ),
       ),

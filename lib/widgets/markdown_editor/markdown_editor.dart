@@ -1167,7 +1167,7 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         controller: _panelController,
         inputFocusNode: _focusNode,
         // 外壳默认纯白,深色主题过渡帧闪白(聊天面板同坑同修)
-        panelBgColor: Theme.of(context).scaffoldBackgroundColor,
+        panelBgColor: Theme.of(context).colorScheme.surface,
         otherPanelWidget: (type) {
           switch (type) {
             case EditorPanelType.emoji:

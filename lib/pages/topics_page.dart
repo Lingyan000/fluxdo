@@ -1824,8 +1824,6 @@ class _CollapsibleHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = Theme.of(context).scaffoldBackgroundColor;
-
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -1869,10 +1867,10 @@ class _CollapsibleHeader extends StatelessWidget {
               children: [
                 Column(
                   children: [
-                    // 背景色只垫到头部实体（窗檐在其下方，需要中间透出
-                    // 列表内容，不能被整块背景垫死）
-                    ColoredBox(
-                      color: bgColor,
+                    // 页面底只垫到头部实体（窗檐在其下方，需要中间透出
+                    // 列表内容，不能被整块背景垫死）。有自定义背景时
+                    // 画对齐的背景副本，与页面连成一片
+                    PageBackdrop(
                       child: Column(
                         children: [
                           SizedBox(height: statusBarHeight),
@@ -2097,7 +2095,6 @@ class _TopEdgeFade extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).scaffoldBackgroundColor;
     return ListenableBuilder(
       listenable: Listenable.merge([headerController, scrollController]),
       builder: (context, _) {
@@ -2116,23 +2113,24 @@ class _TopEdgeFade extends StatelessWidget {
           right: 0,
           height: 24,
           child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  // 多停靠点近似 smoothstep（线性两点在梯度尾部有
-                  // 可感的"边"），整体强度随 cut
-                  colors: [
-                    color.withValues(alpha: cut),
-                    color.withValues(alpha: 0.85 * cut),
-                    color.withValues(alpha: 0.5 * cut),
-                    color.withValues(alpha: 0.15 * cut),
-                    color.withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
-                ),
-              ),
+            // 渐隐的是「页面底」本身：有自定义背景时是背景副本
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (rect) => LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                // 多停靠点近似 smoothstep（线性两点在梯度尾部有
+                // 可感的"边"），整体强度随 cut
+                colors: [
+                  Colors.white.withValues(alpha: cut),
+                  Colors.white.withValues(alpha: 0.85 * cut),
+                  Colors.white.withValues(alpha: 0.5 * cut),
+                  Colors.white.withValues(alpha: 0.15 * cut),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
+              ).createShader(rect),
+              child: const PageBackdrop(),
             ),
           ),
         );

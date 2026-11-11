@@ -240,7 +240,6 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
       'used': l.miniApp_used,
     };
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
       body: SafeArea(
         bottom: false,
         child: Center(

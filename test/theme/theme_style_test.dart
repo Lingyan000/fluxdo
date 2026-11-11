@@ -20,7 +20,7 @@ ThemeData _build(ThemeStyle style, {Brightness brightness = Brightness.light}) {
     UiShapes.standard,
     const ThemeState(mode: ThemeMode.light, seedColor: Color(0xFF3366CC)),
     fullscreenSwipeBack: false,
-    transparent: false,
+    pageBackground: false,
     style: style,
   );
 }

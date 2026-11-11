@@ -187,7 +187,6 @@ void main() {
         spec: ThemeRegistry.material,
         mode: ThemeMode.system,
         black: false,
-        transparent: false,
         seed: Colors.blue,
         variant: DynamicSchemeVariant.tonalSpot,
       );

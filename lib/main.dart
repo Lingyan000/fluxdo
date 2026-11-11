@@ -688,8 +688,6 @@ class MainApp extends ConsumerWidget {
           accentId: themeState.accentFor(colorSpec),
           mode: themeState.mode,
           black: themeState.blackEnabled,
-          // 纸张纹理与用户背景图同走页面背景层，表面同样需要透出
-          transparent: themeState.hasPageBackground,
           seed: themeState.effectiveSeedColor,
           variant: themeState.schemeVariant,
         );
@@ -738,7 +736,7 @@ class MainApp extends ConsumerWidget {
                   shapes,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
-                  transparent: resolvedTheme.transparent,
+                  pageBackground: themeState.hasPageBackground,
                   style: themeState.effectiveStyle,
                 ),
               ),
@@ -749,7 +747,7 @@ class MainApp extends ConsumerWidget {
                   shapes,
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
-                  transparent: resolvedTheme.transparent,
+                  pageBackground: themeState.hasPageBackground,
                   style: themeState.effectiveStyle,
                 ),
               ),
@@ -772,9 +770,9 @@ class MainApp extends ConsumerWidget {
                         Platform.isLinux)) {
                   final isDark = brightness == Brightness.dark;
                   acrylic.Window.setEffect(
-                    // 透明模式下禁用系统窗口效果，避免桌面壁纸
-                    // 与用户背景图双重透出造成视觉混乱
-                    effect: resolvedTheme.transparent
+                    // 有页面背景（自定义背景、主题纹理）时禁用系统窗口
+                    // 效果，避免桌面壁纸与页面背景叠在一起
+                    effect: themeState.hasPageBackground
                         ? acrylic.WindowEffect.disabled
                         : Platform.isMacOS
                         ? acrylic.WindowEffect.sidebar

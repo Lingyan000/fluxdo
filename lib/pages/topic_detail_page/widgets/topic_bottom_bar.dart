@@ -57,35 +57,35 @@ class TopicBottomBar extends StatelessWidget {
     final theme = Theme.of(context);
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    return Container(
-      height: 80,
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          // 回到顶部
-          IconButton(
-            onPressed: onScrollToTop,
-            icon: const Icon(Symbols.vertical_align_top_rounded),
-            tooltip: context.l10n.topicDetail_scrollToTop,
-          ),
-          // 筛选
-          if (_hasActiveFilter)
-            _buildActiveFilterChip(context, theme)
-          else
-            _buildFilterMenuButton(context, theme),
-          // 分享菜单
-          _buildShareMenu(context, theme),
-          // 在浏览器打开
-          IconButton(
-            onPressed: onOpenInBrowser,
-            icon: const Icon(Symbols.language_rounded),
-            tooltip: context.l10n.topicDetail_openInBrowser,
-          ),
-        ],
+    // 底栏属于「页面底」：有页面背景时画对齐的背景副本
+    return PageBackdrop(
+      child: Container(
+        height: 80,
+        padding: EdgeInsets.only(bottom: bottomPadding),
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            // 回到顶部
+            IconButton(
+              onPressed: onScrollToTop,
+              icon: const Icon(Symbols.vertical_align_top_rounded),
+              tooltip: context.l10n.topicDetail_scrollToTop,
+            ),
+            // 筛选
+            if (_hasActiveFilter)
+              _buildActiveFilterChip(context, theme)
+            else
+              _buildFilterMenuButton(context, theme),
+            // 分享菜单
+            _buildShareMenu(context, theme),
+            // 在浏览器打开
+            IconButton(
+              onPressed: onOpenInBrowser,
+              icon: const Icon(Symbols.language_rounded),
+              tooltip: context.l10n.topicDetail_openInBrowser,
+            ),
+          ],
+        ),
       ),
     );
   }
