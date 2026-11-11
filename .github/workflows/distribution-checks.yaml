@@ -38,13 +38,14 @@ jobs:
           CASK_FILE: ${{ runner.temp }}/distribution-fixtures/homebrew/Casks/fluxdo.rb
         run: |
           ruby -c "$CASK_FILE"
-          brew ruby -r cask/cask_loader -e 'cask = Cask::CaskLoader.from_content(File.read(ARGV.fetch(0))); abort "Unexpected Cask" unless cask.token == "fluxdo" && cask.version.to_s == "1.0.0"; puts "Cask DSL valid"' "$CASK_FILE"
+          brew ruby -r cask/cask_loader -e 'cask = Cask::CaskLoader::FromContentLoader.new(File.read(ARGV.fetch(0))).load(config: nil); abort "Unexpected Cask" unless cask.token == "fluxdo" && cask.version.to_s == "1.0.0"; puts "Cask DSL valid"' "$CASK_FILE"
       - name: Set up WinGet
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Install-Module Microsoft.WinGet.Client -Repository PSGallery -Force -Scope CurrentUser
-          Repair-WinGetPackageManager -AllUsers
+          Repair-WinGetPackageManager -AllUsers -Latest -Force
+          winget --version
       - name: Validate WinGet manifests
         if: runner.os == 'Windows'
         shell: pwsh
