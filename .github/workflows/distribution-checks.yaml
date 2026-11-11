@@ -42,13 +42,18 @@ jobs:
       - name: Set up WinGet
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          Install-Module Microsoft.WinGet.Client -Repository PSGallery -Force -Scope CurrentUser
-          Repair-WinGetPackageManager -AllUsers -Latest -Force
-          winget --version
+          gh release download v1.29.380 --repo microsoft/winget-cli --pattern Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle --dir "$env:RUNNER_TEMP/winget"
+          if ($LASTEXITCODE -ne 0) { throw "WinGet download failed" }
+          python -c "import pathlib, zipfile; root = pathlib.Path(r'$env:RUNNER_TEMP/winget'); bundle = zipfile.ZipFile(root / 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'); package = next(name for name in bundle.namelist() if name.endswith('_x64.msix')); bundle.extract(package, root); zipfile.ZipFile(root / package).extractall(root / 'cli')"
+          if ($LASTEXITCODE -ne 0) { throw "WinGet extraction failed" }
+          & "$env:RUNNER_TEMP/winget/cli/winget.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "WinGet startup failed" }
       - name: Validate WinGet manifests
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          winget validate --manifest "${{ runner.temp }}/distribution-fixtures/winget/manifests/l/Lingyan000/FluxDO/1.0.0"
+          & "$env:RUNNER_TEMP/winget/cli/winget.exe" validate --manifest "${{ runner.temp }}/distribution-fixtures/winget/manifests/l/Lingyan000/FluxDO/1.0.0"
           if ($LASTEXITCODE -ne 0) { throw "WinGet manifest validation failed" }
