@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'route_motion_hold.dart';
+import 'ui_decor.dart';
 
 /// 短请求不闪加载占位；同一份内容刷新时保留原子树和滚动位置。
 /// [identity] 必须包含账号、查询等内容身份，变化时不复用上一份内容。
@@ -165,6 +166,19 @@ class _AppEmptyStateState extends State<AppEmptyState>
     },
   );
 
+  /// 宿主注入的点缀挂在图标右上角，不改变图标的布局尺寸
+  Widget _withCornerBadge(BuildContext context, Widget icon) {
+    final badge = UiDecor.maybeOf(context)?.cornerBadge;
+    if (badge == null) return icon;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        icon,
+        Positioned(right: -14, top: -10, child: badge(context)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -178,12 +192,15 @@ class _AppEmptyStateState extends State<AppEmptyState>
             children: [
               _enter(
                 0,
-                IconTheme(
-                  data: IconThemeData(
-                    size: 48,
-                    color: theme.colorScheme.onSurfaceVariant,
+                _withCornerBadge(
+                  context,
+                  IconTheme(
+                    data: IconThemeData(
+                      size: 48,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    child: widget.icon,
                   ),
-                  child: widget.icon,
                 ),
               ),
               const SizedBox(height: 16),

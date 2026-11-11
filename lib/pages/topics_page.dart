@@ -63,6 +63,7 @@ import '../l10n/s.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
+import '../widgets/festival/festival_badge.dart';
 import '../services/toast_service.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/platform_utils.dart';
@@ -1288,7 +1289,17 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
             // 时标题内部自行让步（前缀先缩，见 _TitleTabPrefix），刚性
             // Row + Spacer 版在窄面板直接撑破右簇
             Expanded(
-              child: Align(alignment: Alignment.centerLeft, child: filterMenu),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                // 节日期间标题旁挂一个节日图案（未生效时不占位）
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: filterMenu),
+                    const FestivalBadge(),
+                  ],
+                ),
+              ),
             ),
             // 搜索落位格：展开态零宽（右簇紧凑无空洞），折叠时随 morph
             // 同曲线张开迎接胶囊缩成的图标（胶囊本体在

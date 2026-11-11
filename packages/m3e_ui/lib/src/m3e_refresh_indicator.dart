@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -968,13 +969,21 @@ class _SpinnerBadge extends StatelessWidget {
       padding: const EdgeInsets.all(_kBadgeShadowMargin),
       child: Material(
         elevation: 3,
-        shape: const CircleBorder(),
+        shape: context.shapes.circle(),
         color: scheme.surfaceContainerHigh,
         shadowColor: scheme.shadow.withValues(alpha: 0.6),
         child: SizedBox(
           width: size,
           height: size,
-          child: Center(child: LoadingSpinner(size: size - 18)),
+          child: Center(
+            // 宿主可替换加载动画（例如节日图案）
+            child:
+                UiDecor.maybeOf(context)?.loadingIndicator?.call(
+                  context,
+                  size - 18,
+                ) ??
+                LoadingSpinner(size: size - 18),
+          ),
         ),
       ),
     );

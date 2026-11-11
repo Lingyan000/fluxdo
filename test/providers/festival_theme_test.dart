@@ -112,6 +112,35 @@ void main() {
     expect(notifier.state.activeFestival, isNull);
   });
 
+  test('调试预览不看日期、开关和跳过，结束预览恢复按日期判定', () async {
+    FestivalCalendar.clock = () => DateTime(2026, 7, 1);
+    final notifier = await load({'festival_enabled': false});
+    expect(notifier.state.activeFestival, isNull);
+
+    notifier.setDebugFestival('midautumn');
+    expect(notifier.state.activeFestival?.festival.id, 'midautumn');
+    expect(notifier.state.effectiveColorSpec.id, 'festival-midautumn');
+
+    // 预览里的「本次关闭」只结束预览，不记入真实节日的跳过
+    await notifier.skipCurrentFestival();
+    expect(notifier.state.debugFestivalId, isNull);
+    expect(notifier.state.festivalSkipped, isEmpty);
+    expect(notifier.state.activeFestival, isNull);
+  });
+
+  test('节日装饰：底纹优先于纸张纹理，关闭装饰后只换配色', () async {
+    final notifier = await load({'festival_enabled': true, 'theme_id': 'paper'});
+    expect(notifier.state.isFestivalDecorActive, isTrue);
+    expect(notifier.state.isFestivalPatternActive, isTrue);
+    expect(notifier.state.isPaperTextureActive, isFalse);
+    expect(notifier.state.hasPageBackground, isTrue);
+
+    await notifier.setFestivalDecorEnabled(false);
+    expect(notifier.state.activeFestival, isNotNull);
+    expect(notifier.state.isFestivalDecorActive, isFalse);
+    expect(notifier.state.isPaperTextureActive, isTrue);
+  });
+
   group('界面', () {
     Future<ProviderContainer> pump(
       WidgetTester tester,

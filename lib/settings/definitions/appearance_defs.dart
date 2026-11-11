@@ -31,6 +31,7 @@ import '../../theme/app_colors.dart' show AppHue;
 import '../../theme/app_palettes.dart';
 import '../../theme/color_contrast.dart';
 import '../../theme/custom_themes.dart';
+import '../../theme/festival_calendar.dart';
 import '../../theme/theme_registry.dart';
 import '../../theme/shape_presets.dart';
 import '../../theme/theme_preview_cache.dart';
@@ -40,6 +41,7 @@ import '../../utils/dialog_utils.dart';
 import '../../widgets/common/app_background_layer.dart';
 import '../../widgets/settings/settings_group_page.dart';
 import '../../widgets/common/emoji_text.dart';
+import '../../widgets/festival/festival_motif.dart';
 import '../../utils/seed_color_scheme.dart';
 import '../settings_model.dart';
 
@@ -167,6 +169,36 @@ List<SettingsGroup> buildAppearanceSearchGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(themeProvider.notifier).setFestivalGreetingEnabled(v),
         ),
+        SwitchModel(
+          id: 'festivalDecor',
+          title: l10n.appearance_festivalDecor,
+          subtitle: l10n.appearance_festivalDecorDesc,
+          icon: Symbols.auto_awesome_rounded,
+          enabledWhen: (ref) => ref.watch(themeProvider).festivalEnabled,
+          getValue: (ref) => ref.watch(themeProvider).festivalDecorEnabled,
+          onChanged: (ref, v) =>
+              ref.read(themeProvider.notifier).setFestivalDecorEnabled(v),
+        ),
+        if (kDebugMode)
+          ActionModel(
+            id: 'festivalDebugPreview',
+            title: l10n.appearance_festivalDebugPreview,
+            icon: Symbols.bug_report_rounded,
+            getDynamicSubtitle: (ref) {
+              final id = ref.watch(themeProvider).debugFestivalId;
+              final festival = FestivalCalendar.all
+                  .where((f) => f.id == id)
+                  .firstOrNull;
+              return festival == null
+                  ? l10n.appearance_festivalDebugFollowDate
+                  : localizedName(
+                      festival.name,
+                      Localizations.localeOf(context),
+                      festival.id,
+                    );
+            },
+            onTap: _showFestivalDebugPicker,
+          ),
       ],
     ),
 

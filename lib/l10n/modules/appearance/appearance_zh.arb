@@ -213,6 +213,10 @@
   "appearance_festivalDesc": "春节、端午、中秋等传统节日期间自动换上节日配色",
   "appearance_festivalGreeting": "节日问候",
   "appearance_festivalGreetingDesc": "节日期间首次打开时显示一次问候",
+  "appearance_festivalDecor": "节日装饰",
+  "appearance_festivalDecorDesc": "节日期间在标题栏、下拉刷新、空页面和页面背景加入节日图案",
+  "appearance_festivalDebugPreview": "预览节日（调试）",
+  "appearance_festivalDebugFollowDate": "按日期",
   "appearance_festivalActive": "{name}主题生效中 · 至 {date}",
   "@appearance_festivalActive": {
     "placeholders": {

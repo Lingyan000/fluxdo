@@ -205,6 +205,26 @@ class FestivalCalendar {
     return _cache[cacheKey] = best;
   }
 
+  /// 调试预览：[id] 对应节日离 [now] 最近一次（未结束的）窗口，与日期无关。
+  static FestivalOccurrence? previewOccurrence(String id, DateTime now) {
+    final festival = _festivals.where((f) => f.id == id).firstOrNull;
+    if (festival == null) return null;
+    final today = DateTime(now.year, now.month, now.day);
+    FestivalOccurrence? last;
+    for (final year in [now.year, now.year + 1]) {
+      final date = festival.rule.dateIn(year);
+      if (date == null) continue;
+      last = FestivalOccurrence(
+        festival,
+        date,
+        DateTime(date.year, date.month, date.day + festival.windowStart),
+        DateTime(date.year, date.month, date.day + festival.windowEnd),
+      );
+      if (!last.end.isBefore(today)) return last;
+    }
+    return last;
+  }
+
   /// 下一个本地零点（跨日时重新判定）。
   static DateTime nextMidnight(DateTime now) =>
       DateTime(now.year, now.month, now.day + 1);

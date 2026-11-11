@@ -538,7 +538,10 @@ class _FixedThemeOptions extends ConsumerWidget {
     Future<void> pickCustom(Color? initial) async {
       final color = await _showSeedColorPicker(context, ref, initial: initial);
       if (color == null) return;
-      await notifier.setThemeAccent(spec.familyId, ThemeSpecColor.format(color));
+      await notifier.setThemeAccent(
+        spec.familyId,
+        ThemeSpecColor.format(color),
+      );
     }
 
     Widget label(String text) => Padding(
@@ -1008,4 +1011,52 @@ class _FestivalBanner extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 调试：不看日期直接预览某个节日的配色与装饰（只在调试包里出现）。
+void _showFestivalDebugPicker(BuildContext context, WidgetRef ref) {
+  final selected = ref.read(themeProvider).debugFestivalId;
+  final notifier = ref.read(themeProvider.notifier);
+  final locale = Localizations.localeOf(context);
+  final l10n = context.l10n;
+  showAppBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      Widget option({
+        required Widget leading,
+        required String label,
+        required String? id,
+      }) => ListTile(
+        leading: SizedBox.square(dimension: 24, child: Center(child: leading)),
+        title: Text(label),
+        trailing: selected == id
+            ? Icon(Symbols.check_rounded, color: sheetContext.emphasis.selected)
+            : null,
+        onTap: () {
+          notifier.setDebugFestival(id);
+          Navigator.pop(sheetContext);
+        },
+      );
+      return SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            option(
+              leading: const Icon(Symbols.calendar_month_rounded),
+              label: l10n.appearance_festivalDebugFollowDate,
+              id: null,
+            ),
+            for (final festival in FestivalCalendar.all)
+              option(
+                leading: FestivalMotif(festivalId: festival.id, size: 22),
+                label: localizedName(festival.name, locale, festival.id),
+                id: festival.id,
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }

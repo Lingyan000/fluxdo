@@ -25,5 +25,6 @@ export 'src/page_background.dart';
 export 'src/predictive_back_cupertino_transitions.dart';
 export 'src/keyboard_inset_isolation.dart';
 export 'src/route_motion_hold.dart';
+export 'src/ui_decor.dart';
 export 'src/ui_emphasis.dart';
 export 'src/ui_shapes.dart';

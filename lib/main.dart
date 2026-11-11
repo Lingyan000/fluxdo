@@ -104,6 +104,8 @@ import 'theme/theme_registry.dart';
 import 'theme/theme_resolver.dart';
 import 'widgets/common/app_background_layer.dart';
 import 'widgets/common/paper_texture.dart';
+import 'widgets/festival/festival_decor.dart';
+import 'widgets/festival/festival_pattern.dart';
 import 'theme/app_background.dart';
 import 'utils/time_utils.dart';
 
@@ -635,10 +637,22 @@ ThemeData _withChineseFallback(ThemeData base) {
 }
 
 /// 页面背景构建器需保持同一实例：[PageBackgroundScope] 按引用比较，
-/// 换实例会通知所有路由重建背景。
-final WidgetBuilder _paperBackgroundBuilder = (context) => PaperBackground(
+/// 换实例会通知所有路由重建背景（顶层函数的引用恒定）。
+Widget _paperBackgroundBuilder(BuildContext context) => PaperBackground(
   color: Theme.of(context).colorScheme.surface.withValues(alpha: 1),
 );
+
+final Map<FestivalPatternKind, WidgetBuilder> _festivalBackgrounds = {};
+
+WidgetBuilder _festivalBackgroundBuilder(FestivalPatternKind kind) =>
+    _festivalBackgrounds[kind] ??= (context) {
+      final scheme = Theme.of(context).colorScheme;
+      return FestivalPatternBackground(
+        kind: kind,
+        color: scheme.surface.withValues(alpha: 1),
+        ink: festivalPatternInk(scheme),
+      );
+    };
 
 (AppBackground, WidgetBuilder)? _userBackground;
 
@@ -753,10 +767,16 @@ class MainApp extends ConsumerWidget {
               ),
               builder: (context, child) {
                 final brightness = Theme.of(context).brightness;
-                // 页面背景：用户背景图优先，其次是主题的纸张纹理
+                // 页面背景：用户背景图优先，其次是节日底纹、主题的纸张纹理
                 final WidgetBuilder? pageBackground = themeState
                         .isTransparentActive
                     ? _userBackgroundBuilder(themeState.background)
+                    : themeState.isFestivalPatternActive
+                    ? _festivalBackgroundBuilder(
+                        FestivalPatternKind.forFestival(
+                          themeState.activeFestival!.festival.id,
+                        ),
+                      )
                     : themeState.isPaperTextureActive
                     ? _paperBackgroundBuilder
                     : null;
@@ -837,7 +857,17 @@ class MainApp extends ConsumerWidget {
                           Positioned.fill(child: pageBackground(context)),
                         PageBackgroundScope(
                           backgroundBuilder: pageBackground,
-                          child: child!,
+                          // 节日装饰：空状态与下拉刷新里的节日图案。
+                          // UiDecor 恒驻、只换内容，切换节日不会重建路由树
+                          child: UiDecor(
+                            cornerBadge: themeState.isFestivalDecorActive
+                                ? festivalCornerBadge
+                                : null,
+                            loadingIndicator: themeState.isFestivalDecorActive
+                                ? festivalLoadingIndicator
+                                : null,
+                            child: child!,
+                          ),
                         ),
                         if (windowHome == null) const ReadLaterBubble(),
                       ],

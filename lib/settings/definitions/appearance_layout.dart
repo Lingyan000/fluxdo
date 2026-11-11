@@ -13,7 +13,12 @@ enum AppearanceSection {
     'dialogBlur',
   }),
   interface({'appIcon', 'emojiStyle', 'displayMode', 'topicCardStyle'}),
-  festival({'festivalEnabled', 'festivalGreeting'});
+  festival({
+    'festivalEnabled',
+    'festivalGreeting',
+    'festivalDecor',
+    'festivalDebugPreview',
+  });
 
   const AppearanceSection(this.settingIds);
   final Set<String> settingIds;

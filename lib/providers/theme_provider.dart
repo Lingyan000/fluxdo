@@ -107,6 +107,12 @@ class ThemeState {
   /// 今天所处的节日窗口（与开关、跳过无关）
   final FestivalOccurrence? festival;
 
+  /// 节日装饰（图案挂件、刷新指示、空状态点缀、页面底纹）开关
+  final bool festivalDecorEnabled;
+
+  /// 调试预览的节日 id：不看日期、开关与跳过，直接按该节日生效；不持久化
+  final String? debugFestivalId;
+
   /// 用户自定义主题（与 [ThemeRegistry.custom] 同步，变化时触发重建）
   final List<ThemeSpec> customThemes;
 
@@ -136,6 +142,8 @@ class ThemeState {
     this.festivalGreetingEnabled = true,
     this.festivalSkipped = const {},
     this.festival,
+    this.festivalDecorEnabled = true,
+    this.debugFestivalId,
     this.customThemes = const [],
     this.m3eEnabled = true,
     this.background = const AppBackground(),
@@ -150,8 +158,13 @@ class ThemeState {
 
   /// 当前生效的节日（开关打开、处于窗口内且本次未跳过）
   FestivalOccurrence? get activeFestival {
-    final f = festival;
-    if (!festivalEnabled || f == null || festivalSkipped.contains(f.key)) {
+    final debugId = debugFestivalId;
+    final f = debugId != null
+        ? FestivalCalendar.previewOccurrence(debugId, FestivalCalendar.clock())
+        : festival;
+    if (f == null) return null;
+    if (debugId == null &&
+        (!festivalEnabled || festivalSkipped.contains(f.key))) {
       return null;
     }
     // 节日配色主题缺失（资产损坏）时不生效
@@ -179,12 +192,23 @@ class ThemeState {
   /// 当前生效的界面风格：跟随用户选择的主题（节日只换配色）
   ThemeStyle get effectiveStyle => themeSpec.style;
 
-  /// 纸张纹理是否生效：与用户背景图共用页面背景层，背景图优先
-  bool get isPaperTextureActive =>
-      !isTransparentActive && effectiveStyle.texture == TextureStyle.paper;
+  /// 节日装饰是否生效（节日生效且装饰开关打开）
+  bool get isFestivalDecorActive =>
+      festivalDecorEnabled && activeFestival != null;
 
-  /// 页面是否铺独立背景（用户背景图或纸张纹理），表面类颜色需要透出
-  bool get hasPageBackground => isTransparentActive || isPaperTextureActive;
+  /// 节日底纹是否生效：与用户背景图共用页面背景层，背景图优先
+  bool get isFestivalPatternActive =>
+      !isTransparentActive && isFestivalDecorActive;
+
+  /// 纸张纹理是否生效：用户背景图、节日底纹优先
+  bool get isPaperTextureActive =>
+      !isTransparentActive &&
+      !isFestivalPatternActive &&
+      effectiveStyle.texture == TextureStyle.paper;
+
+  /// 页面是否铺独立背景（用户背景图、节日底纹或纸张纹理），表面类颜色需要透出
+  bool get hasPageBackground =>
+      isTransparentActive || isFestivalPatternActive || isPaperTextureActive;
 
   /// 当前生效的圆角风格：用户指定优先，否则取主题推荐
   ShapePreset get effectiveShapePreset => shapeOverride ?? themeSpec.shape;
@@ -245,6 +269,8 @@ class ThemeState {
     bool? festivalGreetingEnabled,
     Set<String>? festivalSkipped,
     FestivalOccurrence? Function()? festival,
+    bool? festivalDecorEnabled,
+    String? Function()? debugFestivalId,
     List<ThemeSpec>? customThemes,
     bool? m3eEnabled,
     AppBackground? background,
@@ -272,6 +298,10 @@ class ThemeState {
           festivalGreetingEnabled ?? this.festivalGreetingEnabled,
       festivalSkipped: festivalSkipped ?? this.festivalSkipped,
       festival: festival != null ? festival() : this.festival,
+      festivalDecorEnabled: festivalDecorEnabled ?? this.festivalDecorEnabled,
+      debugFestivalId: debugFestivalId != null
+          ? debugFestivalId()
+          : this.debugFestivalId,
       customThemes: customThemes ?? this.customThemes,
       m3eEnabled: m3eEnabled ?? this.m3eEnabled,
       background: background ?? this.background,
@@ -296,6 +326,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   static const String _festivalEnabledKey = 'festival_enabled';
   static const String _festivalGreetingKey = 'festival_greeting';
   static const String _festivalSkippedKey = 'festival_skipped';
+  static const String _festivalDecorKey = 'festival_decor';
   static const String _fontMonoKey = 'font_mono';
   static const String _m3eEnabledKey = 'm3e_enabled';
   static const String _bgImagePathKey = 'bg_image_path';
@@ -361,6 +392,16 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     await _prefs.setBool(_festivalEnabledKey, value);
   }
 
+  Future<void> setFestivalDecorEnabled(bool value) async {
+    state = state.copyWith(festivalDecorEnabled: value);
+    await _prefs.setBool(_festivalDecorKey, value);
+  }
+
+  /// 调试预览指定节日（null 恢复按日期判定），只在内存中生效。
+  void setDebugFestival(String? id) {
+    state = state.copyWith(debugFestivalId: () => id);
+  }
+
   Future<void> setFestivalGreetingEnabled(bool value) async {
     state = state.copyWith(festivalGreetingEnabled: value);
     await _prefs.setBool(_festivalGreetingKey, value);
@@ -408,6 +449,11 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
 
   /// 本次节日不再使用节日配色（窗口结束后自然失效）。
   Future<void> skipCurrentFestival() async {
+    // 调试预览中的「本次关闭」只结束预览，不影响真实节日
+    if (state.debugFestivalId != null) {
+      setDebugFestival(null);
+      return;
+    }
     final f = state.festival;
     if (f == null) return;
     // 只保留最近若干条，避免无限增长
@@ -532,6 +578,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       festivalGreetingEnabled: prefs.getBool(_festivalGreetingKey) ?? true,
       festivalSkipped: {...?prefs.getStringList(_festivalSkippedKey)},
       festival: FestivalCalendar.activeOn(FestivalCalendar.clock()),
+      festivalDecorEnabled: prefs.getBool(_festivalDecorKey) ?? true,
       customThemes: customThemes,
       m3eEnabled: prefs.getBool(_m3eEnabledKey) ?? true,
       background: background,
