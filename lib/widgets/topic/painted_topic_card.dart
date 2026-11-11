@@ -77,7 +77,8 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
     final surfaces = context.themeStyle.surfaces;
     final bgColor = widget.isSelected
         ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-        : (widget.highlightColor ?? layout.cardColor);
+        : (widget.highlightColor ??
+              PageBackgroundScope.contentColor(context, layout.cardColor));
     // 动图头像混合岛:layout.animatedAvatarUrl 非空(开关开启且用户有
     // 动图)时挂播放 overlay 钉在 avatarRect,画布先画静态模板小图
     // (几 KB 秒出)顶住观感;overlay 首帧就绪后画布停画静态层,防

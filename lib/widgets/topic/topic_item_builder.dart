@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/category.dart';
@@ -90,16 +91,18 @@ Widget buildTopicItem({
       style == TopicItemStyle.lastGroupedPinned;
   final lastInGroup = style == TopicItemStyle.lastGroupedPinned;
 
-  // 一镜到底锚点底色:与各分支卡片外壳底色一致(置顶紧凑卡是半透明
-  // surfaceContainerLow,普通卡是 cardTheme.color;落地高亮瞬时值优先)
+  // 一镜到底锚点底色与卡片外壳一致，包含页面背景与落地高亮状态。
   final theme = Theme.of(context);
   final anchorColor =
       highlightColor ??
-      (grouped
+      PageBackgroundScope.contentColor(
+        context,
+        grouped
           ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
           : compact
           ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
-          : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow);
+          : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
+      );
 
   // 从实际卡身接管画面；桌面的居中约束留在来源外层。
   VoidCallback? longPressFor(BuildContext cardContext) => enableLongPress

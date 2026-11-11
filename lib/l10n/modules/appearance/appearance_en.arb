@@ -163,7 +163,7 @@
   "appearance_switchIconFailed": "Failed to switch icon, please retry",
   "appearance_themeMode": "Theme mode",
   "appearance_title": "Appearance",
-  "appearance_transparentDesc": "Translucent surfaces over your image",
+  "appearance_transparentDesc": "Show the background image beneath topic lists and posts. Adjust the overlay and blur for comfortable reading",
   "layout_selectTopicHint": "Select a topic to view details",
   "progressGesture_action_aiAssistant": "AI Assistant",
   "progressGesture_action_bookmark": "Bookmark",

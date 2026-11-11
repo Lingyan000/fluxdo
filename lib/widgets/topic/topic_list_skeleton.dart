@@ -38,6 +38,7 @@ class _TopicCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: PageBackgroundScope.isActive(context) ? Colors.transparent : null,
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(10)),
@@ -94,6 +95,7 @@ class _MessageCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: PageBackgroundScope.isActive(context) ? Colors.transparent : null,
       margin: const EdgeInsets.only(bottom: 8),
       clipBehavior: Clip.antiAlias,
       shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(10)),

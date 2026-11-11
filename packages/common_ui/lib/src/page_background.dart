@@ -12,6 +12,18 @@ class PageBackgroundScope extends InheritedWidget {
   /// Null disables wallpaper without remounting page content.
   final WidgetBuilder? backgroundBuilder;
 
+  static PageBackgroundScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PageBackgroundScope>();
+
+  /// 当前是否铺着页面背景（栏、标题栏据此决定透明还是不透明）。
+  static bool isActive(BuildContext context) =>
+      maybeOf(context)?.backgroundBuilder != null;
+
+  /// 阅读内容的基础填充色。有页面背景时透出背景，否则使用原有颜色。
+  /// 选中、高亮等状态色在此基础上叠加。
+  static Color contentColor(BuildContext context, Color fallback) =>
+      isActive(context) ? Colors.transparent : fallback;
+
   @override
   bool updateShouldNotify(PageBackgroundScope oldWidget) =>
       backgroundBuilder != oldWidget.backgroundBuilder;

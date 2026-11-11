@@ -331,7 +331,11 @@ class TopicCard extends ConsumerWidget {
             decoration: ShapeDecoration(
               color: isSelected
                   ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-                  : (highlightColor ?? theme.cardTheme.color),
+                  : (highlightColor ??
+                        PageBackgroundScope.contentColor(
+                          context,
+                          theme.cardTheme.color ?? Colors.transparent,
+                        )),
               shape: RoundedSuperellipseBorder(
                 borderRadius: cardRadius,
                 side: isSelected
@@ -1076,12 +1080,15 @@ class CompactTopicCard extends ConsumerWidget {
             color: isSelected
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
                 : highlightColor ??
-                      (grouped
+                      PageBackgroundScope.contentColor(
+                        context,
+                        grouped
                           ? theme.cardTheme.color ??
                                 theme.colorScheme.surfaceContainerLow
                           : theme.colorScheme.surfaceContainerLow.withValues(
                               alpha: 0.5,
-                            )),
+                            ),
+                      ),
             shape: RoundedSuperellipseBorder(
               borderRadius: cardRadius,
               side: isSelected

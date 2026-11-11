@@ -44,7 +44,10 @@ class PinnedTopicsHeader extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(bottom: expanded ? 0 : 8),
           child: Material(
-            color: theme.cardTheme.color ?? colors.surfaceContainerLow,
+            color: PageBackgroundScope.contentColor(
+              context,
+              theme.cardTheme.color ?? colors.surfaceContainerLow,
+            ),
             shape: shape,
             child: Row(
               children: [

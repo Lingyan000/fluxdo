@@ -3240,9 +3240,11 @@ class _TopicListState extends ConsumerState<_TopicList>
                         if (shouldHighlight) {
                           final theme = Theme.of(context);
                           // 卡片正常背景色（需与 TopicCard / CompactTopicCard 的默认 color 一致）
-                          final normalColor =
-                              theme.cardTheme.color ??
-                              theme.colorScheme.surfaceContainerLow;
+                          final normalColor = PageBackgroundScope.contentColor(
+                            context,
+                            theme.cardTheme.color ??
+                                theme.colorScheme.surfaceContainerLow,
+                          );
                           final highlightColor = theme
                               .colorScheme
                               .primaryContainer

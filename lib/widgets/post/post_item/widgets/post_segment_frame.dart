@@ -1,4 +1,6 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 
@@ -33,8 +35,20 @@ class PostSegmentFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final targetColor = buildPostTargetColor(theme, post, highlight);
+    final targetColor = buildPostTargetColor(
+      theme,
+      post,
+      highlight,
+      backgroundColor: PageBackgroundScope.contentColor(
+        context,
+        theme.colorScheme.surface,
+      ),
+    );
     final borderColor = theme.colorScheme.outlineVariant.withValues(alpha: 0.5);
+    // 正文透明时，日期标签仍需遮住穿过标签区域的楼层分隔线。
+    final separatorColor = PageBackgroundScope.isActive(context)
+        ? Color.alphaBlend(targetColor, theme.colorScheme.surface)
+        : targetColor;
 
     // 删除/隐藏帖才降透明,常规帖不挂 Opacity 节点(1.0 也要占一个
     // RenderObject 位)
@@ -93,7 +107,7 @@ class PostSegmentFrame extends StatelessWidget {
                           horizontal: 10,
                           vertical: 1,
                         ),
-                        color: targetColor,
+                        color: separatorColor,
                         child: Text(
                           topDateSeparatorLabel!,
                           style: theme.textTheme.labelSmall?.copyWith(
@@ -119,7 +133,7 @@ class PostSegmentFrame extends StatelessWidget {
                           horizontal: 10,
                           vertical: 1,
                         ),
-                        color: targetColor,
+                        color: separatorColor,
                         child: Text(
                           bottomDateSeparatorLabel!,
                           style: theme.textTheme.labelSmall?.copyWith(
@@ -168,18 +182,23 @@ class _PostSelectionIndicator extends StatelessWidget {
   }
 }
 
-Color buildPostTargetColor(ThemeData theme, Post post, bool highlight) {
-  final backgroundColor = theme.colorScheme.surface;
+Color buildPostTargetColor(
+  ThemeData theme,
+  Post post,
+  bool highlight, {
+  Color? backgroundColor,
+}) {
+  final baseColor = backgroundColor ?? theme.colorScheme.surface;
   final highlightColor = theme.colorScheme.primaryContainer.withValues(
     alpha: 0.3,
   );
   return highlight
-      ? Color.alphaBlend(highlightColor, backgroundColor)
+      ? Color.alphaBlend(highlightColor, baseColor)
       : post.isDeleted
       ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
       : post.hidden
       ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
-      : backgroundColor;
+      : baseColor;
 }
 
 Color buildPostSelectionIndicatorColor(ThemeData theme) {

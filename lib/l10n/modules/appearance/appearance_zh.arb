@@ -236,7 +236,7 @@
   "appearance_switchIconFailed": "切换图标失败，请稍后重试",
   "appearance_themeMode": "主题模式",
   "appearance_title": "外观",
-  "appearance_transparentDesc": "界面半透明，透出背景图片",
+  "appearance_transparentDesc": "背景图显示在话题列表和正文下方，可调整遮罩与模糊以保证阅读清晰",
   "layout_selectTopicHint": "选择一个话题查看详情",
   "progressGesture_action_aiAssistant": "AI 助手",
   "progressGesture_action_bookmark": "收藏",

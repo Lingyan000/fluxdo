@@ -72,7 +72,10 @@ class TopicDetailHeader extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.fromLTRB(16, showTitle ? 20 : 12, 16, 16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: PageBackgroundScope.contentColor(
+          context,
+          theme.colorScheme.surface,
+        ),
         border: Border(
           bottom: BorderSide(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),

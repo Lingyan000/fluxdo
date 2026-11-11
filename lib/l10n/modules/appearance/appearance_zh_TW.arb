@@ -163,7 +163,7 @@
   "appearance_switchIconFailed": "切換圖示失敗，請稍後重試",
   "appearance_themeMode": "主題模式",
   "appearance_title": "外觀",
-  "appearance_transparentDesc": "介面半透明，透出背景圖片",
+  "appearance_transparentDesc": "背景圖片顯示在話題列表和內文下方，可調整遮罩與模糊以確保閱讀清晰",
   "layout_selectTopicHint": "選擇一個話題檢視詳情",
   "progressGesture_action_aiAssistant": "AI 助手",
   "progressGesture_action_bookmark": "收藏",
