@@ -7,15 +7,50 @@ on:
     paths:
       - scripts/ci/*distribution_manifests.py
       - .github/workflows/distribution-checks.yaml
+      - .github/workflows/build.yaml
+      - scripts/ci/macos/setup_signing.sh
+      - scripts/ci/macos/test_setup_signing.py
   pull_request:
     paths:
       - scripts/ci/*distribution_manifests.py
       - .github/workflows/distribution-checks.yaml
+      - .github/workflows/build.yaml
+      - scripts/ci/macos/setup_signing.sh
+      - scripts/ci/macos/test_setup_signing.py
 
 permissions:
   contents: read
 
 jobs:
+  macos-packages:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        signing: [adhoc, certificate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Test CI keychain setup
+        run: python3 scripts/ci/macos/test_setup_signing.py
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Prepare isolated signing keychain
+        env:
+          P12_BASE64: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_BASE64 || '' }}
+          P12_PASSWORD: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_PASSWORD || '' }}
+        run: bash scripts/ci/macos/setup_signing.sh
+      - name: Resolve macOS packages and build configuration
+        timeout-minutes: 10
+        run: |
+          flutter build macos --release --config-only --verbose
+          test -d build/macos/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework
+          test -f build/macos/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update
+
   manifests:
     strategy:
       fail-fast: false

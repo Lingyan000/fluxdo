@@ -198,36 +198,7 @@ jobs:
         env:
           P12_BASE64: ${{ secrets.MACOS_CODESIGN_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.MACOS_CODESIGN_P12_PASSWORD }}
-        run: |
-          if [ -z "$P12_BASE64" ]; then
-            echo "MACOS_CODESIGN_P12_BASE64 未配置,回退 adhoc 签名"
-            exit 0
-          fi
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 24)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          echo "$P12_BASE64" | base64 -d > "$RUNNER_TEMP/codesign.p12"
-          security import "$RUNNER_TEMP/codesign.p12" -k "$KEYCHAIN_PATH" \
-            -P "$P12_PASSWORD" -T /usr/bin/codesign
-          # 允许 codesign 免交互使用私钥(CI 无 GUI,不设置会卡死在授权弹窗)
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
-          # 自签证书需要显式授信 codeSign 策略,identity 才会被视为有效
-          openssl pkcs12 -in "$RUNNER_TEMP/codesign.p12" -passin "pass:$P12_PASSWORD" \
-            -nokeys -legacy -clcerts | openssl x509 -out "$RUNNER_TEMP/codesign.cer" -outform DER
-          sudo security add-trusted-cert -d -p codeSign -r trustRoot \
-            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/codesign.cer"
-          rm -f "$RUNNER_TEMP/codesign.p12"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "FluxDO Code Signing"
-          # 通过 Local.xcconfig 覆盖签名身份(与本地开发同一机制)
-          printf '%s\n' \
-            'FLUXDO_APPLE_CODE_SIGN_IDENTITY_MACOSX = FluxDO Code Signing' \
-            'FLUXDO_APPLE_CODE_SIGN_STYLE = Manual' \
-            'FLUXDO_APPLE_CODE_SIGNING_ALLOWED = YES' > apple/Local.xcconfig
+        run: bash scripts/ci/macos/setup_signing.sh
 
       - name: Test macOS updater bridge
         if: matrix.platform == 'macos'
@@ -235,12 +206,13 @@ jobs:
 
       - name: Build macOS
         if: matrix.platform == 'macos'
+        timeout-minutes: 60
         env:
           FLUXDO_MACOS_ARCH: ${{ matrix.arch }}
           FLUTTER_XCODE_EXCLUDED_ARCHS: ${{ matrix.excluded-arch }}
           HAS_CODESIGN_CERT: ${{ secrets.MACOS_CODESIGN_P12_BASE64 != '' }}
         run: |
-          dart tool/flutterw.dart build macos --release
+          dart tool/flutterw.dart build macos --release --verbose
           mkdir -p dist
           APP_PATH="build/macos/Build/Products/Release/fluxdo.app"
           test -f "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib"
