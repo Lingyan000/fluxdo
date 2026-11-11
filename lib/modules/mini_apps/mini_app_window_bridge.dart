@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -40,6 +41,7 @@ class _WindowSession {
   final Future<void> Function(String) community;
   final generation = AuthSession().generation;
   final key = const Uuid().v4();
+  final launchClock = Stopwatch()..start();
   WindowController? window;
   final ready = Completer<void>();
 }
@@ -121,7 +123,8 @@ class MiniAppWindowBridge {
     );
     s.entry = entry;
     try {
-      await WebViewCookiePriming.instance.prime(entry.toString());
+      // 先创建加载窗口；运行页在 WebView 创建后通过 prime 请求对齐 Cookie，
+      // 不在这里重复同步并阻塞子引擎启动。
       if (!AuthSession().isValid(s.generation)) {
         throw StateError('Session changed');
       }
@@ -137,6 +140,17 @@ class MiniAppWindowBridge {
               arguments: jsonEncode({'type': 'miniApp', 'key': s.key}),
             ),
           );
+          LogWriter.instance.write({
+            'type': 'mini_app',
+            'event': 'mini_app_window_created',
+            'level': 'info',
+            'appId': details.app.id,
+            'engine': engine.name,
+            'elapsedMs': s.launchClock.elapsedMilliseconds,
+            'buildMode': kDebugMode
+                ? 'debug'
+                : (kProfileMode ? 'profile' : 'release'),
+          });
         }
         if (!AuthSession().isValid(s.generation)) {
           await s.window?.invokeMethod('revoke');
@@ -251,7 +265,13 @@ class MiniAppWindowBridge {
           if (entry == null) {
             throw const FormatException('Invalid launch report');
           }
-          LogWriter.instance.write(entry);
+          LogWriter.instance.write({
+            ...entry,
+            'windowElapsedMs': s.launchClock.elapsedMilliseconds,
+            'buildMode': kDebugMode
+                ? 'debug'
+                : (kProfileMode ? 'profile' : 'release'),
+          });
           return null;
         case 'community':
           final path = body['path'] as String;

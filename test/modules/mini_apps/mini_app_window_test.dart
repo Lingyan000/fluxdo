@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/user.dart';
@@ -107,13 +108,36 @@ void main() {
       binding.defaultBinaryMessenger.setMockMethodCallHandler(channels, null);
     });
     final launch = Uri.parse('${launchDetails.embedUrl}&room=42');
+    final cookiesReady = Completer<List<webview.Cookie>>();
+    final cookieReadStarted = Completer<void>();
+    var cookieReads = 0;
+    platform.cookies.readSnapshot = () {
+      cookieReads++;
+      if (!cookieReadStarted.isCompleted) cookieReadStarted.complete();
+      return cookiesReady.future;
+    };
+    const rawCookies = MethodChannel('com.fluxdo/raw_cookie');
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(rawCookies, (
+      call,
+    ) async {
+      if (call.method == 'getAllCookieInfos') {
+        await platform.cookies.snapshot();
+        return [];
+      }
+      return null;
+    });
+    addTearDown(() {
+      if (!cookiesReady.isCompleted) cookiesReady.complete([]);
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(rawCookies, null);
+    });
     await MiniAppWindowBridge.open(
       launchDetails,
       launch,
       engine: MiniAppEngine.lightweight,
       container: container,
       community: (_) async {},
-    );
+    ).timeout(const Duration(seconds: 3));
+    expect(cookieReads, 0, reason: '创建窗口不能等待 Cookie 同步');
     final arguments =
         jsonDecode(definitions.single['arguments'] as String) as Map;
     expect(arguments['type'], 'miniApp');
@@ -150,6 +174,14 @@ void main() {
 
     final bootstrap = miniAppWindowMap(await request('bootstrap', {}));
     expect(bootstrap['engine'], 'lightweight');
+    var primed = false;
+    final priming = request('prime', {}).then((_) => primed = true);
+    await cookieReadStarted.future.timeout(const Duration(seconds: 3));
+    expect(cookieReads, greaterThan(0));
+    expect(primed, isFalse, reason: '运行页加载仍须等待 Cookie 对齐');
+    cookiesReady.complete([]);
+    await priming;
+    platform.cookies.readSnapshot = null;
     await request('launchReport', {
       'appId': app.id,
       'engine': 'lightweight',

@@ -13,6 +13,24 @@ class NetworkFlutterViewController: FlutterViewController {
   }
 }
 
+/// NSWindow.close 不保证停止子引擎；遗留 isolate 会在热重启时再次 show。
+/// 监听真实关闭通知，同时覆盖系统按钮和 Dart 关闭入口。
+class MiniAppWindowLifetime {
+  private var closeObserver: NSObjectProtocol?
+
+  init(window: NSWindow, shutdown: @escaping () -> Void) {
+    closeObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.willCloseNotification, object: window, queue: .main
+    ) { [self] _ in
+      guard let observer = closeObserver else { return }
+      NotificationCenter.default.removeObserver(observer)
+      closeObserver = nil
+      // 等窗口关闭通知和当前平台通道回调返回，避免在调用栈内销毁引擎。
+      DispatchQueue.main.async(execute: shutdown)
+    }
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   /// CGEvent 注入式 Cmd+V 的粘贴补丁(语音输入法/剪贴板管理器兼容)。
   /// 详见 SyntheticPasteFix.swift 的文件头注释与上游 issue 184571。
@@ -40,6 +58,13 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
+      if let window = controller.view.window {
+        // 观察器持有生命周期对象至关闭，异步任务持有 controller 至销毁结束。
+        _ = MiniAppWindowLifetime(window: window) {
+          controller.engine.shutDownEngine()
+          window.contentViewController = nil
+        }
+      }
     }
 
     // CGEvent 注入的 Cmd+V(语音输入法/剪贴板管理器)在 Flutter macOS 上会被

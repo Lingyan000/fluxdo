@@ -10,9 +10,8 @@ class AppDelegate: FlutterAppDelegate {
   // 点击 Dock 图标时重新显示窗口
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if !flag {
-      for window in sender.windows {
-        window.makeKeyAndOrderFront(self)
-      }
+      // 已关闭的子窗口可能仍被插件引用，Dock 唤起只恢复社区主窗口。
+      mainFlutterWindow?.makeKeyAndOrderFront(self)
     }
     return true
   }
