@@ -132,7 +132,7 @@ class ThemeState {
     this.bodyFont = FontChoice.follow,
     this.monoFont = FontChoice.follow,
     this.loadedFonts = const {},
-    this.festivalEnabled = false,
+    this.festivalEnabled = true,
     this.festivalGreetingEnabled = true,
     this.festivalSkipped = const {},
     this.festival,
@@ -528,7 +528,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
         for (final font in FontCatalog.all)
           if (FontDownloadService.instance.isRegistered(font)) font.id,
       },
-      festivalEnabled: prefs.getBool(_festivalEnabledKey) ?? false,
+      festivalEnabled: prefs.getBool(_festivalEnabledKey) ?? true,
       festivalGreetingEnabled: prefs.getBool(_festivalGreetingKey) ?? true,
       festivalSkipped: {...?prefs.getStringList(_festivalSkippedKey)},
       festival: FestivalCalendar.activeOn(FestivalCalendar.clock()),

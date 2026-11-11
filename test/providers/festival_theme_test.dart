@@ -63,8 +63,18 @@ void main() {
     expect(state.effectiveShapePreset, ShapePreset.sharp);
   });
 
+  test('未设置过开关时默认开启，用户关过则保持关闭', () async {
+    final fresh = await load({'theme_id': 'paper'});
+    expect(fresh.state.festivalEnabled, isTrue);
+    expect(fresh.state.activeFestival?.festival.id, 'spring');
+
+    final optedOut = await load({'festival_enabled': false});
+    expect(optedOut.state.festivalEnabled, isFalse);
+    expect(optedOut.state.activeFestival, isNull);
+  });
+
   test('开关关闭或不在节日窗口时用用户主题', () async {
-    final off = await load({'theme_id': 'paper'});
+    final off = await load({'theme_id': 'paper', 'festival_enabled': false});
     expect(off.state.activeFestival, isNull);
     expect(off.state.effectiveColorSpec.id, 'paper');
 
@@ -173,7 +183,7 @@ void main() {
     });
 
     testWidgets('开关关闭时无横幅，节日问候开关隐藏', (tester) async {
-      await pump(tester, {});
+      await pump(tester, {'festival_enabled': false});
       expect(find.textContaining('主题生效中'), findsNothing);
       expect(find.text('节日主题'), findsOneWidget);
       expect(find.text('节日问候'), findsNothing);
