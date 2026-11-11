@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../services/eruda_settings_service.dart';
@@ -33,7 +34,7 @@ class ErudaCard extends StatelessWidget {
                     : '关闭（默认）。开启后可在页面内查看网络 / 控制台 / 元素',
               ),
               secondary: Icon(Symbols.terminal_rounded, fill: enabled ? 1 : 0,
-                color: enabled ? theme.colorScheme.primary : null,
+                color: enabled ? context.emphasis.selected : null,
               ),
               value: enabled,
               onChanged: (value) => service.setEnabled(value),

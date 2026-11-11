@@ -10,6 +10,7 @@ import '../../providers/pinned_categories_provider.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
+import '../../utils/color_utils.dart';
 
 class CategoryShortcuts extends ConsumerWidget {
   const CategoryShortcuts({
@@ -69,7 +70,11 @@ class _CategoryShortcutItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
-    final categoryColor = _parseColor(category.color, colorScheme.primary);
+    final categoryColor = ColorUtils.category(
+      category.color,
+      Theme.of(context),
+      fallback: colorScheme.primary,
+    );
     final activeCategoryId = ref.watch(activeSidebarCategoryIdProvider);
     final isSelected = activeCategoryId == category.id;
     final backgroundColor = isSelected
@@ -120,14 +125,6 @@ class _CategoryShortcutItem extends ConsumerWidget {
         ),
       ),
     );
-  }
-}
-
-Color _parseColor(String hex, Color fallback) {
-  try {
-    return Color(int.parse('FF$hex', radix: 16));
-  } catch (_) {
-    return fallback;
   }
 }
 

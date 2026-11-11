@@ -67,7 +67,7 @@ class _ThreadEntryCard extends StatelessWidget {
                   Icon(
                     Symbols.forum_rounded,
                     size: 20,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -78,7 +78,7 @@ class _ThreadEntryCard extends StatelessWidget {
                       Text(
                         S.current.chat_threadReplies(thread.replyCount),
                         style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

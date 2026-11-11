@@ -65,7 +65,7 @@ class SearchCapsule extends StatelessWidget {
                 Icon(
                   Symbols.search_rounded,
                   size: iconSize,
-                  color: colorScheme.onSurfaceVariant,
+                  color: context.emphasis.accent,
                 ),
                 Expanded(
                   child: hintOpacity <= 0
@@ -206,7 +206,7 @@ class _SearchCapsuleFlight extends StatelessWidget {
                       child: Icon(
                         Symbols.search_rounded,
                         size: iconSize,
-                        color: colorScheme.onSurfaceVariant,
+                        color: context.emphasis.accent,
                       ),
                     ),
                   ),

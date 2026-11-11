@@ -45,6 +45,18 @@ class UiShapes extends ThemeExtension<UiShapes> {
   BorderRadius borderRadius(double design) =>
       BorderRadius.circular(resolve(design));
 
+  /// 圆形按钮 / 图标底座的形状：不封顶的风格是正圆，设有 [max] 的风格
+  /// 收成圆角方（与胶囊同一规则）。头像、状态圆点等不走这里，始终是圆。
+  ShapeBorder circle({BorderSide side = BorderSide.none}) {
+    final limit = max;
+    return limit == null
+        ? CircleBorder(side: side)
+        : RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(limit),
+            side: side,
+          );
+  }
+
   @override
   UiShapes copyWith({double? scale, double? max}) =>
       UiShapes(scale: scale ?? this.scale, max: max ?? this.max);

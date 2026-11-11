@@ -49,13 +49,13 @@ class ProfileStatsCard extends ConsumerWidget {
                 Icon(
                   Symbols.add_chart_rounded,
                   size: 20,
-                  color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                  color: context.emphasis.accent.withValues(alpha: 0.6),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   S.current.profileStats_addItems,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.8),
+                    color: context.emphasis.accent.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w500,
                   ),
                 ),

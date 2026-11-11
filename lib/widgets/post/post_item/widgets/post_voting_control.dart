@@ -444,7 +444,7 @@ class _PostVotingVotersSheetState extends State<PostVotingVotersSheet> {
         children: [
           Icon(
             Symbols.thumbs_up_down_rounded,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 8),
           Text(

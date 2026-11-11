@@ -128,7 +128,7 @@ class _PanelHeader extends StatelessWidget {
             Icon(
               Icons.format_list_bulleted,
               size: 16,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             const SizedBox(width: 8),
             Expanded(

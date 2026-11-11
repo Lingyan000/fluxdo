@@ -59,7 +59,7 @@ class UpdateDialog extends StatelessWidget {
               child: Icon(
                 Symbols.rocket_launch_rounded,
                 size: 200,
-                color: colorScheme.primary.withValues(alpha: 0.05),
+                color: context.emphasis.accent.withValues(alpha: 0.05),
               ),
             ),
 

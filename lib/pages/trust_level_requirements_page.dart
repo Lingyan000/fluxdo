@@ -523,7 +523,7 @@ class _TrustLevelRequirementsPageState
                 child: Icon(
                   Symbols.verified_user_rounded,
                   size: 200,
-                  color: colorScheme.primary.withValues(alpha: 0.05),
+                  color: context.emphasis.accent.withValues(alpha: 0.05),
                 ),
               ),
               Positioned(
@@ -964,9 +964,9 @@ class _TrustLevelRequirementsPageState
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: iconBg,
-                  shape: BoxShape.circle,
+                  shape: context.shapes.circle(),
                 ),
                 child: Icon(
                   veto.isMet ? Symbols.check_rounded : Symbols.close_rounded,
@@ -1101,15 +1101,15 @@ class _TrustLevelRequirementsPageState
                         Container(
                           width: 56,
                           height: 56,
-                          decoration: BoxDecoration(
+                          decoration: ShapeDecoration(
                             color: colorScheme.primaryContainer.withValues(
                               alpha: 0.45,
                             ),
-                            shape: BoxShape.circle,
+                            shape: context.shapes.circle(),
                           ),
                           child: Icon(
                             Symbols.star_rounded,
-                            color: colorScheme.primary,
+                            color: context.emphasis.accent,
                             size: 28,
                           ),
                         ),

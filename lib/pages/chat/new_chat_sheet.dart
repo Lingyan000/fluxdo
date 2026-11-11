@@ -295,7 +295,7 @@ class _UserResultTile extends StatelessWidget {
                       Symbols.check_circle_rounded,
                       key: const ValueKey('on'),
                       fill: 1,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.selected,
                     )
                   : Icon(
                       Symbols.circle_rounded,

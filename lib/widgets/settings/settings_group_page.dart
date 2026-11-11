@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:common_ui/common_ui.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -165,7 +166,7 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
   ) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        Icon(icon, size: 18, color: context.emphasis.accent),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

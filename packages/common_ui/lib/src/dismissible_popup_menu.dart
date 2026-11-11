@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 
 import 'route_interaction.dart';
 
+import 'ui_emphasis.dart';
 import 'ui_shapes.dart';
 
 part 'popup_menu_morph.dart';
@@ -720,7 +721,11 @@ class _SubmenuRowTile extends StatelessWidget {
                 ),
               ),
               if (selected)
-                Icon(Symbols.check_rounded, size: 18, color: cs.primary),
+                Icon(
+                  Symbols.check_rounded,
+                  size: 18,
+                  color: context.emphasis.selected,
+                ),
             ],
           ),
         ),

@@ -35,7 +35,7 @@ import 'package:flutter/foundation.dart'
         visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:common_ui/common_ui.dart'
-    show showInteractionDialog, UiShapesContext;
+    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -5047,7 +5047,7 @@ class _EmojiMoreRow extends StatelessWidget {
                 Icon(
                   Symbols.more_horiz_rounded,
                   size: 20,
-                  color: scheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -5055,7 +5055,7 @@ class _EmojiMoreRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: scheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 ),
               ],

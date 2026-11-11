@@ -365,13 +365,12 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
   }
 
   Future<void> _showImageModelMissingDialog() async {
-    final theme = Theme.of(context);
     final result = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: Icon(
           Symbols.image_rounded,
-          color: theme.colorScheme.primary,
+          color: context.emphasis.accent,
           size: 32,
         ),
         title: Text(S.current.ai_imageModelMissingTitle),
@@ -1439,18 +1438,18 @@ class _ThinkingButton extends StatelessWidget {
   ) {
     final cs = Theme.of(context).colorScheme;
     final isSelected = level == current;
-    final color = isSelected ? cs.primary : cs.onSurfaceVariant;
+    final color = isSelected ? context.emphasis.selected : cs.onSurfaceVariant;
     return ListTile(
       leading: _IdeaIcon(asset: _svgAsset(level), color: color, size: 22),
       title: Text(
         label,
         style: TextStyle(
-          color: isSelected ? cs.primary : null,
+          color: isSelected ? context.emphasis.selected : null,
           fontWeight: isSelected ? FontWeight.w500 : null,
         ),
       ),
       trailing: isSelected
-          ? Icon(Symbols.check_rounded, color: cs.primary, size: 20)
+          ? Icon(Symbols.check_rounded, color: context.emphasis.selected, size: 20)
           : null,
       onTap: () {
         _setConfig(ref.read(aiThinkingConfigProvider).copyWith(level: level));
@@ -1466,12 +1465,12 @@ class _ThinkingButton extends StatelessWidget {
       leading: Icon(
         Symbols.tune_rounded,
         size: 22,
-        color: isSelected ? cs.primary : cs.onSurfaceVariant,
+        color: isSelected ? context.emphasis.selected : cs.onSurfaceVariant,
       ),
       title: Text(
         AiL10n.current.thinkingCustom,
         style: TextStyle(
-          color: isSelected ? cs.primary : null,
+          color: isSelected ? context.emphasis.selected : null,
           fontWeight: isSelected ? FontWeight.w500 : null,
         ),
       ),
@@ -1481,7 +1480,7 @@ class _ThinkingButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: cs.primary,
+                color: context.emphasis.selected,
               ),
             )
           : null,

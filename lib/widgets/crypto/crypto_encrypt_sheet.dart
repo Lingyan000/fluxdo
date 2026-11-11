@@ -369,7 +369,7 @@ class _CryptoEncryptSheetState extends ConsumerState<CryptoEncryptSheet> {
                     Icon(
                       Icons.check_circle_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.selected,
                     ),
                     const SizedBox(width: 6),
                   ],

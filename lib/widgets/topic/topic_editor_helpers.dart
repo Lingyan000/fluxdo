@@ -16,6 +16,7 @@ import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
 import '../../../../../l10n/s.dart';
+import '../../utils/color_utils.dart';
 
 /// 话题编辑器辅助函数和 Widgets
 /// 用于 CreateTopicPage 和 EditTopicPage 的公共逻辑
@@ -237,15 +238,6 @@ class PanguSpacingHandler {
 // UI 辅助函数
 // ============================================================================
 
-/// 解析十六进制颜色
-Color parseHexColor(String hex) {
-  hex = hex.replaceAll('#', '');
-  if (hex.length == 6) {
-    return Color(int.parse('0xFF$hex'));
-  }
-  return Colors.grey;
-}
-
 /// 构建颜色点
 Widget buildColorDot(Color color, {double size = 8}) {
   return Container(
@@ -341,7 +333,7 @@ class CategoryTrigger extends StatelessWidget {
       );
     }
 
-    final color = parseHexColor(category!.color);
+    final color = ColorUtils.category(category!.color, theme);
     FaIconData? faIcon = FontAwesomeHelper.getIcon(category!.icon);
     String? logoUrl = category!.uploadedLogo;
 
@@ -807,7 +799,7 @@ class ComposerMetaBar extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -815,12 +807,12 @@ class ComposerMetaBar extends StatelessWidget {
           Icon(
             Symbols.arrow_drop_down_rounded,
             size: 16,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
         ],
       );
     }
-    final color = parseHexColor(category!.color);
+    final color = ColorUtils.category(category!.color, theme);
     return _pill(
       theme,
       key: const ValueKey('composer-category-chip'),

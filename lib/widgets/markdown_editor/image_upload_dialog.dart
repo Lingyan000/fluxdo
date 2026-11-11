@@ -747,14 +747,14 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                         Icon(
                           Symbols.grid_view_rounded,
                           size: 16,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             S.current.imageUpload_gridLayoutHint,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.primary,
+                              color: context.emphasis.accent,
                             ),
                           ),
                         ),

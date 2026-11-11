@@ -141,7 +141,9 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
         }
       },
       offset: const Offset(0, 36),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(12)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(12),
+      ),
       tooltip: S.current.topic_filterTooltip(filterLabel(widget.currentFilter)),
       itemBuilder: (context) {
         final items = <PopupMenuEntry<Object>>[];
@@ -164,7 +166,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                     Icon(
                       Symbols.check_rounded,
                       size: 16,
-                      color: colorScheme.primary,
+                      color: context.emphasis.selected,
                     )
                   else
                     const SizedBox(width: 16),
@@ -190,7 +192,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                       Icon(
                         Symbols.check_rounded,
                         size: 16,
-                        color: colorScheme.primary,
+                        color: context.emphasis.selected,
                       )
                     else
                       const SizedBox(width: 16),
@@ -212,7 +214,7 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
           ExpandablePopupMenuEntry<Object>(
             icon: Symbols.sort_rounded,
             label: S.current.topic_sortTooltip(widget.currentOrder.label),
-            iconColor: orderActive ? colorScheme.primary : null,
+            iconColor: orderActive ? context.emphasis.selected : null,
             labelColor: orderActive ? colorScheme.primary : null,
             children: [
               for (final order in TopicSortOrder.values)
@@ -320,13 +322,13 @@ class _TopicFilterMenuButtonState extends ConsumerState<TopicFilterMenuButton> {
                     curve: Curves.easeOut,
                     width: 20,
                     height: 20,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: _menuOpen
                           ? colorScheme.secondaryContainer
                           : colorScheme.surfaceContainerHighest.withValues(
                               alpha: 0.6,
                             ),
-                      shape: BoxShape.circle,
+                      shape: context.shapes.circle(),
                     ),
                     child: AnimatedRotation(
                       turns: _menuOpen ? 0.5 : 0,

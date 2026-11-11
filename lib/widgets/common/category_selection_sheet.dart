@@ -8,7 +8,9 @@ import 'package:fluxdo/utils/font_awesome_helper.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/utils/url_helper.dart';
 import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
+
 import '../../theme/app_colors.dart';
+import '../../utils/color_utils.dart';
 
 class CategorySelectionSheet extends StatefulWidget {
   final List<Category> categories;
@@ -43,14 +45,6 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
-  }
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return context.appColors.grey;
   }
 
   List<_CategoryItem> _buildList() {
@@ -260,8 +254,12 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                               style: theme.textTheme.titleSmall
                                                   ?.copyWith(
                                                     fontWeight: FontWeight.w600,
-                                                    color: _parseColor(
+                                                    color: ColorUtils.category(
                                                       cat.color,
+                                                      theme,
+                                                      fallback: context
+                                                          .appColors
+                                                          .grey,
                                                     ),
                                                   ),
                                             ),
@@ -291,7 +289,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                   if (isSelected)
                                     Icon(
                                       Symbols.check_rounded,
-                                      color: theme.colorScheme.primary,
+                                      color: context.emphasis.selected,
                                     ),
                                 ],
                               ),
@@ -319,7 +317,15 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
     }
 
     if (faIcon != null) {
-      return FaIcon(faIcon, size: 20, color: _parseColor(category.color));
+      return FaIcon(
+        faIcon,
+        size: 20,
+        color: ColorUtils.category(
+          category.color,
+          Theme.of(context),
+          fallback: context.appColors.grey,
+        ),
+      );
     }
 
     if (logoUrl != null && logoUrl.isNotEmpty) {
@@ -344,7 +350,11 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
       width: 14,
       height: 14,
       decoration: BoxDecoration(
-        color: _parseColor(colorHex),
+        color: ColorUtils.category(
+          colorHex,
+          Theme.of(context),
+          fallback: context.appColors.grey,
+        ),
         shape: BoxShape.circle,
       ),
     );

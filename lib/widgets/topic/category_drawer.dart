@@ -23,6 +23,7 @@ import '../../l10n/s.dart';
 import 'topic_notification_button.dart'
     show getCategoryNotificationIcon, showCategoryNotificationLevelSheet;
 import 'category_tab_manager_sheet.dart' show PinnedCategoryEditPage;
+import '../../utils/color_utils.dart';
 
 /// 分类侧栏的全局开关与拖拽入口。
 /// 宿主 [ControlledCategoryDrawer] 挂在 AdaptiveScaffold 顶层，通过本
@@ -407,7 +408,9 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
     final action = await showMenu<Symbol>(
       context: rowContext,
       position: position,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(14),
+      ),
       items: [
         PopupMenuItem(
           value: #togglePin,
@@ -417,7 +420,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
                 Symbols.star_rounded,
                 size: 18,
                 fill: pinned ? 1 : 0,
-                color: pinned ? colorScheme.primary : null,
+                color: pinned ? context.emphasis.selected : null,
               ),
               const SizedBox(width: 10),
               Text(
@@ -618,7 +621,11 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
         /// 展开后的首行：「全部话题」—— 父分类自身聚合页的入口
         Widget allTopicsRowFor(Category parent) {
           return _AllTopicsRow(
-            parentColor: _parseColor(parent.color, colorScheme.primary),
+            parentColor: ColorUtils.category(
+              parent.color,
+              Theme.of(context),
+              fallback: colorScheme.primary,
+            ),
             onTap: () => _closeAndPush(CategoryTopicsPage(category: parent)),
           );
         }
@@ -903,7 +910,11 @@ class _CategoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final categoryColor = _parseColor(category.color, colorScheme.primary);
+    final categoryColor = ColorUtils.category(
+      category.color,
+      Theme.of(context),
+      fallback: colorScheme.primary,
+    );
     final expanded = expandState;
 
     return Padding(
@@ -951,7 +962,7 @@ class _CategoryRow extends StatelessWidget {
                         Symbols.star_rounded,
                         size: 16,
                         fill: 1,
-                        color: colorScheme.primary.withValues(alpha: 0.75),
+                        color: context.emphasis.selected.withValues(alpha: 0.75),
                       ),
                     // 展开态指示（非按钮：整行即展开/收起）
                     if (expanded != null) ...[
@@ -1108,7 +1119,9 @@ class _TagRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final tagInfo = TagIconList.get(tag.name);
-    final accent = tagInfo?.color ?? colorScheme.primary;
+    final accent = tagInfo == null
+        ? colorScheme.primary
+        : ColorUtils.themed(tagInfo.color, Theme.of(context));
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -1313,14 +1326,6 @@ class _CategoryIconBlock extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-Color _parseColor(String hex, Color fallback) {
-  try {
-    return Color(int.parse('FF$hex', radix: 16));
-  } catch (_) {
-    return fallback;
   }
 }
 

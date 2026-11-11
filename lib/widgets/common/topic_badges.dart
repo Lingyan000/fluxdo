@@ -7,6 +7,7 @@ import '../../models/category.dart';
 import '../../utils/url_helper.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/tag_icon_list.dart';
+import '../../utils/color_utils.dart';
 
 class BadgeSize {
   final EdgeInsets padding;
@@ -71,7 +72,11 @@ class TagBadge extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (tagInfo != null) ...[
-              FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
+              FaIcon(
+                tagInfo.icon,
+                size: size.iconSize,
+                color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
+              ),
               const SizedBox(width: 4),
             ],
             Text(name, style: text),
@@ -129,7 +134,11 @@ class RemovableTagBadge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (tagInfo != null) ...[
-                FaIcon(tagInfo.icon, size: size.iconSize, color: tagInfo.color),
+                FaIcon(
+                  tagInfo.icon,
+                  size: size.iconSize,
+                  color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
+                ),
                 const SizedBox(width: 4),
               ],
               Text(
@@ -243,7 +252,10 @@ class CategoryBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final categoryColor = _parseColor(category.color);
+    final categoryColor = ColorUtils.category(
+      category.color,
+      Theme.of(context),
+    );
     final text =
         textStyle ??
         theme.textTheme.labelSmall?.copyWith(
@@ -320,13 +332,5 @@ class CategoryBadge extends StatelessWidget {
 
   Widget _buildCategoryLock(Color color) {
     return Icon(Symbols.lock_rounded, size: size.iconSize, color: color);
-  }
-
-  Color _parseColor(String hex) {
-    var clean = hex.replaceAll('#', '');
-    if (clean.length == 6) {
-      return Color(int.parse('0xFF$clean'));
-    }
-    return Colors.grey;
   }
 }

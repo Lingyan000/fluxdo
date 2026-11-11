@@ -51,7 +51,7 @@ class TopicListUpdateBanner extends StatelessWidget {
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: colors.primary,
+                        color: context.emphasis.accent,
                       ),
                     )
                   : Row(
@@ -62,13 +62,13 @@ class TopicListUpdateBanner extends StatelessWidget {
                         Icon(
                           Symbols.arrow_upward_rounded,
                           size: 14,
-                          color: colors.primary,
+                          color: context.emphasis.accent,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           label,
                           style: TextStyle(
-                            color: colors.primary,
+                            color: context.emphasis.accent,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),

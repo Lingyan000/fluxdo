@@ -381,7 +381,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
                 child: Icon(
                   Symbols.push_pin_rounded,
                   size: 17,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.selected,
                 ),
               ),
             ),
@@ -638,7 +638,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   Widget _buildCustomActions(BuildContext context, ThemeData theme) {
     return Material(
       color: theme.colorScheme.surface,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(14)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(14),
+      ),
       clipBehavior: Clip.antiAlias,
       elevation: 8,
       child: Column(
@@ -698,7 +700,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
       height: 8,
       decoration: ShapeDecoration(
         color: ColorUtils.readableOn(
-          _parseColor(category.color),
+          ColorUtils.category(category.color, Theme.of(context)),
           theme.brightness,
         ),
         shape: RoundedSuperellipseBorder(
@@ -706,13 +708,5 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
         ),
       ),
     );
-  }
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return context.appColors.grey;
   }
 }

@@ -776,7 +776,7 @@ class _PollWidgetState extends State<_PollWidget> {
                 Icon(
                   Symbols.check_circle_rounded,
                   size: 14,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.selected,
                 ),
                 const SizedBox(width: 2),
               ],
@@ -868,7 +868,7 @@ class _PollWidgetState extends State<_PollWidget> {
                           Icon(
                             Symbols.check_circle_rounded,
                             size: 16,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.selected,
                           ),
                           const SizedBox(width: 6),
                         ],

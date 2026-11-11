@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../l10n/s.dart';
@@ -33,14 +34,14 @@ class PagedListFooter extends StatelessWidget {
             Icon(
               Symbols.refresh_rounded,
               size: 16,
-              color: Theme.of(context).colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             const SizedBox(width: 6),
             Text(
               context.l10n.common_loadFailedTapRetry,
               style: TextStyle(
                 fontSize: 14,
-                color: Theme.of(context).colorScheme.primary,
+                color: context.emphasis.accent,
               ),
             ),
           ],

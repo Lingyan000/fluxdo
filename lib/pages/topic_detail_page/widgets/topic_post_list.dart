@@ -1,4 +1,5 @@
 import 'dart:async' show Timer;
+import 'package:common_ui/common_ui.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
@@ -1684,7 +1685,7 @@ class _GapIndicatorState extends State<_GapIndicator> {
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 ),
               )
@@ -1694,7 +1695,7 @@ class _GapIndicatorState extends State<_GapIndicator> {
                 child: Icon(
                   Symbols.unfold_more_rounded,
                   size: 16,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
               ),
             Text(
@@ -1702,7 +1703,7 @@ class _GapIndicatorState extends State<_GapIndicator> {
                   ? S.current.topicDetail_loading
                   : S.current.topicDetail_showHiddenReplies(widget.count),
               style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
             ),
           ],
@@ -1720,7 +1721,6 @@ class _LoadFailedRetry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Center(
@@ -1732,14 +1732,14 @@ class _LoadFailedRetry extends StatelessWidget {
               Icon(
                 Symbols.refresh_rounded,
                 size: 16,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 6),
               Text(
                 S.current.topicDetail_loadFailedTapRetry,
                 style: TextStyle(
                   fontSize: 14,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
               ),
             ],

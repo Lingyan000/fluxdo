@@ -19,7 +19,6 @@ class NotificationIconButton extends ConsumerWidget {
       notificationCountStateProvider.select((s) => s.allUnread),
     );
     return IconButton(
-      color: Theme.of(context).colorScheme.primary,
       onPressed: () {
         NotificationQuickPanel.show(context);
       },

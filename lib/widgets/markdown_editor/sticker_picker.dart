@@ -455,11 +455,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             color: theme.colorScheme.outlineVariant,
           ),
           IconButton(
-            icon: Icon(
-              Symbols.add_circle_rounded,
-              size: 20,
-              color: theme.colorScheme.primary,
-            ),
+            icon: const Icon(Symbols.add_circle_rounded, size: 20),
             visualDensity: compact ? VisualDensity.compact : null,
             onPressed: _openMarket,
             tooltip: S.current.sticker_addTooltip,

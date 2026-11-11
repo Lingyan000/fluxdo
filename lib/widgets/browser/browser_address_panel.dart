@@ -196,7 +196,7 @@ class BrowserAddressPanel extends StatelessWidget {
                       Icon(
                         Symbols.travel_explore_rounded,
                         size: 48,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                       const SizedBox(height: 20),
                       Text(

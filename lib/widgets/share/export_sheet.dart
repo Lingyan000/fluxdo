@@ -1,4 +1,5 @@
-import 'package:common_ui/common_ui.dart' show InteractionPageRoute;
+import 'package:common_ui/common_ui.dart'
+    show InteractionPageRoute, UiEmphasisContext;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -360,7 +361,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
                 Icon(
                   Symbols.info_rounded,
                   size: 14,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -369,7 +370,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
                       ExportUtils.maxMarkdownPosts,
                     ),
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                   ),
                 ),
@@ -457,7 +458,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
       child: ListTile(
         enabled: _running == null,
         onTap: () => _run(action),
-        leading: Icon(icon, color: cs.primary),
+        leading: Icon(icon, color: context.emphasis.accent),
         title: Text(
           title,
           // 显式给色：执行中整行 enabled=false，否则文字会被 ListTile 灰化
@@ -469,7 +470,7 @@ class _ExportSheetState extends ConsumerState<ExportSheet> {
         subtitle: Text(
           isRunning ? _progressLabel(context) : subtitle,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: isRunning ? cs.primary : cs.onSurfaceVariant,
+            color: isRunning ? context.emphasis.accent : cs.onSurfaceVariant,
           ),
         ),
         trailing: isRunning

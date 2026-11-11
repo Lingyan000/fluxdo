@@ -325,7 +325,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Icon(Icons.assignment_ind_outlined, color: scheme.primary),
+                  Icon(Icons.assignment_ind_outlined, color: context.emphasis.accent),
                   const SizedBox(width: 8),
                   Text('指定', style: Theme.of(context).textTheme.titleMedium),
                 ],

@@ -122,7 +122,9 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                             const SizedBox(height: 16),
                             Text(
                               context.l10n.myBadges_empty,
-                              style: TextStyle(color: context.appColors.grey[600]),
+                              style: TextStyle(
+                                color: context.appColors.grey[600],
+                              ),
                             ),
                           ],
                         ),
@@ -167,8 +169,7 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                 child: FaIcon(
                   FontAwesomeIcons.medal,
                   size: 200,
-                  color: Theme.of(context).colorScheme.primary
-                      .withValues(alpha: 0.05),
+                  color: context.emphasis.accent.withValues(alpha: 0.05),
                 ),
               ),
               Positioned(
@@ -351,16 +352,16 @@ class _MyBadgesPageState extends ConsumerState<MyBadgesPage> {
                   Container(
                     width: 48,
                     height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                    decoration: ShapeDecoration(
                       color: theme.colorScheme.surface,
-                      boxShadow: [
+                      shadows: [
                         BoxShadow(
                           color: iconColor.withValues(alpha: 0.2),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
                       ],
+                      shape: context.shapes.circle(),
                     ),
                     padding: const EdgeInsets.all(
                       8,

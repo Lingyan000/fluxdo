@@ -550,7 +550,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                                 ? Symbols.edit_rounded
                                 : Symbols.reply_rounded,
                             size: 18,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.accent,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -564,7 +564,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                                           replyingTo!.user?.username ?? '',
                                         ),
                                   style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),

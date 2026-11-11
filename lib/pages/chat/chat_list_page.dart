@@ -24,6 +24,7 @@ import 'chat_browse_channels_page.dart';
 import 'chat_search_page.dart';
 import 'channel/chat_channel_page.dart';
 import 'new_chat_sheet.dart';
+import '../../utils/color_utils.dart';
 
 /// 桌面双栏下当前选中的会话(仅聊天页内部,不进平行视界栈体系——
 /// 聊天窗是常驻会话流,不是"层"语义)
@@ -539,9 +540,13 @@ class ChatChannelAvatar extends StatelessWidget {
     if (channel.isPublicChannel) {
       final theme = Theme.of(context);
       final colorHex = channel.categoryColor;
-      final bg = colorHex != null && colorHex.length >= 6
-          ? Color(int.parse('FF${colorHex.substring(0, 6)}', radix: 16))
-          : theme.colorScheme.primaryContainer;
+      final bg = ColorUtils.category(
+        colorHex != null && colorHex.length >= 6
+            ? colorHex.substring(0, 6)
+            : null,
+        theme,
+        fallback: theme.colorScheme.primaryContainer,
+      );
       // 分类色亮度决定前景黑白
       final fg = bg.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
       return CircleAvatar(

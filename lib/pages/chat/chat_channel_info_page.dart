@@ -246,7 +246,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
               trailing: current == level
                   ? Icon(
                       Symbols.check_rounded,
-                      color: Theme.of(sheetContext).colorScheme.primary,
+                      color: sheetContext.emphasis.selected,
                     )
                   : null,
               onTap: () => Navigator.pop(sheetContext, level),

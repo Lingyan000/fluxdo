@@ -140,7 +140,7 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             return ListTile(
               leading: Icon(
                 Symbols.tab_rounded,
-                color: Theme.of(context).colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               title: Text(l.reading_bookmarksOpenMode),
               subtitle: Text(switch (currentMode) {
@@ -350,7 +350,7 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             return ListTile(
               leading: Icon(
                 Symbols.linear_scale_rounded,
-                color: Theme.of(context).colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               title: Text(l.nested_lineStyle),
               subtitle: Text(switch (currentStyle) {

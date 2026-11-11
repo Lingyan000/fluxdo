@@ -100,7 +100,7 @@ class TopicDetailHeader extends ConsumerWidget {
                         child: Icon(
                           Symbols.mail_rounded,
                           size: 20,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                       ),
                     ),
@@ -230,14 +230,14 @@ class TopicDetailHeader extends ConsumerWidget {
                     Icon(
                       Icons.assignment_ind_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       '已指定给 '
                       '${detail.assignedToUser?.displayName ?? detail.assignedToGroupName ?? ''}',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

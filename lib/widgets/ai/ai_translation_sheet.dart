@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:common_ui/common_ui.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:app_icons/app_icons.dart';
@@ -11,7 +12,6 @@ import '../../providers/ai_translation_provider.dart';
 import '../../services/ai_translation_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
-import '../common/app_bottom_sheet.dart';
 
 /// 打开帖子 AI 翻译弹层。弹层独立于楼层树，避免破坏帖子实例缓存。
 void showAiTranslationSheet(
@@ -204,7 +204,7 @@ class _AiTranslationSheetBodyState
             Icon(
               Symbols.translate_rounded,
               size: 20,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             const SizedBox(width: 8),
             Text(

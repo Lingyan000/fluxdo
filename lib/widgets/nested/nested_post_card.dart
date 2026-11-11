@@ -969,13 +969,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           Icon(
             Symbols.add_circle_rounded,
             size: 14,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 4),
           Text(
             context.l10n.nested_repliesCount(_replyCount),
             style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -1173,13 +1173,13 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
           Icon(
             Symbols.subdirectory_arrow_right_rounded,
             size: 14,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 4),
           Text(
             context.l10n.nested_continueThread,
             style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
               fontWeight: FontWeight.w500,
             ),
           ),

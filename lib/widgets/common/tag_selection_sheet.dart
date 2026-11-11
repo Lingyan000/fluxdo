@@ -234,7 +234,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                           shape: RoundedSuperellipseBorder(
                             borderRadius: context.shapes.borderRadius(8),
                             side: BorderSide(
-                              color: theme.colorScheme.primary.withValues(
+                              color: context.emphasis.accent.withValues(
                                 alpha: 0.3,
                               ),
                             ),
@@ -245,7 +245,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                             Icon(
                               Symbols.info_rounded,
                               size: 16,
-                              color: theme.colorScheme.primary,
+                              color: context.emphasis.accent,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -255,7 +255,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                   _requiredTagGroup!.minCount,
                                 ),
                                 style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.primary,
+                                  color: context.emphasis.accent,
                                 ),
                               ),
                             ),
@@ -425,7 +425,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                   )
                                 : Icon(
                                     Symbols.add_circle_rounded,
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                   ),
                             onTap: () => _toggleTag(tag.name),
                             enabled:

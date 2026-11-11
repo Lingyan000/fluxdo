@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -57,7 +58,7 @@ void _showLanguagePicker(
               trailing: _localeKey(locale) == _localeKey(currentLocale)
                   ? Icon(
                       Symbols.check_rounded,
-                      color: Theme.of(sheetContext).colorScheme.primary,
+                      color: sheetContext.emphasis.selected,
                     )
                   : null,
               onTap: () {

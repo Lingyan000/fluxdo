@@ -88,7 +88,7 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                       Icon(
                         Symbols.auto_awesome_rounded,
                         size: 16,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                       const SizedBox(width: 6),
                     ],

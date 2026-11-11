@@ -368,7 +368,7 @@ class BrowserTabOverview extends StatelessWidget {
                           Icon(
                             Symbols.language_rounded,
                             size: 22,
-                            color: colors.primary,
+                            color: context.emphasis.accent,
                           ),
                       const SizedBox(width: 8),
                       Expanded(

@@ -1,4 +1,5 @@
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -86,7 +87,7 @@ class MiniAppDiscoveryCard extends StatelessWidget {
                               Symbols.star_rounded,
                               size: 14,
                               fill: 1,
-                              color: colors.primary,
+                              color: context.emphasis.selected,
                             ),
                             const SizedBox(width: 3),
                             Text(
@@ -111,7 +112,7 @@ class MiniAppDiscoveryCard extends StatelessWidget {
                               Symbols.bookmark_rounded,
                               size: 14,
                               fill: 1,
-                              color: colors.primary,
+                              color: context.emphasis.selected,
                             ),
                           ],
                         ],
@@ -204,7 +205,7 @@ class MiniAppDiscoveryRow extends StatelessWidget {
                                   child: Icon(
                                     Symbols.bookmark_rounded,
                                     size: 16,
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.selected,
                                   ),
                                 ),
                             ],

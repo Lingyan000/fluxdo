@@ -143,7 +143,7 @@ class _ActionOptionTile extends StatelessWidget {
           ? Icon(
               icon,
               color: selected
-                  ? theme.colorScheme.primary
+                  ? context.emphasis.selected
                   : theme.colorScheme.onSurfaceVariant,
             )
           : Icon(
@@ -154,7 +154,7 @@ class _ActionOptionTile extends StatelessWidget {
       trailing: selected
           ? Icon(
               Symbols.check_rounded,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.selected,
             )
           : null,
       onTap: onTap,

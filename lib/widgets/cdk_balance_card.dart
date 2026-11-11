@@ -78,9 +78,9 @@ class CdkBalanceCard extends ConsumerWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: theme.colorScheme.tertiaryContainer,
-                        shape: BoxShape.circle,
+                        shape: context.shapes.circle(),
                       ),
                       child: Icon(
                         Symbols.token_rounded,
@@ -149,9 +149,9 @@ class CdkBalanceCard extends ConsumerWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.tertiaryContainer,
-                    shape: BoxShape.circle,
+                    shape: context.shapes.circle(),
                   ),
                   child: Icon(
                     Symbols.token_rounded,
@@ -258,9 +258,9 @@ class CdkBalanceCard extends ConsumerWidget {
                             onTap: onDisable,
                             child: Container(
                               padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
+                              decoration: ShapeDecoration(
                                 color: Colors.white.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
+                                shape: context.shapes.circle(),
                               ),
                               child: Icon(
                                 Symbols.power_settings_new_rounded,
@@ -345,11 +345,11 @@ class CdkBalanceCard extends ConsumerWidget {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: isExpired
                           ? theme.colorScheme.error.withValues(alpha: 0.1)
                           : theme.colorScheme.tertiaryContainer,
-                      shape: BoxShape.circle,
+                      shape: context.shapes.circle(),
                     ),
                     child: Icon(
                       isCfChallenge
@@ -416,11 +416,11 @@ class CdkBalanceCard extends ConsumerWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: isExpired
                       ? theme.colorScheme.error.withValues(alpha: 0.1)
                       : theme.colorScheme.tertiaryContainer,
-                  shape: BoxShape.circle,
+                  shape: context.shapes.circle(),
                 ),
                 child: Icon(
                   isCfChallenge
@@ -470,7 +470,9 @@ class CdkBalanceCard extends ConsumerWidget {
       shadowColor: isExpired
           ? theme.colorScheme.error.withValues(alpha: 0.3)
           : theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(24),
+      ),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -541,9 +543,9 @@ class CdkBalanceCard extends ConsumerWidget {
                           onTap: onDisable,
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: Colors.white.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
+                              shape: context.shapes.circle(),
                             ),
                             child: Icon(
                               Symbols.power_settings_new_rounded,
@@ -597,9 +599,9 @@ class CdkBalanceCard extends ConsumerWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: theme.colorScheme.tertiaryContainer,
-                    shape: BoxShape.circle,
+                    shape: context.shapes.circle(),
                   ),
                   child: Icon(
                     Symbols.token_rounded,
@@ -655,9 +657,9 @@ class CdkBalanceCard extends ConsumerWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: theme.colorScheme.tertiaryContainer,
-                  shape: BoxShape.circle,
+                  shape: context.shapes.circle(),
                 ),
                 child: Icon(
                   Symbols.token_rounded,
@@ -684,7 +686,9 @@ class CdkBalanceCard extends ConsumerWidget {
     return Card(
       elevation: 8,
       shadowColor: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(24),
+      ),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Container(

@@ -37,7 +37,7 @@ class VpnAutoToggleCard extends StatelessWidget {
               secondary: Icon(
                 Symbols.swap_horiz_rounded,
                 fill: enabled ? 1 : 0,
-                color: enabled ? theme.colorScheme.primary : null,
+                color: enabled ? context.emphasis.selected : null,
               ),
               value: enabled,
               onChanged: (value) => service.setEnabled(value),
@@ -64,7 +64,7 @@ class VpnAutoToggleCard extends StatelessWidget {
                               Icon(
                                 Symbols.check_rounded,
                                 size: 18,
-                                color: theme.colorScheme.primary,
+                                color: context.emphasis.selected,
                               )
                             else
                               const SizedBox(width: 18),
@@ -133,14 +133,14 @@ class VpnAutoToggleCard extends StatelessWidget {
                     Icon(
                       Symbols.info_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _buildSuppressedText(dohSuppressed, proxySuppressed),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                       ),
                     ),

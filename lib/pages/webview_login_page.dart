@@ -155,7 +155,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                 Icon(
                   Symbols.lock_rounded,
                   size: 14,
-                  color: Theme.of(context).colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 8),
                 Expanded(

@@ -403,7 +403,7 @@ class _RevisionToolbar extends StatelessWidget {
                           Icon(
                             Symbols.check_rounded,
                             size: 16,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.selected,
                           ),
                         ],
                       ],

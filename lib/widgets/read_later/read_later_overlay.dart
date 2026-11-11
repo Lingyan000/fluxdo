@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -258,7 +259,9 @@ class _ReadLaterCard extends StatelessWidget {
 
     return Material(
       color: colorScheme.surfaceContainerHigh,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(24)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(24),
+      ),
       clipBehavior: Clip.antiAlias,
       elevation: 6,
       shadowColor: Colors.black.withValues(alpha: 0.25),
@@ -273,7 +276,7 @@ class _ReadLaterCard extends StatelessWidget {
               child: Icon(
                 Symbols.auto_stories_rounded,
                 size: 96,
-                color: colorScheme.primary.withValues(alpha: 0.05),
+                color: context.emphasis.accent.withValues(alpha: 0.05),
               ),
             ),
             Padding(
@@ -353,9 +356,9 @@ class _ReadLaterCard extends StatelessWidget {
                           child: Container(
                             width: 32,
                             height: 32,
-                            decoration: BoxDecoration(
+                            decoration: ShapeDecoration(
                               color: colorScheme.primary,
-                              shape: BoxShape.circle,
+                              shape: context.shapes.circle(),
                             ),
                             child: Icon(
                               Symbols.arrow_forward_rounded,

@@ -248,7 +248,7 @@ class _CryptoAlgorithmPickerSheetState
                   avatar: Icon(
                     Icons.history_rounded,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                   label: Text(algo.displayName),
                   visualDensity: VisualDensity.compact,
@@ -396,7 +396,7 @@ class _CryptoAlgorithmPickerSheetState
                   Icon(
                     Icons.check_rounded,
                     size: 18,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.selected,
                   ),
               ],
             ),
@@ -455,7 +455,7 @@ class CryptoAlgorithmTile extends StatelessWidget {
               Icon(
                 Icons.enhanced_encryption_rounded,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 10),
               Expanded(

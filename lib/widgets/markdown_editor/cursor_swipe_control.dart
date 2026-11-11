@@ -307,7 +307,7 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
           alignment: Alignment.center,
           decoration: ShapeDecoration(
             color: active
-                ? scheme.primary.withValues(alpha: _dragging ? 0.18 : 0.12)
+                ? context.emphasis.accent.withValues(alpha: _dragging ? 0.18 : 0.12)
                 : Colors.transparent,
             shape: RoundedSuperellipseBorder(
               borderRadius: context.shapes.borderRadius(18),
@@ -317,12 +317,12 @@ class _CursorSwipeControlState extends State<CursorSwipeControl> {
               ? Icon(
                   Symbols.text_select_start_rounded,
                   size: 20,
-                  color: scheme.primary,
+                  color: context.emphasis.accent,
                 )
               : FaIcon(
                   FontAwesomeIcons.iCursor,
                   size: 19,
-                  color: active ? scheme.primary : scheme.onSurfaceVariant,
+                  color: active ? context.emphasis.selected : scheme.onSurfaceVariant,
                 ),
         ),
       ),

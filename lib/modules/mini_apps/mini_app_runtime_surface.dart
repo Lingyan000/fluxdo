@@ -1,9 +1,9 @@
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
-import '../../widgets/common/app_bottom_sheet.dart';
 import 'mini_app.dart';
 import 'mini_app_card_surface.dart';
 import 'mini_app_icon.dart';
@@ -244,7 +244,7 @@ class MiniAppPermissionSurface extends StatelessWidget {
                           Icon(
                             Symbols.shield_rounded,
                             size: 36,
-                            color: colors.primary,
+                            color: context.emphasis.accent,
                           ),
                         if (!compact) const SizedBox(height: 16),
                         Text(

@@ -303,7 +303,7 @@ class _ChatUploadTile extends StatelessWidget {
                       Icon(
                         Icons.insert_drive_file_outlined,
                         size: 25,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -402,9 +402,9 @@ class _ChatUploadTile extends StatelessWidget {
                   ),
                   icon: Container(
                     padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
-                      shape: BoxShape.circle,
+                      shape: context.shapes.circle(),
                     ),
                     child: const Icon(
                       Icons.close_rounded,
@@ -498,8 +498,11 @@ class _SourceUploadPanelState extends State<SourceUploadPanel> {
                             width: 30,
                             height: 30,
                             decoration: ShapeDecoration(
-                              color: (failed ? colors.error : colors.primary)
-                                  .withValues(alpha: .12),
+                              color:
+                                  (failed
+                                          ? colors.error
+                                          : context.emphasis.accent)
+                                      .withValues(alpha: .12),
                               shape: RoundedSuperellipseBorder(
                                 borderRadius: context.shapes.borderRadius(10),
                               ),
@@ -509,7 +512,9 @@ class _SourceUploadPanelState extends State<SourceUploadPanel> {
                                   ? Icons.error_outline_rounded
                                   : Icons.cloud_upload_outlined,
                               size: 18,
-                              color: failed ? colors.error : colors.primary,
+                              color: failed
+                                  ? colors.error
+                                  : context.emphasis.accent,
                             ),
                           ),
                           const SizedBox(width: 10),

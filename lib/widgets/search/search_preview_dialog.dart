@@ -449,7 +449,7 @@ class SearchPreviewDialog extends ConsumerWidget {
       height: 8,
       decoration: ShapeDecoration(
         color: ColorUtils.readableOn(
-          _parseColor(category.color),
+          ColorUtils.category(category.color, Theme.of(context)),
           theme.brightness,
         ),
         shape: RoundedSuperellipseBorder(
@@ -457,13 +457,5 @@ class SearchPreviewDialog extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
   }
 }

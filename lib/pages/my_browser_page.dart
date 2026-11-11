@@ -650,14 +650,14 @@ class _BookmarkCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: ShapeDecoration(
-                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                color: context.emphasis.accent.withValues(alpha: 0.1),
                 shape: RoundedSuperellipseBorder(
                   borderRadius: context.shapes.borderRadius(12),
                 ),
               ),
               child: Icon(
                 Symbols.language_rounded,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
                 size: 24,
               ),
             ),

@@ -105,7 +105,7 @@ class ComposerTopicKindPicker extends StatelessWidget {
                   ),
                 ),
                 if (value == question)
-                  Icon(Symbols.check_rounded, size: 18, color: colors.primary),
+                  Icon(Symbols.check_rounded, size: 18, color: context.emphasis.selected),
               ],
             ),
           ),

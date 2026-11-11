@@ -98,7 +98,7 @@ class TopicBottomBar extends StatelessWidget {
       children: [
         IconButton(
           onPressed: isLoading ? null : onCancelFilter,
-          icon: Icon(icon, color: theme.colorScheme.primary),
+          icon: Icon(icon, color: context.emphasis.accent),
           style: IconButton.styleFrom(
             backgroundColor: theme.colorScheme.primaryContainer,
           ),

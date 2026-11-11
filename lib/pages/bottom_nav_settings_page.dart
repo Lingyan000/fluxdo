@@ -462,12 +462,13 @@ class _PreviewItem extends StatelessWidget {
                         child: Container(
                           width: 20,
                           height: 20,
-                          decoration: BoxDecoration(
+                          decoration: ShapeDecoration(
                             color: theme.colorScheme.errorContainer,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: theme.colorScheme.surface,
-                              width: 1.5,
+                            shape: context.shapes.circle(
+                              side: BorderSide(
+                                color: theme.colorScheme.surface,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                           child: Icon(
@@ -624,7 +625,7 @@ class _GestureGroup extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
           child: Row(
             children: [
-              Icon(group.icon, size: 18, color: theme.colorScheme.primary),
+              Icon(group.icon, size: 18, color: context.emphasis.accent),
               const SizedBox(width: 8),
               Text(
                 group.title,

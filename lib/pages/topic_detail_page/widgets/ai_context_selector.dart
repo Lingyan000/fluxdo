@@ -46,7 +46,7 @@ class AiContextSelector extends StatelessWidget {
           child: Row(
             children: [
               if (scope == currentScope)
-                Icon(Symbols.check_rounded, size: 18, color: theme.colorScheme.primary)
+                Icon(Symbols.check_rounded, size: 18, color: context.emphasis.selected)
               else
                 const SizedBox(width: 18),
               const SizedBox(width: 8),

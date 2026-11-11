@@ -1,9 +1,9 @@
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
-import 'app_bottom_sheet.dart';
 
 /// 分类、标签和话题共用的顶部订阅入口。
 class NotificationLevelButton extends StatelessWidget {
@@ -92,7 +92,7 @@ void showNotificationLevelSelectionSheet<T>({
               return ListTile(
                 leading: Icon(
                   option.icon,
-                  color: isSelected ? theme.colorScheme.primary : null,
+                  color: isSelected ? context.emphasis.selected : null,
                 ),
                 title: Text(
                   option.label,
@@ -100,7 +100,7 @@ void showNotificationLevelSelectionSheet<T>({
                     fontWeight: isSelected
                         ? FontWeight.w600
                         : FontWeight.normal,
-                    color: isSelected ? theme.colorScheme.primary : null,
+                    color: isSelected ? context.emphasis.selected : null,
                   ),
                 ),
                 subtitle: Text(
@@ -112,7 +112,7 @@ void showNotificationLevelSelectionSheet<T>({
                 trailing: isSelected
                     ? Icon(
                         Symbols.check_rounded,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.selected,
                       )
                     : null,
                 onTap: () {

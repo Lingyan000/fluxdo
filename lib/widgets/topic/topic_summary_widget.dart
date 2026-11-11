@@ -183,14 +183,14 @@ class TopicSummaryWidget extends ConsumerWidget {
               Icon(
                 Symbols.auto_awesome_rounded,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 8),
               Text(
                 S.current.topic_aiSummary,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w500,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
               ),
               const Spacer(),
@@ -575,7 +575,7 @@ class _CollapsibleTopicSummaryState
                     Icon(
                       Symbols.auto_awesome_rounded,
                       size: 16,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -583,7 +583,7 @@ class _CollapsibleTopicSummaryState
                           ? S.current.topic_aiSummary
                           : S.current.topic_generateAiSummary,
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -596,7 +596,7 @@ class _CollapsibleTopicSummaryState
                       child: Icon(
                         Symbols.expand_more_rounded,
                         size: 18,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                       ),
                     ),
                     // 加载指示器
@@ -607,7 +607,7 @@ class _CollapsibleTopicSummaryState
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                       ),
                     ],

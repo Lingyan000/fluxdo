@@ -225,7 +225,7 @@ class PostHeader extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                         color: (post.moderator || post.admin)
-                            ? theme.colorScheme.primary
+                            ? context.emphasis.accent
                             : theme.colorScheme.onSurface,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -238,7 +238,7 @@ class PostHeader extends StatelessWidget {
                     FaIcon(
                       FontAwesomeIcons.shieldHalved,
                       size: 12,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                   ],
                   // 用户状态 emoji
@@ -445,7 +445,7 @@ class PostHeader extends StatelessWidget {
             Icon(
               Symbols.reply_rounded,
               size: 14,
-              color: theme.colorScheme.primary,
+              color: UiEmphasis.of(theme).accent,
             ),
           const SizedBox(width: 6),
           SmartAvatar(

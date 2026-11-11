@@ -132,7 +132,7 @@ class _BadgePageState extends ConsumerState<BadgePage> {
                         children: [
                           Icon(
                             Symbols.group_rounded,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: context.emphasis.accent,
                             size: 22,
                           ),
                           const SizedBox(width: 8),
@@ -525,7 +525,7 @@ class _UserBadgeItem extends StatelessWidget {
                           Icon(
                             Symbols.article_rounded,
                             size: 14,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.accent,
                           ),
                           const SizedBox(width: 6),
                           Expanded(

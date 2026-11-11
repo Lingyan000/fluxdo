@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -36,7 +37,6 @@ import '../post_replies_list.dart';
 import '../post_solution_banner.dart';
 import '../../../../post/post_replies_sheet.dart';
 import '../../../../../utils/dialog_utils.dart';
-import '../../../../common/app_bottom_sheet.dart';
 import '../../../../ai/ai_translation_sheet.dart';
 import '../../../../../theme/app_colors.dart';
 

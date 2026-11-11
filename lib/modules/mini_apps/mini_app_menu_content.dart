@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
@@ -44,7 +45,7 @@ class MiniAppMenuContent<T> extends StatelessWidget {
                       Icon(
                         item.icon,
                         size: prominent ? 26 : 21,
-                        color: item.destructive ? colors.error : colors.primary,
+                        color: item.destructive ? colors.error : context.emphasis.accent,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -150,7 +151,7 @@ class MiniAppMenuContent<T> extends StatelessWidget {
                                 Icon(
                                   item.icon,
                                   size: 25,
-                                  color: colors.primary,
+                                  color: context.emphasis.accent,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(

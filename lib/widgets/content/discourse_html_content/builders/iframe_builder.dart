@@ -449,7 +449,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
                         Icon(
                           Symbols.play_circle_rounded,
                           size: 48,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.accent,
                         ),
                         const SizedBox(height: 8),
                         Text(

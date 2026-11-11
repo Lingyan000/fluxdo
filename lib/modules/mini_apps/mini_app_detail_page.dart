@@ -293,7 +293,7 @@ class MiniAppDetailsContent extends StatelessWidget {
                           Icon(
                             Symbols.star_rounded,
                             size: 20,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.selected,
                           ),
                           const SizedBox(width: 6),
                           Flexible(

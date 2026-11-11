@@ -432,7 +432,7 @@ class _BookmarkEditSheetState extends State<BookmarkEditSheet> {
       style: AppSheetStyle.card,
       titleWidget: Row(
         children: [
-          Icon(Symbols.bookmark_rounded, color: theme.colorScheme.primary),
+          Icon(Symbols.bookmark_rounded, color: context.emphasis.selected),
           const SizedBox(width: 8),
           Text(
             S.current.bookmark_editBookmark,

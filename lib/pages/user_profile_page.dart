@@ -64,6 +64,7 @@ import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../widgets/common/hero_image.dart';
 import '../theme/app_colors.dart';
+import '../utils/color_utils.dart';
 
 /// 用户个人页
 /// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
@@ -2708,7 +2709,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       Icon(
                         Symbols.check_rounded,
                         size: 18,
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.selected,
                       ),
                   ],
                 ),
@@ -2729,7 +2730,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         Icon(
                           Symbols.check_rounded,
                           size: 18,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.selected,
                         ),
                     ],
                   ),
@@ -2750,7 +2751,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         Icon(
                           Symbols.check_rounded,
                           size: 18,
-                          color: theme.colorScheme.primary,
+                          color: context.emphasis.selected,
                         ),
                     ],
                   ),
@@ -3148,13 +3149,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: theme.colorScheme.primary),
+          Icon(icon, size: 18, color: context.emphasis.accent),
           const SizedBox(width: 8),
           Text(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
           ),
         ],
@@ -3395,9 +3396,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildSummaryCategoryItem(ThemeData theme, SummaryCategory cat) {
-    final color = cat.color != null
-        ? Color(int.parse('FF${cat.color}', radix: 16))
-        : theme.colorScheme.primary;
+    final color = ColorUtils.category(
+      cat.color,
+      theme,
+      fallback: theme.colorScheme.primary,
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -3798,7 +3801,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   Icon(
                     Symbols.rocket_launch_rounded,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -3809,7 +3812,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.primary,
+                        color: context.emphasis.accent,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -3881,13 +3884,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   Icon(
                     Symbols.check_circle_rounded,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.selected,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     context.l10n.userProfile_solvedLabel,
                     style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.selected,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -3957,13 +3960,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   Icon(
                     _getActionIcon(action.actionType),
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     _getActionLabel(action.actionType),
                     style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

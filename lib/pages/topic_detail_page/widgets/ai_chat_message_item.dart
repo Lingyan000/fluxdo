@@ -295,13 +295,13 @@ class AiChatMessageItem extends StatelessWidget {
               icon: Icon(
                 Symbols.refresh_rounded,
                 size: 14,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               label: Text(
                 context.l10n.ai_retryLabel,
                 style: TextStyle(
                   fontSize: 12,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
               ),
               style: TextButton.styleFrom(

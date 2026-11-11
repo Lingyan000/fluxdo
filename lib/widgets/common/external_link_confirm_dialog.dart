@@ -83,9 +83,9 @@ class _ExternalLinkConfirmSheet extends StatelessWidget {
             Container(
               width: 56,
               height: 56,
-              decoration: BoxDecoration(
+              decoration: ShapeDecoration(
                 color: config.color.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+                shape: context.shapes.circle(),
               ),
               child: Icon(config.icon, color: config.color, size: 28),
             ),
@@ -377,9 +377,9 @@ class _LinkBlockedSheet extends StatelessWidget {
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: context.appColors.red.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+              shape: context.shapes.circle(),
             ),
             child: Icon(
               Symbols.block_rounded,
@@ -413,7 +413,9 @@ class _LinkBlockedSheet extends StatelessWidget {
               color: context.appColors.red.withValues(alpha: 0.06),
               shape: RoundedSuperellipseBorder(
                 borderRadius: context.shapes.borderRadius(12),
-                side: BorderSide(color: context.appColors.red.withValues(alpha: 0.15)),
+                side: BorderSide(
+                  color: context.appColors.red.withValues(alpha: 0.15),
+                ),
               ),
             ),
             child: Row(

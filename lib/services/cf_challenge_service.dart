@@ -2077,7 +2077,9 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
 
     return Material(
       color: backgroundColor,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(8)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2436,7 +2438,11 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
               onPressed: showExitConfirmation,
             ),
             const SizedBox(width: 4),
-            Icon(Symbols.shield_rounded, size: 16, color: colorScheme.primary),
+            Icon(
+              Symbols.shield_rounded,
+              size: 16,
+              color: context.emphasis.accent,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -2478,7 +2484,9 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
     return Material(
       color: colorScheme.surface,
       elevation: 0,
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(20)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(20),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
@@ -2972,15 +2980,15 @@ class _ChallengeFallbackOverlayState extends State<_ChallengeFallbackOverlay>
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colorScheme.primary.withValues(alpha: 0.12),
+            decoration: ShapeDecoration(
+              color: context.emphasis.accent.withValues(alpha: 0.12),
+              shape: context.shapes.circle(),
             ),
             alignment: Alignment.center,
             child: Icon(
               Symbols.verified_user_rounded,
               size: 28,
-              color: colorScheme.primary,
+              color: context.emphasis.accent,
             ),
           ),
           const SizedBox(height: 18),

@@ -251,7 +251,7 @@ class _DiscourseAudioPlayerState extends State<DiscourseAudioPlayer> {
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
                         ),
-                        color: scheme.primary,
+                        color: context.emphasis.accent,
                         onPressed: !_ready
                             ? null
                             : () => playing ? _player.pause() : _player.play(),

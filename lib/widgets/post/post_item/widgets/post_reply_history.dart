@@ -52,13 +52,13 @@ class PostReplyHistory extends StatelessWidget {
                 Icon(
                   Symbols.format_quote_rounded,
                   size: 16,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   context.l10n.post_replyTo,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

@@ -351,11 +351,11 @@ class _BoostListState extends State<BoostList>
         child: Container(
           height: 28,
           width: 28,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.3,
             ),
-            shape: BoxShape.circle,
+            shape: context.shapes.circle(),
           ),
           child: Icon(
             Symbols.rocket_launch_rounded,

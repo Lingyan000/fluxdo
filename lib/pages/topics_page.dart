@@ -1271,40 +1271,42 @@ class _TopicsPageState extends ConsumerState<TopicsPage>
   Widget _buildToolbar(bool isLoggedIn, Widget filterMenu) {
     return SizedBox(
       height: _toolbarRowHeight,
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          // ☰ 全平台常显：分类侧栏的显性入口（侧栏走根 Navigator
-          // 路由，rail/底栏任何布局形态下都可用）
-          IconButton(
-            icon: const Icon(Symbols.menu_rounded),
-            color: Theme.of(context).colorScheme.primary,
-            onPressed: _openCategoryDrawer,
-            tooltip: context.l10n.topics_browseCategories,
-            visualDensity: VisualDensity.compact,
-          ),
-          // 标题区弹性化：窄面板（桌面 master-detail 列表栏）空间不足
-          // 时标题内部自行让步（前缀先缩，见 _TitleTabPrefix），刚性
-          // Row + Spacer 版在窄面板直接撑破右簇
-          Expanded(
-            child: Align(alignment: Alignment.centerLeft, child: filterMenu),
-          ),
-          // 搜索落位格：展开态零宽（右簇紧凑无空洞），折叠时随 morph
-          // 同曲线张开迎接胶囊缩成的图标（胶囊本体在
-          // _CollapsibleHeader 的 overlay 层绘制，这里只占位）
-          _SearchSlotSpacer(controller: _headerController),
-
-          if (isLoggedIn && !Responsive.showNavigationRail(context))
-            const NotificationIconButton(compact: true),
-          if (kDebugMode)
+      // 首页标题栏承担顶栏职责：按钮与其他页面的 AppBar 同色
+      child: TopBarIconScope(
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            // ☰ 全平台常显：分类侧栏的显性入口（侧栏走根 Navigator
+            // 路由，rail/底栏任何布局形态下都可用）
             IconButton(
-              icon: const Icon(Symbols.bug_report_rounded),
+              icon: const Icon(Symbols.menu_rounded),
+              onPressed: _openCategoryDrawer,
+              tooltip: context.l10n.topics_browseCategories,
               visualDensity: VisualDensity.compact,
-              onPressed: () => _showTopicIdDialog(context),
-              tooltip: context.l10n.topics_debugJump,
             ),
-          const SizedBox(width: 8),
-        ],
+            // 标题区弹性化：窄面板（桌面 master-detail 列表栏）空间不足
+            // 时标题内部自行让步（前缀先缩，见 _TitleTabPrefix），刚性
+            // Row + Spacer 版在窄面板直接撑破右簇
+            Expanded(
+              child: Align(alignment: Alignment.centerLeft, child: filterMenu),
+            ),
+            // 搜索落位格：展开态零宽（右簇紧凑无空洞），折叠时随 morph
+            // 同曲线张开迎接胶囊缩成的图标（胶囊本体在
+            // _CollapsibleHeader 的 overlay 层绘制，这里只占位）
+            _SearchSlotSpacer(controller: _headerController),
+
+            if (isLoggedIn && !Responsive.showNavigationRail(context))
+              const NotificationIconButton(compact: true),
+            if (kDebugMode)
+              IconButton(
+                icon: const Icon(Symbols.bug_report_rounded),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _showTopicIdDialog(context),
+                tooltip: context.l10n.topics_debugJump,
+              ),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }

@@ -70,7 +70,7 @@ class CategoryTagsLine extends StatelessWidget {
     if (category == null) return text;
 
     final categoryColor = ColorUtils.readableOn(
-      _parseCategoryColor(category.color),
+      ColorUtils.category(category.color, Theme.of(context)),
       theme.brightness,
     );
     final chipColor = f == 1.0
@@ -92,13 +92,5 @@ class CategoryTagsLine extends StatelessWidget {
         Expanded(child: text),
       ],
     );
-  }
-
-  Color _parseCategoryColor(String hex) {
-    final clean = hex.replaceAll('#', '');
-    if (clean.length == 6) {
-      return Color(int.parse('0xFF$clean'));
-    }
-    return Colors.grey;
   }
 }

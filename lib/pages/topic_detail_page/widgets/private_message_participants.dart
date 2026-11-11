@@ -132,7 +132,7 @@ class PrivateMessageParticipants extends StatelessWidget {
               Icon(
                 Icons.lock_outline_rounded,
                 size: 18,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 8),
               Text(

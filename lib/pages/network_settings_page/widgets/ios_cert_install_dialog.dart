@@ -100,7 +100,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
       contentPadding: EdgeInsets.zero,
       titleWidget: Row(
         children: [
-          Icon(Symbols.security_rounded, color: theme.colorScheme.primary),
+          Icon(Symbols.security_rounded, color: context.emphasis.accent),
           const SizedBox(width: 8),
           Text(
             l10n.dohSettings_certDialogTitle,
@@ -364,7 +364,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          Icon(icon, size: 20, color: context.emphasis.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

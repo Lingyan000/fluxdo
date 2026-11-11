@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -80,7 +81,7 @@ class SettingsRenderer extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Icon(m.icon, color: theme.colorScheme.primary),
+              Icon(m.icon, color: context.emphasis.accent),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(

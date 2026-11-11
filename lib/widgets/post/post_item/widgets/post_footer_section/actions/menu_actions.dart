@@ -101,11 +101,11 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                 ListTile(
                   leading: Icon(
                     Symbols.edit_rounded,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                   title: Text(
                     context.l10n.common_edit,
-                    style: TextStyle(color: theme.colorScheme.primary),
+                    style: TextStyle(color: context.emphasis.accent),
                   ),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -287,11 +287,11 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                 ListTile(
                   leading: Icon(
                     Symbols.restore_rounded,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                   title: Text(
                     context.l10n.common_restore,
-                    style: TextStyle(color: theme.colorScheme.primary),
+                    style: TextStyle(color: context.emphasis.accent),
                   ),
                   onTap: _isDeleting
                       ? null

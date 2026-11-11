@@ -222,13 +222,13 @@ class _PostLinksState extends State<PostLinks>
                                 Icon(
                                   Symbols.more_horiz_rounded,
                                   size: 16,
-                                  color: theme.colorScheme.primary,
+                                  color: context.emphasis.accent,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   context.l10n.post_moreLinks(_remainingCount),
                                   style: theme.textTheme.labelMedium?.copyWith(
-                                    color: theme.colorScheme.primary,
+                                    color: context.emphasis.accent,
                                   ),
                                 ),
                               ],

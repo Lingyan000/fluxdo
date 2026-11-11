@@ -682,7 +682,7 @@ class _ReactionBar extends StatelessWidget {
                 quickReactions.length,
                 InkWell(
                   onTap: onMore,
-                  customBorder: const CircleBorder(),
+                  customBorder: context.shapes.circle(),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Icon(
@@ -718,13 +718,13 @@ class _ReactionBarButton extends StatelessWidget {
     final url = EmojiHandler().getEmojiUrl(emoji);
     return InkWell(
       onTap: onTap,
-      customBorder: const CircleBorder(),
+      customBorder: context.shapes.circle(),
       child: Container(
         padding: const EdgeInsets.all(7),
         decoration: reacted
-            ? BoxDecoration(
+            ? ShapeDecoration(
                 color: theme.colorScheme.primaryContainer,
-                shape: BoxShape.circle,
+                shape: context.shapes.circle(),
               )
             : null,
         child: url.isEmpty
@@ -834,7 +834,7 @@ class _ReactionRowEntryState extends State<_ReactionRowEntry> {
                 Navigator.pop(context, (null, selected));
               }
             },
-            customBorder: const CircleBorder(),
+            customBorder: context.shapes.circle(),
             child: Padding(
               padding: const EdgeInsets.all(7),
               child: Icon(

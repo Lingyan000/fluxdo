@@ -270,7 +270,7 @@ class _QrLoginScanPageState extends State<QrLoginScanPage> {
               Icon(
                 Symbols.qr_code_scanner_rounded,
                 size: 72,
-                color: scheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(height: 20),
               Text(

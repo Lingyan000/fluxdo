@@ -303,7 +303,7 @@ class _QrLoginPanelState extends State<_QrLoginPanel> {
   Widget _buildHeader(ThemeData theme, ColorScheme scheme) {
     return Row(
       children: [
-        Icon(Symbols.qr_code_rounded, size: 22, color: scheme.primary),
+        Icon(Symbols.qr_code_rounded, size: 22, color: context.emphasis.accent),
         const SizedBox(width: 10),
         Expanded(
           child: Text(

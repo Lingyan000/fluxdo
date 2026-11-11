@@ -158,7 +158,7 @@ class _PostReactionUsersSheetState extends State<PostReactionUsersSheet> {
         children: [
           Icon(
             Symbols.emoji_emotions_rounded,
-            color: theme.colorScheme.primary,
+            color: context.emphasis.accent,
           ),
           const SizedBox(width: 8),
           Text(

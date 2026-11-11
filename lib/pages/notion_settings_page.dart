@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import '../services/notion/notion_sync_service.dart';
 import '../services/toast_service.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../theme/app_colors.dart';
 
 /// Notion 同步设置页：分步引导 + 配置编辑。
@@ -574,9 +576,9 @@ class _ConfiguredBanner extends StatelessWidget {
           Container(
             width: 28,
             height: 28,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: theme.colorScheme.primary,
-              shape: BoxShape.circle,
+              shape: context.shapes.circle(),
             ),
             alignment: Alignment.center,
             child: Icon(
@@ -630,14 +632,14 @@ class _Header extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: ShapeDecoration(
-              color: theme.colorScheme.primary.withValues(alpha: 0.16),
+              color: context.emphasis.accent.withValues(alpha: 0.16),
               shape: RoundedSuperellipseBorder(
                 borderRadius: context.shapes.borderRadius(10),
               ),
             ),
             child: Icon(
               Symbols.cloud_sync_rounded,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
           ),
           const SizedBox(width: 12),
@@ -709,11 +711,11 @@ class _StepCard extends StatelessWidget {
               Container(
                 width: 24,
                 height: 24,
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: done
                       ? theme.colorScheme.primary
                       : theme.colorScheme.surfaceContainerHighest,
-                  shape: BoxShape.circle,
+                  shape: context.shapes.circle(),
                 ),
                 alignment: Alignment.center,
                 child: done

@@ -778,7 +778,7 @@ class TopicCardLayout {
         b.pop();
         first = false;
         var dot = ColorUtils.readableOn(
-          _parseCategoryColor(effCategory.color),
+          ColorUtils.category(effCategory.color, theme),
           theme.brightness,
         );
         categoryDotColor = dot.withValues(alpha: dot.a * dimF);
@@ -1150,12 +1150,6 @@ class TopicCardLayout {
     if (ratio > 1.0) return const Color(0xFFCF7721);
     if (ratio > 0.5) return const Color(0xFF9B764F);
     return null;
-  }
-
-  static Color _parseCategoryColor(String hex) {
-    final clean = hex.replaceAll('#', '');
-    if (clean.length == 6) return Color(int.parse('0xFF$clean'));
-    return Colors.grey;
   }
 }
 

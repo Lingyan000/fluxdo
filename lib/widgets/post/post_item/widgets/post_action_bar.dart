@@ -417,11 +417,11 @@ class _PostActionBarState extends State<PostActionBar>
       child: Container(
         height: 36,
         width: 36,
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(
             alpha: 0.3,
           ),
-          shape: BoxShape.circle,
+          shape: context.shapes.circle(),
         ),
         child: Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
       ),

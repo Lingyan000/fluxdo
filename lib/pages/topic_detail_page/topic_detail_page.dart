@@ -1367,7 +1367,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                     child: Icon(
                       Symbols.mail_rounded,
                       size: 18,
-                      color: theme.colorScheme.primary,
+                      color: context.emphasis.accent,
                     ),
                   ),
                 ),
@@ -1485,7 +1485,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   child: Icon(
                     Symbols.mail_rounded,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                   ),
                 ),
               ),
@@ -1707,7 +1707,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           submenu: MenuQuickActionSubmenu(
             icon: Symbols.filter_list_rounded,
             label: context.l10n.topicDetail_filter,
-            iconColor: hasFilter ? Theme.of(context).colorScheme.primary : null,
+            iconColor: hasFilter ? context.emphasis.selected : null,
             children: [
               // 问答话题:默认按票排序,可切按活动(时间流)
               if (detail.isPostVoting)

@@ -382,11 +382,7 @@ class _EmojiPickerState extends ConsumerState<EmojiPicker>
       child: Row(
         children: [
           IconButton(
-            icon: Icon(
-              Symbols.search_rounded,
-              size: 20,
-              color: theme.colorScheme.primary,
-            ),
+            icon: const Icon(Symbols.search_rounded, size: 20),
             visualDensity: compact ? VisualDensity.compact : null,
             onPressed: () => _onSearchPressed(context, emojiGroups),
             tooltip: S.current.emoji_searchTooltip,

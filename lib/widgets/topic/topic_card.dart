@@ -26,6 +26,7 @@ import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
 import 'topic_expandable_excerpt.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/color_utils.dart';
 
 Widget _withDesktopTertiaryTap(Widget child, VoidCallback? onMiddleClick) {
   if (!PlatformUtils.isDesktop || onMiddleClick == null) return child;
@@ -1138,6 +1139,7 @@ class CompactTopicCard extends ConsumerWidget {
                                                     end: 8,
                                                   ),
                                               child: _buildCategoryIcon(
+                                                context,
                                                 category,
                                                 faIcon,
                                                 logoUrl,
@@ -1258,12 +1260,17 @@ class CompactTopicCard extends ConsumerWidget {
   }
 
   Widget _buildCategoryIcon(
+    BuildContext context,
     Category category,
     FaIconData? icon,
     String? logoUrl,
   ) {
     if (icon != null) {
-      return FaIcon(icon, size: 12, color: _parseColor(category.color));
+      return FaIcon(
+        icon,
+        size: 12,
+        color: ColorUtils.category(category.color, Theme.of(context)),
+      );
     }
     if (logoUrl != null && logoUrl.isNotEmpty) {
       return Image(
@@ -1272,28 +1279,20 @@ class CompactTopicCard extends ConsumerWidget {
         height: 12,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) =>
-            _buildCategoryDot(category),
+            _buildCategoryDot(context, category),
       );
     }
-    return _buildCategoryDot(category);
+    return _buildCategoryDot(context, category);
   }
 
-  Widget _buildCategoryDot(Category category) {
+  Widget _buildCategoryDot(BuildContext context, Category category) {
     return Container(
       width: 6,
       height: 6,
       decoration: BoxDecoration(
-        color: _parseColor(category.color),
+        color: ColorUtils.category(category.color, Theme.of(context)),
         shape: BoxShape.circle,
       ),
     );
-  }
-
-  Color _parseColor(String hex) {
-    hex = hex.replaceAll('#', '');
-    if (hex.length == 6) {
-      return Color(int.parse('0xFF$hex'));
-    }
-    return Colors.grey;
   }
 }

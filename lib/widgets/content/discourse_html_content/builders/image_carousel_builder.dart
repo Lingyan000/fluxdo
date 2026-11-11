@@ -465,15 +465,15 @@ class _NavButton extends StatelessWidget {
         child: Container(
           width: 32,
           height: 32,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: theme.colorScheme.surface.withValues(alpha: 0.8),
-            shape: BoxShape.circle,
-            boxShadow: [
+            shadows: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 4,
               ),
             ],
+            shape: context.shapes.circle(),
           ),
           child: Icon(icon, size: 20, color: theme.colorScheme.onSurface),
         ),

@@ -3,7 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:common_ui/common_ui.dart' show showInteractionDialog, UiShapesContext;
+import 'package:common_ui/common_ui.dart'
+    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -853,7 +854,7 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Symbols.verified_user_rounded, size: 20, color: scheme.primary),
+          Icon(Symbols.verified_user_rounded, size: 20, color: context.emphasis.accent),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

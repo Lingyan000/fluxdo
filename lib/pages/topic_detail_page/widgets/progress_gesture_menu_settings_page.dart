@@ -106,7 +106,7 @@ class _ProgressGestureMenuSettingsPageState
             subtitle: Text(l10n.progressGesture_longPressEnableDesc),
             secondary: Icon(
               Symbols.fingerprint_rounded,
-              color: theme.colorScheme.primary,
+              color: context.emphasis.accent,
             ),
             onChanged: (v) => ref
                 .read(preferencesProvider.notifier)
@@ -421,7 +421,7 @@ class _PreviewAreaState extends State<_PreviewArea> {
       color: dragging
           ? theme.colorScheme.primary
           : theme.colorScheme.surfaceContainerHighest,
-      shape: const CircleBorder(),
+      shape: context.shapes.circle(),
       elevation: dragging ? 10 : 2,
       shadowColor: dragging
           ? theme.colorScheme.primary.withValues(alpha: 0.5)
@@ -442,12 +442,13 @@ class _PreviewAreaState extends State<_PreviewArea> {
 
   Widget _buildPlaceholder(ThemeData theme) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.35),
-          width: 1.2,
+        shape: context.shapes.circle(
+          side: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
         ),
       ),
     );
@@ -599,9 +600,9 @@ class _AvailableTile extends StatelessWidget {
       leading: Container(
         width: 40,
         height: 40,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
+        decoration: ShapeDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
+          shape: context.shapes.circle(),
         ),
         alignment: Alignment.center,
         child: Icon(
@@ -615,7 +616,7 @@ class _AvailableTile extends StatelessWidget {
       title: Text(meta.label),
       trailing: Icon(
         Symbols.add_circle_rounded,
-        color: enabled ? theme.colorScheme.primary : theme.colorScheme.outline,
+        color: enabled ? context.emphasis.selected : theme.colorScheme.outline,
       ),
       onTap: enabled ? onTap : null,
     );

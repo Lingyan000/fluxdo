@@ -628,7 +628,7 @@ class _ModelRow extends StatelessWidget {
               Icon(
                 Symbols.check_circle_rounded,
                 size: 20,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.selected,
               ),
             ],
           ],

@@ -416,7 +416,7 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           color: isHighlighted
               ? theme.colorScheme.primary
               : theme.colorScheme.surfaceContainerHighest,
-          shape: const CircleBorder(),
+          shape: context.shapes.circle(),
           elevation: isHighlighted ? 6 : 2,
           shadowColor: isHighlighted
               ? theme.colorScheme.primary.withValues(alpha: 0.4)
