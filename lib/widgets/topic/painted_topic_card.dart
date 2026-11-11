@@ -12,6 +12,7 @@ import '../common/animated_avatar_overlay.dart';
 import '../common/smart_avatar.dart' show isSquareAvatarUrl;
 import 'topic_card.dart' show TopicCardInteractiveSurface;
 import 'topic_card_layout.dart';
+import '../../theme/theme_style.dart';
 
 /// 标题 emoji 短代码 → 图片 URL(自绘卡排版层注入;顶层函数,避免
 /// 每个调用点手写 EmojiHandler 单例访问)
@@ -73,6 +74,7 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
     final layout = widget.layout;
     final cardRadius = context.shapes.borderRadius(10);
     final theme = Theme.of(context);
+    final surfaces = context.themeStyle.surfaces;
     final bgColor = widget.isSelected
         ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
         : (widget.highlightColor ?? layout.cardColor);
@@ -101,6 +103,8 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
               ? BorderSide(
                   color: theme.colorScheme.primary.withValues(alpha: 0.5),
                 )
+              : surfaces == SurfaceStyle.outlined
+              ? BorderSide(color: theme.colorScheme.outlineVariant)
               : BorderSide.none,
         ),
       ),
@@ -121,8 +125,41 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
     if (layout.band != null) {
       card = ClipRSuperellipse(borderRadius: cardRadius, child: card);
     }
-    return Padding(padding: const EdgeInsets.only(bottom: 8), child: card);
+    card = Padding(padding: const EdgeInsets.only(bottom: 8), child: card);
+    // 平铺风格：卡片不画容器，相邻话题之间在间距正中画一道细线
+    if (surfaces == SurfaceStyle.flat) {
+      card = CustomPaint(
+        foregroundPainter: _GapDividerPainter(
+          theme.colorScheme.outlineVariant,
+        ),
+        child: card,
+      );
+    }
+    return card;
   }
+}
+
+/// 平铺风格的分隔线：画在卡片下方 8px 间距的正中，左右与内容对齐。
+class _GapDividerPainter extends CustomPainter {
+  const _GapDividerPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height - 4;
+    canvas.drawLine(
+      Offset(12, y),
+      Offset(size.width - 12, y),
+      Paint()
+        ..color = color
+        ..strokeWidth = 0.6,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GapDividerPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _PaintedTopicCardLeaf extends SingleChildRenderObjectWidget {

@@ -28,6 +28,7 @@ import 'widgets/post_header_section.dart';
 import 'widgets/post_notice_widget.dart';
 import 'widgets/post_segment_frame.dart';
 import 'widgets/post_voting_control.dart';
+import '../../../theme/theme_style.dart';
 
 class PostItem extends ConsumerStatefulWidget {
   final Post post;
@@ -330,7 +331,10 @@ class _PostItemState extends ConsumerState<PostItem> {
                                 // (此前新引擎分支未接入,顺带修复)。
                                 baseTextStyle: theme.textTheme.bodyMedium
                                     ?.copyWith(
-                                      height: 1.5,
+                                      // 主题可放宽行高（如纸质的书页排版）
+                                      height:
+                                          context.themeStyle.bodyLineHeight ??
+                                          1.5,
                                       fontSize:
                                           (theme
                                                   .textTheme
@@ -442,13 +446,13 @@ class _PostItemState extends ConsumerState<PostItem> {
                           Icon(
                             Symbols.visibility_rounded,
                             size: 15,
-                            color: theme.colorScheme.primary,
+                            color: context.emphasis.accent,
                           ),
                           const SizedBox(width: 4),
                           Text(
                             context.l10n.post_viewHiddenInfo,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.primary,
+                              color: context.emphasis.accent,
                             ),
                           ),
                         ],
@@ -556,7 +560,7 @@ class _PostAssignmentBadge extends ConsumerWidget {
               Icon(
                 Icons.assignment_ind_rounded,
                 size: 16,
-                color: theme.colorScheme.primary,
+                color: context.emphasis.accent,
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -564,7 +568,7 @@ class _PostAssignmentBadge extends ConsumerWidget {
                   '已指定给 ${info.displayName}',
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.primary,
+                    color: context.emphasis.accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -575,7 +579,7 @@ class _PostAssignmentBadge extends ConsumerWidget {
                 icon: Icon(
                   Icons.more_vert_rounded,
                   size: 16,
-                  color: theme.colorScheme.primary,
+                  color: context.emphasis.accent,
                 ),
                 onSelected: (value) {
                   if (value == 'edit') {

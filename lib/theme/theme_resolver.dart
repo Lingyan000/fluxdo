@@ -136,9 +136,12 @@ class ThemeResolver {
       final neutral = spec.surface == GeneratedSurface.neutral;
       if (neutral || useBlack || transparent) {
         // 合成路径：彩色 role 来自种子，中性 role 来自中性层
+        final light = brightness == Brightness.light;
         final base = useBlack
             ? NeutralRamp.black
-            : brightness == Brightness.light
+            : neutral
+            ? (light ? NeutralRamp.zincLight : NeutralRamp.zincDark)
+            : light
             ? NeutralRamp.light
             : NeutralRamp.dark;
         final scheme = resolveColorScheme(

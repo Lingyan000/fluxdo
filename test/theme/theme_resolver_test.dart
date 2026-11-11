@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 重构前的 ThemeResolver.resolve 原样拷贝，作为零视觉变化的参照。
+///
+/// 唯一有意的差异：简约（原中性开关）的表面从带冷调的中性灰改为锌灰。
 ResolvedTheme _legacyResolve({
   required ThemeMode mode,
   required bool neutral,
@@ -22,9 +24,12 @@ ResolvedTheme _legacyResolve({
   ColorScheme schemeFor(Brightness brightness) {
     final useBlackRamp = black && brightness == Brightness.dark;
     if (neutral || useBlackRamp || transparent) {
+      final light = brightness == Brightness.light;
       final base = useBlackRamp
           ? NeutralRamp.black
-          : brightness == Brightness.light
+          : neutral
+          ? (light ? NeutralRamp.zincLight : NeutralRamp.zincDark)
+          : light
           ? NeutralRamp.light
           : NeutralRamp.dark;
       return ThemeResolver.resolveColorScheme(

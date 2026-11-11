@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'color_scheme_roles.dart';
 import 'shape_presets.dart';
+import 'theme_style.dart';
 
 /// 主题配色的生成方式。
 enum ThemeColorKind {
@@ -207,6 +208,7 @@ class ThemeSpec {
     this.variantName = const {},
     this.order = 1000,
     this.shape = ShapePreset.standard,
+    this.style = ThemeStyle.material,
     this.fontBody,
     this.fontMono,
     this.surface = GeneratedSurface.tinted,
@@ -223,11 +225,12 @@ class ThemeSpec {
     required this.surface,
     this.name = const {},
     this.order = 0,
+    this.shape = ShapePreset.standard,
+    this.style = ThemeStyle.material,
   }) : kind = ThemeColorKind.generated,
        group = ThemeGroup.generated,
        family = null,
        variantName = const {},
-       shape = ShapePreset.standard,
        fontBody = null,
        fontMono = null,
        light = null,
@@ -260,6 +263,9 @@ class ThemeSpec {
 
   /// 主题推荐的圆角风格（用户可在外观设置中覆盖）。
   final ShapePreset shape;
+
+  /// 界面风格：配色之外，组件长什么样（容器、控件、导航、输入框……）。
+  final ThemeStyle style;
 
   /// 主题推荐的正文 / 等宽字体（字体目录 id），用户选「跟随主题」时
   /// 生效；字体未下载时回退系统字体。
@@ -318,6 +324,7 @@ class ThemeSpec {
     variantName: clearFamily ? const {} : variantName,
     order: order,
     shape: shape ?? this.shape,
+    style: style,
     fontBody: fontBody,
     fontMono: fontMono,
     surface: surface,
@@ -390,6 +397,9 @@ class ThemeSpec {
       variantName: _parseName(json['variantName']),
       order: json['order'] as int? ?? 1000,
       shape: shape,
+      style: json['style'] is Map<String, dynamic>
+          ? ThemeStyle.fromJson(json['style'] as Map<String, dynamic>)
+          : ThemeStyle.material,
       fontBody: (json['font'] as Map?)?['body'] as String?,
       fontMono: (json['font'] as Map?)?['mono'] as String?,
       light: ThemePalette.fromJson(lightJson),
@@ -409,6 +419,7 @@ class ThemeSpec {
     if (variantName.isNotEmpty) 'variantName': variantName,
     if (order != (isGenerated ? 0 : 1000)) 'order': order,
     if (shape != ShapePreset.standard) 'shape': shape.name,
+    if (!style.isMaterial) 'style': style.toJson(),
     if (fontBody != null || fontMono != null)
       'font': {'body': ?fontBody, 'mono': ?fontMono},
     if (isGenerated) 'surface': surface.name,

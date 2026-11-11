@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
 
 import 'm3e_flags.dart';
+import 'segmented_card_style.dart';
 
 /// M3 Expressive 风格分段卡片组
 ///
@@ -125,6 +126,10 @@ class _SegmentedCardGroupState extends State<SegmentedCardGroup> {
 
   @override
   Widget build(BuildContext context) {
+    final style = SegmentedCardStyle.of(context);
+    if (style.mode != SegmentedCardMode.segmented) {
+      return _buildLined(context, style);
+    }
     return Column(
       children: [
         for (final entry in _entries)
@@ -151,6 +156,57 @@ class _SegmentedCardGroupState extends State<SegmentedCardGroup> {
             ),
           ),
       ],
+    );
+  }
+}
+
+extension on _SegmentedCardGroupState {
+  /// 描边 / 平铺：条目之间画细线（不留缝），描边模式外加整组细线框。
+  /// 条目增删的展开收起动画与分段模式共用 [_CardPresence]。
+  Widget _buildLined(BuildContext context, SegmentedCardStyle style) {
+    final scheme = Theme.of(context).colorScheme;
+    final divider = style.dividerColor ?? scheme.outlineVariant;
+    final outlined = style.mode == SegmentedCardMode.outlined;
+    final column = Column(
+      children: [
+        for (final entry in _entries)
+          _CardPresence(
+            key: ValueKey(entry.key),
+            visible: !entry.leaving,
+            enter: entry.entering,
+            animate: _animate,
+            onHidden: () {
+              if (mounted && entry.leaving) {
+                // ignore: invalid_use_of_protected_member
+                setState(() => _entries.remove(entry));
+              }
+            },
+            child: DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                border: entry.index > 0
+                    ? Border(top: BorderSide(color: divider, width: 0.6))
+                    : null,
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: entry.child,
+              ),
+            ),
+          ),
+      ],
+    );
+    if (!outlined) return column;
+    return Material(
+      color: widget.color ?? style.background ?? scheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(widget.outerRadius),
+        side: BorderSide(
+          color: style.borderColor ?? scheme.outlineVariant,
+        ),
+      ),
+      child: column,
     );
   }
 }

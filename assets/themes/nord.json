@@ -7,6 +7,7 @@
   "kind": "fixed",
   "group": "classic",
   "order": 110,
+  "style": {"dataColors": "harmonized"},
   "supportsPureBlack": false,
   "allowCustomAccent": true,
   "light": {

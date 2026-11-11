@@ -9,6 +9,7 @@
   "kind": "fixed",
   "group": "terminal",
   "order": 300,
+  "style": {"surfaces": "outlined", "navIndicator": "bar", "inputs": "outlined", "shadows": false, "titleFont": "mono", "quote": "bar", "dataColors": "mono"},
   "shape": "sharp",
   "font": {"mono": "firacode"},
   "supportsPureBlack": true,

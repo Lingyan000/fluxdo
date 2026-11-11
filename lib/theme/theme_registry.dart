@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'shape_presets.dart';
 import 'theme_spec.dart';
+import 'theme_style.dart';
 
 /// 主题注册表。
 ///
@@ -27,10 +29,20 @@ class ThemeRegistry {
     surface: GeneratedSurface.tinted,
   );
 
+  /// 简约：锌灰中性面 + 细线描边容器 + 墨色控件，强调色只留给链接、
+  /// 选中与焦点；无阴影、圆角收一档。
   static const ThemeSpec minimal = ThemeSpec.generated(
     id: minimalId,
     surface: GeneratedSurface.neutral,
     order: 1,
+    shape: ShapePreset.compact,
+    style: ThemeStyle(
+      surfaces: SurfaceStyle.outlined,
+      controls: ControlStyle.ink,
+      navIndicator: NavIndicatorStyle.tint,
+      inputs: InputStyle.outlined,
+      shadows: false,
+    ),
   );
 
   static const List<ThemeSpec> builtins = [material, minimal];

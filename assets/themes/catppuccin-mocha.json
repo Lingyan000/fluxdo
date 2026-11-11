@@ -11,6 +11,7 @@
     "en": "Mocha"
   },
   "order": 102,
+  "style": {"dataColors": "harmonized"},
   "supportsPureBlack": true,
   "allowCustomAccent": true,
   "light": {

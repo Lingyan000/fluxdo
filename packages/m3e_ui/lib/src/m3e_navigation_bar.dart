@@ -111,7 +111,10 @@ class _M3eNavigationBarState extends State<M3eNavigationBar>
                             width: _kIndicatorWidth,
                             height: _kIndicatorHeight,
                             decoration: ShapeDecoration(
-                              color: scheme.secondaryContainer,
+                              // 主题可换指示器颜色（浅灰底、短横等风格）
+                              color:
+                                  barTheme.indicatorColor ??
+                                  scheme.secondaryContainer,
                               shape:
                                   barTheme.indicatorShape ??
                                   RoundedSuperellipseBorder(

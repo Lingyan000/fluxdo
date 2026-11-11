@@ -9,6 +9,7 @@
   "kind": "fixed",
   "group": "reading",
   "order": 210,
+  "style": {"surfaces": "outlined", "controls": "ink", "navIndicator": "bar", "inputs": "underline", "shadows": false, "quote": "bar", "dataColors": "muted"},
   "supportsPureBlack": false,
   "allowCustomAccent": true,
   "light": {

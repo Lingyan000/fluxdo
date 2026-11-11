@@ -20,6 +20,7 @@ import '../theme/festival_calendar.dart';
 import '../theme/shape_presets.dart';
 import '../theme/theme_registry.dart';
 import '../theme/theme_spec.dart';
+import '../theme/theme_style.dart';
 
 /// 字体选择的特殊取值；其余取值为字体目录 id（见 [FontCatalog]）。
 abstract final class FontChoice {
@@ -165,6 +166,16 @@ class ThemeState {
     final f = activeFestival;
     return f == null ? themeSpec : ThemeRegistry.byId(f.festival.themeId);
   }
+
+  /// 当前生效的界面风格：跟随用户选择的主题（节日只换配色）
+  ThemeStyle get effectiveStyle => themeSpec.style;
+
+  /// 纸张纹理是否生效：与用户背景图共用页面背景层，背景图优先
+  bool get isPaperTextureActive =>
+      !isTransparentActive && effectiveStyle.texture == TextureStyle.paper;
+
+  /// 页面是否铺独立背景（用户背景图或纸张纹理），表面类颜色需要透出
+  bool get hasPageBackground => isTransparentActive || isPaperTextureActive;
 
   /// 当前生效的圆角风格：用户指定优先，否则取主题推荐
   ShapePreset get effectiveShapePreset => shapeOverride ?? themeSpec.shape;

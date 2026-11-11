@@ -22,6 +22,7 @@ import 'category_shortcuts.dart';
 import '../topic/category_tab_manager_sheet.dart';
 import '../topic/category_drawer.dart';
 import '../browser/browser_dock_content_layout.dart';
+import '../../theme/theme_style.dart';
 
 /// 自适应 Scaffold
 ///
@@ -276,6 +277,7 @@ class _SidebarCategoryAddButton extends StatelessWidget {
   final bool extended;
   final Future<void> Function() onOpenCategoryManager;
 
+  // 与侧栏导航项同色：侧栏是一块区域，不单独给强调色
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -298,7 +300,7 @@ class _SidebarCategoryAddButton extends StatelessWidget {
                       const SizedBox(width: 16),
                       Icon(
                         Symbols.add_rounded,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         size: 22,
                       ),
                       const SizedBox(width: 12),
@@ -308,7 +310,7 @@ class _SidebarCategoryAddButton extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -319,7 +321,7 @@ class _SidebarCategoryAddButton extends StatelessWidget {
                 : Center(
                     child: Icon(
                       Symbols.add_rounded,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       size: 22,
                     ),
                   ),
@@ -379,12 +381,39 @@ class _AnimatedBottomNav extends StatelessWidget {
         offset: Offset(0, forceHidden ? 1.0 : 0.0),
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
-        child: AdaptiveBottomNavigation(
-          selectedIndex: selectedIndex,
-          onDestinationSelected: onDestinationSelected,
-          destinations: destinations,
+        child: _StyledBarEdge(
+          child: AdaptiveBottomNavigation(
+            selectedIndex: selectedIndex,
+            onDestinationSelected: onDestinationSelected,
+            destinations: destinations,
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// 底栏与内容的分界：色块风格靠底栏底色区分；描边 / 平铺风格底栏与
+/// 页面同色，在顶边补一道细线。
+class _StyledBarEdge extends StatelessWidget {
+  const _StyledBarEdge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (context.themeStyle.surfaces == SurfaceStyle.filled) return child;
+    return DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 0.6,
+          ),
+        ),
+      ),
+      child: child,
     );
   }
 }

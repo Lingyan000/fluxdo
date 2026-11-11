@@ -11,6 +11,7 @@
     "en": "Macchiato"
   },
   "order": 101,
+  "style": {"dataColors": "harmonized"},
   "supportsPureBlack": true,
   "allowCustomAccent": true,
   "light": {

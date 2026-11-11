@@ -103,6 +103,8 @@ import 'theme/shape_presets.dart';
 import 'theme/theme_registry.dart';
 import 'theme/theme_resolver.dart';
 import 'widgets/common/app_background_layer.dart';
+import 'widgets/common/paper_texture.dart';
+import 'theme/app_background.dart';
 import 'utils/time_utils.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -602,12 +604,50 @@ Future<void> main() async {
 
 /// 只给 textTheme/primaryTextTheme 注入中文 fallback，保留 ThemeData 原本的
 /// fontFamily 与 weight 配置（避免覆盖 Android OEM 字体导致视觉变粗）。
+///
+/// 已有 fallback 的样式（主题的宋体 / 等宽标题）保留原链，系统中文字体接在后面。
 ThemeData _withChineseFallback(ThemeData base) {
   final fallback = SystemChineseFont.fontFamilyFallback;
-  return base.copyWith(
-    textTheme: base.textTheme.apply(fontFamilyFallback: fallback),
-    primaryTextTheme: base.primaryTextTheme.apply(fontFamilyFallback: fallback),
+  TextStyle? merge(TextStyle? style) => style?.copyWith(
+    fontFamilyFallback: [...?style.fontFamilyFallback, ...fallback],
   );
+  TextTheme apply(TextTheme t) => t.copyWith(
+    displayLarge: merge(t.displayLarge),
+    displayMedium: merge(t.displayMedium),
+    displaySmall: merge(t.displaySmall),
+    headlineLarge: merge(t.headlineLarge),
+    headlineMedium: merge(t.headlineMedium),
+    headlineSmall: merge(t.headlineSmall),
+    titleLarge: merge(t.titleLarge),
+    titleMedium: merge(t.titleMedium),
+    titleSmall: merge(t.titleSmall),
+    bodyLarge: merge(t.bodyLarge),
+    bodyMedium: merge(t.bodyMedium),
+    bodySmall: merge(t.bodySmall),
+    labelLarge: merge(t.labelLarge),
+    labelMedium: merge(t.labelMedium),
+    labelSmall: merge(t.labelSmall),
+  );
+  return base.copyWith(
+    textTheme: apply(base.textTheme),
+    primaryTextTheme: apply(base.primaryTextTheme),
+  );
+}
+
+/// 页面背景构建器需保持同一实例：[PageBackgroundScope] 按引用比较，
+/// 换实例会通知所有路由重建背景。
+final WidgetBuilder _paperBackgroundBuilder = (context) => PaperBackground(
+  color: Theme.of(context).colorScheme.surface.withValues(alpha: 1),
+);
+
+(AppBackground, WidgetBuilder)? _userBackground;
+
+WidgetBuilder _userBackgroundBuilder(AppBackground background) {
+  final cached = _userBackground;
+  if (cached != null && identical(cached.$1, background)) return cached.$2;
+  Widget builder(BuildContext _) => AppBackgroundLayer(background: background);
+  _userBackground = (background, builder);
+  return builder;
 }
 
 final _routeInteractionObserver = RouteInteractionObserver();
@@ -648,7 +688,8 @@ class MainApp extends ConsumerWidget {
           accentId: themeState.accentFor(colorSpec),
           mode: themeState.mode,
           black: themeState.blackEnabled,
-          transparent: themeState.isTransparentActive,
+          // 纸张纹理与用户背景图同走页面背景层，表面同样需要透出
+          transparent: themeState.hasPageBackground,
           seed: themeState.effectiveSeedColor,
           variant: themeState.schemeVariant,
         );
@@ -698,6 +739,7 @@ class MainApp extends ConsumerWidget {
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,
+                  style: themeState.effectiveStyle,
                 ),
               ),
               darkTheme: _withChineseFallback(
@@ -708,10 +750,18 @@ class MainApp extends ConsumerWidget {
                   themeState,
                   fullscreenSwipeBack: fullscreenSwipeBack,
                   transparent: resolvedTheme.transparent,
+                  style: themeState.effectiveStyle,
                 ),
               ),
               builder: (context, child) {
                 final brightness = Theme.of(context).brightness;
+                // 页面背景：用户背景图优先，其次是主题的纸张纹理
+                final WidgetBuilder? pageBackground = themeState
+                        .isTransparentActive
+                    ? _userBackgroundBuilder(themeState.background)
+                    : themeState.isPaperTextureActive
+                    ? _paperBackgroundBuilder
+                    : null;
                 final iconBrightness = brightness == Brightness.light
                     ? Brightness.dark
                     : Brightness.light;
@@ -785,18 +835,10 @@ class MainApp extends ConsumerWidget {
                       fit: StackFit.passthrough,
                       children: [
                         // 根背景只兜底路由间隙；各普通页面独立铺壁纸，隔离前后页。
-                        if (resolvedTheme.transparent)
-                          Positioned.fill(
-                            child: AppBackgroundLayer(
-                              background: themeState.background,
-                            ),
-                          ),
+                        if (pageBackground != null)
+                          Positioned.fill(child: pageBackground(context)),
                         PageBackgroundScope(
-                          backgroundBuilder: resolvedTheme.transparent
-                              ? (_) => AppBackgroundLayer(
-                                  background: themeState.background,
-                                )
-                              : null,
+                          backgroundBuilder: pageBackground,
                           child: child!,
                         ),
                         if (windowHome == null) const ReadLaterBubble(),

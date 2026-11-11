@@ -115,6 +115,47 @@ class NeutralRamp {
     surfaceContainerHighest: _over(const Color(0xFF131315), _white, 0.10),
   );
 
+  /// 简约主题的浅色层：纯白底、不带色相的锌灰阶梯。层级以细线描边
+  /// 区分为主（见 ThemeStyle.surfaces），容器色只做极轻的明度台阶。
+  static const NeutralRamp zincLight = NeutralRamp(
+    surface: Color(0xFFFFFFFF),
+    onSurface: Color(0xFF09090B),
+    onSurfaceVariant: Color(0xFF67676F),
+    outline: Color(0xFF8B8B93),
+    outlineVariant: Color(0xFFE4E4E7),
+    inverseSurface: Color(0xFF18181B),
+    onInverseSurface: Color(0xFFFAFAFA),
+    shadow: _black,
+    scrim: _black,
+    surfaceDim: Color(0xFFE4E4E7),
+    surfaceBright: Color(0xFFFFFFFF),
+    surfaceContainerLowest: Color(0xFFFFFFFF),
+    surfaceContainerLow: Color(0xFFFAFAFA),
+    surfaceContainer: Color(0xFFF5F5F6),
+    surfaceContainerHigh: Color(0xFFEFEFF1),
+    surfaceContainerHighest: Color(0xFFE9E9EC),
+  );
+
+  /// 简约主题的深色层：近黑底、锌灰阶梯。
+  static const NeutralRamp zincDark = NeutralRamp(
+    surface: Color(0xFF09090B),
+    onSurface: Color(0xFFFAFAFA),
+    onSurfaceVariant: Color(0xFFA1A1AA),
+    outline: Color(0xFF71717A),
+    outlineVariant: Color(0xFF27272A),
+    inverseSurface: Color(0xFFFAFAFA),
+    onInverseSurface: Color(0xFF18181B),
+    shadow: _black,
+    scrim: _black,
+    surfaceDim: Color(0xFF050506),
+    surfaceBright: Color(0xFF27272A),
+    surfaceContainerLowest: Color(0xFF050506),
+    surfaceContainerLow: Color(0xFF0F0F12),
+    surfaceContainer: Color(0xFF141417),
+    surfaceContainerHigh: Color(0xFF1C1C20),
+    surfaceContainerHighest: Color(0xFF232328),
+  );
+
   /// 纯黑中性层（AMOLED）：surface 纯黑，容器阶梯比深色更亮一点，
   /// 保证卡片/菜单在纯黑底上仍可分辨。
   static final NeutralRamp black = NeutralRamp(

@@ -9,6 +9,7 @@
   "kind": "fixed",
   "group": "reading",
   "order": 200,
+  "style": {"surfaces": "flat", "controls": "ink", "navIndicator": "bar", "inputs": "underline", "shadows": false, "titleFont": "serif", "bodyLineHeight": 1.72, "quote": "bar", "texture": "paper", "dataColors": "muted"},
   "shape": "compact",
   "font": {"body": "lxgw-wenkai"},
   "supportsPureBlack": false,
