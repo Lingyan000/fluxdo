@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -34,15 +36,15 @@ import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/pane_projection_back_scope.dart';
 import 'topics_screen.dart' show PaneContentWidget;
 import '../widgets/common/flair_badge.dart';
-import '../widgets/common/grain_gradient_background.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/common/smart_avatar.dart';
-import '../widgets/user/avatar_action_menu.dart';
 import '../widgets/content/collapsed_html_content.dart';
 import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
+import '../widgets/user/user_profile_header.dart';
+import '../services/preloaded_data_service.dart';
 import '../widgets/user/ignore_duration_picker.dart';
 import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
@@ -57,11 +59,11 @@ import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
 import 'chat/channel/chat_channel_page.dart';
+import 'forum_preferences/forum_preferences_page.dart';
 
 import 'package:common_ui/common_ui.dart';
 
 import '../l10n/s.dart';
-import '../utils/dialog_utils.dart';
 import '../widgets/common/hero_image.dart';
 import '../theme/app_colors.dart';
 import '../utils/color_utils.dart';
@@ -106,8 +108,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<bool> _showPinnedAction = ValueNotifier(false);
   User? _user;
   UserSummary? _summary;
+  bool _summaryLoading = false;
+  Object? _summaryError;
+  StackTrace? _summaryErrorStack;
+  List<badge_model.UserBadge>? _badges;
+  bool _badgesLoading = false;
+  Object? _badgesError;
+  StackTrace? _badgesErrorStack;
+  String? _renamedUsername;
+  String get _username => _renamedUsername ?? widget.username;
+  int? _savingBadgeId;
+  String _activityFilter = 'all';
   bool _isLoading = true;
   Object? _error;
   StackTrace? _errorStack;
@@ -124,7 +138,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   /// 全屏形态自己的平行视界栈(按 username 隔离,叠开多个资料页互不
   /// 串)。嵌入形态不用——压宿主的栈。
   SelectedTopicProvider get _ownPaneProvider =>
-      selectedUserProfilePaneProvider(widget.username);
+      selectedUserProfilePaneProvider(_username);
 
   void _openTopic({
     required int topicId,
@@ -223,6 +237,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   final Map<String, bool> _hasMoreCache = {};
   final Map<String, bool> _loadingCache = {};
   final Map<String, bool> _loadMoreFailedCache = {};
+  final Map<String, Object> _actionErrors = {};
   final Map<String, LoadMoreCoordinator> _actionLoadMoreCoordinators = {};
 
   // 回应列表单独缓存
@@ -255,29 +270,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   bool _solvedLoadMoreFailed = false;
   final LoadMoreCoordinator _solvedLoadMoreCoordinator = LoadMoreCoordinator();
 
-  // tab 对应的 filter: summary=总结, 4,5=全部(话题+回复), 4=话题, 5=回复, 1=点赞,
-  // reactions=回应, boosts=Boost, votes=投票, solved=已解决
+  // 一级栏目用于导航，动态类型在动态栏目内部筛选。
   static const List<String> _tabFilters = [
+    'activity',
     'summary',
-    '4,5',
-    '4',
-    '5',
-    '1',
-    'reactions',
-    'boosts',
-    'votes',
-    'solved',
+    'badges',
+    'about',
   ];
 
   /// 桌面端 Esc 关闭当前层:平行视界嵌入层走 onEmbeddedBack,普通路由
   /// maybePop —— 与 TopicDetailPage 的 closeOverlay 语义对齐。
-  late final ShortcutScopeBinding _shortcutScopeBinding = ShortcutScopeBinding(
-    ref: ref,
-    scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
-    // 嵌入面板挂在 IndexedStack 常驻 tab 里:宿主不活跃时注册失效,
-    // 否则截胡其他 tab 的 ESC(见 TopicDetailPage 同注)。
-    enabled: () => !widget.embeddedMode || widget.parentActive,
-  );
+  late final ShortcutScopeBinding _shortcutScopeBinding;
 
   /// 全屏形态的 ESC 两段式(右栏开着=让分发落 detail scope 关右栏,
   /// 空了=maybePop 关整页),按右栏开合在 build 里动态同步。
@@ -302,25 +305,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   @override
   void initState() {
     super.initState();
+    _shortcutScopeBinding = ShortcutScopeBinding(
+      ref: ref,
+      scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
+      // 嵌入面板挂在 IndexedStack 常驻 tab 里:宿主不活跃时注册失效,
+      // 否则截胡其他 tab 的 ESC(见 TopicDetailPage 同注)。
+      enabled: () => !widget.embeddedMode || widget.parentActive,
+    );
     _registerShortcuts();
     _tabController = TabController(length: _tabFilters.length, vsync: this);
     _tabController.addListener(_onTabChanged);
-    // 预先为所有 tab 设置 loading 状态，避免切换时闪现空状态
-    for (final filter in _tabFilters) {
-      if (filter == 'summary') {
-        // 总结 tab 数据随 _summary 加载，无需单独标记
-      } else if (filter == 'reactions') {
-        _reactionsLoading = true;
-      } else if (filter == 'boosts') {
-        _boostsLoading = true;
-      } else if (filter == 'votes') {
-        _votesLoading = true;
-      } else if (filter == 'solved') {
-        _solvedLoading = true;
-      } else {
-        _loadingCache[filter] = true;
-      }
-    }
     _loadUser();
   }
 
@@ -330,51 +324,75 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     _standaloneEsc?.dispose();
     _tabController.dispose();
     _scrollController.dispose();
+    _showPinnedAction.dispose();
     super.dispose();
   }
 
   void _onTabChanged() {
-    if (!_tabController.indexIsChanging) {
-      final filter = _tabFilters[_tabController.index];
-      if (filter == 'summary') {
-        // 总结 tab - 数据随用户信息一起加载
-      } else if (filter == 'reactions') {
-        // 回应列表
-        if (_reactionsCache == null) {
-          _loadReactions();
-        }
-      } else if (filter == 'boosts') {
-        if (_boostsCache == null) {
-          _loadBoosts();
-        }
-      } else if (filter == 'votes') {
-        if (_votesCache == null) {
-          _loadVotes();
-        }
-      } else if (filter == 'solved') {
-        if (_solvedCache == null) {
-          _loadSolved();
-        }
-      } else if (!_actionsCache.containsKey(filter)) {
-        _loadActions(filter);
-      }
+    if (_tabController.indexIsChanging) return;
+    if (_user == null || _user!.profileHidden) return;
+    final section = _tabFilters[_tabController.index];
+    if (section == 'activity') _loadActivity();
+    if (section == 'badges' &&
+        _badges == null &&
+        !_badgesLoading &&
+        _badgesError == null) {
+      _loadBadges();
     }
   }
 
+  void _loadActivity() {
+    if (_summary?.canSeeUserActions == false) return;
+    switch (_activityFilter) {
+      case 'reactions':
+        if (_reactionsCache == null &&
+            !_reactionsLoading &&
+            !_actionErrors.containsKey('reactions')) {
+          _loadReactions();
+        }
+      case 'boosts':
+        if (_boostsCache == null &&
+            !_boostsLoading &&
+            !_actionErrors.containsKey('boosts')) {
+          _loadBoosts();
+        }
+      case 'votes':
+        if (_votesCache == null &&
+            !_votesLoading &&
+            !_actionErrors.containsKey('votes')) {
+          _loadVotes();
+        }
+      case 'solved':
+        if (_solvedCache == null &&
+            !_solvedLoading &&
+            !_actionErrors.containsKey('solved')) {
+          _loadSolved();
+        }
+      default:
+        if (!_actionsCache.containsKey(_activityFilter) &&
+            _loadingCache[_activityFilter] != true &&
+            !_actionErrors.containsKey(_activityFilter)) {
+          _loadActions(_activityFilter);
+        }
+    }
+  }
+
+  void _showActivity(String filter) {
+    setState(() => _activityFilter = filter);
+    _tabController.animateTo(_tabFilters.indexOf('activity'));
+    _loadActivity();
+  }
+
   Future<void> _loadUser() async {
+    final username = _username;
     try {
       final service = ref.read(discourseServiceProvider);
-      // 并行加载用户基本信息和统计数据
-      final results = await Future.wait([
-        service.getUser(widget.username),
-        service.getUserSummary(widget.username),
-      ]);
-
-      if (mounted) {
-        final user = results[0] as User;
+      final user = await service.getUser(username);
+      if (mounted && username == _username) {
         setState(() {
           _user = user;
-          _summary = results[1] as UserSummary;
+          _error = null;
+          _errorStack = null;
           _isFollowed = user.isFollowed ?? false;
           _notificationLevel = user.ignored == true
               ? 'ignore'
@@ -383,16 +401,116 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               : 'normal';
           _isLoading = false;
         });
-        // 总结 tab 数据已从 _summary 获取，无需额外加载
+        if (!user.profileHidden) {
+          _loadSummary();
+          _onTabChanged();
+        }
       }
     } catch (e, s) {
-      if (mounted) {
+      if (mounted && username == _username) {
         setState(() {
           _error = e;
           _errorStack = s;
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadSummary({bool forceRefresh = false}) async {
+    if (_summaryLoading || _user?.profileHidden == true) return;
+    final username = _username;
+    setState(() {
+      _summaryLoading = true;
+      _summaryError = null;
+      _summaryErrorStack = null;
+    });
+    try {
+      final summary = await ref
+          .read(discourseServiceProvider)
+          .getUserSummary(username, forceRefresh: forceRefresh);
+      if (mounted && _username == username) {
+        setState(() => _summary = summary);
+        if (!summary.canSeeUserActions &&
+            _tabFilters[_tabController.index] == 'activity') {
+          _tabController.animateTo(_tabFilters.indexOf('summary'));
+        }
+      }
+    } catch (error, stack) {
+      if (mounted && _username == username) {
+        setState(() {
+          _summaryError = error;
+          _summaryErrorStack = stack;
+        });
+      }
+    } finally {
+      if (mounted && _username == username) {
+        setState(() => _summaryLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadBadges() async {
+    if (_badgesLoading || _user?.profileHidden == true) return;
+    final username = _username;
+    setState(() {
+      _badgesLoading = true;
+      _badgesError = null;
+      _badgesErrorStack = null;
+    });
+    try {
+      final response = await ref
+          .read(discourseServiceProvider)
+          .getUserBadges(username: username);
+      if (mounted && _username == username) {
+        setState(() => _badges = response.userBadges);
+      }
+    } catch (error, stack) {
+      if (mounted && _username == username) {
+        setState(() {
+          _badgesError = error;
+          _badgesErrorStack = stack;
+        });
+      }
+    } finally {
+      if (mounted && _username == username) {
+        setState(() => _badgesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _toggleFavoriteBadge(badge_model.UserBadge badge) async {
+    if (_savingBadgeId != null) return;
+    setState(() => _savingBadgeId = badge.id);
+    try {
+      await ref
+          .read(discourseServiceProvider)
+          .toggleFavoriteUserBadge(badge.id);
+      if (!mounted) return;
+      await _loadBadges();
+      if (mounted) await _loadSummary(forceRefresh: true);
+    } catch (error, stack) {
+      if (error is! DioException) {
+        AppErrorHandler.handleUnexpected(error, stack);
+      }
+    } finally {
+      if (mounted) setState(() => _savingBadgeId = null);
+    }
+  }
+
+  Future<void> _openPreferences({bool editProfile = false}) async {
+    final changed = await Navigator.of(context).push<String>(
+      InteractionPageRoute(
+        builder: (_) => ForumPreferencesPage(
+          username: _username,
+          initialSection: editProfile ? ForumPreferenceSection.profile : null,
+        ),
+      ),
+    );
+    if (changed != null && mounted) {
+      _renamedUsername = changed;
+      ref.invalidate(currentUserProvider);
+      await _loadUser();
     }
   }
 
@@ -463,7 +581,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     Navigator.push(
       context,
       InteractionPageRoute(
-        builder: (_) => SearchPage(initialQuery: '@${widget.username}'),
+        builder: (_) => SearchPage(initialQuery: '@$_username'),
       ),
     );
   }
@@ -474,7 +592,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final username = user?.username ?? '';
     final prefs = ref.read(preferencesProvider);
     final url = ShareUtils.buildShareUrl(
-      path: '/u/${widget.username}',
+      path: '/u/$_username',
       username: username,
       anonymousShare: prefs.anonymousShare,
     );
@@ -536,192 +654,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   /// 显示用户详细信息弹窗
   void _showUserInfo() {
-    if (_user == null) return;
-
-    final hasBio = _user!.bio != null && _user!.bio!.isNotEmpty;
-    final hasLocation = _user!.location != null && _user!.location!.isNotEmpty;
-    final hasWebsite = _user!.website != null && _user!.website!.isNotEmpty;
-    final hasJoinedAt = _user!.createdAt != null;
-    final isSuspended = _user!.isSuspended;
-    final isSilenced = _user!.isSilenced;
-
-    if (!hasBio &&
-        !hasLocation &&
-        !hasWebsite &&
-        !hasJoinedAt &&
-        !isSuspended &&
-        !isSilenced) {
-      return;
-    }
-
-    showAppBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          final theme = Theme.of(context);
-          return Container(
-            decoration: ShapeDecoration(
-              color: theme.colorScheme.surface,
-              shadows: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-              shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.vertical(
-                  top: context.shapes.radius(24),
-                ),
-              ),
-            ),
-            child: Column(
-              children: [
-                // 拖动指示器
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  width: 32,
-                  height: 4,
-                  decoration: ShapeDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: context.shapes.borderRadius(2),
-                    ),
-                  ),
-                ),
-
-                // 标题栏
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
-                  child: Row(
-                    children: [
-                      Text(
-                        context.l10n.common_about,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-
-                // 内容
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 24,
-                    ),
-                    children: [
-                      // 封禁/禁言状态
-                      if (isSuspended)
-                        _buildRestrictionSection(
-                          theme,
-                          icon: Symbols.block_rounded,
-                          title: context.l10n.userProfile_suspendedStatus,
-                          label: _user!.isSuspendedForever
-                              ? context.l10n.userProfile_permanentlySuspended
-                              : context.l10n.userProfile_suspendedUntil(
-                                  TimeUtils.formatFullDate(
-                                    _user!.suspendedTill,
-                                  ),
-                                ),
-                          reason: _user!.suspendReason,
-                          color: theme.colorScheme.error,
-                        ),
-                      if (isSilenced)
-                        _buildRestrictionSection(
-                          theme,
-                          icon: Symbols.mic_off_rounded,
-                          title: context.l10n.userProfile_silencedStatus,
-                          label: _user!.isSilencedForever
-                              ? context.l10n.userProfile_permanentlySilenced
-                              : context.l10n.userProfile_silencedUntil(
-                                  TimeUtils.formatFullDate(_user!.silencedTill),
-                                ),
-                          reason: _user!.silenceReason,
-                          color: context.appColors.orange,
-                        ),
-
-                      // 个人简介
-                      if (hasBio) ...[
-                        Text(
-                          context.l10n.userProfile_bio,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // 个人简介属只读展示：走新引擎 FluxdoRender，关闭划词选区。
-                        FluxdoRenderCallbacks.generic(
-                          heroTagNamespace:
-                              'user_profile_bio_${_user!.username}',
-                        ).render(
-                          cookedHtml: _user!.bio!,
-                          baseTextStyle: theme.textTheme.bodyLarge?.copyWith(
-                            height: 1.6,
-                          ),
-                          selectionEnabled: false,
-                        ),
-                        const SizedBox(height: 32),
-                      ],
-
-                      // 其他信息列表
-                      if (hasLocation || hasWebsite || hasJoinedAt) ...[
-                        Text(
-                          context.l10n.userProfile_moreInfo,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        if (hasLocation)
-                          _buildInfoRow(
-                            context,
-                            Symbols.location_on_rounded,
-                            context.l10n.userProfile_location,
-                            _user!.location!,
-                          ),
-
-                        if (hasWebsite)
-                          _buildInfoRow(
-                            context,
-                            Symbols.link_rounded,
-                            context.l10n.userProfile_website,
-                            _user!.websiteName ?? _user!.website!,
-                            url: _user!.website,
-                            isLink: true,
-                          ),
-
-                        if (hasJoinedAt)
-                          _buildInfoRow(
-                            context,
-                            Symbols.calendar_today_rounded,
-                            context.l10n.userProfile_joinDate,
-                            TimeUtils.formatFullDate(_user!.createdAt),
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+    if (_user == null || _user!.profileHidden) return;
+    _tabController.animateTo(_tabFilters.indexOf('about'));
   }
 
   /// 关于弹窗中的封禁/禁言区块
@@ -956,14 +890,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     setState(() {
       _loadingCache[filter] = true;
       _loadMoreFailedCache[filter] = false;
+      _actionErrors.remove(filter);
     });
 
     try {
       final service = ref.read(discourseServiceProvider);
       final offset = loadMore ? (_actionsCache[filter]?.length ?? 0) : 0;
       final response = await service.getUserActions(
-        widget.username,
-        filter: filter,
+        _username,
+        filter: filter == 'all' ? null : filter,
         offset: offset,
       );
 
@@ -996,6 +931,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _loadingCache[filter] = false;
           if (loadMore) {
             _loadMoreFailedCache[filter] = true;
+          } else {
+            _actionErrors[filter] = e;
           }
         });
       }
@@ -1003,13 +940,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Future<void> _loadReactions({bool loadMore = false}) async {
-    if (_reactionsLoading && _reactionsCache != null) return;
+    if (_reactionsLoading) return;
 
     if (!loadMore) {
       _reactionsLoadMoreCoordinator.resetCooldown();
     }
 
     setState(() {
+      _actionErrors.remove('reactions');
       _reactionsLoading = true;
       _reactionsLoadMoreFailed = false;
     });
@@ -1021,7 +959,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           ? _reactionsCache!.last.id
           : null;
       final response = await service.getUserReactions(
-        widget.username,
+        _username,
         beforeReactionUserId: beforeId,
       );
 
@@ -1054,6 +992,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _reactionsLoading = false;
           if (loadMore) {
             _reactionsLoadMoreFailed = true;
+          } else {
+            _actionErrors['reactions'] = e;
           }
         });
       }
@@ -1061,13 +1001,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Future<void> _loadBoosts({bool loadMore = false}) async {
-    if (_boostsLoading && _boostsCache != null) return;
+    if (_boostsLoading) return;
 
     if (!loadMore) {
       _boostsLoadMoreCoordinator.resetCooldown();
     }
 
     setState(() {
+      _actionErrors.remove('boosts');
       _boostsLoading = true;
       _boostsLoadMoreFailed = false;
     });
@@ -1079,7 +1020,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           ? _boostsCache!.last.id
           : null;
       final response = await service.getUserBoostsGiven(
-        widget.username,
+        _username,
         beforeBoostId: beforeId,
       );
 
@@ -1112,6 +1053,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _boostsLoading = false;
           if (loadMore) {
             _boostsLoadMoreFailed = true;
+          } else {
+            _actionErrors['boosts'] = e;
           }
         });
       }
@@ -1119,13 +1062,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Future<void> _loadVotes({bool loadMore = false}) async {
-    if (_votesLoading && _votesCache != null) return;
+    if (_votesLoading) return;
 
     if (!loadMore) {
       _votesLoadMoreCoordinator.resetCooldown();
     }
 
     setState(() {
+      _actionErrors.remove('votes');
       _votesLoading = true;
       _votesLoadMoreFailed = false;
     });
@@ -1133,10 +1077,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     try {
       final service = ref.read(discourseServiceProvider);
       final page = loadMore ? _votesPage + 1 : 0;
-      final response = await service.getVotedTopics(
-        widget.username,
-        page: page,
-      );
+      final response = await service.getVotedTopics(_username, page: page);
 
       if (mounted) {
         setState(() {
@@ -1162,6 +1103,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _votesLoading = false;
           if (loadMore) {
             _votesLoadMoreFailed = true;
+          } else {
+            _actionErrors['votes'] = e;
           }
         });
       }
@@ -1169,13 +1112,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Future<void> _loadSolved({bool loadMore = false}) async {
-    if (_solvedLoading && _solvedCache != null) return;
+    if (_solvedLoading) return;
 
     if (!loadMore) {
       _solvedLoadMoreCoordinator.resetCooldown();
     }
 
     setState(() {
+      _actionErrors.remove('solved');
       _solvedLoading = true;
       _solvedLoadMoreFailed = false;
     });
@@ -1184,7 +1128,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       final service = ref.read(discourseServiceProvider);
       final offset = loadMore ? (_solvedCache?.length ?? 0) : 0;
       final response = await service.getUserSolvedPosts(
-        widget.username,
+        _username,
         offset: offset,
       );
 
@@ -1217,6 +1161,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _solvedLoading = false;
           if (loadMore) {
             _solvedLoadMoreFailed = true;
+          } else {
+            _actionErrors['solved'] = e;
           }
         });
       }
@@ -1245,13 +1191,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
 
     if (_isLoading) {
-      return const UserProfileSkeleton();
+      return UserProfileSkeleton(
+        embeddedMode: widget.embeddedMode,
+        onBack: widget.onEmbeddedBack,
+      );
     }
 
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(widget.username),
+          title: Text(_username),
           // embeddedMode 但 onEmbeddedBack 为空（master 面板的"上一层
           // 预览"，非当前可交互栈顶）时不该有任何返回键——之前不管
           // onEmbeddedBack 是否为空都塞 BackButton，BackButton(onPressed:
@@ -1280,20 +1229,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       );
     }
 
-    // 计算 pinned header 高度
-    final double pinnedHeaderHeight =
-        kToolbarHeight +
-        MediaQuery.of(context).padding.top +
-        36; // 36 是 TabBar 高度
-
-    // 宽窄两版排版按**本页实际可用宽度**分流(不是屏宽):嵌入面板、
-    // 压栈后收窄的左栏拿到的都是格子宽,窄了自动回竖版折叠头图形态。
     final Widget profileBody = LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth >= UserProfileWideLayout.minWidth) {
-          return _buildWideBody(theme, currentUser);
-        }
-        return _buildNarrowBody(theme, currentUser, pinnedHeaderHeight);
+        final width = math.min(
+          constraints.maxWidth,
+          Breakpoints.maxContentWidth,
+        );
+        return PageBackdrop(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: width,
+              child: _buildProfileBody(theme, currentUser, width),
+            ),
+          ),
+        );
       },
     );
 
@@ -1312,435 +1262,352 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       final filter = entry.value;
       return ExtendedVisibilityDetector(
         uniqueKey: Key('tab_$index'),
-        child: _constrainWide(_buildActionList(filter)),
+        child: _constrainWide(switch (filter) {
+          'summary' => _buildSummaryTab(),
+          'activity' => _buildActivityTab(),
+          'badges' => _buildBadgesTab(),
+          _ => _buildAboutTab(),
+        }),
       );
     }).toList();
   }
 
-  /// 竖版(窄):折叠头图 SliverAppBar + Tab 列表(原形态)。
-  Widget _buildNarrowBody(
-    ThemeData theme,
-    User? currentUser,
-    double pinnedHeaderHeight,
-  ) {
-    return Scaffold(
-      body: ScrollConfiguration(
-        // 禁用 overscroll indicator：Material 3 在 Android 上默认
-        // StretchingOverscrollIndicator，与 NestedScrollView/SliverAppBar
-        // 组合存在 framework bug（flutter/flutter #100967、#116522、#100538），
-        // 表现为上滑松手时 tab 区域回弹抖动（与 topics_page 同因同修）。
-        behavior: ScrollConfiguration.of(context)
-            .copyWith(scrollbars: false, overscroll: false),
-        child: ExtendedNestedScrollView(
-          controller: _scrollController,
-          pinnedHeaderSliverHeightBuilder: () => pinnedHeaderHeight,
-          onlyOneScrollInBody: true,
-          headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            _buildSliverAppBar(context, theme, currentUser),
+  Widget _buildProfileToolbar(User? currentUser, double titleOpacity) {
+    final own = currentUser?.id == _user!.id;
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<bool>(
+      valueListenable: _showPinnedAction,
+      builder: (context, showAction, _) {
+        showAction = showAction &&
+            (own ? _user!.canEdit : _user!.canFollow == true);
+        final actions = _buildHeaderActions(own);
+        return AppBar(
+          titleSpacing: 4,
+          foregroundColor: theme.colorScheme.onSurface,
+          title: Opacity(
+            opacity: titleOpacity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _user!.name?.isNotEmpty == true
+                      ? _user!.name!
+                      : _user!.username,
+                  key: const ValueKey('profile-toolbar-name'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (_summary?.canSeeSummaryStats == true &&
+                    MediaQuery.textScalerOf(context).scale(14) < 20)
+                  Text(
+                    '${NumberUtils.formatCount(_summary!.topicCount)} ${context.l10n.userProfile_statsTopics} · ${NumberUtils.formatCount(_summary!.postCount)} ${context.l10n.userProfile_statsReplies}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+          forceMaterialTransparency: true,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          automaticallyImplyLeading: !widget.embeddedMode,
+          leading: widget.embeddedMode && widget.onEmbeddedBack != null
+              ? BackButton(onPressed: widget.onEmbeddedBack)
+              : null,
+          actions: [
+            AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              switchInCurve: M3eMotion.fastEffects.curveFor(
+                const Duration(milliseconds: 180),
+              ),
+              child: Row(
+                key: ValueKey(showAction),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!showAction) actions.first,
+                  actions.last,
+                  if (showAction)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: own
+                          ? IconButton(
+                              tooltip: context.l10n.profile_editProfile,
+                              onPressed: () =>
+                                  _openPreferences(editProfile: true),
+                              icon: const Icon(Symbols.edit_rounded),
+                            )
+                          : _buildFollowButton(compact: true),
+                    ),
+                ],
+              ),
+            ),
           ],
-          body: TabBarView(
-            controller: _tabController,
-            children: _buildTabViews(),
+        );
+      },
+    );
+  }
+
+  Widget _buildProfileBody(ThemeData theme, User? currentUser, double width) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final buttons = _buildProfileActionButtons(theme, currentUser);
+    final actionHeight = math.max(
+      48.0,
+      MediaQuery.textScalerOf(context).scale(14) * 1.4 + 12,
+    );
+    return Scaffold(
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context)
+              .copyWith(scrollbars: false, overscroll: false),
+          child: ExtendedNestedScrollView(
+            controller: _scrollController,
+            pinnedHeaderSliverHeightBuilder: () =>
+                topInset + kToolbarHeight + (_user!.profileHidden ? 0 : 48),
+            onlyOneScrollInBody: true,
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: UserProfileHeaderDelegate(
+                  context: context,
+                  width: width,
+                  header: _buildProfileHeader(theme, currentUser),
+                  toolbarBuilder: (opacity) =>
+                      _buildProfileToolbar(currentUser, opacity),
+                  topInset: topInset,
+                ),
+              ),
+              SliverToBoxAdapter(child: _buildProfileDetails(theme)),
+              if (buttons.isNotEmpty)
+                SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    final canPin = currentUser?.id == _user!.id
+                        ? _user!.canEdit
+                        : _user!.canFollow == true;
+                    final show =
+                        canPin &&
+                        constraints.scrollOffset + constraints.overlap >=
+                            actionHeight + 8;
+                    if (_showPinnedAction.value != show) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _showPinnedAction.value = show;
+                      });
+                    }
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: SizedBox(
+                          key: const ValueKey('profile-primary-actions'),
+                          height: actionHeight,
+                          child: Row(
+                            children: [
+                              for (
+                                var index = 0;
+                                index < buttons.length;
+                                index++
+                              ) ...[
+                                if (index > 0) const SizedBox(width: 8),
+                                Expanded(child: buttons[index]),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (!_user!.profileHidden)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _ProfileTabsDelegate(child: _buildTabBar(theme)),
+                ),
+            ],
+            body: _user!.profileHidden
+                ? _buildHiddenProfile()
+                : TabBarView(
+                    controller: _tabController,
+                    children: _buildTabViews(),
+                  ),
           ),
         ),
       ),
     );
   }
 
-  /// 宽版:左侧定宽资料栏(头图背景+用户信息全量常驻)+ 右侧 Tab 与
-  /// 列表占满剩余宽度。竖版的「头图占满首屏再折叠」在宽屏下浪费一整
-  /// 屏高度、内容被挤成一条,信息与内容改并排才用得上横向空间。
-  Widget _buildWideBody(ThemeData theme, User? currentUser) {
-    final isOwnProfile =
-        currentUser != null &&
-        _user != null &&
-        currentUser.username == _user!.username;
-    return Scaffold(
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: UserProfileWideLayout.infoPanelWidth,
-            child: _buildWideInfoPanel(theme, currentUser, isOwnProfile),
-          ),
-          SizedBox(
-            width: 1,
-            child: ColoredBox(
-              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-            ),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                // Tab 行与列表同一条限宽轴线,避免"标签顶在左上角、
-                // 内容居中"的错位感。
-                PageBackdrop(
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: SafeArea(
-                      bottom: false,
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: Breakpoints.maxContentWidth,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 8, bottom: 4),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: _buildTabBar(theme),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: _buildTabViews(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  Widget _buildHiddenProfile() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text(
+          context.l10n.userProfile_hidden,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 
-  /// 宽版左栏:顶部头图横幅 + 头像骑缝叠在横幅下缘,下方信息用主题
-  /// 配色正常排版。竖版那套「白字压满幅头图」平铺到整栏全高会把左栏
-  /// 闷成一大块深色(实测被否),头图只作横幅、信息区回到正常底色。
-  Widget _buildWideInfoPanel(
-    ThemeData theme,
-    User? currentUser,
-    bool isOwnProfile,
-  ) {
-    final bgUrl = _user?.backgroundUrl;
-    final hasBackground = bgUrl != null && bgUrl.isNotEmpty;
-    const bannerHeight = UserProfileWideLayout.bannerHeight;
-    const avatarRadius = UserProfileWideLayout.avatarRadius;
-    final hasBio = _user?.bio != null && _user!.bio!.isNotEmpty;
-    final hasLocation = _user?.location != null && _user!.location!.isNotEmpty;
-    final hasWebsite = _user?.website != null && _user!.website!.isNotEmpty;
-    final hasJoinedAt = _user?.createdAt != null;
-    final hasInfo = hasBio || hasLocation || hasWebsite || hasJoinedAt;
-
-    final banner = SizedBox(
-      height: bannerHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 个人主页可能长时间停留,装饰背景不常驻刷新(与竖版同口径)。
-          const GrainGradientBackground(animated: false),
-          if (hasBackground)
-            Image(
-              image: discourseImageProvider(UrlHelper.resolveUrlWithCdn(bgUrl)),
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded || frame != null) {
-                  return AnimatedOpacity(
-                    opacity: frame != null ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: child,
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          // 轻压暗:保住悬浮按钮可读性,不吃头图本身。
-          Container(color: Colors.black.withValues(alpha: 0.2)),
-        ],
+  UserProfileHeader _buildProfileHeader(ThemeData theme, User? currentUser) {
+    return UserProfileHeader(
+      user: _user!,
+      avatar: _buildTappableAvatar(
+        radius: 40,
+        flairSize: 28,
+        flairRight: -4,
+        flairBottom: -2,
+        borderColor: theme.colorScheme.surface,
+        borderWidth: 3,
       ),
+      trailing: IconButton.outlined(
+        tooltip: context.l10n.userProfile_shareUser,
+        onPressed: _shareUser,
+        icon: const Icon(Symbols.share_rounded, size: 20),
+      ),
+      onBackground: () {
+        final background = _user!.backgroundUrl;
+        if (background?.isNotEmpty == true) {
+          ImageViewerPage.open(context, background!);
+        }
+      },
     );
+  }
 
-    return ColoredBox(
-      color: theme.scaffoldBackgroundColor,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      banner,
-                      Positioned(
-                        left: 20,
-                        bottom: -avatarRadius,
-                        child: _buildTappableAvatar(
-                          radius: avatarRadius,
-                          flairSize: 34,
-                          flairRight: -8,
-                          flairBottom: -4,
-                          borderColor: theme.colorScheme.surface,
-                          borderWidth: 4,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // 头像下半部分的骑缝空间,右侧顺势放关注按钮。
-                  SizedBox(
-                    height: avatarRadius + 12,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 20),
-                        child: _buildWideFollowButton(isOwnProfile),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                (_user?.name?.isNotEmpty == true)
-                                    ? _user!.name!
-                                    : (_user?.username ?? ''),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            if (_user?.status != null) ...[
-                              const SizedBox(width: 8),
-                              _buildStatusEmoji(_user!.status!),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            if (_user?.username != null)
-                              Flexible(
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () =>
-                                      copyUsernameToClipboard(_user!.username),
-                                  child: Text(
-                                    '@${_user!.username}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 3,
-                              ),
-                              decoration: ShapeDecoration(
-                                color: theme.colorScheme.secondaryContainer,
-                                shape: RoundedSuperellipseBorder(
-                                  borderRadius: context.shapes.borderRadius(12),
-                                ),
-                              ),
-                              child: Text(
-                                _getTrustLevelLabel(_user?.trustLevel ?? 0),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSecondaryContainer,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // 封禁/禁言与简介互斥(与竖版一致)。
-                        if (_user!.isSuspended || _user!.isSilenced) ...[
-                          GestureDetector(
-                            onTap: _showUserInfo,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (_user!.isSuspended) ...[
-                                  _buildRestrictionBanner(
-                                    icon: Symbols.block_rounded,
-                                    label: _user!.isSuspendedForever
-                                        ? context
-                                              .l10n
-                                              .userProfile_suspendedBannerForever
-                                        : context.l10n
-                                              .userProfile_suspendedBannerUntil(
-                                                TimeUtils.formatFullDate(
-                                                  _user!.suspendedTill,
-                                                ),
-                                              ),
-                                    reason: _user!.suspendReason,
-                                    color: context.appColors.redAccent,
-                                    reasonColor:
-                                        theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                  if (_user!.isSilenced)
-                                    const SizedBox(height: 8),
-                                ],
-                                if (_user!.isSilenced)
-                                  _buildRestrictionBanner(
-                                    icon: Symbols.mic_off_rounded,
-                                    label: _user!.isSilencedForever
-                                        ? context
-                                              .l10n
-                                              .userProfile_silencedBannerForever
-                                        : context.l10n
-                                              .userProfile_silencedBannerUntil(
-                                                TimeUtils.formatFullDate(
-                                                  _user!.silencedTill,
-                                                ),
-                                              ),
-                                    reason: _user!.silenceReason,
-                                    color: context.appColors.orangeAccent,
-                                    reasonColor:
-                                        theme.colorScheme.onSurfaceVariant,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ] else
-                          InkWell(
-                            onTap: hasInfo ? _showUserInfo : null,
-                            customBorder: RoundedSuperellipseBorder(
-                              borderRadius: context.shapes.borderRadius(12),
-                            ),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              decoration: ShapeDecoration(
-                                color: theme.colorScheme.surfaceContainerLow,
-                                shape: RoundedSuperellipseBorder(
-                                  borderRadius: context.shapes.borderRadius(12),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: hasBio
-                                        ? CollapsedHtmlContent(
-                                            html: _user!.bio!,
-                                            maxLines: 4,
-                                            overflow: TextOverflow.ellipsis,
-                                            textStyle: theme
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(height: 1.4),
-                                          )
-                                        : Text(
-                                            context.l10n.userProfile_noBio,
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                          ),
-                                  ),
-                                  if (hasInfo) ...[
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      Symbols.chevron_right_rounded,
-                                      size: 16,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 24),
-                        _buildWideStats(theme),
-                        if (_user?.lastPostedAt != null ||
-                            _user?.lastSeenAt != null) ...[
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Symbols.flash_on_rounded,
-                                size: 14,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 6),
-                              RelativeTimeText(
-                                dateTime:
-                                    _user?.lastSeenAt ?? _user!.lastPostedAt!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // 悬浮顶栏:返回 + 操作按钮,渐变黑纱保证压图可读。
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black45, Colors.transparent],
-                ),
-              ),
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: IconTheme(
-                    data: const IconThemeData(color: Colors.white),
-                    child: Row(
-                      children: [
-                        // 与竖版 AppBar 同一套返回键语义:嵌入预览位
-                        // (onEmbeddedBack == null)不渲染任何返回键。
-                        if (!widget.embeddedMode)
-                          const BackButton(color: Colors.white)
-                        else if (widget.onEmbeddedBack != null)
-                          BackButton(
-                            color: Colors.white,
-                            onPressed: widget.onEmbeddedBack,
-                          ),
-                        const Spacer(),
-                        ..._buildHeaderActions(isOwnProfile),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+  List<Widget> _buildProfileActionButtons(ThemeData theme, User? currentUser) {
+    final user = _user!;
+    final own = currentUser?.id == user.id;
+    final canMessage =
+        currentUser != null && !own && user.canSendPrivateMessageToUser == true;
+    final canChat = currentUser != null && !own && user.canChatUser == true;
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: theme.colorScheme.onSurface,
+      textStyle: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w700,
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      side: BorderSide(color: theme.colorScheme.outlineVariant),
+    );
+    return [
+      if (own && user.canEdit)
+        OutlinedButton(
+          style: style,
+          onPressed: () => _openPreferences(editProfile: true),
+          child: Text(
+            context.l10n.profile_editProfile,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      if (canMessage && canChat)
+        SwipeDismissiblePopupMenuButton<String>(
+          tooltip: context.l10n.userProfile_contact,
+          padding: EdgeInsets.zero,
+          borderRadius: context.shapes.borderRadius(9999),
+          onSelected: (value) {
+            if (value == 'message') _openMessageDialog();
+            if (value == 'chat') _startChat();
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'message',
+              child: Text(context.l10n.userProfile_message),
+            ),
+            PopupMenuItem(
+              value: 'chat',
+              enabled: !_isStartingChat,
+              child: Text(context.l10n.chat_title),
+            ),
+          ],
+          child: Container(
+            alignment: Alignment.center,
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(9999),
+                side: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+            ),
+            child: Text(
+              context.l10n.userProfile_contact,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        )
+      else if (canMessage || canChat)
+        OutlinedButton(
+          style: style,
+          onPressed: canMessage
+              ? _openMessageDialog
+              : (_isStartingChat ? null : _startChat),
+          child: Text(
+            canMessage
+                ? context.l10n.userProfile_message
+                : context.l10n.chat_title,
+          ),
+        ),
+      if (!own && user.canFollow == true) _buildFollowButton(),
+    ];
+  }
+
+  Widget _buildProfileDetails(ThemeData theme) {
+    final user = _user!;
+    return UserProfileDetails(
+      user: user,
+      statusIcon: user.status?.emoji?.isNotEmpty == true
+          ? _buildStatusEmoji(user.status!)
+          : null,
+      onAbout: _showUserInfo,
+      onFollowing: () => Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) =>
+              FollowListPage(username: user.username, isFollowing: true),
+        ),
+      ),
+      onFollowers: () => Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) =>
+              FollowListPage(username: user.username, isFollowing: false),
+        ),
+      ),
+      restriction: user.isSuspended || user.isSilenced
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (user.isSuspended)
+                  _buildRestrictionBanner(
+                    icon: Symbols.block_rounded,
+                    label: user.isSuspendedForever
+                        ? context.l10n.userProfile_suspendedBannerForever
+                        : context.l10n.userProfile_suspendedBannerUntil(
+                            TimeUtils.formatFullDate(user.suspendedTill),
+                          ),
+                    reason: user.suspendReason,
+                    color: theme.colorScheme.error,
+                    reasonColor: theme.colorScheme.onSurfaceVariant,
+                  ),
+                if (user.isSilenced)
+                  _buildRestrictionBanner(
+                    icon: Symbols.mic_off_rounded,
+                    label: user.isSilencedForever
+                        ? context.l10n.userProfile_silencedBannerForever
+                        : context.l10n.userProfile_silencedBannerUntil(
+                            TimeUtils.formatFullDate(user.silencedTill),
+                          ),
+                    reason: user.silenceReason,
+                    color: context.appColors.orangeAccent,
+                    reasonColor: theme.colorScheme.onSurfaceVariant,
+                  ),
+              ],
+            )
+          : null,
     );
   }
 
@@ -1810,6 +1677,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               imageUrl: avatarUrl,
               radius: radius,
               fallbackText: _user?.username,
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              foregroundColor: Theme.of(context)
+                  .colorScheme
+                  .onSecondaryContainer,
             ),
           ),
         ),
@@ -1817,90 +1688,43 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  /// 宽版关注按钮:主题配色(竖版那颗白底按钮是压深色头图的样式,
-  /// 放到正常底色上会糊)。
-  Widget _buildWideFollowButton(bool isOwnProfile) {
-    if (_user == null || _user!.canFollow != true || isOwnProfile) {
-      return const SizedBox.shrink();
-    }
-    if (_isFollowLoading) {
-      return const SizedBox(
-        width: 32,
-        height: 32,
-        child: Padding(
-          padding: EdgeInsets.all(6),
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-    return _isFollowed
-        ? FilledButton.tonalIcon(
-            onPressed: _toggleFollow,
-            icon: const Icon(Symbols.check_rounded, size: 16),
-            label: Text(context.l10n.userProfile_followed),
-          )
-        : FilledButton.icon(
-            onPressed: _toggleFollow,
-            icon: const Icon(Symbols.add_rounded, size: 16),
-            label: Text(context.l10n.userProfile_follow),
+  Widget _buildFollowButton({bool compact = false}) {
+    final theme = Theme.of(context);
+    final label = _isFollowLoading
+        ? const LoadingSpinner(size: 16)
+        : Text(
+            _isFollowed
+                ? context.l10n.userProfile_followed
+                : context.l10n.userProfile_follow,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           );
-  }
-
-  /// 宽版统计区:数值大字+标签小字上下排,Wrap 流式铺开(竖版的
-  /// 单行小字挤排是为头图区省高度,左栏不缺纵向空间)。
-  Widget _buildWideStats(ThemeData theme) {
-    final items = <Widget>[
-      if (_user?.totalFollowing != null)
-        _buildWideStat(
-          NumberUtils.formatCount(_user!.totalFollowing!),
-          context.l10n.userProfile_following,
-          _user!.totalFollowing!,
-          onTap: () => Navigator.push(
-            context,
-            InteractionPageRoute(
-              builder: (_) =>
-                  FollowListPage(username: widget.username, isFollowing: true),
+    final style = FilledButton.styleFrom(
+      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 20),
+      minimumSize: Size(compact ? 72 : 0, 40),
+      backgroundColor: theme.colorScheme.onSurface,
+      foregroundColor: theme.colorScheme.surface,
+      textStyle: theme.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    return _isFollowed
+        ? OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurface,
+              textStyle: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              side: BorderSide(color: theme.colorScheme.outlineVariant),
             ),
-          ),
-        ),
-      if (_user?.totalFollowers != null)
-        _buildWideStat(
-          NumberUtils.formatCount(_user!.totalFollowers!),
-          context.l10n.userProfile_followers,
-          _user!.totalFollowers!,
-          onTap: () => Navigator.push(
-            context,
-            InteractionPageRoute(
-              builder: (_) =>
-                  FollowListPage(username: widget.username, isFollowing: false),
-            ),
-          ),
-        ),
-      if (_summary != null) ...[
-        _buildWideStat(
-          NumberUtils.formatCount(_summary!.likesReceived),
-          context.l10n.userProfile_statsLikes,
-          _summary!.likesReceived,
-        ),
-        _buildWideStat(
-          NumberUtils.formatCount(_summary!.daysVisited),
-          context.l10n.userProfile_statsVisits,
-          _summary!.daysVisited,
-        ),
-        _buildWideStat(
-          NumberUtils.formatCount(_summary!.topicCount),
-          context.l10n.userProfile_statsTopics,
-          _summary!.topicCount,
-        ),
-        _buildWideStat(
-          NumberUtils.formatCount(_summary!.postCount),
-          context.l10n.userProfile_statsReplies,
-          _summary!.postCount,
-        ),
-      ],
-    ];
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Wrap(spacing: 28, runSpacing: 16, children: items);
+            onPressed: _isFollowLoading ? null : _toggleFollow,
+            child: label,
+          )
+        : FilledButton(
+            style: style,
+            onPressed: _isFollowLoading ? null : _toggleFollow,
+            child: label,
+          );
   }
 
   Widget _buildWideStat(
@@ -1997,657 +1821,63 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  Widget _buildSliverAppBar(
-    BuildContext context,
-    ThemeData theme,
-    User? currentUser,
-  ) {
-    final bgUrl = _user?.backgroundUrl;
-    final hasBackground = bgUrl != null && bgUrl.isNotEmpty;
-    // Standard toolbar height is usually 56.0 + status bar height
-    final double pinnedHeight =
-        kToolbarHeight + MediaQuery.of(context).padding.top;
-    // 横屏时屏幕高度有限，限制 expandedHeight 不超过屏幕高度的 70%
-    final screenHeight = MediaQuery.of(context).size.height;
-    final double expandedHeight = 410.0.clamp(0.0, screenHeight * 0.7);
-    // 头部完整内容(头像行+简介卡+双行统计+活跃胶囊)加底部间距约需 340px;
-    // 横屏被上面限高后装不下,开精简模式(隐简介卡/活跃胶囊)——否则自底
-    // 锚定的内容向上溢出,与 toolbar 返回键/操作按钮及状态栏叠印。
-    final bool compactHeader = expandedHeight < 340;
-    // 检查是否是自己
-    final isOwnProfile =
-        currentUser != null &&
-        _user != null &&
-        currentUser.username == _user!.username;
+  Map<String, String> get _activityFilters => {
+    'all': context.l10n.userProfile_allActivity,
+    '4': context.l10n.userProfile_tabTopics,
+    '5': context.l10n.userProfile_tabReplies,
+    '1': context.l10n.userProfile_tabLikes,
+    '2': context.l10n.userProfile_statsLikes,
+    'reactions': context.l10n.userProfile_tabReactions,
+    'boosts': context.l10n.userProfile_tabBoosts,
+    'votes': context.l10n.userProfile_tabVotes,
+    'solved': context.l10n.userProfile_tabSolved,
+  };
 
-    return SliverAppBar(
-      expandedHeight: expandedHeight,
-      pinned: true,
-      stretch: true,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      backgroundColor:
-          Colors.transparent, // Transparent to show FlexibleSpaceBar background
-      surfaceTintColor: Colors.transparent, // Prevent M3 tint
-      iconTheme: const IconThemeData(color: Colors.white),
-      // 同上（错误态 AppBar）的注释：onEmbeddedBack 为空时不能塞
-      // BackButton，且要显式关掉 automaticallyImplyLeading。
-      automaticallyImplyLeading: !widget.embeddedMode,
-      leading: widget.embeddedMode && widget.onEmbeddedBack != null
-          ? BackButton(onPressed: widget.onEmbeddedBack)
-          : null,
-      actions: _buildHeaderActions(isOwnProfile),
-      // Bottom 参数承载 TabBar，并应用圆角背景，这样它会“浮”在 FlexibleSpace 背景图之上
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(36),
-        child: Container(
-          decoration: ShapeDecoration(
-            shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.vertical(top: context.shapes.radius(16)),
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: PageBackdrop(
-            child: Material(
-              type: MaterialType.transparency,
-              child: _buildTabBar(theme),
-            ),
-          ),
-        ),
-      ),
-      // Use a Stack to ensure a solid black background exists BEHIND the FlexibleSpaceBar
-      flexibleSpace: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final currentHeight = constraints.biggest.height;
-          final t =
-              ((currentHeight - pinnedHeight) / (expandedHeight - pinnedHeight))
-                  .clamp(0.0, 1.0);
-
-          // 标题透明度：收起时显示（当 t < 0.3 时完全显示，避免半透明）
-          final titleOpacity = t < 0.3
-              ? 1.0
-              : (1.0 - ((t - 0.3) / 0.7)).clamp(0.0, 1.0);
-          // 内容透明度：展开时显示
-          final contentOpacity = ((t - 0.4) / 0.6).clamp(0.0, 1.0);
-
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // ===== 层 0: 背景 - shader 动画 + 径向渐变辉光 + 图片叠加 =====
-              // 用 ClipRect 裁剪溢出，内部固定为 expandedHeight，防止收起时 shader 被压扁
-              Positioned.fill(
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.topCenter,
-                    maxHeight: expandedHeight,
-                    child: SizedBox(
-                      height: expandedHeight,
-                      // 个人主页可能长时间停留，装饰背景不应常驻 60 FPS
-                      // 刷新；固定 shader 时间轴仍保留原始画质与噪声细节。
-                      child: const GrainGradientBackground(animated: false),
-                    ),
-                  ),
+  Widget _buildTabBar(ThemeData theme) => MenuTabBar<String>(
+    controller: _tabController,
+    items: [
+      for (final section in _tabFilters)
+        switch (section) {
+          'activity' => MenuTabItem(
+            label: _activityFilter == 'all'
+                ? context.l10n.userProfile_tabActivity
+                : _activityFilters[_activityFilter]!,
+            icon: Symbols.article_rounded,
+            selectedValue: _activityFilter,
+            onSelected: _showActivity,
+            menuBuilder: (_) => [
+              for (final filter in _activityFilters.entries)
+                CheckedPopupMenuItem(
+                  value: filter.key,
+                  checked: filter.key == _activityFilter,
+                  child: Text(filter.value),
                 ),
-              ),
-              if (hasBackground)
-                Image(
-                  image: discourseImageProvider(
-                    UrlHelper.resolveUrlWithCdn(bgUrl),
-                  ),
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  frameBuilder:
-                      (context, child, frame, wasSynchronouslyLoaded) {
-                        if (wasSynchronouslyLoaded || frame != null) {
-                          return AnimatedOpacity(
-                            opacity: frame != null ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 300),
-                            child: child,
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-
-              // ===== 层 1: 统一压暗遮罩 - 随向上滑动变得更暗 =====
-              Container(
-                color: Color.lerp(
-                  Colors.black.withValues(alpha: 0.6), // 展开状态：默认更暗 (0.6)
-                  Colors.black.withValues(alpha: 0.85), // 收起状态：稍微透一点 (0.85)
-                  Curves.easeOut.transform(1.0 - t), // 使用 easeOut 曲线优化滑动体验
-                ),
-              ),
-
-              // ===== 层 2: 用户信息内容 - 展开时显示，收起时淡出 =====
-              // 宽屏时信息区与下方列表同宽限居中(头图背景仍全宽出血)。
-              Positioned(
-                left: 20,
-                right: 20,
-                // TabBar 高度 + 间距(精简模式收紧间距,给内容让位)
-                bottom: 36 + (compactHeader ? 12 : 24),
-                child: Opacity(
-                  opacity: contentOpacity,
-                  child: _buildUserInfoContent(
-                    theme,
-                    currentUser,
-                    compact: compactHeader,
-                  ),
-                ),
-              ),
-
-              // ===== 层 3: 收起时的标题栏内容 - 收起时显示，点击展开 =====
-              Positioned(
-                left: 60 + MediaQuery.of(context).padding.left, // 横屏时需加上左侧安全区
-                right: 48 + MediaQuery.of(context).padding.right, // 横屏时需加上右侧安全区
-                bottom: 14 + 36, // 调整位置适应 TabBar (36是TabBar高度)
-                child: GestureDetector(
-                  onTap: titleOpacity > 0.5
-                      ? () {
-                          _scrollController.animateTo(
-                            0,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      : null,
-                  behavior: HitTestBehavior.opaque,
-                  child: Opacity(
-                    opacity: titleOpacity,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 头像 radius=16，flair 大小 14，偏移 right=-3, bottom=-1
-                        AvatarWithFlair(
-                          flairSize: 14,
-                          flairRight: -3,
-                          flairBottom: -1,
-                          flairUrl: _user?.flairUrl,
-                          flairName: _user?.flairName,
-                          flairBgColor: _user?.flairBgColor,
-                          flairColor: _user?.flairColor,
-                          avatar: SmartAvatar(
-                            imageUrl: _user?.getAvatarUrl() != null
-                                ? _user!.getAvatarUrl(size: 64)
-                                : null,
-                            radius: 16,
-                            fallbackText: _user?.username,
-                            border: Border.all(color: Colors.white70, width: 1),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Flexible(
-                          child: Text(
-                            (_user?.name?.isNotEmpty == true)
-                                ? _user!.name!
-                                : (_user?.username ?? ''),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // 移除之前的所有伪装层
             ],
-          );
+          ),
+          'summary' => MenuTabItem(
+            label: context.l10n.userProfile_overview,
+            icon: Symbols.bar_chart_rounded,
+          ),
+          'badges' => MenuTabItem(
+            label: context.l10n.userProfile_badges,
+            icon: Symbols.workspace_premium_rounded,
+          ),
+          _ => MenuTabItem(
+            label: context.l10n.common_about,
+            icon: Symbols.person_rounded,
+          ),
         },
-      ),
-    );
-  }
+    ],
+  );
 
-  /// 用户信息列(头像/名字/简介/统计/最近活动),窄版 SliverAppBar
-  /// flexibleSpace 层2 专用(白字压深色头图);宽版左栏是同风格的另一
-  /// 套排版(见 _buildWideInfoPanel),两边各自维护。
-  ///
-  /// [compact] 精简模式(横屏等 flexibleSpace 高度受限时):隐藏简介卡/
-  /// 封禁条与最近活跃胶囊,只留头像行+统计,防止内容向上溢出叠到
-  /// toolbar/状态栏。
-  Widget _buildUserInfoContent(
-    ThemeData theme,
-    User? currentUser, {
-    bool compact = false,
-  }) {
-    final hasBio = _user?.bio != null && _user!.bio!.isNotEmpty;
-    final hasLocation = _user?.location != null && _user!.location!.isNotEmpty;
-    final hasWebsite = _user?.website != null && _user!.website!.isNotEmpty;
-    final hasJoinedAt = _user?.createdAt != null;
-    final hasInfo = hasBio || hasLocation || hasWebsite || hasJoinedAt;
-    final isOwnProfile =
-        currentUser != null &&
-        _user != null &&
-        currentUser.username == _user!.username;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 头像、姓名、操作按钮一行
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // 1. 头像 radius=36，flair 大小 30，偏移 right=-7, bottom=-4
-            GestureDetector(
-              onTap: () {
-                if (_user?.getAvatarUrl() != null) {
-                  final avatarUrl = _user!.getAvatarUrl(size: 360);
-                  // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
-                  final thumbUrl = _user!.getAvatarUrl(size: 144);
-                  // 与源端同源(同竖版口径,见 _avatarStyle)
-                  final args = _avatarStyle(
-                    isSquare: isSquareAvatarUrl(thumbUrl),
-                    radius: 12,
-                  ).openViewerArgs;
-                  ImageViewerPage.open(
-                    context,
-                    avatarUrl,
-                    heroTag: 'user_avatar_${_user!.username}',
-                    thumbnailUrl: thumbUrl,
-                    heroSourceFit: args.fit,
-                    heroSourceRadius: args.radius,
-                    heroSourceCircular: args.circular,
-                  );
-                }
-              },
-              child: Builder(
-                builder: (context) {
-                  // linux.do 站点定制:个别账号头像方形化,外层白边框
-                  // 得跟 SmartAvatar 里的裁切形状对齐,不然会出现
-                  // "图是方的、外层白圈还是圆的"这种两层错位。
-                  final avatarUrl = _user?.getAvatarUrl(size: 144);
-                  final isSquare = isSquareAvatarUrl(avatarUrl);
-                  return Container(
-                    decoration: ShapeDecoration(
-                      shape: isSquare
-                          ? RoundedSuperellipseBorder(
-                              borderRadius: context.shapes.borderRadius(8),
-                              side: const BorderSide(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            )
-                          : const CircleBorder(
-                              side: BorderSide(color: Colors.white, width: 2),
-                            ),
-                    ),
-                    child: AvatarWithFlair(
-                      flairSize: 30,
-                      flairRight: -7,
-                      flairBottom: -4,
-                      flairUrl: _user?.flairUrl,
-                      flairName: _user?.flairName,
-                      flairBgColor: _user?.flairBgColor,
-                      flairColor: _user?.flairColor,
-                      // HeroImage 统一件(同竖版口径)
-                      avatar: HeroImage(
-                        heroTag: 'user_avatar_${_user?.username ?? ''}',
-                        style: _avatarStyle(isSquare: isSquare, radius: 12),
-                        flightImage: avatarUrl == null
-                            ? null
-                            : discourseImageProvider(avatarUrl),
-                        child: SmartAvatar(
-                          imageUrl: avatarUrl,
-                          radius: 36,
-                          fallbackText: _user?.username,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-
-            // 2. 姓名、身份信息
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Row 1: Name + Status
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          (_user?.name?.isNotEmpty == true)
-                              ? _user!.name!
-                              : (_user?.username ?? ''),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w600,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black45,
-                                offset: Offset(0, 1),
-                                blurRadius: 2,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (_user?.status != null) ...[
-                        const SizedBox(width: 8),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: _buildStatusEmoji(_user!.status!),
-                        ),
-                      ],
-                    ],
-                  ),
-
-                  // Row 2: Username
-                  if (_user?.username != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2, bottom: 6),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        // 点击 @username 复制用户名
-                        onTap: () => copyUsernameToClipboard(_user!.username),
-                        child: Text(
-                          '@${_user?.username}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    const SizedBox(height: 6), // 占位
-                  // Row 3: Level Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 2,
-                    ),
-                    decoration: ShapeDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: context.shapes.borderRadius(12),
-                      ),
-                    ),
-                    child: Text(
-                      _getTrustLevelLabel(_user?.trustLevel ?? 0),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 3. 操作按钮 (关注)
-            if (_user != null && !isOwnProfile) ...[
-              const SizedBox(width: 12),
-              _buildFollowButton(isOwnProfile),
-            ],
-          ],
-        ),
-        const SizedBox(height: 16),
-        // 封禁/禁言状态 与 个人简介 互斥显示（与 Discourse 前端一致）。
-        // 精简模式整块隐藏——简介与封禁详情仍可从「关于」弹窗查看。
-        if (!compact && (_user!.isSuspended || _user!.isSilenced)) ...[
-          GestureDetector(
-            onTap: _showUserInfo,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 封禁提示
-                if (_user!.isSuspended) ...[
-                  _buildRestrictionBanner(
-                    icon: Symbols.block_rounded,
-                    label: _user!.isSuspendedForever
-                        ? context.l10n.userProfile_suspendedBannerForever
-                        : context.l10n.userProfile_suspendedBannerUntil(
-                            TimeUtils.formatFullDate(_user!.suspendedTill),
-                          ),
-                    reason: _user!.suspendReason,
-                    color: context.appColors.redAccent,
-                  ),
-                  if (_user!.isSilenced) const SizedBox(height: 8),
-                ],
-                // 禁言提示
-                if (_user!.isSilenced)
-                  _buildRestrictionBanner(
-                    icon: Symbols.mic_off_rounded,
-                    label: _user!.isSilencedForever
-                        ? context.l10n.userProfile_silencedBannerForever
-                        : context.l10n.userProfile_silencedBannerUntil(
-                            TimeUtils.formatFullDate(_user!.silencedTill),
-                          ),
-                    reason: _user!.silenceReason,
-                    color: context.appColors.orangeAccent,
-                  ),
-              ],
-            ),
-          ),
-        ] else if (!compact) ...[
-          // 个人简介（非封禁/禁言状态时显示）
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: hasInfo ? _showUserInfo : null,
-            child: Container(
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: ShapeDecoration(
-                color: Colors.white.withValues(alpha: 0.1),
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(8),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: hasBio
-                        ? CollapsedHtmlContent(
-                            html: _user!.bio!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textStyle: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              fontSize: 14,
-                              height: 1.3,
-                            ),
-                          )
-                        : Text(
-                            context.l10n.userProfile_noBio,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 14,
-                              height: 1.3,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                  ),
-                  if (hasInfo) ...[
-                    const SizedBox(width: 8),
-                    Icon(
-                      Symbols.chevron_right_rounded,
-                      size: 16,
-                      color: Colors.white.withValues(alpha: 0.6),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-
-        // Stats
-        const SizedBox(height: 16),
-        if (_summary != null)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 第一行：关注、粉丝
-              if (_user?.totalFollowing != null ||
-                  _user?.totalFollowers != null)
-                Wrap(
-                  spacing: 16,
-                  children: [
-                    if (_user?.totalFollowing != null)
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          InteractionPageRoute(
-                            builder: (_) => FollowListPage(
-                              username: widget.username,
-                              isFollowing: true,
-                            ),
-                          ),
-                        ),
-                        child: _buildStatSlot(
-                          NumberUtils.formatCount(_user!.totalFollowing!),
-                          context.l10n.userProfile_following,
-                          _user!.totalFollowing!,
-                        ),
-                      ),
-                    if (_user?.totalFollowers != null)
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          InteractionPageRoute(
-                            builder: (_) => FollowListPage(
-                              username: widget.username,
-                              isFollowing: false,
-                            ),
-                          ),
-                        ),
-                        child: _buildStatSlot(
-                          NumberUtils.formatCount(_user!.totalFollowers!),
-                          context.l10n.userProfile_followers,
-                          _user!.totalFollowers!,
-                        ),
-                      ),
-                  ],
-                ),
-              // 第二行：获赞、访问、话题、回复
-              if (_user?.totalFollowing != null ||
-                  _user?.totalFollowers != null)
-                const SizedBox(height: 8),
-              Wrap(
-                spacing: 16,
-                children: [
-                  _buildStatSlot(
-                    NumberUtils.formatCount(_summary!.likesReceived),
-                    context.l10n.userProfile_statsLikes,
-                    _summary!.likesReceived,
-                  ),
-                  _buildStatSlot(
-                    NumberUtils.formatCount(_summary!.daysVisited),
-                    context.l10n.userProfile_statsVisits,
-                    _summary!.daysVisited,
-                  ),
-                  _buildStatSlot(
-                    NumberUtils.formatCount(_summary!.topicCount),
-                    context.l10n.userProfile_statsTopics,
-                    _summary!.topicCount,
-                  ),
-                  _buildStatSlot(
-                    NumberUtils.formatCount(_summary!.postCount),
-                    context.l10n.userProfile_statsReplies,
-                    _summary!.postCount,
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-        // 最近活动时间(精简模式隐藏)
-        if (!compact &&
-            (_user?.lastPostedAt != null || _user?.lastSeenAt != null)) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: ShapeDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              shape: RoundedSuperellipseBorder(
-                borderRadius: context.shapes.borderRadius(12),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Symbols.flash_on_rounded,
-                  size: 12,
-                  color: Colors.white70,
-                ),
-                const SizedBox(width: 4),
-                RelativeTimeText(
-                  dateTime: _user?.lastSeenAt ?? _user!.lastPostedAt!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Tab 栏本体(样式统一)。窄版挂在 SliverAppBar.bottom 的圆角容器里,
-  /// 宽版直接放右栏顶部。
-  Widget _buildTabBar(ThemeData theme) {
-    return TabBar(
-      controller: _tabController,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
-      labelColor: theme.colorScheme.primary,
-      unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-      indicatorColor: theme.colorScheme.primary,
-      labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-      indicatorSize: TabBarIndicatorSize.label,
-      dividerColor: Colors.transparent,
-      tabs: [
-        Tab(height: 36, text: context.l10n.userProfile_tabSummary),
-        Tab(height: 36, text: context.l10n.userProfile_tabActivity),
-        Tab(height: 36, text: context.l10n.userProfile_tabTopics),
-        Tab(height: 36, text: context.l10n.userProfile_tabReplies),
-        Tab(height: 36, text: context.l10n.userProfile_tabLikes),
-        Tab(height: 36, text: context.l10n.userProfile_tabReactions),
-        Tab(height: 36, text: context.l10n.userProfile_tabBoosts),
-        Tab(height: 36, text: context.l10n.userProfile_tabVotes),
-        Tab(height: 36, text: context.l10n.userProfile_tabSolved),
-      ],
-    );
-  }
-
-  /// 顶部操作按钮(搜索/私信/聊天/更多)。窄版在 SliverAppBar.actions,
-  /// 宽版在左侧资料栏顶行。
+  /// 顶部统一放置搜索与更多操作，联系入口位于资料头部。
   List<Widget> _buildHeaderActions(bool isOwnProfile) {
     return <Widget>[
       IconButton(
         icon: const Icon(Symbols.search_rounded),
         onPressed: () => _openUserSearch(),
+        tooltip: context.l10n.common_search,
       ),
-      if (_user != null && _user!.canSendPrivateMessageToUser != false)
-        IconButton(
-          onPressed: _openMessageDialog,
-          icon: const Icon(Symbols.mail_rounded),
-          tooltip: context.l10n.userProfile_message,
-        ),
-      if (_user != null && !isOwnProfile)
-        IconButton(
-          onPressed: _isStartingChat ? null : _startChat,
-          icon: const Icon(Symbols.forum_rounded),
-          tooltip: context.l10n.chat_title,
-        ),
       SwipeDismissiblePopupMenuButton<String>(
         icon: const Icon(Symbols.more_vert_rounded),
         onSelected: (value) {
@@ -2656,6 +1886,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               _showUserInfo();
             case 'share':
               _shareUser();
+            case 'preferences':
+              _openPreferences();
             case 'level_normal':
               _setNotificationLevel('normal');
             case 'level_mute':
@@ -2667,20 +1899,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         itemBuilder: (context) {
           final theme = Theme.of(context);
           return [
-            PopupMenuItem<String>(
-              value: 'about',
-              child: Row(
-                children: [
-                  Icon(
-                    Symbols.info_rounded,
-                    size: 20,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.common_about),
-                ],
+            if (isOwnProfile && _user?.canEdit == true)
+              PopupMenuItem<String>(
+                value: 'preferences',
+                child: Text(context.l10n.userProfile_forumPreferences),
               ),
-            ),
+            if (_user?.profileHidden != true)
+              PopupMenuItem<String>(
+                value: 'about',
+                child: Row(
+                  children: [
+                    Icon(
+                      Symbols.info_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(context.l10n.common_about),
+                  ],
+                ),
+              ),
             PopupMenuItem<String>(
               value: 'share',
               child: Row(
@@ -2696,7 +1934,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               ),
             ),
             // 非自己才显示订阅级别选项
-            if (!isOwnProfile && _user != null) ...[
+            if (!isOwnProfile &&
+                _user != null &&
+                ref.read(currentUserProvider).value != null) ...[
               const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'level_normal',
@@ -2765,83 +2005,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         },
       ),
     ];
-  }
-
-  Widget _buildStatSlot(String value, String label, int rawValue) {
-    return Tooltip(
-      message: '$rawValue',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFollowButton(bool isOwnProfile) {
-    if (_user == null || _user!.canFollow != true || isOwnProfile) {
-      return const SizedBox.shrink();
-    }
-
-    return _isFollowLoading
-        ? Container(
-            width: 32,
-            height: 32,
-            padding: const EdgeInsets.all(8),
-            child: const CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : TextButton.icon(
-            onPressed: _toggleFollow,
-            icon: Icon(
-              _isFollowed ? Symbols.check_rounded : Symbols.add_rounded,
-              size: 16,
-            ),
-            label: Text(
-              _isFollowed
-                  ? context.l10n.userProfile_followed
-                  : context.l10n.userProfile_follow,
-            ),
-            style: TextButton.styleFrom(
-              backgroundColor: _isFollowed
-                  ? Colors.white.withValues(alpha: 0.15)
-                  : Colors.white,
-              foregroundColor: _isFollowed ? Colors.white : Colors.black87,
-              shape: RoundedSuperellipseBorder(
-                borderRadius: context.shapes.borderRadius(18),
-                side: _isFollowed
-                    ? const BorderSide(color: Colors.white38)
-                    : BorderSide.none,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-              minimumSize: const Size(0, 32),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          );
   }
 
   Widget _buildRestrictionBanner({
@@ -2921,7 +2084,277 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     return Text(emoji, style: const TextStyle(fontSize: 16));
   }
 
+  Widget _buildActivityTab() {
+    if (_summary?.canSeeUserActions == false) {
+      return Center(child: Text(context.l10n.userProfile_activityPrivate));
+    }
+    return KeyedSubtree(
+      key: ValueKey(_activityFilter),
+      child: _buildActionList(_activityFilter),
+    );
+  }
+
+  Widget _buildBadgesTab() {
+    if (_badgesLoading && _badges == null) {
+      return const UserActionListSkeleton();
+    }
+    if (_badgesError != null) {
+      return ErrorView(
+        error: _badgesError!,
+        stackTrace: _badgesErrorStack,
+        onRetry: _loadBadges,
+      );
+    }
+    final badges = _badges ?? const <badge_model.UserBadge>[];
+    final own = ref.watch(currentUserProvider).value?.id == _user?.id;
+    final theme = Theme.of(context);
+    return M3eRefreshIndicator(
+      onRefresh: _loadBadges,
+      child: ListView(
+        key: PageStorageKey('user_${_username}_badges'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        children: [
+          if (badges.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48),
+              child: Text(
+                context.l10n.myBadges_empty,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          for (final type in badge_model.BadgeType.values)
+            if (badges.any((entry) => entry.badge?.badgeType == type)) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                child: Text(type.label, style: theme.textTheme.titleSmall),
+              ),
+              for (final entry in badges.where(
+                (item) => item.badge?.badgeType == type,
+              ))
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: FaIcon(
+                    BadgeUIUtils.getBadgeIcon(type),
+                    color: BadgeUIUtils.getBadgeColor(context, type),
+                    size: 24,
+                  ),
+                  title: Text(entry.badge!.name),
+                  subtitle: CollapsedHtmlContent(
+                    html: entry.badge!.description,
+                    textStyle: theme.textTheme.bodySmall,
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    InteractionPageRoute(
+                      builder: (_) => BadgePage(
+                        badgeId: entry.badgeId,
+                        username: _username,
+                      ),
+                    ),
+                  ),
+                  trailing: own && entry.canFavorite == true
+                      ? IconButton(
+                          tooltip: entry.isFavorite == true
+                              ? context.l10n.userProfile_unfeatureBadge
+                              : context.l10n.userProfile_featureBadge,
+                          isSelected: entry.isFavorite == true,
+                          selectedIcon: const Icon(
+                            Symbols.star_rounded,
+                            fill: 1,
+                          ),
+                          icon: _savingBadgeId == entry.id
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Symbols.star_rounded),
+                          onPressed: _savingBadgeId == null
+                              ? () => _toggleFavoriteBadge(entry)
+                              : null,
+                        )
+                      : entry.count > 1
+                      ? Text('× ${entry.count}')
+                      : null,
+                ),
+              const SizedBox(height: 16),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutTab() {
+    final user = _user!;
+    final theme = Theme.of(context);
+    final fields =
+        (PreloadedDataService().siteSync?['user_fields'] as List? ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .where((field) => field['show_on_profile'] == true)
+            .toList()
+          ..sort(
+            (a, b) => ((a['position'] as num?) ?? 0).compareTo(
+              (b['position'] as num?) ?? 0,
+            ),
+          );
+    return ListView(
+      key: PageStorageKey('user_${_username}_about'),
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (user.bio?.isNotEmpty == true) ...[
+          Text(context.l10n.userProfile_bio, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 12),
+          FluxdoRenderCallbacks.generic(
+            heroTagNamespace: 'user_profile_bio_${user.username}',
+          ).render(
+            cookedHtml: user.bio!,
+            baseTextStyle: theme.textTheme.bodyLarge,
+            selectionEnabled: false,
+          ),
+          const SizedBox(height: 24),
+        ],
+        if (user.title?.isNotEmpty == true)
+          _buildInfoRow(
+            context,
+            Symbols.badge_rounded,
+            context.l10n.userProfile_title,
+            user.title!,
+          ),
+        if (user.location?.isNotEmpty == true)
+          _buildInfoRow(
+            context,
+            Symbols.location_on_rounded,
+            context.l10n.userProfile_location,
+            user.location!,
+          ),
+        if (user.website?.isNotEmpty == true)
+          _buildInfoRow(
+            context,
+            Symbols.link_rounded,
+            context.l10n.userProfile_website,
+            user.websiteName ?? user.website!,
+            isLink: true,
+            url: user.website,
+          ),
+        if (user.createdAt != null)
+          _buildInfoRow(
+            context,
+            Symbols.calendar_today_rounded,
+            context.l10n.userProfile_joinDate,
+            TimeUtils.formatFullDate(user.createdAt),
+          ),
+        if (user.lastSeenAt != null)
+          _buildInfoRow(
+            context,
+            Symbols.schedule_rounded,
+            context.l10n.userProfile_lastSeen,
+            TimeUtils.formatFullDate(user.lastSeenAt),
+          ),
+        if (user.lastPostedAt != null)
+          _buildInfoRow(
+            context,
+            Symbols.edit_rounded,
+            context.l10n.userProfile_lastPosted,
+            TimeUtils.formatFullDate(user.lastPostedAt),
+          ),
+        if (user.profileViewCount != null)
+          _buildInfoRow(
+            context,
+            Symbols.visibility_rounded,
+            context.l10n.userProfile_views,
+            NumberUtils.formatCount(user.profileViewCount!),
+          ),
+        if (user.invitedBy != null)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.userProfile_invitedBy),
+            subtitle: Text(user.invitedBy!.username),
+            trailing: const Icon(Symbols.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              InteractionPageRoute(
+                builder: (_) =>
+                    UserProfilePage(username: user.invitedBy!.username),
+              ),
+            ),
+          ),
+        if (user.groups.isNotEmpty) ...[
+          Text(
+            context.l10n.userProfile_groups,
+            style: theme.textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: user.groups
+                .map(
+                  (group) => ActionChip(
+                    label: Text(group.displayName),
+                    onPressed: () => launchUrl(
+                      Uri.parse(
+                        UrlHelper.resolveUrl(
+                          '/g/${Uri.encodeComponent(group.name)}',
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+        for (final field in fields)
+          if (user.userFields['${field['id']}']?.toString().isNotEmpty == true)
+            _buildInfoRow(
+              context,
+              Symbols.info_rounded,
+              field['name'] as String? ?? '',
+              user.userFields['${field['id']}'] is List
+                  ? (user.userFields['${field['id']}'] as List).join(' · ')
+                  : user.userFields['${field['id']}'].toString(),
+            ),
+        if (user.isSuspended)
+          _buildRestrictionSection(
+            theme,
+            icon: Symbols.block_rounded,
+            title: context.l10n.userProfile_suspendedStatus,
+            label: user.isSuspendedForever
+                ? context.l10n.userProfile_permanentlySuspended
+                : context.l10n.userProfile_suspendedUntil(
+                    TimeUtils.formatFullDate(user.suspendedTill),
+                  ),
+            reason: user.suspendReason,
+            color: theme.colorScheme.error,
+          ),
+        if (user.isSilenced)
+          _buildRestrictionSection(
+            theme,
+            icon: Symbols.mic_off_rounded,
+            title: context.l10n.userProfile_silencedStatus,
+            label: user.isSilencedForever
+                ? context.l10n.userProfile_permanentlySilenced
+                : context.l10n.userProfile_silencedUntil(
+                    TimeUtils.formatFullDate(user.silencedTill),
+                  ),
+            reason: user.silenceReason,
+            color: context.appColors.orangeAccent,
+          ),
+      ],
+    );
+  }
+
   Widget _buildActionList(String filter) {
+    if (_actionErrors.containsKey(filter)) {
+      final retry = switch (filter) {
+        'reactions' => () => _loadReactions(),
+        'boosts' => () => _loadBoosts(),
+        'votes' => () => _loadVotes(),
+        'solved' => () => _loadSolved(),
+        _ => () => _loadActions(filter),
+      };
+      return ErrorView(error: _actionErrors[filter]!, onRetry: retry);
+    }
     // 总结 tab
     if (filter == 'summary') {
       return _buildSummaryTab();
@@ -2948,6 +2381,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final hasMore = _hasMoreCache[filter] ?? true;
     final loadMoreCoordinator = _actionLoadMoreCoordinator(filter);
 
+    if (_actionErrors[filter] != null && actions == null) {
+      return ErrorView(
+        error: _actionErrors[filter]!,
+        onRetry: () => _loadActions(filter),
+      );
+    }
+
     // 优先检查 loading 状态
     if (isLoading && actions == null) {
       return const UserActionListSkeleton();
@@ -2955,18 +2395,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 空状态
     if (actions == null || actions.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Symbols.inbox_rounded, size: 48, color: context.appColors.grey[400]),
-            const SizedBox(height: 8),
-            Text(
-              context.l10n.userProfile_noContent,
-              style: TextStyle(color: context.appColors.grey[600]),
-            ),
-          ],
-        ),
+      return AppEmptyState(
+        icon: const Icon(Symbols.inbox_rounded),
+        title: context.l10n.userProfile_noContent,
       );
     }
 
@@ -2985,7 +2416,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       child: M3eRefreshIndicator(
         onRefresh: () => _loadActions(filter),
         child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          key: PageStorageKey('user_${_username}_$filter'),
+          padding: EdgeInsets.zero,
           itemCount: actions.length + 1,
           itemBuilder: (context, index) {
             if (index == actions.length) {
@@ -3004,6 +2436,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildSummaryTab() {
+    if (_summaryError != null) {
+      return ErrorView(
+        error: _summaryError!,
+        stackTrace: _summaryErrorStack,
+        onRetry: () => _loadSummary(forceRefresh: true),
+      );
+    }
     if (_summary == null) {
       return const UserActionListSkeleton();
     }
@@ -3011,157 +2450,281 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final theme = Theme.of(context);
     final summary = _summary!;
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      children: [
-        // 热门话题
-        if (summary.topics.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.article_rounded,
-            context.l10n.userProfile_topTopics,
-          ),
-          const SizedBox(height: 8),
-          ...summary.topics.map(
-            (topic) => _buildSummaryTopicItem(theme, topic),
-          ),
-          const SizedBox(height: 20),
-        ],
+    return M3eRefreshIndicator(
+      onRefresh: () => _loadSummary(forceRefresh: true),
+      child: ListView(
+        key: PageStorageKey('user_${_username}_summary'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        children: [
+          if (summary.canSeeSummaryStats) ...[
+            _buildSummaryStats(summary),
+            const SizedBox(height: 12),
+            ExpansionTile(
+              key: PageStorageKey('$_username/reading-stats'),
+              tilePadding: EdgeInsets.zero,
+              title: Text(context.l10n.userProfile_readingStats),
+              children: [
+                _buildSummaryMetric(
+                  context.l10n.profileStats_daysVisited,
+                  '${summary.daysVisited}',
+                ),
+                _buildSummaryMetric(
+                  context.l10n.profileStats_topicsEntered,
+                  '${summary.topicsEntered}',
+                ),
+                _buildSummaryMetric(
+                  context.l10n.profileStats_postsRead,
+                  '${summary.postsReadCount}',
+                ),
+                _buildSummaryMetric(
+                  context.l10n.profileStats_timeRead,
+                  _readingDuration(summary.timeRead),
+                ),
+                _buildSummaryMetric(
+                  context.l10n.profileStats_recentTimeRead,
+                  _readingDuration(summary.recentTimeRead),
+                ),
+                _buildSummaryMetric(
+                  context.l10n.profileStats_likesGiven,
+                  '${summary.likesGiven}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+          if (_user?.featuredTopic != null) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.push_pin_rounded,
+              context.l10n.userProfile_featuredTopic,
+            ),
+            const SizedBox(height: 8),
+            _buildSummaryTopicItem(theme, _user!.featuredTopic!),
+            const SizedBox(height: 20),
+          ],
+          // 热门话题
+          if (summary.topics.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.article_rounded,
+              context.l10n.userProfile_topTopics,
+              onTap: summary.canSeeUserActions
+                  ? () => _showActivity('4')
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            ...summary.topics.map(
+              (topic) => _buildSummaryTopicItem(theme, topic),
+            ),
+            const SizedBox(height: 20),
+          ],
 
-        // 热门回复
-        if (summary.replies.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.chat_bubble_rounded,
-            context.l10n.userProfile_topReplies,
-          ),
-          const SizedBox(height: 8),
-          ...summary.replies.map(
-            (reply) => _buildSummaryReplyItem(theme, reply),
-          ),
-          const SizedBox(height: 20),
-        ],
+          // 热门回复
+          if (summary.replies.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.chat_bubble_rounded,
+              context.l10n.userProfile_topReplies,
+              onTap: summary.canSeeUserActions
+                  ? () => _showActivity('5')
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            ...summary.replies.map(
+              (reply) => _buildSummaryReplyItem(theme, reply),
+            ),
+            const SizedBox(height: 20),
+          ],
 
-        // 热门链接
-        if (summary.links.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.link_rounded,
-            context.l10n.userProfile_topLinks,
-          ),
-          const SizedBox(height: 8),
-          ...summary.links.map((link) => _buildSummaryLinkItem(theme, link)),
-          const SizedBox(height: 20),
-        ],
+          // 热门链接
+          if (summary.links.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.link_rounded,
+              context.l10n.userProfile_topLinks,
+            ),
+            const SizedBox(height: 8),
+            ...summary.links.map((link) => _buildSummaryLinkItem(theme, link)),
+            const SizedBox(height: 20),
+          ],
 
-        // 最多回复至
-        if (summary.mostRepliedToUsers.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.reply_rounded,
-            context.l10n.userProfile_mostRepliedTo,
-          ),
-          const SizedBox(height: 8),
-          _buildUserChips(theme, summary.mostRepliedToUsers),
-          const SizedBox(height: 20),
-        ],
+          // 最多回复至
+          if (summary.mostRepliedToUsers.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.reply_rounded,
+              context.l10n.userProfile_mostRepliedTo,
+            ),
+            const SizedBox(height: 8),
+            _buildUserChips(theme, summary.mostRepliedToUsers),
+            const SizedBox(height: 20),
+          ],
 
-        // 被谁赞的最多
-        if (summary.mostLikedByUsers.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.favorite_rounded,
-            context.l10n.userProfile_mostLikedBy,
-          ),
-          const SizedBox(height: 8),
-          _buildUserChips(theme, summary.mostLikedByUsers),
-          const SizedBox(height: 20),
-        ],
+          // 被谁赞的最多
+          if (summary.mostLikedByUsers.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.favorite_rounded,
+              context.l10n.userProfile_mostLikedBy,
+            ),
+            const SizedBox(height: 8),
+            _buildUserChips(theme, summary.mostLikedByUsers),
+            const SizedBox(height: 20),
+          ],
 
-        // 赞最多
-        if (summary.mostLikedUsers.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.thumb_up_rounded,
-            context.l10n.userProfile_mostLiked,
-          ),
-          const SizedBox(height: 8),
-          _buildUserChips(theme, summary.mostLikedUsers),
-          const SizedBox(height: 20),
-        ],
+          // 赞最多
+          if (summary.mostLikedUsers.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.thumb_up_rounded,
+              context.l10n.userProfile_mostLiked,
+            ),
+            const SizedBox(height: 8),
+            _buildUserChips(theme, summary.mostLikedUsers),
+            const SizedBox(height: 20),
+          ],
 
-        // 热门类别
-        if (summary.topCategories.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.category_rounded,
-            context.l10n.userProfile_topCategories,
-          ),
-          const SizedBox(height: 8),
-          ...summary.topCategories.map(
-            (cat) => _buildSummaryCategoryItem(theme, cat),
-          ),
-          const SizedBox(height: 20),
-        ],
+          // 热门类别
+          if (summary.topCategories.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.category_rounded,
+              context.l10n.userProfile_topCategories,
+            ),
+            const SizedBox(height: 8),
+            ...summary.topCategories.map(
+              (cat) => _buildSummaryCategoryItem(theme, cat),
+            ),
+            const SizedBox(height: 20),
+          ],
 
-        // 热门徽章
-        if (summary.badges.isNotEmpty) ...[
-          _buildSectionHeader(
-            theme,
-            Symbols.military_tech_rounded,
-            context.l10n.userProfile_topBadges,
-          ),
-          const SizedBox(height: 8),
-          _buildBadgeChips(theme, summary.badges),
-          const SizedBox(height: 20),
-        ],
+          // 热门徽章
+          if (summary.badges.isNotEmpty) ...[
+            _buildSectionHeader(
+              theme,
+              Symbols.military_tech_rounded,
+              context.l10n.userProfile_topBadges,
+              onTap: () => _tabController.animateTo(2),
+            ),
+            const SizedBox(height: 8),
+            _buildBadgeChips(theme, summary.badges),
+            const SizedBox(height: 20),
+          ],
 
-        // 若所有列表都为空
-        if (summary.topics.isEmpty &&
-            summary.replies.isEmpty &&
-            summary.links.isEmpty &&
-            summary.mostRepliedToUsers.isEmpty &&
-            summary.mostLikedByUsers.isEmpty &&
-            summary.mostLikedUsers.isEmpty &&
-            summary.topCategories.isEmpty &&
-            summary.badges.isEmpty)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 80),
-              child: Column(
-                children: [
-                  Icon(
-                    Symbols.summarize_rounded,
-                    size: 48,
-                    color: context.appColors.grey[400],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    context.l10n.userProfile_noSummary,
-                    style: TextStyle(color: context.appColors.grey[600]),
-                  ),
-                ],
+          // 若所有列表都为空
+          if (!summary.canSeeSummaryStats &&
+              _user?.featuredTopic == null &&
+              summary.topics.isEmpty &&
+              summary.replies.isEmpty &&
+              summary.links.isEmpty &&
+              summary.mostRepliedToUsers.isEmpty &&
+              summary.mostLikedByUsers.isEmpty &&
+              summary.mostLikedUsers.isEmpty &&
+              summary.topCategories.isEmpty &&
+              summary.badges.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 80),
+                child: Column(
+                  children: [
+                    Icon(
+                      Symbols.summarize_rounded,
+                      size: 48,
+                      color: context.appColors.grey[400],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      context.l10n.userProfile_noSummary,
+                      style: TextStyle(color: context.appColors.grey[600]),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildSectionHeader(ThemeData theme, IconData icon, String title) {
+  Widget _buildSummaryStats(UserSummary summary) {
+    final metrics = [
+      (summary.topicCount, context.l10n.userProfile_statsTopics, '4'),
+      (summary.postCount, context.l10n.userProfile_statsReplies, '5'),
+      (summary.likesReceived, context.l10n.userProfile_statsLikes, '2'),
+      (summary.likesGiven, context.l10n.profileStats_likesGiven, '1'),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns =
+            constraints.maxWidth < 320 ||
+                MediaQuery.textScalerOf(context).scale(14) > 20
+            ? 2
+            : 4;
+        final width = (constraints.maxWidth - (columns - 1) * 16) / columns;
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: metrics
+              .map(
+                (metric) => SizedBox(
+                  width: width,
+                  child: _buildWideStat(
+                    NumberUtils.formatCount(metric.$1),
+                    metric.$2,
+                    metric.$1,
+                    onTap: summary.canSeeUserActions
+                        ? () => _showActivity(metric.$3)
+                        : null,
+                  ),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+
+  String _readingDuration(int seconds) {
+    return seconds >= 3600
+        ? context.l10n.time_hours(seconds ~/ 3600)
+        : context.l10n.time_minutes(seconds ~/ 60);
+  }
+
+  Widget _buildSummaryMetric(String label, String value) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(value),
+    );
+  }
+
+  Widget _buildSectionHeader(
+    ThemeData theme,
+    IconData icon,
+    String title, {
+    VoidCallback? onTap,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(icon, size: 18, color: context.emphasis.accent),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: context.emphasis.accent,
+          Expanded(
+            child: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
+          if (onTap != null)
+            TextButton(
+              onPressed: onTap,
+              child: Text(context.l10n.common_viewAll),
+            ),
         ],
       ),
     );
@@ -3787,7 +3350,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -3870,7 +3435,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -3943,72 +3510,102 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Widget _buildActionItem(UserAction action) {
     final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
-      clipBehavior: Clip.antiAlias,
+    final actor = action.username ?? _user!.username;
+    final avatar = action.avatarTemplate == null
+        ? _user!.getAvatarUrl(size: 96)
+        : action.getAvatarUrl(size: 96);
+    return Material(
+      color: PageBackgroundScope.contentColor(
+        context,
+        theme.colorScheme.surface,
+      ),
       child: InkWell(
         onTap: () => _openTopic(
           topicId: action.topicId,
           scrollToPostNumber: action.postNumber,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 头部：动作类型和时间
-              Row(
-                children: [
-                  Icon(
-                    _getActionIcon(action.actionType),
-                    size: 16,
-                    color: context.emphasis.accent,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _getActionLabel(action.actionType),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: context.emphasis.accent,
-                      fontWeight: FontWeight.w600,
+              SmartAvatar(
+                imageUrl: avatar,
+                radius: 20,
+                fallbackText: actor,
+                backgroundColor: theme.colorScheme.secondaryContainer,
+                foregroundColor: theme.colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            actor,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (action.actingAt != null)
+                          RelativeTimeText(
+                            dateTime: action.actingAt,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                  const Spacer(),
-                  if (action.actingAt != null)
-                    RelativeTimeText(
-                      dateTime: action.actingAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
+                    const SizedBox(height: 4),
+                    Text(
+                      action.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 标题
-              Text(
-                action.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
+                    if (action.excerpt?.isNotEmpty == true) ...[
+                      const SizedBox(height: 6),
+                      CollapsedHtmlContent(
+                        html: action.excerpt!,
+                        maxLines: 4,
+                        textStyle: theme.textTheme.bodyMedium,
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Icon(
+                          _getActionIcon(action.actionType),
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _getActionLabel(action.actionType),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-
-              // 摘要
-              if (action.excerpt != null && action.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  action.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -4029,7 +3626,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(borderRadius: context.shapes.borderRadius(16)),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(16),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(
@@ -4121,23 +3720,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  String _getTrustLevelLabel(int level) {
-    switch (level) {
-      case 0:
-        return S.current.user_trustLevel0;
-      case 1:
-        return S.current.user_trustLevel1;
-      case 2:
-        return S.current.user_trustLevel2;
-      case 3:
-        return S.current.user_trustLevel3;
-      case 4:
-        return S.current.user_trustLevel4;
-      default:
-        return S.current.user_trustLevelUnknown(level);
-    }
-  }
-
   String _getActionLabel(int? type) {
     switch (type) {
       case UserActionType.like:
@@ -4152,4 +3734,29 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return S.current.userProfile_actionDefault;
     }
   }
+}
+
+class _ProfileTabsDelegate extends SliverPersistentHeaderDelegate {
+  const _ProfileTabsDelegate({required this.child});
+
+  final Widget child;
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return PageBackdrop(child: child);
+  }
+
+  @override
+  bool shouldRebuild(_ProfileTabsDelegate oldDelegate) =>
+      child != oldDelegate.child;
 }
