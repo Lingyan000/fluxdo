@@ -302,6 +302,34 @@ void main() {
     expect(FontSource.builtin(FontSourceKind.jsdelivr)!.rangeSafe, isFalse);
   });
 
+  test('jsDelivr 系源不提供超过 50 MB 的单文件，整包源不受限', () {
+    final big = FontEntry(
+      id: 'big',
+      family: 'Big',
+      slot: FontSlot.body,
+      name: const {'zh': '大字体'},
+      license: 'OFL-1.1',
+      package: 'big-font',
+      version: '1.0.0',
+      file: 'Big.ttf',
+      size: 60 * 1000 * 1000,
+      sha256: '0' * 64,
+      tarballSize: 40 * 1000 * 1000,
+      tarballIntegrity: 'sha512-x',
+    );
+    for (final kind in [FontSourceKind.fastly, FontSourceKind.jsdelivr]) {
+      expect(FontSource.builtin(kind)!.supports(big), isFalse, reason: kind.name);
+      expect(FontSource.builtin(kind)!.supports(entry), isTrue, reason: kind.name);
+    }
+    for (final kind in [
+      FontSourceKind.npmmirror,
+      FontSourceKind.unpkg,
+      FontSourceKind.npmjs,
+    ]) {
+      expect(FontSource.builtin(kind)!.supports(big), isTrue, reason: kind.name);
+    }
+  });
+
   test('内置字体目录可解析，条目完整', () {
     final fonts = FontCatalog.parse(
       File(FontCatalog.assetPath).readAsStringSync(),

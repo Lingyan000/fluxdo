@@ -31,6 +31,7 @@ class FontSource {
     required this.tarball,
     required this.rangeSafe,
     required this.url,
+    this.maxFileSize,
   });
 
   final FontSourceKind kind;
@@ -48,7 +49,19 @@ class FontSource {
   /// 由字体条目生成下载地址。
   final String Function(FontEntry) url;
 
+  /// 单文件大小上限（字节），null 不限。超限的文件该源直接拒绝（403）。
+  final int? maxFileSize;
+
   String urlFor(FontEntry entry) => url(entry);
+
+  /// 该源能否提供 [entry]。
+  bool supports(FontEntry entry) {
+    final limit = maxFileSize;
+    return limit == null || (tarball ? entry.tarballSize : entry.size) <= limit;
+  }
+
+  /// jsDelivr 单文件上限 50 MB，超出返回 403。
+  static const int _jsdelivrFileLimit = 50 * 1000 * 1000;
 
   /// 内置源，「自动」模式下全部参与测速。
   static final List<FontSource> builtins = [
@@ -63,6 +76,7 @@ class FontSource {
     FontSource._(
       FontSourceKind.fastly,
       tarball: false,
+      maxFileSize: _jsdelivrFileLimit,
       rangeSafe: true,
       url: (e) =>
           'https://fastly.jsdelivr.net/npm/${e.package}@${e.version}/'
@@ -71,6 +85,7 @@ class FontSource {
     FontSource._(
       FontSourceKind.jsdelivr,
       tarball: false,
+      maxFileSize: _jsdelivrFileLimit,
       rangeSafe: false,
       url: (e) =>
           'https://cdn.jsdelivr.net/npm/${e.package}@${e.version}/'

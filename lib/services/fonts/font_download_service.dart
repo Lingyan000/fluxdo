@@ -240,7 +240,11 @@ class FontDownloadService extends ChangeNotifier {
         }
         sources = [FontSource.custom(customTemplate)];
       case final kind:
-        sources = [FontSource.builtin(kind)!];
+        final pinned = FontSource.builtin(kind)!;
+        // 指定源提供不了这个文件（超出单文件上限）时按自动顺序换源
+        sources = pinned.supports(entry)
+            ? [pinned]
+            : await _rankedBuiltins(entry);
     }
 
     FontFailed? lastFailure;
@@ -277,7 +281,10 @@ class FontDownloadService extends ChangeNotifier {
 
   Future<List<FontSource>> _rankedBuiltins(FontEntry entry) async {
     await measureLatencies(entry);
-    final sources = [...FontSource.builtins];
+    final sources = [
+      for (final source in FontSource.builtins)
+        if (source.supports(entry)) source,
+    ];
     // 测速失败的源排到最后但仍会尝试（测速请求本身也可能被偶发干扰）
     sources.sort((a, b) {
       final la = latencies[a.kind];
