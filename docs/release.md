@@ -165,7 +165,7 @@ GitHub Release 随安装包发布以下文件，应用通过 `releases/latest/do
 
 `Distribution checks` 在 `dev`、`main` 上的清单生成脚本或工作流改动时运行，也支持 PR 和手动触发。
 它使用测试文件调用正式清单生成入口，核验 SHA-256、预发布版本拒绝逻辑和微软官方 JSON schema，
-再分别在 macOS 上加载 Homebrew Cask、在 Windows 上执行 `winget validate`。
+再分别在 macOS 上加载 Homebrew Cask、在 Windows 上使用官方 WinGet 1.29.380 执行 `winget validate`。
 测试清单只用于 CI 验证，正式发布清单由发版流程根据实际产物生成。
 
 ### WinGet 首次提交

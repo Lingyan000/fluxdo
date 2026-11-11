@@ -47,8 +47,12 @@ jobs:
         run: |
           gh release download v1.29.380 --repo microsoft/winget-cli --pattern Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle --dir "$env:RUNNER_TEMP/winget"
           if ($LASTEXITCODE -ne 0) { throw "WinGet download failed" }
-          python -c "import pathlib, zipfile; root = pathlib.Path(r'$env:RUNNER_TEMP/winget'); bundle = zipfile.ZipFile(root / 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'); package = next(name for name in bundle.namelist() if name.endswith('_x64.msix')); bundle.extract(package, root); zipfile.ZipFile(root / package).extractall(root / 'cli')"
-          if ($LASTEXITCODE -ne 0) { throw "WinGet extraction failed" }
+          $bundle = "$env:RUNNER_TEMP/winget/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+          $unpacked = "$env:RUNNER_TEMP/winget/bundle"
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($bundle, $unpacked)
+          $packages = @(Get-ChildItem "$unpacked/*_x64.msix")
+          if ($packages.Count -ne 1) { throw "Expected one x64 WinGet package" }
+          [System.IO.Compression.ZipFile]::ExtractToDirectory($packages[0].FullName, "$env:RUNNER_TEMP/winget/cli")
           & "$env:RUNNER_TEMP/winget/cli/winget.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "WinGet startup failed" }
       - name: Validate WinGet manifests
