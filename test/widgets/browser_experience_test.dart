@@ -15,6 +15,7 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/webview_page.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/browser_navigation.dart';
+import 'package:fluxdo/services/browser_safe_area.dart';
 import 'package:fluxdo/services/browser_tabs.dart';
 import 'package:fluxdo/services/navigation/browser_dock_observer.dart';
 import 'package:fluxdo/services/network/cookie/cookie_store_observer.dart';
@@ -22,6 +23,7 @@ import 'package:fluxdo/services/network/cookie/webview_cookie_priming.dart';
 import 'package:fluxdo/widgets/browser/browser_dock_host.dart';
 import 'package:fluxdo/widgets/browser/browser_toolbar.dart';
 import 'package:fluxdo/widgets/browser/browser_dock_motion.dart';
+import 'package:fluxdo/widgets/browser/browser_web_viewport.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/browser_test_platform.dart';
@@ -684,6 +686,123 @@ void main() {
       await h.finish(tester);
     }
     await h.dispose(tester);
+  });
+
+  group('网页安全区', () {
+    const landscape = Size(844, 390);
+    const notch = FakeViewPadding(left: 47, right: 47, bottom: 21);
+    Map<String, Object?> report({
+      required bool cover,
+      List<double> env = const [0, 0, 0, 0],
+      List<double>? background = const [12, 34, 56, 1],
+    }) => {
+      'cover': cover,
+      'env': env,
+      'background': background,
+      'canvas': [250, 250, 250, 1],
+    };
+    BrowserWebViewport viewport(WidgetTester tester) =>
+        tester.widget<BrowserWebViewport>(find.byType(BrowserWebViewport));
+    int edgeSamples(_Harness h) => h.platform.controller.screenshotRequests
+        .where((c) => c?.compressFormat == CompressFormat.PNG)
+        .length;
+    void send(_Harness h, Map<String, Object?> payload) =>
+        h.platform.controller.handlers[BrowserSafeAreaProbe.handlerName]!([
+          payload,
+        ]);
+    Rect page(WidgetTester tester, _Harness h) =>
+        tester.getRect(find.byKey(h.nativeBoundary));
+
+    tearDown(BrowserSafeAreaPolicy.resetForTest);
+
+    testWidgets('普通网页让出刘海，cover 网页铺满，实测 env 一致后保持', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      expect(page(tester, h).left, 47);
+      expect(page(tester, h).right, landscape.width - 47);
+      send(h, report(cover: false));
+      await tester.pump();
+      expect(viewport(tester).top, const Color(0xff0c2238));
+      expect(viewport(tester).bottom, const Color(0xff0c2238));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(edgeSamples(h), 0);
+      final measured = report(cover: true, env: [47, 0, 47, 0]);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? measured : null;
+      send(h, measured);
+      await tester.pump();
+      expect(page(tester, h).left, 0);
+      expect(page(tester, h).right, landscape.width);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isTrue);
+      expect(page(tester, h).left, 0);
+      await h.dispose(tester);
+    });
+
+    testWidgets('原生 env 连续两次对不上时退回留边，并对后续网页生效', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      final broken = report(cover: true);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? broken : null;
+      send(h, broken);
+      await tester.pump();
+      expect(page(tester, h).left, 0);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isNull);
+      expect(page(tester, h).left, 0);
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isFalse);
+      expect(page(tester, h).left, 47);
+      send(h, report(cover: true, env: [1, 0, 1, 0]));
+      await tester.pump();
+      expect(page(tester, h).left, 47);
+      await h.dispose(tester);
+    });
+
+    testWidgets('网页没有声明底色时才截图取色，取不到时用画布色', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      send(h, report(cover: false, background: null));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(edgeSamples(h), greaterThan(0));
+      expect(viewport(tester).top, const Color(0xfffafafa));
+      expect(viewport(tester).bottom, const Color(0xfffafafa));
+      final sampled = edgeSamples(h);
+      send(h, report(cover: true, env: [47, 0, 47, 0], background: null));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 13));
+      expect(edgeSamples(h), sampled);
+      await h.dispose(tester);
+    });
+
+    testWidgets('从底部恢复时沿用会话里的安全区声明', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      send(h, report(cover: true, env: [47, 0, 47, 0]));
+      await tester.pump();
+      await tester.tap(find.byTooltip('收起到底部'));
+      await tester.pumpAndSettle();
+      final session = (await h.tabs.take(h.tabs.tabs.single))!;
+      expect(session.safeArea?.cover, isTrue);
+      WebViewPage.restore(h.navigator.currentState!, session);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<BrowserWebViewport>(find.byType(BrowserWebViewport))
+            .edgeToEdge,
+        isTrue,
+      );
+      await h.dispose(tester);
+    });
   });
 
   testWidgets('收藏可直接打开，历史可填入编辑，搜索引擎可手动切换', (tester) async {

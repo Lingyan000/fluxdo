@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_session.dart';
+import 'browser_safe_area.dart';
 
 /// 一个网页拥有一个原生实例；路由只是临时挂载它的宿主。
 class BrowserTabSession {
@@ -25,6 +26,9 @@ class BrowserTabSession {
   String url;
   String title;
   Uint8List? preview;
+
+  /// 最近一次网页上报的安全区声明；恢复时先按它布局，避免接回后跳动。
+  BrowserPageSafeArea? safeArea;
   bool initialLoadRequested = false;
   bool hasWebView = false;
   bool _closed = false;
