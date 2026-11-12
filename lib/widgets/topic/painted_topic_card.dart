@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../utils/relative_time_clock.dart';
+import '../../utils/svg_utils.dart';
 import '../common/animated_avatar_overlay.dart';
 import '../common/smart_avatar.dart' show isSquareAvatarUrl;
 import 'topic_card.dart' show TopicCardInteractiveSurface;
@@ -492,6 +495,13 @@ class TopicCardImages {
             : null,
       );
       if (bytes.isEmpty) return;
+      // SVG 头像(含伪装成 PNG 的)位图解码器解不了,按内容嗅探后光栅化,
+      // 与 SmartAvatar 同一判断
+      if (SvgUtils.isSvgBytes(bytes)) {
+        final image = await _rasterizeSvg(bytes);
+        if (image != null) _store(url, image);
+        return;
+      }
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       // 头像显示 32dp、emoji ~19dp;96px 解码对两者都双倍富余
       final codec = await PaintingBinding.instance
@@ -510,12 +520,7 @@ class TopicCardImages {
           );
       final frame = await codec.getNextFrame();
       codec.dispose();
-      if (_images.length >= _cap) {
-        for (final k in _images.keys.take(_cap ~/ 4).toList()) {
-          _images.remove(k)?.dispose();
-        }
-      }
-      _images[url] = frame.image;
+      _store(url, frame.image);
     } catch (_) {
       // 失败不重试本会话(fallback 占位继续显示);滚动重访会因 waiters
       // 已清除而重新尝试
@@ -529,6 +534,47 @@ class TopicCardImages {
           if (_images.containsKey(url) && r.attached) r.markNeedsPaint();
         }
       }
+    }
+  }
+
+  static void _store(String url, ui.Image image) {
+    if (_images.length >= _cap) {
+      for (final k in _images.keys.take(_cap ~/ 4).toList()) {
+        _images.remove(k)?.dispose();
+      }
+    }
+    _images[url] = image;
+  }
+
+  /// SVG 按 cover 裁切光栅化成 96px 方图(与位图路径同一解码上限),
+  /// 裁切方式与 SmartAvatar 的 BoxFit.cover 一致
+  static Future<ui.Image?> _rasterizeSvg(List<int> bytes) async {
+    final si = ScalableImage.fromSvgString(
+      SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes)),
+      warnF: (_) {},
+    );
+    await si.prepareImages();
+    try {
+      final vp = si.viewport;
+      if (vp.isEmpty) return null;
+      const side = 96;
+      final scale = side / math.min(vp.width, vp.height);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.translate(
+        (side - vp.width * scale) / 2,
+        (side - vp.height * scale) / 2,
+      );
+      canvas.scale(scale);
+      si.paint(canvas);
+      final picture = recorder.endRecording();
+      try {
+        return await picture.toImage(side, side);
+      } finally {
+        picture.dispose();
+      }
+    } finally {
+      si.unprepareImages();
     }
   }
 }
