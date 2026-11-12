@@ -94,6 +94,7 @@ class _ShopApi extends _Api {
   bool connectTimeout = false;
   bool expired = false;
   String orderStatus = 'completed';
+  String orderFormat = 'snake';
   Map<String, Object?> productFields = {};
   bool includeBestCoupon = true;
   bool simulateCheckout = false;
@@ -181,7 +182,7 @@ class _ShopApi extends _Api {
       expect(uri.queryParameters['role'], 'buyer');
       if (expired) return ResponseBody.fromString('{}', 401);
       final page = int.tryParse(uri.queryParameters['page'] ?? '1') ?? 1;
-      final row = {
+      final camelOrder = {
         'orderNo': 'FIX-$page',
         'productName': '买家商品 $page',
         'status': orderStatus,
@@ -189,10 +190,34 @@ class _ShopApi extends _Api {
         'deliveryType': 'auto',
         'deliveryContent': '仅用于离线测试的交付说明',
       };
+      // 公开订单协议用例中的原始字段，尚未经过网页服务层的驼峰转换。
+      final snakeOrder = {
+        'order_no': 'FIX-$page',
+        'product_name': '买家商品 $page',
+        'status': orderStatus,
+        'total_price': 0,
+        'delivery_type': 'auto',
+        'delivery_content': '仅用于离线测试的交付说明',
+      };
+      final row = switch (orderFormat) {
+        'camel' => camelOrder,
+        'mixed' => {
+          ...snakeOrder,
+          'order_no': '错误的别名',
+          'product_name': '错误的别名',
+          ...camelOrder,
+          'delivery_content': '错误的别名',
+          'displayStatus': null,
+          'display_status': 'failed',
+        },
+        _ => snakeOrder,
+      };
       final data = uri.path == '/api/shop/orders'
           ? {
               'orders': [row],
-              'pagination': {'totalPages': 2},
+              'pagination': {
+                orderFormat == 'snake' ? 'total_pages' : 'totalPages': 2,
+              },
             }
           : {'order': row};
       return ResponseBody.fromString(
@@ -1044,64 +1069,66 @@ Future<void> main() async {
       expect(delegate.opened, isEmpty);
     });
 
-    pluginTest('宿主保管模拟士多会话，原生列表分页、打开详情、过期后清除订单', (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(360, 780);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      final service = _ShopApi();
-      await tester.runAsync(() async {
-        await openShop(
-          (_) async => [InternetAddress('8.8.8.8')],
-          primary: service,
+    for (final format in ['snake', 'camel', 'mixed']) {
+      pluginTest('订单 $format 字段支持原生列表分页、详情、交付和会话过期', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(360, 780);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final service = _ShopApi()..orderFormat = format;
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          await store.writeServiceSession(
+            host.id,
+            MetaverseServiceSession('fixture-session'),
+          );
+        });
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'orders',
+            ),
+          ),
         );
-        await store.writeServiceSession(
-          host.id,
-          MetaverseServiceSession('fixture-session'),
+        await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+        await tester.tap(find.text('加载更多订单'));
+        await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
+        expect(find.text('买家商品 1'), findsOneWidget);
+        await tester.tap(find.text('买家商品 1'));
+        await settle(tester, () => delegate.pages.contains('order'));
+        await tester.pumpWidget(
+          app(
+            MetaversePluginSurfaceView(
+              key: const ValueKey('order'),
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'order',
+              params: const {'no': 'FIX-1'},
+            ),
+          ),
         );
+        await settle(tester, () => find.text('自动发货').evaluate().isNotEmpty);
+        expect(find.text('0.00 LDC'), findsOneWidget);
+        expect(find.text('仅用于离线测试的交付说明'), findsNothing);
+        await tester.tap(find.text('查看交付内容'));
+        await settle(
+          tester,
+          () => find.text('仅用于离线测试的交付说明').evaluate().isNotEmpty,
+        );
+        service.expired = true;
+        await tester.tap(find.text('刷新订单'));
+        await settle(tester, () => find.text('士多会话已失效。').evaluate().isNotEmpty);
+        expect(find.text('FIX-1'), findsNothing);
+        expect(find.text('仅用于离线测试的交付说明'), findsNothing);
+        expect(delegate.opened, isEmpty);
+        expect(service.requests, hasLength(4));
       });
-      await tester.pumpWidget(
-        app(
-          MetaversePluginSurfaceView(
-            host: host,
-            kind: MetaversePluginSurfaceKind.page,
-            page: 'orders',
-          ),
-        ),
-      );
-      await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
-      await tester.tap(find.text('加载更多订单'));
-      await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
-      expect(find.text('买家商品 1'), findsOneWidget);
-      await tester.tap(find.text('买家商品 1'));
-      await settle(tester, () => delegate.pages.contains('order'));
-      await tester.pumpWidget(
-        app(
-          MetaversePluginSurfaceView(
-            key: const ValueKey('order'),
-            host: host,
-            kind: MetaversePluginSurfaceKind.page,
-            page: 'order',
-            params: const {'no': 'FIX-1'},
-          ),
-        ),
-      );
-      await settle(tester, () => find.text('自动发货').evaluate().isNotEmpty);
-      expect(find.text('0.00 LDC'), findsOneWidget);
-      expect(find.text('仅用于离线测试的交付说明'), findsNothing);
-      await tester.tap(find.text('查看交付内容'));
-      await settle(
-        tester,
-        () => find.text('仅用于离线测试的交付说明').evaluate().isNotEmpty,
-      );
-      service.expired = true;
-      await tester.tap(find.text('刷新订单'));
-      await settle(tester, () => find.text('士多会话已失效。').evaluate().isNotEmpty);
-      expect(find.text('FIX-1'), findsNothing);
-      expect(find.text('仅用于离线测试的交付说明'), findsNothing);
-      expect(delegate.opened, isEmpty);
-      expect(service.requests, hasLength(4));
-    });
+    }
 
     pluginTest('双栈 Fake-IP 下远端安装士多、渲染广场并从帖子打开商品详情', (tester) async {
       tester.view.devicePixelRatio = 1;
@@ -1190,16 +1217,22 @@ Future<void> main() async {
         expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
         expect(find.text('立即兑换'), findsOneWidget);
         final shell = find.byType(AppSheetScaffold);
-        expect(tester.widget<AppSheetScaffold>(shell).showDragHandle, width < 600);
+        expect(
+          tester.widget<AppSheetScaffold>(shell).showDragHandle,
+          width < 600,
+        );
         if (width < 600) {
           await tester.dragFrom(
             tester.getTopLeft(shell) + Offset(width / 2, 12),
             const Offset(0, 700),
           );
         } else {
-          await tester.tap(find.byTooltip(
-            MaterialLocalizations.of(tester.element(shell)).modalBarrierDismissLabel,
-          ));
+          await tester.tap(
+            find.byTooltip(
+              MaterialLocalizations.of(tester.element(shell))
+                  .modalBarrierDismissLabel,
+            ),
+          );
         }
         await tester.pumpAndSettle();
         expect(find.text('帖子链接'), findsOneWidget);

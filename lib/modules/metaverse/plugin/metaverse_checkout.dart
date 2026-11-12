@@ -182,8 +182,13 @@ class MetaverseCheckout {
           : result['exists'] == true
           ? result['order']
           : null;
-      if (order is Map && MetaverseOrderIntent.validId(order['orderNo'])) {
-        no = order['orderNo'];
+      final orderNo = order is Map
+          ? (order.containsKey('orderNo')
+                ? order['orderNo']
+                : order['order_no'])
+          : null;
+      if (MetaverseOrderIntent.validId(orderNo)) {
+        no = orderNo as String;
         state = 'created';
       } else if (!create &&
           result['exists'] == false &&

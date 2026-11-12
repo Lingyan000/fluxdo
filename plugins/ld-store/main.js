@@ -175,6 +175,21 @@ async function detail(ctx) {
 const statusLabels = {pending:'待支付',pending_payment:'待支付',paying:'支付中',paid:'已支付',
   delivered:'已交付',completed:'已完成',cancelled:'已取消',refunded:'已退款',refund_pending:'退款中',
   refund_failed:'退款失败',external_dispute:'争议处理中',expired:'已过期',uploaded:'已上传',failed:'失败'};
+// 与士多网页的订单服务边界一致，兼容接口混合返回的两种字段命名。
+// 显式驼峰字段优先，保留 null、false 和 0 的业务含义。
+function normalizeOrderData(value) {
+  if (Array.isArray(value)) return value.map(normalizeOrderData);
+  if (!value || typeof value !== 'object') return value;
+  const result = Object.create(null);
+  for (const key of Object.keys(value)) {
+    const target = key.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+    if (target !== key && Object.prototype.hasOwnProperty.call(value, target)) {
+      continue;
+    }
+    result[target] = normalizeOrderData(value[key]);
+  }
+  return result;
+}
 function orderSummary(o) {
   if (!o || typeof o.orderNo !== 'string' || !o.orderNo || typeof o.status !== 'string') {
     throw Error('订单数据格式有误');
@@ -207,7 +222,9 @@ async function loadOrders(ctx, append) {
     if (detailPage) {
       const no = ctx.params.no;
       if (typeof no !== 'string' || !no) throw Error('缺少订单号');
-      const data = await read('/orders/' + encodeURIComponent(no) + '?role=buyer',true);
+      const data = normalizeOrderData(
+        await read('/orders/' + encodeURIComponent(no) + '?role=buyer', true)
+      );
       if (!current()) return;
       const row = orderSummary(data.order);
       if (row.no !== no) throw Error('订单号与请求不一致');
@@ -223,7 +240,11 @@ async function loadOrders(ctx, append) {
         delivery:delivery === 'auto' ? '自动发货' : delivery === 'manual' ? '手动发货' : '未提供'});
     } else {
       const page = s.page + 1;
-      const data = await read('/orders?' + params({role:'buyer',page:page,pageSize:20,status:s.orderStatus || ''}),true);
+      const data = normalizeOrderData(
+        await read('/orders?' + params({
+          role: 'buyer', page: page, pageSize: 20, status: s.orderStatus || ''
+        }), true)
+      );
       if (!current()) return;
       if (!Array.isArray(data.orders) || !data.pagination) throw Error('订单列表格式有误');
       const rows = data.orders.map(orderSummary), seen = new Set(s.rows.map(r => r.no));

@@ -61,19 +61,27 @@ class MetaversePayment implements LdcPaymentDelegate {
     final details = await request(no, 'details');
     final order = details['order'];
     if (order is! Map ||
-        (order['order_no'] ?? order['orderNo']) != no ||
+        (order.containsKey('orderNo') ? order['orderNo'] : order['order_no']) !=
+            no ||
         order['status'] != 'pending') {
       throw const MetaversePluginCallException('payment_order_unavailable');
     }
     final payment = await request(no, 'payment');
-    final uri = Uri.tryParse('${payment['paymentUrl']}');
+    final paymentUrl = payment.containsKey('paymentUrl')
+        ? payment['paymentUrl']
+        : payment['payment_url'];
+    final uri = Uri.tryParse('$paymentUrl');
     if (uri == null) {
       throw const MetaversePluginCallException('payment_invalid_url');
     }
     return credit.prepare(
       uri,
       orderNo: no,
-      amount: order['amount'] ?? order['totalPrice'],
+      amount:
+          order['amount'] ??
+          (order.containsKey('totalPrice')
+              ? order['totalPrice']
+              : order['total_price']),
       username: username,
       checkSession: checkSession,
     );
