@@ -20,9 +20,17 @@ class MetaverseLoginException extends MetaversePluginCallException {
     super.message, {
     this.status,
     this.callbackHost,
+    this.reason,
+    this.serviceCode,
+    this.responseType,
+    this.requestId,
   });
   final int? status;
   final String? callbackHost;
+  final String? reason;
+  final String? serviceCode;
+  final String? responseType;
+  final String? requestId;
 }
 
 enum _LoginStage {
@@ -83,22 +91,35 @@ class MetaverseConnectLogin {
         FormatException() => 'invalid_response',
         _ => 'request_failed',
       };
+      final failure = error is MetaverseLoginException ? error : null;
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
         'level': 'warning',
         'message':
             '[插件授权] ${manifest.id} version=${manifest.version} '
             'stage=${stage.name} reason=$reason'
-            '${status == null ? '' : ' HTTP=$status'}',
+            '${status == null ? '' : ' HTTP=$status'}'
+            '${failure?.serviceCode == null ? '' : ' serviceCode=${failure!.serviceCode}'}'
+            '${failure?.responseType == null ? '' : ' responseType=${failure!.responseType}'}',
         'pluginVersion': manifest.version,
-        if (error is MetaverseLoginException && error.callbackHost != null)
-          'callbackHost': error.callbackHost,
+        if (failure?.callbackHost != null)
+          'callbackHost': failure!.callbackHost,
+        if (failure?.requestId != null) 'requestId': failure!.requestId,
       });
       throw MetaverseLoginException(
         reason == 'oauth_invalid_callback'
             ? S.current.metaverse_loginCallbackNotDeclared
+            : failure?.serviceCode == 'OAUTH_REAUTHORIZE_REQUIRED'
+            ? S.current.metaverse_loginRestartRequired
+            : status != null
+            ? S.current.metaverse_loginResponseFailed(stage.label, '$status')
             : S.current.metaverse_loginStageFailed(stage.label),
         status: status,
+        reason: reason,
+        callbackHost: failure?.callbackHost,
+        serviceCode: failure?.serviceCode,
+        responseType: failure?.responseType,
+        requestId: failure?.requestId,
       );
     }
   }
@@ -225,6 +246,7 @@ class MetaverseConnectLogin {
         final response = await _connect.get<String>(
           uri.toString(),
           options: Options(
+            headers: {'Accept': _navigationAccept},
             responseType: ResponseType.plain,
             followRedirects: false,
             validateStatus: (s) => s != null && s < 400,
@@ -245,11 +267,31 @@ class MetaverseConnectLogin {
         }
         final response = await network.fetch(
           manifest,
-          request: {'url': '$uri'},
+          request: {
+            'url': '$uri',
+            'headers': {
+              'Accept': _navigationAccept,
+              'User-Agent': await AppConstants.getUserAgent(),
+            },
+          },
           authToken: null,
         );
         body = response['body'] as String;
         location = (response['headers'] as Map)['location'] as String?;
+        final status = response['status'] as int?;
+        // 业务回调与 Connect 同意页是两个协议阶段。服务端错误不能再被
+        // 当成缺失同意按钮，也不能刷新同一个回调来重放一次性授权码。
+        if (status == null ||
+            status < 300 ||
+            status >= 400 ||
+            location == null ||
+            location.trim().isEmpty) {
+          throw _responseFailure(
+            response,
+            uri,
+            reason: 'oauth_callback_response',
+          );
+        }
       }
       if (location != null) {
         uri = uri.resolve(location);
@@ -277,6 +319,54 @@ class MetaverseConnectLogin {
       uri.port == 443 &&
       uri.userInfo.isEmpty &&
       uri.host == 'connect.linux.do';
+
+  static const _navigationAccept =
+      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+
+  static MetaverseLoginException _responseFailure(
+    Map<String, Object?> response,
+    Uri uri, {
+    required String reason,
+  }) {
+    final headers = response['headers'] as Map;
+    final contentType = '${headers['content-type'] ?? ''}'
+        .split(';')
+        .first
+        .trim()
+        .toLowerCase();
+    final responseType = switch (contentType) {
+      'application/json' => 'json',
+      'text/html' => 'html',
+      _ => 'other',
+    };
+    String? serviceCode;
+    try {
+      final result = jsonDecode(response['body'] as String);
+      if (result is Map && result['success'] == false) {
+        final error = result['error'];
+        final code = error is Map ? error['code'] : result['code'];
+        // 仅保留有界的协议错误标识，绝不输出响应正文、消息和授权参数。
+        if (code is String && RegExp(r'^[A-Z][A-Z_]{2,63}$').hasMatch(code)) {
+          serviceCode = code;
+        }
+      }
+    } on FormatException {
+      // 网关错误页和验证页不一定是 JSON。
+    }
+    final requestId = headers['x-request-id'];
+    return MetaverseLoginException(
+      reason,
+      status: response['status'] as int?,
+      callbackHost: uri.host,
+      responseType: responseType,
+      serviceCode: serviceCode,
+      requestId:
+          requestId is String &&
+              RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(requestId)
+          ? requestId
+          : null,
+    );
+  }
 
   static Object? _readHandoff(Uri uri) {
     // 与网页一致地保留标准 Base64 的 +，兼容 URL 编码和百分号编码的 JSON。
@@ -308,6 +398,8 @@ class MetaverseConnectLogin {
         'url': '$uri',
         'method': body == null ? 'GET' : 'POST',
         'headers': {
+          'Accept': 'application/json',
+          'User-Agent': await AppConstants.getUserAgent(),
           'Origin': Uri.parse(manifest.auth.connect!['callback']!).origin,
           if (body != null) 'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -316,14 +408,16 @@ class MetaverseConnectLogin {
       },
       authToken: null,
     );
-    final result = jsonDecode(response['body'] as String);
+    Object? result;
+    try {
+      result = jsonDecode(response['body'] as String);
+    } on FormatException {
+      throw _responseFailure(response, uri, reason: 'oauth_service_error');
+    }
     if (response['status'] != 200 ||
         result is! Map ||
         result['success'] != true) {
-      throw MetaverseLoginException(
-        'oauth_service_error',
-        status: response['status'] as int?,
-      );
+      throw _responseFailure(response, uri, reason: 'oauth_service_error');
     }
     return result['data'] is Map ? result['data'] as Map : result;
   }

@@ -26,6 +26,8 @@
   "metaverse_loginVerification": "帳號驗證",
   "metaverse_loginCallbackNotDeclared": "服務的授權回呼尚未宣告。請在元宇宙的服務卡片上更新外掛，確認權限後重新啟用、登入。",
   "metaverse_loginStageFailed": "登入在「{stage}」階段未完成，請重試。",
+  "metaverse_loginRestartRequired": "本次授權已失效，請再次點擊登入重新授權，不要重新整理舊回呼。",
+  "metaverse_loginResponseFailed": "登入在「{stage}」階段收到異常回應（HTTP {status}），請重試。",
   "metaverse_bundledPlugins": "可用外掛",
   "metaverse_installFromUrl": "從連結安裝",
   "metaverse_pluginInvalidUrl": "請輸入有效的 HTTPS 清單網址",

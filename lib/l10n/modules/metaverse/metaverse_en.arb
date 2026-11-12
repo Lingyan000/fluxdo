@@ -19,6 +19,8 @@
   "metaverse_loginVerification": "account verification",
   "metaverse_loginCallbackNotDeclared": "The authorization callback is missing from this plugin’s permissions. Update the plugin from its Metaverse card, confirm permissions, then enable it and sign in again.",
   "metaverse_loginStageFailed": "Sign-in could not complete during {stage}. Please try again.",
+  "metaverse_loginRestartRequired": "This authorization has expired. Start a new sign-in instead of refreshing the old callback.",
+  "metaverse_loginResponseFailed": "Sign-in received an unexpected response during {stage} (HTTP {status}). Please try again.",
   "metaverse_bundledPlugins": "Available plugins",
   "metaverse_installFromUrl": "Install from link",
   "metaverse_pluginInvalidUrl": "Enter a valid HTTPS manifest URL",

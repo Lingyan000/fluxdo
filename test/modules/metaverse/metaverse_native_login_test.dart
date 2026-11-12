@@ -24,6 +24,9 @@ class _OAuthAdapter implements HttpClientAdapter {
   String challenge = '';
   String handoffEncoding = 'url';
   bool queryHandoff = false;
+  int callbackStatus = 302;
+  String callbackBody = '';
+  String callbackType = 'text/html';
   String get handoff {
     final json = jsonEncode({
       'c': 'a' * 43,
@@ -86,13 +89,20 @@ class _OAuthAdapter implements HttpClientAdapter {
           },
         );
       case '/api/auth/callback':
+        expect(options.headers['Accept'], contains('text/html'));
+        expect(options.headers['User-Agent'], isNotEmpty);
+        expect(options.headers.containsKey('Cookie'), isFalse);
+        expect(options.headers.containsKey('Authorization'), isFalse);
         return ResponseBody.fromString(
-          '',
-          302,
+          callbackBody,
+          callbackStatus,
           headers: {
-            'location': [
-              '$site/auth/callback${queryHandoff ? '?' : '#'}ldsp_oauth=$handoff',
-            ],
+            'content-type': [callbackType],
+            'x-request-id': ['request-fixture-42'],
+            if (callbackStatus == 302)
+              'location': [
+                '$site/auth/callback${queryHandoff ? '?' : '#'}ldsp_oauth=$handoff',
+              ],
           },
         );
       case '/api/shop/auth/exchange':
@@ -210,6 +220,58 @@ void main() {
         expect(session.accountId, 42);
       });
     }
+  }
+  for (final status in [200, 400, 403, 502]) {
+    loginTest('回调 HTTP $status 没有跳转时保留诊断，不误报同意按钮或重放授权码', () async {
+      api.callbackStatus = status;
+      api.callbackBody = status == 400
+          ? jsonEncode({
+              'success': false,
+              'error': {
+                'code': 'OAUTH_REAUTHORIZE_REQUIRED',
+                'message': '不应输出的服务端正文和 provider-code',
+              },
+            })
+          : '<html>不应输出的验证页和 bound-state</html>';
+      api.callbackType = status == 400 ? 'application/json' : 'text/html';
+      await expectLater(
+        login.authorize(manifest, accountId: 42, active: () => true),
+        throwsA(
+          isA<MetaverseLoginException>()
+              .having((e) => e.reason, '准确阶段原因', 'oauth_callback_response')
+              .having((e) => e.status, 'HTTP 状态', status)
+              .having(
+                (e) => e.serviceCode,
+                '协议错误码',
+                status == 400 ? 'OAUTH_REAUTHORIZE_REQUIRED' : null,
+              )
+              .having(
+                (e) => e.responseType,
+                '响应类型',
+                status == 400 ? 'json' : 'html',
+              )
+              .having((e) => e.requestId, '服务追踪编号', 'request-fixture-42')
+              .having(
+                (e) => e.message,
+                '用户提示',
+                status == 400
+                    ? S.current.metaverse_loginRestartRequired
+                    : S.current.metaverse_loginResponseFailed(
+                        S.current.metaverse_loginCallback,
+                        '$status',
+                      ),
+              ),
+        ),
+      );
+      expect(
+        api.requests.where((r) => r.uri.path == '/api/auth/callback'),
+        hasLength(1),
+      );
+      expect(
+        api.requests.where((r) => r.uri.path.endsWith('/exchange')),
+        isEmpty,
+      );
+    });
   }
   loginTest('旧清单漏声明线上回调域名时提示更新，不放宽网络权限', () async {
     final json = jsonDecode(
