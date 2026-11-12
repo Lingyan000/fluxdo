@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'log/log_writer.dart';
+import 'network/core/core_request_log_context.dart';
 
 /// 网络诊断日志门面（DOH 解析 / DOH 代理 / 适配器）
 ///
@@ -40,15 +41,17 @@ class NetworkLogger {
         ? target.substring('fluxdo_net::'.length)
         : target;
     if (kDebugMode) debugPrint('[Core/$module] $message');
+    // 核心回调来自共享监听器，只使用请求号关联的归属。
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': levelName,
       'type': 'network',
       ...?fields,
+      ...CoreRequestLogContext.instance.fieldsFor(fields?['coreRequestId']),
       'tag': 'core',
       'module': module,
       'message': '[Core/$module] $message',
-    });
+    }, inheritPluginContext: false);
   }
 
   /// 记录 DOH 解析：成功为 debug 级（高频，仅开发者模式落盘），失败为 warning

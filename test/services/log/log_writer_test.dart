@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_writer.dart';
+import 'package:fluxdo/services/network_logger.dart';
+import 'package:fluxdo/services/network/core/core_request_log_context.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 void main() {
@@ -71,6 +73,53 @@ void main() {
     expect(rows, hasLength(1));
     expect(jsonDecode(rows.single)['emitter'], 'framework');
     expect(await LogWriter.readPluginContent('spoofed'), isEmpty);
+  });
+
+  test('核心回调按请求号归属，共享监听器上下文不会串到其他请求', () async {
+    await LogWriter.initForTesting(tempDir);
+    final registry = CoreRequestLogContext.instance;
+    registry.register(99101, {
+      ...const PluginExecutionContext(
+        pluginId: 'example.one',
+        pluginVersion: '2.0.0',
+        runtimeId: 'run-one',
+        surfaceId: 'details',
+      ).fields,
+      'traceId': 'request-trace',
+    });
+    registry.complete(99101);
+    const PluginExecutionContext(
+      pluginId: 'example.wrong',
+      pluginVersion: '1.0.0',
+      runtimeId: 'run-wrong',
+    ).run(() {
+      NetworkLogger.logCore(
+        level: 3,
+        target: 'fluxdo_net::ffi',
+        message: 'done',
+        fields: {'coreRequestId': 99101},
+      );
+      NetworkLogger.logCore(
+        level: 3,
+        target: 'fluxdo_net::pool',
+        message: 'shared',
+      );
+    });
+    final pluginRows = const LineSplitter().convert(
+      await LogWriter.readPluginContent('example.one'),
+    );
+    final row = jsonDecode(pluginRows.single) as Map;
+    expect(row['pluginVersion'], '2.0.0');
+    expect(row['runtimeId'], 'run-one');
+    expect(row['surfaceId'], 'details');
+    expect(row['traceId'], 'request-trace');
+    expect(row['emitter'], 'framework');
+    expect(await LogWriter.readPluginContent('example.wrong'), isEmpty);
+    await LogWriter.instance.clearPlugin('example.one');
+    expect(await LogWriter.readPluginContent('example.one'), isEmpty);
+    final remaining = await readEntries(await LogWriter.getLogFile());
+    expect(remaining.single['message'], '[Core/pool] shared');
+    expect(remaining.single.containsKey('pluginId'), isFalse);
   });
 
   test('清空插件覆盖轮转缓冲和重复摘要并保留后续记录', () async {

@@ -259,14 +259,14 @@ class LogWriter {
 
   /// 写入一条日志条目，自动注入 appVersion。
   /// 同步 fire-and-forget：只追加内存缓冲，落盘由 flush 策略决定。
-  void write(Map<String, dynamic> entry) {
+  void write(Map<String, dynamic> entry, {bool inheritPluginContext = true}) {
     final level = entry['level'];
     // debug 级日志仅在开发者模式下落盘
     if (level == 'debug' && !verboseEnabled) return;
 
     entry = LogPolicy.normalize({
       ...entry,
-      ...?PluginExecutionContext.current?.fields,
+      if (inheritPluginContext) ...?PluginExecutionContext.current?.fields,
       if (_appVersion != null) 'appVersion': _appVersion,
     });
     // 仅合并没有请求身份的完全相同事件；请求/重试记录始终保留。
