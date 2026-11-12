@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +114,79 @@ void main() {
     expect(services.last.isEnabled(container), isFalse);
     expect(services.last.canRemove, isTrue);
   });
+
+  test('应用升级发现本地旧士多清单，确认更新后才获得新回调权限', () async {
+    final bundled = await container.read(
+      metaverseBundledPluginsProvider.future,
+    );
+    final latest = bundled.singleWhere(
+      (p) => p.manifest.id == 'community.fluxdo.ldstore',
+    );
+    final oldJson =
+        jsonDecode(jsonEncode(latest.manifest.raw)) as Map<String, dynamic>;
+    oldJson['version'] = '1.6.0';
+    (oldJson['permissions']['network'] as List).remove('api.ldspro.qzz.io');
+    final controller = container.read(metaversePluginsProvider.notifier);
+    await controller.install(
+      MetaversePluginPackage(
+        manifest: MetaversePluginManifest.parse(oldJson),
+        source: latest.source,
+        code: latest.code,
+      ),
+    );
+    await controller.setEnabled(latest.manifest.id, enabled: true);
+
+    final updates = container.read(metaversePluginUpdatesProvider);
+    expect(updates[latest.manifest.id], latest);
+    final store = container.read(metaversePluginStoreProvider);
+    expect(store.loadIndex().single.manifest.version, '1.6.0');
+    expect(store.loadIndex().single.enabled, isTrue);
+    expect(
+      store.loadIndex().single.manifest.networkHosts,
+      isNot(contains('api.ldspro.qzz.io')),
+    );
+
+    await controller.install(latest);
+    final updated = store.loadIndex().single;
+    expect(updated.manifest.version, latest.manifest.version);
+    expect(updated.manifest.networkHosts, contains('api.ldspro.qzz.io'));
+    expect(updated.enabled, isFalse);
+    expect(await store.readCode(updated.id), latest.code);
+    expect(container.read(metaversePluginUpdatesProvider), isEmpty);
+    await controller.setEnabled(updated.id, enabled: true);
+    expect(controller.byId(updated.id)!.enabled, isTrue);
+  });
+
+  for (final versions in [
+    ('1.6.0', '1.6.1', true),
+    ('1.6.1', '1.6.1', false),
+    ('1.7.0', '1.6.1', false),
+    ('1.6.1', '1.6.1-beta.1', false),
+    ('1.6.1-beta.1', '1.6.1', true),
+    ('1.6.1-beta.2', '1.6.1-beta.10', true),
+    ('1.6.1-beta.10', '1.6.1-beta.2', false),
+    ('1.6.1-beta', '1.6.1-beta.1', true),
+    ('1.6.1+1', '1.6.1+2', false),
+  ]) {
+    test('内置插件更新版本判断 ${versions.$1} → ${versions.$2}', () async {
+      final current = await package({'version': versions.$1});
+      final candidate = await package({'version': versions.$2});
+      final installed = InstalledMetaversePlugin(
+        manifest: current.manifest,
+        source: current.source,
+      );
+      expect(candidate.isUpdateFor(installed), versions.$3);
+      expect(
+        candidate.isUpdateFor(
+          InstalledMetaversePlugin(
+            manifest: current.manifest,
+            source: 'https://different.example.org/plugin.json',
+          ),
+        ),
+        isFalse,
+      );
+    });
+  }
 
   test('未开启的插件不接管链接；开启后接管并按规则捕获参数', () async {
     final controller = container.read(metaversePluginsProvider.notifier);

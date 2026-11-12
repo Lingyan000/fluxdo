@@ -26,7 +26,7 @@
   "metaverse_loginCallback": "服务回调",
   "metaverse_loginExchange": "会话交换",
   "metaverse_loginVerification": "账号校验",
-  "metaverse_loginCallbackNotDeclared": "服务的授权回调尚未声明，请更新插件后重新登录。",
+  "metaverse_loginCallbackNotDeclared": "服务的授权回调尚未声明。请在元宇宙的服务卡片上更新插件，确认权限后重新启用、登录。",
   "metaverse_loginStageFailed": "登录在「{stage}」阶段未完成，请重试。",
   "metaverse_bundledPlugins": "可用插件",
   "metaverse_installFromUrl": "从链接安装",
@@ -160,6 +160,8 @@
     }
   },
   "metaverse_pluginUpdate": "更新",
+  "metaverse_pluginUpdateTo": "更新至 {version}",
+  "@metaverse_pluginUpdateTo": {"placeholders":{"version":{"type":"String"}}},
   "metaverse_pluginWarning": "第三方服务由其作者提供，FluxDO 不对其内容负责。它只能使用下面列出的权限，无法读取你的论坛登录状态。",
   "metaverse_thirdParty": "第三方",
   "metaverse_title": "元宇宙",

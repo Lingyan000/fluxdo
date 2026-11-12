@@ -82,7 +82,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     return null;
   });
 
-  Future<void> _installPlugin() async {
+  Future<void> _installPlugin({MetaversePluginPackage? update}) async {
     if (_installing) return;
     setState(() => _installing = true);
     try {
@@ -90,34 +90,36 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
         network: ref.read(metaversePluginNetworkProvider),
         reservedHosts: ref.read(metaversePluginStoreProvider).reservedHosts,
       );
-      final bundled = await installer.bundledPackages(
-        DefaultAssetBundle.of(context),
-      );
-      if (!mounted) return;
-      final choice = await showMetaversePluginPicker(
-        context,
-        bundled,
-        installedIds: ref
-            .read(metaversePluginsProvider)
-            .map((p) => p.id)
-            .toSet(),
-      );
-      if (choice == null || choice.url == '' || !mounted) return;
       final MetaversePluginPackage package;
-      if (choice.bundled case final MetaversePluginPackage local) {
-        package = local;
-      } else if (choice.url case final String address) {
-        package = await installer.fetch(address);
+      if (update != null) {
+        package = update;
       } else {
-        final result = await FilePicker.platform.pickFiles(
-          withReadStream: true,
+        final bundled = await ref.read(metaverseBundledPluginsProvider.future);
+        if (!mounted) return;
+        final choice = await showMetaversePluginPicker(
+          context,
+          bundled,
+          installedIds: ref
+              .read(metaversePluginsProvider)
+              .map((p) => p.id)
+              .toSet(),
         );
-        if (result == null) return;
-        final stream = result.files.single.readStream;
-        if (stream == null) {
-          throw const MetaversePluginInstallException('无法读取插件文件');
+        if (choice == null || choice.url == '' || !mounted) return;
+        if (choice.bundled case final MetaversePluginPackage local) {
+          package = local;
+        } else if (choice.url case final String address) {
+          package = await installer.fetch(address);
+        } else {
+          final result = await FilePicker.platform.pickFiles(
+            withReadStream: true,
+          );
+          if (result == null) return;
+          final stream = result.files.single.readStream;
+          if (stream == null) {
+            throw const MetaversePluginInstallException('无法读取插件文件');
+          }
+          package = await installer.importBundle(stream);
         }
-        package = await installer.importBundle(stream);
       }
       if (!mounted) return;
       final controller = ref.read(metaversePluginsProvider.notifier);
@@ -197,10 +199,25 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     MetaverseService service,
     ProviderContainer container,
   ) {
-    final isProcessing = _processing.contains(service.id);
+    final isProcessing = _installing || _processing.contains(service.id);
+    final update = ref.watch(metaversePluginUpdatesProvider)[service.id];
+    final VoidCallback? onUpdate = update == null || isProcessing
+        ? null
+        : () => _installPlugin(update: update);
     if (!service.isEnabled(container)) {
       return [
         _buildConnectCard(context, service, isProcessing),
+        if (update != null)
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: TextButton.icon(
+              onPressed: onUpdate,
+              icon: const Icon(Symbols.update_rounded),
+              label: Text(
+                context.l10n.metaverse_pluginUpdateTo(update.manifest.version),
+              ),
+            ),
+          ),
         const SizedBox(height: 16),
       ];
     }
@@ -215,6 +232,8 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
             onDisable: () => _disable(service),
             onReauthorize: () => _reauthorize(service),
             onRemove: service.canRemove ? () => _remove(service) : null,
+            onUpdate: onUpdate,
+            updateVersion: update?.manifest.version,
           ),
         ),
       ),

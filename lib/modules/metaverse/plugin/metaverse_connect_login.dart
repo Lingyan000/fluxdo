@@ -16,8 +16,13 @@ import 'metaverse_service_session.dart';
 import 'runtime/metaverse_plugin_runtime.dart';
 
 class MetaverseLoginException extends MetaversePluginCallException {
-  const MetaverseLoginException(super.message, {this.status});
+  const MetaverseLoginException(
+    super.message, {
+    this.status,
+    this.callbackHost,
+  });
   final int? status;
+  final String? callbackHost;
 }
 
 enum _LoginStage {
@@ -82,8 +87,12 @@ class MetaverseConnectLogin {
         'timestamp': DateTime.now().toIso8601String(),
         'level': 'warning',
         'message':
-            '[插件授权] ${manifest.id} stage=${stage.name} reason=$reason'
+            '[插件授权] ${manifest.id} version=${manifest.version} '
+            'stage=${stage.name} reason=$reason'
             '${status == null ? '' : ' HTTP=$status'}',
+        'pluginVersion': manifest.version,
+        if (error is MetaverseLoginException && error.callbackHost != null)
+          'callbackHost': error.callbackHost,
       });
       throw MetaverseLoginException(
         reason == 'oauth_invalid_callback'
@@ -129,7 +138,10 @@ class MetaverseConnectLogin {
     if (serviceCallback == null ||
         serviceCallback.scheme != 'https' ||
         !manifest.networkHosts.contains(serviceCallback.host)) {
-      throw const MetaversePluginCallException('oauth_invalid_callback');
+      throw MetaverseLoginException(
+        'oauth_invalid_callback',
+        callbackHost: serviceCallback?.host,
+      );
     }
     Uri? approve;
     for (var hop = 0; hop < 8; hop++) {

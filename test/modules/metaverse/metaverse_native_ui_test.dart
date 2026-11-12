@@ -11,6 +11,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/pages/metaverse_page.dart';
+import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/models/ldc_user_info.dart';
@@ -77,6 +80,20 @@ class _FixtureBalance extends LdcUserInfoNotifier {
 class _NoReward extends LdcRewardCredentialsNotifier {
   @override
   Future<LdcRewardCredentials?> build() async => null;
+}
+
+class _MemoryCodeStore extends MetaversePluginStore {
+  _MemoryCodeStore(SharedPreferences preferences)
+    : super(
+        preferences: preferences,
+        secretStore: InMemorySecretStore(),
+        rootDirectory: () => throw StateError('测试不读写文件'),
+      );
+  MetaversePluginCode? written;
+  @override
+  Future<void> writeCode(String id, MetaversePluginCode code) async {
+    written = code;
+  }
 }
 
 class _EmptyPlugins extends MetaversePluginsController {
@@ -164,6 +181,8 @@ void main() {
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reducedMotion = false,
+    MetaversePluginStore? pluginStore,
+    List<MetaversePluginPackage>? bundled,
   }) {
     const seed = Colors.indigo;
     final theme = buildAppTheme(
@@ -177,7 +196,22 @@ void main() {
     return ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
-        metaversePluginsProvider.overrideWith(_EmptyPlugins.new),
+        metaversePluginsProvider.overrideWith(
+          pluginStore == null
+              ? _EmptyPlugins.new
+              : MetaversePluginsController.new,
+        ),
+        if (pluginStore != null) ...[
+          metaversePluginStoreProvider.overrideWithValue(pluginStore),
+          metaverseServicesProvider.overrideWith(
+            (ref) => [
+              for (final plugin in ref.watch(metaversePluginsProvider))
+                MetaversePluginService(plugin),
+            ],
+          ),
+        ],
+        if (bundled != null)
+          metaverseBundledPluginsProvider.overrideWith((ref) async => bundled),
       ],
       child: RepaintBoundary(
         key: captureKey,
@@ -695,6 +729,69 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       expect(find.text('添加入口'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+  }
+
+  for (final enabled in [true, false]) {
+    for (final confirm in [true, false]) {
+      testWidgets('服务卡片直接更新旧清单 enabled=$enabled confirm=$confirm', (
+        tester,
+      ) async {
+        await preferences.clear();
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final newJson = jsonDecode(
+          File('plugins/ld-store/plugin.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        final latest = MetaversePluginPackage(
+          manifest: MetaversePluginManifest.parse(newJson),
+          source: 'asset:plugins/ld-store/plugin.json',
+          code: (script: '', ui: ''),
+        );
+        final oldJson = jsonDecode(jsonEncode(newJson)) as Map<String, dynamic>;
+        oldJson['version'] = '1.6.0';
+        (oldJson['permissions']['network'] as List).remove('api.ldspro.qzz.io');
+        final store = _MemoryCodeStore(preferences);
+        await store.saveIndex([
+          InstalledMetaversePlugin(
+            manifest: MetaversePluginManifest.parse(oldJson),
+            source: latest.source,
+            enabled: enabled,
+            suspendedReason: enabled ? '测试暂停运行' : null,
+          ),
+        ]);
+        await tester.pumpWidget(
+          app(const MetaversePage(), pluginStore: store, bundled: [latest]),
+        );
+        await tester.pumpAndSettle();
+        final l = tester.element(find.byType(Scaffold).first).l10n;
+        final update = find.text(
+          l.metaverse_pluginUpdateTo(latest.manifest.version),
+        );
+        await tester.ensureVisible(update);
+        expect(update.hitTestable(), findsOneWidget);
+        expect(store.written, isNull);
+        await tester.tap(update);
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.byType(AppSheetScaffold), findsOneWidget);
+        expect(store.loadIndex().single.manifest.version, '1.6.0');
+        await tester.tap(
+          confirm
+              ? find.widgetWithText(FilledButton, l.metaverse_pluginUpdate)
+              : find.widgetWithText(TextButton, l.common_cancel),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          store.loadIndex().single.manifest.version,
+          confirm ? latest.manifest.version : '1.6.0',
+        );
+        expect(store.written != null, confirm);
+        expect(update, confirm ? findsNothing : findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 
   for (final confirm in [true, false]) {

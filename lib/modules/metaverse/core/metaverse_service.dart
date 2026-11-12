@@ -11,6 +11,8 @@ class MetaverseCardHost {
     required this.onDisable,
     required this.onReauthorize,
     this.onRemove,
+    this.onUpdate,
+    this.updateVersion,
   });
 
   /// 宿主正在执行开启/停用/授权，卡片应暂停交互。
@@ -20,6 +22,8 @@ class MetaverseCardHost {
 
   /// 仅可卸载的服务（第三方插件）提供。
   final VoidCallback? onRemove;
+  final VoidCallback? onUpdate;
+  final String? updateVersion;
 }
 
 /// 元宇宙服务：元宇宙页里一项可开启的服务。

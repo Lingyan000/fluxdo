@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -53,6 +54,27 @@ final metaversePluginStoreProvider = Provider<MetaversePluginStore>((ref) {
 final metaversePluginNetworkProvider = Provider<MetaversePluginNetwork>(
   (ref) => _createPluginNetwork(ref, localDoh: false),
 );
+
+/// 应用资源随 APK 更新，已安装插件需在确认后更新到对应清单。
+final metaverseBundledPluginsProvider =
+    FutureProvider<List<MetaversePluginPackage>>((ref) {
+      return MetaversePluginInstaller(
+        network: ref.watch(metaversePluginNetworkProvider),
+        reservedHosts: ref.watch(metaversePluginStoreProvider).reservedHosts,
+      ).bundledPackages(rootBundle);
+    });
+
+final metaversePluginUpdatesProvider =
+    Provider<Map<String, MetaversePluginPackage>>((ref) {
+      final bundled =
+          ref.watch(metaverseBundledPluginsProvider).value ?? const [];
+      final installed = ref.watch(metaversePluginsProvider);
+      return {
+        for (final package in bundled)
+          if (installed.any(package.isUpdateFor)) package.manifest.id: package,
+      };
+    });
+
 final _pluginDohNetworkProvider = Provider<MetaversePluginNetwork>(
   (ref) => _createPluginNetwork(ref, localDoh: true),
 );

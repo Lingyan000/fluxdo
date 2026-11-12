@@ -23,6 +23,47 @@ class MetaversePluginPackage {
   final MetaversePluginManifest manifest;
   final String source;
   final MetaversePluginCode code;
+
+  /// 只提示同一来源的较新版本，防止随应用回退时降级已安装插件。
+  bool isUpdateFor(InstalledMetaversePlugin installed) {
+    if (manifest.id != installed.id || source != installed.source) return false;
+    final candidate = manifest.version.split('+').first.split('-');
+    final current = installed.manifest.version.split('+').first.split('-');
+    final candidateNumbers = candidate.first
+        .split('.')
+        .map(BigInt.parse)
+        .toList();
+    final currentNumbers = current.first.split('.').map(BigInt.parse).toList();
+    for (var i = 0; i < candidateNumbers.length; i++) {
+      final comparison = candidateNumbers[i].compareTo(currentNumbers[i]);
+      if (comparison != 0) return comparison > 0;
+    }
+    if (candidate.length == 1 || current.length == 1) {
+      return candidate.length == 1 && current.length > 1;
+    }
+    final candidatePre = candidate.skip(1).join('-').split('.');
+    final currentPre = current.skip(1).join('-').split('.');
+    for (var i = 0; i < candidatePre.length && i < currentPre.length; i++) {
+      final left = candidatePre[i];
+      final right = currentPre[i];
+      final leftNumber = RegExp(r'^\d+$').hasMatch(left)
+          ? BigInt.parse(left)
+          : null;
+      final rightNumber = RegExp(r'^\d+$').hasMatch(right)
+          ? BigInt.parse(right)
+          : null;
+      final int comparison;
+      if (leftNumber != null && rightNumber != null) {
+        comparison = leftNumber.compareTo(rightNumber);
+      } else if ((leftNumber == null) != (rightNumber == null)) {
+        comparison = leftNumber == null ? 1 : -1;
+      } else {
+        comparison = left.compareTo(right);
+      }
+      if (comparison != 0) return comparison > 0;
+    }
+    return candidatePre.length > currentPre.length;
+  }
 }
 
 class MetaversePluginInstallException implements Exception {
