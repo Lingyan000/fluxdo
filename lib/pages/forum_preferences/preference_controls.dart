@@ -12,8 +12,10 @@ import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
 import '../../utils/url_helper.dart';
+import '../../utils/time_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../widgets/common/tag_selection_sheet.dart';
+import '../chat/new_chat_sheet.dart';
 
 Future<bool> confirmPreferenceAction(
   BuildContext context,
@@ -202,17 +204,21 @@ class _PreferenceSelectionState extends State<_PreferenceSelection> {
       title: Text(widget.title),
       content: SizedBox(
         width: 440,
-        height: 400,
+        height:
+            (widget.choices.length * 58.0 +
+                    (widget.choices.length > 8 ? 64 : 0))
+                .clamp(120, 400),
         child: Column(
           children: [
-            TextField(
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Symbols.search_rounded),
-                hintText: context.l10n.common_search,
+            if (widget.choices.length > 8)
+              TextField(
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Symbols.search_rounded),
+                  hintText: context.l10n.common_search,
+                ),
+                onChanged: (value) => setState(() => _query = value),
               ),
-              onChanged: (value) => setState(() => _query = value),
-            ),
-            const SizedBox(height: 8),
+            if (widget.choices.length > 8) const SizedBox(height: 8),
             Expanded(
               child: ListView.builder(
                 itemCount: entries.length,
@@ -222,6 +228,9 @@ class _PreferenceSelectionState extends State<_PreferenceSelection> {
                     return ListTile(
                       title: Text(item.value),
                       selected: _selected.contains(item.key),
+                      trailing: _selected.contains(item.key)
+                          ? const Icon(Symbols.check_rounded)
+                          : null,
                       onTap: () => Navigator.of(context).pop([item.key]),
                     );
                   }
@@ -279,6 +288,60 @@ class PreferenceControl extends StatefulWidget {
 class _PreferenceControlState extends State<PreferenceControl> {
   bool _uploading = false;
   String? _error;
+
+  Future<void> _pickUsers() async {
+    final selected = await showUserPickerSheet(
+      context,
+      title: widget.field.label,
+      confirmLabel: (_) => context.l10n.common_add,
+    );
+    if (selected == null || !mounted) return;
+    final users = List<String>.from(widget.value as List);
+    for (final user in selected) {
+      if (!users.any(
+        (name) => name.toLowerCase() == user.username.toLowerCase(),
+      )) {
+        users.add(user.username);
+      }
+    }
+    widget.onChanged(users);
+  }
+
+  DateTime? get _birthday {
+    final value = widget.value as String?;
+    if (value == null || value.isEmpty) return null;
+    // 生日是日历日期，补齐 UTC 标识以保持年月日，避免被设备时区移到前一天。
+    final date = TimeUtils.parseUtcTime('${value}T00:00:00Z')?.toUtc();
+    return date == null ? null : DateTime(date.year, date.month, date.day);
+  }
+
+  Future<void> _pickBirthday() async {
+    final now = DateTime.now();
+    final previous = _birthday;
+    final first = DateTime(1900);
+    final date = await showAppDialog<DateTime>(
+      context: context,
+      builder: (_) => DatePickerDialog(
+        initialDate:
+            previous != null &&
+                !previous.isAfter(now) &&
+                !previous.isBefore(first)
+            ? previous
+            : DateTime(now.year - 20, now.month, now.day),
+        firstDate: first,
+        lastDate: now,
+        initialEntryMode: DatePickerEntryMode.calendarOnly,
+      ),
+    );
+    if (date != null && mounted) {
+      widget.onChanged(
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}',
+      );
+    }
+  }
+
   Future<void> _pick() async {
     final field = widget.field;
     if (field.kind == ForumPreferenceKind.tags ||
@@ -359,6 +422,59 @@ class _PreferenceControlState extends State<PreferenceControl> {
   Widget build(BuildContext context) {
     final field = widget.field;
     switch (field.kind) {
+      case ForumPreferenceKind.birthday:
+        final birthday = _birthday;
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Symbols.cake_rounded),
+          title: Text(field.label),
+          subtitle: Text(
+            birthday == null
+                ? context.l10n.forumPrefs_none
+                : MaterialLocalizations.of(context).formatCompactDate(birthday),
+          ),
+          trailing: birthday == null
+              ? const Icon(Symbols.chevron_right_rounded)
+              : IconButton(
+                  tooltip: context.l10n.common_clear,
+                  onPressed: () => widget.onChanged(''),
+                  icon: const Icon(Symbols.close_rounded),
+                ),
+          onTap: _pickBirthday,
+        );
+      case ForumPreferenceKind.usernames:
+        final users = List<String>.from(widget.value as List);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(field.label),
+              subtitle: users.isEmpty
+                  ? Text(context.l10n.forumPrefs_none)
+                  : null,
+              trailing: IconButton(
+                tooltip: context.l10n.common_add,
+                icon: const Icon(Symbols.person_add_rounded),
+                onPressed: _pickUsers,
+              ),
+              onTap: _pickUsers,
+            ),
+            if (users.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final username in users)
+                    InputChip(
+                      label: Text('@$username'),
+                      onDeleted: () =>
+                          widget.onChanged([...users]..remove(username)),
+                    ),
+                ],
+              ),
+          ],
+        );
       case ForumPreferenceKind.toggle:
         return ListTileTheme.merge(
           contentPadding: EdgeInsets.zero,
@@ -452,19 +568,19 @@ class _PreferenceControlState extends State<PreferenceControl> {
           label: field.label,
           help: field.help,
         );
-      case ForumPreferenceKind.text ||
-          ForumPreferenceKind.multiline ||
-          ForumPreferenceKind.usernames:
-        final usernames = field.kind == ForumPreferenceKind.usernames;
+      case ForumPreferenceKind.text || ForumPreferenceKind.multiline:
         return TextFormField(
-          initialValue: usernames
-              ? (widget.value as List).join(', ')
-              : widget.value?.toString() ?? '',
+          initialValue: widget.value?.toString() ?? '',
+          keyboardType: field.key == 'website' ? TextInputType.url : null,
           decoration: InputDecoration(
             labelText: field.label,
             helperText: field.help,
             helperMaxLines: 3,
             alignLabelWithHint: true,
+            filled: false,
+            border: InputBorder.none,
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
           ),
           minLines: field.kind == ForumPreferenceKind.multiline ? 4 : 1,
           maxLines: field.kind == ForumPreferenceKind.multiline ? 10 : 1,
@@ -478,23 +594,9 @@ class _PreferenceControlState extends State<PreferenceControl> {
                 !tz.timeZoneDatabase.locations.containsKey(value)) {
               return context.l10n.forumPrefs_invalidValue;
             }
-            if (field.key == 'date_of_birth' &&
-                value != null &&
-                value.isNotEmpty &&
-                !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
-              return context.l10n.forumPrefs_invalidValue;
-            }
             return null;
           },
-          onChanged: (value) => widget.onChanged(
-            usernames
-                ? value
-                      .split(RegExp(r'[,，\s]+'))
-                      .where((name) => name.isNotEmpty)
-                      .toSet()
-                      .toList()
-                : value,
-          ),
+          onChanged: widget.onChanged,
         );
     }
   }

@@ -16,11 +16,33 @@ String preferenceSectionLabel(
   ForumPreferenceSection.emails => l.forumPrefs_emails,
   ForumPreferenceSection.tracking => l.forumPrefs_tracking,
   ForumPreferenceSection.users => l.forumPrefs_users,
-  ForumPreferenceSection.interface => l.forumPrefs_interface,
-  ForumPreferenceSection.navigation => l.forumPrefs_navigation,
   ForumPreferenceSection.chat => l.forumPrefs_chat,
   ForumPreferenceSection.apps => l.forumPrefs_apps,
   ForumPreferenceSection.calendar => l.forumPrefs_calendar,
+};
+
+String preferenceSectionDescription(
+  ForumPreferenceSection section,
+  AppLocalizations l,
+) => switch (section) {
+  ForumPreferenceSection.account =>
+    '${l.forumPrefs_avatar} · ${l.forumPrefs_username} · ${l.forumPrefs_status}',
+  ForumPreferenceSection.profile =>
+    '${l.forumPrefs_bio} · ${l.forumPrefs_backgrounds}',
+  ForumPreferenceSection.security =>
+    '${l.forumPrefs_password} · ${l.forumPrefs_sessions}',
+  ForumPreferenceSection.notifications =>
+    '${l.forumPrefs_likeFrequency} · ${l.forumPrefs_schedule}',
+  ForumPreferenceSection.emails =>
+    '${l.forumPrefs_emailLevel} · ${l.forumPrefs_emailDigests}',
+  ForumPreferenceSection.tracking =>
+    '${l.forumPrefs_categories} · ${l.forumPrefs_tags} · ${l.forumPrefs_bookmarks}',
+  ForumPreferenceSection.users =>
+    '${l.forumPrefs_allowMessages} · ${l.forumPrefs_ignoredUsers}',
+  ForumPreferenceSection.chat =>
+    '${l.forumPrefs_chatEnabled} · ${l.forumPrefs_chatIgnoreMentions}',
+  ForumPreferenceSection.apps => l.forumPrefs_appsDescription,
+  ForumPreferenceSection.calendar => l.forumPrefs_calendarDescription,
 };
 
 IconData preferenceSectionIcon(ForumPreferenceSection section) =>
@@ -32,8 +54,6 @@ IconData preferenceSectionIcon(ForumPreferenceSection section) =>
       ForumPreferenceSection.emails => Symbols.mail_rounded,
       ForumPreferenceSection.tracking => Symbols.bookmark_rounded,
       ForumPreferenceSection.users => Symbols.group_rounded,
-      ForumPreferenceSection.interface => Symbols.palette_rounded,
-      ForumPreferenceSection.navigation => Symbols.explore_rounded,
       ForumPreferenceSection.chat => Symbols.chat_bubble_rounded,
       ForumPreferenceSection.apps => Symbols.apps_rounded,
       ForumPreferenceSection.calendar => Symbols.calendar_month_rounded,
@@ -45,6 +65,7 @@ List<ForumPreferenceField> preferenceFields(
   AppLocalizations l,
 ) {
   final result = <ForumPreferenceField>[];
+  var group = '';
   final user = data.user;
   final settings = data.settings;
   final options = data.options;
@@ -54,6 +75,7 @@ List<ForumPreferenceField> preferenceFields(
     ForumPreferenceKind kind = ForumPreferenceKind.toggle,
     Map<Object, String> choices = const {},
     String? help,
+    String? enabledBy,
   }) {
     if (options.containsKey(key)) {
       result.add(
@@ -64,6 +86,8 @@ List<ForumPreferenceField> preferenceFields(
           kind: kind,
           choices: choices,
           help: help,
+          group: group,
+          enabledBy: enabledBy,
         ),
       );
     }
@@ -75,6 +99,7 @@ List<ForumPreferenceField> preferenceFields(
     ForumPreferenceKind kind = ForumPreferenceKind.text,
     Map<Object, String> choices = const {},
     String? help,
+    String? enabledBy,
     String? permission,
     String? uploadType,
     Object? emptyValue,
@@ -88,15 +113,13 @@ List<ForumPreferenceField> preferenceFields(
         choices: choices,
         help: help,
         uploadType: uploadType,
+        group: group,
+        enabledBy: enabledBy,
         emptyValue: emptyValue,
       ),
     );
   }
 
-  Map<Object, String> records(String key, {String id = 'id'}) => {
-    for (final item in (data.site[key] as List? ?? []).whereType<Map>())
-      if (item[id] != null) item[id] as Object: '${item['name'] ?? item[id]}',
-  };
   final emailLevels = {
     0: l.forumPrefs_always,
     1: l.forumPrefs_whenAway,
@@ -122,20 +145,26 @@ List<ForumPreferenceField> preferenceFields(
           choices: groups,
         );
       }
-      field(
-        'flair_group_id',
-        l.forumPrefs_flairGroup,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          0: l.forumPrefs_none,
-          for (final group
-              in data
-                  .records('groups')
-                  .where((group) => group['flair_url'] != null))
-            group['id'] as Object: '${group['name']}',
-        },
-      );
+      final flairGroups = data
+          .records('groups')
+          .where(
+            (group) =>
+                group['flair_url'] != null || group['flair_icon'] != null,
+          );
+      if (flairGroups.isNotEmpty || user['flair_group_id'] != null) {
+        field(
+          'flair_group_id',
+          l.forumPrefs_flairGroup,
+          kind: ForumPreferenceKind.choice,
+          choices: {
+            0: l.forumPrefs_none,
+            for (final group in flairGroups)
+              group['id'] as Object: '${group['name']}',
+          },
+        );
+      }
     case ForumPreferenceSection.profile:
+      group = l.forumPrefs_basicProfile;
       field(
         'bio_raw',
         l.forumPrefs_bio,
@@ -152,9 +181,10 @@ List<ForumPreferenceField> preferenceFields(
         field(
           'date_of_birth',
           l.forumPrefs_birthday,
-          help: l.forumPrefs_birthdayHint,
+          kind: ForumPreferenceKind.birthday,
         );
       }
+      group = l.forumPrefs_backgrounds;
       field(
         'profile_background_upload_url',
         l.forumPrefs_profileBackground,
@@ -169,6 +199,7 @@ List<ForumPreferenceField> preferenceFields(
         permission: 'can_upload_user_card_background',
         uploadType: 'card_background',
       );
+      group = l.forumPrefs_basicProfile;
       option(
         'timezone',
         l.forumPrefs_timezone,
@@ -177,19 +208,10 @@ List<ForumPreferenceField> preferenceFields(
           for (final zone in tz.timeZoneDatabase.locations.keys) zone: zone,
         },
       );
+      group = l.forumPrefs_privacy;
       option('hide_profile', l.forumPrefs_hideProfile);
-      if (options['default_calendar'] != 'none_selected') {
-        option(
-          'default_calendar',
-          l.forumPrefs_calendarApp,
-          kind: ForumPreferenceKind.choice,
-          choices: {
-            'ics': 'ICS',
-            'google': 'Google Calendar',
-            'none_selected': l.forumPrefs_none,
-          },
-        );
-      }
+      option('hide_presence', l.forumPrefs_hidePresence);
+      group = l.forumPrefs_extraProfile;
       final customFields =
           (data.site['user_fields'] as List? ?? []).whereType<Map>().toList()
             ..sort(
@@ -213,6 +235,7 @@ List<ForumPreferenceField> preferenceFields(
         result.add(
           ForumPreferenceField(
             key: '${custom['id']}',
+            group: group,
             label: '${custom['name']}',
             container: 'user_fields',
             kind: switch (type) {
@@ -275,10 +298,12 @@ List<ForumPreferenceField> preferenceFields(
         },
       );
       option('email_in_reply_to', l.forumPrefs_emailInReplyTo);
+      group = l.forumPrefs_emailDigests;
       option('email_digests', l.forumPrefs_emailDigests);
       option(
         'digest_after_minutes',
         l.forumPrefs_digestFrequency,
+        enabledBy: 'user_option.email_digests',
         kind: ForumPreferenceKind.choice,
         choices: {
           30: l.forumPrefs_minutes30,
@@ -289,16 +314,23 @@ List<ForumPreferenceField> preferenceFields(
           259200: l.forumPrefs_months6,
         },
       );
-      option('include_tl0_in_digests', l.forumPrefs_includeNewUsers);
+      option(
+        'include_tl0_in_digests',
+        l.forumPrefs_includeNewUsers,
+        enabledBy: 'user_option.email_digests',
+      );
+      group = l.forumPrefs_mailingList;
       if (settings['disable_mailing_list_mode'] != true) {
         option('mailing_list_mode', l.forumPrefs_mailingList);
         option(
           'mailing_list_mode_frequency',
           l.forumPrefs_mailingFrequency,
+          enabledBy: 'user_option.mailing_list_mode',
           kind: ForumPreferenceKind.choice,
           choices: {1: l.forumPrefs_allPosts, 2: l.forumPrefs_exceptOwn},
         );
       }
+      group = l.forumPrefs_chat;
       option(
         'chat_email_frequency',
         l.forumPrefs_chatEmail,
@@ -349,6 +381,7 @@ List<ForumPreferenceField> preferenceFields(
           1: l.forumPrefs_regular,
         },
       );
+      group = l.forumPrefs_categories;
       field(
         'watched_category_ids',
         l.forumPrefs_watchedCategories,
@@ -383,6 +416,7 @@ List<ForumPreferenceField> preferenceFields(
         );
       }
       if (settings['tagging_enabled'] == true) {
+        group = l.forumPrefs_tags;
         field(
           'watched_tags',
           l.forumPrefs_watchedTags,
@@ -404,85 +438,9 @@ List<ForumPreferenceField> preferenceFields(
           kind: ForumPreferenceKind.tags,
         );
       }
+      group = l.forumPrefs_tracking;
       option('watched_precedence_over_muted', l.forumPrefs_watchPrecedence);
       option('topics_unread_when_closed', l.forumPrefs_unreadClosed);
-    case ForumPreferenceSection.users:
-      option('allow_private_messages', l.forumPrefs_allowMessages);
-      option('enable_allowed_pm_users', l.forumPrefs_onlyAllowed);
-      field(
-        'allowed_pm_usernames',
-        l.forumPrefs_allowedUsers,
-        kind: ForumPreferenceKind.usernames,
-        help: l.forumPrefs_usernamesHelp,
-      );
-      field(
-        'muted_usernames',
-        l.forumPrefs_mutedUsers,
-        kind: ForumPreferenceKind.usernames,
-        permission: 'can_mute_users',
-        help: l.forumPrefs_usernamesHelp,
-      );
-    case ForumPreferenceSection.interface:
-      if (settings['allow_user_locale'] == true) {
-        final locales = settings['available_locales'] as List? ?? [];
-        field(
-          'locale',
-          l.forumPrefs_locale,
-          kind: ForumPreferenceKind.choice,
-          choices: {
-            '': l.forumPrefs_defaultValue,
-            for (final locale in locales.whereType<Map>())
-              locale['value'] as Object:
-                  '${locale['nativeName'] ?? locale['name']}',
-          },
-        );
-      }
-      option('external_links_in_new_tab', l.forumPrefs_externalLinks);
-      option('dynamic_favicon', l.forumPrefs_dynamicFavicon);
-      option('enable_quoting', l.forumPrefs_quoting);
-      option('enable_smart_lists', l.forumPrefs_smartLists);
-      option('enable_defer', l.forumPrefs_defer);
-      option('automatically_unpin_topics', l.forumPrefs_unpin);
-      option('enable_markdown_monospace_font', l.forumPrefs_monospace);
-      option('show_original_content', l.forumPrefs_originalContent);
-      option('hide_presence', l.forumPrefs_hidePresence);
-      option('skip_new_user_tips', l.forumPrefs_hideTips);
-      option(
-        'homepage_id',
-        l.forumPrefs_homepage,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          1: l.forumPrefs_latest,
-          2: l.forumPrefs_categories,
-          3: l.forumPrefs_unread,
-          4: l.forumPrefs_newTopics,
-          5: l.forumPrefs_top,
-          6: l.forumPrefs_bookmarks,
-          7: l.forumPrefs_unseen,
-          8: l.forumPrefs_hot,
-        },
-      );
-      option(
-        'text_size',
-        l.forumPrefs_textSize,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          'smallest': l.forumPrefs_smallest,
-          'smaller': l.forumPrefs_smaller,
-          'normal': l.forumPrefs_normal,
-          'larger': l.forumPrefs_larger,
-          'largest': l.forumPrefs_largest,
-        },
-      );
-      option(
-        'title_count_mode',
-        l.forumPrefs_countMode,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          'notifications': l.forumPrefs_notifications,
-          'contextual': l.forumPrefs_contextual,
-        },
-      );
       option(
         'bookmark_auto_delete_preference',
         l.forumPrefs_bookmarkDelete,
@@ -494,121 +452,28 @@ List<ForumPreferenceField> preferenceFields(
           3: l.forumPrefs_clearReminder,
         },
       );
-      option(
-        'interface_color_mode',
-        l.forumPrefs_colorMode,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          1: l.forumPrefs_system,
-          2: l.forumPrefs_light,
-          3: l.forumPrefs_dark,
-        },
-      );
-      final themes = records('user_themes', id: 'theme_id');
-      if (themes.isNotEmpty) {
-        option(
-          'theme_ids',
-          l.forumPrefs_theme,
-          kind: ForumPreferenceKind.theme,
-          choices: themes,
-        );
-      }
-      final schemes = records('user_color_schemes');
-      if (schemes.isNotEmpty) {
-        option(
-          'color_scheme_id',
-          l.forumPrefs_lightScheme,
-          kind: ForumPreferenceKind.choice,
-          choices: {-1: l.forumPrefs_defaultValue, ...schemes},
-        );
-        option(
-          'dark_scheme_id',
-          l.forumPrefs_darkScheme,
-          kind: ForumPreferenceKind.choice,
-          choices: {-1: l.forumPrefs_defaultValue, ...schemes},
-        );
-      }
-    case ForumPreferenceSection.navigation:
-      option('sidebar_link_to_filtered_list', l.forumPrefs_sidebarFiltered);
-      option('sidebar_show_count_of_new_items', l.forumPrefs_sidebarCount);
+    case ForumPreferenceSection.users:
+      option('allow_private_messages', l.forumPrefs_allowMessages);
+      option('enable_allowed_pm_users', l.forumPrefs_onlyAllowed);
       field(
-        'sidebar_category_ids',
-        l.forumPrefs_sidebarCategories,
-        kind: ForumPreferenceKind.categories,
+        'allowed_pm_usernames',
+        enabledBy: 'user_option.enable_allowed_pm_users',
+        l.forumPrefs_allowedUsers,
+        kind: ForumPreferenceKind.usernames,
       );
-      if (settings['tagging_enabled'] == true) {
-        result.add(
-          ForumPreferenceField(
-            key: 'sidebar_tag_names',
-            label: l.forumPrefs_sidebarTags,
-            kind: ForumPreferenceKind.tagNames,
-            choices: {
-              for (final tag in data.records('sidebar_tags'))
-                tag['name'] as Object: '${tag['name']}',
-            },
-          ),
-        );
-      }
+      field(
+        'muted_usernames',
+        l.forumPrefs_mutedUsers,
+        kind: ForumPreferenceKind.usernames,
+        permission: 'can_mute_users',
+      );
     case ForumPreferenceSection.chat:
       option('chat_enabled', l.forumPrefs_chatEnabled);
       option('only_chat_push_notifications', l.forumPrefs_chatPushOnly);
       option('ignore_channel_wide_mention', l.forumPrefs_chatIgnoreMentions);
-      option('show_thread_title_prompts', l.forumPrefs_chatThreads);
-      option(
-        'chat_header_indicator_preference',
-        l.forumPrefs_chatIndicator,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          'all_new': l.forumPrefs_allNew,
-          'dm_and_mentions': l.forumPrefs_messagesMentions,
-          'only_mentions': l.forumPrefs_mentionsOnly,
-          'never': l.forumPrefs_never,
-        },
-      );
-      option(
-        'chat_send_shortcut',
-        l.forumPrefs_chatShortcut,
-        kind: ForumPreferenceKind.choice,
-        choices: {'enter': 'Enter', 'meta_enter': 'Ctrl / ⌘ + Enter'},
-      );
-      option(
-        'chat_separate_sidebar_mode',
-        l.forumPrefs_chatSidebar,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          'always': l.forumPrefs_always,
-          'fullscreen': l.forumPrefs_fullscreen,
-          'never': l.forumPrefs_never,
-        },
-      );
-      option(
-        'chat_quick_reaction_type',
-        l.forumPrefs_chatReaction,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          'frequent': l.forumPrefs_frequent,
-          'custom': l.forumPrefs_custom,
-        },
-      );
-      option(
-        'chat_quick_reactions_custom',
-        l.forumPrefs_chatEmojis,
-        kind: ForumPreferenceKind.text,
-        help: l.forumPrefs_chatEmojisHelp,
-      );
-      option(
-        'chat_sound',
-        l.forumPrefs_chatSound,
-        kind: ForumPreferenceKind.choice,
-        choices: {
-          '': l.forumPrefs_none,
-          'bell': l.forumPrefs_bell,
-          'ding': l.forumPrefs_ding,
-        },
-      );
-    case ForumPreferenceSection.security ||
-        ForumPreferenceSection.apps ||
-        ForumPreferenceSection.calendar:
+    case ForumPreferenceSection.calendar ||
+        ForumPreferenceSection.security ||
+        ForumPreferenceSection.apps:
       break;
   }
   return result;
