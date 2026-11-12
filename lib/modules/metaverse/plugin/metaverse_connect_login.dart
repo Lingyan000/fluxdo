@@ -8,6 +8,7 @@ import 'package:html/parser.dart' as html;
 import '../../../constants.dart';
 import '../../../l10n/s.dart';
 import '../../../services/log/log_writer.dart';
+import '../../../services/linux_do_connect_navigator.dart';
 import '../../../services/network/discourse_dio.dart';
 import 'metaverse_checkout_types.dart';
 import 'metaverse_plugin_manifest.dart';
@@ -164,7 +165,13 @@ class MetaverseConnectLogin {
         callbackHost: serviceCallback?.host,
       );
     }
-    Uri? approve;
+    onStage(_LoginStage.authorization);
+    try {
+      uri = await LinuxDoConnectNavigator(_connect)
+          .authorize(uri, active: active);
+    } on FormatException catch (error) {
+      throw MetaversePluginCallException(error.message);
+    }
     for (var hop = 0; hop < 8; hop++) {
       if (!active()) {
         throw const MetaversePluginCallException('oauth_cancelled');
@@ -236,81 +243,40 @@ class MetaverseConnectLogin {
       }
       final String body;
       String? location;
-      if (_isConnect(uri) || uri.host == Uri.parse(AppConstants.baseUrl).host) {
-        onStage(_LoginStage.authorization);
-        if (uri.scheme != 'https' ||
-            uri.port != 443 ||
-            uri.userInfo.isNotEmpty) {
-          throw const MetaversePluginCallException('oauth_invalid_redirect');
-        }
-        final response = await _connect.get<String>(
-          uri.toString(),
-          options: Options(
-            headers: {'Accept': _navigationAccept},
-            responseType: ResponseType.plain,
-            followRedirects: false,
-            validateStatus: (s) => s != null && s < 400,
-            extra: {
-              'skipCsrf': true,
-              'skipRedirect': true,
-              'allowRedirectSetCookie': true,
-            },
-          ),
-        );
-        body = response.data ?? '';
-        location = response.headers.value('location');
-      } else {
-        onStage(_LoginStage.callback);
-        if (uri.origin != serviceCallback.origin ||
-            uri.path != serviceCallback.path) {
-          throw const MetaversePluginCallException('oauth_invalid_redirect');
-        }
-        final response = await network.fetch(
-          manifest,
-          request: {
-            'url': '$uri',
-            'headers': {
-              'Accept': _navigationAccept,
-              'User-Agent': await AppConstants.getUserAgent(),
-            },
+      onStage(_LoginStage.callback);
+      if (uri.origin != serviceCallback.origin ||
+          uri.path != serviceCallback.path) {
+        throw const MetaversePluginCallException('oauth_invalid_redirect');
+      }
+      final response = await network.fetch(
+        manifest,
+        request: {
+          'url': '$uri',
+          'headers': {
+            'Accept': _navigationAccept,
+            'User-Agent': await AppConstants.getUserAgent(),
           },
-          authToken: null,
+        },
+        authToken: null,
+      );
+      body = response['body'] as String;
+      location = (response['headers'] as Map)['location'] as String?;
+      final status = response['status'] as int?;
+      // 服务可以用 HTML 页面交接。提取清单声明的回跳地址后，再走相同的
+      // state / PKCE 校验；一次性回调只请求一次。
+      if (status == 200 && _responseType(response) == 'html') {
+        location = _htmlCallback(body, uri, callback)?.toString();
+      } else if (status == null || status < 300 || status >= 400) {
+        location = null;
+      }
+      if (location == null || location.trim().isEmpty) {
+        throw _responseFailure(
+          response,
+          uri,
+          reason: 'oauth_callback_response',
         );
-        body = response['body'] as String;
-        location = (response['headers'] as Map)['location'] as String?;
-        final status = response['status'] as int?;
-        // 服务可以用 HTML 页面交接。提取清单声明的回跳地址后，再走相同的
-        // state / PKCE 校验；一次性回调只请求一次。
-        if (status == 200 && _responseType(response) == 'html') {
-          location = _htmlCallback(body, uri, callback)?.toString();
-        } else if (status == null || status < 300 || status >= 400) {
-          location = null;
-        }
-        if (location == null || location.trim().isEmpty) {
-          throw _responseFailure(
-            response,
-            uri,
-            reason: 'oauth_callback_response',
-          );
-        }
       }
-      if (location != null) {
-        uri = uri.resolve(location);
-        continue;
-      }
-      final link = html
-          .parse(body)
-          .querySelector('a[href*="/oauth2/approve/"]')
-          ?.attributes['href'];
-      if (!_isConnect(uri) || link == null || approve != null) {
-        throw const MetaversePluginCallException('oauth_approval_unavailable');
-      }
-      approve = uri.resolve(link);
-      if (!_isConnect(approve) ||
-          !approve.path.startsWith('/oauth2/approve/')) {
-        throw const MetaversePluginCallException('oauth_invalid_approval');
-      }
-      uri = approve;
+      uri = uri.resolve(location);
     }
     throw const MetaversePluginCallException('oauth_redirect_limit');
   }
