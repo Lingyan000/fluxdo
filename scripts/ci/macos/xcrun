@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+
+# Flutter 通过 PATH 查找 xcrun，项目查询和构建都需要使用相同的认证来源。
+if [[ "${1:-}" == "xcodebuild" && "${2:-}" != "-version" ]]; then
+  shift
+  exec /usr/bin/xcrun xcodebuild -packageAuthorizationProvider netrc "$@"
+fi
+exec /usr/bin/xcrun "$@"
