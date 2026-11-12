@@ -2,6 +2,11 @@ part of 'discourse_service.dart';
 
 /// 分类和标签相关
 mixin _CategoriesMixin on _DiscourseServiceBase {
+  Future<Category> getCategory(int id) async {
+    final response = await _dio.get('/c/$id/show.json');
+    return Category.fromJson(response.data['category'] as Map<String, dynamic>);
+  }
+
   /// 获取站点信息（包含所有分类）
   Future<List<Category>> getCategories() async {
     final preloaded = PreloadedDataService();

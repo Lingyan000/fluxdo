@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
+
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/url_helper.dart';
+import '../common/emoji_text.dart';
 
-/// 一个支持 maxLines 截断的简化 HTML 渲染组件
-/// 主要用于个人简介的收起状态显示，保留 emoji 图片
+/// 简介与帖子摘要的轻量预览，保留表情及显式分段，并按行数截断。
 class CollapsedHtmlContent extends StatelessWidget {
   final String html;
   final TextStyle? textStyle;
@@ -20,98 +23,100 @@ class CollapsedHtmlContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _buildRichText(context);
-  }
+    final style = DefaultTextStyle.of(context).style.merge(textStyle);
+    final fragment = html_parser.parseFragment(html);
+    final spans = <InlineSpan>[];
+    final text = StringBuffer();
 
-  Widget _buildRichText(BuildContext context) {
-    final spans = _parseHtmlToSpans(html, textStyle, context);
-    
+    // HTML 源码的缩进、换行均为空格；只有标签产生实际的分段。
+    void appendText(String value) {
+      text.write(value.replaceAll(RegExp(r'\s+'), ' '));
+    }
+
+    void flushText({bool last = false}) {
+      var value = text
+          .toString()
+          .replaceAll(RegExp(r'[^\S\n]+'), ' ')
+          .replaceAll(RegExp(r' *\n\s*'), '\n');
+      if (spans.isEmpty) value = value.trimLeft();
+      if (last) value = value.trimRight();
+      if (value.isNotEmpty) {
+        spans.addAll(EmojiText.buildEmojiSpans(context, value, style));
+      }
+      text.clear();
+    }
+
+    void appendNode(dom.Node node) {
+      if (node is dom.Text) {
+        appendText(node.data);
+        return;
+      }
+      if (node is! dom.Element) return;
+
+      switch (node.localName) {
+        case 'script' || 'style' || 'template':
+          return;
+        case 'br':
+          text.writeln();
+          return;
+        case 'img':
+          final alt = node.attributes['alt'] ?? node.attributes['title'] ?? '';
+          final src = node.attributes['src'];
+          if (node.classes.contains('emoji') && src?.isNotEmpty == true) {
+            flushText();
+            final size = (style.fontSize ?? 14) * 1.2;
+            spans.add(
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Image(
+                  image: emojiImageProvider(UrlHelper.resolveUrlWithCdn(src!)),
+                  width: size,
+                  height: size,
+                  fit: BoxFit.contain,
+                  semanticLabel: alt,
+                  errorBuilder: (_, _, _) => Text(alt, style: style),
+                ),
+              ),
+            );
+          } else {
+            appendText(alt);
+          }
+          return;
+      }
+
+      // 摘要压缩连续空段，但保留正文、列表与显式换行的阅读顺序。
+      final block = switch (node.localName) {
+        'p' ||
+        'div' ||
+        'blockquote' ||
+        'pre' ||
+        'li' ||
+        'tr' ||
+        'h1' ||
+        'h2' ||
+        'h3' ||
+        'h4' ||
+        'h5' ||
+        'h6' => true,
+        _ => false,
+      };
+      if (block) text.writeln();
+      for (final child in node.nodes) {
+        appendNode(child);
+      }
+      if (block) text.writeln();
+    }
+
+    for (final node in fragment.nodes) {
+      appendNode(node);
+    }
+    flushText(last: true);
+
     return Text.rich(
       TextSpan(children: spans),
       maxLines: maxLines,
       overflow: overflow,
       style: textStyle,
     );
-  }
-
-  List<InlineSpan> _parseHtmlToSpans(String htmlContent, TextStyle? style, BuildContext context) {
-    final List<InlineSpan> spans = [];
-    final imgRegExp = RegExp(
-      r'''<img[^>]+src=["']([^"']+)["'][^>]*alt=["']([^"']*)["'][^>]*>|<img[^>]+alt=["']([^"']*)["'][^>]*src=["']([^"']+)["'][^>]*>''',
-      caseSensitive: false,
-    );
-    
-    int lastIndex = 0;
-    
-    // 简单的解析循环
-    for (final match in imgRegExp.allMatches(htmlContent)) {
-      // 添加前面的文本
-      if (match.start > lastIndex) {
-        final text = _stripTags(htmlContent.substring(lastIndex, match.start));
-        if (text.isNotEmpty) {
-          spans.add(TextSpan(text: text, style: style));
-        }
-      }
-
-      // 添加图片（通常是 emoji）
-      final src = match.group(1) ?? match.group(4);
-      final alt = match.group(2) ?? match.group(3);
-      // 判断是否是 emoji (class="emoji")
-      final isEmoji = match.group(0)?.contains('class="emoji"') ?? false;
-
-      if (src != null && isEmoji) {
-        // 修正相对路径
-        final fullUrl = UrlHelper.resolveUrlWithCdn(src);
-        
-        // 计算合适的 Emoji 尺寸
-        final double emojiSize = (style?.fontSize ?? 14.0) * 1.3;
-        
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Image(
-              image: discourseImageProvider(fullUrl),
-              width: emojiSize,
-              height: emojiSize,
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => Text(alt ?? ''),
-            ),
-          ),
-        );
-      } else {
-         // 非 emoji 图片，或者是普通图片，在简介里通常不显示大图，或者显示 alt
-         if (alt != null && alt.isNotEmpty) {
-           spans.add(TextSpan(text: alt, style: style));
-         }
-      }
-
-      lastIndex = match.end;
-    }
-
-    // 添加剩余文本
-    if (lastIndex < htmlContent.length) {
-      final text = _stripTags(htmlContent.substring(lastIndex));
-      if (text.isNotEmpty) {
-        spans.add(TextSpan(text: text, style: style));
-      }
-    }
-
-    return spans;
-  }
-
-  String _stripTags(String html) {
-    // 移除所有 HTML 标签，只保留内容
-    // 替换 <br> 为换行
-    var text = html.replaceAll(RegExp(r'<br\s*\/?>', caseSensitive: false), '\n');
-    // 移除其他标签
-    text = text.replaceAll(RegExp(r'<[^>]*>'), '');
-    // 解码实体字符 (简单处理)
-    text = text
-        .replaceAll('&nbsp;', ' ')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .replaceAll('&quot;', '"');
-    return text;
   }
 }
