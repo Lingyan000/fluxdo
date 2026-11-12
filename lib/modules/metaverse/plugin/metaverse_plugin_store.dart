@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../services/storage/secret_store.dart';
 import 'metaverse_plugin_manifest.dart';
-import 'metaverse_service_session.dart';
 import 'metaverse_credential.dart';
 import 'migrations/metaverse_legacy_storage.dart';
 
@@ -115,6 +114,7 @@ class MetaversePluginStore {
         final manifest = MetaversePluginManifest.parse(
           item['manifest'],
           reservedHosts: reservedHosts,
+          allowLegacyMetadata: true,
         );
         if (plugins.any((plugin) => plugin.id == manifest.id)) continue;
         plugins.add(
@@ -256,7 +256,7 @@ class MetaversePluginStore {
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
     if (await file.exists()) await file.delete();
     await _deleteToken(id);
-    await _secretStore.deleteScope(SecretScope(namespace: 'metaverse_orders:$id'));
+    await clearLegacyPluginRecords(_secretStore, id);
   });
 
   Future<int> localBytes(String id) async {
@@ -287,65 +287,9 @@ class MetaversePluginStore {
   SecretKey _sessionKey(String id) =>
       SecretKey(namespace: _secretNamespace, name: '$id:serviceSession');
 
-  // 同一个存储实例跨脚本重启共用；旧请求尚在飞行时新实例不能再发一次。
-  final _orderLocks = <String>{};
-  Future<T> withOrderLock<T>(String id, Future<T> Function() run) async {
-    if (!_orderLocks.add(id)) throw StateError('checkout_busy');
-    try {
-      return await run();
-    } finally {
-      _orderLocks.remove(id);
-    }
-  }
-
-  SecretKey _orderKey(String id, String scope) =>
-      SecretKey(namespace: 'metaverse_orders:$id', name: scope);
-  Future<String?> readOrder(String id, String scope) =>
-      _secretStore.read(_orderKey(id, scope));
-  Future<void> writeOrder(
-    String id,
-    String scope,
-    String encoded, {
-    bool Function()? isActive,
-  }) => _operations.run(id, () async {
-    if (isActive != null && !isActive()) throw const PluginOperationCancelled();
-    await _secretStore.write(_orderKey(id, scope), encoded);
-  });
-  Future<void> forgetOrder(String id, String scope, {bool Function()? isActive}) =>
-      _operations.run(id, () async {
-        if (isActive != null && !isActive()) throw const PluginOperationCancelled();
-        await _secretStore.delete(_orderKey(id, scope));
-      });
-  Future<void> clearOrders(String id) =>
+  Future<void> clearLegacyRecords(String id) =>
       _operations.run(id, () =>
-          _secretStore.deleteScope(SecretScope(namespace: 'metaverse_orders:$id')));
-
-  Future<MetaverseServiceSession?> readServiceSession(String id) async {
-    final encoded = await _secretStore.read(_sessionKey(id));
-    // 手填凭证没有服务签发记录，不能升级成托管会话。
-    if (encoded == null) return null;
-    try {
-      final session = MetaverseServiceSession.parse(jsonDecode(encoded));
-      if (session?.expiresAt case final expires?
-          when expires * 1000 <= DateTime.now().millisecondsSinceEpoch) {
-        return null;
-      }
-      return session;
-    } on FormatException {
-      return null;
-    }
-  }
-
-  /// 仅限宿主接收已验证的签发结果时调用；脚本和手填凭证对话框没有此入口。
-  Future<void> writeServiceSession(
-    String id,
-    MetaverseServiceSession session, {
-    bool Function()? isActive,
-  }) => _operations.run(id, () async {
-    if (isActive != null && !isActive()) throw const PluginOperationCancelled();
-    await _secretStore.delete(_tokenKey(id));
-    await _secretStore.write(_sessionKey(id), jsonEncode(session.toJson()));
-  });
+          clearLegacyPluginRecords(_secretStore, id));
 
   Future<void> deleteToken(String id) => _operations.reset(id, () => _deleteToken(id));
 

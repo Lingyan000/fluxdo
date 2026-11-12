@@ -14,8 +14,6 @@ import '../../../services/network_logger.dart';
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_capabilities.dart';
-import 'metaverse_checkout_types.dart';
-import 'metaverse_service_session.dart';
 import 'metaverse_socket_connection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
@@ -207,10 +205,6 @@ class MetaversePluginNetwork {
       if (!auth.canAttachCredential) {
         throw const MetaversePluginCallException('清单未声明授权方式');
       }
-      if (auth.type == MetaversePluginAuthType.readSession &&
-          (method != 'GET' || request['body'] != null || headers.isNotEmpty)) {
-        throw const MetaversePluginCallException('此服务会话只支持无自定义请求头、无请求体的 GET');
-      }
       if (!MetaverseHostPattern.matchesAny(auth.hosts, uri.host)) {
         throw MetaversePluginCallException('凭证不允许发往 ${uri.host}');
       }
@@ -248,121 +242,6 @@ class MetaversePluginNetwork {
       'headers': response.headers,
       'body': utf8.decode(response.bytes, allowMalformed: true),
     };
-  }
-
-  /// 只向清单与宿主会话都授权的精确端点发送 JSON 查询，不接受脚本传入 URL 或请求头。
-  Future<Map<String, Object?>> query(
-    MetaversePluginManifest manifest,
-    String name,
-    Map<String, Object?> arguments,
-    MetaverseServiceSession? session,
-  ) async {
-    final endpoint = manifest.auth.queries[name];
-    if (manifest.auth.type != MetaversePluginAuthType.readSession ||
-        endpoint == null ||
-        session == null ||
-        !session.queryUrls.contains(endpoint)) {
-      throw const MetaversePluginCallException('query_not_granted');
-    }
-    final body = jsonEncode(arguments);
-    if (utf8.encode(body).length > maxRequestBody) {
-      throw const MetaversePluginCallException('请求体过大');
-    }
-    final uri = Uri.parse(endpoint);
-    final target = await _checkTarget(uri, manifest.networkHosts);
-    final response = await _send(
-      uri,
-      target: target,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${session.token}',
-      },
-      body: body,
-      maxBytes: maxResponseBody,
-    );
-    return {
-      'status': response.status,
-      'body': utf8.decode(response.bytes, allowMalformed: true),
-    };
-  }
-
-  /// 订单协议不接受自由请求体、目标 URL 或来自脚本的提交号。
-  Future<Map<String, Object?>> orderRequest(
-    MetaversePluginManifest manifest,
-    MetaverseServiceSession session,
-    String submissionToken, {
-    MetaverseOrderIntent? create,
-    required Future<void> Function() checkSession,
-  }) async {
-    final endpoints = manifest.auth.checkout;
-    if (endpoints == null ||
-        session.checkout?.endpoints != endpoints ||
-        !RegExp(r'^ord_[0-9a-f]{32}$').hasMatch(submissionToken)) {
-      throw const MetaversePluginCallException('checkout_not_granted');
-    }
-    final uri = Uri.parse(
-      create == null
-          ? '${endpoints.lookup}/$submissionToken'
-          : endpoints.create,
-    );
-    final target = await _checkTarget(uri, manifest.networkHosts);
-    await checkSession();
-    final response = await _send(
-      uri,
-      target: target,
-      method: create == null ? 'GET' : 'POST',
-      headers: {
-        'Authorization': 'Bearer ${session.token}',
-        if (create != null) 'Content-Type': 'application/json',
-      },
-      body: create == null
-          ? null
-          : jsonEncode({
-              ...create.toJson(),
-              'submissionToken': submissionToken,
-            }),
-      maxBytes: maxResponseBody,
-    );
-    return {
-      'status': response.status,
-      'body': utf8.decode(response.bytes, allowMalformed: true),
-    };
-  }
-
-  /// 读取、刷新或取消同一服务的买家订单，凭证留在宿主内。
-  Future<Map<String, Object?>> paymentOrderRequest(
-    MetaversePluginManifest manifest,
-    MetaverseServiceSession session,
-    String orderNo,
-    String action, {
-    required Future<void> Function() checkSession,
-  }) async {
-    if (manifest.auth.payment != 'linuxDoCredit' ||
-        session.checkout?.endpoints != manifest.auth.checkout ||
-        !MetaverseOrderIntent.validId(orderNo)) {
-      throw const MetaversePluginCallException('payment_not_granted');
-    }
-    final (suffix, method) = switch (action) {
-      'details' => ('?role=buyer', 'GET'),
-      'payment' => ('/payment-url', 'GET'),
-      'refresh' => ('/refresh', 'POST'),
-      'cancel' => ('/cancel', 'POST'),
-      _ => throw const MetaversePluginCallException('payment_invalid_action'),
-    };
-    final uri = Uri.parse('${manifest.auth.checkout!.create}/$orderNo$suffix');
-    final target = await _checkTarget(uri, manifest.networkHosts);
-    await checkSession();
-    final response = await _send(
-      uri,
-      target: target,
-      method: method,
-      body: null,
-      headers: {'Authorization': 'Bearer ${session.token}'},
-      maxBytes: maxResponseBody,
-    );
-    await checkSession();
-    return {'status': response.status, 'body': utf8.decode(response.bytes)};
   }
 
   /// 下载插件包里的一个文件（清单、界面描述、脚本）。

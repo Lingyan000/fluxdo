@@ -8,8 +8,6 @@ import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_checkout_types.dart';
-import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
@@ -361,30 +359,16 @@ class _Delegate extends MetaversePluginHostDelegate {
   }
 
   @override
-  Future<Object?> payOrder(
-    BuildContext context,
-    String orderNo, {
-    bool cancel = false,
-  }) async {
-    payments.add('${cancel ? 'cancel' : 'pay'}:$orderNo');
-    return paymentResult;
-  }
-
-  @override
   String? currentUsername() => 'alice';
 
   @override
-  Future<bool> confirmOrder(
-    BuildContext context,
-    MetaverseCheckoutGrant grant,
-    MetaverseOrderIntent intent,
-  ) => showMetaverseOrderConfirmation(context, grant, intent);
-
-  @override
-  Future<bool> requestAuth(BuildContext context, _) async {
+  Future<bool> requestCredential(BuildContext context, String name) async {
     authRequests++;
     return true;
   }
+
+  @override
+  Future<bool> requestAuth(BuildContext context, _) async => false;
 
   @override
   void openPage(BuildContext context, _, String page, Map<String, Object?> p) {
@@ -463,7 +447,10 @@ Future<void> main() async {
       api = _Api();
       delegate = _Delegate();
       await install();
-      await store.writeToken(manifest.id, 'k-123');
+      await store.writeCredential(manifest.id, 'account',
+          MetaverseCredential('k-123', accountId: delegate.accountId),
+          revision: store.credentialRevision(manifest.id, 'account'),
+          isActive: () => true);
       host = createHost();
     });
 
@@ -765,7 +752,7 @@ Future<void> main() async {
       );
       await settle(tester, () => find.text('登录士多').evaluate().isNotEmpty);
       await expectLater(
-        host.call('auth.request', {}),
+        host.call('credentials.request', {'name': 'account'}),
         throwsA(isA<MetaversePluginCallException>()),
       );
       await tester.pumpAndSettle();
@@ -1469,7 +1456,7 @@ Future<void> main() async {
       container.dispose();
     });
 
-    pluginTest('脚本不能自行跳转：没有用户点击时 openUrl / navigate / auth.request 被拒', (
+    pluginTest('脚本不能自行跳转：没有用户点击时 openUrl / navigate / credentials.request 被拒', (
       tester,
     ) async {
       await tester.runAsync(
@@ -1481,7 +1468,7 @@ Future<void> main() async {
             () => fluxdo.openUrl('https://evil.example.org/phish'),
             () => fluxdo.navigate('order', {id: '1'}),
             () => fluxdo.prepareNavigation('order'),
-            () => fluxdo.auth.request(),
+            () => fluxdo.credentials.request('account'),
           ]) {
             try { await run(); tried.push('ok'); } catch (e) { tried.push('denied'); }
           }
@@ -1540,7 +1527,7 @@ Future<void> main() async {
       host.attachSurface(surface, tester.element(find.byType(Scaffold)));
       host.dispatchUserEvent(surface, 'refresh', const {});
       final token = await host.call('navigation.prepare', {'page': 'order'});
-      await host.call('auth.request', {});
+      await host.call('credentials.request', {'name': 'account'});
       now = now.add(const Duration(minutes: 1));
       await expectLater(
         host.call('navigate', {'page': 'other', 'continuation': token}),

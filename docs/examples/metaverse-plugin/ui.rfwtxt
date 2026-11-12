@@ -13,6 +13,7 @@ widget Card = Column(
       "": SizedBoxShrink(),
       default: Label(text: data.error, style: "bodySmall", color: "error"),
     },
+    Button(label: "填写 API Key", variant: "text", onPressed: event "login" {}),
     Row(
       children: [
         Button(

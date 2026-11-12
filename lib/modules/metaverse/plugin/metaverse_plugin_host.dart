@@ -12,12 +12,9 @@ import '../../../services/log/log_policy.dart';
 import '../../../services/log/log_writer.dart';
 
 import 'metaverse_plugin_installer.dart';
-import 'metaverse_checkout.dart';
-import 'metaverse_checkout_types.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
-import 'metaverse_service_session.dart';
 import 'metaverse_credential_manager.dart';
 import 'metaverse_plugin_capabilities.dart';
 import 'ui/metaverse_widget_library.dart';
@@ -41,17 +38,6 @@ abstract class MetaversePluginHostDelegate {
     required String reference,
     required Object amount,
   }) => Future.error(const MetaversePluginCallException('payment_unavailable'));
-
-  Future<Object?> payOrder(
-    BuildContext context,
-    String orderNo, {
-    bool cancel = false,
-  }) => Future.error(const MetaversePluginCallException('payment_unavailable'));
-  Future<bool> confirmOrder(
-    BuildContext context,
-    MetaverseCheckoutGrant grant,
-    MetaverseOrderIntent intent,
-  );
 
   /// 当前登录用户名，未登录为 null。
   String? currentUsername();
@@ -113,7 +99,6 @@ class MetaversePluginHost implements MetaversePluginBridge {
   final MetaversePluginManifest manifest;
   final MetaversePluginStore _store;
   final MetaversePluginNetwork _network;
-  late final _checkout = MetaverseCheckout(manifest, _store, _network);
   late final _credentials = MetaverseCredentialManager(manifest, _store, _network);
   final MetaversePluginNetwork? dohNetwork;
   final bool Function()? canSuggestDoh;
@@ -261,6 +246,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   Future<void> _start(int generation) async {
     try {
+      if (!manifest.runtimeSupported) {
+        throw const MetaversePluginCallException('plugin_api_upgrade_required');
+      }
       final code = await _store.readCode(id);
       final library = MetaversePluginInstaller.validateUi(manifest, code.ui);
       final runtime = await MetaversePluginRuntime.start(
@@ -326,15 +314,6 @@ class MetaversePluginHost implements MetaversePluginBridge {
       'level': level,
       'message': message,
     });
-  }
-
-  Future<MetaverseServiceSession?> _readSession() async {
-    final session = await _store.readServiceSession(id);
-    if (session?.accountId != null &&
-        session!.accountId != _delegate.currentAccountId()) {
-      return null;
-    }
-    return session;
   }
 
   @override
@@ -403,9 +382,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
             authToken: credentialName != null
                 ? credential?.secret
                 : params['auth'] == true
-                ? manifest.auth.type == MetaversePluginAuthType.readSession
-                      ? (await _readSession())?.token
-                      : await _store.readToken(id)
+                ? await _store.readToken(id)
                 : null,
             checkActive: checkActive,
           );
@@ -528,103 +505,13 @@ class MetaversePluginHost implements MetaversePluginBridge {
         );
 
       case 'auth.status':
-        final managed =
-            manifest.auth.type == MetaversePluginAuthType.readSession;
-        final session = managed ? await _readSession() : null;
         return {
           'required': manifest.auth.required,
-          'nativeSupported': manifest.auth.connect != null,
-          'paymentSupported': manifest.auth.payment != null,
-          'authorized': managed
-              ? session != null
-              : (manifest.auth.required &&
-                    ((await _store.readToken(id))?.isNotEmpty ?? false)),
-          'queries': [
-            for (final e in manifest.auth.queries.entries)
-              if (session?.queryUrls.contains(e.value) == true) e.key,
-          ],
-          if (session?.checkout case final grant?
-              when grant.endpoints == manifest.auth.checkout)
-            'checkoutUnit': grant.unit,
+          'authorized': manifest.auth.required &&
+              ((await _store.readToken(id))?.isNotEmpty ?? false),
         };
-      case 'checkout.status':
-      case 'checkout.recover':
-      case 'checkout.finish':
-      case 'checkout.submit':
-      case 'checkout.retry':
-        final generation = _generation;
-        final accountId = _delegate.currentAccountId();
-        if (await _readSession() == null) {
-          throw const MetaversePluginCallException('checkout_not_granted');
-        }
-        bool active() =>
-            generation == _generation &&
-            _runtime != null &&
-            accountId == _delegate.currentAccountId();
-        if (method == 'checkout.status') return _checkout.status(active);
-        if (method == 'checkout.recover') return _checkout.recover(active);
-        if (method == 'checkout.finish') {
-          // 已确认建单的本地记录可以归档，服务端订单仍由订单页管理。
-          return _checkout.finish('${params['orderNo']}', active);
-        }
-        final retry = method == 'checkout.retry';
-        final intent = retry ? null : MetaverseOrderIntent.parse(params);
-        final origin = _activatedSurface;
-        if (!retry && intent == null) {
-          throw const MetaversePluginCallException('checkout_invalid_intent');
-        }
-        return _userInitiatedUi(
-          (context) => _checkout.submit(
-            intent,
-            (grant, order) =>
-                context.mounted && active() && origin?.foreground == true
-                ? _delegate.confirmOrder(context, grant, order)
-                : Future.value(false),
-            () => active() && context.mounted,
-            retry: retry,
-          ),
-        );
-      case 'auth.query':
-        final name = params['name'];
-        final args = params['arguments'];
-        if (name is! String ||
-            args is! Map<String, dynamic> ||
-            !manifest.auth.queries.containsKey(name)) {
-          throw const MetaversePluginCallException('query_not_granted');
-        }
-        final generation = _generation;
-        final accountId = _delegate.currentAccountId();
-        final response = await _network.query(
-          manifest,
-          name,
-          args,
-          await _readSession(),
-        );
-        if (generation != _generation ||
-            accountId != _delegate.currentAccountId()) {
-          throw const MetaversePluginCallException('auth_required');
-        }
-        return response;
-      case 'checkout.pay':
-      case 'checkout.cancel':
-        final no = params['orderNo'];
-        if (manifest.auth.payment == null ||
-            !MetaverseOrderIntent.validId(no)) {
-          throw const MetaversePluginCallException('payment_not_granted');
-        }
-        return _userInitiatedUi(
-          (context) => _delegate.payOrder(
-            context,
-            no as String,
-            cancel: method == 'checkout.cancel',
-          ),
-        );
       case 'auth.request':
-        if (manifest.auth.type == MetaversePluginAuthType.readSession &&
-            manifest.auth.connect == null) {
-          throw const MetaversePluginCallException('native_login_unavailable');
-        }
-        if (!manifest.auth.required && manifest.auth.connect == null) {
+        if (!manifest.auth.required) {
           throw const MetaversePluginCallException('清单未声明授权方式');
         }
         return _userInitiatedUi(

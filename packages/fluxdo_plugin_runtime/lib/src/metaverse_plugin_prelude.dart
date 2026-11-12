@@ -141,25 +141,11 @@ const metaversePluginPrelude = r'''
     }),
 
     auth: Object.freeze({
-      query: function (name, args) { return call('auth.query', {name:name, arguments:args}).then(function (res) {
-        res.ok = res.status >= 200 && res.status < 300;
-        res.json = function () { return JSON.parse(res.body); };
-        return res;
-      }); },
       status: function () { return call('auth.status'); },
       request: function () { return call('auth.request'); },
       signOut: function () { return call('auth.signOut'); }
     }),
 
-    checkout: Object.freeze({
-      pay: function (no) { return call('checkout.pay',{orderNo:no}); },
-      cancel: function (no) { return call('checkout.cancel',{orderNo:no}); },
-      status: function () { return call('checkout.status'); },
-      submit: function (intent) { return call('checkout.submit',intent); },
-      recover: function () { return call('checkout.recover'); },
-      retry: function () { return call('checkout.retry'); },
-      finish: function (no) { return call('checkout.finish',{orderNo:no}); }
-    }),
     user: Object.freeze({
       get: function () { return call('user.get'); }
     }),

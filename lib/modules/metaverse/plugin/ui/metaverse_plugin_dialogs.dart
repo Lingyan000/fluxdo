@@ -9,7 +9,6 @@ import '../../../../utils/dialog_utils.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
-import '../metaverse_checkout_types.dart';
 import '../metaverse_plugin_installer.dart';
 import 'metaverse_widget_library.dart';
 
@@ -48,42 +47,6 @@ Future<void> showMetaversePluginDetails(
     ],
   ),
 );
-
-Future<bool> showMetaverseOrderConfirmation(
-  BuildContext context,
-  MetaverseCheckoutGrant grant,
-  MetaverseOrderIntent intent,
-) async {
-  final site = Uri.parse(grant.endpoints.create).host;
-  return await showAppDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(ctx.l10n.metaverse_checkoutConfirm),
-          scrollable: true,
-          content: Text(
-            ctx.l10n.metaverse_checkoutSummary(
-              site,
-              grant.displayName ?? grant.subject,
-              intent.productId,
-              intent.quantity,
-              intent.couponClaimId ?? '—',
-              '${intent.expectedAmount.toStringAsFixed(2)} ${grant.unit}',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.l10n.common_cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.l10n.metaverse_checkoutConfirm),
-            ),
-          ],
-        ),
-      ) ??
-      false;
-}
 
 Future<PluginInstallChoice?> showMetaversePluginPicker(
   BuildContext context,
@@ -346,7 +309,7 @@ class _InstallReview extends StatelessWidget {
               _PermissionRow(
                 icon: Symbols.account_circle_rounded,
                 title: l.metaverse_permissionAccount,
-                description: manifest.auth.connect != null || manifest.capabilities.connectCallbacks.isNotEmpty
+                description: manifest.capabilities.connectCallbacks.isNotEmpty
                     ? l.metaverse_permissionNativeLogin
                     : manifest.auth.required
                     ? l.metaverse_pluginPermToken
@@ -357,18 +320,11 @@ class _InstallReview extends StatelessWidget {
                     for (final scope in credential.scopes)
                       '${scope.methods.join(" / ")} ${scope.origin.origin}${scope.pathPrefix}',
                   ...manifest.auth.hosts,
-                  if (manifest.auth.connect != null)
-                    ...manifest.auth.connect!.values,
-                  for (final url in manifest.auth.queries.values) 'POST $url',
-                  if (manifest.auth.checkout case final endpoints?) ...[
-                    'POST ${endpoints.create}',
-                    'GET ${endpoints.lookup}',
-                  ],
                   if (manifest.webLogin case final login?)
                     '${l.metaverse_permissionWebSession} · ${login.host}',
                 ],
               ),
-            if (manifest.auth.payment != null || manifest.capabilities.payments.isNotEmpty)
+            if (manifest.capabilities.payments.isNotEmpty)
               _PermissionRow(
                 icon: Symbols.payments_rounded,
                 title: l.metaverse_nativePayTitle,

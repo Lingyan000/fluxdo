@@ -26,6 +26,7 @@
   "metaverse_marketInstall": "Install plugin",
   "metaverse_marketInstalled": "Installed",
   "metaverse_marketUpdate": "Update plugin",
+  "metaverse_pluginApiUpgradeRequired": "This plugin uses retired APIs. Update the plugin to continue.",
   "metaverse_marketUpdates": "Updates available",
   "metaverse_marketSources": "Marketplace sources",
   "metaverse_marketAddSource": "Add GitHub source",

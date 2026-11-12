@@ -9,21 +9,16 @@ Future<bool> showMetaverseConnectConfirmation(
   BuildContext context,
   MetaversePluginManifest manifest,
   String username, {
-  Uri? callback,
+  required Uri callback,
   Uri? terms,
 }) async {
-  final destination =
-      callback ?? Uri.parse(manifest.auth.connect!['callback']!);
-  final legacyTerms = manifest.auth.connect?['terms'];
-  final termsUri =
-      terms ?? (legacyTerms == null ? null : Uri.parse(legacyTerms));
   return await showAppDialog<bool>(
         context: context,
         builder: (_) => _ConnectConfirmation(
           manifest: manifest,
           username: username,
-          callback: destination,
-          terms: termsUri,
+          callback: callback,
+          terms: terms,
         ),
       ) ??
       false;

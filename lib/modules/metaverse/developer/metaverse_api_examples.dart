@@ -106,27 +106,6 @@ const metaverseApiExamples = [
   MetaverseApiExample('storage.get', "'example'", {'value': 1}),
   MetaverseApiExample('storage.set', "'example', {value: 1}", null),
   MetaverseApiExample('storage.remove', "'example'", null),
-  MetaverseApiExample(
-    'auth.query',
-    "'quote', {productId: 'demo', quantity: 1}",
-    {'status': 200, 'body': '{"amount":1}'},
-    permission: 'auth.queries',
-  ),
-  MetaverseApiExample('auth.status', '', {
-    'authorized': false,
-    'required': false,
-    'nativeSupported': true,
-    'paymentSupported': true,
-    'queries': [],
-  }),
-  MetaverseApiExample(
-    'auth.request',
-    '',
-    true,
-    permission: 'auth',
-    userAction: true,
-  ),
-  MetaverseApiExample('auth.signOut', '', null, permission: 'auth'),
   MetaverseApiExample('user.get', '', {
     'username': 'example',
   }, permission: 'identity'),
@@ -165,47 +144,6 @@ const metaverseApiExamples = [
     userAction: true,
   ),
   MetaverseApiExample('toast', "'Example', 'info'", null),
-  MetaverseApiExample('checkout.status', '', {
-    'state': 'idle',
-  }, permission: 'auth.checkout'),
-  MetaverseApiExample(
-    'checkout.submit',
-    "{productId: 'demo', quantity: 1, expectedAmount: 1}",
-    {'state': 'created', 'orderNo': 'DEMO-1'},
-    permission: 'auth.checkout',
-    userAction: true,
-  ),
-  MetaverseApiExample('checkout.recover', '', {
-    'state': 'created',
-    'orderNo': 'DEMO-1',
-  }, permission: 'auth.checkout'),
-  MetaverseApiExample(
-    'checkout.retry',
-    '',
-    {'state': 'created', 'orderNo': 'DEMO-1'},
-    permission: 'auth.checkout',
-    userAction: true,
-  ),
-  MetaverseApiExample(
-    'checkout.finish',
-    "'DEMO-1'",
-    null,
-    permission: 'auth.checkout',
-  ),
-  MetaverseApiExample(
-    'checkout.pay',
-    "'DEMO-1'",
-    {'state': 'paid'},
-    permission: 'auth.payment',
-    userAction: true,
-  ),
-  MetaverseApiExample(
-    'checkout.cancel',
-    "'DEMO-1'",
-    {'state': 'cancelled'},
-    permission: 'auth.payment',
-    userAction: true,
-  ),
 ];
 
 /// 开发中心始终注入这个演示桥，独立于已安装插件、账号、网络和支付服务。
