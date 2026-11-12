@@ -15,7 +15,6 @@ import '../models/topic.dart';
 import '../providers/discourse_providers.dart';
 import '../services/discourse_cache_manager.dart';
 import '../utils/time_utils.dart';
-import '../widgets/common/relative_time_text.dart';
 import '../utils/number_utils.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
@@ -23,7 +22,7 @@ import '../services/emoji_handler.dart';
 
 import 'package:dio/dio.dart';
 
-import '../utils/url_helper.dart';
+import '../utils/category_navigation.dart';
 import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
 import '../providers/preferences_provider.dart';
@@ -44,11 +43,12 @@ import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
 import '../widgets/user/user_profile_header.dart';
+import '../widgets/user/activity_post_card.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/user/ignore_duration_picker.dart';
-import '../widgets/topic/topic_card_prewarmer.dart';
-import '../widgets/topic/topic_item_builder.dart';
-import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/common/morphing_dialog_anchor.dart';
+import '../widgets/topic/topic_preview_dialog.dart';
+import '../services/topic_preview_preloader.dart';
 import '../widgets/post/post_boost/boost_content.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import '../services/toast_service.dart';
@@ -58,6 +58,7 @@ import 'search_page.dart';
 import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
+import 'group_page.dart';
 import 'chat/channel/chat_channel_page.dart';
 import 'forum_preferences/forum_preferences_page.dart';
 
@@ -123,6 +124,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   String get _username => _renamedUsername ?? widget.username;
   int? _savingBadgeId;
   String _activityFilter = 'all';
+  int _activeTabIndex = 0;
   bool _isLoading = true;
   Object? _error;
   StackTrace? _errorStack;
@@ -333,8 +335,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
     if (_user == null || _user!.profileHidden) return;
+    final changed = _activeTabIndex != _tabController.index;
+    _activeTabIndex = _tabController.index;
     final section = _tabFilters[_tabController.index];
-    if (section == 'activity') _loadActivity();
+    if (section == 'activity') _loadActivity(refresh: changed);
     if (section == 'badges' &&
         _badges == null &&
         !_badgesLoading &&
@@ -343,37 +347,41 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  void _loadActivity() {
+  void _loadActivity({bool refresh = false}) {
     if (_summary?.canSeeUserActions == false) return;
     switch (_activityFilter) {
       case 'reactions':
-        if (_reactionsCache == null &&
-            !_reactionsLoading &&
-            !_actionErrors.containsKey('reactions')) {
+        if (!_reactionsLoading &&
+            (refresh ||
+                (_reactionsCache == null &&
+                    !_actionErrors.containsKey('reactions')))) {
           _loadReactions();
         }
       case 'boosts':
-        if (_boostsCache == null &&
-            !_boostsLoading &&
-            !_actionErrors.containsKey('boosts')) {
+        if (!_boostsLoading &&
+            (refresh ||
+                (_boostsCache == null &&
+                    !_actionErrors.containsKey('boosts')))) {
           _loadBoosts();
         }
       case 'votes':
-        if (_votesCache == null &&
-            !_votesLoading &&
-            !_actionErrors.containsKey('votes')) {
+        if (!_votesLoading &&
+            (refresh ||
+                (_votesCache == null && !_actionErrors.containsKey('votes')))) {
           _loadVotes();
         }
       case 'solved':
-        if (_solvedCache == null &&
-            !_solvedLoading &&
-            !_actionErrors.containsKey('solved')) {
+        if (!_solvedLoading &&
+            (refresh ||
+                (_solvedCache == null &&
+                    !_actionErrors.containsKey('solved')))) {
           _loadSolved();
         }
       default:
-        if (!_actionsCache.containsKey(_activityFilter) &&
-            _loadingCache[_activityFilter] != true &&
-            !_actionErrors.containsKey(_activityFilter)) {
+        if (_loadingCache[_activityFilter] != true &&
+            (refresh ||
+                (!_actionsCache.containsKey(_activityFilter) &&
+                    !_actionErrors.containsKey(_activityFilter)))) {
           _loadActions(_activityFilter);
         }
     }
@@ -381,8 +389,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   void _showActivity(String filter) {
     setState(() => _activityFilter = filter);
-    _tabController.animateTo(_tabFilters.indexOf('activity'));
-    _loadActivity();
+    _activeTabIndex = _tabFilters.indexOf('activity');
+    _tabController.animateTo(_activeTabIndex);
+    _loadActivity(refresh: true);
   }
 
   Future<void> _loadUser({bool refresh = false}) async {
@@ -904,7 +913,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       final offset = loadMore ? (_actionsCache[filter]?.length ?? 0) : 0;
       final response = await service.getUserActions(
         _username,
-        filter: filter == 'all' ? null : filter,
+        // 与网页的活动流一致，「所有」只请求用户发表的话题和回复。
+        filter: filter == 'all'
+            ? '${UserActionType.newTopic},${UserActionType.reply}'
+            : filter,
         offset: offset,
       );
 
@@ -1193,8 +1205,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = ref.watch(currentUserProvider).value;
-    // 话题卡自定义样式:改设置触发 rebuild(投票 tab 的话题卡直读全局快照)
-    ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
 
     if (_isLoading) {
       return UserProfileSkeleton(
@@ -1413,6 +1423,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Widget _buildProfileBody(ThemeData theme, User? currentUser, double width) {
     final topInset = MediaQuery.paddingOf(context).top;
+    final pinnedHeaderHeight =
+        topInset + kToolbarHeight + (_user!.profileHidden ? 0 : 48);
     final wide =
         width >= UserProfileWideLayout.minWidth &&
         width >= MediaQuery.textScalerOf(context).scale(14) * 60;
@@ -1429,11 +1441,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           behavior: ScrollConfiguration.of(context)
               .copyWith(scrollbars: false, overscroll: false),
           child: M3eRefreshIndicator(
-            edgeOffset: topInset,
+            edgeOffset: pinnedHeaderHeight,
             displacement: 32,
+            triggerMode: RefreshIndicatorTriggerMode.anywhere,
             onPullExtentChanged: (extent) => _pullExtent.value = extent * 2,
             notificationPredicate: (notification) =>
-                notification.metrics.axis == Axis.vertical &&
+                notification.metrics.axis == Axis.vertical,
+            edgePredicate: (notification) =>
+                notification.metrics.extentBefore == 0 &&
                 (!_scrollController.hasClients ||
                     _scrollController.offset <= 0),
             onRefresh: _refreshProfile,
@@ -1442,8 +1457,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 parent: ClampingScrollPhysics(),
               ),
               controller: _scrollController,
-              pinnedHeaderSliverHeightBuilder: () =>
-                  topInset + kToolbarHeight + (_user!.profileHidden ? 0 : 48),
+              pinnedHeaderSliverHeightBuilder: () => pinnedHeaderHeight,
               onlyOneScrollInBody: true,
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 ValueListenableBuilder<double>(
@@ -2279,7 +2293,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Widget _buildBadgesTab() {
     if (_badgesLoading && _badges == null) {
-      return const UserActionListSkeleton();
+      return const UserBadgeListSkeleton();
     }
     if (_badgesError != null) {
       return ErrorView(
@@ -2470,11 +2484,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 .map(
                   (group) => ActionChip(
                     label: Text(group.displayName),
-                    onPressed: () => launchUrl(
-                      Uri.parse(
-                        UrlHelper.resolveUrl(
-                          '/g/${Uri.encodeComponent(group.name)}',
-                        ),
+                    onPressed: () => Navigator.of(context).push(
+                      InteractionPageRoute(
+                        builder: (_) => GroupPage(name: group.name),
                       ),
                     ),
                   ),
@@ -2569,7 +2581,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && actions == null) {
-      return const UserActionListSkeleton();
+      final actionType = int.tryParse(filter);
+      final ownPost =
+          filter == 'all' ||
+          actionType == UserActionType.newTopic ||
+          actionType == UserActionType.reply;
+      return UserActionListSkeleton(
+        type: ownPost
+            ? UserActivitySkeletonType.post
+            : UserActivitySkeletonType.quoted,
+      );
     }
 
     // 空状态
@@ -2594,7 +2615,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       },
       child: ListView.builder(
         key: PageStorageKey('user_${_username}_$filter'),
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         itemCount: actions.length + 1,
         itemBuilder: (context, index) {
           if (index == actions.length) {
@@ -2605,7 +2626,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               onRetry: () => _loadMoreActions(filter),
             );
           }
-          return _buildActionItem(actions[index]);
+          return _buildActionItem(actions[index], (
+            index: index,
+            count: actions.length,
+          ));
         },
       ),
     );
@@ -3319,54 +3343,61 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     return Material(
       color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: ShapeDecoration(
-                color: color,
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(3),
+      child: InkWell(
+        onTap: () => openCategoryPage(context, cat.id, useWorkspace: false),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: ShapeDecoration(
+                  color: color,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(3),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    cat.name,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      cat.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    children: [
-                      Text(
-                        context.l10n.userProfile_catTopicCount(cat.topicCount),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          context.l10n.userProfile_catTopicCount(
+                            cat.topicCount,
+                          ),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                      Text(
-                        context.l10n.userProfile_catPostCount(cat.postCount),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                        Text(
+                          context.l10n.userProfile_catPostCount(cat.postCount),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              const Icon(Symbols.chevron_right_rounded, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -3424,7 +3455,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && reactions == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(
+        type: UserActivitySkeletonType.reaction,
+      );
     }
 
     // 空状态
@@ -3475,7 +3508,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               onRetry: _loadMoreReactions,
             );
           }
-          return _buildReactionItem(reactions[index]);
+          return _buildReactionItem(reactions[index], (
+            index: index,
+            count: reactions.length,
+          ));
         },
       ),
     );
@@ -3489,7 +3525,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && boosts == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.boost);
     }
 
     // 空状态
@@ -3537,7 +3573,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               onRetry: _loadMoreBoosts,
             );
           }
-          return _buildBoostItem(boosts[index]);
+          return _buildBoostItem(boosts[index], (
+            index: index,
+            count: boosts.length,
+          ));
         },
       ),
     );
@@ -3548,36 +3587,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
+    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
 
     // 优先检查 loading 状态
     if (isLoading && topics == null) {
-      return const TopicListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.topic);
     }
 
     // 空状态
     if (topics == null || topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Symbols.how_to_vote_rounded,
-              size: 48,
-              color: context.appColors.grey[400],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              context.l10n.userProfile_noVotes,
-              style: TextStyle(color: context.appColors.grey[600]),
-            ),
-          ],
-        ),
+      return AppEmptyState(
+        icon: const Icon(Symbols.how_to_vote_rounded),
+        title: context.l10n.userProfile_noVotes,
       );
     }
 
     final enableLongPress = ref.watch(
       preferencesProvider.select((p) => p.longPressPreview),
     );
+    final categories = ref.watch(categoryMapProvider).value ?? const {};
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -3591,37 +3619,58 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: TopicCardPrewarmScope(
-        topics: topics,
-        child: ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: topics.length + 1,
-          itemBuilder: (context, index) {
-            if (index == topics.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _votesLoadMoreFailed,
-                onRetry: _loadMoreVotes,
-              );
-            }
-            final topic = topics[index];
-            return buildTopicItem(
-              context: context,
-              topic: topic,
-              isSelected: false,
-              onTap: () => _openTopic(
-                topicId: topic.id,
-                initialTitle: topic.title,
-                scrollToPostNumber:
-                    ref.read(preferencesProvider).defaultNestedView
-                    ? null
-                    : topic.lastReadPostNumber,
-              ),
-              enableLongPress: enableLongPress,
+      child: ListView.builder(
+        padding: padding,
+        itemCount: topics.length + 1,
+        itemBuilder: (context, index) {
+          if (index == topics.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _votesLoadMoreFailed,
+              onRetry: _loadMoreVotes,
             );
-          },
-        ),
+          }
+          final topic = topics[index];
+          void openTopic() => _openTopic(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: ref.read(preferencesProvider).defaultNestedView
+                ? null
+                : topic.lastReadPostNumber,
+          );
+          return MorphingDialogAnchor(
+            enabled: enableLongPress,
+            bottomGap: index == topics.length - 1
+                ? 0
+                : SegmentedCardItem.gapOf(context, 4),
+            builder: (cardContext) => ActivityTopicCard(
+              topic: topic,
+              position: (index: index, count: topics.length),
+              categories: categories,
+              onTap: openTopic,
+              onPreviewIntent: enableLongPress
+                  ? () => TopicPreviewPreloader.preload(
+                      ref.read(discourseServiceProvider),
+                      topic.id,
+                    )
+                  : null,
+              onLongPress: enableLongPress
+                  ? () => TopicPreviewDialog.show(
+                      context,
+                      topic: topic,
+                      onOpen: openTopic,
+                      sourceContext: cardContext,
+                      anchorColor: PageBackgroundScope.contentColor(
+                        context,
+                        Theme.of(context).cardTheme.color ??
+                            Theme.of(context).colorScheme.surfaceContainerLow,
+                      ),
+                    )
+                  : null,
+            ),
+          );
+        },
       ),
     );
   }
@@ -3682,372 +3731,119 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               onRetry: _loadMoreSolved,
             );
           }
-          return _buildSolvedItem(posts[index]);
+          return _buildSolvedItem(posts[index], (
+            index: index,
+            count: posts.length,
+          ));
         },
       ),
     );
   }
 
-  Widget _buildBoostItem(UserBoost boost) {
-    final theme = Theme.of(context);
-    final boostText = BoostContentParser.parse(boost.cooked).displayText;
+  TopicUser get _activityOwner => TopicUser(
+    id: _user!.id,
+    username: _user!.username,
+    name: _user!.name,
+    avatarTemplate: _user!.avatarTemplate ?? '',
+  );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: boost.topicId,
-          scrollToPostNumber: boost.postNumber,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：Boost 内容和时间
-              Row(
-                children: [
-                  Icon(
-                    Symbols.rocket_launch_rounded,
-                    size: 16,
-                    color: context.emphasis.accent,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      boostText.isNotEmpty
-                          ? boostText
-                          : context.l10n.userProfile_boosted,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: context.emphasis.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (boost.createdAt != null) ...[
-                    const SizedBox(width: 8),
-                    RelativeTimeText(
-                      dateTime: boost.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 话题标题
-              if (boost.topicTitle != null && boost.topicTitle!.isNotEmpty)
-                Text(
-                  boost.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 帖子内容摘要
-              if (boost.excerpt != null && boost.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  boost.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+  Widget _buildBoostItem(UserBoost boost, ({int index, int count}) position) {
+    final text = BoostContentParser.parse(boost.cooked).displayText;
+    return ActivityPostCard(
+      position: position,
+      author: boost.author,
+      title: boost.topicTitle ?? '',
+      actionLabel: context.l10n.userProfile_tabBoosts,
+      actionIcon: Symbols.rocket_launch_rounded,
+      occurredAt: boost.createdAt,
+      postNumber: boost.postNumber,
+      excerpt: boost.excerpt,
+      categoryId: boost.categoryId,
+      categories: ref.watch(categoryMapProvider).value ?? const {},
+      boostNote: text.isEmpty
+          ? null
+          : ActivityBoostNote(actor: _activityOwner, text: text),
+      onTap: () => _openTopic(
+        topicId: boost.topicId,
+        scrollToPostNumber: boost.postNumber,
       ),
     );
   }
 
-  Widget _buildSolvedItem(SolvedPost post) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
+  Widget _buildSolvedItem(SolvedPost post, ({int index, int count}) position) =>
+      ActivityPostCard(
+        position: position,
+        author: post.author ?? _activityOwner,
+        title: post.topicTitle ?? '',
+        actionLabel: context.l10n.post_solutionAccepted,
+        actionIcon: Symbols.check_circle_rounded,
+        accepted: true,
+        occurredAt: post.createdAt,
+        postNumber: post.postNumber,
+        excerpt: post.excerpt,
+        categoryId: post.categoryId,
+        categories: ref.watch(categoryMapProvider).value ?? const {},
         onTap: () => _openTopic(
           topicId: post.topicId,
           scrollToPostNumber: post.postNumber,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：已解决标记和时间
-              Row(
-                children: [
-                  Icon(
-                    Symbols.check_circle_rounded,
-                    size: 16,
-                    color: context.emphasis.selected,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.userProfile_solvedLabel,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: context.emphasis.selected,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (post.createdAt != null)
-                    RelativeTimeText(
-                      dateTime: post.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
+      );
 
-              // 话题标题
-              if (post.topicTitle != null && post.topicTitle!.isNotEmpty)
-                Text(
-                  post.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 被采纳回答摘要
-              if (post.excerpt != null && post.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  post.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+  Widget _buildActionItem(
+    UserAction action,
+    ({int index, int count}) position,
+  ) {
+    final ownPost =
+        action.actionType == UserActionType.newTopic ||
+        action.actionType == UserActionType.reply;
+    final author = action.author ?? (ownPost ? _activityOwner : null);
+    final actor = TopicUser(
+      id: 0,
+      username: action.username ?? _user!.username,
+      avatarTemplate: action.avatarTemplate ?? _user!.avatarTemplate ?? '',
+    );
+    return ActivityPostCard(
+      position: position,
+      author: author,
+      title: action.title,
+      actionLabel: action.actionType == UserActionType.wasLiked
+          ? context.l10n.userProfile_actionLike
+          : _getActionLabel(action.actionType),
+      actionIcon: _getActionIcon(action.actionType),
+      actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
+      occurredAt: action.actingAt,
+      postNumber: action.postNumber,
+      excerpt: action.excerpt,
+      quoteExcerpt: !ownPost,
+      categoryId: action.categoryId,
+      categories: ref.watch(categoryMapProvider).value ?? const {},
+      onTap: () => _openTopic(
+        topicId: action.topicId,
+        scrollToPostNumber: action.postNumber,
       ),
     );
   }
 
-  Widget _buildActionItem(UserAction action) {
-    final theme = Theme.of(context);
-    final actor = action.username ?? _user!.username;
-    final avatar = action.avatarTemplate == null
-        ? _user!.getAvatarUrl(size: 96)
-        : action.getAvatarUrl(size: 96);
-    return Material(
-      color: PageBackgroundScope.contentColor(
-        context,
-        theme.colorScheme.surface,
-      ),
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: action.topicId,
-          scrollToPostNumber: action.postNumber,
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-              ),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SmartAvatar(
-                imageUrl: avatar,
-                radius: 20,
-                fallbackText: actor,
-                backgroundColor: theme.colorScheme.secondaryContainer,
-                foregroundColor: theme.colorScheme.onSecondaryContainer,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            actor,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if (action.actingAt != null)
-                          RelativeTimeText(
-                            dateTime: action.actingAt,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      action.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (action.excerpt?.isNotEmpty == true) ...[
-                      const SizedBox(height: 6),
-                      CollapsedHtmlContent(
-                        html: action.excerpt!,
-                        maxLines: 4,
-                        textStyle: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Icon(
-                          _getActionIcon(action.actionType),
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _getActionLabel(action.actionType),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 获取 emoji 图片 URL（未加载完成时返回空字符串，由 errorBuilder 处理）
-  String _getEmojiUrl(String emojiName) {
-    return EmojiHandler().getEmojiUrl(emojiName);
-  }
-
-  Widget _buildReactionItem(UserReaction reaction) {
-    final theme = Theme.of(context);
-    final emojiUrl = reaction.reactionValue != null
-        ? _getEmojiUrl(reaction.reactionValue!)
-        : null;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: reaction.topicId,
-          scrollToPostNumber: reaction.postNumber,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：回应 emoji 和时间
-              Row(
-                children: [
-                  if (emojiUrl != null)
-                    Image(
-                      image: emojiImageProvider(emojiUrl),
-                      width: 20,
-                      height: 20,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Symbols.emoji_emotions_rounded, size: 20),
-                    )
-                  else
-                    const Icon(Symbols.emoji_emotions_rounded, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.userProfile_reacted,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (reaction.createdAt != null)
-                    RelativeTimeText(
-                      dateTime: reaction.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 话题标题
-              if (reaction.topicTitle != null &&
-                  reaction.topicTitle!.isNotEmpty)
-                Text(
-                  reaction.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 帖子内容摘要
-              if (reaction.excerpt != null && reaction.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  reaction.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildReactionItem(
+    UserReaction reaction,
+    ({int index, int count}) position,
+  ) => ActivityPostCard(
+    position: position,
+    author: reaction.author,
+    title: reaction.topicTitle ?? '',
+    actionLabel: context.l10n.userProfile_tabReactions,
+    occurredAt: reaction.createdAt,
+    postNumber: reaction.postNumber,
+    excerpt: reaction.excerpt,
+    quoteExcerpt: true,
+    reactionId: reaction.reactionValue,
+    categoryId: reaction.categoryId,
+    categories: ref.watch(categoryMapProvider).value ?? const {},
+    onTap: () => _openTopic(
+      topicId: reaction.topicId,
+      scrollToPostNumber: reaction.postNumber,
+    ),
+  );
 
   IconData _getActionIcon(int? type) {
     switch (type) {
@@ -4064,6 +3860,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  String _getEmojiUrl(String emojiName) =>
+      EmojiHandler().getEmojiUrl(emojiName);
+
   String _getActionLabel(int? type) {
     switch (type) {
       case UserActionType.like:
@@ -4073,7 +3872,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       case UserActionType.newTopic:
         return S.current.userProfile_actionCreatedTopic;
       case UserActionType.reply:
-        return S.current.userProfile_actionReplied;
+        return S.current.common_reply;
       default:
         return S.current.userProfile_actionDefault;
     }

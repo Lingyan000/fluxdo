@@ -87,7 +87,8 @@ class UserProfileHeader extends StatelessWidget {
     );
     final blurProgress = ((shrinkOffset + pullExtent) / 80).clamp(0.0, 1.0);
     final titleOpacity =
-        ((toolbarHeight - layout.titleTop + shrinkOffset) / layout.titleHeight)
+        ((toolbarHeight - layout.titleTop + shrinkOffset - pullExtent) /
+                layout.titleHeight)
             .clamp(0.0, 1.0);
 
     return ClipRect(
@@ -204,7 +205,7 @@ class UserProfileHeader extends StatelessWidget {
             ),
             if (toolbarBuilder != null)
               Positioned(
-                top: pullExtent,
+                top: 0,
                 left: 0,
                 right: 0,
                 height: toolbarHeight,

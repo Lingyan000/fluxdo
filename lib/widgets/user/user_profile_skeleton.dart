@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -152,54 +154,168 @@ class UserProfileSkeleton extends StatelessWidget {
   );
 }
 
+enum UserActivitySkeletonType { post, quoted, reaction, boost, topic }
+
 class UserActionItemSkeleton extends StatelessWidget {
-  const UserActionItemSkeleton({super.key});
+  const UserActionItemSkeleton({
+    super.key,
+    this.type = UserActivitySkeletonType.post,
+  });
+
+  final UserActivitySkeletonType type;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SkeletonCircle(size: 40),
-        const SizedBox(width: 10),
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SkeletonBox(width: 140, height: 16),
-              SizedBox(height: 10),
-              SkeletonBox(width: double.infinity, height: 18),
-              SizedBox(height: 8),
-              SkeletonBox(width: double.infinity, height: 14),
-              SizedBox(height: 6),
-              SkeletonBox(width: double.infinity, height: 14),
-              SizedBox(height: 12),
-              SkeletonBox(width: 70, height: 12),
-            ],
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
+    final authorStyle = theme.textTheme.labelLarge!;
+    final authorHeight =
+        scaler.scale(authorStyle.fontSize!) * (authorStyle.height ?? 1);
+    final metadataHeight =
+        scaler.scale(theme.textTheme.bodySmall!.fontSize!) * 1.4;
+    final titleHeight =
+        scaler.scale(theme.textTheme.titleSmall!.fontSize!) * 1.4;
+    final bodyHeight =
+        scaler.scale(theme.textTheme.bodyMedium!.fontSize!) * 1.5;
+    final quoted =
+        type == UserActivitySkeletonType.quoted ||
+        type == UserActivitySkeletonType.reaction;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: math.max(44, authorHeight + 8),
+            child: Row(
+              children: [
+                const SkeletonCircle(size: 32),
+                const SizedBox(width: 10),
+                Flexible(child: SkeletonBox(width: 120, height: authorHeight)),
+              ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 4),
+          SkeletonBox(width: 150, height: metadataHeight),
+          const SizedBox(height: 10),
+          SkeletonBox(width: double.infinity, height: titleHeight),
+          if (type == UserActivitySkeletonType.reaction) ...[
+            const SizedBox(height: 10),
+            const SkeletonBox(width: 28, height: 28),
+          ],
+          if (type != UserActivitySkeletonType.topic) ...[
+            const SizedBox(height: 10),
+            if (quoted)
+              SkeletonBox(
+                width: double.infinity,
+                height: bodyHeight * 2 + 20,
+                borderRadius: 10,
+              )
+            else
+              SkeletonBox(width: double.infinity, height: bodyHeight * 2),
+          ],
+          if (type == UserActivitySkeletonType.boost) ...[
+            const SizedBox(height: 10),
+            const SkeletonBox(width: 200, height: 44, borderRadius: 22),
+          ],
+          const SizedBox(height: 4),
+          SizedBox(
+            height: math.max(44, metadataHeight + 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SkeletonBox(width: 120, height: metadataHeight),
+            ),
+          ),
+          if (type == UserActivitySkeletonType.topic) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                for (var index = 0; index < 3; index++)
+                  SkeletonBox(width: 44, height: metadataHeight),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 /// 用户动态列表骨架屏（用于 Tab 内容的初始加载）
 class UserActionListSkeleton extends StatelessWidget {
   final int itemCount;
 
-  const UserActionListSkeleton({super.key, this.itemCount = 5});
+  final UserActivitySkeletonType type;
+
+  const UserActionListSkeleton({
+    super.key,
+    this.itemCount = 5,
+    this.type = UserActivitySkeletonType.post,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Skeleton(
       child: ListView.builder(
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         itemCount: itemCount,
-        itemBuilder: (context, index) => const UserActionItemSkeleton(),
+        itemBuilder: (context, index) => SegmentedCardItem(
+          index: index,
+          count: itemCount,
+          gap: 4,
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).cardTheme.color ??
+                Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+          child: UserActionItemSkeleton(type: type),
+        ),
       ),
     );
   }
+}
+
+/// 徽章列表沿用分组标题与双行条目的占位结构。
+class UserBadgeListSkeleton extends StatelessWidget {
+  const UserBadgeListSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) => Skeleton(
+    child: ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SkeletonBox(width: 64, height: 20),
+          ),
+        ),
+        SegmentedCardGroup(
+          children: [
+            for (var index = 0; index < 4; index++)
+              const ListTile(
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                leading: SkeletonBox(width: 24, height: 24),
+                title: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SkeletonBox(width: 120, height: 20),
+                ),
+                subtitle: Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: SkeletonBox(width: double.infinity, height: 16),
+                ),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
 }
 
 /// 总览统计的加载占位与真实分组使用相同结构。

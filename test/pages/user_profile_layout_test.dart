@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -12,6 +13,10 @@ import 'package:fluxdo/theme/app_theme.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/user/user_profile_header.dart';
+import 'package:fluxdo/widgets/user/activity_post_card.dart';
+import 'package:fluxdo/widgets/user/user_profile_skeleton.dart';
+import 'package:fluxdo/widgets/post/post_item/widgets/reaction_emoji.dart';
+import 'package:fluxdo/pages/topic_detail_page/topic_detail_page.dart';
 import 'package:fluxdo/widgets/common/hero_image.dart';
 import 'package:fluxdo/widgets/user/user_profile_cover.dart';
 
@@ -25,6 +30,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/models/category.dart';
+import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/pages/category_topics_page.dart';
+import 'package:fluxdo/pages/group_page.dart';
 import 'package:fluxdo/models/user_action.dart';
 import 'package:fluxdo/pages/user_profile_page.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
@@ -34,12 +43,23 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 class _ProfileService implements DiscourseService {
   _ProfileService(this.user, {this.failSummary = false});
   final User user;
   final bool failSummary;
   int summaryCalls = 0;
+  @override
+  Future<List<Category>> getCategories() async => [await getCategory(42)];
+  @override
+  Future<Category> getCategory(int id) async => Category(
+    id: id,
+    name: '开发调优',
+    color: '0088CC',
+    textColor: 'FFFFFF',
+    slug: 'develop',
+  );
   @override
   Future<User> getUser(String username, {bool isSilent = false}) async => user;
   @override
@@ -85,9 +105,11 @@ class _ProfileService implements DiscourseService {
 
   final requestedFilters = <String?>[];
   int followCalls = 0;
+  Completer<void>? pendingFollow;
   @override
   Future<void> followUser(String username) async {
     followCalls++;
+    await pendingFollow?.future;
   }
 
   @override
@@ -102,10 +124,17 @@ class _ProfileService implements DiscourseService {
       actions: [
         for (var index = 0; index < 8; index++)
           UserAction(
-            actionType: filter == '4' ? 4 : 5,
+            actionType: int.tryParse(filter ?? '') ?? 5,
             topicId: 100 + index,
             postNumber: index + 1,
             username: user.username,
+            author: TopicUser(
+              id: 2,
+              username: 'author',
+              name: '原帖作者',
+              avatarTemplate: '',
+            ),
+            categoryId: 42,
             title: index.isEven ? 'Flutter 桌面端的多窗口体验' : '分享最近整理的开发工具与使用心得',
             excerpt: index.isEven
                 ? '<p>把常用操作放在顺手的位置，页面切换时也能保持阅读进度。最近做了些调整，欢迎一起交流。</p>'
@@ -113,6 +142,101 @@ class _ProfileService implements DiscourseService {
             actingAt: DateTime.now().toUtc().subtract(
               Duration(minutes: 12 + index * 30),
             ),
+          ),
+      ],
+    );
+  }
+
+  Map<String, dynamic> get _activityPost => {
+    'id': 901,
+    'post_id': 901,
+    'topic_id': 101,
+    'topic_title': '活动原帖',
+    'post_number': 24,
+    'url': '/t/activity/101/24',
+    'category_id': 42,
+    'user_id': 2,
+    'username': 'author',
+    'name': '原帖作者',
+    'excerpt': '<p>正文 &amp; 表情都需要保留。</p>',
+  };
+
+  @override
+  Future<UserReactionsResponse> getUserReactions(
+    String username, {
+    int? beforeReactionUserId,
+    bool isSilent = false,
+  }) async => UserReactionsResponse.fromJson([
+    {
+      'id': 1,
+      'post_id': 901,
+      'post': _activityPost,
+      'reaction': {'reaction_value': 'heart'},
+    },
+  ]);
+
+  @override
+  Future<UserBoostsResponse> getUserBoostsGiven(
+    String username, {
+    int? beforeBoostId,
+    bool isSilent = false,
+  }) async => UserBoostsResponse.fromJson({
+    'boosts': [
+      {'id': 1, 'post': _activityPost, 'cooked': '<p>感谢这些细节上的改进，期待继续完善。</p>'},
+    ],
+  });
+
+  int solvedCalls = 0;
+  Completer<void>? pendingSolved;
+
+  @override
+  Future<SolvedPostsResponse> getUserSolvedPosts(
+    String username, {
+    int offset = 0,
+  }) async {
+    solvedCalls++;
+    await pendingSolved?.future;
+    return SolvedPostsResponse.fromJson({
+      'user_solved_posts': [_activityPost],
+    });
+  }
+
+  int votesCalls = 0;
+  Completer<void>? pendingVotes;
+
+  @override
+  Future<TopicListResponse> getVotedTopics(
+    String username, {
+    int page = 0,
+  }) async {
+    votesCalls++;
+    await pendingVotes?.future;
+    return TopicListResponse(
+      topics: [
+        for (var index = 0; index < 8; index++)
+          Topic(
+            id: 200 + index,
+            title: '一起完善社区的阅读体验 $index',
+            slug: 'reading',
+            postsCount: 25,
+            replyCount: 24,
+            views: 1200,
+            likeCount: 42,
+            categoryId: '42',
+            lastReadPostNumber: 3,
+            posters: [
+              TopicPoster(
+                userId: 2,
+                description: 'Original Poster',
+                extras: 'latest',
+                user: TopicUser(
+                  id: 2,
+                  username: 'author',
+                  name: '原帖作者',
+                  avatarTemplate: '',
+                ),
+              ),
+            ],
           ),
       ],
     );
@@ -129,7 +253,16 @@ class _SignedInUser extends CurrentUserNotifier {
   Future<User?> build() async => user;
 }
 
+class _ProfileRouteObserver extends NavigatorObserver {
+  Route<dynamic>? latest;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      latest = route;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(ThemeRegistry.loadBuiltins);
   setUp(
     () => VisibilityDetectorController.instance.updateInterval = Duration.zero,
   );
@@ -147,11 +280,17 @@ void main() {
     _ProfileCase(width: 1440),
     _ProfileCase(width: 390, hidden: true),
     _ProfileCase(width: 390),
+    _ProfileCase(width: 390, platform: TargetPlatform.iOS),
     _ProfileCase(width: 390, dark: true),
     _ProfileCase(width: 390, visitor: true),
     _ProfileCase(width: 390, cover: true),
     _ProfileCase(width: 390, cover: true, dark: true),
     _ProfileCase(width: 320, cover: true, textScale: 2, visitor: true),
+    _ProfileCase(width: 390, seedColor: Colors.green, visitor: true),
+    _ProfileCase(width: 390, themeId: 'minimal', visitor: true),
+    _ProfileCase(width: 1100, themeId: 'minimal', dark: true, visitor: true),
+    _ProfileCase(width: 390, themeId: 'paper', visitor: true),
+    _ProfileCase(width: 1100, themeId: 'nord', dark: true, visitor: true),
   ]) {
     final width = variant.width;
     final textScale = variant.textScale;
@@ -223,12 +362,13 @@ void main() {
         });
         addTearDown(() => PaintingBinding.instance.imageCache.clear());
       }
-      const themeState = ThemeState(
+      final themeState = ThemeState(
         mode: ThemeMode.system,
-        seedColor: Colors.blue,
+        themeId: variant.themeId,
+        seedColor: variant.seedColor,
       );
       final resolved = ThemeResolver.resolve(
-        spec: ThemeRegistry.material,
+        spec: themeState.themeSpec,
         mode: ThemeMode.system,
         black: false,
         seed: themeState.seedColor,
@@ -241,11 +381,13 @@ void main() {
         themeState,
         fullscreenSwipeBack: false,
         pageBackground: variant.dark,
+        style: themeState.effectiveStyle,
       );
+      final platformTheme = appTheme.copyWith(platform: variant.platform);
       final theme = captureDir.isEmpty
-          ? appTheme
-          : appTheme.copyWith(
-              textTheme: appTheme.textTheme.apply(fontFamily: 'MiSans'),
+          ? platformTheme
+          : platformTheme.copyWith(
+              textTheme: platformTheme.textTheme.apply(fontFamily: 'MiSans'),
             );
       tester.view.devicePixelRatio = 1;
       PlatformUtils.debugDesktopOverride = width > 800;
@@ -276,8 +418,17 @@ void main() {
         canFollow: variant.visitor,
         canSendPrivateMessageToUser: variant.visitor,
         canChatUser: variant.visitor,
+        groups: const [TopicGroup(id: 7, name: 'team', fullName: '开发者交流')],
       );
       final service = _ProfileService(user, failSummary: failSummary);
+      final observer = _ProfileRouteObserver();
+      final checkNavigation =
+          width == 390 &&
+          !variant.dark &&
+          !variant.cover &&
+          !hidden &&
+          !failSummary &&
+          !variant.visitor;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -294,6 +445,7 @@ void main() {
           child: TranslationProvider(
             child: MaterialApp(
               navigatorKey: navigatorKey,
+              navigatorObservers: [observer],
               debugShowCheckedModeBanner: false,
               theme: theme,
               locale: const Locale('zh'),
@@ -335,6 +487,10 @@ void main() {
         expect(service.requestedFilters, isEmpty);
       }
       await _capture(tester, captureDir, '${variant.name}-expanded');
+      if (variant.visitor && textScale == 1) {
+        _expectFollowColors(tester, theme);
+      }
+      _expectToolbarColor(tester, theme);
       if (variant.visitor) {
         final contact = find.widgetWithText(OutlinedButton, '联系');
         if (width >= 900) {
@@ -473,9 +629,43 @@ void main() {
         await tester.pumpAndSettle();
         expect(service.summaryCalls, calls);
         expect(tester.getTopLeft(avatar), expandedPosition);
+
+        for (final distance in [80.0, 320.0]) {
+          final reversed = await tester.startGesture(const Offset(180, 330));
+          await reversed.moveBy(const Offset(0, 20));
+          await tester.pump();
+          await reversed.moveBy(Offset(0, distance));
+          await tester.pump();
+          await reversed.moveBy(Offset(0, -distance - 160));
+          await tester.pump();
+          await reversed.up();
+          await tester.pumpAndSettle();
+          expect(service.summaryCalls, calls);
+          expect(nested.controller!.offset, greaterThan(0));
+          expect(
+            tester
+                .widgetList<SliverPersistentHeader>(
+                  find.byType(SliverPersistentHeader),
+                )
+                .map((sliver) => sliver.delegate)
+                .whereType<UserProfileHeaderDelegate>()
+                .single
+                .pullExtent,
+            0,
+          );
+          nested.controller!.jumpTo(0);
+          await tester.pumpAndSettle();
+        }
         final drag = await tester.startGesture(const Offset(180, 330));
         await drag.moveBy(const Offset(0, 20));
         await tester.pump();
+        // 同一手势先收起资料头，再回到顶部，下拉距离应从真正到顶后计算。
+        await drag.moveBy(const Offset(0, -180));
+        await tester.pump();
+        expect(nested.controller!.offset, greaterThan(0));
+        await drag.moveBy(const Offset(0, 180));
+        await tester.pump();
+        expect(nested.controller!.offset, 0);
         await drag.moveBy(const Offset(0, 320));
         await tester.pump(const Duration(milliseconds: 80));
         final pulled = tester
@@ -528,6 +718,10 @@ void main() {
       expect(tester.getTopLeft(toolbarName).dy, lessThan(delegate.minExtent));
       if (!variant.visitor) expect(find.byTooltip('编辑资料'), findsOneWidget);
       await _capture(tester, captureDir, '${variant.name}-collapsed');
+      if (variant.visitor && textScale == 1) {
+        _expectFollowColors(tester, theme);
+      }
+      _expectToolbarColor(tester, theme);
       if (!hidden && !failSummary) {
         final summaryScrollable = find.descendant(
           of: find.byKey(const PageStorageKey('user_tester_summary')),
@@ -541,6 +735,15 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         await _capture(tester, captureDir, '${variant.name}-summary-content');
+        if (checkNavigation) {
+          final context = tester.element(find.text('开发调优'));
+          await tester.tap(find.text('开发调优'));
+          await tester.idle();
+          final route = observer.latest! as InteractionPageRoute;
+          expect((route.builder(context) as CategoryTopicsPage).category.id, 1);
+          Navigator.of(context).pop();
+          await tester.pumpAndSettle();
+        }
         tester.state<ScrollableState>(summaryScrollable).position.jumpTo(0);
         await tester.pumpAndSettle();
       }
@@ -572,7 +775,17 @@ void main() {
       await tester.pumpAndSettle();
 
       if (variant.visitor) {
+        service.pendingFollow = Completer<void>();
         await tester.tap(find.widgetWithText(FilledButton, '关注').hitTestable());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        final pendingButton = find.byType(FilledButton).hitTestable();
+        final spinner = find.descendant(
+          of: pendingButton,
+          matching: find.byType(LoadingSpinner),
+        );
+        expect(spinner, findsOneWidget);
+        service.pendingFollow!.complete();
         await tester.pumpAndSettle();
         expect(service.followCalls, 1);
         expect(
@@ -597,6 +810,8 @@ void main() {
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
         await tester.tap(find.byTooltip('动态'));
         await tester.pumpAndSettle();
+        expect(service.requestedFilters, contains('4,5'));
+        expect(service.requestedFilters, isNot(contains(null)));
         expect(find.byType(CheckedPopupMenuItem<String>), findsNothing);
         await tester.tap(find.byTooltip('动态'));
         await tester.pumpAndSettle();
@@ -606,6 +821,273 @@ void main() {
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4'));
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
+        var selectedLabel = '话题';
+        if (checkNavigation) {
+          for (final label in ['赞', '获赞', '回应', 'Boost', '已解决']) {
+            await tester.tap(find.byTooltip(selectedLabel));
+            await tester.pumpAndSettle();
+            if (label == '已解决') service.pendingSolved = Completer<void>();
+            await tester.tap(
+              find.widgetWithText(CheckedPopupMenuItem<String>, label),
+            );
+            if (label == '已解决') {
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 500));
+              expect(
+                tester
+                    .widget<UserActionListSkeleton>(
+                      find.byType(UserActionListSkeleton),
+                    )
+                    .type,
+                UserActivitySkeletonType.post,
+              );
+              await _capture(
+                tester,
+                captureDir,
+                '${variant.name}-solved-skeleton',
+              );
+              service.pendingSolved!.complete();
+              service.pendingSolved = null;
+            }
+            await tester.pumpAndSettle();
+            selectedLabel = label;
+            final cardFinder = find.byType(ActivityPostCard).first;
+            final card = tester.widget<ActivityPostCard>(cardFinder);
+            expect(card.author?.username, 'author');
+            expect(card.categoryId, 42);
+            final like = label == '赞' || label == '获赞';
+            expect(card.postNumber, like ? 1 : 24);
+            expect(card.quoteExcerpt, label != '已解决' && label != 'Boost');
+            if (label == '获赞') {
+              expect(card.actionActor?.username, user.username);
+              expect(card.actionLabel, '点赞');
+              expect(card.boostNote, isNull);
+            }
+            if (label == 'Boost') {
+              expect(find.byType(ActivityBoostNote), findsOneWidget);
+              expect(card.reactionId, isNull);
+            }
+            if (label == '回应') {
+              expect(card.boostNote, isNull);
+              expect(card.reactionId, 'heart');
+              expect(card.actionIcon, isNull);
+              expect(find.byType(ActivityBoostNote), findsNothing);
+              expect(find.byType(ReactionEmoji), findsOneWidget);
+            }
+            await _capture(
+              tester,
+              captureDir,
+              '${variant.name}-activity-$label',
+            );
+            final title = find.descendant(
+              of: cardFinder,
+              matching: find.text(card.title),
+            );
+            await tester.ensureVisible(title);
+            final context = tester.element(title);
+            await tester.tap(title);
+            await tester.idle();
+            final route = observer.latest! as InteractionPageRoute;
+            final detail = route.builder(context) as TopicDetailPage;
+            expect(detail.topicId, like ? 100 : 101);
+            expect(detail.scrollToPostNumber, like ? 1 : 24);
+            Navigator.of(context).pop();
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+          }
+        }
+        await tester.tap(find.byTooltip(selectedLabel));
+        await tester.pumpAndSettle();
+        service.pendingVotes = Completer<void>();
+        await tester.tap(
+          find.widgetWithText(CheckedPopupMenuItem<String>, '投票'),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          tester
+              .widget<UserActionListSkeleton>(
+                find.byType(UserActionListSkeleton),
+              )
+              .type,
+          UserActivitySkeletonType.topic,
+        );
+        final skeletonRect = tester.getRect(
+          find.byType(SegmentedCardItem).first,
+        );
+        await _capture(tester, captureDir, '${variant.name}-votes-skeleton');
+        service.pendingVotes!.complete();
+        service.pendingVotes = null;
+        await tester.pumpAndSettle();
+        final voteCard = find.byType(ActivityTopicCard).first;
+        final voteList = find.ancestor(
+          of: voteCard,
+          matching: find.byType(ListView),
+        );
+        final listRect = tester.getRect(voteList);
+        final cardRect = tester.getRect(voteCard);
+        final voteContent = tester.widget<ActivityPostCard>(
+          find.descendant(
+            of: voteCard,
+            matching: find.byType(ActivityPostCard),
+          ),
+        );
+        expect(cardRect.left, listRect.left + 16);
+        expect(cardRect.right, listRect.right - 16);
+        expect(cardRect.left, skeletonRect.left);
+        expect(cardRect.right, skeletonRect.right);
+        final voteSegment = tester.widget<SegmentedCardItem>(
+          find.descendant(
+            of: voteCard,
+            matching: find.byType(SegmentedCardItem),
+          ),
+        );
+        expect(voteSegment.index, 0);
+        expect(voteSegment.count, 8);
+        expect(voteSegment.gap, 4);
+        expect(voteContent.author?.username, 'author');
+        expect(voteContent.categoryId, 42);
+        expect(voteContent.actionLabel, '投票');
+        for (final label in ['24 条回复', '1200 浏览', '42 点赞']) {
+          expect(
+            find.descendant(of: voteCard, matching: find.byTooltip(label)),
+            findsOneWidget,
+          );
+        }
+        final author = find.descendant(
+          of: voteCard,
+          matching: find.text('原帖作者'),
+        );
+        final action = find.descendant(of: voteCard, matching: find.text('投票'));
+        final title = find.descendant(
+          of: voteCard,
+          matching: find.text(voteContent.title),
+        );
+        expect(
+          tester.getRect(action).top,
+          greaterThan(tester.getRect(author).bottom),
+        );
+        expect(
+          tester.getRect(title).top,
+          greaterThan(tester.getRect(action).bottom),
+        );
+        await _capture(tester, captureDir, '${variant.name}-votes');
+        if (checkNavigation) {
+          final initialCalls = service.votesCalls;
+          service.pendingVotes = Completer<void>();
+          nested.controller!.jumpTo(
+            nested.controller!.position.maxScrollExtent,
+          );
+          await tester.pumpAndSettle();
+          final listPosition = Scrollable.of(tester.element(voteCard)).position;
+          listPosition.jumpTo(100);
+          await tester.pumpAndSettle();
+          final initialListOffset = listPosition.pixels;
+          expect(initialListOffset, greaterThan(0));
+          final collapsedOffset = nested.controller!.offset;
+          final drag = await tester.startGesture(const Offset(180, 350));
+          await drag.moveBy(const Offset(0, 20));
+          await tester.pump();
+          await drag.moveBy(Offset(0, initialListOffset / 2));
+          await tester.pump();
+          expect(listPosition.pixels, lessThan(initialListOffset));
+          expect(nested.controller!.offset, collapsedOffset);
+          await drag.moveBy(Offset(0, initialListOffset));
+          await tester.pump();
+          expect(nested.controller!.offset, lessThan(collapsedOffset));
+          expect(service.votesCalls, initialCalls);
+          await drag.moveBy(Offset(0, nested.controller!.offset + 320));
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(nested.controller!.offset, 0);
+          expect(
+            tester
+                .widgetList<SliverPersistentHeader>(
+                  find.byType(SliverPersistentHeader),
+                )
+                .map((sliver) => sliver.delegate)
+                .whereType<UserProfileHeaderDelegate>()
+                .single
+                .pullExtent,
+            greaterThan(0),
+          );
+          await drag.up();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          expect(service.votesCalls, initialCalls + 1);
+
+          // 请求等待期间仍能收起资料头和滚动，且只刷新当前投票列表一次。
+          await tester.dragFrom(const Offset(180, 650), const Offset(0, -200));
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(nested.controller!.offset, greaterThan(0));
+          expect(find.byType(ActivityTopicCard), findsWidgets);
+          await tester.dragFrom(const Offset(180, 650), const Offset(0, -700));
+          await tester.pump(const Duration(milliseconds: 200));
+          expect(
+            find.byKey(const ValueKey('profile-more-menu')).hitTestable(),
+            findsOneWidget,
+          );
+          expect(
+            tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
+            morePosition,
+          );
+          final toolbarName = find.byKey(
+            const ValueKey('profile-toolbar-name'),
+          );
+          final toolbarOpacity = tester.widget<Opacity>(
+            find
+                .ancestor(of: toolbarName, matching: find.byType(Opacity))
+                .first,
+          );
+          expect(toolbarOpacity.opacity, 1);
+          expect(
+            tester.getTopLeft(find.byType(LoadingSpinner).first).dy,
+            greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TabBar)).dy),
+          );
+          await _capture(
+            tester,
+            captureDir,
+            '${variant.name}-refresh-scrolled',
+          );
+          service.pendingVotes!.complete();
+          await tester.pumpAndSettle();
+          expect(service.votesCalls, initialCalls + 1);
+          service.pendingVotes = null;
+          expect(tester.takeException(), isNull);
+
+          // 切回已有内容的筛选项会重新请求，请求中的快速切换复用同一次加载。
+          final votesCalls = service.votesCalls;
+          final solvedCalls = service.solvedCalls;
+          service.pendingSolved = Completer<void>();
+          service.pendingVotes = Completer<void>();
+          var selected = '投票';
+          for (final label in ['已解决', '投票', '已解决', '投票']) {
+            await tester.tap(find.byTooltip(selected));
+            await tester.pumpAndSettle();
+            await tester.tap(
+              find.widgetWithText(CheckedPopupMenuItem<String>, label),
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 500));
+            expect(find.byType(UserActionListSkeleton), findsNothing);
+            expect(find.byType(ActivityPostCard), findsWidgets);
+            selected = label;
+          }
+          expect(service.votesCalls, votesCalls + 1);
+          expect(service.solvedCalls, solvedCalls + 1);
+          service.pendingSolved!.complete();
+          service.pendingVotes!.complete();
+          service.pendingSolved = null;
+          service.pendingVotes = null;
+          await tester.pumpAndSettle();
+
+          // 从外层页签回到活动也重新加载，动画完成回调不能重复请求。
+          await tester.tap(find.byTooltip('关于'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip('投票'));
+          await tester.pumpAndSettle();
+          expect(service.votesCalls, votesCalls + 2);
+          expect(tester.takeException(), isNull);
+        }
         if (width == 1440) {
           final controller = tester
               .widget<TabBar>(find.byType(TabBar))
@@ -635,6 +1117,31 @@ void main() {
           find.byKey(const PageStorageKey('user_tester_about')),
           findsOneWidget,
         );
+        if (checkNavigation) {
+          final group = find.widgetWithText(ActionChip, '开发者交流');
+          await tester.scrollUntilVisible(
+            group,
+            150,
+            scrollable: find
+                .descendant(
+                  of: find.byKey(const PageStorageKey('user_tester_about')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          await tester.ensureVisible(group);
+          final context = tester.element(group);
+          await tester.tap(group);
+          await tester.idle();
+          expect(
+            ((observer.latest! as InteractionPageRoute).builder(
+              context,
+            ) as GroupPage).name,
+            'team',
+          );
+          Navigator.of(context).pop();
+          await tester.pumpAndSettle();
+        }
         expect(tester.takeException(), isNull);
         if (failSummary) {
           await tester.tap(find.byTooltip('概览'));
@@ -717,6 +1224,9 @@ class _ProfileCase {
     this.cover = false,
     this.dark = false,
     this.visitor = false,
+    this.themeId = 'material',
+    this.seedColor = Colors.blue,
+    this.platform,
   });
   final double width;
   final double textScale;
@@ -725,8 +1235,33 @@ class _ProfileCase {
   final bool cover;
   final bool dark;
   final bool visitor;
+  final String themeId;
+  final Color seedColor;
+  final TargetPlatform? platform;
   String get name =>
-      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}';
+      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}';
+}
+
+void _expectFollowColors(WidgetTester tester, ThemeData theme) {
+  final follow = find.widgetWithText(FilledButton, '关注').hitTestable();
+  final surface = tester.widget<Material>(
+    find.descendant(of: follow, matching: find.byType(Material)).first,
+  );
+  expect(surface.color, theme.colorScheme.onSurface);
+  final label = find.descendant(of: follow, matching: find.text('关注'));
+  expect(
+    DefaultTextStyle.of(tester.element(label)).style.color,
+    theme.colorScheme.surface,
+  );
+}
+
+void _expectToolbarColor(WidgetTester tester, ThemeData theme) {
+  final icon = find.descendant(
+    of: find.byKey(const ValueKey('profile-more-menu')),
+    matching: find.byType(RichText),
+  );
+  final glyph = tester.renderObject<RenderParagraph>(icon);
+  expect(glyph.text.style?.color, theme.appBarTheme.actionsIconTheme?.color);
 }
 
 Future<void> _loadCaptureFonts() async {

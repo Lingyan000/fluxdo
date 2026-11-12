@@ -164,6 +164,10 @@ class M3eRefreshIndicator extends StatefulWidget {
   final ValueChanged<double>? onPullExtentChanged;
 
   final ScrollNotificationPredicate notificationPredicate;
+  final RefreshIndicatorTriggerMode triggerMode;
+
+  /// 嵌套滚动的实际刷新边缘，外层标题与内层列表都到顶时才接受下拉。
+  final ScrollNotificationPredicate? edgePredicate;
 
   const M3eRefreshIndicator({
     super.key,
@@ -177,6 +181,8 @@ class M3eRefreshIndicator extends StatefulWidget {
     this.displacement = 40.0,
     this.onPullExtentChanged,
     this.notificationPredicate = defaultScrollNotificationPredicate,
+    this.triggerMode = RefreshIndicatorTriggerMode.onEdge,
+    this.edgePredicate,
   });
 
   @override
@@ -206,13 +212,15 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
   Widget build(BuildContext context) {
     if (!M3eFlags.of(context).enabled &&
         widget.onSecondaryAction == null &&
-        widget.onPullExtentChanged == null) {
+        widget.onPullExtentChanged == null &&
+        widget.edgePredicate == null) {
       return RefreshIndicator(
         key: _fallbackKey,
         onRefresh: widget.onRefresh,
         edgeOffset: widget.edgeOffset,
         displacement: widget.displacement,
         notificationPredicate: widget.notificationPredicate,
+        triggerMode: widget.triggerMode,
         child: widget.child,
       );
     }
@@ -223,6 +231,8 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
       displacement: widget.displacement,
       onPullExtentChanged: widget.onPullExtentChanged,
       notificationPredicate: widget.notificationPredicate,
+      triggerMode: widget.triggerMode,
+      edgePredicate: widget.edgePredicate,
       onSecondaryAction: widget.onSecondaryAction,
       externalReveal: widget.externalReveal,
       revealOffset: widget.revealOffset,
@@ -263,6 +273,8 @@ class _M3eRefreshCore extends StatefulWidget {
 
   final ValueChanged<double>? onPullExtentChanged;
   final ScrollNotificationPredicate notificationPredicate;
+  final RefreshIndicatorTriggerMode triggerMode;
+  final ScrollNotificationPredicate? edgePredicate;
   final RefreshCallback? onSecondaryAction;
   final Widget Function(BuildContext, double, bool, bool)?
   secondaryActionBuilder;
@@ -275,6 +287,8 @@ class _M3eRefreshCore extends StatefulWidget {
     required this.displacement,
     this.onPullExtentChanged,
     required this.notificationPredicate,
+    required this.triggerMode,
+    this.edgePredicate,
     this.onSecondaryAction,
     this.externalReveal = false,
     this.revealOffset,
@@ -616,10 +630,17 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
   }
 
   bool _shouldStart(ScrollNotification notification) {
-    // 仅边缘触发(SDK triggerMode.onEdge):手指驱动的 ScrollStart,
-    // 且列表已贴相应边缘,且当前空闲。
-    return notification is ScrollStartNotification &&
-        notification.dragDetails != null &&
+    // 连续拖动到边缘时也可接上刷新，程序滚动与惯性回弹不触发。
+    final userDrag = switch (notification) {
+      ScrollStartNotification(:final dragDetails) => dragDetails != null,
+      ScrollUpdateNotification(:final dragDetails) ||
+      OverscrollNotification(:final dragDetails) =>
+        dragDetails != null &&
+            widget.triggerMode == RefreshIndicatorTriggerMode.anywhere,
+      _ => false,
+    };
+    return userDrag &&
+        (widget.edgePredicate?.call(notification) ?? true) &&
         ((notification.metrics.axisDirection == AxisDirection.up &&
                 notification.metrics.extentAfter == 0.0) ||
             (notification.metrics.axisDirection == AxisDirection.down &&
@@ -633,9 +654,22 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
       return _handleTwoStageScroll(notification);
     }
     if (!widget.notificationPredicate(notification)) return false;
+    if (_dragging && widget.edgePredicate?.call(notification) == false) {
+      // 滚动离开边缘时交还手势，并清空累计距离，下一次回到顶部可立即接续。
+      _transition++;
+      _positionController.stop();
+      setState(() {
+        _status = null;
+        _dragOffset = null;
+        _isIndicatorAtTop = null;
+      });
+      _positionController.value = 0;
+      return false;
+    }
     if (_shouldStart(notification)) {
       setState(() => _status = RefreshIndicatorStatus.drag);
-      return false;
+      // 嵌套滚动可能在抵达顶部的同一帧直接报告剩余越界量。
+      if (notification is! OverscrollNotification) return false;
     }
     final bool? indicatorAtTopNow =
         switch (notification.metrics.axisDirection) {
