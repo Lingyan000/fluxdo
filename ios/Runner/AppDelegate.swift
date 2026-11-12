@@ -9,6 +9,14 @@ import workmanager_apple
   // 窗口由 UIScene 持有，不能再从 AppDelegate.window 获取界面。
   private weak var flutterViewController: FlutterViewController?
 
+  override func application(
+    _ application: UIApplication, open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    if PluginFileHandler.shared.open(url) { return true }
+    return super.application(application, open: url, options: options)
+  }
+
   override func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
                    options: UIScene.ConnectionOptions) -> UISceneConfiguration {
     if options.userActivities.contains(where: { $0.activityType == MiniAppScenes.kind }) {
@@ -41,6 +49,7 @@ import workmanager_apple
   }
 
   private func registerNativeChannels(messenger: FlutterBinaryMessenger) {
+    PluginFileHandler.shared.register(messenger: messenger)
     MiniAppScenes.shared.attach(messenger)
     PublicFileHandler.shared.register(messenger: messenger)
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)
@@ -787,11 +796,19 @@ import workmanager_apple
 // 场景连接后再绑定依赖界面的通道，其余生命周期交给 Flutter 转发给插件。
 // 与 AppDelegate 放在同一编译文件中，无需修改 Xcode 工程文件引用。
 class SceneDelegate: FlutterSceneDelegate {
+  override func scene(_ scene: UIScene, openURLContexts contexts: Set<UIOpenURLContext>) {
+    let remaining = contexts.filter { !PluginFileHandler.shared.open($0.url) }
+    if !remaining.isEmpty { super.scene(scene, openURLContexts: remaining) }
+  }
+
   override func scene(
     _ scene: UIScene,
     willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
   ) {
+    for context in connectionOptions.urlContexts {
+      PluginFileHandler.shared.open(context.url)
+    }
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     if let controller = window?.rootViewController as? FlutterViewController,
        let appDelegate = UIApplication.shared.delegate as? AppDelegate {

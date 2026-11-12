@@ -26,6 +26,7 @@ import 'package:fluxdo/modules/ldc_reward/models/ldc_reward_credentials.dart';
 import 'package:fluxdo/modules/ldc_reward/providers/ldc_reward_provider.dart';
 import 'package:fluxdo/modules/ldc_reward/widgets/ldc_reward_config_tile.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
@@ -246,6 +247,76 @@ void main() {
       ),
     );
   }
+
+  testWidgets('系统文件打开先确认，取消保留现状，再次打开可安装', (tester) async {
+    await preferences.clear();
+    final store = _MemoryCodeStore(preferences);
+    final manifest = jsonDecode(File('docs/examples/metaverse-plugin/plugin.json').readAsStringSync());
+    final bundle = jsonEncode({
+      'manifest': manifest,
+      'files': {
+        'ui.rfwtxt': File('docs/examples/metaverse-plugin/ui.rfwtxt').readAsStringSync(),
+        'main.js': File('docs/examples/metaverse-plugin/main.js').readAsStringSync(),
+      },
+    });
+    final directory = Directory.systemTemp.createTempSync('fluxdo_file_install_');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/示例 #1.fluxplugin')..writeAsStringSync(bundle);
+    final service = MetaversePluginFileService.instance;
+    const channel = MethodChannel('com.fluxdo/plugin_files');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    var incoming = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'readFile') return Uint8List.fromList(utf8.encode(bundle));
+      final files = incoming;
+      incoming = [];
+      return files;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    service.initialize([file.path]);
+    Future<void> activateFile() async {
+      incoming = [file.uri.toString()];
+      await messenger.handlePlatformMessage(
+        channel.name,
+        channel.codec.encodeMethodCall(const MethodCall('filesAvailable')),
+        null,
+      );
+    }
+    await tester.pumpWidget(app(const Text('文件安装'), pluginStore: store));
+    final context = tester.element(find.text('文件安装'));
+    addTearDown(() => service.detach(context));
+    service.attach(context);
+    Future<void> waitForSheet() async {
+      for (var attempt = 0; attempt < 30; attempt++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(AppSheetScaffold).evaluate().isNotEmpty) break;
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(AppSheetScaffold), findsOneWidget);
+    }
+    await waitForSheet();
+    final l = context.l10n;
+    expect(store.loadIndex(), isEmpty);
+    expect(store.written, isNull);
+    // 同一文件的重复系统事件不会再叠加弹框。
+    await activateFile();
+    await tester.tap(find.widgetWithText(TextButton, l.common_cancel));
+    await tester.pumpAndSettle();
+    expect(find.byType(AppSheetScaffold), findsNothing);
+    expect(store.loadIndex(), isEmpty);
+    await activateFile();
+    await waitForSheet();
+    await tester.tap(find.widgetWithText(FilledButton, l.metaverse_pluginInstall));
+    await tester.pumpAndSettle();
+    expect(store.loadIndex().single.id, manifest['id']);
+    expect(store.loadIndex().single.enabled, isFalse);
+    expect(store.written?.script, (jsonDecode(bundle)['files'] as Map)['main.js']);
+    service.detach(context);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   Future<void> snapshot(WidgetTester tester, String name) async {
     if (!snapshots) return;

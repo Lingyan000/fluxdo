@@ -34,6 +34,8 @@ dart run tool/pack_metaverse_plugin.dart path/to/my-plugin build/my-plugin.fluxp
 
 在应用的「元宇宙 → 添加第三方服务 → 从文件安装」选择产物，查看权限后安装并启用。也可把三个文件部署在同一 HTTPS 目录，从应用输入 `plugin.json` 的文件地址安装。
 
+安装新宿主后，也可从系统文件管理器打开 `.fluxplugin`，选择 FluxDO。应用就绪后显示同一权限确认页，多个文件逐个确认，取消后可再次打开。Android 文件管理器须提供文件读取授权和真实显示名称。Apple 平台在导入结束后释放文件访问授权。Windows 便携版首次启动后登记「打开方式」，Linux 安装包提供 MIME 描述和 desktop 入口。
+
 当前 `.fluxplugin` 的内容是 UTF-8 JSON，包含 `manifest` 和 `files`。打包工具检查资源路径，客户端负责清单、资源大小和 rfw 校验。安装失败时先核对 JSON、资源名称、页面引用与实际组件定义。
 
 ## 一次交互

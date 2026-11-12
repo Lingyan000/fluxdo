@@ -7,6 +7,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "desktop_multi_window/desktop_multi_window_plugin.h"
+#include "plugin_file_activation.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -124,6 +125,7 @@ static void my_application_activate(GApplication* application) {
       view, "button-press-event", G_CALLBACK(on_view_button_press_event), window);
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  RegisterPluginFiles(view, window);
   desktop_multi_window_plugin_set_window_created_callback([](FlPluginRegistry* registry) {
     fl_register_plugins(registry);
   });
@@ -138,6 +140,11 @@ static gboolean my_application_local_command_line(GApplication* application,
   MyApplication* self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+
+  if (ForwardPluginFilesToInstance(self->dart_entrypoint_arguments)) {
+    *exit_status = 0;
+    return TRUE;
+  }
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
@@ -172,6 +179,7 @@ static void my_application_shutdown(GApplication* application) {
 
 // Implements GObject::dispose.
 static void my_application_dispose(GObject* object) {
+  DisposePluginFiles();
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);

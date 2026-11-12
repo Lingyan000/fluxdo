@@ -5,6 +5,7 @@
 #include "app_links/app_links_plugin_c_api.h"
 #include "flutter_window.h"
 #include "utils.h"
+#include "plugin_file_activation.h"
 
 // 深链启动(discourse:// / fluxdo://)时把 URL 转发给已运行实例并退出,
 // 避免为一次授权回调开出第二个窗口(app_links 官方集成方式)。
@@ -45,6 +46,10 @@ static bool SendAppLinkToInstance(const wchar_t* command_line) {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
+  if (ForwardPluginFilesToInstance(command_line_arguments)) {
+    return EXIT_SUCCESS;
+  }
   if (SendAppLinkToInstance(command_line)) {
     return EXIT_SUCCESS;
   }
@@ -60,9 +65,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
