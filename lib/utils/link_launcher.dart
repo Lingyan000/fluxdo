@@ -12,9 +12,10 @@ import '../constants.dart';
 import '../modules/mini_apps/mini_app_navigation.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/image_viewer_page.dart';
+import '../pages/group_page.dart';
+import '../pages/groups_page.dart';
 import '../pages/webview_page.dart';
 import '../providers/preferences_provider.dart';
-import '../providers/category_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
@@ -23,6 +24,7 @@ import '../widgets/common/external_link_confirm_dialog.dart';
 import '../widgets/content/discourse_html_content/image_utils.dart';
 import '../widgets/layout/home_workspace_scope.dart';
 import 'discourse_url_parser.dart';
+import 'category_navigation.dart';
 import 'link_security.dart';
 import 'url_helper.dart';
 
@@ -30,6 +32,7 @@ const _browserChannel = MethodChannel('com.github.lingyan000.fluxdo/browser');
 
 /// 检查 URL 是否属于站点内部链接（主域名或子域名）
 bool isInternalUrl(Uri uri) {
+  if (uri.scheme != 'http' && uri.scheme != 'https') return false;
   final baseUri = Uri.tryParse(AppConstants.baseUrl);
   if (baseUri == null) return false;
 
@@ -44,9 +47,10 @@ bool isInternalUrl(Uri uri) {
 
 /// 检查 URL 是否属于站点内部链接（字符串版本，支持相对路径）
 bool isInternalUrlString(String url) {
-  if (url.startsWith('/')) return true;
   final uri = Uri.tryParse(url);
   if (uri == null) return false;
+  if (url.startsWith('/') && !uri.hasAuthority) return true;
+  if (url.startsWith('//')) return isInternalUrl(uri.replace(scheme: 'https'));
   return isInternalUrl(uri);
 }
 
@@ -143,6 +147,8 @@ Future<void> launchExternalLink(
 ///
 /// 处理所有类型的链接：
 /// - 用户链接 /u/username → 打开用户页面
+/// - 用户组链接 /g/name → 原生用户组页面
+/// - 分类链接 /c/slug/id → 首页分类视图或独立分类页面
 /// - 话题链接 /t/topic/123 → 调用 onInternalLinkTap 或用 WebView 打开
 /// - 图片直链（站点域名/CDN/S3 CDN）→ 内置查看器直接打开，对齐网页端
 /// - 附件链接 /uploads/ → 外部浏览器打开
@@ -157,6 +163,7 @@ Future<void> launchContentLink(
   void Function(String url)? onDownloadAttachment,
 }) async {
   if (url.isEmpty) return;
+  if (url.startsWith('//')) url = UrlHelper.resolveUrl(url);
   if (url.startsWith('upload://')) {
     url = await DiscourseService().resolveShortUrlForLink(url) ?? url;
     // 短链解析期间列表项可能已离开缓存范围并被销毁，不能再使用旧 context。
@@ -173,24 +180,49 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 首页平行视界中的站点首页、分类和标签链接直接替换左栏，不再打开
-  // WebView。正文链接与话题头部 Badge 使用同一套行为。
+  final directoryInfo = DiscourseUrlParser.parseGroupDirectory(url);
+  if (directoryInfo != null && isInternalUrlString(url)) {
+    Navigator.of(context).push(
+      InteractionPageRoute(
+        builder: (_) => GroupsPage(
+          initialFilter: directoryInfo.filter,
+          initialType: directoryInfo.type,
+          initialOrder: directoryInfo.order,
+          initialAscending: directoryInfo.ascending,
+          username: directoryInfo.username,
+        ),
+      ),
+    );
+    return;
+  }
+
+  final groupInfo = DiscourseUrlParser.parseGroup(url);
+  if (groupInfo != null && isInternalUrlString(url)) {
+    Navigator.of(context).push(
+      InteractionPageRoute(
+        builder: (_) => GroupPage(
+          name: groupInfo.name,
+          initialSection: groupInfo.section,
+          initialActivityFilter: groupInfo.activityFilter,
+          initialCategoryId: groupInfo.categoryId,
+        ),
+      ),
+    );
+    return;
+  }
+
+  final categoryInfo = DiscourseUrlParser.parseCategory(url);
+  if (categoryInfo != null && isInternalUrlString(url)) {
+    await openCategoryPage(context, categoryInfo.categoryId);
+    return;
+  }
+
+  // 首页平行视界中的站点首页和标签链接直接替换左栏。
   final workspace = HomeWorkspaceScope.maybeOf(context);
   if (workspace != null && isInternalUrlString(url)) {
     if (DiscourseUrlParser.isHomepage(url)) {
       workspace.onShowFeed();
       return;
-    }
-    final categoryInfo = DiscourseUrlParser.parseCategory(url);
-    if (categoryInfo != null) {
-      final container = ProviderScope.containerOf(context, listen: false);
-      final category = container
-          .read(categoryMapProvider)
-          .value?[categoryInfo.categoryId];
-      if (category != null) {
-        workspace.onShowCategory(category);
-        return;
-      }
     }
     final tag = DiscourseUrlParser.parseTag(url);
     if (tag != null && tag.isNotEmpty) {

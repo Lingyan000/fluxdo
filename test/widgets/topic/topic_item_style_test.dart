@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/utils/responsive.dart';
 import 'package:fluxdo/widgets/topic/painted_topic_card.dart';
 import 'package:fluxdo/widgets/topic/topic_card.dart';
 import 'package:fluxdo/widgets/topic/topic_item_builder.dart';
@@ -80,6 +81,70 @@ void main() {
   });
 
   for (final style in TopicItemStyle.values) {
+    testWidgets('$style 默认桌面限宽，父级提供宽度时遵循父级边界', (tester) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final topic = Topic(
+        id: 20,
+        title: 'Topic in a constrained page',
+        slug: 'constrained',
+        postsCount: 8,
+        replyCount: 7,
+        views: 100,
+        likeCount: 2,
+        categoryId: '1',
+      );
+      for (final pageOwnsWidth in [false, true]) {
+        await tester.pumpWidget(
+          ProviderScope(
+            child: MaterialApp(
+              home: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    width: 1032,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => buildTopicItem(
+                        context: context,
+                        topic: topic,
+                        style: style,
+                        isSelected: false,
+                        onTap: () {},
+                        enableLongPress: false,
+                        availableWidth: pageOwnsWidth
+                            ? constraints.maxWidth
+                            : null,
+                        categoryMap: const {},
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final expectedWidth = pageOwnsWidth
+            ? 1032.0
+            : Breakpoints.maxContentWidth;
+        final card = find.byType(
+          style == TopicItemStyle.standard
+              ? PaintedTopicCard
+              : CompactTopicCard,
+        );
+        expect(tester.getSize(card).width, expectedWidth);
+        if (style == TopicItemStyle.standard) {
+          expect(
+            tester.widget<PaintedTopicCard>(card).layout.layoutWidth,
+            expectedWidth,
+          );
+        }
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('置顶话题卡片按列表指定的 $style 展示，默认保持普通卡片', (tester) async {
       final topic = Topic(
         id: 1,

@@ -14,6 +14,7 @@ import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
 import 'webview_page.dart';
+import 'groups_page.dart';
 import 'login_page.dart';
 import '../widgets/auth/qr_login_sheet.dart';
 import 'browsing_history_page.dart';
@@ -881,6 +882,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           onTap: () => Navigator.push(
             context,
             InteractionPageRoute(builder: (_) => const ChatListPage()),
+          ),
+        ),
+        _buildOptionTile(
+          icon: Symbols.groups_rounded,
+          title: context.l10n.userProfile_groups,
+          onTap: () => Navigator.push(
+            context,
+            InteractionPageRoute(builder: (_) => const GroupsPage()),
           ),
         ),
         _buildOptionTile(

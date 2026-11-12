@@ -49,10 +49,11 @@ TopicCardLayout obtainTopicItemLayout({
   required BuildContext context,
   required Topic topic,
   Map<int, Category>? categoryMap,
+  double? availableWidth,
   double? statsAvailableWidth,
   bool messageStyle = false,
 }) {
-  final cardWidth = topicCardWidthFor(context);
+  final cardWidth = availableWidth ?? topicCardWidthFor(context);
   final categoryId = int.tryParse(topic.categoryId);
   return TopicCardLayout.obtain(
     identity: 'topic:${topic.id}',
@@ -72,6 +73,8 @@ TopicCardLayout obtainTopicItemLayout({
 /// 宽度包装。普通/私信话题卡默认走自绘(单渲染对象,挂载帧纯绘制,
 /// 见 [TopicCardLayout]);带自定义 topWidget/middleWidget 的调用方
 /// (书签有专用自绘接线)与显式指定的紧凑卡走 widget 版。
+/// 已统一页面宽度的调用方通过 LayoutBuilder 传入 [availableWidth]，
+/// 排版使用该实际宽度，并跳过默认的桌面居中限宽。
 Widget buildTopicItem({
   required BuildContext context,
   required Topic topic,
@@ -86,6 +89,7 @@ Widget buildTopicItem({
   Widget? middleWidget,
   bool messageStyle = false,
   Map<int, Category>? categoryMap,
+  double? availableWidth,
   double? statsAvailableWidth,
   List<PreviewAction>? previewActions,
   WidgetBuilder? previewCustomActionPanelBuilder,
@@ -102,10 +106,10 @@ Widget buildTopicItem({
       PageBackgroundScope.contentColor(
         context,
         grouped
-          ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
-          : compact
-          ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
-          : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
+            ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
+            : compact
+            ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
+            : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
       );
 
   // 从实际卡身接管画面；桌面的居中约束留在来源外层。
@@ -164,6 +168,7 @@ Widget buildTopicItem({
           context: context,
           topic: topic,
           categoryMap: categoryMap,
+          availableWidth: availableWidth,
           statsAvailableWidth: statsAvailableWidth,
           messageStyle: messageStyle,
         )
@@ -221,7 +226,7 @@ Widget buildTopicItem({
     },
   );
 
-  if (!isMobile) {
+  if (!isMobile && availableWidth == null) {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(
