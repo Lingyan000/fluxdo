@@ -178,5 +178,6 @@ FluxDO 集成了基于 Rust 的 DOH (DNS over HTTPS) 代理，提供：
 ## 相关文档
 
 - [开发环境与日常命令](docs/development.md)
+- [插件开发文档](docs/plugins/README.md)
 - [Flatpak 打包说明](docs/flatpak.md)
 - [发版与 iOS IPA](docs/release.md)
