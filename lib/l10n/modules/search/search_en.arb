@@ -2,6 +2,7 @@
   "@@locale": "en",
   "search_advancedSearch": "Advanced search",
   "search_afterDate": "After {date}",
+  "search_aiSearching": "Searching with AI…",
   "search_applyFilter": "Apply filter",
   "search_beforeDate": "Before {date}",
   "search_category": "Category",
