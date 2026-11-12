@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
 
@@ -44,7 +45,7 @@ class CustomThemes {
   ///
   /// 固定配色主题直接复制配色；生成式主题（Material / 简约）没有关键色，
   /// 从当前解析结果 [resolved] 里取：表面 / 文字 / 分割线、语义色相，
-  /// 以及主色、第三色作为强调色。
+  /// 以及主色、第三色作为强调色。圆角与界面风格都沿用底稿。
   static ThemeSpec draftFrom(
     ThemeSpec base, {
     required String name,
@@ -80,6 +81,7 @@ class CustomThemes {
       name: {'zh': name, 'en': name},
       group: ThemeGroup.custom,
       shape: base.shape,
+      style: base.style,
       light: palette(Brightness.light),
       dark: palette(Brightness.dark),
       accents: [
@@ -99,8 +101,9 @@ class CustomThemes {
     );
   }
 
-  /// 从主题代码导入：完整校验，强制归入「我的主题」，id 与已有主题冲突
-  /// 时换新。格式不合法抛 [FormatException]。
+  /// 从主题代码导入：补全省略的部分（见 [_complete]）后完整校验，强制
+  /// 归入「我的主题」，id 与已有主题冲突时换新。格式不合法抛
+  /// [FormatException]。
   static ThemeSpec importFrom(String raw, {required Set<String> existingIds}) {
     final Object? json;
     try {
@@ -111,7 +114,7 @@ class CustomThemes {
     if (json is! Map<String, dynamic>) {
       throw const FormatException('不是有效的主题代码');
     }
-    final spec = ThemeSpec.fromJson(json);
+    final spec = ThemeSpec.fromJson(_complete(json));
     if (spec.isGenerated) {
       throw const FormatException('只能导入固定配色主题');
     }
@@ -122,6 +125,68 @@ class CustomThemes {
       group: ThemeGroup.custom,
       clearFamily: true,
     );
+  }
+
+  /// 补全主题代码里省略的部分，方便手写或从别处的配色换算：
+  /// - `id`、`kind` 可省略；
+  /// - 每一侧只有 `bg`、`fg` 必填：`fgMuted`、`border` 缺省由两者混合得出，
+  ///   `hues` 里缺省的色相取默认语义色；
+  /// - 强调色可以只写一个颜色，或只给一侧（两侧共用，显示时按各自背景
+  ///   补足对比度）。
+  ///
+  /// `group` 直接丢弃：导入后一律归入「我的主题」，旧版本导出的分组名
+  /// 改过也不影响导入。写了的其他字段原样交给 [ThemeSpec.fromJson] 严格
+  /// 校验，不替用户纠错。
+  static Map<String, dynamic> _complete(Map<String, dynamic> json) {
+    Object? palette(Object? raw, Brightness brightness) {
+      if (raw is! Map<String, dynamic>) return raw;
+      final bg = ThemeSpecColor.tryParse(raw['bg']);
+      final fg = ThemeSpecColor.tryParse(raw['fg']);
+      final hues = raw['hues'];
+      if (bg == null || fg == null || (hues != null && hues is! Map)) {
+        return raw;
+      }
+      final defaults = AppColors.material(brightness).hues;
+      return {
+        ...raw,
+        if (raw['fgMuted'] == null)
+          'fgMuted': ThemeSpecColor.format(Color.lerp(fg, bg, 0.35)!),
+        if (raw['border'] == null)
+          'border': ThemeSpecColor.format(Color.lerp(bg, fg, 0.12)!),
+        'hues': {
+          for (final hue in AppHue.basics)
+            hue.name: ThemeSpecColor.format(defaults[hue]!.shade500),
+          ...?(hues as Map?),
+        },
+      };
+    }
+
+    Object? accents(Object? raw) {
+      if (raw is! List) return raw;
+      return [
+        for (final (i, accent) in raw.indexed)
+          if (accent is String)
+            {'id': 'a$i', 'light': accent, 'dark': accent}
+          else if (accent is Map<String, dynamic>)
+            {
+              'id': 'a$i',
+              ...accent,
+              'light': accent['light'] ?? accent['dark'],
+              'dark': accent['dark'] ?? accent['light'],
+            }
+          else
+            accent,
+      ];
+    }
+
+    return {
+      'id': newId(),
+      'kind': ThemeColorKind.fixed.name,
+      ...json,
+      'light': palette(json['light'], Brightness.light),
+      'dark': palette(json['dark'], Brightness.dark),
+      'accents': accents(json['accents']),
+    }..remove('group');
   }
 
   /// 导出为主题代码（格式化 JSON，便于分享与手改）。

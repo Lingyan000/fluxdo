@@ -205,6 +205,9 @@ class _CustomThemeEditorPageState
         : _spec.copyWith(dark: palette);
   });
 
+  void _setStyle(ThemeStyle style) =>
+      setState(() => _spec = _spec.copyWith(style: style));
+
   Future<void> _pick(Color current, void Function(Color) apply) async {
     final color = await _showSeedColorPicker(context, ref, initial: current);
     if (color != null && mounted) apply(color);
@@ -235,6 +238,7 @@ class _CustomThemeEditorPageState
     );
     final scheme = side == Brightness.light ? resolved.light : resolved.dark;
     final palette = _palette;
+    final style = _spec.style;
 
     Widget sectionTitle(String text) => Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
@@ -260,6 +264,37 @@ class _CustomThemeEditorPageState
       ),
       trailing: const Icon(Symbols.chevron_right_rounded),
       onTap: () => _pick(color, apply),
+    );
+
+    // 界面风格的一项：标题 + 联排选项。选项取枚举的全部取值，文案用
+    // 穷尽的 switch 给出，新增取值时编译器会要求补上
+    Widget styleChoice<T>(
+      String label,
+      List<T> values,
+      String Function(T value) name,
+      T selected,
+      ThemeStyle Function(T value) apply,
+    ) => Padding(
+      // 可横滑的按钮组四周自带 8 的留白，这里补到与其他分区同样的 16 边距
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(label, style: textTheme.bodyMedium),
+          ),
+          M3eButtonGroup<T>(
+            scrollable: true,
+            items: [
+              for (final value in values)
+                M3eButtonGroupItem(value: value, label: Text(name(value))),
+            ],
+            selected: selected,
+            onSelected: (value) => _setStyle(apply(value)),
+          ),
+        ],
+      ),
     );
 
     return Scaffold(
@@ -456,6 +491,88 @@ class _CustomThemeEditorPageState
               selected: _spec.shape,
               onSelected: (value) =>
                   setState(() => _spec = _spec.copyWith(shape: value)),
+            ),
+          ),
+          sectionTitle(l10n.appearance_themeEditorStyle),
+          styleChoice(
+            l10n.appearance_styleSurfaces,
+            SurfaceStyle.values,
+            (v) => switch (v) {
+              SurfaceStyle.filled => l10n.appearance_styleSurfacesFilled,
+              SurfaceStyle.outlined => l10n.appearance_styleSurfacesOutlined,
+              SurfaceStyle.flat => l10n.appearance_styleSurfacesFlat,
+              SurfaceStyle.raised => l10n.appearance_styleSurfacesRaised,
+            },
+            style.surfaces,
+            (v) => style.copyWith(surfaces: v),
+          ),
+          styleChoice(
+            l10n.appearance_styleControls,
+            ControlStyle.values,
+            (v) => switch (v) {
+              ControlStyle.accent => l10n.appearance_styleControlsAccent,
+              ControlStyle.ink => l10n.appearance_styleControlsInk,
+            },
+            style.controls,
+            (v) => style.copyWith(controls: v),
+          ),
+          styleChoice(
+            l10n.appearance_styleNav,
+            NavIndicatorStyle.values,
+            (v) => switch (v) {
+              NavIndicatorStyle.pill => l10n.appearance_styleNavPill,
+              NavIndicatorStyle.bar => l10n.appearance_styleNavBar,
+              NavIndicatorStyle.tint => l10n.appearance_styleNavTint,
+            },
+            style.navIndicator,
+            (v) => style.copyWith(navIndicator: v),
+          ),
+          styleChoice(
+            l10n.appearance_styleInputs,
+            InputStyle.values,
+            (v) => switch (v) {
+              InputStyle.filled => l10n.appearance_styleInputsFilled,
+              InputStyle.outlined => l10n.appearance_styleInputsOutlined,
+              InputStyle.underline => l10n.appearance_styleInputsUnderline,
+            },
+            style.inputs,
+            (v) => style.copyWith(inputs: v),
+          ),
+          styleChoice(
+            l10n.appearance_styleQuote,
+            QuoteStyle.values,
+            (v) => switch (v) {
+              QuoteStyle.card => l10n.appearance_styleQuoteCard,
+              QuoteStyle.bar => l10n.appearance_styleQuoteBar,
+            },
+            style.quote,
+            (v) => style.copyWith(quote: v),
+          ),
+          styleChoice(
+            l10n.appearance_styleDataColors,
+            DataColorStyle.values,
+            (v) => switch (v) {
+              DataColorStyle.vivid => l10n.appearance_styleDataColorsVivid,
+              DataColorStyle.harmonized =>
+                l10n.appearance_styleDataColorsHarmonized,
+              DataColorStyle.muted => l10n.appearance_styleDataColorsMuted,
+              DataColorStyle.mono => l10n.appearance_styleDataColorsMono,
+            },
+            style.dataColors,
+            (v) => style.copyWith(dataColors: v),
+          ),
+          SwitchListTile(
+            title: Text(l10n.appearance_styleShadows),
+            value: style.shadows,
+            onChanged: (v) => _setStyle(style.copyWith(shadows: v)),
+          ),
+          SwitchListTile(
+            title: Text(l10n.appearance_styleTexture),
+            value: style.texture == TextureStyle.paper,
+            onChanged: (v) => _setStyle(
+              style.copyWith(
+                texture: v ? TextureStyle.paper : TextureStyle.none,
+              ),
             ),
           ),
         ],
