@@ -297,7 +297,7 @@ fluxdo.on('login',async ctx => {
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
     else if (ctx.page === 'product' || ctx.page === 'review') await detail(ctx);
     else ctx.setData('authorized',true);
-  } catch (_) {ctx.setData('loginError','登录未完成，请检查当前 Linux DO 账号与网络后重试。');}
+  } catch (error) {ctx.setData('loginError',error.message || '登录未完成，请稍后重试。');}
   finally {ctx.setData('loggingIn',false);}
 });
 async function payOrder(ctx,cancel) {

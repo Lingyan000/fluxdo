@@ -19,6 +19,13 @@
   },
   "github_viewFullCode": "點擊查看完整代碼",
   "metaverse_addService": "新增第三方服務",
+  "metaverse_loginInitialize": "授權初始化",
+  "metaverse_loginAuthorization": "Linux DO 授權",
+  "metaverse_loginCallback": "服務回調",
+  "metaverse_loginExchange": "工作階段交換",
+  "metaverse_loginVerification": "帳戶驗證",
+  "metaverse_loginCallbackNotDeclared": "服務的授權回調尚未聲明，請更新外掛後重新登入。",
+  "metaverse_loginStageFailed": "登入在「{stage}」階段未完成，請重試。",
   "metaverse_addServiceDesc": "透過清單網址安裝社群開發的服務",
   "metaverse_authFailed": "授權失敗: {error}",
   "@metaverse_authFailed": {
