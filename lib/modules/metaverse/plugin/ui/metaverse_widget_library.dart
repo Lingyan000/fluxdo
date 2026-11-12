@@ -662,40 +662,32 @@ class _PluginTextInputState extends State<_PluginTextInput> {
   @override
   Widget build(BuildContext context) {
     if (widget.search) {
-      return SearchBar(
+      return InputFieldShell(child: TextField(
         controller: _controller,
-        hintText: widget.hint,
-        leading: IconButton(
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          prefixIcon: IconButton(
           icon: const Icon(Symbols.search_rounded),
           tooltip: widget.hint,
           onPressed: () => _submitSearch(_controller.text),
         ),
-        constraints: const BoxConstraints(minHeight: 48),
-        backgroundColor: WidgetStatePropertyAll(
-          PageBackgroundScope.contentColor(
-            context,
-            Theme.of(context).colorScheme.surfaceContainerLow,
+          suffixIcon: _controller.text.isEmpty ? null : IconButton(
+            tooltip: context.l10n.common_clear,
+            icon: const Icon(Symbols.close_rounded),
+            onPressed: () {
+              setState(_controller.clear);
+              widget.onChanged?.call('');
+              _submitSearch('');
+            },
           ),
         ),
-        elevation: const WidgetStatePropertyAll(0),
         onChanged: (value) {
           setState(() {});
           widget.onChanged?.call(value);
         },
         onSubmitted: _submitSearch,
-        trailing: [
-          if (_controller.text.isNotEmpty)
-            IconButton(
-              tooltip: context.l10n.common_clear,
-              icon: const Icon(Symbols.close_rounded),
-              onPressed: () {
-                setState(_controller.clear);
-                widget.onChanged?.call('');
-                _submitSearch('');
-              },
-            ),
-        ],
-      );
+      ));
     }
     return TextField(
       controller: _controller,

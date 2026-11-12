@@ -676,7 +676,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     await tester.enterText(find.byType(TextField), '卡密');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
-    expect(find.byType(SearchBar), findsOneWidget);
+    expect(find.byType(InputFieldShell), findsOneWidget);
     expect(events, ['change:卡密', 'submit:卡密']);
     await tester.tap(
       find.byTooltip(

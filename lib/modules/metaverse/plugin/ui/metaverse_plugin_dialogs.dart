@@ -336,14 +336,12 @@ class _InstallReview extends StatelessWidget {
               description: manifest.networkHosts.isEmpty
                   ? l.metaverse_pluginPermNetworkNone
                   : manifest.networkHosts.join(' · '),
+              details: [
+                ...manifest.networkHosts,
+                if (manifest.publicImages) l.metaverse_pluginPublicImages,
+              ],
             ),
-            if (manifest.publicImages)
-              _PermissionRow(
-                icon: Symbols.image_rounded,
-                title: l.metaverse_permissionImages,
-                description: l.metaverse_pluginPublicImages,
-              ),
-            if (manifest.auth.canAttachCredential)
+            if (manifest.auth.canAttachCredential || manifest.webLogin != null)
               _PermissionRow(
                 icon: Symbols.account_circle_rounded,
                 title: l.metaverse_permissionAccount,
@@ -351,39 +349,25 @@ class _InstallReview extends StatelessWidget {
                     ? l.metaverse_permissionNativeLogin
                     : manifest.auth.required
                     ? l.metaverse_pluginPermToken
-                    : l.metaverse_pluginPermReadSession,
+                    : l.metaverse_permissionServiceSession,
                 details: [
                   ...manifest.auth.hosts,
                   if (manifest.auth.connect != null)
                     ...manifest.auth.connect!.values,
+                  for (final url in manifest.auth.queries.values) 'POST $url',
+                  if (manifest.auth.checkout case final endpoints?) ...[
+                    'POST ${endpoints.create}',
+                    'GET ${endpoints.lookup}',
+                  ],
+                  if (manifest.webLogin case final login?)
+                    '${l.metaverse_permissionWebSession} · ${login.host}',
                 ],
-              ),
-            if (manifest.auth.queries.isNotEmpty)
-              _PermissionRow(
-                icon: Symbols.manage_search_rounded,
-                title: l.metaverse_permissionQueries,
-                description: l.metaverse_permissionQueriesNote,
-                details: manifest.auth.queries.values.toList(),
-              ),
-            if (manifest.auth.checkout case final endpoints?)
-              _PermissionRow(
-                icon: Symbols.shopping_bag_rounded,
-                title: l.metaverse_permissionOrders,
-                description: l.metaverse_permissionOrdersNote,
-                details: [endpoints.create, endpoints.lookup],
               ),
             if (manifest.auth.payment != null)
               _PermissionRow(
                 icon: Symbols.payments_rounded,
                 title: l.metaverse_nativePayTitle,
                 description: l.metaverse_permissionPaymentNote,
-              ),
-            if (manifest.webLogin case final Uri login)
-              _PermissionRow(
-                icon: Symbols.language_rounded,
-                title: l.metaverse_permissionWebSession,
-                description: l.metaverse_pluginWebSession,
-                details: [login.host],
               ),
             if (manifest.linkHosts.isNotEmpty)
               _PermissionRow(
