@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -10,21 +11,34 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_payment.dart';
-import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_payment_sheet.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
+import 'package:fluxdo/modules/ldc_payment/ldc_payment_sheet.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/ldc_payment_service.dart';
+import 'package:fluxdo/services/ldc_biometric_payment.dart';
+import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_theme.dart';
 import 'package:rfw/rfw.dart';
 import 'package:rfw/formats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
-class _Payment implements MetaversePayment {
+class _EmptyPlugins extends MetaversePluginsController {
+  @override
+  List<InstalledMetaversePlugin> build() => [];
+}
+
+class _Payment implements LdcPaymentDelegate {
   int payments = 0, refreshes = 0;
   int passwords = 0;
   bool timeout = false, refreshFails = false;
+  String status = 'completed';
   Completer<void>? pending;
   final order = LdcPaymentOrder(
     token: 'fixture',
@@ -58,11 +72,10 @@ class _Payment implements MetaversePayment {
   }
 
   @override
-  Future<Map> request(String no, String action) async {
-    expect(action, 'refresh');
+  Future<bool> refreshPayment(String no) async {
     refreshes++;
     if (refreshFails) throw StateError('offline');
-    return {'status': 'completed'};
+    return status == 'completed';
   }
 
   @override
@@ -85,6 +98,9 @@ void main() {
             ),
           );
     await icons.load();
+    final materialIcons = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await materialIcons.load();
     if (snapshots) {
       final font = File('C:/Windows/Fonts/msyh.ttc');
       final loader = FontLoader('ReviewFont')
@@ -97,6 +113,7 @@ void main() {
     Widget child, {
     Brightness brightness = Brightness.light,
     double scale = 1,
+    bool reducedMotion = false,
   }) {
     const seed = Colors.indigo;
     final theme = buildAppTheme(
@@ -108,7 +125,10 @@ void main() {
       pageBackground: false,
     );
     return ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(preferences),
+        metaversePluginsProvider.overrideWith(_EmptyPlugins.new),
+      ],
       child: RepaintBoundary(
         key: captureKey,
         child: TranslationProvider(
@@ -120,8 +140,10 @@ void main() {
                   )
                 : theme,
             builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+                disableAnimations: reducedMotion,
+              ),
               child: child!,
             ),
             home: Scaffold(
@@ -155,8 +177,12 @@ void main() {
     WidgetTester tester,
     _Payment payment, {
     bool needsPassword = false,
+    bool reducedMotion = false,
+    Size size = const Size(390, 844),
+    double scale = 1,
+    LdcBiometricPayment? biometrics,
   }) async {
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -165,17 +191,20 @@ void main() {
         Builder(
           builder: (context) => Center(
             child: FilledButton(
-              onPressed: () => showMetaversePaymentSheet(
+              onPressed: () => showLdcPaymentSheet(
                 context,
                 payment: payment,
                 orderNo: payment.order.orderNo,
                 username: 'tester',
                 needsPassword: needsPassword,
+                biometrics: biometrics,
               ),
               child: const Text('支付入口'),
             ),
           ),
         ),
+        reducedMotion: reducedMotion,
+        scale: scale,
       ),
     );
     await tester.tap(find.text('支付入口'));
@@ -215,6 +244,13 @@ void main() {
     expect(find.text('12.50 LDC'), findsOneWidget);
     expect(find.text('LD士多 · seller'), findsOneWidget);
     expect(payment.payments, 0);
+    expect(
+      tester
+          .widget<AppSheetScaffold>(find.byType(AppSheetScaffold))
+          .showDragHandle,
+      isTrue,
+    );
+    expect(find.byType(PinInput), findsOneWidget);
     await snapshot(tester, 'payment');
     await tester.tap(
       find.text(tester.element(find.byType(Scaffold).first).l10n.common_cancel),
@@ -256,6 +292,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(payment.refreshes, 1);
     expect(find.byType(TextField), findsNothing);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+    await snapshot(tester, 'payment-success');
+    await tester.tap(
+      find.text(
+        tester
+            .element(find.byType(Scaffold).first)
+            .l10n
+            .metaverse_nativePayViewOrder,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
   });
 
   testWidgets('付款响应丢失后仅提供查单，查单恢复也不重放扣款', (tester) async {
@@ -297,6 +345,341 @@ void main() {
     await tester.pumpAndSettle();
     expect(payment.payments, 1);
     expect(payment.refreshes, 2);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+  });
+
+  testWidgets('超时后订单仍待支付时保留查单，成功态由服务端状态确认', (tester) async {
+    final payment = _Payment()
+      ..timeout = true
+      ..status = 'pending';
+    await openPayment(tester, payment);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.byType(PinInput), findsNothing);
+    expect(find.text(l.metaverse_nativePayPending), findsOneWidget);
+    payment.status = 'completed';
+    await tester.tap(find.text(l.metaverse_nativePayCheck));
+    await tester.pumpAndSettle();
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+    expect(payment.payments, 1);
+  });
+
+  testWidgets('减少动态效果时直接完成，商户刷新失败保留收银台成功结果', (tester) async {
+    final payment = _Payment()..refreshFails = true;
+    await openPayment(tester, payment, reducedMotion: true);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(find.text(l.metaverse_nativePaySuccess), findsOneWidget);
+    expect(find.text(l.metaverse_nativePayPending), findsNothing);
+    expect(payment.payments, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('密码输入仅保留六位数字，删除与清空同步格子，读屏隐藏原文', (tester) async {
+    await openPayment(tester, _Payment());
+    await tester.enterText(find.byType(TextField), '1a23456789');
+    await tester.pump();
+    final input = tester.widget<TextField>(find.byType(TextField));
+    expect(input.controller!.text, '123456');
+    expect(input.obscureText, isTrue);
+    expect(find.text('•'), findsNWidgets(6));
+    await tester.enterText(find.byType(TextField), '123');
+    await tester.pump();
+    expect(find.text('•'), findsNWidgets(3));
+    input.controller!.clear();
+    await tester.pump();
+    expect(find.text('•'), findsNothing);
+  });
+
+  for (final width in [390.0, 800.0]) {
+    testWidgets('插件弹层复用统一外壳 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        app(
+          const MetaversePluginPage(
+            pluginId: 'test.missing',
+            page: 'details',
+            modal: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final shell = tester.widget<AppSheetScaffold>(
+        find.byType(AppSheetScaffold),
+      );
+      expect(shell.showDragHandle, width < 600);
+      expect(shell.expandToFill, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('通用搜索组件提交、清空与脚本更新保留标准输入行为', (tester) async {
+    final runtime = Runtime()
+      ..update(
+        metaverseWidgetLibraryName,
+        createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)),
+      )
+      ..update(
+        metaversePluginLibraryName,
+        parseLibraryFile('''
+import fluxdo;
+widget Search = SearchInput(hint: "搜索", value: data.query,
+  onChanged: event "change" {}, onSubmitted: event "submit" {});
+'''),
+      );
+    addTearDown(runtime.dispose);
+    final content = DynamicContent({'query': ''});
+    final events = <String>[];
+    await tester.pumpWidget(
+      app(
+        RemoteWidget(
+          runtime: runtime,
+          widget: const FullyQualifiedWidgetName(
+            metaversePluginLibraryName,
+            'Search',
+          ),
+          data: content,
+          onEvent: (name, arguments) =>
+              events.add('$name:${arguments['value']}'),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), '卡密');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+    expect(find.byType(SearchBar), findsOneWidget);
+    expect(events, ['change:卡密', 'submit:卡密']);
+    await tester.tap(
+      find.byTooltip(
+        tester.element(find.byType(Scaffold).first).l10n.common_clear,
+      ),
+    );
+    await tester.pump();
+    expect(events.sublist(2), ['change:', 'submit:']);
+    content.update('query', '新查询');
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '新查询',
+    );
+  });
+
+  for (final width in [320.0, 390.0, 800.0]) {
+    testWidgets('安装权限可滚动且底部确认始终可点击 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final manifest = MetaversePluginManifest.parse(
+        jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      );
+      bool? result;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async =>
+                  result = await showMetaversePluginInstallSheet(
+                    context,
+                    manifest,
+                    isUpdate: true,
+                  ),
+              child: const Text('安装入口'),
+            ),
+          ),
+          scale: width == 320 ? 1.6 : 1,
+        ),
+      );
+      await tester.tap(find.text('安装入口'));
+      await tester.pumpAndSettle();
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      final update = find.widgetWithText(
+        FilledButton,
+        l.metaverse_pluginUpdate,
+      );
+      expect(update.hitTestable(), findsOneWidget);
+      final list = find.byType(ListView);
+      final controller = tester.widget<ListView>(list).controller!;
+      await tester.drag(list, const Offset(0, -900));
+      await tester.pumpAndSettle();
+      await tester.drag(list, const Offset(0, -500));
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
+      expect(update.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      if (width == 390) {
+        controller.jumpTo(0);
+        await snapshot(tester, 'install-review');
+      }
+      await tester.tap(update);
+      await tester.pumpAndSettle();
+      expect(result, isTrue);
+      expect(find.text('安装入口'), findsOneWidget);
+    });
+  }
+
+  for (final confirm in [true, false]) {
+    testWidgets('生物识别付款确认 $confirm，取消保留密码入口', (tester) async {
+      var confirmed = true;
+      var authentications = 0;
+      final biometric = LdcBiometricPayment(
+        accountId: 501,
+        store: InMemorySecretStore(),
+        preferences: preferences,
+        checkSession: () async {},
+        available: () async => true,
+        authenticate: (_) async {
+          authentications++;
+          return confirmed;
+        },
+      );
+      await biometric.enable('123456', 'setup');
+      confirmed = confirm;
+      final payment = _Payment();
+      await openPayment(tester, payment, biometrics: biometric);
+      expect(payment.payments, 0);
+      expect(authentications, 1);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      final pay = find.widgetWithText(FilledButton, l.ldc_biometricPay);
+      if (confirm) await snapshot(tester, 'payment-biometric');
+      await tester.ensureVisible(pay);
+      await tester.tap(pay);
+      await tester.pumpAndSettle();
+      expect(authentications, 2);
+      expect(payment.payments, confirm ? 1 : 0);
+      expect(payment.refreshes, confirm ? 1 : 0);
+      if (confirm) {
+        expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+      } else {
+        expect(find.byType(PinInput), findsOneWidget);
+        expect(find.text(l.ldc_biometricFailed), findsOneWidget);
+      }
+    });
+  }
+
+  for (final setupAllowed in [true, false]) {
+    testWidgets('主动开启生物识别 $setupAllowed，仅在密码付款确认后保存', (tester) async {
+      await preferences.clear();
+      var authentications = 0;
+      final payment = _Payment()..pending = Completer<void>();
+      final biometric = LdcBiometricPayment(
+        accountId: 601,
+        store: InMemorySecretStore(),
+        preferences: preferences,
+        checkSession: () async {},
+        available: () async => true,
+        authenticate: (_) async {
+          expect(payment.payments, 1);
+          expect(payment.pending!.isCompleted, isTrue);
+          authentications++;
+          return setupAllowed;
+        },
+      );
+      await openPayment(tester, payment, biometrics: biometric);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(
+        tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+        isFalse,
+      );
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.pump();
+      final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+      await tester.ensureVisible(pay);
+      await tester.tap(pay);
+      await tester.pump();
+      expect(authentications, 0);
+      expect(biometric.enabled, isFalse);
+      payment.pending!.complete();
+      await tester.pumpAndSettle();
+      expect(authentications, 1);
+      expect(biometric.enabled, setupAllowed);
+      expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+      expect(
+        find.text(
+          setupAllowed ? l.ldc_biometricEnabled : l.ldc_biometricSaveFailed,
+        ),
+        findsOneWidget,
+      );
+    });
+  }
+
+  testWidgets('付款响应丢失时只查单，不开启生物识别或重放付款', (tester) async {
+    await preferences.clear();
+    var authentications = 0;
+    final payment = _Payment()..timeout = true;
+    final biometric = LdcBiometricPayment(
+      accountId: 602,
+      store: InMemorySecretStore(),
+      preferences: preferences,
+      checkSession: () async {},
+      available: () async => true,
+      authenticate: (_) async {
+        authentications++;
+        return true;
+      },
+    );
+    await openPayment(tester, payment, biometrics: biometric);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+    await tester.ensureVisible(pay);
+    await tester.tap(pay);
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(payment.refreshes, 1);
+    expect(authentications, 0);
+    expect(biometric.enabled, isFalse);
+    expect(find.byType(M3eSuccessIndicator), findsOneWidget);
+  });
+
+  testWidgets('窄屏大字体与键盘下可滚动到付款和取消入口', (tester) async {
+    await preferences.clear();
+    final payment = _Payment();
+    final biometric = LdcBiometricPayment(
+      accountId: 603,
+      store: InMemorySecretStore(),
+      preferences: preferences,
+      checkSession: () async {},
+      available: () async => true,
+      authenticate: (_) async => true,
+    );
+    await openPayment(
+      tester,
+      payment,
+      biometrics: biometric,
+      size: const Size(320, 640),
+      scale: 1.6,
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    final pay = find.text(l.metaverse_nativePayConfirm('12.50'));
+    await tester.ensureVisible(pay);
+    await tester.pumpAndSettle();
+    expect(pay.hitTestable(), findsOneWidget);
+    final cancel = find.text(l.common_cancel);
+    await tester.ensureVisible(cancel);
+    await tester.pumpAndSettle();
+    expect(cancel.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    expect(payment.payments, 0);
   });
 
   final data = <String, Object?>{

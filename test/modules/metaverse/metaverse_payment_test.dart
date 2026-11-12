@@ -23,6 +23,8 @@ class _Store implements MetaversePluginStore {
 }
 
 class _TransactionApi implements HttpClientAdapter {
+  _TransactionApi({required this.host, required this.prefix});
+  final String host, prefix;
   final requests = <RequestOptions>[];
   @override
   Future<ResponseBody> fetch(
@@ -32,21 +34,21 @@ class _TransactionApi implements HttpClientAdapter {
   ) async {
     requests.add(options);
     final Map<String, Object?> response;
-    if (options.uri.host == 'api2.ldspro.qzz.io') {
+    if (options.uri.host == host) {
       expect(options.headers['Authorization'], 'Bearer fixture-session');
-      final data = switch (options.uri.path) {
-        '/api/shop/orders/order-1' => {
+      final data = switch (options.uri.path.substring(prefix.length)) {
+        '/orders/order-1' => {
           'order': {
             'orderNo': 'order-1',
             'status': 'pending',
             'totalPrice': '12.50',
           },
         },
-        '/api/shop/orders/order-1/payment-url' => {
+        '/orders/order-1/payment-url' => {
           'paymentUrl': 'https://credit.linux.do/epay/submit.php?sign=fixture',
         },
-        '/api/shop/orders/order-1/refresh' => {'status': 'completed'},
-        '/api/shop/orders/order-1/cancel' => null,
+        '/orders/order-1/refresh' => {'status': 'completed'},
+        '/orders/order-1/cancel' => null,
         _ => throw StateError('意外请求'),
       };
       response = {'success': true, 'data': data};
@@ -97,50 +99,60 @@ class _TransactionApi implements HttpClientAdapter {
 }
 
 void main() {
-  test('士多订单与 LDC 收银台衔接，付款和刷新仅发送约定请求', () async {
-    final manifest = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
-    );
-    final api = _TransactionApi();
-    final store = _Store(
-      MetaverseServiceSession(
-        'fixture-session',
-        accountId: 42,
-        checkout: MetaverseCheckoutGrant(
-          manifest.auth.checkout!,
-          subject: 'tester',
-          unit: 'LDC',
+  for (final (host, prefix) in [
+    ('api2.ldspro.qzz.io', '/api/shop'),
+    ('shop.example.org', '/v2/catalog'),
+  ]) {
+    test('$host 按清单衔接 LDC，域名和业务路径支持同协议新服务', () async {
+      final manifest = MetaversePluginManifest.parse(
+        jsonDecode(
+          File('plugins/ld-store/plugin.json')
+              .readAsStringSync()
+              .replaceAll('api2.ldspro.qzz.io', host)
+              .replaceAll('/api/shop', prefix),
         ),
-      ),
-    );
-    final network = MetaversePluginNetwork(
-      dio: Dio()..httpClientAdapter = api,
-      lookup: (_) async => [InternetAddress('198.18.0.6')],
-    );
-    final credit = LdcPaymentService(dio: Dio()..httpClientAdapter = api);
-    addTearDown(network.dispose);
-    addTearDown(credit.dispose);
-    final payment = MetaversePayment(
-      manifest,
-      store,
-      network,
-      credit,
-      accountId: 42,
-      isActive: () => true,
-    );
-    final order = await payment.prepare('order-1', 'tester');
-    expect(order.amount, '12.50');
-    expect(api.requests.every((r) => r.method == 'GET'), isTrue);
-    await payment.pay(order, '123456');
-    await payment.request('order-1', 'refresh');
-    expect(
-      api.requests.where((r) => r.method == 'POST').map((r) => r.uri.path),
-      ['/api/v1/merchant/payment', '/api/shop/orders/order-1/refresh'],
-    );
-    expect(await payment.request('order-1', 'cancel'), isEmpty);
-    store.session = null;
-    final count = api.requests.length;
-    await expectLater(payment.request('order-1', 'cancel'), throwsException);
-    expect(api.requests.length, count);
-  });
+      );
+      final api = _TransactionApi(host: host, prefix: prefix);
+      final store = _Store(
+        MetaverseServiceSession(
+          'fixture-session',
+          accountId: 42,
+          checkout: MetaverseCheckoutGrant(
+            manifest.auth.checkout!,
+            subject: 'tester',
+            unit: 'LDC',
+          ),
+        ),
+      );
+      final network = MetaversePluginNetwork(
+        dio: Dio()..httpClientAdapter = api,
+        lookup: (_) async => [InternetAddress('198.18.0.6')],
+      );
+      final credit = LdcPaymentService(dio: Dio()..httpClientAdapter = api);
+      addTearDown(network.dispose);
+      addTearDown(credit.dispose);
+      final payment = MetaversePayment(
+        manifest,
+        store,
+        network,
+        credit,
+        accountId: 42,
+        isActive: () => true,
+      );
+      final order = await payment.prepare('order-1', 'tester');
+      expect(order.amount, '12.50');
+      expect(api.requests.every((r) => r.method == 'GET'), isTrue);
+      await payment.pay(order, '123456');
+      await payment.request('order-1', 'refresh');
+      expect(
+        api.requests.where((r) => r.method == 'POST').map((r) => r.uri.path),
+        ['/api/v1/merchant/payment', '$prefix/orders/order-1/refresh'],
+      );
+      expect(await payment.request('order-1', 'cancel'), isEmpty);
+      store.session = null;
+      final count = api.requests.length;
+      await expectLater(payment.request('order-1', 'cancel'), throwsException);
+      expect(api.requests.length, count);
+    });
+  }
 }

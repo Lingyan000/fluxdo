@@ -43,6 +43,9 @@ dependencies:
   dio_cookie_manager: ^3.1.1
   cookie_jar: ^4.0.8
   flutter_secure_storage: ^10.3.1
+  local_auth: ^3.0.2
+  local_auth_android: ^2.3.0
+  local_auth_darwin: ^2.0.5
   flutter_inappwebview: ^6.2.0-beta.3
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
   # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)

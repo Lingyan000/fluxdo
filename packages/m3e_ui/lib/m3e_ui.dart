@@ -24,5 +24,6 @@ export 'src/m3e_motion.dart';
 export 'src/m3e_navigation_bar.dart';
 export 'src/m3e_refresh_indicator.dart';
 export 'src/m3e_switch.dart';
+export 'src/m3e_success_indicator.dart';
 export 'src/segmented_card_group.dart';
 export 'src/segmented_card_style.dart';

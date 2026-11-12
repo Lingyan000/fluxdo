@@ -8,7 +8,7 @@ import 'metaverse_service_session.dart';
 import 'runtime/metaverse_plugin_runtime.dart';
 
 /// 业务订单与 LDC 收银台的衔接。支付 URL 和密码留在宿主内。
-class MetaversePayment {
+class MetaversePayment implements LdcPaymentDelegate {
   MetaversePayment(
     this.manifest,
     this.store,
@@ -56,6 +56,7 @@ class MetaversePayment {
     return data['data'] as Map;
   }
 
+  @override
   Future<LdcPaymentOrder> prepare(String no, String username) async {
     final details = await request(no, 'details');
     final order = details['order'];
@@ -78,9 +79,20 @@ class MetaversePayment {
     );
   }
 
+  @override
+  Future<bool> refreshPayment(String orderNo) async {
+    final result = await request(orderNo, 'refresh');
+    return switch (result['status']) {
+      'paid' || 'delivered' || 'completed' => true,
+      _ => false,
+    };
+  }
+
+  @override
   Future<void> pay(LdcPaymentOrder order, String password) =>
       credit.pay(order, password, checkSession: checkSession);
 
+  @override
   Future<void> setInitialPassword(String password, String username) =>
       credit.setInitialPassword(password, username, checkSession: checkSession);
 }

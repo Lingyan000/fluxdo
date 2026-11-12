@@ -34,7 +34,7 @@ main.js        逻辑（跑在独立的 JS 引擎里）
 
 ## 清单
 
-宿主支持 schema 1 至 6。网站会话、商品弹层和公开图片需要 schema 2 或以上，服务读会话需要 schema 3，具名查询需要 schema 4，逐笔确认的原生建单需要 schema 5，原生 Connect 授权、LDC 买家支付与页面自管滚动需要 schema 6。旧版宿主会在安装时提示版本不兼容。下方基础示例仍使用 schema 1。
+宿主支持 schema 1 至 7。网站会话、商品弹层和公开图片需要 schema 2 或以上，服务读会话需要 schema 3，具名查询需要 schema 4，逐笔确认的原生建单需要 schema 5，原生 Connect 授权、LDC 买家支付与页面自管滚动需要 schema 6，`SearchInput` 需要 schema 7。旧版宿主会在安装时提示版本不兼容。下方基础示例仍使用 schema 1。
 
 ```json
 {
@@ -92,12 +92,33 @@ schema 4 的服务读会话可额外声明 `auth.queries`，例如 `{"orderQuote
 
 `auth.payment: "linuxDoCredit"` 与 `readSession`、`checkout` 一同声明。安装确认会展示该权限，授权成功后宿主按此服务协议配置报价和建单能力。
 
-- `fluxdo.checkout.pay(orderNo)` 读取业务订单与支付链接，取得 LDC 买家订单，核对账号、金额与商户订单号后展示原生支付确认。六位密码仅用于宿主的 LDC 买家付款请求。
+- `fluxdo.checkout.pay(orderNo)` 读取业务订单与支付链接，取得 LDC 买家订单，核对账号、金额与商户订单号后展示原生支付确认。六位密码由应用处理，用于 LDC 买家付款请求。
 - `fluxdo.checkout.cancel(orderNo)` 展示原生取消确认后取消对应业务订单。
 - 两个入口都要求用户点击，且同一插件同时只能处理一笔交易。支付响应丢失后查原单，结果返回给脚本后由订单接口重新读取状态。
 - 业务订单协议由 `checkout.create` 路径推导详情、`payment-url`、`refresh`、`cancel` 路径，结构参见 LD士多示例。采用其他交易协议的服务需新增宿主适配。
 
 页面声明 `scroll: false` 时由页面组件管理滚动与底部区域。`PageLayout(children, footer, loading, onRefresh)` 提供居中内容、下拉刷新与固定底部操作栏，配合 `TileGrid`、`Choice`、`EmptyState`、`SelectableLabel` 组合页面。省略 `scroll` 时保留原有宿主滚动方式。
+
+### 应用级 LDC 收银台
+
+`lib/modules/ldc_payment/ldc_payment_sheet.dart` 提供统一收银台，依赖应用服务层的 `LdcPaymentDelegate`。业务适配器负责准备订单、回查交付状态及会话有效性，`LdcPaymentService` 负责核对 LDC 订单、设置初始密码和提交付款。元宇宙的 `MetaversePayment` 实现此接口，插件脚本只接触订单号与结果。收银台可以供其他应用模块和采用 LDC 的插件复用。
+
+指纹、面部识别与 Touch ID 的本机确认由应用级 `LdcBiometricPayment` 提供。在用户勾选开启、密码付款获得明确成功响应后，再经系统生物识别确认保存支付密码。密码按付款账号隔离，写入现有系统安全存储，每笔付款都重新进行系统认证，随后读取密码并向 LDC 提交。关闭该能力会删除本地保存的密码。应用层认证门控与系统安全存储分别执行，当前没有配置逐笔生物识别绑定的存储密钥。
+
+Android、iOS、macOS 在设备提供已录入的生物识别时展示入口。Windows、Linux 及设备不可用时提供密码付款。取消系统认证、认证期间切换账号或切到后台会终止这次认证，界面保留密码入口。系统认证采用 `biometricOnly` 和 `sensitiveTransaction`。Android 主 Activity 使用 `FlutterFragmentActivity`，主题使用 AppCompat，iOS 声明 Face ID 用途。平台要求见 [Android 官方插件说明](https://pub.dev/packages/local_auth_android) 与 [Darwin 官方插件说明](https://pub.dev/packages/local_auth_darwin)。
+
+## 新服务的复用范围
+
+| 能力 | 只发布插件即可调整的部分 | 需要宿主适配的变化 |
+| --- | --- | --- |
+| 页面与交互 | 卡片、列表、搜索、筛选、底部操作区、商品链接路由、弹层与已提供组件的组合 | 新的原生控件或平台能力 |
+| 网络与存储 | 清单中的服务域名、公开 API、具名查询、插件私有存储 | 超出现有凭证类型与请求权限的能力 |
+| 原生授权 | 同一 Connect + PKCE 交接协议的初始化、回调、交换、校验、条款地址 | 不同的授权方式、回调数据格式、令牌结构或账号验证协议 |
+| 原生订单与付款 | 同一订单协议的创建和恢复路径、商品业务逻辑，复用 LDC 收银台 | 不同的幂等约定、订单响应结构、详情/支付地址等路径约定，或新的支付渠道 |
+
+回归中使用另一个服务的业务域名、授权域名和订单路径，验证原生授权与付款按清单工作。该验证覆盖相同协议的新配置。当前授权协议中的 `ldsp_oauth` 交接字段、订单请求字段与响应结构仍然固定，接入不同协议时需要增加受测的协议适配能力。
+
+`SearchInput(value, hint, onChanged, onSubmitted)` 复用应用 `SearchBar` 和主题。输入事件携带 `value`，搜索图标和键盘搜索触发 `onSubmitted`，清空依次触发空值的 `onChanged` 与 `onSubmitted`。弹层使用公共外壳，手机显示托柄和关闭按钮。收银台使用公共 `PinInput` 与 `M3eSuccessIndicator`，密码输入满六位后仍需明确确认付款。收银台确认付款成功或服务端查单确认已支付后展示成功反馈，待确认状态继续提供原单查询。系统开启减少动态效果时显示静态完成态。
 
 ## 原生建单（schema 5）
 
@@ -214,7 +235,7 @@ ctx.setData(k, v); // 写入 data.k（界面按 key 读取）
 
 1. 用户在元宇宙页点「添加第三方服务」，填清单地址（使用 HTTPS 域名，通过上文的出口检查）。
 2. 宿主下载清单与代码，校验清单、解析界面描述、确认引用的组件都存在。
-3. 展示确认页：网络域名、接管的链接域名、身份、凭证去向，用户确认后才落盘。
+3. 展示可滚动的权限确认弹层，按用途展示网络域名、接管链接、账号、查询、建单和 LDC 付款。技术端点可展开查看，安装或更新按钮固定在底部，用户确认后才落盘。
 4. 用户点开启时，只有 `auth.type = token` 会弹框收集凭证；服务签发的会话不能通过手填建立。
 5. 停用即撤销凭证；移除会删除插件的全部本地文件、数据与凭证。
 

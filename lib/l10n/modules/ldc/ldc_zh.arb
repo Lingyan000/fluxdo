@@ -1,0 +1,14 @@
+{
+  "@@locale": "zh",
+  "ldc_biometricEnable": "在此设备启用生物识别付款",
+  "ldc_biometricNote": "在本机安全存储中保存支付密码，之后每笔付款使用系统生物识别确认。",
+  "ldc_biometricPay": "生物识别付款",
+  "ldc_biometricHint": "请使用指纹或面部识别确认",
+  "ldc_usePaymentPassword": "使用支付密码",
+  "ldc_biometricDisable": "关闭生物识别付款",
+  "ldc_biometricReason": "请确认向 {merchant} 支付 {amount} LDC",
+  "ldc_biometricFailed": "生物识别未完成，可以使用支付密码。",
+  "ldc_biometricEnabled": "已在此设备启用生物识别付款。",
+  "ldc_biometricSaveFailed": "本次付款已完成，生物识别设置未完成，可在下次付款时重新开启。",
+  "@ldc_biometricReason": {"placeholders":{"merchant":{"type":"String"},"amount":{"type":"String"}}}
+}

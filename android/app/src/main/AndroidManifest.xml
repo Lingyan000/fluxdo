@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- LDC 付款时由用户主动发起设备生物识别确认 -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- 通知权限 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- 扫码登录:相机 -->

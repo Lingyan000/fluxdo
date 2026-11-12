@@ -29,7 +29,7 @@ import android.webkit.WebView
 import androidx.webkit.CookieManagerCompat
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -37,7 +37,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val TAG = "AppLink"

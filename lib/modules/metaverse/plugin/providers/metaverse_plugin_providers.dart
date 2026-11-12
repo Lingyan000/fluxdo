@@ -9,6 +9,7 @@ import '../../../../constants.dart';
 import '../../../../l10n/s.dart';
 import '../../../../services/ldc_oauth_service.dart';
 import '../../../../services/ldc_payment_service.dart';
+import '../../../../services/ldc_biometric_payment.dart';
 import '../../../../services/network/exceptions/oauth_exception.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../../../../providers/core_providers.dart';
@@ -30,7 +31,8 @@ import '../runtime/flutter_js_script_engine.dart';
 import '../runtime/metaverse_script_engine.dart';
 import '../ui/metaverse_plugin_dialogs.dart';
 import '../ui/metaverse_plugin_page.dart';
-import '../ui/metaverse_payment_sheet.dart';
+import '../../../ldc_payment/ldc_payment_sheet.dart';
+import '../ui/metaverse_connect_confirmation.dart';
 
 /// 插件数据的根目录：每个插件一个子目录。
 final metaversePluginDirectoryProvider = FutureProvider<Directory>((ref) async {
@@ -416,12 +418,18 @@ class _HostDelegate extends MetaversePluginHostDelegate {
         }
         await payment.checkSession();
         if (!context.mounted) return null;
-        return await showMetaversePaymentSheet(
+        return await showLdcPaymentSheet(
           context,
           payment: payment,
           orderNo: orderNo,
           username: account.username,
           needsPassword: needsPassword,
+          biometrics: LdcBiometricPayment(
+            accountId: account.id,
+            store: _ref.read(secretStoreProvider),
+            preferences: _ref.read(sharedPreferencesProvider),
+            checkSession: payment.checkSession,
+          ),
         );
       } finally {
         credit.dispose();

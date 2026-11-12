@@ -11,6 +11,11 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
 
 class _OAuthAdapter implements HttpClientAdapter {
+  _OAuthAdapter({
+    this.site = 'https://ldcstore.com',
+    this.authHost = 'api1.ldspro.qzz.io',
+  });
+  final String site, authHost;
   final requests = <RequestOptions>[];
   String challenge = '';
   final expiry = DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600;
@@ -35,13 +40,10 @@ class _OAuthAdapter implements HttpClientAdapter {
     switch (uri.path) {
       case '/api/auth/init':
         challenge = uri.queryParameters['code_challenge']!;
-        expect(
-          uri.queryParameters['return_url'],
-          'https://ldcstore.com/auth/callback',
-        );
+        expect(uri.queryParameters['return_url'], '$site/auth/callback');
         payload = {
           'auth_url': Uri.https('connect.linux.do', '/oauth2/authorize', {
-            'redirect_uri': 'https://api1.ldspro.qzz.io/api/auth/callback',
+            'redirect_uri': 'https://$authHost/api/auth/callback',
             'state': 'bound-state',
           }).toString(),
           'state': 'bound-state',
@@ -57,7 +59,7 @@ class _OAuthAdapter implements HttpClientAdapter {
           302,
           headers: {
             'location': [
-              'https://api1.ldspro.qzz.io/api/auth/callback?code=provider-code&state=bound-state',
+              'https://$authHost/api/auth/callback?code=provider-code&state=bound-state',
             ],
           },
         );
@@ -67,7 +69,7 @@ class _OAuthAdapter implements HttpClientAdapter {
           302,
           headers: {
             'location': [
-              'https://ldcstore.com/auth/callback#ldsp_oauth=${encode({'c': 'a' * 43, 's': wrongState ? 'other' : 'bound-state', 'exp': 1})}',
+              '$site/auth/callback#ldsp_oauth=${encode({'c': 'a' * 43, 's': wrongState ? 'other' : 'bound-state', 'exp': 1})}',
             ],
           },
         );
@@ -80,7 +82,7 @@ class _OAuthAdapter implements HttpClientAdapter {
           challenge,
         );
         expect(request['state'], 'bound-state');
-        expect(request['origin'], 'https://ldcstore.com');
+        expect(request['origin'], site);
         if (exchangeTimeout) {
           throw DioException.receiveTimeout(
             timeout: const Duration(seconds: 1),
@@ -175,6 +177,49 @@ void main() {
       );
     });
   }
+  test('同交接协议的新服务通过清单配置原生登录，全部业务域名可替换', () async {
+    final other = MetaversePluginManifest.parse(
+      jsonDecode(
+        File('plugins/ld-store/plugin.json')
+            .readAsStringSync()
+            .replaceAll('ldcstore.com', 'other.example.org')
+            .replaceAll('api1.ldspro.qzz.io', 'auth.example.org')
+            .replaceAll('api2.ldspro.qzz.io', 'api.example.org'),
+      ),
+    );
+    final adapter = _OAuthAdapter(
+      site: 'https://other.example.org',
+      authHost: 'auth.example.org',
+    );
+    final otherNetwork = MetaversePluginNetwork(
+      dio: Dio(BaseOptions(validateStatus: (_) => true))
+        ..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')],
+    );
+    final otherLogin = MetaverseConnectLogin(
+      otherNetwork,
+      connectClient: Dio()..httpClientAdapter = adapter,
+    );
+    addTearDown(otherNetwork.dispose);
+    addTearDown(otherLogin.dispose);
+    final session = await otherLogin.authorize(
+      other,
+      accountId: 42,
+      active: () => true,
+    );
+    expect(session.accountId, 42);
+    expect(
+      session.checkout!.endpoints.create,
+      startsWith('https://api.example.org/'),
+    );
+    expect(
+      adapter.requests.every(
+        (r) =>
+            !r.uri.host.contains('ldspro') && !r.uri.host.contains('ldcstore'),
+      ),
+      isTrue,
+    );
+  });
   test('账号退出后停止授权导航', () async {
     await expectLater(
       login.authorize(manifest, accountId: 42, active: () => false),

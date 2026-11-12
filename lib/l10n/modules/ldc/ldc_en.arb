@@ -1,0 +1,13 @@
+{
+  "@@locale": "en",
+  "ldc_biometricEnable": "Enable biometric payments on this device",
+  "ldc_biometricNote": "Save your payment password in secure storage on this device. Each subsequent payment requires system biometric confirmation.",
+  "ldc_biometricPay": "Pay with biometrics",
+  "ldc_biometricHint": "Confirm with fingerprint or face recognition",
+  "ldc_usePaymentPassword": "Use payment password",
+  "ldc_biometricDisable": "Disable biometric payments",
+  "ldc_biometricReason": "Confirm payment of {amount} LDC to {merchant}",
+  "ldc_biometricFailed": "Biometric confirmation was not completed. You can use your payment password.",
+  "ldc_biometricEnabled": "Biometric payments are enabled on this device.",
+  "ldc_biometricSaveFailed": "Payment is complete. Biometric setup was not completed and can be retried with your next payment."
+}

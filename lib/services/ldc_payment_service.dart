@@ -26,6 +26,14 @@ class LdcPaymentException implements Exception {
   String toString() => message;
 }
 
+/// 应用收银台需要的业务订单操作，各服务负责将自己的订单协议适配到此接口。
+abstract interface class LdcPaymentDelegate {
+  Future<LdcPaymentOrder> prepare(String orderNo, String username);
+  Future<void> pay(LdcPaymentOrder order, String password);
+  Future<bool> refreshPayment(String orderNo);
+  Future<void> setInitialPassword(String password, String username);
+}
+
 /// 复用 LDC 的业务会话，支付请求禁用自动重放和请求体日志。
 class LdcPaymentService {
   LdcPaymentService({Dio? dio})
