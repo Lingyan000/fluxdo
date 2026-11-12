@@ -1,5 +1,310 @@
 // 每个页面独立保存筛选和分页，晚到的请求不能覆盖新筛选的结果。
 const api = 'https://api2.ldspro.qzz.io/api/shop';
+// 士多协议由插件实现，宿主提供网络、凭证、Connect 与收银台。
+const ldStore = (() => {
+  const site = 'https://ldcstore.com';
+  const callback = site + '/auth/callback';
+  let loginTask = null;
+  let orderQueue = Promise.resolve();
+
+  function address(value, source) {
+    if (typeof value !== 'string' || value.length > 32768) throw Error('oauth_invalid_redirect');
+    if (source && value.startsWith('//')) value = 'https:' + value;
+    if (source && value.startsWith('/')) value = source.origin + value;
+    if (source && /^[?#]/.test(value)) value = source.endpoint + value;
+    const parts = /^(https:\/\/[^/?#]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/.exec(value);
+    if (!parts || /[\s\\@]/.test(parts[1])) throw Error('oauth_invalid_redirect');
+    return {url: value, origin: parts[1], endpoint: parts[1] + (parts[2] || '/'),
+      query: (parts[3] || '').slice(1), fragment: (parts[4] || '').slice(1)};
+  }
+
+  function parameter(text, name) {
+    const fields = text.split('&').filter(field => field.split('=')[0] === name);
+    if (fields.length !== 1) return null;
+    return decodeURIComponent(fields[0].slice(name.length + 1));
+  }
+
+  function decodeBase64(value) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    const input = value.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '+');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(input) || input.replace(/=/g, '').length % 4 === 1) {
+      throw Error('oauth_invalid_handoff');
+    }
+    let bits = 0, count = 0, encoded = '';
+    for (const char of input.replace(/=/g, '')) {
+      bits = (bits << 6) | alphabet.indexOf(char);
+      count += 6;
+      if (count >= 8) {
+        count -= 8;
+        encoded += '%' + ((bits >>> count) & 255).toString(16).padStart(2, '0');
+      }
+    }
+    return decodeURIComponent(encoded);
+  }
+
+  function htmlValue(value) {
+    return value.replace(/&(#x[0-9a-f]+|#\d+|amp|quot|apos|lt|gt);/gi, (raw, entity) => {
+      if (entity[0] !== '#') return {amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'}[entity.toLowerCase()];
+      const code = entity[1].toLowerCase() === 'x' ? parseInt(entity.slice(2), 16) : Number(entity.slice(1));
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : raw;
+    });
+  }
+
+  function htmlCallback(body, source) {
+    const candidates = new Set();
+    function add(value) {
+      try {
+        const target = address(value.trim(), source);
+        if (target.endpoint === callback &&
+            /(?:^|&)ldsp_oauth=/.test(target.fragment + '&' + target.query)) candidates.add(target.url);
+      } catch (_) {}
+    }
+    const markup = body.replace(/<!--[\s\S]*?-->/g, '');
+    for (const tag of markup.match(/<(?:a|meta)\b[^>]*>/gi) || []) {
+      const attrs = {};
+      const pattern = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+      let attr;
+      while ((attr = pattern.exec(tag))) attrs[attr[1].toLowerCase()] = htmlValue(attr[2] ?? attr[3] ?? attr[4]);
+      if (/^<a\b/i.test(tag) && attrs.href) add(attrs.href);
+      if (/^<meta\b/i.test(tag) && (attrs['http-equiv'] || '').toLowerCase() === 'refresh') {
+        const match = /^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*(.*?)\s*$/i.exec(attrs.content || '');
+        if (match) add(match[1].replace(/^(['"])([\s\S]*)\1$/, '$2'));
+      }
+    }
+    const scripts = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+    const literals = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+    let script;
+    while ((script = scripts.exec(markup))) {
+      if (/\bsrc\s*=/i.test(script[1])) continue;
+      let literal;
+      while ((literal = literals.exec(script[2]))) {
+        const text = literal[0];
+        if (text[0] === '/' || (text[0] === '`' && text.includes('${'))) continue;
+        try {
+          const json = text[0] === '"' ? text : '"' + text.slice(1, -1)
+            .replace(/\\.|"/g, part => part === "\\'" ? "'" : part === '\\`' ? '`' : part === '"' ? '\\"' : part) + '"';
+          add(JSON.parse(json));
+        } catch (_) {}
+      }
+    }
+    if (candidates.size !== 1) throw Error('oauth_invalid_callback');
+    return candidates.values().next().value;
+  }
+
+  async function jsonRequest(client, url, options) {
+    const response = await client.fetch(url, options);
+    let body;
+    try { body = response.json(); } catch (_) { throw Error('service_invalid_response'); }
+    if (!response.ok || body?.success !== true) {
+      const error = Error('service_http_' + response.status);
+      error.status = response.status;
+      throw error;
+    }
+    return body.data ?? body;
+  }
+
+  async function login(client) {
+    let stage = 'initialize', captured = false;
+    try {
+      const account = await client.user.get();
+      if (!account?.id) throw Error('oauth_account_required');
+      const pkce = await client.crypto.pkce();
+      const initial = await jsonRequest(client,
+        'https://api1.ldspro.qzz.io/api/auth/init?' + params({
+          site:'linux.do', return_url:callback, code_challenge:pkce.challenge,
+        }), {headers:{Accept:'application/json', Origin:site}});
+      if (typeof initial.state !== 'string' || !initial.state || typeof initial.auth_url !== 'string') {
+        throw Error('oauth_invalid_init');
+      }
+      const serviceCallback = address(parameter(address(initial.auth_url).query, 'redirect_uri'));
+      stage = 'authorization';
+      const authorized = await client.connect.authorize(initial.auth_url);
+      if (authorized === null) return false;
+      let target = address(authorized);
+      stage = 'callback';
+      for (let hop = 0; target.endpoint !== callback && hop < 8; hop++) {
+        if (target.endpoint !== serviceCallback.endpoint) throw Error('oauth_invalid_redirect');
+        const response = await client.fetch(target.url, {
+          headers:{Accept:'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'},
+        });
+        let next;
+        if (response.status >= 300 && response.status < 400) next = response.headers.location;
+        else if (response.status === 200 && (response.headers['content-type'] || '').startsWith('text/html')) {
+          next = htmlCallback(response.body, target);
+        }
+        target = address(next, target);
+      }
+      if (target.endpoint !== callback) throw Error('oauth_redirect_limit');
+      const encoded = parameter(target.fragment, 'ldsp_oauth') ?? parameter(target.query, 'ldsp_oauth');
+      if (!encoded || encoded.length > 32768) throw Error('oauth_invalid_handoff');
+      const decoded = decodeBase64(encoded);
+      let handoff;
+      try { handoff = JSON.parse(decoded); } catch (_) { handoff = JSON.parse(decodeURIComponent(decoded)); }
+      if (handoff.s !== initial.state || !Number.isInteger(handoff.exp) || handoff.exp <= 0 ||
+          typeof handoff.c !== 'string' || !/^[A-Za-z0-9_-]{43,128}$/.test(handoff.c)) {
+        throw Error('oauth_state_mismatch');
+      }
+      stage = 'exchange';
+      const result = await client.credentials.capture('account', {
+        url:api + '/auth/exchange', method:'POST', headers:{Origin:site},
+        body:{code:handoff.c, state:initial.state, verifier:pkce.verifier, origin:site},
+      }, {tokenPath:['data','token'], jwt:true});
+      captured = true;
+      stage = 'verification';
+      const verified = await jsonRequest(client, api + '/auth/verify', {credential:'account', headers:{Origin:site}});
+      const current = await client.user.get();
+      const claims = result.claims;
+      if (current?.id !== account.id || verified.authenticated !== true ||
+          String(verified.user?.id) !== String(account.id) ||
+          String(claims?.sub ?? claims?.id) !== String(account.id) ||
+          (verified.user?.site ?? 'linux.do') !== 'linux.do' ||
+          (claims?.site ?? 'linux.do') !== 'linux.do' ||
+          !Number.isInteger(claims?.exp) || claims.exp * 1000 <= Date.now()) {
+        throw Error('oauth_identity_mismatch');
+      }
+      return true;
+    } catch (error) {
+      if (captured) await client.credentials.remove('account');
+      const reason = /^[a-z_0-9]+$/.test(error.message || '') ? error.message : 'request_failed';
+      console.warn('login stage=' + stage + ' reason=' + reason);
+      const label = {initialize:'服务初始化',authorization:'Connect 授权',callback:'服务回调',exchange:'会话交换',verification:'账号校验'};
+      throw Error('登录在「' + label[stage] + '」阶段未完成，请重试。');
+    }
+  }
+
+  async function status() {
+    if (loginTask) await loginTask.catch(() => false);
+    const current = await fluxdo.credentials.status('account');
+    return {...current, paymentSupported:true, checkoutUnit:'LDC', queries:['orderQuote']};
+  }
+
+  async function session() {
+    const account = await fluxdo.user.get();
+    if (!account?.id || !(await status()).authorized) throw Error('auth_required');
+    return account.id;
+  }
+
+  async function checkSession(account) {
+    if (await session() !== account) throw Error('checkout_session_changed');
+  }
+
+  function validIntent(intent) {
+    return intent && /^[A-Za-z0-9_-]{1,128}$/.test(intent.productId || '') &&
+      Number.isInteger(intent.quantity) && intent.quantity >= 1 && intent.quantity <= 5000 &&
+      typeof intent.expectedAmount === 'number' && Number.isFinite(intent.expectedAmount) &&
+      intent.expectedAmount >= 0 && intent.expectedAmount <= 1e9 &&
+      Number(intent.expectedAmount.toFixed(2)) === intent.expectedAmount &&
+      (intent.couponClaimId == null || /^[A-Za-z0-9_-]{1,128}$/.test(intent.couponClaimId));
+  }
+
+  async function record(account) {
+    const saved = await fluxdo.storage.get('submission:' + account);
+    if (saved == null) return null;
+    if (!validIntent(saved) || !/^ord_[0-9a-f]{32}$/.test(saved.token || '') ||
+        !['pending','missing','created'].includes(saved.state) ||
+        (saved.state === 'created' && !/^[A-Za-z0-9_-]{1,128}$/.test(saved.orderNo || ''))) {
+      throw Error('checkout_record_invalid');
+    }
+    return saved;
+  }
+
+  async function saveRecord(account, value) {
+    await checkSession(account);
+    await fluxdo.storage.set('submission:' + account, value);
+  }
+
+  async function requestOrder(account, pending, create) {
+    let response, body;
+    try {
+      await checkSession(account);
+      response = await fluxdo.fetch(api + (create ? '/orders' : '/order-submissions/' + pending.token), {
+        credential:'account', method:create ? 'POST' : 'GET',
+        ...(create ? {body:{productId:pending.productId, quantity:pending.quantity,
+          expectedAmount:pending.expectedAmount, submissionToken:pending.token,
+          ...(pending.couponClaimId ? {couponClaimId:pending.couponClaimId} : {})}} : {}),
+      });
+      body = response.json();
+    } catch (_) {}
+    await checkSession(account);
+    const next = {...pending, state:'pending'};
+    delete next.orderNo;
+    if (response?.ok && body?.success === true && body.data) {
+      const order = create ? body.data : body.data.exists === true ? body.data.order : null;
+      const no = order?.orderNo ?? order?.order_no;
+      if (typeof no === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(no)) {
+        next.state = 'created'; next.orderNo = no;
+      } else if (!create && body.data.exists === false && body.data.order == null) next.state = 'missing';
+    } else if (create && [400,409,422].includes(response?.status) && body?.success === false) {
+      const code = body.error?.code ?? body.errorCode ?? body.code;
+      if (typeof code === 'string' && code && code !== 'ORDER_SUBMISSION_CONFLICT' && code !== 'PUBLIC_ID_REQUIRED') {
+        await saveRecord(account, null);
+        return {state:'rejected'};
+      }
+    }
+    await saveRecord(account, next);
+    return {...next, ...([401,403].includes(response?.status) ? {issue:'authorization'} : {})};
+  }
+
+  async function submission(action, value) {
+    const account = await session();
+    const previous = await record(account);
+    await checkSession(account);
+    if (action === 'status') return previous || {state:'idle'};
+    if (action === 'finish') {
+      if (previous?.state !== 'created' || previous.orderNo !== value) throw Error('checkout_lookup_required');
+      return saveRecord(account, null);
+    }
+    if (action === 'recover') {
+      if (!previous || previous.state === 'created') return previous || {state:'idle'};
+      return requestOrder(account, previous, false);
+    }
+    if (action === 'submit' && previous) return previous;
+    if (action === 'retry' && previous?.state !== 'missing') throw Error('checkout_lookup_required');
+    const intent = action === 'retry' ? previous : value;
+    if (!validIntent(intent)) throw Error('checkout_invalid_intent');
+    const pending = {...intent, state:'pending',
+      token:previous?.token || 'ord_' + (await fluxdo.crypto.uuid()).replace(/-/g, '')};
+    await saveRecord(account, pending);
+    return requestOrder(account, pending, true);
+  }
+
+  return {
+    status,
+    login(client) {
+      if (loginTask) return loginTask;
+      loginTask = login(client).finally(() => { loginTask = null; });
+      return loginTask;
+    },
+    submission(action, value) {
+      const task = orderQueue.then(() => submission(action, value));
+      orderQueue = task.catch(() => {});
+      return task;
+    },
+    async pay(client, no) {
+      const account = await session();
+      const orderPath = api + '/orders/' + encodeURIComponent(no);
+      const details = await jsonRequest(client, orderPath + '?role=buyer', {credential:'account'});
+      const order = details.order;
+      if (!order || (order.orderNo ?? order.order_no) !== no || order.status !== 'pending') throw Error('payment_order_unavailable');
+      const payment = await jsonRequest(client, orderPath + '/payment-url', {credential:'account'});
+      await checkSession(account);
+      const result = await client.payments.request({provider:'linuxDoCredit',
+        url:payment.paymentUrl ?? payment.payment_url, reference:no,
+        amount:order.amount ?? order.totalPrice ?? order.total_price});
+      if (result) {
+        await checkSession(account);
+        try { await jsonRequest(client, orderPath + '/refresh', {credential:'account', method:'POST'}); }
+        catch (_) { console.warn('delivery refresh pending'); }
+      }
+      return result;
+    },
+    async cancel(client, no) {
+      await session();
+      await jsonRequest(client, api + '/orders/' + encodeURIComponent(no) + '/cancel', {credential:'account', method:'POST'});
+      return {state:'cancelled'};
+    },
+  };
+})();
 const views = new Map();
 const money = n => Number.isFinite(Number(n)) ? Number(n).toFixed(2) + ' LDC' : '—';
 const display = v => v == null ? '' : String(v);
@@ -33,7 +338,7 @@ function params(obj) {
     encodeURIComponent(k) + '=' + encodeURIComponent(obj[k])).join('&');
 }
 async function read(path, withSession) {
-  const res = await fluxdo.fetch(api + path, {auth:withSession === true});
+  const res = await fluxdo.fetch(api + path, withSession ? {credential:'account'} : {});
   if (!res.ok) {
     const error = Error('请求失败（HTTP ' + res.status + '）');
     error.status = res.status;
@@ -137,7 +442,7 @@ async function detail(ctx) {
   const seq = ++s.seq;
   write(ctx,{ready:false,loading:true,error:'',buy:false});
   try {
-    const auth = await fluxdo.auth.status();
+    const auth = await ldStore.status();
     if (seq !== s.seq || market(ctx) !== s) return;
     write(ctx,{authorized:auth.authorized,linkProduct:false});
     if (ctx.page === 'review') {
@@ -194,7 +499,7 @@ async function loadComments(ctx,more) {
   s.commentsLoading = true;
   write(ctx,{commentsLoading:true,commentsError:''});
   try {
-    const auth = await fluxdo.auth.status();
+    const auth = await ldStore.status();
     const data = normalizeOrderData(await read('/products/' + encodeURIComponent(ctx.params.id) +
       '/comments?page=' + page + '&pageSize=10',auth.authorized));
     if (!current()) return;
@@ -261,7 +566,7 @@ async function loadOrders(ctx, append) {
       orderTitle:'',orderNo:'',state:'',amount:'',delivery:''});
   };
   try {
-    const auth = await fluxdo.auth.status();
+    const auth = await ldStore.status();
     if (!current()) return;
     if (!auth.authorized) {sessionMissing('登录士多后查看订单和交付内容'); return;}
     ctx.setData('authorized',true);
@@ -281,7 +586,7 @@ async function loadOrders(ctx, append) {
       }
       write(ctx,{ready:true,orderTitle:row.title,orderNo:row.no,state:row.state,amount:row.amount,
         canPay:auth.paymentSupported && data.order.status === 'pending',
-        paymentAvailable:!s.paymentBusy,
+        paymentAvailable:!s.paymentBusy,cancelLabel:'取消订单',
         hasDelivery:!!s.deliveryText,
         delivery:delivery === 'auto' ? '自动发货' : delivery === 'manual' ? '手动发货' : '未提供'});
     } else {
@@ -320,7 +625,7 @@ function showOrderFilters(ctx) {
   const status = market(ctx).orderStatus || '';
   ctx.setData('orderFilters',orderFilters.map(filter => ({...filter,selected:filter.status === status})));
 }
-fluxdo.on('card.load',async ctx => ctx.setData('authorized',(await fluxdo.auth.status()).authorized));
+fluxdo.on('card.load',async ctx => ctx.setData('authorized',(await ldStore.status()).authorized));
 fluxdo.on('page.open',ctx => {
   const s = {seq:0,rows:[],cat:'',search:'',sort:'',direction:'',stock:false,min:'',max:''};
   views.set(ctx.surface,s);
@@ -359,7 +664,7 @@ fluxdo.on('login',async ctx => {
   const s = market(ctx);
   write(ctx,{loggingIn:true,loginError:''});
   try {
-    if (!await fluxdo.auth.request()) return;
+    if (!await ldStore.login(ctx.api)) return;
     invalidateViews(s);
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
@@ -371,10 +676,17 @@ fluxdo.on('login',async ctx => {
 async function payOrder(ctx,cancel) {
   const s = market(ctx);
   if (!s || s.paymentBusy || ctx.page !== 'order') return;
+  if (cancel && !s.cancelConfirmed) {
+    s.cancelConfirmed = true;
+    write(ctx,{cancelLabel:'确认取消订单',paymentNote:'取消后将无法继续支付此订单，再次点击确认。'});
+    return;
+  }
+  s.cancelConfirmed = false;
+  ctx.setData('cancelLabel','取消订单');
   s.paymentBusy=true;write(ctx,{paymentBusy:true,paymentAvailable:false,paymentNote:''});
   try {
-    const result = cancel ? await fluxdo.checkout.cancel(ctx.params.no) :
-      await fluxdo.checkout.pay(ctx.params.no);
+    const result = cancel ? await ldStore.cancel(ctx.api,ctx.params.no) :
+      await ldStore.pay(ctx.api,ctx.params.no);
     if (result != null) invalidateViews();
   } catch (_) {
     invalidateViews();
@@ -441,7 +753,9 @@ async function quote(ctx) {
   const seq = s.quoteSeq, quantity = s.quantity, current = () => market(ctx) === s && seq === s.quoteSeq;
   s.quoting = true; ctx.setData('quoting',true);
   try {
-    const response = await fluxdo.auth.query('orderQuote',{productId:s.id,quantity});
+    const response = await ctx.api.fetch(api + '/orders/quote', {
+      credential:'account', method:'POST', body:{productId:s.id,quantity},
+    });
     if (!current()) return;
     if (response.status === 401) {
       delete s.couponChoice;s.quoteEnabled=false;s.checkoutEnabled=false;
@@ -485,9 +799,9 @@ async function checkoutStatus(ctx,s) {
   const rev = s.checkoutRevision = (s.checkoutRevision || 0)+1;
   const current = () => rev === s.checkoutRevision && market(ctx) === s;
   try {
-    let result = await fluxdo.checkout.status();
+    let result = await ldStore.submission('status');
     if (result.state === 'created') {
-      await fluxdo.checkout.finish(result.orderNo);
+      await ldStore.submission('finish',result.orderNo);
       result = {state:'idle'};
     }
     if (current()) showSubmission(ctx,s,result);
@@ -502,9 +816,8 @@ async function checkoutAction(ctx,kind) {
   try {
     const openOrder = kind !== 'finish' && typeof fluxdo.prepareNavigation === 'function'
       ? await fluxdo.prepareNavigation('order') : null;
-    const result = kind === 'submit' ? await fluxdo.checkout.submit(s.orderIntent) :
-      kind === 'retry' ? await fluxdo.checkout.retry() :
-      kind === 'finish' ? await fluxdo.checkout.finish(s.record.orderNo) : await fluxdo.checkout.recover();
+    const result = await ldStore.submission(kind,
+      kind === 'submit' ? s.orderIntent : kind === 'finish' ? s.record.orderNo : null);
     if (result?.state === 'created' || result?.state === 'pending') invalidateViews(s);
     if (result?.state === 'created') {
       showSubmission(ctx,s,result);
@@ -532,7 +845,7 @@ async function openCreatedOrder(ctx,s) {
   s.createdNavigation = null;
   try {
     await navigation.open({no:navigation.orderNo});
-    await fluxdo.checkout.finish(navigation.orderNo);
+    await ldStore.submission('finish',navigation.orderNo);
     showSubmission(ctx,s,{state:'idle'});
     clearQuote(ctx,s);
     s.dirty = true;
@@ -547,7 +860,7 @@ fluxdo.on('finishSubmission',ctx => checkoutAction(ctx,'finish'));
 fluxdo.on('createdOrder',async ctx => {
   const r = market(ctx)?.record;
   if (r?.state === 'created') {
-    await fluxdo.checkout.finish(r.orderNo);
+    await ldStore.submission('finish',r.orderNo);
     showSubmission(ctx,market(ctx),{state:'idle'});
     return fluxdo.navigate('order',{no:r.orderNo});
   }

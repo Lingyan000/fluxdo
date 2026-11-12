@@ -117,7 +117,7 @@ void main() {
       test('$host $format 订单按清单衔接 LDC 并核对金额', () async {
         final manifest = MetaversePluginManifest.parse(
           jsonDecode(
-            File('plugins/ld-store/plugin.json')
+            File('test/fixtures/metaverse/api1_shop.json')
                 .readAsStringSync()
                 .replaceAll('api2.ldspro.qzz.io', host)
                 .replaceAll('/api/shop', prefix),

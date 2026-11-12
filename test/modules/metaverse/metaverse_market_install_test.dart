@@ -47,7 +47,7 @@ void main() {
       expectedDigest: sha256.convert(bytes).toString(),
     );
     expect(package.source, source);
-    expect(package.manifest.apiVersion, 1);
+    expect(package.manifest.apiVersion, 2);
     await expectLater(
       installer.importBundle(
         Stream.value([...bytes, 32]),

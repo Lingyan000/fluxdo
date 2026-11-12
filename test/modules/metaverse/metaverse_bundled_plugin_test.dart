@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_capabilities.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,10 +20,16 @@ void main() {
     expect(shop.manifest.webLogin?.host, 'ldcstore.com');
     expect(shop.source, 'asset:plugins/ld-store/plugin.json');
     expect(shop.manifest.page('product')?.modal, true);
-    expect(shop.manifest.auth.connect, isNotNull);
-    expect(shop.manifest.auth.payment, 'linuxDoCredit');
+    expect(shop.manifest.apiVersion, 2);
+    expect(shop.manifest.capabilities.connectCallbacks, isNotEmpty);
+    expect(
+      shop.manifest.capabilities.payments,
+      contains(MetaversePaymentProvider.linuxDoCredit),
+    );
     expect(shop.manifest.page('product')?.scroll, false);
-    expect(shop.code.script, contains('fluxdo.auth.request()'));
-    expect(shop.code.script, contains('fluxdo.checkout.pay('));
+    expect(shop.code.script, contains('ldStore.login(ctx.api)'));
+    expect(shop.code.script, contains('client.payments.request('));
+    expect(shop.code.script, isNot(contains('fluxdo.auth.')));
+    expect(shop.code.script, isNot(contains('fluxdo.checkout.')));
   });
 }

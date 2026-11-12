@@ -126,6 +126,7 @@ void main() {
         jsonDecode(jsonEncode(latest.manifest.raw)) as Map<String, dynamic>;
     oldJson['version'] = '1.6.0';
     (oldJson['permissions']['network'] as List).remove('api.ldspro.qzz.io');
+    (oldJson['permissions']['connect'] as List).remove('https://api.ldspro.qzz.io/api/auth/callback');
     final controller = container.read(metaversePluginsProvider.notifier);
     await controller.install(
       MetaversePluginPackage(

@@ -981,6 +981,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         final oldJson = jsonDecode(jsonEncode(newJson)) as Map<String, dynamic>;
         oldJson['version'] = '1.6.0';
         (oldJson['permissions']['network'] as List).remove('api.ldspro.qzz.io');
+        (oldJson['permissions']['connect'] as List).remove('https://api.ldspro.qzz.io/api/auth/callback');
         final store = _MemoryCodeStore(preferences);
         await store.saveIndex([
           InstalledMetaversePlugin(

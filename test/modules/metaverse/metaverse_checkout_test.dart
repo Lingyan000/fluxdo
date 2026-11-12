@@ -59,7 +59,7 @@ void main() {
   Future<bool> accept(_, _) async => true;
   setUp(() async {
     manifest = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync()),
     );
     SharedPreferences.setMockInitialValues({});
     store = MetaversePluginStore(
