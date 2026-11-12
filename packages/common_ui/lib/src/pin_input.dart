@@ -14,6 +14,8 @@ class PinInput extends StatefulWidget {
     this.onChanged,
     this.onSubmitted,
     this.textInputAction = TextInputAction.done,
+    this.keyboardType = TextInputType.number,
+    this.focusNode,
   }) : assert(length > 0);
 
   final TextEditingController controller;
@@ -23,17 +25,20 @@ class PinInput extends StatefulWidget {
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
   final TextInputAction textInputAction;
+  final TextInputType keyboardType;
+  final FocusNode? focusNode;
 
   @override
   State<PinInput> createState() => _PinInputState();
 }
 
 class _PinInputState extends State<PinInput> {
-  final _focus = FocusNode();
+  final _ownedFocus = FocusNode();
+  FocusNode get _focus => widget.focusNode ?? _ownedFocus;
 
   @override
   void dispose() {
-    _focus.dispose();
+    _ownedFocus.dispose();
     super.dispose();
   }
 
@@ -103,7 +108,7 @@ class _PinInputState extends State<PinInput> {
                     showCursor: false,
                     enableSuggestions: false,
                     autocorrect: false,
-                    keyboardType: TextInputType.number,
+                    keyboardType: widget.keyboardType,
                     textInputAction: widget.textInputAction,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,

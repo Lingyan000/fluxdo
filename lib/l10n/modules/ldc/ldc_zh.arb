@@ -1,5 +1,7 @@
 {
   "@@locale": "zh",
+  "ldc_paymentMethod": "付款方式",
+  "ldc_deleteDigit": "删除上一位",
   "ldc_biometricEnable": "在此设备启用生物识别付款",
   "ldc_biometricNote": "在本机安全存储中保存支付密码，之后每笔付款使用系统生物识别确认。",
   "ldc_biometricPay": "生物识别付款",
