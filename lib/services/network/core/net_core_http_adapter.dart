@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'package:dio/dio.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../../network_logger.dart';
 import '../../log/log_policy.dart';
@@ -12,6 +13,7 @@ import 'net_core_bindings.dart';
 import '../cookie/csrf_session_trace.dart';
 import '../flux_request_spec.dart';
 import 'network_health_monitor.dart';
+import 'core_request_log_context.dart';
 
 /// [Response.extra] 里网络核心附带的连接信息：
 /// `reused` / `tlsResumed` / `connectMs` / `ttfbMs`。
@@ -50,7 +52,9 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
   /// 每个 isolate 注册一次；原生宿主必须在热重启前解除旧回调。
   static void _ensureCallback(NetCoreBindings bindings) {
     if (_callback != null) return;
-    final callback = NativeCallable<NetCoreEventCallback>.listener(_onEvent);
+    final callback = Zone.root.run(
+      () => NativeCallable<NetCoreEventCallback>.listener(_onEvent),
+    );
     bindings.setEventCallback(callback.nativeFunction);
     _callback = callback;
   }
@@ -63,16 +67,18 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       if (ptr != nullptr) NetCoreBindings.instance.bufferFree(ptr, length);
       return;
     }
-    switch (kind) {
-      case NetCoreEventKind.head:
-        pending.onHead(_takeString(ptr, length));
-      case NetCoreEventKind.data:
-        pending.onData(_takeBytes(ptr, length));
-      case NetCoreEventKind.done:
-        pending.onDone();
-      case NetCoreEventKind.error:
-        pending.onError(_takeString(ptr, length));
-    }
+    pending.zone.run(() {
+      switch (kind) {
+        case NetCoreEventKind.head:
+          pending.onHead(_takeString(ptr, length));
+        case NetCoreEventKind.data:
+          pending.onData(_takeBytes(ptr, length));
+        case NetCoreEventKind.done:
+          pending.onDone();
+        case NetCoreEventKind.error:
+          pending.onError(_takeString(ptr, length));
+      }
+    });
   }
 
   /// 读走载荷并归还核心分配的缓冲区。
@@ -154,6 +160,12 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       );
     }
 
+    CoreRequestLogContext.instance.register(id, {
+      ...?PluginExecutionContext.current?.fields,
+      'traceId': options.extra['traceId'].toString(),
+      'attemptId': options.extra['attemptId'].toString(),
+    });
+
     final pending = _PendingRequest(
       options,
       onPause: () => _bindings.requestPause(id),
@@ -161,6 +173,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       // 消费方不要响应体了：连同上游请求一起中止，放掉连接上的流
       onAbandon: () => _bindings.requestCancel(id),
       onFinished: () {
+        CoreRequestLogContext.instance.complete(id);
         _pending.remove(id);
         _ownedRequests.remove(id);
       },
@@ -305,6 +318,7 @@ class _PendingRequest {
   }
 
   final RequestOptions options;
+  final Zone zone = Zone.current;
   late final CoreRequestObservation observation;
 
   /// 终态（完成、出错、被放弃）时调用一次，用于移出在途表。

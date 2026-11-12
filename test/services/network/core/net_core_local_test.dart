@@ -11,6 +11,9 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/dio_http_client.dart';
+import 'package:fluxdo/services/app_logger.dart';
+import 'package:fluxdo/services/log/log_writer.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:http/http.dart' as http;
 import 'package:fluxdo/services/network/core/net_core_http_adapter.dart';
 import 'package:fluxdo/services/network/deadline_dio.dart';
@@ -145,6 +148,82 @@ void main() {
     await NetCoreService.instance.stop();
     await templateDirectory.delete(recursive: true);
   });
+
+  test('并发插件请求的真实核心回调和失败观测保留各自归属', () async {
+    final logs = await Directory.systemTemp.createTemp('core_plugin_logs_');
+    await LogWriter.initForTesting(logs);
+    final oldVerbose = AppLogger.verboseNotifier.value;
+    AppLogger.setVerbose(true);
+    addTearDown(() async {
+      AppLogger.setVerbose(oldVerbose);
+      await LogWriter.resetForTesting();
+      await logs.delete(recursive: true);
+    });
+    const first = PluginExecutionContext(
+      pluginId: 'example.one',
+      pluginVersion: '2.0.0',
+      runtimeId: 'run-one',
+      surfaceId: 'catalog',
+    );
+    const second = PluginExecutionContext(
+      pluginId: 'example.two',
+      pluginVersion: '1.0.0',
+      runtimeId: 'run-two',
+    );
+    final responses = await Future.wait([
+      first.run(() => dio.get<String>('/path?plugin=one')),
+      second.run(() => dio.get<String>('/path?plugin=two')),
+      dio.get<String>('/path?host=app'),
+    ]);
+    await first.run(() async {
+      await expectLater(
+        dio.get<String>(
+          '/slow',
+          options: Options(receiveTimeout: const Duration(milliseconds: 150)),
+        ),
+        throwsA(isA<DioException>()),
+      );
+    });
+    // 日志与响应走不同的 FFI 监听器，允许完成日志在响应终态后到达。
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await LogWriter.instance.flushNow();
+    final rows = const LineSplitter()
+        .convert(await (await LogWriter.getLogFile()).readAsString())
+        .map((line) => jsonDecode(line) as Map)
+        .toList();
+    for (var index = 0; index < responses.length; index++) {
+      final request = responses[index].requestOptions;
+      final entries = rows
+          .where(
+            (row) =>
+                row['tag'] == 'core' &&
+                row['coreRequestId'] == request.extra['coreRequestId'],
+          )
+          .toList();
+      expect(entries, isNotEmpty);
+      for (final entry in entries) {
+        expect(entry['traceId'], request.extra['traceId']);
+        expect(entry['attemptId'], request.extra['attemptId']);
+        expect(
+          entry['pluginId'],
+          [first.pluginId, second.pluginId, null][index],
+        );
+        if (index == 0) {
+          expect(entry['runtimeId'], first.runtimeId);
+          expect(entry['surfaceId'], first.surfaceId);
+          expect(entry['emitter'], 'framework');
+        }
+      }
+    }
+    final failed = rows.singleWhere(
+      (row) => row['event'] == 'transport_failure_started',
+    );
+    expect(failed['pluginId'], first.pluginId);
+    expect(failed['runtimeId'], first.runtimeId);
+    await LogWriter.instance.clearPlugin(first.pluginId);
+    expect(await LogWriter.readPluginContent(first.pluginId), isEmpty);
+    expect(await LogWriter.readPluginContent(second.pluginId), isNotEmpty);
+  }, skip: skip);
 
   test('HTTP 保留路径和查询参数', () async {
     final response = await dio.get<String>('/path?q=a%2Fb');

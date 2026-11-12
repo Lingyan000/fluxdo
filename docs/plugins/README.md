@@ -63,6 +63,7 @@ sequenceDiagram
 - `schema` 校验清单结构，`apiVersion` 声明脚本 API 版本。支持 1、2，不支持的版本会在安装时拒绝。
 - 网络、凭证和跳转检查由 Dart 宿主执行。使用公开 SDK 即可获得一致的检查行为。
 - `console` 写入结构化日志，包含插件 ID、版本和运行实例。插件管理中的日志入口支持查看、导出与仅清空当前插件。事件处理中使用 `ctx.api` 可以附带 surfaceId。
+- 核心请求日志通过 `coreRequestId` 关联同一插件，保留版本、运行实例、页面、`traceId` 和 `attemptId`。`emitter` 区分脚本与框架，`tag: core` 标识原生网络核心。共享连接维护等无请求归属的日志保留在应用网络日志中。
 - `storage` 是每插件共享的普通 JSON 数据，账号会话使用宿主管理的安全存储。业务数据包含账号差异时，插件需要在自身数据结构中体现账号范围。
 - API 2 使用 `credentials`、`connect` 和 `payments` 能力。API 1 仅兼容通用网络、界面与手填 token。旧服务授权和订单接口已删除，相关已安装插件更新后恢复使用。
 
