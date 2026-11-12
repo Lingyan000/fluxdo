@@ -316,27 +316,51 @@ class _PaymentContentState extends State<_PaymentContent> {
     final order = _order;
     final showKeyboard =
         !_loading && order != null && !_submitted && !_useBiometric;
+    final canSwitchAuthentication =
+        !_loading &&
+        order != null &&
+        !_submitted &&
+        !_needsPassword &&
+        _biometricEnabled &&
+        _biometricAvailable;
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            children: [
-              IconButton(
+          child: SizedBox(
+            height: kToolbarHeight,
+            child: NavigationToolbar(
+              centerMiddle: true,
+              leading: IconButton(
                 tooltip: _submitted ? l.common_close : l.common_cancel,
                 onPressed: _paying ? null : _close,
                 icon: const Icon(Symbols.close_rounded),
               ),
-              Expanded(
-                child: Text(
-                  l.metaverse_nativePayTitle,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium,
-                ),
+              middle: Text(
+                l.metaverse_nativePayTitle,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium,
               ),
-              const SizedBox(width: 48),
-            ],
+              trailing: canSwitchAuthentication
+                  ? TextButton(
+                      key: const ValueKey('ldc-switch-authentication'),
+                      onPressed: _paying
+                          ? null
+                          : () => setState(() {
+                              _useBiometric = !_useBiometric;
+                              _password.clear();
+                              _error = null;
+                            }),
+                      child: Text(
+                        _useBiometric
+                            ? l.ldc_usePaymentPassword
+                            : l.ldc_biometricPay,
+                      ),
+                    )
+                  : const SizedBox(width: 48),
+            ),
           ),
         ),
         if (_paid && order != null)
@@ -497,19 +521,6 @@ class _PaymentContentState extends State<_PaymentContent> {
                       Wrap(
                         alignment: WrapAlignment.center,
                         children: [
-                          if (_biometricAvailable)
-                            TextButton(
-                              onPressed: _paying
-                                  ? null
-                                  : () => setState(
-                                      () => _useBiometric = !_useBiometric,
-                                    ),
-                              child: Text(
-                                _useBiometric
-                                    ? l.ldc_usePaymentPassword
-                                    : l.ldc_biometricPay,
-                              ),
-                            ),
                           TextButton(
                             onPressed: _paying ? null : _disableBiometrics,
                             child: Text(l.ldc_biometricDisable),
