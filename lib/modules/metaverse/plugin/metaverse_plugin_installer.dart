@@ -181,7 +181,7 @@ class MetaversePluginInstaller {
   ) {
     final RemoteWidgetLibrary library;
     try {
-      library = parseLibraryFile(ui);
+      library = parseLibraryFile(ui.replaceAll('\r\n', '\n'));
     } on ParserException catch (error) {
       throw MetaversePluginInstallException('界面描述解析失败: $error');
     }

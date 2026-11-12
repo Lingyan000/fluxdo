@@ -488,6 +488,18 @@ void main() {
       );
     });
 
+    test('Windows CRLF 与 LF 的插件界面均能解析', () {
+      const ui =
+          'import fluxdo;\nwidget Card = Gap();\nwidget OrderPage = Gap();\n';
+      for (final text in [ui, ui.replaceAll('\n', '\r\n')]) {
+        final library = MetaversePluginInstaller.validateUi(
+          _parse(_example()),
+          text,
+        );
+        expect(library.widgets, hasLength(2));
+      }
+    });
+
     test('界面描述不能 import 宿主组件库以外的库', () {
       expect(
         () => MetaversePluginInstaller.validateUi(
