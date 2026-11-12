@@ -338,9 +338,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
         if (method == 'checkout.status') return _checkout.status(active);
         if (method == 'checkout.recover') return _checkout.recover(active);
         if (method == 'checkout.finish') {
-          return _userInitiatedUi(
-            (_) => _checkout.finish('${params['orderNo']}', active),
-          );
+          // 已确认建单的本地记录可以归档，服务端订单仍由订单页管理。
+          return _checkout.finish('${params['orderNo']}', active);
         }
         final retry = method == 'checkout.retry';
         final intent = retry ? null : MetaverseOrderIntent.parse(params);

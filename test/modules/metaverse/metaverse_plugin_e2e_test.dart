@@ -118,6 +118,26 @@ class _ShopApi extends _Api {
       final file = File('plugins/ld-store/${uri.pathSegments.last}');
       return ResponseBody.fromString(file.readAsStringSync(), 200);
     }
+    if (uri.path.endsWith('/comments')) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'commentEnabled': true,
+            'comments': [
+              {
+                'id': '1',
+                'username': '买家',
+                'content': '商品评论测试',
+                'ratingValue': 5,
+              },
+            ],
+            'pagination': {'page': 1, 'totalPages': 1},
+          },
+        }),
+        200,
+      );
+    }
     if (uri.path == '/api/shop/orders/quote') {
       expect(options.method, 'POST');
       expect(options.headers['Authorization'], 'Bearer fixture-session');
@@ -821,7 +841,7 @@ Future<void> main() async {
       expect(delegate.opened, isEmpty);
     });
 
-    pluginTest('兑换预览返回时保留数量，库存减少时重新限量且不自动查价或下单', (tester) async {
+    pluginTest('确认订单后台恢复保留数量和商品内容，不自动查价或下单', (tester) async {
       const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
       final service = _ShopApi();
       await tester.runAsync(
@@ -860,22 +880,23 @@ Future<void> main() async {
 
       service.productFields = {'price': 10};
       resume();
-      await settle(tester, () => find.text('20.00 LDC').evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      expect(find.text('24.00 LDC'), findsOneWidget);
       await expectLater(
         host.call('session.login', {}),
         throwsA(isA<MetaversePluginCallException>()),
       );
       service.productFields = {'price': 8, 'availableStock': 1};
       resume();
-      await settle(tester, () => find.text('8.00 LDC').evaluate().length == 2);
-      expect(find.text('1'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('2'), findsOneWidget);
       expect(
         tester
             .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '+'))
             .onPressed,
-        isNull,
+        isNotNull,
       );
-      expect(service.requests, hasLength(3));
+      expect(service.requests, hasLength(1));
       expect(
         service.requests.every(
           (r) => r.method == 'GET' && r.uri.path == '/api/shop/products/$id',
@@ -1062,6 +1083,7 @@ Future<void> main() async {
           await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
         } else {
           await settle(tester, () => find.text('立即兑换').evaluate().isNotEmpty);
+          await settle(tester, () => find.text('商品评论测试').evaluate().isNotEmpty);
         }
         final count = service.requests.length;
         final content = tester
@@ -1148,7 +1170,7 @@ Future<void> main() async {
       expect(delegate.payments, ['pay:FIX-1']);
     });
 
-    pluginTest('内层订单被根路由覆盖时不查单，后台恢复后读取服务端状态', (tester) async {
+    pluginTest('内层订单被根路由覆盖时不查单，后台恢复保留当前订单内容', (tester) async {
       final service = _ShopApi()..orderStatus = 'pending';
       await tester.runAsync(() async {
         await openShop(
@@ -1201,7 +1223,7 @@ Future<void> main() async {
       await settle(
         tester,
         () =>
-            service.requests.length == 2 &&
+            service.requests.length == 1 &&
             find.text('待支付').evaluate().isNotEmpty,
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -1209,7 +1231,7 @@ Future<void> main() async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
-      expect(service.requests, hasLength(2));
+      expect(service.requests, hasLength(1));
       service.orderStatus = 'delivered';
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
@@ -1217,8 +1239,9 @@ Future<void> main() async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
-      expect(service.requests, hasLength(3));
+      await tester.pumpAndSettle();
+      expect(find.text('待支付'), findsWidgets);
+      expect(service.requests, hasLength(1));
       expect(
         service.requests.every(
           (r) => r.method == 'GET' && r.uri.path == '/api/shop/orders/FIX-1',

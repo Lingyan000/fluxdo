@@ -2,7 +2,7 @@
   "@@locale": "en",
   "ldc_paymentMethod": "Payment method",
   "ldc_deleteDigit": "Delete last digit",
-  "ldc_biometricEnable": "Enable biometric payments on this device",
+  "ldc_biometricEnable": "Use biometrics next time",
   "ldc_biometricNote": "Save your payment password in secure storage on this device. Each subsequent payment requires system biometric confirmation.",
   "ldc_biometricPay": "Pay with biometrics",
   "ldc_biometricHint": "Confirm with fingerprint or face recognition",

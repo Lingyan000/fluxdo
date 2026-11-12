@@ -384,7 +384,7 @@ class _PaymentContentState extends State<_PaymentContent> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
                     const Divider(height: 1),
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -411,8 +411,7 @@ class _PaymentContentState extends State<_PaymentContent> {
                         ],
                       ),
                     ),
-                    _DetailRow(l.metaverse_nativePayOrder, order.orderNo),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     if (_needsPassword)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -483,8 +482,11 @@ class _PaymentContentState extends State<_PaymentContent> {
                         value: _rememberBiometric,
                         contentPadding: EdgeInsets.zero,
                         controlAffinity: ListTileControlAffinity.leading,
-                        title: Text(l.ldc_biometricEnable),
-                        subtitle: Text(l.ldc_biometricNote),
+                        title: Tooltip(
+                          message: l.ldc_biometricNote,
+                          child: Text(l.ldc_biometricEnable),
+                        ),
+                        dense: true,
                         onChanged: _paying
                             ? null
                             : (value) => setState(
@@ -541,13 +543,16 @@ class _PaymentContentState extends State<_PaymentContent> {
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && !_paying) _close();
       },
-      child: MediaQuery.disableAnimationsOf(context)
-          ? content
-          : AnimatedSize(
-              duration: const Duration(milliseconds: 240),
-              alignment: Alignment.topCenter,
-              child: content,
-            ),
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: MediaQuery.disableAnimationsOf(context)
+            ? content
+            : AnimatedSize(
+                duration: const Duration(milliseconds: 240),
+                alignment: Alignment.topCenter,
+                child: content,
+              ),
+      ),
     );
   }
 
@@ -708,31 +713,4 @@ class _PaymentKeypad extends StatelessWidget {
       ),
     );
   }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow(this.label, this.value);
-  final String label, value;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
-        const SizedBox(width: 20),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-      ],
-    ),
-  );
 }
