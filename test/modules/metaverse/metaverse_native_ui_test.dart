@@ -978,14 +978,14 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           source: 'asset:plugins/ld-store/plugin.json',
           code: (script: '', ui: ''),
         );
-        final oldJson = jsonDecode(jsonEncode(newJson)) as Map<String, dynamic>;
+        final oldJson = jsonDecode(
+          File('test/fixtures/metaverse/api1_shop.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         oldJson['version'] = '1.6.0';
-        (oldJson['permissions']['network'] as List).remove('api.ldspro.qzz.io');
-        (oldJson['permissions']['connect'] as List).remove('https://api.ldspro.qzz.io/api/auth/callback');
         final store = _MemoryCodeStore(preferences);
         await store.saveIndex([
           InstalledMetaversePlugin(
-            manifest: MetaversePluginManifest.parse(oldJson),
+            manifest: MetaversePluginManifest.parse(oldJson, allowLegacyMetadata: true),
             source: latest.source,
             enabled: enabled,
             suspendedReason: enabled ? '测试暂停运行' : null,
@@ -996,6 +996,10 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         );
         await tester.pumpAndSettle();
         final l = tester.element(find.byType(Scaffold).first).l10n;
+        if (enabled) {
+          expect(find.text(l.metaverse_pluginApiUpgradeRequired), findsOneWidget);
+          expect(find.text(l.metaverse_pluginResume), findsNothing);
+        }
         final update = find.text(
           l.metaverse_pluginUpdateTo(latest.manifest.version),
         );

@@ -144,8 +144,6 @@ class MetaversePluginCard extends ConsumerWidget {
           (item) => item.id == service.id,
           orElse: () => service.plugin,
         );
-    final suspended = plugin.suspendedReason ??
-        (!manifest.runtimeSupported ? context.l10n.metaverse_pluginApiUpgradeRequired : null);
     final pluginHost = ref
         .read(metaversePluginHostsProvider)
         .hostFor(plugin);
@@ -177,7 +175,15 @@ class MetaversePluginCard extends ConsumerWidget {
                   ),
                 ),
               ),
-            if (suspended != null)
+            if (!plugin.manifest.runtimeSupported)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Text(
+                  context.l10n.metaverse_pluginApiUpgradeRequired,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              )
+            else if (plugin.suspendedReason != null)
               _suspended(context, ref, plugin)
             else
               _content(context, pluginHost, manifest),
