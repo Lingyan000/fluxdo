@@ -508,13 +508,15 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                                 if (index > 0)
                                                   const SizedBox(width: 10),
                                                 Expanded(
-                                                  child: MiniAppDiscoveryCard(
-                                                    key: ValueKey(app.id),
-                                                    app: app,
-                                                    opening:
-                                                        _openingAppId == app.id,
-                                                    onOpen: () => _open(app),
-                                                    onInfo: () => _info(app),
+                                                  child: RepaintBoundary(
+                                                    child: MiniAppDiscoveryCard(
+                                                      key: ValueKey(app.id),
+                                                      app: app,
+                                                      opening:
+                                                          _openingAppId == app.id,
+                                                      onOpen: () => _open(app),
+                                                      onInfo: () => _info(app),
+                                                    ),
                                                   ),
                                                 ),
                                               ],

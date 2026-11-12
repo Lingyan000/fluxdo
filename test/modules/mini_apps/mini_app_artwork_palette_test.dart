@@ -68,6 +68,11 @@ void main() {
       same(first),
     );
     expect(await first, const Color(0xff2878c8));
+    Color? cachedColor;
+    MiniAppArtworkPalette.resolve(svgUrl, Brightness.light).then((color) {
+      cachedColor = color;
+    });
+    expect(cachedColor, const Color(0xff2878c8), reason: '滚动回收后同步恢复已缓存颜色');
     await _expectTaskIcon(svgUrl, const Color(0xff2878c8));
 
     final recorder = ui.PictureRecorder();
@@ -118,6 +123,11 @@ void main() {
       await MiniAppArtworkPalette.resolve(brokenUrl, Brightness.light),
       isNull,
     );
+    var cachedFailureResolved = false;
+    MiniAppArtworkPalette.resolve(brokenUrl, Brightness.light).then((_) {
+      cachedFailureResolved = true;
+    });
+    expect(cachedFailureResolved, isTrue, reason: '失败兜底也同步复用');
     expect(await MiniAppArtworkPalette.resolve('', Brightness.light), isNull);
     expect(await MiniAppTaskIcon.load(brokenUrl, Brightness.light), isNull);
     expect(await MiniAppTaskIcon.load('', Brightness.light), isNull);
