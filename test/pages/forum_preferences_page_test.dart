@@ -1,3 +1,16 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:app_icons/app_icons.dart';
+import 'package:fluxdo/theme/app_theme.dart';
+import 'package:fluxdo/theme/theme_registry.dart';
+import 'package:fluxdo/theme/theme_resolver.dart';
+
+import '../helpers/preview_fonts.dart';
+
+import 'package:fluxdo/widgets/settings/settings_group_page.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 
 import 'dart:convert';
@@ -13,16 +26,54 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
-  for (final width in [320.0, 1000.0]) {
+  const captureDir = String.fromEnvironment('PROFILE_CAPTURE_DIR');
+  for (final width in [320.0, 390.0, 1000.0]) {
     testWidgets('原生设置 $width 保存失败保留输入，仅提交改动字段', (tester) async {
+      if (captureDir.isNotEmpty) {
+        await tester.runAsync(() async {
+          await loadPreviewCjkFont();
+          final manifest = jsonDecode(
+            await rootBundle.loadString('FontManifest.json'),
+          ) as List;
+          for (final entry in manifest) {
+            final family = entry['family'] as String;
+            if (!family.contains('Material')) continue;
+            final loader = FontLoader(family);
+            for (final font in entry['fonts'] as List) {
+              loader.addFont(rootBundle.load(font['asset'] as String));
+            }
+            await loader.load();
+          }
+        });
+      }
       tester.view.physicalSize = Size(width, 850);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues({'pref_dialog_blur': false});
       final preferences = await SharedPreferences.getInstance();
+      const themeState = ThemeState(
+        mode: ThemeMode.system,
+        seedColor: Colors.blue,
+      );
+      final resolved = ThemeResolver.resolve(
+        spec: ThemeRegistry.material,
+        mode: ThemeMode.system,
+        black: false,
+        seed: themeState.seedColor,
+        variant: themeState.schemeVariant,
+      );
+      final appTheme = buildAppTheme(
+        width == 390 ? resolved.dark : resolved.light,
+        width == 390 ? resolved.darkColors : resolved.lightColors,
+        themeState.effectiveShapes,
+        themeState,
+        fullscreenSwipeBack: false,
+        pageBackground: false,
+      );
       final user = <String, dynamic>{
         'id': 1,
         'username': 'tester',
@@ -68,6 +119,15 @@ void main() {
           child: TranslationProvider(
             child: MaterialApp(
               navigatorKey: navigatorKey,
+              theme: captureDir.isEmpty
+                  ? appTheme
+                  : appTheme.copyWith(
+                      textTheme: appTheme.textTheme.apply(fontFamily: 'MiSans'),
+                    ),
+              builder: (context, child) => RepaintBoundary(
+                key: const ValueKey('preferences-capture'),
+                child: child!,
+              ),
               locale: const Locale('zh'),
               supportedLocales: AppLocaleUtils.supportedLocales,
               localizationsDelegates: const [
@@ -75,16 +135,22 @@ void main() {
                 GlobalWidgetsLocalizations.delegate,
                 GlobalCupertinoLocalizations.delegate,
               ],
-              home: const ForumPreferencesPage(
-                username: 'tester',
-                initialSection: ForumPreferenceSection.profile,
-              ),
+              home: const ForumPreferencesPage(username: 'tester'),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      expect(find.byIcon(Symbols.account_circle_rounded), findsOneWidget);
+      expect(find.byIcon(Symbols.shield_rounded), findsOneWidget);
+      await _capture(tester, captureDir, 'preferences-navigation-$width');
+      await tester.tap(
+        find.byKey(const ValueKey(ForumPreferenceSection.profile)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsGroupPage), findsOneWidget);
+      await _capture(tester, captureDir, 'preferences-$width');
       await tester.enterText(
         find.widgetWithText(TextFormField, '个人简介'),
         '修改后的简介',
@@ -108,6 +174,11 @@ void main() {
         isNull,
       );
       expect(tester.takeException(), isNull);
+      await tester.tap(find.widgetWithText(M3eSwitchListTile, '隐藏公开资料与活动'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'hide_profile': true});
       await tester.enterText(
         find.widgetWithText(TextFormField, '个人简介'),
         '尚未保存的简介',
@@ -123,4 +194,18 @@ void main() {
       await tester.pump();
     });
   }
+}
+
+Future<void> _capture(WidgetTester tester, String dir, String name) async {
+  if (dir.isEmpty) return;
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.byKey(const ValueKey('preferences-capture')),
+  );
+  await tester.runAsync(() async {
+    final image = await boundary.toImage();
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    Directory(dir).createSync(recursive: true);
+    File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+    image.dispose();
+  });
 }

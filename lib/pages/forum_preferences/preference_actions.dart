@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,7 @@ import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/user/ignore_duration_picker.dart';
 import '../webview_page.dart';
 import 'preference_controls.dart';
+import 'preference_fields.dart';
 
 class PreferenceActions extends StatefulWidget {
   const PreferenceActions({
@@ -110,8 +112,11 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     String? subtitle,
     IconData? icon,
   }) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: icon == null ? null : Icon(icon),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    leading: Icon(
+      icon ?? preferenceSectionIcon(widget.section),
+      color: context.emphasis.accent,
+    ),
     title: Text(title),
     subtitle: subtitle == null ? null : Text(subtitle),
     trailing: const Icon(Symbols.chevron_right_rounded),
@@ -424,39 +429,44 @@ class _PreferenceActionsState extends State<PreferenceActions> {
   });
 
   List<Widget> _profile() => [
-    _heading(context.l10n.forumPrefs_featuredTopic),
-    _action(
-      context.l10n.forumPrefs_featuredTopic,
-      () => _run(() async {
-        final saved = await editPreferenceValue(
-          context,
-          title: context.l10n.forumPrefs_featuredTopic,
-          help: context.l10n.forumPrefs_featuredTopicHint,
-          submit: (value) async {
-            final id =
-                int.tryParse(value) ??
-                DiscourseUrlParser.parseTopic(value)?.topicId;
-            if (id == null || id <= 0) {
-              throw FormatException(context.l10n.forumPrefs_invalidValue);
-            }
-            await _service.featureProfileTopic(_username, id);
-          },
-        );
-        if (saved) await widget.onChanged();
-      }),
-      subtitle:
-          (widget.data.user['featured_topic'] as Map?)?['title'] as String?,
+    SegmentedCardGroup(
+      children: [
+        _action(
+          context.l10n.forumPrefs_featuredTopic,
+          () => _run(() async {
+            final saved = await editPreferenceValue(
+              context,
+              title: context.l10n.forumPrefs_featuredTopic,
+              help: context.l10n.forumPrefs_featuredTopicHint,
+              submit: (value) async {
+                final id =
+                    int.tryParse(value) ??
+                    DiscourseUrlParser.parseTopic(value)?.topicId;
+                if (id == null || id <= 0) {
+                  throw FormatException(context.l10n.forumPrefs_invalidValue);
+                }
+                await _service.featureProfileTopic(_username, id);
+              },
+            );
+            if (saved) await widget.onChanged();
+          }),
+          icon: Symbols.push_pin_rounded,
+          subtitle:
+              (widget.data.user['featured_topic'] as Map?)?['title'] as String?,
+        ),
+        if (widget.data.user['featured_topic'] != null)
+          TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _run(() async {
+                    await _service.featureProfileTopic(_username, null);
+                    await widget.onChanged();
+                  }),
+            icon: const Icon(Symbols.delete_outline_rounded),
+            label: Text(context.l10n.common_remove),
+          ),
+      ],
     ),
-    if (widget.data.user['featured_topic'] != null)
-      TextButton(
-        onPressed: _busy
-            ? null
-            : () => _run(() async {
-                await _service.featureProfileTopic(_username, null);
-                await widget.onChanged();
-              }),
-        child: Text(context.l10n.common_remove),
-      ),
   ];
 
   Future<void> _loadFactors() => _run(() async {

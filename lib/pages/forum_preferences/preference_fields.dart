@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:app_icons/app_icons.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../l10n/s.dart';
@@ -20,6 +22,22 @@ String preferenceSectionLabel(
   ForumPreferenceSection.apps => l.forumPrefs_apps,
   ForumPreferenceSection.calendar => l.forumPrefs_calendar,
 };
+
+IconData preferenceSectionIcon(ForumPreferenceSection section) =>
+    switch (section) {
+      ForumPreferenceSection.account => Symbols.account_circle_rounded,
+      ForumPreferenceSection.security => Symbols.shield_rounded,
+      ForumPreferenceSection.profile => Symbols.person_rounded,
+      ForumPreferenceSection.notifications => Symbols.notifications_rounded,
+      ForumPreferenceSection.emails => Symbols.mail_rounded,
+      ForumPreferenceSection.tracking => Symbols.bookmark_rounded,
+      ForumPreferenceSection.users => Symbols.group_rounded,
+      ForumPreferenceSection.interface => Symbols.palette_rounded,
+      ForumPreferenceSection.navigation => Symbols.explore_rounded,
+      ForumPreferenceSection.chat => Symbols.chat_bubble_rounded,
+      ForumPreferenceSection.apps => Symbols.apps_rounded,
+      ForumPreferenceSection.calendar => Symbols.calendar_month_rounded,
+    };
 
 List<ForumPreferenceField> preferenceFields(
   ForumPreferenceSection section,
