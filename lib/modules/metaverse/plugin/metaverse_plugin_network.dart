@@ -291,6 +291,41 @@ class MetaversePluginNetwork {
     };
   }
 
+  /// 读取、刷新或取消同一服务的买家订单，凭证留在宿主内。
+  Future<Map<String, Object?>> paymentOrderRequest(
+    MetaversePluginManifest manifest,
+    MetaverseServiceSession session,
+    String orderNo,
+    String action, {
+    required Future<void> Function() checkSession,
+  }) async {
+    if (manifest.auth.payment != 'linuxDoCredit' ||
+        session.checkout?.endpoints != manifest.auth.checkout ||
+        !MetaverseOrderIntent.validId(orderNo)) {
+      throw const MetaversePluginCallException('payment_not_granted');
+    }
+    final (suffix, method) = switch (action) {
+      'details' => ('?role=buyer', 'GET'),
+      'payment' => ('/payment-url', 'GET'),
+      'refresh' => ('/refresh', 'POST'),
+      'cancel' => ('/cancel', 'POST'),
+      _ => throw const MetaversePluginCallException('payment_invalid_action'),
+    };
+    final uri = Uri.parse('${manifest.auth.checkout!.create}/$orderNo$suffix');
+    final target = await _checkTarget(uri, manifest.networkHosts);
+    await checkSession();
+    final response = await _send(
+      uri,
+      target: target,
+      method: method,
+      body: null,
+      headers: {'Authorization': 'Bearer ${session.token}'},
+      maxBytes: maxResponseBody,
+    );
+    await checkSession();
+    return {'status': response.status, 'body': utf8.decode(response.bytes)};
+  }
+
   /// 下载插件包里的一个文件（清单、界面描述、脚本）。
   Future<String> download(Uri uri, {required int maxBytes}) async {
     final target = await _checkTarget(uri, null);

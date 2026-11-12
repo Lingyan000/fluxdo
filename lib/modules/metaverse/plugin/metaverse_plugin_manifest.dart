@@ -38,6 +38,8 @@ class MetaversePluginAuthSpec {
     this.hosts = const [],
     this.queries = const {},
     this.checkout,
+    this.connect,
+    this.payment,
   });
 
   final MetaversePluginAuthType type;
@@ -61,6 +63,10 @@ class MetaversePluginAuthSpec {
   final Map<String, String> queries;
   final MetaverseCheckoutEndpoints? checkout;
 
+  /// Linux DO Connect 的 PKCE 交接端点，凭证仅由宿主交换和保存。
+  final Map<String, String>? connect;
+  final String? payment;
+
   bool get required => type == MetaversePluginAuthType.token;
   bool get canAttachCredential => type != MetaversePluginAuthType.none;
 }
@@ -72,6 +78,7 @@ class MetaversePluginPageSpec {
     required this.widget,
     required this.title,
     this.modal = false,
+    this.scroll = true,
   });
 
   final String id;
@@ -80,6 +87,7 @@ class MetaversePluginPageSpec {
   final String widget;
   final String title;
   final bool modal;
+  final bool scroll;
 }
 
 /// 第三方插件清单，保持对旧版本插件的支持。
@@ -110,7 +118,7 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 5;
+  static const schemaVersion = 6;
 
   final String id;
   final String name;
@@ -177,6 +185,8 @@ class MetaversePluginManifest {
     auth.label,
     auth.queries,
     auth.checkout,
+    auth.connect,
+    auth.payment,
     links.map((r) => (r.host, r.path, r.page)).toList(),
   ];
   bool sameApprovalAs(MetaversePluginManifest other) =>
@@ -238,6 +248,12 @@ class MetaversePluginManifest {
     if (json['auth'] case {'checkout': _} when schema < 5) {
       throw const MetaverseManifestException('schema', '原生建单需要 schema 5');
     }
+    if (schema < 6 &&
+        json['auth'] is Map &&
+        ((json['auth'] as Map).containsKey('connect') ||
+            (json['auth'] as Map).containsKey('payment'))) {
+      throw const MetaverseManifestException('schema', '原生登录与支付需要 schema 6');
+    }
     if (schema < 2 &&
         (json['webLogin'] != null || permissions['publicImages'] == true)) {
       throw const MetaverseManifestException('schema', '网站会话与公开图片需要 schema 2');
@@ -274,12 +290,17 @@ class MetaversePluginManifest {
           '须为 page 或 modal',
         );
       }
+      if (item.containsKey('scroll') &&
+          (schema < 6 || item['scroll'] is! bool)) {
+        throw MetaverseManifestException('$field.scroll', '需要 schema 6 和布尔值');
+      }
       pages.add(
         MetaversePluginPageSpec(
           id: pageId,
           widget: _widgetName(item, 'widget', field),
           title: _string(item, 'title', max: 40, prefix: field),
           modal: presentation == 'modal',
+          scroll: item['scroll'] != false,
         ),
       );
     }
@@ -383,7 +404,9 @@ class MetaversePluginManifest {
     }
     final type = value['type'];
     if (type == 'none') {
-      if (value.containsKey('checkout')) {
+      if (value.containsKey('checkout') ||
+          value.containsKey('connect') ||
+          value.containsKey('payment')) {
         throw const MetaverseManifestException('auth.checkout', '建单须使用服务会话');
       }
       return const MetaversePluginAuthSpec();
@@ -408,7 +431,9 @@ class MetaversePluginManifest {
                   k != 'type' &&
                   k != 'hosts' &&
                   k != 'queries' &&
-                  k != 'checkout',
+                  k != 'checkout' &&
+                  k != 'connect' &&
+                  k != 'payment',
             ))) {
       throw const MetaverseManifestException(
         'auth',
@@ -416,6 +441,46 @@ class MetaversePluginManifest {
       );
     }
     final queries = <String, String>{};
+    Map<String, String>? connect;
+    if (value['connect'] case final Map config) {
+      connect = {};
+      for (final key in ['init', 'callback', 'exchange', 'verify', 'terms']) {
+        final raw = config[key];
+        final uri = raw is String ? Uri.tryParse(raw) : null;
+        if (type != 'readSession' ||
+            uri == null ||
+            uri.scheme != 'https' ||
+            uri.userInfo.isNotEmpty ||
+            uri.port != 443 ||
+            !MetaverseHostPattern.matchesAny(networkHosts, uri.host) ||
+            uri.hasFragment) {
+          throw MetaverseManifestException(
+            'auth.connect.$key',
+            '须为已声明网络域名的 HTTPS 地址',
+          );
+        }
+        connect[key] = uri.toString();
+      }
+      if (Uri.parse(connect['exchange']!).host != hosts.single ||
+          Uri.parse(connect['verify']!).host != hosts.single) {
+        throw const MetaverseManifestException(
+          'auth.connect',
+          '会话交换和校验须使用凭证域名',
+        );
+      }
+    } else if (value.containsKey('connect')) {
+      throw const MetaverseManifestException('auth.connect', '必须是授权端点对象');
+    }
+    final payment = value['payment'];
+    if (payment != null &&
+        (payment != 'linuxDoCredit' ||
+            type != 'readSession' ||
+            !value.containsKey('checkout'))) {
+      throw const MetaverseManifestException(
+        'auth.payment',
+        '支付须使用支持的提供方和订单协议',
+      );
+    }
     MetaverseCheckoutEndpoints? checkout;
     if (value.containsKey('checkout')) {
       final raw = value['checkout'];
@@ -494,6 +559,8 @@ class MetaversePluginManifest {
       hosts: hosts,
       queries: Map.unmodifiable(queries),
       checkout: checkout,
+      connect: connect == null ? null : Map.unmodifiable(connect),
+      payment: payment as String?,
     );
   }
 

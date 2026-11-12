@@ -34,7 +34,7 @@ main.js        逻辑（跑在独立的 JS 引擎里）
 
 ## 清单
 
-宿主支持 schema 1 至 5。网站会话、商品弹层和公开图片需要 schema 2 或以上，服务读会话需要 schema 3，具名查询需要 schema 4，逐笔确认的原生建单需要 schema 5。旧版宿主会在安装时提示版本不兼容。下方基础示例仍使用 schema 1。
+宿主支持 schema 1 至 6。网站会话、商品弹层和公开图片需要 schema 2 或以上，服务读会话需要 schema 3，具名查询需要 schema 4，逐笔确认的原生建单需要 schema 5，原生 Connect 授权、LDC 买家支付与页面自管滚动需要 schema 6。旧版宿主会在安装时提示版本不兼容。下方基础示例仍使用 schema 1。
 
 ```json
 {
@@ -85,6 +85,19 @@ schema 3 可声明 `"auth": {"type":"readSession","hosts":["api.example.org"]}`�
 schema 4 的服务读会话可额外声明 `auth.queries`，例如 `{"orderQuote":"/api/shop/orders/quote"}`。安装时显示精确端点。受信任的宿主签发适配器必须另外核实该端点仅执行查询，将获准的完整 URL 与本次令牌作为同一会话安全保存。旧令牌和没有查询授权的会话只能 GET；插件清单本身不能授予权限。
 
 脚本用 `fluxdo.auth.status().then(s => s.queries)` 获得当前会话允许的查询名，调用 `fluxdo.auth.query("orderQuote", {productId, quantity})`，返回 `status`、`ok`、`body` 和 `json()`。POST 请求的 URL、方法、JSON 和授权头由宿主组装。普通 `fetch` 的限制不变，不能把下单、支付或其他有副作用的操作当成查询授权。登出、卸载、更换来源或授权声明均清除会话及其查询授权。
+
+## 原生授权与支付（schema 6）
+
+`auth.connect` 声明 `init`、`callback`、`exchange`、`verify`、`terms` 的完整 HTTPS 地址，均须在网络权限范围内，交换和校验端点属于凭证域名。当前实现支持士多的 Connect + PKCE 交接协议，其请求字段和回调格式固定。宿主使用网站已有回调、state、S256 verifier、一次性码和服务验证接口建立绑定当前账号的会话。`auth.request()` 由点击触发原生条款确认，取消返回 false。
+
+`auth.payment: "linuxDoCredit"` 与 `readSession`、`checkout` 一同声明。安装确认会展示该权限，授权成功后宿主按此服务协议配置报价和建单能力。
+
+- `fluxdo.checkout.pay(orderNo)` 读取业务订单与支付链接，取得 LDC 买家订单，核对账号、金额与商户订单号后展示原生支付确认。六位密码仅用于宿主的 LDC 买家付款请求。
+- `fluxdo.checkout.cancel(orderNo)` 展示原生取消确认后取消对应业务订单。
+- 两个入口都要求用户点击，且同一插件同时只能处理一笔交易。支付响应丢失后查原单，结果返回给脚本后由订单接口重新读取状态。
+- 业务订单协议由 `checkout.create` 路径推导详情、`payment-url`、`refresh`、`cancel` 路径，结构参见 LD士多示例。采用其他交易协议的服务需新增宿主适配。
+
+页面声明 `scroll: false` 时由页面组件管理滚动与底部区域。`PageLayout(children, footer, loading, onRefresh)` 提供居中内容、下拉刷新与固定底部操作栏，配合 `TileGrid`、`Choice`、`EmptyState`、`SelectableLabel` 组合页面。省略 `scroll` 时保留原有宿主滚动方式。
 
 ## 原生建单（schema 5）
 

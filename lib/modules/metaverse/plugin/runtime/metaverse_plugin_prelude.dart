@@ -122,6 +122,8 @@ const metaversePluginPrelude = r'''
     }),
 
     checkout: Object.freeze({
+      pay: function (no) { return call('checkout.pay',{orderNo:no}); },
+      cancel: function (no) { return call('checkout.cancel',{orderNo:no}); },
       status: function () { return call('checkout.status'); },
       submit: function (intent) { return call('checkout.submit',intent); },
       recover: function () { return call('checkout.recover'); },

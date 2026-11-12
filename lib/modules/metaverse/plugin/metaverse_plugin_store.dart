@@ -222,7 +222,12 @@ class MetaversePluginStore {
     // 手填凭证没有服务签发记录，不能升级成托管会话。
     if (encoded == null) return null;
     try {
-      return MetaverseServiceSession.parse(jsonDecode(encoded));
+      final session = MetaverseServiceSession.parse(jsonDecode(encoded));
+      if (session?.expiresAt case final expires?
+          when expires * 1000 <= DateTime.now().millisecondsSinceEpoch) {
+        return null;
+      }
+      return session;
     } on FormatException {
       return null;
     }

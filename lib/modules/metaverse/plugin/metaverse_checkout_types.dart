@@ -7,16 +7,19 @@ class MetaverseCheckoutGrant {
     this.endpoints, {
     required this.subject,
     required this.unit,
+    this.displayName,
   });
   final MetaverseCheckoutEndpoints endpoints;
   final String subject;
   final String unit;
+  final String? displayName;
 
   Map<String, Object?> toJson() => {
     'create': endpoints.create,
     'lookup': endpoints.lookup,
     'subject': subject,
     'unit': unit,
+    'displayName': ?displayName,
   };
 
   static MetaverseCheckoutGrant? parse(Object? raw) {
@@ -36,6 +39,9 @@ class MetaverseCheckoutGrant {
         (create: create, lookup: lookup),
         subject: subject,
         unit: unit,
+        displayName: raw['displayName'] is String
+            ? raw['displayName'] as String
+            : null,
       );
     }
     return null;

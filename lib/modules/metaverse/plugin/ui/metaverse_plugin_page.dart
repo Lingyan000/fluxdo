@@ -107,12 +107,22 @@ class MetaversePluginPage extends ConsumerWidget {
                     child: Text(context.l10n.metaverse_pluginUseDoh(name)),
                   ),
           ),
-          MetaversePluginSurfaceView(
-            host: host,
-            kind: MetaversePluginSurfaceKind.page,
-            page: page,
-            params: params,
-          ),
+          if (!spec.scroll)
+            Expanded(
+              child: MetaversePluginSurfaceView(
+                host: host,
+                kind: MetaversePluginSurfaceKind.page,
+                page: page,
+                params: params,
+              ),
+            )
+          else
+            MetaversePluginSurfaceView(
+              host: host,
+              kind: MetaversePluginSurfaceKind.page,
+              page: page,
+              params: params,
+            ),
         ],
       );
     }
@@ -146,10 +156,12 @@ class MetaversePluginPage extends ConsumerWidget {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: body,
-        ),
+        child: spec?.scroll == false
+            ? body
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: body,
+              ),
       ),
     );
   }

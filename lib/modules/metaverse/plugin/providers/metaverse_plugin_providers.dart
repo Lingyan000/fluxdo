@@ -1,11 +1,16 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../constants.dart';
+import '../../../../l10n/s.dart';
+import '../../../../services/ldc_oauth_service.dart';
+import '../../../../services/ldc_payment_service.dart';
+import '../../../../services/network/exceptions/oauth_exception.dart';
+import '../../../../utils/dialog_utils.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/secret_store_provider.dart';
 import '../../../../providers/theme_provider.dart';
@@ -14,6 +19,8 @@ import '../../../../services/network/core/net_core_bindings.dart';
 import '../../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../../utils/link_launcher.dart';
 import '../metaverse_plugin_host.dart';
+import '../metaverse_connect_login.dart';
+import '../metaverse_payment.dart';
 import '../metaverse_checkout_types.dart';
 import '../metaverse_plugin_installer.dart';
 import '../metaverse_plugin_manifest.dart';
@@ -23,6 +30,7 @@ import '../runtime/flutter_js_script_engine.dart';
 import '../runtime/metaverse_script_engine.dart';
 import '../ui/metaverse_plugin_dialogs.dart';
 import '../ui/metaverse_plugin_page.dart';
+import '../ui/metaverse_payment_sheet.dart';
 
 /// 插件数据的根目录：每个插件一个子目录。
 final metaversePluginDirectoryProvider = FutureProvider<Directory>((ref) async {
@@ -280,6 +288,18 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   String? currentUsername() => _ref.read(currentUserProvider).value?.username;
 
   @override
+  int? currentAccountId() => _ref.read(currentUserProvider).value?.id;
+
+  bool _accountActive(int id) =>
+      _ref.mounted &&
+      currentAccountId() == id &&
+      _ref
+              .read(metaversePluginsProvider.notifier)
+              .byId(_manifest.id)
+              ?.enabled ==
+          true;
+
+  @override
   Future<bool> confirmOrder(
     BuildContext context,
     MetaverseCheckoutGrant grant,
@@ -291,12 +311,122 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     BuildContext context,
     MetaversePluginManifest manifest,
   ) async {
+    if (manifest.auth.connect != null) {
+      final account = _ref.read(currentUserProvider).value;
+      if (account == null) {
+        throw StateError(S.current.metaverse_nativeLoginRequired);
+      }
+      if (!await showMetaverseConnectConfirmation(
+        context,
+        manifest,
+        account.username,
+      )) {
+        return false;
+      }
+      if (!context.mounted || !_accountActive(account.id)) return false;
+      final login = MetaverseConnectLogin(
+        _ref.read(metaversePluginNetworkProvider),
+      );
+      try {
+        final session = await login.authorize(
+          manifest,
+          accountId: account.id,
+          active: () => context.mounted && _accountActive(account.id),
+        );
+        if (!context.mounted || !_accountActive(account.id)) return false;
+        await _ref
+            .read(metaversePluginStoreProvider)
+            .writeServiceSession(manifest.id, session);
+        return true;
+      } finally {
+        login.dispose();
+      }
+    }
     final token = await showMetaversePluginTokenDialog(context, manifest);
     if (token == null || token.isEmpty) return false;
     await _ref
         .read(metaversePluginsProvider.notifier)
         .saveToken(manifest.id, token);
     return true;
+  }
+
+  @override
+  Future<Object?> payOrder(
+    BuildContext context,
+    String orderNo, {
+    bool cancel = false,
+  }) async {
+    final account = _ref.read(currentUserProvider).value;
+    if (account == null) {
+      throw StateError(S.current.metaverse_nativeLoginRequired);
+    }
+    final store = _ref.read(metaversePluginStoreProvider);
+    return store.withOrderLock(_manifest.id, () async {
+      final credit = LdcPaymentService();
+      final payment = MetaversePayment(
+        _manifest,
+        store,
+        _ref.read(metaversePluginNetworkProvider),
+        credit,
+        accountId: account.id,
+        isActive: () => context.mounted && _accountActive(account.id),
+      );
+      try {
+        await payment.checkSession();
+        if (cancel) {
+          if (!context.mounted) return null;
+          final confirmed = await showAppDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(ctx.l10n.metaverse_nativeCancelOrder),
+              content: Text(orderNo),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(ctx.l10n.common_cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(ctx.l10n.common_confirm),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true) return null;
+          await payment.request(orderNo, 'cancel');
+          return {'state': 'cancelled'};
+        }
+        final oauth = LdcOAuthService();
+        var needsPassword = false;
+        try {
+          final user = await oauth.getUserInfo(
+            expectedUsername: account.username,
+          );
+          needsPassword = user?.isPayKey != true;
+        } on OAuthExpiredException {
+          if (!context.mounted ||
+              !_accountActive(account.id) ||
+              !await oauth.authorize(context)) {
+            return null;
+          }
+          final user = await oauth.getUserInfo(
+            expectedUsername: account.username,
+          );
+          needsPassword = user?.isPayKey != true;
+        }
+        await payment.checkSession();
+        if (!context.mounted) return null;
+        return await showMetaversePaymentSheet(
+          context,
+          payment: payment,
+          orderNo: orderNo,
+          username: account.username,
+          needsPassword: needsPassword,
+        );
+      } finally {
+        credit.dispose();
+      }
+    });
   }
 
   @override

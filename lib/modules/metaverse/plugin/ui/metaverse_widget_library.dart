@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -211,6 +212,49 @@ Widget? _icon(BuildContext context, DataSource source, List<Object> key) {
 Map<String, LocalWidgetBuilder> _hostWidgets(
   Future<Uint8List> Function(Uri) loadImage,
 ) => {
+  'PageLayout': (context, source) => _PluginPageLayout(
+    loading: source.v<bool>(['loading']) == true,
+    onRefresh: source.voidHandler(['onRefresh']),
+    footer: source.optionalChild(['footer']),
+    children: source.childList(['children']),
+  ),
+  'TileGrid': (context, source) {
+    final children = source.childList(['children']);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = constraints.maxWidth >= 720
+            ? 3
+            : constraints.maxWidth >= 320
+            ? 2
+            : 1;
+        final width = (constraints.maxWidth - (count - 1) * 12) / count;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final child in children) SizedBox(width: width, child: child),
+          ],
+        );
+      },
+    );
+  },
+  'Choice': (context, source) => ChoiceChip(
+    label: Text(_text(source, ['label'])),
+    selected: source.v<bool>(['selected']) == true,
+    onSelected: (_) => source.voidHandler(['onSelected'])?.call(),
+  ),
+  'EmptyState': (context, source) => AppEmptyState(
+    icon:
+        _icon(context, source, ['icon']) ??
+        const Icon(Symbols.shopping_bag_rounded),
+    title: _text(source, ['title']),
+    message: source.v<String>(['message']),
+    action: source.optionalChild(['action']),
+  ),
+  'SelectableLabel': (context, source) => SelectableText(
+    _text(source, ['text']),
+    style: Theme.of(context).textTheme.bodyMedium,
+  ),
   // 跟随主题的文本：style 取主题文字样式名，color 取主题色名。
   'Label': (context, source) {
     final maxLines = source.v<int>(['maxLines']);
@@ -247,7 +291,10 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     return Material(
       color:
           _color(context, source, ['color']) ??
-          Theme.of(context).colorScheme.surfaceContainerHigh,
+          PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: onTap == null
@@ -263,10 +310,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
         : source.voidHandler(['onPressed']);
     final label = Text(_text(source, ['label']));
     final icon = loading
-        ? const SizedBox.square(
-            dimension: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
+        ? const LoadingSpinner(size: 16)
         : _icon(context, source, ['icon']);
     return switch (source.v<String>(['variant'])) {
       'tonal' => FilledButton.tonalIcon(
@@ -355,7 +399,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
       SizedBox.square(dimension: _number(source, ['size']) ?? 8),
 
   // 开关：onChanged 事件带 { value: bool }。
-  'Toggle': (context, source) => Switch(
+  'Toggle': (context, source) => M3eSwitch(
     value: source.v<bool>(['value']) ?? false,
     onChanged: source.handler(
       ['onChanged'],
@@ -383,6 +427,91 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     ),
   ),
 };
+
+class _PluginPageLayout extends StatefulWidget {
+  const _PluginPageLayout({
+    required this.children,
+    this.footer,
+    this.onRefresh,
+    required this.loading,
+  });
+  final List<Widget> children;
+  final Widget? footer;
+  final VoidCallback? onRefresh;
+  final bool loading;
+  @override
+  State<_PluginPageLayout> createState() => _PluginPageLayoutState();
+}
+
+class _PluginPageLayoutState extends State<_PluginPageLayout> {
+  Completer<void>? _refresh;
+  @override
+  void didUpdateWidget(_PluginPageLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.loading) {
+      _refresh?.complete();
+      _refresh = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _refresh?.complete();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final content = Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: widget.children,
+            ),
+          ),
+        ),
+      );
+      if (!constraints.hasBoundedHeight) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [content, ?widget.footer],
+        );
+      }
+      Widget scroll = SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: content,
+      );
+      if (widget.onRefresh != null) {
+        scroll = M3eRefreshIndicator(
+          onRefresh: () {
+            if (_refresh != null) return _refresh!.future;
+            final pending = _refresh = Completer<void>();
+            widget.onRefresh!();
+            return pending.future;
+          },
+          child: scroll,
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: scroll),
+          if (widget.footer != null)
+            PageBackdrop(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: widget.footer,
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
 
 class _PluginImage extends StatefulWidget {
   const _PluginImage({

@@ -19,6 +19,10 @@ void main() {
     expect(shop.manifest.webLogin?.host, 'ldcstore.com');
     expect(shop.source, 'asset:plugins/ld-store/plugin.json');
     expect(shop.manifest.page('product')?.modal, true);
-    expect(shop.code.script, contains('fluxdo.session.login()'));
+    expect(shop.manifest.auth.connect, isNotNull);
+    expect(shop.manifest.auth.payment, 'linuxDoCredit');
+    expect(shop.manifest.page('product')?.scroll, false);
+    expect(shop.code.script, contains('fluxdo.auth.request()'));
+    expect(shop.code.script, contains('fluxdo.checkout.pay('));
   });
 }

@@ -29,7 +29,7 @@ Future<bool> showMetaverseOrderConfirmation(
           content: Text(
             ctx.l10n.metaverse_checkoutSummary(
               site,
-              grant.subject,
+              grant.displayName ?? grant.subject,
               intent.productId,
               intent.quantity,
               intent.couponClaimId ?? '—',
@@ -191,6 +191,9 @@ class _InstallReview extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 MetaverseHostList(hosts: manifest.auth.hosts),
+                if (manifest.auth.connect != null ||
+                    manifest.auth.payment != null)
+                  _Bullet(context.l10n.metaverse_nativeLoginAccess),
                 if (manifest.auth.queries.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   _Bullet(context.l10n.metaverse_pluginPermQueries),

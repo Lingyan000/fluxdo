@@ -237,6 +237,20 @@ class _Delegate extends MetaversePluginHostDelegate {
   final pages = <String>[];
   final suspended = <String>[];
   int authRequests = 0;
+  int? accountId;
+  @override
+  int? currentAccountId() => accountId;
+  final payments = <String>[];
+
+  @override
+  Future<Object?> payOrder(
+    BuildContext context,
+    String orderNo, {
+    bool cancel = false,
+  }) async {
+    payments.add('${cancel ? 'cancel' : 'pay'}:$orderNo');
+    return {'state': 'checking'};
+  }
 
   @override
   String? currentUsername() => 'alice';
@@ -509,6 +523,7 @@ Future<void> main() async {
         final button = find.text(label);
         await settle(tester, () => button.evaluate().isNotEmpty);
         expect(delegate.opened, hasLength(opened));
+        await tester.pumpAndSettle();
         await tester.ensureVisible(button);
         await tester.tap(button);
         await settle(tester, () => delegate.opened.length == opened + 1);
@@ -516,7 +531,87 @@ Future<void> main() async {
       }
     });
 
-    pluginTest('没有原生授权时查单不自动开网页，明确点官网才使用网页会话', (tester) async {
+    test('切换论坛账号后旧士多会话不能读订单或恢复建单', () async {
+      final service = _ShopApi();
+      await openShop(
+        (_) async => [InternetAddress('8.8.8.8')],
+        primary: service,
+      );
+      await store.writeServiceSession(
+        host.id,
+        MetaverseServiceSession(
+          'fixture-session',
+          accountId: 42,
+          checkout: MetaverseCheckoutGrant(
+            host.manifest.auth.checkout!,
+            subject: 'linux.do:42',
+            unit: 'LDC',
+          ),
+        ),
+      );
+      delegate.accountId = 43;
+      expect((await host.call('auth.status', {}) as Map)['authorized'], false);
+      await expectLater(
+        host.call('checkout.status', {}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await expectLater(
+        host.call('checkout.recover', {}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await expectLater(
+        host.call('fetch', {
+          'url': 'https://api2.ldspro.qzz.io/api/shop/orders',
+          'auth': true,
+        }),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(service.requests, isEmpty);
+    });
+
+    pluginTest('待支付订单仅在点击后调用宿主付款或取消，并回查原单', (tester) async {
+      final service = _ShopApi()..orderStatus = 'pending';
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await store.writeServiceSession(
+          host.id,
+          MetaverseServiceSession('fixture-session'),
+        );
+      });
+      await tester.pumpWidget(
+        app(
+          MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'order',
+            params: const {'no': 'FIX-1'},
+          ),
+        ),
+      );
+      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      expect(delegate.payments, isEmpty);
+      await expectLater(
+        host.call('checkout.pay', {'orderNo': 'FIX-1'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(
+        tester,
+        () => delegate.payments.length == 1 && service.requests.length == 2,
+      );
+      await settle(tester, () => find.text('取消订单').evaluate().isNotEmpty);
+      await tester.ensureVisible(find.text('取消订单'));
+      await tester.tap(find.text('取消订单'));
+      await settle(tester, () => service.requests.length == 3);
+      expect(delegate.payments, ['pay:FIX-1', 'cancel:FIX-1']);
+      expect(delegate.opened, isEmpty);
+    });
+
+    pluginTest('未登录入口调用宿主原生授权，取消后保留页面并可重新授权', (tester) async {
       await tester.runAsync(
         () => openShop((_) async => [InternetAddress('8.8.8.8')]),
       );
@@ -528,17 +623,14 @@ Future<void> main() async {
           ),
         ),
       );
-      await settle(tester, () => find.text('在士多官网登录').evaluate().isNotEmpty);
-      expect(delegate.opened, isEmpty);
+      await settle(tester, () => find.text('登录士多').evaluate().isNotEmpty);
       await expectLater(
-        host.call('session.login', {}),
+        host.call('auth.request', {}),
         throwsA(isA<MetaversePluginCallException>()),
       );
-      await tester.tap(find.text('在士多官网登录'));
-      await settle(tester, () => delegate.opened.length == 1);
-      await tester.tap(find.text('我的订单'));
-      await settle(tester, () => delegate.pages.contains('orders'));
-      expect(delegate.opened, hasLength(1));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登录士多'));
+      await settle(tester, () => delegate.authRequests == 1);
       await tester.pumpWidget(
         app(
           MetaversePluginSurfaceView(
@@ -549,49 +641,14 @@ Future<void> main() async {
           ),
         ),
       );
-      await settle(tester, () => find.text('在士多官网查看订单').evaluate().isNotEmpty);
-      await tester.tap(find.text('在士多官网查看订单'));
-      await settle(tester, () => delegate.opened.length == 2);
-      const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
-      await tester.pumpWidget(
-        app(
-          MetaversePluginSurfaceView(
-            key: const ValueKey('detail'),
-            host: host,
-            kind: MetaversePluginSurfaceKind.page,
-            page: 'product',
-            params: const {'id': id},
-          ),
-        ),
+      await settle(
+        tester,
+        () => find.text('登录士多后查看订单和交付内容').evaluate().isNotEmpty,
       );
-      await settle(tester, () => find.text('查看兑换预览').evaluate().isNotEmpty);
-      await tester.tap(find.text('查看兑换预览'));
-      await settle(tester, () => delegate.pages.contains('review'));
-      expect(delegate.opened, hasLength(2));
-      await tester.pumpWidget(
-        app(
-          MetaversePluginSurfaceView(
-            key: const ValueKey('review'),
-            host: host,
-            kind: MetaversePluginSurfaceKind.page,
-            page: 'review',
-            params: const {'id': id},
-          ),
-        ),
-      );
-      await settle(tester, () => find.text('前往士多确认兑换').evaluate().isNotEmpty);
-      await tester.tap(find.text('+'));
-      await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
-      expect(delegate.opened, hasLength(2));
-      await tester.ensureVisible(find.text('前往士多确认兑换'));
-      await tester.tap(find.text('前往士多确认兑换'));
-      await settle(tester, () => delegate.opened.length == 3);
-      expect(delegate.opened, [
-        'https://ldcstore.com/login',
-        'https://ldcstore.com/user/orders',
-        'https://ldcstore.com/checkout/$id',
-      ]);
-      expect(delegate.authRequests, 0);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登录士多'));
+      await settle(tester, () => delegate.authRequests == 2);
+      expect(delegate.opened, isEmpty);
     });
 
     pluginTest('匿名兑换预览采用实际可用库存，零库存不会被原始不限库存覆盖', (tester) async {
@@ -615,11 +672,11 @@ Future<void> main() async {
             ),
           ),
         );
-        await settle(tester, () => find.text('查看兑换预览').evaluate().isNotEmpty);
+        await settle(tester, () => find.text('立即兑换').evaluate().isNotEmpty);
         expect(
           tester
                   .widget<FilledButton>(
-                    find.widgetWithText(FilledButton, '查看兑换预览'),
+                    find.widgetWithText(FilledButton, '立即兑换'),
                   )
                   .onPressed !=
               null,
@@ -670,14 +727,11 @@ Future<void> main() async {
           ),
         ),
       );
-      final quote = find.text('查询当前报价');
+      final quote = find.text('刷新报价');
       await settle(tester, () => quote.evaluate().isNotEmpty);
-      expect(find.textContaining('库存 不限'), findsOneWidget);
       expect(find.textContaining('当前可购 2 件'), findsOneWidget);
-      await tester.ensureVisible(quote);
-      await tester.tap(quote);
       await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
-      final none = find.widgetWithText(TextButton, '不使用优惠券');
+      final none = find.widgetWithText(ChoiceChip, '不使用优惠券');
       await tester.ensureVisible(none);
       await tester.tap(none);
       await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
@@ -693,12 +747,14 @@ Future<void> main() async {
       await tester.tap(find.text('+'));
       await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
       delayed.complete();
-      await tester.ensureVisible(quote);
-      await tester.tap(quote);
       // 改数量后重新查价，保留用户主动选择的「不用券」。
       await settle(
         tester,
-        () => find.widgetWithText(FilledButton, '不使用优惠券').evaluate().isNotEmpty,
+        () =>
+            find.widgetWithText(ChoiceChip, '不使用优惠券').evaluate().isNotEmpty &&
+            tester
+                .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '不使用优惠券'))
+                .selected,
       );
       expect(find.text('2.00 LDC'), findsNothing);
       final best = find.text('模拟券 · 2.00 LDC');
@@ -712,7 +768,7 @@ Future<void> main() async {
         tester,
         () => find.textContaining('优惠券已不可用').evaluate().isNotEmpty,
       );
-      expect(find.widgetWithText(FilledButton, '不使用优惠券'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '不使用优惠券'), findsOneWidget);
       expect(find.text('24.00 LDC'), findsNWidgets(2));
       final posted = service.requests.where((r) => r.method == 'POST').toList();
       expect(posted.map((r) => jsonDecode(r.data)['quantity']), [1, 1, 2, 2]);
@@ -746,7 +802,15 @@ Future<void> main() async {
       await tester.tap(find.text('+'));
       await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
       void resume() {
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
         tester.binding.handleAppLifecycleStateChanged(
           AppLifecycleState.resumed,
         );
@@ -827,7 +891,7 @@ Future<void> main() async {
         (r) => r.uri.path.startsWith('/api/shop/order-submissions/'),
       );
       await mount();
-      await click('查询当前报价');
+      await click('刷新报价');
       await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
       await click('核对并创建订单');
       await settle(
@@ -842,10 +906,10 @@ Future<void> main() async {
         tester,
         () =>
             find.byType(AlertDialog).evaluate().isEmpty &&
-            find.text('查询当前报价').evaluate().isNotEmpty,
+            find.text('刷新报价').evaluate().isNotEmpty,
       );
       expect(submit, isEmpty);
-      await click('查询当前报价');
+      await click('刷新报价');
       await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
       await click('核对并创建订单');
       await settle(
@@ -884,9 +948,9 @@ Future<void> main() async {
       expect(jsonDecode(submit.last.data as String), first);
       service.lookupExists = true;
       await click('查询提交结果');
-      await settle(tester, () => find.text('查看已建订单').evaluate().isNotEmpty);
+      await settle(tester, () => find.text('查看订单并支付').evaluate().isNotEmpty);
       expect(find.text('FIX-1'), findsOneWidget);
-      await click('查看已建订单');
+      await click('查看订单并支付');
       await settle(tester, () => delegate.pages.contains('order'));
       expect(submit, hasLength(2));
       expect(delegate.opened, isEmpty);
@@ -937,7 +1001,11 @@ Future<void> main() async {
       );
       unawaited(root.currentState!.push(next));
       await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       expect(service.requests, hasLength(1));
@@ -949,11 +1017,17 @@ Future<void> main() async {
             find.text('待支付').evaluate().isNotEmpty,
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pump();
       expect(service.requests, hasLength(2));
       service.orderStatus = 'delivered';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
       expect(service.requests, hasLength(3));
@@ -1102,7 +1176,7 @@ Future<void> main() async {
               (r) => r.uri.queryParameters['sortOrder'] == 'ASC',
             ),
       );
-      expect(find.widgetWithText(FilledButton, '低价'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '低价'), findsOneWidget);
       await settle(tester, () => find.text('测试商品').evaluate().isNotEmpty);
       final productReads = shop.requests
           .where((r) => r.uri.path == '/api/shop/products')
@@ -1114,7 +1188,7 @@ Future<void> main() async {
         await tester.tap(find.text('帖子链接'));
         await settle(tester, () => find.text('测试说明').evaluate().isNotEmpty);
         expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
-        expect(find.text('查看兑换预览'), findsOneWidget);
+        expect(find.text('立即兑换'), findsOneWidget);
         await tester.tap(find.byType(CloseButton));
         await tester.pumpAndSettle();
         expect(find.text('帖子链接'), findsOneWidget);
