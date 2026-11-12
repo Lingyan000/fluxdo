@@ -111,6 +111,27 @@ widget Product = PageLayout(
         Label(text: "商品说明", style: "titleMedium"),
         Gap(size: 12),
         SelectableLabel(text: data.description),
+        Gap(size: 24),
+        Label(text: "商品评论", style: "titleMedium"),
+        Gap(size: 12),
+        ...for comment in data.comments: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Column(crossAxisAlignment: "stretch", children: [
+          Row(children: [
+            Expanded(child: Label(text: comment.author, bold: true)),
+            Label(text: comment.rating, color: "onSurfaceVariant"),
+          ]),
+          Gap(size: 8),
+          SelectableLabel(text: comment.content),
+        ])),
+        Label(text: data.commentsMessage, color: "onSurfaceVariant"),
+        switch data.commentsLoading {true: Spinner(), default: SizedBoxShrink()},
+        switch data.commentsError {
+          "": SizedBoxShrink(),
+          default: Column(children: [
+            Label(text: data.commentsError, color: "error"),
+            Button(label: "重新加载评论", variant: "text", onPressed: event "commentsRetry" {}),
+          ]),
+        },
+        switch data.commentsMore {true: Button(label: "更多评论", variant: "text", onPressed: event "commentsMore" {}), default: SizedBoxShrink()},
       ]),
       default: SizedBoxShrink(),
     },

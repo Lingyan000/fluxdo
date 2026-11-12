@@ -181,9 +181,42 @@ async function detail(ctx) {
         (bounds.label ? ' · ' + bounds.label : '') +
         (p.auto_delivery ? ' · 自动交付' : ''), buy:s.buy});
     if (s.quoteEnabled && (!s.record || s.record.state === 'idle')) await quote(ctx);
+    if (ctx.page === 'product') loadComments(ctx,false);
   } catch (e) {if (seq === s.seq) ctx.setData('error',String(e.message));}
   finally {if (seq === s.seq) ctx.setData('loading',false);}
 }
+async function loadComments(ctx,more) {
+  const s = market(ctx);
+  if (!s || ctx.page !== 'product' || (more && s.commentsLoading)) return;
+  const revision = s.commentsRevision = (s.commentsRevision || 0) + 1;
+  const current = () => market(ctx) === s && s.commentsRevision === revision;
+  const page = more ? (s.commentsPage || 1) + 1 : 1;
+  s.commentsLoading = true;
+  write(ctx,{commentsLoading:true,commentsError:''});
+  try {
+    const auth = await fluxdo.auth.status();
+    const data = normalizeOrderData(await read('/products/' + encodeURIComponent(ctx.params.id) +
+      '/comments?page=' + page + '&pageSize=10',auth.authorized));
+    if (!current()) return;
+    if (!Array.isArray(data.comments)) throw Error('评论数据格式有误');
+    const rows = data.comments.map(c => ({id:String(c.id),
+      author:display(c.nickname || c.username) || '用户',content:display(c.content),
+      rating:c.ratingValue == null ? '' : String(c.ratingValue) + ' / 5'}));
+    const previous = more ? s.comments || [] : [];
+    const ids = new Set(previous.map(c => c.id));
+    s.comments = previous.concat(rows.filter(c => !ids.has(c.id)));
+    s.commentsPage = page;
+    const paging = data.pagination || {};
+    write(ctx,{comments:s.comments,commentsMore:paging.hasMore === true || page < Number(paging.totalPages),
+      commentsMessage:data.commentEnabled === false ? '该商品已关闭评论' : s.comments.length ? '' : '暂无评论'});
+  } catch (e) {
+    if (current()) ctx.setData('commentsError',String(e.message));
+  } finally {
+    if (current()) {s.commentsLoading = false;ctx.setData('commentsLoading',false);}
+  }
+}
+fluxdo.on('commentsRetry',ctx => loadComments(ctx,false));
+fluxdo.on('commentsMore',ctx => loadComments(ctx,true));
 // 分页失败可以继续读同一页，授权失效则清空上一账号的数据。
 const statusLabels = {pending:'待支付',pending_payment:'待支付',paying:'支付中',paid:'已支付',
   delivered:'已交付',completed:'已完成',cancelled:'已取消',refunded:'已退款',refund_pending:'退款中',
@@ -291,6 +324,7 @@ fluxdo.on('card.load',async ctx => ctx.setData('authorized',(await fluxdo.auth.s
 fluxdo.on('page.open',ctx => {
   const s = {seq:0,rows:[],cat:'',search:'',sort:'',direction:'',stock:false,min:'',max:''};
   views.set(ctx.surface,s);
+  if (ctx.page === 'product') write(ctx,{comments:[],commentsError:'',commentsMessage:'',commentsMore:false,commentsLoading:false});
   if (ctx.page === 'orders' || ctx.page === 'order') {
     ctx.setData('filterName','全部订单');
     showOrderFilters(ctx);
@@ -316,7 +350,6 @@ fluxdo.on('page.resume',(ctx,args) => {
   const s = market(ctx);
   if (!s) return;
   s.hidden = false;
-  if (args.reason === 'app' && ctx.page !== 'market') s.dirty = true;
   if (s.dirty) return refreshView(ctx);
 });
 fluxdo.on('market',() => fluxdo.navigate('market'));
@@ -451,7 +484,11 @@ async function checkoutStatus(ctx,s) {
   const rev = s.checkoutRevision = (s.checkoutRevision || 0)+1;
   const current = () => rev === s.checkoutRevision && market(ctx) === s;
   try {
-    const result = await fluxdo.checkout.status();
+    let result = await fluxdo.checkout.status();
+    if (result.state === 'created') {
+      await fluxdo.checkout.finish(result.orderNo);
+      result = {state:'idle'};
+    }
     if (current()) showSubmission(ctx,s,result);
   } catch (_) {if (current()) showSubmission(ctx,s,{state:'unavailable'});}
 }
@@ -466,18 +503,19 @@ async function checkoutAction(ctx,kind) {
       kind === 'retry' ? await fluxdo.checkout.retry() :
       kind === 'finish' ? await fluxdo.checkout.finish(s.record.orderNo) : await fluxdo.checkout.recover();
     if (result?.state === 'created' || result?.state === 'pending') invalidateViews(s);
+    if (result?.state === 'created') showSubmission(ctx,s,result);
     if (result?.state === 'rejected') {
       clearQuote(ctx,s);note='士多未接受本次订单，请重新查价并核对数量。';
     } else if (result?.issue === 'authorization') {
       note='士多没有接受当前账号的授权。恢复授权后，请查这笔订单的原提交结果。';
-    } else if (kind === 'finish') clearQuote(ctx,s);
+    } else if (kind === 'finish') {showSubmission(ctx,s,{state:'idle'});clearQuote(ctx,s);}
   } catch (_) {note='未能确认操作结果，请先查看当前订单记录。';}
   finally {
     s.orderBusy=false;
     if (market(ctx) === s) {
       write(ctx,{orderBusy:false,orderNote:note});
       if (s.dirty && !s.hidden) await refreshView(ctx);
-      else await checkoutStatus(ctx,s);
+      else if (s.record?.state !== 'created') await checkoutStatus(ctx,s);
     }
   }
 }
@@ -485,9 +523,13 @@ fluxdo.on('submitOrder',ctx => checkoutAction(ctx,'submit'));
 fluxdo.on('lookupSubmission',ctx => checkoutAction(ctx,'recover'));
 fluxdo.on('retrySubmission',ctx => checkoutAction(ctx,'retry'));
 fluxdo.on('finishSubmission',ctx => checkoutAction(ctx,'finish'));
-fluxdo.on('createdOrder',ctx => {
+fluxdo.on('createdOrder',async ctx => {
   const r = market(ctx)?.record;
-  if (r?.state === 'created') return fluxdo.navigate('order',{no:r.orderNo});
+  if (r?.state === 'created') {
+    await fluxdo.checkout.finish(r.orderNo);
+    showSubmission(ctx,market(ctx),{state:'idle'});
+    return fluxdo.navigate('order',{no:r.orderNo});
+  }
 });
 fluxdo.on('quantity',(ctx,a) => {
   const s = market(ctx);

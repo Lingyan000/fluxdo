@@ -2,7 +2,7 @@
   "@@locale": "zh_TW",
   "ldc_paymentMethod": "付款方式",
   "ldc_deleteDigit": "刪除上一位",
-  "ldc_biometricEnable": "在此裝置啟用生物辨識付款",
+  "ldc_biometricEnable": "下次使用指紋或臉部辨識付款",
   "ldc_biometricNote": "在本機安全儲存空間保存付款密碼，之後每筆付款使用系統生物辨識確認。",
   "ldc_biometricPay": "生物辨識付款",
   "ldc_biometricHint": "請使用指紋或臉部辨識確認",
