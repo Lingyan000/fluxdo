@@ -12,7 +12,7 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_connect_login.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 class _OAuthAdapter implements HttpClientAdapter {
   _OAuthAdapter({

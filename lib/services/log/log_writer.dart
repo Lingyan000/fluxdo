@@ -5,6 +5,7 @@ import 'dart:io';
 import 'log_policy.dart';
 
 import 'package:flutter/widgets.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -265,6 +266,7 @@ class LogWriter {
 
     entry = LogPolicy.normalize({
       ...entry,
+      ...?PluginExecutionContext.current?.fields,
       if (_appVersion != null) 'appVersion': _appVersion,
     });
     // 仅合并没有请求身份的完全相同事件；请求/重试记录始终保留。
@@ -284,6 +286,7 @@ class LogWriter {
       }
       if (_repeats.length >= 128) _flushRepeats();
       _repeats[key] = {
+        ...entry,
         'event': 'repeat_summary',
         'type': entry['type'],
         'level': entry['level'],
@@ -418,6 +421,61 @@ class LogWriter {
         })
         .catchError((_) {});
     return _io;
+  }
+
+  /// 清理插件在调用时刻之前的记录，新产生的记录仍可正常落盘。
+  Future<void> clearPlugin(String pluginId) {
+    final cutoff = LogPolicy.sequence;
+    bool belongsToClearedScope(Map<dynamic, dynamic> row) =>
+        row['pluginId'] == pluginId &&
+        (row['sessionId'] != LogPolicy.sessionId ||
+            (row['seq'] is int && (row['seq'] as int) <= cutoff));
+    bool keep(String line) {
+      try {
+        final row = jsonDecode(line);
+        return row is! Map || !belongsToClearedScope(row);
+      } on FormatException {
+        return true;
+      }
+    }
+
+    _repeats.removeWhere((_, row) => belongsToClearedScope(row));
+    _buffer.removeWhere((line) => !keep(line));
+    _bufferBytes = _buffer.fold(0, (size, line) => size + utf8.encode(line).length);
+    final operation = _io.then((_) async {
+      await _closeSink();
+      try {
+        for (final file in [_rotatedFile, _file]) {
+          if (file == null || !await file.exists()) continue;
+          final content = await readContentSafely(file);
+          final lines = const LineSplitter().convert(content).where(keep);
+          final retained = lines.isEmpty ? '' : '${lines.join('\n')}\n';
+          final temporary = File('${file.path}.clear');
+          await temporary.writeAsString(retained, flush: true);
+          await temporary.rename(file.path);
+        }
+      } finally {
+        final file = _file;
+        _currentSize = file != null && await file.exists() ? await file.length() : 0;
+        _openSink();
+      }
+    });
+    _io = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  static Future<String> readPluginContent(String pluginId) async {
+    final content = await readAllContent();
+    final result = StringBuffer();
+    for (final line in const LineSplitter().convert(content)) {
+      try {
+        final row = jsonDecode(line);
+        if (row is Map && row['pluginId'] == pluginId) result.writeln(line);
+      } on FormatException {
+        continue;
+      }
+    }
+    return result.toString();
   }
 
   /// 获取当前代日志文件（读取前请先 flushNow）

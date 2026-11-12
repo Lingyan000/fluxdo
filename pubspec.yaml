@@ -23,6 +23,7 @@ workspace:
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/fluxdo_render
+  - packages/fluxdo_plugin_runtime
   - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
@@ -106,6 +107,8 @@ dependencies:
     path: packages/paper_shaders
   fluxdo_render:
     path: packages/fluxdo_render
+  fluxdo_plugin_runtime:
+    path: packages/fluxdo_plugin_runtime
   flutter_local_notifications: ^21.0.0
   jovial_svg: ^1.1.29
   # kroki.io mermaid 出图的 zlib+base64url 编码(纯 Dart,web 可用;

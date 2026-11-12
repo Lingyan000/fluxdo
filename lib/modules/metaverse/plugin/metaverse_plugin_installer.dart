@@ -9,7 +9,7 @@ import 'package:rfw/formats.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
-import 'runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 /// 下载并校验完毕、等待用户确认的插件包。
 @immutable
@@ -27,42 +27,9 @@ class MetaversePluginPackage {
   /// 只提示同一来源的较新版本，防止随应用回退时降级已安装插件。
   bool isUpdateFor(InstalledMetaversePlugin installed) {
     if (manifest.id != installed.id || source != installed.source) return false;
-    final candidate = manifest.version.split('+').first.split('-');
-    final current = installed.manifest.version.split('+').first.split('-');
-    final candidateNumbers = candidate.first
-        .split('.')
-        .map(BigInt.parse)
-        .toList();
-    final currentNumbers = current.first.split('.').map(BigInt.parse).toList();
-    for (var i = 0; i < candidateNumbers.length; i++) {
-      final comparison = candidateNumbers[i].compareTo(currentNumbers[i]);
-      if (comparison != 0) return comparison > 0;
-    }
-    if (candidate.length == 1 || current.length == 1) {
-      return candidate.length == 1 && current.length > 1;
-    }
-    final candidatePre = candidate.skip(1).join('-').split('.');
-    final currentPre = current.skip(1).join('-').split('.');
-    for (var i = 0; i < candidatePre.length && i < currentPre.length; i++) {
-      final left = candidatePre[i];
-      final right = currentPre[i];
-      final leftNumber = RegExp(r'^\d+$').hasMatch(left)
-          ? BigInt.parse(left)
-          : null;
-      final rightNumber = RegExp(r'^\d+$').hasMatch(right)
-          ? BigInt.parse(right)
-          : null;
-      final int comparison;
-      if (leftNumber != null && rightNumber != null) {
-        comparison = leftNumber.compareTo(rightNumber);
-      } else if ((leftNumber == null) != (rightNumber == null)) {
-        comparison = leftNumber == null ? 1 : -1;
-      } else {
-        comparison = left.compareTo(right);
-      }
-      if (comparison != 0) return comparison > 0;
-    }
-    return candidatePre.length > currentPre.length;
+    return PluginVersion.parse(manifest.version).compareTo(
+      PluginVersion.parse(installed.manifest.version),
+    ) > 0;
   }
 }
 
@@ -129,7 +96,9 @@ class MetaversePluginInstaller {
 
   /// 文件包含清单和两个文本资源，不解压、不读取插件指定的本地路径。
   static const maxBundleBytes = 2 * 1024 * 1024;
-  Future<MetaversePluginPackage> importBundle(Stream<List<int>> stream) async {
+  Future<MetaversePluginPackage> importBundle(
+    Stream<List<int>> stream, {String? source, String? expectedDigest}
+  ) async {
     final bytes = BytesBuilder(copy: false);
     await for (final chunk in stream) {
       if (bytes.length + chunk.length > maxBundleBytes) {
@@ -138,6 +107,9 @@ class MetaversePluginInstaller {
       bytes.add(chunk);
     }
     final raw = bytes.takeBytes();
+    if (expectedDigest != null && sha256.convert(raw).toString() != expectedDigest) {
+      throw const MetaversePluginInstallException('插件包摘要与市场记录不匹配');
+    }
     final bundle = jsonDecode(utf8.decode(raw));
     if (bundle is! Map<String, dynamic> ||
         bundle['files'] is! Map<String, dynamic> ||
@@ -149,7 +121,7 @@ class MetaversePluginInstaller {
       reservedHosts: reservedHosts,
     );
     final files = bundle['files'] as Map<String, dynamic>;
-    return _checkedFiles(manifest, files, 'bundle:${sha256.convert(raw)}');
+    return _checkedFiles(manifest, files, source ?? 'file:${manifest.id}');
   }
 
   MetaversePluginPackage _checkedFiles(

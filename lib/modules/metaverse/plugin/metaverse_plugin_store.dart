@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,12 +19,14 @@ class InstalledMetaversePlugin {
     required this.source,
     this.enabled = false,
     this.suspendedReason,
+    this.codeRevision,
   });
 
   final MetaversePluginManifest manifest;
 
   /// 清单地址，也是更新来源。
   final String source;
+  final String? codeRevision;
 
   /// 用户是否已开启（并完成授权）。
   final bool enabled;
@@ -39,6 +43,7 @@ class InstalledMetaversePlugin {
   }) => InstalledMetaversePlugin(
     manifest: manifest,
     source: source,
+    codeRevision: codeRevision,
     enabled: enabled ?? this.enabled,
     suspendedReason: clearSuspended
         ? null
@@ -47,6 +52,7 @@ class InstalledMetaversePlugin {
 
   Map<String, dynamic> toJson() => {
     'source': source,
+    'codeRevision': ?codeRevision,
     'enabled': enabled,
     'suspended': ?suspendedReason,
     'manifest': manifest.raw,
@@ -80,6 +86,8 @@ class MetaversePluginStore {
   final SecretStore _secretStore;
   final Future<Directory> Function() _rootDirectory;
   final List<String> reservedHosts;
+  final _operations = PluginOperationQueue();
+  final _stagedCode = <String, String>{};
 
   /// 读取已安装插件；清单已不合法的条目直接跳过。
   List<InstalledMetaversePlugin> loadIndex() {
@@ -107,6 +115,9 @@ class MetaversePluginStore {
           InstalledMetaversePlugin(
             manifest: manifest,
             source: source,
+            codeRevision: item['codeRevision'] is String
+                ? item['codeRevision'] as String
+                : null,
             enabled: item['enabled'] == true,
             suspendedReason: item['suspended'] is String
                 ? item['suspended'] as String
@@ -130,59 +141,120 @@ class MetaversePluginStore {
 
   Future<Directory> _directory(String id) async {
     // id 已由清单校验限制为 [a-z0-9._-]，这里再防一道目录穿越。
-    if (id.contains('/') || id.contains(r'\') || id.contains('..')) {
+    if (id.length > 64 || !RegExp(r'^[a-z0-9]+([._-][a-z0-9]+)+$').hasMatch(id)) {
       throw ArgumentError.value(id, 'id');
     }
     return Directory(p.join((await _rootDirectory()).path, id));
   }
 
-  Future<void> writeCode(String id, MetaversePluginCode code) async {
+  static String revisionOf(MetaversePluginCode code) => sha256
+      .convert(utf8.encode(jsonEncode({'ui': code.ui, 'script': code.script})))
+      .toString();
+
+  Future<void> writeCode(String id, MetaversePluginCode code) => _operations.run(id, () async {
     final dir = await _directory(id);
     await dir.create(recursive: true);
-    await File(p.join(dir.path, 'ui.rfwtxt')).writeAsString(code.ui);
-    await File(p.join(dir.path, 'main.js')).writeAsString(code.script);
-  }
+    final revision = revisionOf(code);
+    await _atomicWrite(
+      File(p.join(dir.path, 'code-$revision.json')),
+      jsonEncode({'ui': code.ui, 'script': code.script}),
+    );
+    _stagedCode[id] = revision;
+  });
 
   Future<MetaversePluginCode> readCode(String id) async {
     final dir = await _directory(id);
+    String? revision;
+    for (final installed in loadIndex()) {
+      if (installed.id == id) revision = installed.codeRevision;
+    }
+    revision ??= _stagedCode[id];
+    if (revision != null) {
+      if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(revision)) {
+        throw const FormatException('插件代码版本无效');
+      }
+      final decoded = jsonDecode(
+        await File(p.join(dir.path, 'code-$revision.json')).readAsString(),
+      ) as Map<String, dynamic>;
+      final code = (ui: decoded['ui'] as String, script: decoded['script'] as String);
+      if (revisionOf(code) != revision) throw const FormatException('插件代码摘要不匹配');
+      return code;
+    }
     return (
       ui: await File(p.join(dir.path, 'ui.rfwtxt')).readAsString(),
       script: await File(p.join(dir.path, 'main.js')).readAsString(),
     );
   }
 
-  /// 读取插件自己的键值数据；文件缺失或损坏时返回空。
+  /// 文件缺失时返回空，损坏时报告错误并保留原文件。
   Future<Map<String, Object?>> readStorage(String id) async {
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
-    try {
-      final decoded = jsonDecode(await file.readAsString());
-      return decoded is Map<String, dynamic> ? decoded : {};
-    } catch (_) {
-      return {};
-    }
+    if (!await file.exists()) return {};
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! Map<String, dynamic>) throw const FormatException('插件数据损坏');
+    return decoded;
   }
 
   /// 写入键值数据。超出容量上限时抛 [StateError]，不落盘。
-  Future<void> writeStorage(String id, Map<String, Object?> data) async {
+  Future<void> writeStorage(String id, Map<String, Object?> data) =>
+      _operations.run(id, () => _writeStorage(id, data));
+
+  Future<Map<String, Object?>> updateStorage(String id, String key, Object? value) =>
+      _operations.run(id, () async {
+        final data = await readStorage(id);
+        if (value == null) {
+          data.remove(key);
+        } else {
+          data[key] = value;
+        }
+        await _writeStorage(id, data);
+        return data;
+      });
+
+  Future<void> _writeStorage(String id, Map<String, Object?> data) async {
     final encoded = jsonEncode(data);
     if (utf8.encode(encoded).length > maxStorageBytes) {
       throw StateError('插件存储超出容量上限');
     }
     final dir = await _directory(id);
     await dir.create(recursive: true);
-    await File(p.join(dir.path, 'storage.json')).writeAsString(encoded);
+    await _atomicWrite(File(p.join(dir.path, 'storage.json')), encoded);
   }
 
-  Future<void> clearStorage(String id) async {
+  Future<void> _atomicWrite(File file, String content) async {
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(content, flush: true);
+    await temporary.rename(file.path);
+  }
+
+  Future<void> clearStorage(String id) => _operations.reset(id, () async {
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
     if (await file.exists()) await file.delete();
+  });
+
+  Future<void> resetData(String id) => _operations.reset(id, () async {
+    final file = File(p.join((await _directory(id)).path, 'storage.json'));
+    if (await file.exists()) await file.delete();
+    await _deleteToken(id);
+    await _secretStore.deleteScope(SecretScope(namespace: 'metaverse_orders:$id'));
+  });
+
+  Future<int> localBytes(String id) async {
+    final directory = await _directory(id);
+    if (!await directory.exists()) return 0;
+    var bytes = 0;
+    await for (final entity in directory.list(recursive: true, followLinks: false)) {
+      if (entity is File) bytes += await entity.length();
+    }
+    return bytes;
   }
 
   /// 删除插件的全部本地文件。
-  Future<void> deleteFiles(String id) async {
+  Future<void> deleteFiles(String id) => _operations.reset(id, () async {
     final dir = await _directory(id);
     if (await dir.exists()) await dir.delete(recursive: true);
-  }
+    _stagedCode.remove(id);
+  });
 
   SecretKey _tokenKey(String id) =>
       SecretKey(namespace: _secretNamespace, name: '$id:token');
@@ -190,7 +262,7 @@ class MetaversePluginStore {
   Future<String?> readToken(String id) => _secretStore.read(_tokenKey(id));
 
   Future<void> writeToken(String id, String token) =>
-      _secretStore.write(_tokenKey(id), token);
+      _operations.run(id, () => _secretStore.write(_tokenKey(id), token));
 
   SecretKey _sessionKey(String id) =>
       SecretKey(namespace: _secretNamespace, name: '$id:serviceSession');
@@ -210,12 +282,23 @@ class MetaversePluginStore {
       SecretKey(namespace: 'metaverse_orders:$id', name: scope);
   Future<String?> readOrder(String id, String scope) =>
       _secretStore.read(_orderKey(id, scope));
-  Future<void> writeOrder(String id, String scope, String encoded) =>
-      _secretStore.write(_orderKey(id, scope), encoded);
-  Future<void> forgetOrder(String id, String scope) =>
-      _secretStore.delete(_orderKey(id, scope));
+  Future<void> writeOrder(
+    String id,
+    String scope,
+    String encoded, {
+    bool Function()? isActive,
+  }) => _operations.run(id, () async {
+    if (isActive != null && !isActive()) throw const PluginOperationCancelled();
+    await _secretStore.write(_orderKey(id, scope), encoded);
+  });
+  Future<void> forgetOrder(String id, String scope, {bool Function()? isActive}) =>
+      _operations.run(id, () async {
+        if (isActive != null && !isActive()) throw const PluginOperationCancelled();
+        await _secretStore.delete(_orderKey(id, scope));
+      });
   Future<void> clearOrders(String id) =>
-      _secretStore.deleteScope(SecretScope(namespace: 'metaverse_orders:$id'));
+      _operations.run(id, () =>
+          _secretStore.deleteScope(SecretScope(namespace: 'metaverse_orders:$id')));
 
   Future<MetaverseServiceSession?> readServiceSession(String id) async {
     final encoded = await _secretStore.read(_sessionKey(id));
@@ -236,13 +319,17 @@ class MetaversePluginStore {
   /// 仅限宿主接收已验证的签发结果时调用；脚本和手填凭证对话框没有此入口。
   Future<void> writeServiceSession(
     String id,
-    MetaverseServiceSession session,
-  ) async {
+    MetaverseServiceSession session, {
+    bool Function()? isActive,
+  }) => _operations.run(id, () async {
+    if (isActive != null && !isActive()) throw const PluginOperationCancelled();
     await _secretStore.delete(_tokenKey(id));
     await _secretStore.write(_sessionKey(id), jsonEncode(session.toJson()));
-  }
+  });
 
-  Future<void> deleteToken(String id) async {
+  Future<void> deleteToken(String id) => _operations.reset(id, () => _deleteToken(id));
+
+  Future<void> _deleteToken(String id) async {
     await Future.wait([
       _secretStore.delete(_tokenKey(id)),
       _secretStore.delete(_sessionKey(id)),

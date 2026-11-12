@@ -15,11 +15,11 @@ const metaversePluginPrelude = r'''
 
   function post(message) { send(CHANNEL, JSON.stringify(message)); }
 
-  function call(method, params) {
+  function request(method, params, surface) {
     return new Promise(function (resolve, reject) {
       var id = ++seq;
       pending[id] = { resolve: resolve, reject: reject };
-      post({ t: 'call', id: id, m: method, p: params === undefined ? null : params });
+      post({ t: 'call', id: id, m: method, s: surface, p: params === undefined ? null : params });
     });
   }
 
@@ -50,6 +50,7 @@ const metaversePluginPrelude = r'''
       kind: info.kind,
       page: info.page || null,
       params: info.params || {},
+      api: makeApi(info.surface),
       setData: function (key, value) {
         post({ t: 'data', s: info.surface, k: String(key), v: value === undefined ? null : value });
       }
@@ -76,7 +77,9 @@ const metaversePluginPrelude = r'''
     post({ t: 'timer', op: 'clear', id: id });
   };
 
-  globalThis.fluxdo = Object.freeze({
+  function makeApi(surface) {
+    function call(method, params) { return request(method, params, surface); }
+    return Object.freeze({
     /** 注册事件处理器：card.load / page.open / page.hide / page.resume / surface.close，或界面声明的事件。 */
     on: function (name, handler) { handlers[String(name)] = handler; },
 
@@ -150,7 +153,9 @@ const metaversePluginPrelude = r'''
     }),
     openUrl: function (url) { return call('openUrl', { url: String(url) }); },
     toast: function (message, type) { return call('toast', { message: String(message), type: type || 'info' }); }
-  });
+    });
+  }
+  globalThis.fluxdo = makeApi(null);
 
   Object.defineProperty(globalThis, '__fluxdoMetaverse', {
     value: Object.freeze({

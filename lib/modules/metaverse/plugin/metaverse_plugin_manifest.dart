@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:collection/collection.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_checkout_types.dart';
@@ -118,7 +119,8 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 7;
+  static const schemaVersion = 8;
+  int get apiVersion => raw['apiVersion'] as int? ?? 1;
 
   final String id;
   final String name;
@@ -181,8 +183,6 @@ class MetaversePluginManifest {
     auth.hosts.toSet(),
     auth.header,
     auth.scheme,
-    auth.helpUrl,
-    auth.label,
     auth.queries,
     auth.checkout,
     auth.connect,
@@ -204,7 +204,6 @@ class MetaversePluginManifest {
 
   static final _id = RegExp(r'^[a-z0-9]+([._-][a-z0-9]+)+$');
   static final _identifier = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,63}$');
-  static final _version = RegExp(r'^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$');
   static final _headerName = RegExp(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$");
 
   /// 解析并校验清单。
@@ -234,8 +233,13 @@ class MetaversePluginManifest {
       );
     }
     final version = _string(json, 'version', max: 32);
-    if (!_version.hasMatch(version)) {
+    try {
+      PluginVersion.parse(version);
+    } on FormatException {
       throw const MetaverseManifestException('version', '须为 x.y.z 形式');
+    }
+    if ((schema >= 8 || json['apiVersion'] != null) && json['apiVersion'] != 1) {
+      throw const MetaverseManifestException('apiVersion', '不支持的脚本 API 版本');
     }
 
     final permissions = _map(json, 'permissions');

@@ -14,7 +14,7 @@ import 'metaverse_checkout_types.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_service_session.dart';
-import 'runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 class MetaverseLoginException extends MetaversePluginCallException {
   const MetaverseLoginException(

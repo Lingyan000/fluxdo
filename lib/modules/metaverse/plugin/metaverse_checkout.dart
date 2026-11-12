@@ -8,7 +8,7 @@ import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
 import 'metaverse_service_session.dart';
-import 'runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 typedef _Session = ({
   MetaverseServiceSession session,
@@ -135,7 +135,7 @@ class MetaverseCheckout {
         previous?.token ?? 'ord_${const Uuid().v4().replaceAll('-', '')}';
     final pending = _Submission(selected, token);
     // 先持久化，再发送：哪怕应用在下一行后崩溃也只会回到同一笔订单。
-    await store.writeOrder(_id, s.scope, pending.encoded);
+    await store.writeOrder(_id, s.scope, pending.encoded, isActive: active);
     await _check(s, active);
     return _request(s, pending, active, create: true);
   });
@@ -207,7 +207,7 @@ class MetaverseCheckout {
           code.isNotEmpty &&
           code != 'ORDER_SUBMISSION_CONFLICT' &&
           code != 'PUBLIC_ID_REQUIRED') {
-        await store.forgetOrder(_id, s.scope);
+        await store.forgetOrder(_id, s.scope, isActive: active);
         return {'state': 'rejected'};
       }
     }
@@ -217,7 +217,7 @@ class MetaverseCheckout {
       state: state,
       orderNo: no,
     );
-    await store.writeOrder(_id, s.scope, next.encoded);
+    await store.writeOrder(_id, s.scope, next.encoded, isActive: active);
     await _check(s, active);
     return {
       ...next.view,
@@ -234,7 +234,7 @@ class MetaverseCheckout {
         if (previous?.state != 'created' || previous?.orderNo != no) {
           throw const MetaversePluginCallException('checkout_lookup_required');
         }
-        await store.forgetOrder(_id, s.scope);
+        await store.forgetOrder(_id, s.scope, isActive: active);
         return null;
       });
 }

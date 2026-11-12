@@ -9,7 +9,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_service_session.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

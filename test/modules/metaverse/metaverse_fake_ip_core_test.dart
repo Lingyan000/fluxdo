@@ -10,7 +10,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/services/network/core/net_core_bindings.dart';
 import 'package:fluxdo/services/network/core/net_core_service.dart';
 import 'package:fluxdo/services/network/proxy/proxy_settings_service.dart';
