@@ -884,6 +884,10 @@ void main() {
           ? MiniAppDiscoveryRow
           : MiniAppDiscoveryCard;
       final cards = find.byType(cardType);
+      final surface = tester.widget<MiniAppCardSurface>(
+        find.descendant(of: cards.first, matching: find.byType(MiniAppCardSurface)),
+      );
+      expect(surface.watermark, isTrue, reason: '单列与多列都展示图标渐隐背景');
       final first = tester.getRect(cards.first);
       final rowCount = tester
           .elementList(cards)

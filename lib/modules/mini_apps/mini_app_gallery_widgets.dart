@@ -142,7 +142,6 @@ class MiniAppDiscoveryRow extends StatelessWidget {
     final description = app.description.trim().replaceAll(RegExp(r'\s+'), ' ');
     return MiniAppCardSurface(
       app: app,
-      watermark: false,
       child: InkWell(
         key: ValueKey('mini-app-launch-${app.id}'),
         onTap: opening ? null : onOpen,
