@@ -25,10 +25,16 @@ class MenuTabItem<T> {
 
 /// 图标栏目导航。选中项展开文字，菜单复用公共弹层的手势与键盘交互。
 class MenuTabBar<T> extends StatefulWidget implements PreferredSizeWidget {
-  const MenuTabBar({super.key, required this.controller, required this.items});
+  const MenuTabBar({
+    super.key,
+    required this.controller,
+    required this.items,
+    this.showAllLabels = false,
+  });
 
   final TabController controller;
   final List<MenuTabItem<T>> items;
+  final bool showAllLabels;
 
   @override
   Size get preferredSize => const Size.fromHeight(48);
@@ -74,23 +80,29 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     assert(widget.items.length == widget.controller.length);
     if (widget.items.isEmpty) return const SizedBox(height: 48);
     final theme = Theme.of(context);
-    final selected = widget.items[_selected];
     final style = theme.textTheme.titleSmall!.copyWith(
       fontWeight: FontWeight.w700,
     );
-    final painter = TextPainter(
-      text: TextSpan(text: selected.label, style: style),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-      maxLines: 1,
-    )..layout();
-    final selectedWidth =
-        24 + 24 + 6 + painter.width + (selected.menuBuilder == null ? 0 : 22);
-    painter.dispose();
+    final widths = <double>[];
+    for (var index = 0; index < widget.items.length; index++) {
+      final item = widget.items[index];
+      if (!widget.showAllLabels && index != _selected) {
+        widths.add(48);
+        continue;
+      }
+      final painter = TextPainter(
+        text: TextSpan(text: item.label, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      widths.add(54 + painter.width + (item.menuBuilder == null ? 0 : 22));
+      painter.dispose();
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final totalWidth = selectedWidth + 48 * (widget.items.length - 1);
+        final totalWidth = widths.fold<double>(0, (sum, width) => sum + width);
         final extra =
             math.max(0.0, constraints.maxWidth - totalWidth) /
             widget.items.length;
@@ -108,12 +120,7 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
           dividerColor: theme.colorScheme.outlineVariant,
           tabs: [
             for (var index = 0; index < widget.items.length; index++)
-              _tab(
-                context,
-                widget.items[index],
-                index,
-                (index == _selected ? selectedWidth : 48) + extra,
-              ),
+              _tab(context, widget.items[index], index, widths[index] + extra),
           ],
         );
       },
@@ -134,7 +141,7 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           ExcludeSemantics(child: Icon(item.icon, size: 22)),
-          if (active) ...[
+          if (active || widget.showAllLabels) ...[
             const SizedBox(width: 6),
             Text(item.label),
             if (item.menuBuilder != null) ...[

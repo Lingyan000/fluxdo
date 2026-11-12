@@ -12,6 +12,7 @@ import 'package:fluxdo/theme/app_theme.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/user/user_profile_header.dart';
+import 'package:fluxdo/widgets/common/hero_image.dart';
 import 'package:fluxdo/widgets/user/user_profile_cover.dart';
 
 import '../helpers/preview_fonts.dart';
@@ -26,6 +27,8 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/models/user_action.dart';
 import 'package:fluxdo/pages/user_profile_page.dart';
+import 'package:fluxdo/pages/image_viewer_page.dart';
+import 'package:fluxdo/utils/hero_visibility_controller.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
@@ -52,7 +55,31 @@ class _ProfileService implements DiscourseService {
         'topic_count': 12,
         'post_count': 21,
         'likes_received': 100,
+        'likes_given': 86,
+        'posts_read_count': 12400,
+        'topics_entered': 823,
+        'time_read': 185400,
+        'recent_time_read': 14400,
+        'replies': [
+          {'topic_id': 101, 'post_number': 3, 'like_count': 24},
+        ],
+        'links': [
+          {'url': 'https://flutter.dev', 'title': 'Flutter', 'clicks': 42},
+        ],
+        'top_categories': [
+          {
+            'id': 1,
+            'name': '开发调优',
+            'color': '0088CC',
+            'topic_count': 12,
+            'post_count': 21,
+          },
+        ],
       },
+      'topics': [
+        {'id': 101, 'title': 'Flutter 桌面端的多窗口体验', 'like_count': 42},
+        {'id': 102, 'title': '分享最近整理的开发工具与使用心得', 'like_count': 26},
+      ],
     });
   }
 
@@ -116,6 +143,8 @@ void main() {
     _ProfileCase(width: 320),
     _ProfileCase(width: 320, textScale: 2),
     _ProfileCase(width: 1100, failSummary: true, cover: true),
+    _ProfileCase(width: 1100, dark: true, visitor: true),
+    _ProfileCase(width: 1440),
     _ProfileCase(width: 390, hidden: true),
     _ProfileCase(width: 390),
     _ProfileCase(width: 390, dark: true),
@@ -150,6 +179,21 @@ void main() {
             ),
             () => OneFrameImageStreamCompleter(
               Future.value(ImageInfo(image: frame.image)),
+            ),
+          );
+          final viewerKey = await const ResizeImage(
+            BlobImageProvider(
+              'https://example.com/profile-cover.png',
+              bucket: BlobImageCache.originalBucket,
+            ),
+            width: 2550,
+            height: 2550,
+            policy: ResizeImagePolicy.fit,
+          ).obtainKey(ImageConfiguration.empty);
+          PaintingBinding.instance.imageCache.putIfAbsent(
+            viewerKey,
+            () => OneFrameImageStreamCompleter(
+              Future.value(ImageInfo(image: frame.image.clone())),
             ),
           );
           codec.dispose();
@@ -288,9 +332,119 @@ void main() {
       expect(find.byIcon(Symbols.fullscreen_rounded), findsNothing);
       expect(find.byType(DropdownButtonFormField<String>), findsNothing);
       if (!hidden) {
-        expect(service.requestedFilters, contains(null));
+        expect(service.requestedFilters, isEmpty);
       }
       await _capture(tester, captureDir, '${variant.name}-expanded');
+      if (variant.visitor) {
+        final contact = find.widgetWithText(OutlinedButton, '联系');
+        if (width >= 900) {
+          expect(contact, findsNothing);
+          expect(find.widgetWithText(OutlinedButton, '私信'), findsOneWidget);
+          expect(find.widgetWithText(OutlinedButton, '聊天'), findsOneWidget);
+        } else {
+          await tester.ensureVisible(contact);
+          await tester.pumpAndSettle();
+          final follow = find.widgetWithText(FilledButton, '关注');
+          final contactSurface = find.descendant(
+            of: contact,
+            matching: find.byType(Material),
+          );
+          final followSurface = find.descendant(
+            of: follow,
+            matching: find.byType(Material),
+          );
+          expect(
+            tester.getSize(contactSurface.first).height,
+            tester.getSize(followSurface.first).height,
+          );
+          await tester.tap(contact);
+          await tester.pumpAndSettle();
+          expect(
+            find.widgetWithIcon(PopupMenuItem<String>, Symbols.mail_rounded),
+            findsOneWidget,
+          );
+          expect(
+            find.widgetWithIcon(
+              PopupMenuItem<String>,
+              Symbols.chat_bubble_rounded,
+            ),
+            findsOneWidget,
+          );
+          await _capture(tester, captureDir, '${variant.name}-contact');
+          await tester.tapAt(const Offset(12, 760));
+          await tester.pumpAndSettle();
+          tester
+              .widget<ExtendedNestedScrollView>(
+                find.byType(ExtendedNestedScrollView),
+              )
+              .controller!
+              .jumpTo(0);
+          await tester.pumpAndSettle();
+        }
+      }
+      if (variant.cover) {
+        final cover = tester.widget<HeroImage>(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is HeroImage && widget.heroTag == 'user_cover_tester',
+          ),
+        );
+        expect(cover.effectiveCover, true);
+        expect(cover.flightImage, isNotNull);
+        if (width == 390 && !variant.dark) {
+          final sourceRect = tester.getRect(find.byType(UserProfileCover));
+          await tester.tapAt(const Offset(195, 105));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.byType(ImageViewerPage), findsOneWidget);
+          expect(find.byType(CoverContainFlightImage), findsWidgets);
+          expect(
+            HeroVisibilityController.instance.hiddenHeroTag,
+            'user_cover_tester',
+          );
+          final viewer = tester.widget<ImageViewerPage>(
+            find.byType(ImageViewerPage),
+          );
+          expect(viewer.heroSourceFit, BoxFit.cover);
+          expect(viewer.thumbnailUrl, user.backgroundUrl);
+          await tester.pumpAndSettle();
+          navigatorKey.currentState!.pop();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.byType(CoverContainFlightImage), findsWidgets);
+          await tester.pumpAndSettle();
+          expect(find.byType(ImageViewerPage), findsNothing);
+          expect(HeroVisibilityController.instance.hiddenHeroTag, isNull);
+          expect(tester.getRect(find.byType(UserProfileCover)), sourceRect);
+          expect(tester.takeException(), isNull);
+        }
+      }
+      if (width == 390 && !hidden) {
+        await tester.tap(find.byKey(const ValueKey('profile-more-menu')));
+        await tester.pumpAndSettle();
+        expect(find.text('关于'), findsNothing);
+        expect(
+          find.widgetWithIcon(PopupMenuItem<String>, Symbols.settings_rounded),
+          variant.visitor ? findsNothing : findsOneWidget,
+        );
+        expect(
+          find.widgetWithText(PopupMenuItem<String>, '分享用户'),
+          findsNothing,
+        );
+        if (variant.visitor) {
+          expect(find.byType(PopupMenuDivider), findsNothing);
+          expect(
+            find.widgetWithIcon(PopupMenuItem<String>, Symbols.mail_rounded),
+            findsNothing,
+          );
+        }
+        await tester.tapAt(const Offset(12, 760));
+        await tester.pumpAndSettle();
+      }
+
+      final morePosition = tester.getCenter(
+        find.byKey(const ValueKey('profile-more-menu')),
+      );
       final avatarElement = tester.element(avatar);
       final expandedPosition = tester.getTopLeft(avatar);
       final nested = tester.widget<ExtendedNestedScrollView>(
@@ -304,6 +458,40 @@ void main() {
           .whereType<UserProfileHeaderDelegate>()
           .single;
       final travel = delegate.maxExtent - delegate.minExtent;
+      if (width == 390 &&
+          !variant.cover &&
+          !hidden &&
+          !variant.visitor &&
+          !variant.dark) {
+        final calls = service.summaryCalls;
+        final canceled = await tester.startGesture(const Offset(180, 330));
+        await canceled.moveBy(const Offset(0, 20));
+        await tester.pump();
+        await canceled.moveBy(const Offset(0, 30));
+        await tester.pump();
+        await canceled.up();
+        await tester.pumpAndSettle();
+        expect(service.summaryCalls, calls);
+        expect(tester.getTopLeft(avatar), expandedPosition);
+        final drag = await tester.startGesture(const Offset(180, 330));
+        await drag.moveBy(const Offset(0, 20));
+        await tester.pump();
+        await drag.moveBy(const Offset(0, 320));
+        await tester.pump(const Duration(milliseconds: 80));
+        final pulled = tester
+            .widgetList<SliverPersistentHeader>(
+              find.byType(SliverPersistentHeader),
+            )
+            .map((s) => s.delegate)
+            .whereType<UserProfileHeaderDelegate>()
+            .single;
+        expect(pulled.maxExtent, greaterThan(delegate.maxExtent + 10));
+        await _capture(tester, captureDir, '${variant.name}-pull');
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(service.summaryCalls, calls + 1);
+        expect(tester.getTopLeft(avatar), expandedPosition);
+      }
       nested.controller!.jumpTo(travel / 2);
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
@@ -312,22 +500,92 @@ void main() {
         closeTo(expandedPosition.dy - travel / 2, 0.01),
       );
       await _capture(tester, captureDir, '${variant.name}-middle');
+      if (width == 390 && !hidden && !variant.cover && !variant.visitor) {
+        await tester.tap(find.byKey(const ValueKey('profile-more-menu')));
+        await tester.pumpAndSettle();
+        expect(
+          find.widgetWithIcon(PopupMenuItem<String>, Symbols.share_rounded),
+          findsOneWidget,
+        );
+        await tester.tapAt(const Offset(12, 760));
+        await tester.pumpAndSettle();
+      }
       nested.controller!.jumpTo(nested.controller!.position.maxScrollExtent);
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 45));
+        expect(
+          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
+          morePosition,
+        );
+      }
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
+      expect(
+        tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
+        morePosition,
+      );
       final toolbarName = find.byKey(const ValueKey('profile-toolbar-name'));
       expect(tester.getTopLeft(toolbarName).dy, lessThan(delegate.minExtent));
       if (!variant.visitor) expect(find.byTooltip('编辑资料'), findsOneWidget);
       await _capture(tester, captureDir, '${variant.name}-collapsed');
-      if (variant.visitor) {
-        await tester.tap(
-          find.widgetWithText(FilledButton, '关注').hitTestable(),
+      if (!hidden && !failSummary) {
+        final summaryScrollable = find.descendant(
+          of: find.byKey(const PageStorageKey('user_tester_summary')),
+          matching: find.byType(Scrollable),
         );
+        await tester.scrollUntilVisible(
+          find.text('开发调优'),
+          200,
+          scrollable: summaryScrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await _capture(tester, captureDir, '${variant.name}-summary-content');
+        tester.state<ScrollableState>(summaryScrollable).position.jumpTo(0);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(const ValueKey('profile-more-menu')));
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithIcon(PopupMenuItem<String>, Symbols.share_rounded),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithIcon(PopupMenuItem<String>, Symbols.search_rounded),
+        findsOneWidget,
+      );
+      if (variant.visitor) {
+        expect(
+          find.widgetWithIcon(PopupMenuItem<String>, Symbols.mail_rounded),
+          findsOneWidget,
+        );
+        expect(
+          find.widgetWithIcon(
+            PopupMenuItem<String>,
+            Symbols.chat_bubble_rounded,
+          ),
+          findsOneWidget,
+        );
+      }
+      await _capture(tester, captureDir, '${variant.name}-more');
+      await tester.tapAt(const Offset(12, 760));
+      await tester.pumpAndSettle();
+
+      if (variant.visitor) {
+        await tester.tap(find.widgetWithText(FilledButton, '关注').hitTestable());
         await tester.pumpAndSettle();
         expect(service.followCalls, 1);
         expect(
           find.widgetWithText(OutlinedButton, '已关注').hitTestable(),
           findsOneWidget,
+        );
+        final followedLabel = find.descendant(
+          of: find.widgetWithText(OutlinedButton, '已关注').hitTestable(),
+          matching: find.text('已关注'),
+        );
+        expect(
+          tester.renderObject<RenderParagraph>(followedLabel).didExceedMaxLines,
+          false,
         );
       }
       expect(tester.takeException(), isNull);
@@ -339,14 +597,44 @@ void main() {
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
         await tester.tap(find.byTooltip('动态'));
         await tester.pumpAndSettle();
+        expect(find.byType(CheckedPopupMenuItem<String>), findsNothing);
+        await tester.tap(find.byTooltip('动态'));
+        await tester.pumpAndSettle();
         await _capture(tester, captureDir, '${variant.name}-menu');
         expect(find.byType(CheckedPopupMenuItem<String>), findsWidgets);
         await tester.tapAt(tester.getCenter(find.text('话题').last));
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4'));
-        expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
+        expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
+        if (width == 1440) {
+          final controller = tester
+              .widget<TabBar>(find.byType(TabBar))
+              .controller;
+          final requests = service.requestedFilters.length;
+          tester.view.physicalSize = const Size(520, 850);
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<TabBar>(find.byType(TabBar)).controller,
+            same(controller),
+          );
+          expect(controller!.index, 1);
+          expect(service.requestedFilters.length, requests);
+          expect(tester.takeException(), isNull);
+          tester.view.physicalSize = Size(width, 850);
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<TabBar>(find.byType(TabBar)).controller,
+            same(controller),
+          );
+        }
+        expect(find.byTooltip('关于'), findsOneWidget);
         await tester.tap(find.byTooltip('关于'));
         await tester.pumpAndSettle();
+        expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 3);
+        expect(
+          find.byKey(const PageStorageKey('user_tester_about')),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         if (failSummary) {
           await tester.tap(find.byTooltip('概览'));

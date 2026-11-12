@@ -42,19 +42,13 @@ class PaneBreakpoints {
 class UserProfileWideLayout {
   UserProfileWideLayout._();
 
-  /// 启用宽版(左资料栏+右内容横排)的最小**实际可用宽度**——按页面
+  /// 启用宽版资料与操作横排的最小**实际可用宽度**——按页面
   /// 拿到的约束分流,不按屏宽:嵌入面板/压栈收窄的左栏拿到的是格子
   /// 宽,窄了自动回竖版折叠头图形态。
-  static const double minWidth = 760;
+  static const double minWidth = 900;
 
-  /// 左侧资料栏定宽(与「我的」页左资料卡同宽口径)。
-  static const double infoPanelWidth = 360;
-
-  /// 左栏顶部头图横幅高度(头像骑缝叠在横幅下缘,页面与骨架屏共用)。
-  static const double bannerHeight = 200;
-
-  /// 骑缝头像半径。
-  static const double avatarRadius = 44;
+  /// 宽屏总览的最大宽度，动态正文仍使用通用阅读宽度。
+  static const double maxWidth = 1120;
 }
 
 /// 设备类型枚举

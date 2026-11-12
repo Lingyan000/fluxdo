@@ -3,6 +3,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('宽屏显示全部标签，切换时保持栏目位置', (tester) async {
+    final controller = TabController(length: 3, vsync: tester);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_host(controller, (_) {}, showAllLabels: true));
+    await tester.pumpAndSettle();
+    expect(find.text('动态'), findsOneWidget);
+    expect(find.text('概览'), findsOneWidget);
+    expect(find.text('关于'), findsOneWidget);
+    final position = tester.getCenter(find.byTooltip('关于'));
+    await tester.tap(find.byTooltip('关于'));
+    await tester.pumpAndSettle();
+    expect(controller.index, 2);
+    expect(
+      (tester.getCenter(find.byTooltip('关于')) - position).distance,
+      lessThan(0.01),
+    );
+    expect(find.text('动态'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('先切换栏目，再点击选中栏目打开筛选且仅回调一次', (tester) async {
     final controller = TabController(length: 3, vsync: tester, initialIndex: 1);
     addTearDown(controller.dispose);
@@ -61,6 +82,7 @@ Widget _host(
   TabController controller,
   ValueChanged<String> onSelected, {
   double scale = 1,
+  bool showAllLabels = false,
 }) => MaterialApp(
   builder: (context, child) => MediaQuery(
     data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
@@ -71,6 +93,7 @@ Widget _host(
       alignment: Alignment.topCenter,
       child: MenuTabBar<String>(
         controller: controller,
+        showAllLabels: showAllLabels,
         items: [
           MenuTabItem(
             label: '动态',

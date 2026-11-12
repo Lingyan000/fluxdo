@@ -22,12 +22,14 @@ class UserProfileHeader extends StatelessWidget {
     required this.avatar,
     required this.trailing,
     required this.onBackground,
+    this.wide = false,
   });
 
   final User user;
   final Widget avatar;
   final Widget trailing;
   final VoidCallback onBackground;
+  final bool wide;
 
   _ProfileHeaderLayout _layout(
     BuildContext context,
@@ -50,9 +52,10 @@ class UserProfileHeader extends StatelessWidget {
     );
     return _ProfileHeaderLayout(
       coverHeight: coverHeight,
-      titleTop: coverHeight + 80,
+      titleTop: coverHeight + (wide ? 12 : 80),
       titleHeight: titleHeight,
       titleStyle: style,
+      wide: wide,
     );
   }
 
@@ -67,18 +70,22 @@ class UserProfileHeader extends StatelessWidget {
     _ProfileHeaderLayout layout, {
     double shrinkOffset = 0,
     double topInset = 0,
-    Widget Function(double titleOpacity)? toolbarBuilder,
+    double pullExtent = 0,
+    Widget Function(double titleOpacity, bool shareCollapsed)? toolbarBuilder,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final toolbarHeight = toolbarBuilder == null
         ? 0.0
         : topInset + kToolbarHeight;
-    final height = math.max(toolbarHeight, layout.height - shrinkOffset);
+    final height = math.max(
+      toolbarHeight,
+      layout.height + pullExtent - shrinkOffset,
+    );
     final coverHeight = math.max(
       toolbarHeight,
-      layout.coverHeight - shrinkOffset,
+      layout.coverHeight + pullExtent - shrinkOffset,
     );
-    final blurProgress = (shrinkOffset / 80).clamp(0.0, 1.0);
+    final blurProgress = ((shrinkOffset + pullExtent) / 80).clamp(0.0, 1.0);
     final titleOpacity =
         ((toolbarHeight - layout.titleTop + shrinkOffset) / layout.titleHeight)
             .clamp(0.0, 1.0);
@@ -96,7 +103,7 @@ class UserProfileHeader extends StatelessWidget {
               height: coverHeight,
               child: ClipRect(
                 child: IgnorePointer(
-                  ignoring: shrinkOffset > 0,
+                  ignoring: shrinkOffset > 0 || pullExtent > 0,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
@@ -108,6 +115,7 @@ class UserProfileHeader extends StatelessWidget {
                         enabled: blurProgress > 0,
                         child: UserProfileCover(
                           imageUrl: user.backgroundUrl,
+                          heroTag: 'user_cover_${user.username}',
                           onTap: onBackground,
                         ),
                       ),
@@ -129,9 +137,10 @@ class UserProfileHeader extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned(
-                      left: 16,
+                      left: wide ? 24 : 16,
                       top:
-                          layout.coverHeight -
+                          layout.coverHeight +
+                          pullExtent -
                           16 -
                           shrinkOffset -
                           toolbarHeight,
@@ -145,13 +154,21 @@ class UserProfileHeader extends StatelessWidget {
                     Positioned(
                       right: 16,
                       top:
-                          layout.coverHeight + 8 - shrinkOffset - toolbarHeight,
+                          layout.coverHeight +
+                          pullExtent +
+                          8 -
+                          shrinkOffset -
+                          toolbarHeight,
                       child: trailing,
                     ),
                     Positioned(
-                      left: 16,
-                      right: 16,
-                      top: layout.titleTop - shrinkOffset - toolbarHeight,
+                      left: wide ? 128 : 16,
+                      right: wide ? 80 : 16,
+                      top:
+                          layout.titleTop +
+                          pullExtent -
+                          shrinkOffset -
+                          toolbarHeight,
                       child: Text(
                         user.name?.trim().isNotEmpty == true
                             ? user.name!
@@ -162,13 +179,32 @@ class UserProfileHeader extends StatelessWidget {
                         style: layout.titleStyle,
                       ),
                     ),
+                    if (wide)
+                      Positioned(
+                        left: 128,
+                        right: 80,
+                        top:
+                            layout.titleTop +
+                            layout.titleHeight +
+                            4 +
+                            pullExtent -
+                            shrinkOffset -
+                            toolbarHeight,
+                        child: Text(
+                          '@${user.username}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
             if (toolbarBuilder != null)
               Positioned(
-                top: 0,
+                top: pullExtent,
                 left: 0,
                 right: 0,
                 height: toolbarHeight,
@@ -186,7 +222,11 @@ class UserProfileHeader extends StatelessWidget {
                               ),
                             ),
                   ),
-                  child: toolbarBuilder(titleOpacity),
+                  child: toolbarBuilder(
+                    titleOpacity,
+                    layout.coverHeight + 8 + pullExtent - shrinkOffset <=
+                        toolbarHeight,
+                  ),
                 ),
               ),
           ],
@@ -203,17 +243,20 @@ class UserProfileHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.header,
     required this.toolbarBuilder,
     required this.topInset,
+    this.pullExtent = 0,
   }) : _layout = header._layout(context, width, topInset);
 
   final UserProfileHeader header;
-  final Widget Function(double titleOpacity) toolbarBuilder;
+  final Widget Function(double titleOpacity, bool shareCollapsed)
+  toolbarBuilder;
   final double topInset;
+  final double pullExtent;
   final _ProfileHeaderLayout _layout;
 
   @override
   double get minExtent => topInset + kToolbarHeight;
   @override
-  double get maxExtent => _layout.height;
+  double get maxExtent => _layout.height + pullExtent;
 
   @override
   Widget build(
@@ -225,6 +268,7 @@ class UserProfileHeaderDelegate extends SliverPersistentHeaderDelegate {
     _layout,
     shrinkOffset: shrinkOffset.clamp(0.0, maxExtent - minExtent),
     topInset: topInset,
+    pullExtent: pullExtent,
     toolbarBuilder: toolbarBuilder,
   );
 
@@ -238,12 +282,16 @@ class _ProfileHeaderLayout {
     required this.titleTop,
     required this.titleHeight,
     required this.titleStyle,
+    required this.wide,
   });
   final double coverHeight;
   final double titleTop;
   final double titleHeight;
   final TextStyle titleStyle;
-  double get height => titleTop + titleHeight + 2;
+  final bool wide;
+  double get height => wide
+      ? math.max(coverHeight + 80, titleTop + titleHeight + 32)
+      : titleTop + titleHeight + 2;
 }
 
 /// 身份、关注数据和简介按阅读顺序排列，长内容保持自然高度。
@@ -256,6 +304,7 @@ class UserProfileDetails extends StatelessWidget {
     required this.onFollowers,
     this.statusIcon,
     this.restriction,
+    this.showUsername = true,
   });
 
   final User user;
@@ -264,6 +313,7 @@ class UserProfileDetails extends StatelessWidget {
   final VoidCallback onFollowers;
   final Widget? statusIcon;
   final Widget? restriction;
+  final bool showUsername;
 
   @override
   Widget build(BuildContext context) {
@@ -278,10 +328,11 @@ class UserProfileDetails extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: SelectableText('@${user.username}', style: muted),
-          ),
+          if (showUsername)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: SelectableText('@${user.username}', style: muted),
+            ),
           if (!user.profileHidden)
             EmojiText(
               [

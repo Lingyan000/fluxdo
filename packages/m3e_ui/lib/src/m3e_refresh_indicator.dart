@@ -160,6 +160,9 @@ class M3eRefreshIndicator extends StatefulWidget {
   /// 指示器悬停位(圆片顶边到 [edgeOffset] 的距离)。
   final double displacement;
 
+  /// 宿主可用同一刷新进度拉伸封面，取消、刷新完成时连续回到零。
+  final ValueChanged<double>? onPullExtentChanged;
+
   final ScrollNotificationPredicate notificationPredicate;
 
   const M3eRefreshIndicator({
@@ -172,6 +175,7 @@ class M3eRefreshIndicator extends StatefulWidget {
     this.secondaryActionBuilder,
     this.edgeOffset = 0.0,
     this.displacement = 40.0,
+    this.onPullExtentChanged,
     this.notificationPredicate = defaultScrollNotificationPredicate,
   });
 
@@ -200,7 +204,9 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
 
   @override
   Widget build(BuildContext context) {
-    if (!M3eFlags.of(context).enabled && widget.onSecondaryAction == null) {
+    if (!M3eFlags.of(context).enabled &&
+        widget.onSecondaryAction == null &&
+        widget.onPullExtentChanged == null) {
       return RefreshIndicator(
         key: _fallbackKey,
         onRefresh: widget.onRefresh,
@@ -215,6 +221,7 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
       onRefresh: widget.onRefresh,
       edgeOffset: widget.edgeOffset,
       displacement: widget.displacement,
+      onPullExtentChanged: widget.onPullExtentChanged,
       notificationPredicate: widget.notificationPredicate,
       onSecondaryAction: widget.onSecondaryAction,
       externalReveal: widget.externalReveal,
@@ -253,6 +260,8 @@ class _M3eRefreshCore extends StatefulWidget {
   final RefreshCallback onRefresh;
   final double edgeOffset;
   final double displacement;
+
+  final ValueChanged<double>? onPullExtentChanged;
   final ScrollNotificationPredicate notificationPredicate;
   final RefreshCallback? onSecondaryAction;
   final Widget Function(BuildContext, double, bool, bool)?
@@ -264,6 +273,7 @@ class _M3eRefreshCore extends StatefulWidget {
     required this.onRefresh,
     required this.edgeOffset,
     required this.displacement,
+    this.onPullExtentChanged,
     required this.notificationPredicate,
     this.onSecondaryAction,
     this.externalReveal = false,
@@ -556,6 +566,14 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     );
     _scaleController = AnimationController(vsync: this);
     _scaleFactor = _scaleController.drive(Tween<double>(begin: 1.0, end: 0.0));
+    _positionController.addListener(_notifyPullExtent);
+    _scaleController.addListener(_notifyPullExtent);
+  }
+
+  void _notifyPullExtent() {
+    widget.onPullExtentChanged?.call(
+      _positionFactor.value * widget.displacement * _scaleFactor.value,
+    );
   }
 
   @override
