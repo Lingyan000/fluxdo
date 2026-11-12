@@ -94,7 +94,14 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
         DefaultAssetBundle.of(context),
       );
       if (!mounted) return;
-      final choice = await showMetaversePluginUrlDialog(context, bundled);
+      final choice = await showMetaversePluginPicker(
+        context,
+        bundled,
+        installedIds: ref
+            .read(metaversePluginsProvider)
+            .map((p) => p.id)
+            .toSet(),
+      );
       if (choice == null || choice.url == '' || !mounted) return;
       final MetaversePluginPackage package;
       if (choice.bundled case final MetaversePluginPackage local) {
@@ -157,17 +164,26 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16, top: 8),
                   child: Text(
-                    context.l10n.metaverse_myServices,
+                    context.l10n.metaverse_builtinServices,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: theme.colorScheme.onSurface,
                     ),
                   ),
                 ),
-                for (final service in services)
+                for (final service in services.where((s) => !s.isThirdParty))
+                  ..._buildService(context, service, container),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+                  child: Text(
+                    context.l10n.metaverse_thirdPartyServices,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                for (final service in services.where((s) => s.isThirdParty))
                   ..._buildService(context, service, container),
                 _buildAddServiceItem(theme),
-                const SizedBox(height: 100), // 底部留白
+                SizedBox(height: 24 + MediaQuery.paddingOf(context).bottom),
               ]),
             ),
           ),
@@ -311,41 +327,49 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
       borderRadius: context.shapes.borderRadius(16),
     );
     return Card(
-      color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+      margin: EdgeInsets.zero,
+      color: PageBackgroundScope.contentColor(
+        context,
+        theme.colorScheme.surfaceContainerLow,
+      ),
       shape: shape,
       child: InkWell(
         onTap: _installing ? null : _installPlugin,
         customBorder: shape,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Center(
-            child: Column(
-              children: [
-                if (_installing)
-                  const LoadingSpinner(size: 32)
-                else
-                  Icon(
-                    Symbols.add_rounded,
-                    size: 32,
-                    color: theme.colorScheme.outline,
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  context.l10n.metaverse_addService,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              if (_installing)
+                const LoadingSpinner(size: 24)
+              else
+                Icon(
+                  Symbols.add_circle_rounded,
+                  size: 28,
+                  color: context.emphasis.accent,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  context.l10n.metaverse_addServiceDesc,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
-                  ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.l10n.metaverse_addService,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      context.l10n.metaverse_addServiceDesc,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Symbols.chevron_right_rounded, size: 20),
+            ],
           ),
         ),
       ),

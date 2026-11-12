@@ -11,6 +11,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
+import 'package:fluxdo/models/ldc_user_info.dart';
+import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/providers/core_providers.dart';
+import 'package:fluxdo/providers/ldc_providers.dart';
+import 'package:fluxdo/widgets/ldc_balance_card.dart';
+import 'package:fluxdo/modules/ldc_reward/models/ldc_reward_credentials.dart';
+import 'package:fluxdo/modules/ldc_reward/providers/ldc_reward_provider.dart';
+import 'package:fluxdo/modules/ldc_reward/widgets/ldc_reward_config_tile.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
@@ -28,6 +39,45 @@ import 'package:rfw/rfw.dart';
 import 'package:rfw/formats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
+class _FixtureUser extends CurrentUserNotifier {
+  @override
+  User? build() => null;
+}
+
+class _FixtureBalance extends LdcUserInfoNotifier {
+  _FixtureBalance(this.mode);
+  final String mode;
+  @override
+  Future<LdcUserInfo?> build() async {
+    if (mode == 'loading') return Completer<LdcUserInfo?>().future;
+    if (mode == 'error') throw StateError('offline');
+    return LdcUserInfo.fromJson({
+      'id': 42,
+      'username': 'tester',
+      'nickname': 'tester',
+      'trust_level': 2,
+      'avatar_url': '',
+      'total_receive': '0',
+      'total_payment': '0',
+      'total_transfer': '0',
+      'total_community': '8000',
+      'community_balance': '7940.98',
+      'available_balance': '7950.98',
+      'pay_score': 0,
+      'is_pay_key': true,
+      'is_admin': false,
+      'remain_quota': '5000',
+      'pay_level': 1,
+      'daily_limit': null,
+    });
+  }
+}
+
+class _NoReward extends LdcRewardCredentialsNotifier {
+  @override
+  Future<LdcRewardCredentials?> build() async => null;
+}
 
 class _EmptyPlugins extends MetaversePluginsController {
   @override
@@ -133,6 +183,7 @@ void main() {
         key: captureKey,
         child: TranslationProvider(
           child: MaterialApp(
+            navigatorKey: navigatorKey,
             debugShowCheckedModeBanner: false,
             theme: snapshots
                 ? theme.copyWith(
@@ -528,6 +579,124 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     });
   }
 
+  for (final mode in ['data', 'error', 'loading']) {
+    testWidgets('打赏入口并入余额卡片并在 $mode 状态保留', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        app(
+          ProviderScope(
+            overrides: [
+              ldcUserInfoProvider.overrideWith(() => _FixtureBalance(mode)),
+              currentUserProvider.overrideWith(_FixtureUser.new),
+              ldcRewardCredentialsProvider.overrideWith(_NoReward.new),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: LdcBalanceCard(
+                footer: LdcRewardConfigTile(embedded: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      if (mode != 'loading') await tester.pumpAndSettle();
+      expect(find.byType(Card), findsOneWidget);
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(find.text(l.reward_title), findsOneWidget);
+      if (mode == 'data') await snapshot(tester, 'ldc-reward-merged');
+      await tester.tap(find.text(l.reward_title));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final choice in ['bundled', 'file', 'url']) {
+    testWidgets('添加插件分组选择 $choice，小屏大字可操作', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final manifest = MetaversePluginManifest.parse(
+        jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      );
+      final package = MetaversePluginPackage(
+        manifest: manifest,
+        source: 'asset:plugins/ld-store/plugin.json',
+        code: (script: '', ui: ''),
+      );
+      PluginInstallChoice? result;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showMetaversePluginPicker(
+                context,
+                [package],
+                installedIds: {manifest.id},
+              ),
+              child: const Text('添加入口'),
+            ),
+          ),
+          scale: 1.4,
+        ),
+      );
+      await tester.tap(find.text('添加入口'));
+      await tester.pumpAndSettle();
+      final l = tester.element(find.byType(Scaffold).first).l10n;
+      expect(
+        tester
+            .widget<AppSheetScaffold>(find.byType(AppSheetScaffold))
+            .showDragHandle,
+        isTrue,
+      );
+      if (choice == 'bundled') {
+        await snapshot(tester, 'plugin-picker');
+        await tester.tap(find.widgetWithText(ListTile, manifest.name));
+        await tester.pumpAndSettle();
+        expect(result?.bundled, same(package));
+      } else if (choice == 'file') {
+        await tester.ensureVisible(find.text(l.metaverse_importFile));
+        await tester.tap(find.text(l.metaverse_importFile));
+        await tester.pumpAndSettle();
+        expect(result, (url: null, bundled: null));
+      } else {
+        await tester.ensureVisible(find.text(l.metaverse_installFromUrl));
+        await tester.tap(find.text(l.metaverse_installFromUrl));
+        await tester.pumpAndSettle();
+        tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.enterText(
+          find.byType(TextField),
+          'http://example.com/plugin.json',
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, l.common_continue),
+              )
+              .onPressed,
+          isNull,
+        );
+        await tester.enterText(
+          find.byType(TextField),
+          'https://example.com/plugin.json',
+        );
+        await tester.testTextInput.receiveAction(TextInputAction.go);
+        await tester.pumpAndSettle();
+        expect(result?.url, 'https://example.com/plugin.json');
+      }
+      expect(find.text('添加入口'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final confirm in [true, false]) {
     testWidgets('生物识别付款确认 $confirm，取消保留密码入口', (tester) async {
       var confirmed = true;
@@ -684,6 +853,9 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
 
   final data = <String, Object?>{
     'loading': false,
+    'loginLabel': '登录士多',
+    'loginError': '',
+    'authBusy': false,
     'ready': true,
     'error': '',
     'message': '',
@@ -771,6 +943,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           );
         addTearDown(runtime.dispose);
         for (final name in [
+          'Card',
           'Market',
           'Product',
           'Review',
@@ -779,13 +952,18 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         ]) {
           await tester.pumpWidget(
             app(
-              RemoteWidget(
-                runtime: runtime,
-                widget: FullyQualifiedWidgetName(
-                  metaversePluginLibraryName,
-                  name,
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: name == 'Card' ? 32 : 0,
                 ),
-                data: DynamicContent(data),
+                child: RemoteWidget(
+                  runtime: runtime,
+                  widget: FullyQualifiedWidgetName(
+                    metaversePluginLibraryName,
+                    name,
+                  ),
+                  data: DynamicContent(data),
+                ),
               ),
               brightness: brightness,
               scale: width == 320 ? 1.4 : 1,

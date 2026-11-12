@@ -142,9 +142,6 @@ class LdcMetaverseService extends _LinuxDoBalanceService {
   Future<void> oauthLogout() => LdcOAuthService().logout();
 
   @override
-  Widget? buildExtras(BuildContext context) => const LdcRewardConfigTile();
-
-  @override
   Widget buildBalanceCard({
     required bool isProcessing,
     required VoidCallback onDisable,
@@ -153,6 +150,7 @@ class LdcMetaverseService extends _LinuxDoBalanceService {
     isProcessing: isProcessing,
     onDisable: onDisable,
     onReauthorize: onReauthorize,
+    footer: const LdcRewardConfigTile(embedded: true),
   );
 }
 

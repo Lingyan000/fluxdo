@@ -26,7 +26,12 @@
   "metaverse_loginVerification": "帳號驗證",
   "metaverse_loginCallbackNotDeclared": "服務的授權回呼尚未宣告，請更新外掛後重新登入。",
   "metaverse_loginStageFailed": "登入在「{stage}」階段未完成，請重試。",
-  "metaverse_addServiceDesc": "透過清單網址安裝社群開發的服務",
+  "metaverse_bundledPlugins": "可用外掛",
+  "metaverse_installFromUrl": "從連結安裝",
+  "metaverse_pluginInvalidUrl": "請輸入有效的 HTTPS 清單網址",
+  "metaverse_builtinServices": "內建服務",
+  "metaverse_thirdPartyServices": "第三方服務",
+  "metaverse_addServiceDesc": "選擇外掛，或透過連結、檔案安裝",
   "metaverse_authFailed": "授權失敗: {error}",
   "@metaverse_authFailed": {
     "placeholders": {

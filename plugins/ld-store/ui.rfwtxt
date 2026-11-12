@@ -1,12 +1,13 @@
 import fluxdo;
 
 widget Card = Column(crossAxisAlignment: "stretch", children: [
-  Button(label: "进入物品广场", icon: "storefront", onPressed: event "market" {}),
-  Gap(size: 8),
-  Wrap(spacing: 8.0, runSpacing: 8.0, children: [
-    Button(label: "我的订单", icon: "history", variant: "text", onPressed: event "orders" {}),
-    LoginButton(),
+  Row(children: [
+    Expanded(child: Button(label: "物品广场", icon: "storefront", variant: "tonal", onPressed: event "market" {})),
+    Gap(size: 8),
+    Expanded(child: Button(label: "我的订单", icon: "history", variant: "tonal", onPressed: event "orders" {})),
   ]),
+  Gap(size: 8),
+  LoginButton(),
 ]);
 
 widget Market = PageLayout(
@@ -321,8 +322,8 @@ widget SubmissionRecovery = Surface(child: Column(crossAxisAlignment: "stretch",
 
 widget LoginButton = switch data.authorized {
   true: SizedBoxShrink(),
-  default: Column(mainAxisSize: "min", children: [
-    Button(label: "登录士多", icon: "person", variant: "tonal", loading: data.loggingIn, onPressed: event "login" {}),
-    switch data.loginError {"": SizedBoxShrink(), default: Label(text: data.loginError, color: "error")},
+  default: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+    Button(label: "登录士多", icon: "person", variant: "text", loading: data.loggingIn, onPressed: event "login" {}),
+    switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Label(text: data.loginError, style: "bodySmall", color: "error"))},
   ]),
 };

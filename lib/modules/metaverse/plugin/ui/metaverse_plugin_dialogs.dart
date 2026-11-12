@@ -16,6 +16,39 @@ import 'metaverse_widget_library.dart';
 /// 输入清单地址。
 typedef PluginInstallChoice = ({String? url, MetaversePluginPackage? bundled});
 
+Future<void> showMetaversePluginDetails(
+  BuildContext context,
+  MetaversePluginManifest manifest,
+) => showAppDialog<void>(
+  context: context,
+  builder: (ctx) => AlertDialog(
+    title: Text(manifest.name),
+    scrollable: true,
+    content: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(manifest.description),
+        const SizedBox(height: 16),
+        Text(
+          ctx.l10n.metaverse_pluginAuthor(manifest.author, manifest.version),
+          style: Theme.of(ctx).textTheme.bodySmall,
+        ),
+      ],
+    ),
+    actions: [
+      if (manifest.homepage case final String url)
+        TextButton(
+          onPressed: () => launchExternalLink(ctx, url),
+          child: Text(ctx.l10n.metaverse_pluginSource),
+        ),
+      FilledButton(
+        onPressed: () => Navigator.of(ctx).pop(),
+        child: Text(ctx.l10n.common_close),
+      ),
+    ],
+  ),
+);
+
 Future<bool> showMetaverseOrderConfirmation(
   BuildContext context,
   MetaverseCheckoutGrant grant,
@@ -52,58 +85,151 @@ Future<bool> showMetaverseOrderConfirmation(
       false;
 }
 
-Future<PluginInstallChoice?> showMetaversePluginUrlDialog(
+Future<PluginInstallChoice?> showMetaversePluginPicker(
   BuildContext context,
-  List<MetaversePluginPackage> bundled,
-) {
-  var address = '';
-  return showAppDialog<PluginInstallChoice>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(ctx.l10n.metaverse_addService),
-      content: TextField(
-        onChanged: (value) => address = value,
-        autofocus: bundled.isEmpty,
-        keyboardType: TextInputType.url,
-        decoration: InputDecoration(
-          labelText: ctx.l10n.metaverse_pluginManifestUrl,
-          hintText: 'https://example.com/plugin.json',
-          border: OutlineInputBorder(borderRadius: ctx.shapes.borderRadius(4)),
-        ),
-        onSubmitted: (value) => Navigator.pop<PluginInstallChoice>(ctx, (
-          url: value.trim(),
-          bundled: null,
-        )),
-      ),
-      actions: [
-        for (final package in bundled)
-          TextButton(
-            onPressed: () => Navigator.pop<PluginInstallChoice>(ctx, (
-              url: null,
-              bundled: package,
-            )),
-            child: Text(package.manifest.name),
+  List<MetaversePluginPackage> bundled, {
+  Set<String> installedIds = const {},
+}) => AppBottomSheet.showDraggable<PluginInstallChoice>(
+  context: context,
+  title: context.l10n.metaverse_addService,
+  showCloseButton: true,
+  initialSize: .65,
+  minSize: .4,
+  maxSize: .95,
+  bodyBuilder: (ctx, controller) => ListView(
+    controller: controller,
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+    children: [
+      if (bundled.isNotEmpty) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+          child: Text(
+            ctx.l10n.metaverse_bundledPlugins,
+            style: Theme.of(ctx).textTheme.titleSmall,
           ),
-        TextButton(
-          onPressed: () => Navigator.pop<PluginInstallChoice>(ctx, (
-            url: null,
-            bundled: null,
-          )),
-          child: Text(ctx.l10n.metaverse_importFile),
         ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: Text(ctx.l10n.common_cancel),
+        SegmentedCardGroup(
+          children: [
+            for (final package in bundled)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                leading: Icon(
+                  metaversePluginIcon(package.manifest.icon),
+                  color: ctx.emphasis.accent,
+                  size: 28,
+                ),
+                title: Text(package.manifest.name),
+                subtitle: Text(
+                  package.manifest.description,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Icon(
+                  installedIds.contains(package.manifest.id)
+                      ? Symbols.update_rounded
+                      : Symbols.add_rounded,
+                ),
+                onTap: () => Navigator.of(ctx)
+                    .pop<PluginInstallChoice>((url: null, bundled: package)),
+              ),
+          ],
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop<PluginInstallChoice>(ctx, (
-            url: address.trim(),
-            bundled: null,
-          )),
-          child: Text(ctx.l10n.common_confirm),
-        ),
+        const SizedBox(height: 24),
       ],
+      SegmentedCardGroup(
+        children: [
+          ListTile(
+            leading: Icon(Symbols.link_rounded, color: ctx.emphasis.accent),
+            title: Text(ctx.l10n.metaverse_installFromUrl),
+            trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
+            onTap: () async {
+              final address = await showAppDialog<String>(
+                context: ctx,
+                builder: (_) => const _PluginUrlInput(),
+              );
+              if (address != null && ctx.mounted) {
+                Navigator.of(ctx)
+                    .pop<PluginInstallChoice>((url: address, bundled: null));
+              }
+            },
+          ),
+          ListTile(
+            leading: Icon(
+              Symbols.file_open_rounded,
+              color: ctx.emphasis.accent,
+            ),
+            title: Text(ctx.l10n.metaverse_importFile),
+            trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
+            onTap: () =>
+                Navigator.of(ctx)
+                    .pop<PluginInstallChoice>((url: null, bundled: null)),
+          ),
+        ],
+      ),
+    ],
+  ),
+);
+
+class _PluginUrlInput extends StatefulWidget {
+  const _PluginUrlInput();
+  @override
+  State<_PluginUrlInput> createState() => _PluginUrlInputState();
+}
+
+class _PluginUrlInputState extends State<_PluginUrlInput> {
+  final _controller = TextEditingController();
+
+  bool get _valid {
+    final uri = Uri.tryParse(_controller.text.trim());
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_valid) Navigator.of(context).pop(_controller.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(context.l10n.metaverse_installFromUrl),
+    scrollable: true,
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      autocorrect: false,
+      keyboardType: TextInputType.url,
+      textInputAction: TextInputAction.go,
+      onChanged: (_) => setState(() {}),
+      onSubmitted: (_) => _submit(),
+      decoration: InputDecoration(
+        labelText: context.l10n.metaverse_pluginManifestUrl,
+        hintText: 'https://example.com/plugin.json',
+        errorText: _controller.text.isNotEmpty && !_valid
+            ? context.l10n.metaverse_pluginInvalidUrl
+            : null,
+      ),
     ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: Text(context.l10n.common_cancel),
+      ),
+      FilledButton(
+        onPressed: _valid ? _submit : null,
+        child: Text(context.l10n.common_continue),
+      ),
+    ],
   );
 }
 

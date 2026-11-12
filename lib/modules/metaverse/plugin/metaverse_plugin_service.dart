@@ -150,7 +150,12 @@ class MetaversePluginCard extends ConsumerWidget {
     return IgnorePointer(
       ignoring: host.isProcessing,
       child: Card(
-        color: theme.colorScheme.surfaceContainerHigh,
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: PageBackgroundScope.contentColor(
+          context,
+          theme.colorScheme.surfaceContainerLow,
+        ),
         shape: RoundedSuperellipseBorder(
           borderRadius: context.shapes.borderRadius(24),
         ),
@@ -176,14 +181,14 @@ class MetaversePluginCard extends ConsumerWidget {
   ) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+      padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
       child: Row(
         children: [
           Container(
             width: 40,
             height: 40,
             decoration: ShapeDecoration(
-              color: theme.colorScheme.secondaryContainer,
+              color: theme.colorScheme.secondaryContainer.withValues(alpha: .6),
               shape: RoundedSuperellipseBorder(
                 borderRadius: context.shapes.borderRadius(12),
               ),
@@ -199,31 +204,21 @@ class MetaversePluginCard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        manifest.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IgnorePointer(
-                      child: _ThirdPartyBadge(
-                        label: context.l10n.metaverse_thirdParty,
-                      ),
-                    ),
-                  ],
-                ),
                 Text(
-                  context.l10n.metaverse_pluginAuthor(
-                    manifest.author,
-                    manifest.version,
+                  manifest.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                  style: theme.textTheme.labelSmall?.copyWith(
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  manifest.homepage == null
+                      ? manifest.author
+                      : Uri.parse(manifest.homepage!).host,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -248,6 +243,8 @@ class MetaversePluginCard extends ConsumerWidget {
       ),
       onSelected: (value) async {
         switch (value) {
+          case 'details':
+            await showMetaversePluginDetails(context, manifest);
           case 'reauthorize':
             host.onReauthorize();
           case 'disable':
@@ -259,6 +256,10 @@ class MetaversePluginCard extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'details',
+          child: Text(context.l10n.common_details),
+        ),
         if (manifest.auth.required)
           PopupMenuItem(
             value: 'reauthorize',
@@ -356,7 +357,7 @@ class MetaversePluginCard extends ConsumerWidget {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 320),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: ClipRRect(
           borderRadius: context.shapes.borderRadius(16),
           child: SingleChildScrollView(
@@ -364,33 +365,6 @@ class MetaversePluginCard extends ConsumerWidget {
               host: pluginHost,
               kind: MetaversePluginSurfaceKind.card,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ThirdPartyBadge extends StatelessWidget {
-  const _ThirdPartyBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: theme.colorScheme.tertiaryContainer,
-        shape: const StadiumBorder(),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        child: Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onTertiaryContainer,
-            fontSize: 10,
           ),
         ),
       ),

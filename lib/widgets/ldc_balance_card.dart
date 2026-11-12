@@ -24,6 +24,7 @@ class LdcBalanceCard extends ConsumerWidget {
   final bool isProcessing;
   final VoidCallback? onDisable;
   final VoidCallback? onReauthorize;
+  final Widget? footer;
 
   const LdcBalanceCard({
     super.key,
@@ -32,6 +33,7 @@ class LdcBalanceCard extends ConsumerWidget {
     this.isProcessing = false,
     this.onDisable,
     this.onReauthorize,
+    this.footer,
   });
 
   @override
@@ -280,123 +282,129 @@ class LdcBalanceCard extends ConsumerWidget {
         ),
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        child: _withFooter(
+          context,
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-          ),
-          child: Stack(
-            children: [
-              // 装饰背景
-              Positioned(
-                right: -20,
-                top: -20,
-                child: Icon(
-                  Symbols.account_balance_wallet_rounded,
-                  size: 150,
-                  color: Colors.white.withValues(alpha: 0.1),
+            child: Stack(
+              children: [
+                // 装饰背景
+                Positioned(
+                  right: -20,
+                  top: -20,
+                  child: Icon(
+                    Symbols.account_balance_wallet_rounded,
+                    size: 150,
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: ShapeDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            shape: RoundedSuperellipseBorder(
-                              borderRadius: context.shapes.borderRadius(12),
-                            ),
-                          ),
-                          child: const Icon(
-                            Symbols.auto_awesome_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'LINUX DO Credits',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: Colors.white.withValues(alpha: 0.9),
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                        if (isRefreshing)
-                          const LoadingSpinner(size: 30, color: Colors.white70)
-                        else if (onDisable != null)
-                          GestureDetector(
-                            onTap: onDisable,
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: ShapeDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                shape: context.shapes.circle(),
-                              ),
-                              child: Icon(
-                                Symbols.power_settings_new_rounded,
-                                color: Colors.white.withValues(alpha: 0.7),
-                                size: 18,
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: ShapeDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(12),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      userInfo.availableBalance,
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                        fontSize: 36,
-                      ),
-                    ),
-                    if (dailyIncomeText != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: ShapeDecoration(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          shape: RoundedSuperellipseBorder(
-                            borderRadius: context.shapes.borderRadius(20),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Symbols.trending_up_rounded,
-                              color: context.appColors.greenAccent,
-                              size: 16,
+                            child: const Icon(
+                              Symbols.auto_awesome_rounded,
+                              color: Colors.white,
+                              size: 20,
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              S.current.ldc_dailyIncome(dailyIncomeText),
-                              style: theme.textTheme.bodyMedium?.copyWith(
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'LINUX DO Credits',
+                              style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
-                                fontWeight: FontWeight.w500,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                          ],
+                          ),
+                          if (isRefreshing)
+                            const LoadingSpinner(
+                              size: 30,
+                              color: Colors.white70,
+                            )
+                          else if (onDisable != null)
+                            GestureDetector(
+                              onTap: onDisable,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: ShapeDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  shape: context.shapes.circle(),
+                                ),
+                                child: Icon(
+                                  Symbols.power_settings_new_rounded,
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        userInfo.availableBalance,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          fontSize: 36,
                         ),
                       ),
+                      if (dailyIncomeText != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: ShapeDecoration(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(20),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Symbols.trending_up_rounded,
+                                color: context.appColors.greenAccent,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                S.current.ldc_dailyIncome(dailyIncomeText),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -583,113 +591,116 @@ class LdcBalanceCard extends ConsumerWidget {
       ),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isExpired
-                ? [
-                    theme.colorScheme.error.withValues(alpha: 0.8),
-                    theme.colorScheme.error.withValues(alpha: 0.6),
-                  ]
-                : [theme.colorScheme.primary, theme.colorScheme.tertiary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: _withFooter(
+        context,
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isExpired
+                  ? [
+                      theme.colorScheme.error.withValues(alpha: 0.8),
+                      theme.colorScheme.error.withValues(alpha: 0.6),
+                    ]
+                  : [theme.colorScheme.primary, theme.colorScheme.tertiary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -20,
-              top: -20,
-              child: Icon(
-                isCfChallenge
-                    ? Symbols.shield_rounded
-                    : isExpired
-                    ? Symbols.lock_clock_rounded
-                    : Symbols.error_rounded,
-                size: 150,
-                color: Colors.white.withValues(alpha: 0.1),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -20,
+                top: -20,
+                child: Icon(
+                  isCfChallenge
+                      ? Symbols.shield_rounded
+                      : isExpired
+                      ? Symbols.lock_clock_rounded
+                      : Symbols.error_rounded,
+                  size: 150,
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: ShapeDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: RoundedSuperellipseBorder(
-                            borderRadius: context.shapes.borderRadius(12),
-                          ),
-                        ),
-                        child: Icon(
-                          isCfChallenge
-                              ? Symbols.shield_rounded
-                              : isExpired
-                              ? Symbols.lock_clock_rounded
-                              : Symbols.error_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'LINUX DO Credits',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                      if (onDisable != null && !isBusy)
-                        GestureDetector(
-                          onTap: onDisable,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: ShapeDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              shape: context.shapes.circle(),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: ShapeDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(12),
                             ),
-                            child: Icon(
-                              Symbols.power_settings_new_rounded,
-                              color: Colors.white.withValues(alpha: 0.7),
-                              size: 18,
+                          ),
+                          child: Icon(
+                            isCfChallenge
+                                ? Symbols.shield_rounded
+                                : isExpired
+                                ? Symbols.lock_clock_rounded
+                                : Symbols.error_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'LINUX DO Credits',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    errorTitle,
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      fontSize: 28,
+                        if (onDisable != null && !isBusy)
+                          GestureDetector(
+                            onTap: onDisable,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: ShapeDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                shape: context.shapes.circle(),
+                              ),
+                              child: Icon(
+                                Symbols.power_settings_new_rounded,
+                                color: Colors.white.withValues(alpha: 0.7),
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isCfChallenge
-                        ? S.current.cf_dataBlockedByChallenge
-                        : isExpired
-                        ? S.current.ldc_reAuthHint
-                        : S.current.common_checkNetworkRetry,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.7),
+                    const SizedBox(height: 24),
+                    Text(
+                      errorTitle,
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontSize: 28,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  actionButton(filled: true),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      isCfChallenge
+                          ? S.current.cf_dataBlockedByChallenge
+                          : isExpired
+                          ? S.current.ldc_reAuthHint
+                          : S.current.common_checkNetworkRetry,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    actionButton(filled: true),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -800,45 +811,66 @@ class LdcBalanceCard extends ConsumerWidget {
       ),
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: _withFooter(
+        context,
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [theme.colorScheme.primary, theme.colorScheme.tertiary],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: ShapeDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(12),
+                  ),
+                ),
+                child: const Icon(
+                  Symbols.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'LINUX DO Credits',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const LoadingSpinner(size: 16, color: Colors.white),
+            ],
           ),
         ),
-        padding: const EdgeInsets.all(24),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: ShapeDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(12),
-                ),
-              ),
-              child: const Icon(
-                Symbols.auto_awesome_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'LINUX DO Credits',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            const LoadingSpinner(size: 16, color: Colors.white),
-          ],
-        ),
       ),
+    );
+  }
+
+  Widget _withFooter(BuildContext context, Widget content) {
+    if (footer == null) return content;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        content,
+        Material(
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+          child: footer!,
+        ),
+      ],
     );
   }
 }
