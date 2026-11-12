@@ -445,12 +445,13 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                   final scale = MediaQuery.textScalerOf(
                                     context,
                                   );
+                                  // 给标题和完整统计留足宽度，窄屏及大字号使用单列。
+                                  final minCardWidth =
+                                      264 *
+                                      (scale.scale(14) / 14).clamp(1.0, 2.0);
                                   final columns =
-                                      (constraints.crossAxisExtent /
-                                              (164 *
-                                                  scale
-                                                      .scale(1)
-                                                      .clamp(1.0, 1.6)))
+                                      ((constraints.crossAxisExtent + 10) /
+                                              (minCardWidth + 10))
                                           .floor()
                                           .clamp(1, 3);
                                   if (columns == 1) {

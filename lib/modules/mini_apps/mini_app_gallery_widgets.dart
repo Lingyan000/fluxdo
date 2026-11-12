@@ -143,92 +143,84 @@ class MiniAppDiscoveryRow extends StatelessWidget {
     return MiniAppCardSurface(
       app: app,
       watermark: false,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: InkWell(
-              key: ValueKey('mini-app-launch-${app.id}'),
-              onTap: opening ? null : onOpen,
-              onSecondaryTap: opening ? null : onInfo,
-              onLongPress: opening || PlatformUtils.isDesktop ? null : onInfo,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 0, 18),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
+      child: InkWell(
+        key: ValueKey('mini-app-launch-${app.id}'),
+        onTap: opening ? null : onOpen,
+        onSecondaryTap: opening ? null : onInfo,
+        onLongPress: opening || PlatformUtils.isDesktop ? null : onInfo,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      MiniAppIcon(app, size: 52),
+                      if (opening) const LoadingSpinner(size: 28),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        MiniAppIcon(app, size: 52),
-                        if (opening) const LoadingSpinner(size: 28),
+                        Text(
+                          app.name,
+                          style: theme.textTheme.titleSmall,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (app.version.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            context.l10n.miniApp_version(app.version),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: secondary,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  app.name,
-                                  style: theme.textTheme.titleSmall,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (app.favorited)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 4),
-                                  child: Icon(
-                                    Symbols.bookmark_rounded,
-                                    size: 16,
-                                    color: context.emphasis.selected,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (app.version.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              context.l10n.miniApp_version(app.version),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: secondary,
-                              ),
-                            ),
-                          ],
-                          if (description.isNotEmpty) ...[
-                            const SizedBox(height: 5),
-                            Text(
-                              description,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: secondary,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          MiniAppDeveloper(app: app),
-                          const SizedBox(height: 8),
-                          MiniAppStatistics(app: app, compact: true),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(color: secondary),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: MiniAppDeveloper(app: app)),
+                  if (app.favorited)
+                    Icon(
+                      Symbols.bookmark_rounded,
+                      size: 16,
+                      color: context.emphasis.selected,
+                    ),
+                  IconButton(
+                    tooltip: context.l10n.miniApp_info,
+                    onPressed: onInfo,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Symbols.info_rounded, size: 22),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              MiniAppStatistics(app: app, compact: true),
+            ],
           ),
-          IconButton(
-            tooltip: context.l10n.miniApp_info,
-            onPressed: onInfo,
-            icon: const Icon(Symbols.info_rounded, size: 22),
-          ),
-          const SizedBox(width: 4),
-        ],
+        ),
       ),
     );
   }

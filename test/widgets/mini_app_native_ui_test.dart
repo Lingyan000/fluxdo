@@ -92,6 +92,16 @@ const _app = MiniApp(
   usageCount: 200,
 );
 
+const _narrowCardApp = MiniApp(
+  id: 'narrow-card',
+  name: '广告游戏系列_减3加5',
+  description: '图标已经说明了一切，想必逛着各种小程序的你已经准备好了。',
+  author: '野怪',
+  version: '1.1.0',
+  usageCount: 63,
+  recentUsageCount: 63,
+);
+
 class _Api extends MiniAppService {
   _Api() : super(dio: Dio());
   int ratingCalls = 0;
@@ -847,6 +857,57 @@ void main() {
     },
   );
 
+  testWidgets('窄卡片切换单列，长名称与使用统计不会挤成长条', (tester) async {
+    api.apps = const [
+      _narrowCardApp,
+      _app,
+      MiniApp(id: 'third', name: '第三个应用'),
+    ];
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final (width, scale, columns) in [
+      (360.0, 1.0, 1),
+      (390.0, 1.0, 1),
+      (569.0, 1.0, 1),
+      (570.0, 1.0, 2),
+      (843.0, 1.0, 2),
+      (844.0, 1.0, 3),
+      (960.0, 1.0, 3),
+      (960.0, 1.8, 1),
+    ]) {
+      tester.view.physicalSize = Size(width, 844);
+      await tester.pumpWidget(wrap(const MiniAppGalleryPage(), scale: scale));
+      await tester.pumpAndSettle();
+      final cardType = columns == 1
+          ? MiniAppDiscoveryRow
+          : MiniAppDiscoveryCard;
+      final cards = find.byType(cardType);
+      final first = tester.getRect(cards.first);
+      final rowCount = tester
+          .elementList(cards)
+          .where(
+            (element) =>
+                tester.getTopLeft(find.byWidget(element.widget)).dy ==
+                first.top,
+          )
+          .length;
+      expect(rowCount, columns, reason: '视口 $width，字号缩放 $scale');
+      if (columns > 1) expect(first.width, greaterThanOrEqualTo(264));
+      if (scale == 1) {
+        expect(first.height, lessThan(first.width));
+        expect(
+          tester.getTopLeft(find.text('63 次使用')).dy,
+          tester.getTopLeft(find.text('近 7 天 63 次')).dy,
+          reason: '使用量和近 7 天统计同排展示，视口 $width',
+        );
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('桌面广场有刷新、滚动条和右键详情，键盘仅作用于当前工作区', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     tester.view.devicePixelRatio = 1;
@@ -995,7 +1056,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(layer.currentState!.isOpen, isFalse);
     final gallery = tester.element(find.byType(MiniAppGalleryPage));
-    expect(find.byType(MiniAppDiscoveryCard), findsOneWidget);
+    expect(find.byType(MiniAppDiscoveryRow), findsOneWidget);
     expect(api.requests, hasLength(1));
     await deep.up();
     await tester.pumpAndSettle();
@@ -1195,6 +1256,7 @@ void main() {
           .load();
     }
     api.apps = const [
+      _narrowCardApp,
       MiniApp(
         id: 'one',
         name: '软块合成',
@@ -1313,10 +1375,13 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        final cardType = width == 390
+            ? MiniAppDiscoveryRow
+            : MiniAppDiscoveryCard;
         expect(
-          tester.getSize(find.byType(MiniAppDiscoveryCard).first).height,
+          tester.getSize(find.byType(cardType).first).height,
           lessThan(280),
-          reason: '完整元数据卡片按内容收紧，避免固定高度撑出大块留白',
+          reason: '卡片按内容收紧，避免固定高度撑出大块留白',
         );
         await capture('gallery-${brightness.name}-${width.toInt()}');
         if (width == 390) {
