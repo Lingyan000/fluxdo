@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 
+import '../../../constants.dart';
 import '../../../services/network/core/net_core_http_adapter.dart';
 import '../../../services/network/android_route_snapshot.dart';
 import '../../../services/network_logger.dart';
@@ -62,6 +63,7 @@ class MetaversePluginNetwork {
 
   static const maxRequestBody = 256 * 1024;
   static const maxResponseBody = 1024 * 1024;
+  static const maxImageBytes = 16 * 1024 * 1024;
   static const _methods = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE'};
 
   static BaseOptions _options() => BaseOptions(
@@ -117,9 +119,12 @@ class MetaversePluginNetwork {
       uri,
       target: target,
       method: 'GET',
-      headers: const {},
+      headers: {
+        'User-Agent': await AppConstants.getUserAgent(),
+        'Accept': 'image/*',
+      },
       body: null,
-      maxBytes: 2 * 1024 * 1024,
+      maxBytes: maxImageBytes,
     );
     if (response.status != 200 ||
         !(response.headers['content-type'] ?? '').toLowerCase().startsWith(
