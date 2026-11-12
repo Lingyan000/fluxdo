@@ -341,16 +341,21 @@ class _InstallReview extends StatelessWidget {
                 if (manifest.publicImages) l.metaverse_pluginPublicImages,
               ],
             ),
-            if (manifest.auth.canAttachCredential || manifest.webLogin != null)
+            if (manifest.auth.canAttachCredential || manifest.webLogin != null ||
+                manifest.capabilities.credentials.isNotEmpty || manifest.capabilities.connectCallbacks.isNotEmpty)
               _PermissionRow(
                 icon: Symbols.account_circle_rounded,
                 title: l.metaverse_permissionAccount,
-                description: manifest.auth.connect != null
+                description: manifest.auth.connect != null || manifest.capabilities.connectCallbacks.isNotEmpty
                     ? l.metaverse_permissionNativeLogin
                     : manifest.auth.required
                     ? l.metaverse_pluginPermToken
                     : l.metaverse_permissionServiceSession,
                 details: [
+                  for (final callback in manifest.capabilities.connectCallbacks) callback.toString(),
+                  for (final credential in manifest.capabilities.credentials.values)
+                    for (final scope in credential.scopes)
+                      '${scope.methods.join(" / ")} ${scope.origin.origin}${scope.pathPrefix}',
                   ...manifest.auth.hosts,
                   if (manifest.auth.connect != null)
                     ...manifest.auth.connect!.values,
@@ -363,7 +368,7 @@ class _InstallReview extends StatelessWidget {
                     '${l.metaverse_permissionWebSession} · ${login.host}',
                 ],
               ),
-            if (manifest.auth.payment != null)
+            if (manifest.auth.payment != null || manifest.capabilities.payments.isNotEmpty)
               _PermissionRow(
                 icon: Symbols.payments_rounded,
                 title: l.metaverse_nativePayTitle,
@@ -453,8 +458,10 @@ class _PermissionRow extends StatelessWidget {
 /// 索取凭证。凭证由宿主保存，脚本只能通过白名单请求间接使用。
 Future<String?> showMetaversePluginTokenDialog(
   BuildContext context,
-  MetaversePluginManifest manifest,
-) {
+  MetaversePluginManifest manifest, {
+  String? label,
+  List<String>? hosts,
+}) {
   final auth = manifest.auth;
   var token = '';
   return showAppDialog<String>(
@@ -466,7 +473,7 @@ Future<String?> showMetaversePluginTokenDialog(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            ctx.l10n.metaverse_pluginTokenNote(auth.hosts.join('、')),
+            ctx.l10n.metaverse_pluginTokenNote((hosts ?? auth.hosts).join('、')),
             style: Theme.of(ctx).textTheme.bodySmall
                 ?.copyWith(color: Theme.of(ctx).colorScheme.onSurfaceVariant),
           ),
@@ -476,7 +483,7 @@ Future<String?> showMetaversePluginTokenDialog(
             autofocus: true,
             obscureText: true,
             decoration: InputDecoration(
-              labelText: auth.label ?? ctx.l10n.metaverse_pluginTokenLabel,
+              labelText: label ?? auth.label ?? ctx.l10n.metaverse_pluginTokenLabel,
               border: OutlineInputBorder(
                 borderRadius: ctx.shapes.borderRadius(4),
               ),

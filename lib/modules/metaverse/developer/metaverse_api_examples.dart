@@ -6,6 +6,7 @@ class MetaverseApiExample {
     this.arguments,
     this.result, {
     this.permission,
+    this.apiVersion = 1,
     this.userAction = false,
     this.afterCall = 'console.log(result);',
   });
@@ -13,6 +14,7 @@ class MetaverseApiExample {
   final String arguments;
   final Object? result;
   final String? permission;
+  final int apiVersion;
   final bool userAction;
   final String afterCall;
   String get script =>
@@ -28,6 +30,62 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample(
+    'credentials.status',
+    "'account'",
+    {'authorized': true, 'expiresAt': 2000000000},
+    permission: 'credentials',
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
+    'credentials.capture',
+    "'account', {url: 'https://api.example.org/token', method: 'POST', body: {code: 'demo'}}, {tokenPath: ['access', 'value']}",
+    {'authorized': true, 'expiresAt': null},
+    permission: 'credentials, network',
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
+    'credentials.remove',
+    "'account'",
+    null,
+    permission: 'credentials',
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
+    'credentials.request',
+    "'account'",
+    true,
+    permission: 'credentials',
+    apiVersion: 2,
+    userAction: true,
+  ),
+  MetaverseApiExample(
+    'connect.authorize',
+    "'https://connect.linux.do/oauth2/authorize?client_id=demo&redirect_uri=https%3A%2F%2Fapi.example.org%2Fcallback&state=demo'",
+    'https://api.example.org/callback?code=demo&state=demo',
+    permission: 'connect',
+    apiVersion: 2,
+    userAction: true,
+  ),
+  MetaverseApiExample('crypto.pkce', '', {
+    'verifier': 'demo-verifier',
+    'challenge': 'demo-challenge',
+    'method': 'S256',
+  }, apiVersion: 2),
+  MetaverseApiExample(
+    'crypto.uuid',
+    '',
+    '96d7c264-e355-4d84-9dbe-6b3751671a41',
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
+    'payments.request',
+    "{provider: 'linuxDoCredit', url: 'https://credit.linux.do/paying?order_no=demo', reference: 'DEMO-1', amount: '1.00'}",
+    {'state': 'paid'},
+    permission: 'payments',
+    apiVersion: 2,
+    userAction: true,
+  ),
   MetaverseApiExample('fetch', "'https://api.example.org/items'", {
     'status': 200,
     'headers': <String, Object?>{},

@@ -363,6 +363,10 @@ class _ApiGalleryState extends State<_ApiGallery> {
                   if (value != null) setState(() => _example = value);
                 },
         ),
+        ListTile(
+          title: Text(l.metaverse_marketCompatibility),
+          subtitle: Text('API ${_example.apiVersion}'),
+        ),
         if (_example.permission case final permission?)
           ListTile(
             title: Text(l.metaverse_marketPermissions),

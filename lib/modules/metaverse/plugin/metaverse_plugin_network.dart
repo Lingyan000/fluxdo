@@ -13,6 +13,7 @@ import '../../../services/network/android_route_snapshot.dart';
 import '../../../services/network_logger.dart';
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_plugin_manifest.dart';
+import 'metaverse_plugin_capabilities.dart';
 import 'metaverse_checkout_types.dart';
 import 'metaverse_service_session.dart';
 import 'metaverse_socket_connection.dart';
@@ -65,7 +66,6 @@ class MetaversePluginNetwork {
   static const maxRequestBody = 256 * 1024;
   static const maxResponseBody = 1024 * 1024;
   static const maxImageBytes = 16 * 1024 * 1024;
-  static const _methods = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE'};
 
   static BaseOptions _options() => BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -153,6 +153,7 @@ class MetaversePluginNetwork {
     MetaversePluginManifest manifest, {
     required Map<String, Object?> request,
     required String? authToken,
+    void Function()? checkActive,
   }) async {
     final rawUrl = request['url'];
     final uri = rawUrl is String ? Uri.tryParse(rawUrl) : null;
@@ -160,7 +161,14 @@ class MetaversePluginNetwork {
     final target = await _checkTarget(uri, manifest.networkHosts);
 
     final method = '${request['method'] ?? 'GET'}'.toUpperCase();
-    if (!_methods.contains(method)) {
+    final credentialName = request['credential'];
+    final credential = manifest.capabilities.credentials[credentialName];
+    if (credentialName != null && credential == null) {
+      throw const MetaversePluginCallException('credential_not_declared');
+    }
+    if (!MetaverseRequestMethod.values.any(
+      (value) => value.name.toUpperCase() == method,
+    )) {
       throw MetaversePluginCallException('不支持的请求方法 $method');
     }
 
@@ -181,7 +189,20 @@ class MetaversePluginNetwork {
       }
     }
 
-    if (request['auth'] == true) {
+    if (credential != null) {
+      if (!credential.allows(uri, method)) {
+        throw const MetaversePluginCallException('credential_scope_denied');
+      }
+      if (authToken == null || authToken.isEmpty) {
+        throw const MetaversePluginCallException('credential_required');
+      }
+      headers.removeWhere(
+        (name, _) => name.toLowerCase() == credential.header.toLowerCase(),
+      );
+      headers[credential.header] = credential.scheme.isEmpty
+          ? authToken
+          : '${credential.scheme} $authToken';
+    } else if (request['auth'] == true) {
       final auth = manifest.auth;
       if (!auth.canAttachCredential) {
         throw const MetaversePluginCallException('清单未声明授权方式');
@@ -212,6 +233,7 @@ class MetaversePluginNetwork {
       throw const MetaversePluginCallException('请求体过大');
     }
 
+    checkActive?.call();
     final response = await _send(
       uri,
       target: target,
@@ -220,6 +242,7 @@ class MetaversePluginNetwork {
       body: body as String?,
       maxBytes: maxResponseBody,
     );
+    checkActive?.call();
     return {
       'status': response.status,
       'headers': response.headers,

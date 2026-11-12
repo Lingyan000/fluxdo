@@ -4,6 +4,7 @@ import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_checkout_types.dart';
+import 'metaverse_plugin_capabilities.dart';
 
 /// 清单不合法。[field] 是出错字段的路径，[reason] 面向插件作者。
 class MetaverseManifestException implements Exception {
@@ -112,6 +113,7 @@ class MetaversePluginManifest {
     required this.reservedHosts,
     required this.identity,
     required this.auth,
+    required this.capabilities,
     required this.webLogin,
     required this.cardWidget,
     required this.pages,
@@ -119,7 +121,8 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 8;
+  static const schemaVersion = 9;
+  static const supportedApiVersions = {1, 2};
   int get apiVersion => raw['apiVersion'] as int? ?? 1;
 
   final String id;
@@ -145,6 +148,7 @@ class MetaversePluginManifest {
   final bool identity;
 
   final MetaversePluginAuthSpec auth;
+  final MetaversePluginCapabilities capabilities;
 
   /// 第一方网页登录地址。会话留在浏览器中，插件只可打开同源页面。
   final Uri? webLogin;
@@ -187,6 +191,7 @@ class MetaversePluginManifest {
     auth.checkout,
     auth.connect,
     auth.payment,
+    capabilities.approval,
     links.map((r) => (r.host, r.path, r.page)).toList(),
   ];
   bool sameApprovalAs(MetaversePluginManifest other) =>
@@ -238,8 +243,14 @@ class MetaversePluginManifest {
     } on FormatException {
       throw const MetaverseManifestException('version', '须为 x.y.z 形式');
     }
-    if ((schema >= 8 || json['apiVersion'] != null) && json['apiVersion'] != 1) {
+    final apiVersion = json['apiVersion'] ?? 1;
+    if ((schema >= 8 && json['apiVersion'] == null) ||
+        !supportedApiVersions.contains(apiVersion) ||
+        (apiVersion == 2 && schema < 9)) {
       throw const MetaverseManifestException('apiVersion', '不支持的脚本 API 版本');
+    }
+    if (apiVersion == 2 && json.containsKey('auth')) {
+      throw const MetaverseManifestException('auth', 'API 2 使用 permissions 中的公共能力声明');
     }
 
     final permissions = _map(json, 'permissions');
@@ -269,6 +280,20 @@ class MetaversePluginManifest {
       max: 16,
     );
     final identity = permissions['identity'] == true;
+    final MetaversePluginCapabilities capabilities;
+    try {
+      capabilities = MetaversePluginCapabilities.parse(
+        permissions,
+        networkHosts: networkHosts,
+        forbiddenHeader: isForbiddenHeader,
+      );
+    } on FormatException catch (error) {
+      throw MetaverseManifestException('permissions', error.message);
+    }
+    if (apiVersion == 1 && (capabilities.credentials.isNotEmpty ||
+        capabilities.connectCallbacks.isNotEmpty || capabilities.payments.isNotEmpty)) {
+      throw const MetaverseManifestException('apiVersion', '公共能力声明需要 API 2');
+    }
 
     final pages = <MetaversePluginPageSpec>[];
     final rawPages = json['pages'];
@@ -389,6 +414,7 @@ class MetaversePluginManifest {
       reservedHosts: List.unmodifiable(reservedHosts),
       identity: identity,
       auth: _auth(json['auth'], networkHosts, reservedHosts),
+      capabilities: capabilities,
       webLogin: webLogin,
       cardWidget: cardWidget,
       pages: List.unmodifiable(pages),

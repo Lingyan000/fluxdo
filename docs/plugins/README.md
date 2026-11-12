@@ -1,6 +1,6 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。新发布清单使用 schema 8，显式声明 apiVersion 为 1。应用内「元宇宙 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+本目录面向 FluxDO 插件作者。通用能力清单使用 schema 9、apiVersion 2。宿主在迁移期间继续支持 API 1，当前已发布的 LD 士多为 API 1。应用内「元宇宙 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
 
 ## 文档导航
 
@@ -58,11 +58,11 @@ sequenceDiagram
 
 ## 兼容与调试
 
-- `schema` 校验清单结构，`apiVersion` 声明脚本 API 版本。当前版本为 1，不支持的版本会在安装时拒绝。
+- `schema` 校验清单结构，`apiVersion` 声明脚本 API 版本。支持 1、2，不支持的版本会在安装时拒绝。
 - 网络、凭证和跳转检查由 Dart 宿主执行。使用公开 SDK 即可获得一致的检查行为。
 - `console` 写入结构化日志，包含插件 ID、版本和运行实例。插件管理中的日志入口支持查看、导出与仅清空当前插件。事件处理中使用 `ctx.api` 可以附带 surfaceId。
 - `storage` 是每插件共享的普通 JSON 数据，账号会话使用宿主管理的安全存储。业务数据包含账号差异时，插件需要在自身数据结构中体现账号范围。
-- `auth.connect`、`auth.query` 和 `checkout` 当前依赖既定授权、订单协议。异构服务接入的限制和迁移方向见架构审计。
+- API 2 使用 `credentials`、`connect` 和 `payments` 能力。API 1 的 `auth.connect`、`auth.query` 和 `checkout` 仍依赖既定授权、订单协议，现有士多插件正在迁移。
 
 ## 文档入口
 

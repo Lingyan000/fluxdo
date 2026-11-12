@@ -148,7 +148,7 @@
   "metaverse_title": "元宇宙",
   "metaverse_nativeLoginTitle": "登入 {name}",
   "metaverse_nativeLoginAccount": "使用 Linux DO 帳號 @{username}",
-  "metaverse_nativeLoginAccess": "授權後可查看訂單、查詢報價，並在確認後下單。付款時需要另行確認及輸入 LDC 付款密碼。",
+  "metaverse_nativeLoginAccess": "使用目前的 Linux DO 帳戶授權予此服務。服務工作階段用於安裝時批准的網絡位址與操作。",
   "metaverse_nativeTerms": "查看服務條款",
   "metaverse_nativeTermsAgree": "我已閱讀並同意服務條款",
   "metaverse_nativePayTitle": "LDC 付款",

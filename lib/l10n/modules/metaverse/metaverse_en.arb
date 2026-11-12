@@ -134,7 +134,7 @@
   "metaverse_title": "Metaverse",
   "metaverse_nativeLoginTitle": "Sign in to {name}",
   "metaverse_nativeLoginAccount": "Use Linux DO account @{username}",
-  "metaverse_nativeLoginAccess": "Authorize order access and quotes, then confirm before placing an order. Payments require a separate confirmation and your LDC payment password.",
+  "metaverse_nativeLoginAccess": "Authorize this service with your current Linux DO account. The service session is used for the network addresses and operations approved during installation.",
   "metaverse_nativeTerms": "View terms of service",
   "metaverse_nativeTermsAgree": "I have read and agree to the terms",
   "metaverse_nativePayTitle": "LDC payment",

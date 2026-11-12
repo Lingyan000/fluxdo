@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:rfw/rfw.dart';
@@ -14,12 +18,29 @@ import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
 import 'metaverse_service_session.dart';
+import 'metaverse_credential_manager.dart';
+import 'metaverse_plugin_capabilities.dart';
 import 'ui/metaverse_widget_library.dart';
 
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
   void onShutdown() {}
   int? currentAccountId() => null;
+
+  Future<String?> authorizeConnect(BuildContext context, Uri authorization) =>
+      Future.error(const MetaversePluginCallException('connect_unavailable'));
+  Future<bool> requestCredential(BuildContext context, String name) =>
+      Future.error(
+        const MetaversePluginCallException('credential_input_unavailable'),
+      );
+
+  Future<Object?> requestPayment(
+    BuildContext context, {
+    required MetaversePaymentProvider provider,
+    required Uri url,
+    required String reference,
+    required Object amount,
+  }) => Future.error(const MetaversePluginCallException('payment_unavailable'));
 
   Future<Object?> payOrder(
     BuildContext context,
@@ -93,6 +114,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   final MetaversePluginStore _store;
   final MetaversePluginNetwork _network;
   late final _checkout = MetaverseCheckout(manifest, _store, _network);
+  late final _credentials = MetaverseCredentialManager(manifest, _store, _network);
   final MetaversePluginNetwork? dohNetwork;
   final bool Function()? canSuggestDoh;
   final dnsRetryHost = ValueNotifier<String?>(null);
@@ -347,6 +369,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         final publicRead =
             '${params['method'] ?? 'GET'}'.toUpperCase() == 'GET' &&
             params['auth'] != true &&
+            params['credential'] == null &&
             params['body'] == null &&
             (params['headers'] == null ||
                 (params['headers'] is Map &&
@@ -358,15 +381,33 @@ class MetaversePluginHost implements MetaversePluginBridge {
             dohNetwork != null;
         final generation = _generation;
         final accountId = _delegate.currentAccountId();
+        final credentialName = params['credential'];
+        final credentialRevision = credentialName is String
+            ? _store.credentialRevision(id, credentialName)
+            : null;
+        final credential = credentialName == null
+            ? null
+            : await _credentials.read(credentialName, accountId);
+        void checkActive() {
+          if (generation != _generation ||
+              accountId != _delegate.currentAccountId() ||
+              (credentialName is String &&
+                  credentialRevision != _store.credentialRevision(id, credentialName))) {
+            throw const PluginOperationCancelled();
+          }
+        }
         try {
           final response = await (useDoh ? dohNetwork! : _network).fetch(
             manifest,
             request: params,
-            authToken: params['auth'] == true
+            authToken: credentialName != null
+                ? credential?.secret
+                : params['auth'] == true
                 ? manifest.auth.type == MetaversePluginAuthType.readSession
                       ? (await _readSession())?.token
                       : await _store.readToken(id)
                 : null,
+            checkActive: checkActive,
           );
           if (params['auth'] == true &&
               (generation != _generation ||
@@ -391,6 +432,80 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return _writeStorage(_storageKey(params), params['value']);
       case 'storage.remove':
         return _writeStorage(_storageKey(params), null);
+
+      case 'credentials.status':
+        return _credentials.status(params['name'], _delegate.currentAccountId());
+      case 'credentials.capture':
+        final generation = _generation;
+        final accountId = _delegate.currentAccountId();
+        return _credentials.capture(
+          params,
+          accountId: accountId,
+          isActive: () => generation == _generation &&
+              accountId == _delegate.currentAccountId(),
+        );
+      case 'credentials.remove':
+        final name = _credentials.spec(params['name']).name;
+        await _store.removeCredential(id, name);
+        return null;
+      case 'credentials.request':
+        final name = _credentials.spec(params['name']).name;
+        return _userInitiatedUi(
+          (context) => _delegate.requestCredential(context, name),
+        );
+      case 'crypto.pkce':
+        final random = Random.secure();
+        final verifier = base64Url
+            .encode(List.generate(32, (_) => random.nextInt(256)))
+            .replaceAll('=', '');
+        return {
+          'verifier': verifier,
+          'challenge': base64Url
+              .encode(sha256.convert(utf8.encode(verifier)).bytes)
+              .replaceAll('=', ''),
+          'method': 'S256',
+        };
+      case 'crypto.uuid':
+        return const Uuid().v4();
+      case 'connect.authorize':
+        final raw = params['url'];
+        final uri = raw is String && raw.length <= 16384
+            ? Uri.tryParse(raw)
+            : null;
+        if (uri == null || manifest.capabilities.connectCallbacks.isEmpty) {
+          throw const MetaversePluginCallException('connect_not_declared');
+        }
+        return _userInitiatedUi(
+          (context) => _delegate.authorizeConnect(context, uri),
+        );
+      case 'payments.request':
+        final provider = manifest.capabilities.payments
+            .where((value) => value.name == params['provider'])
+            .firstOrNull;
+        final reference = params['reference'];
+        final rawUrl = params['url'];
+        final url = rawUrl is String && rawUrl.length <= 16384
+            ? Uri.tryParse(rawUrl)
+            : null;
+        final amount = params['amount'];
+        if (provider == null ||
+            url == null ||
+            reference is! String ||
+            reference.isEmpty ||
+            reference.length > 128 ||
+            reference.contains(RegExp(r'[\x00-\x1f\x7f]')) ||
+            (amount is! String && amount is! num)) {
+          throw const MetaversePluginCallException('payment_invalid_request');
+        }
+        return _userInitiatedUi(
+          (context) => _delegate.requestPayment(
+            context,
+            provider: provider,
+            url: url,
+            reference: reference,
+            amount: amount!,
+          ),
+        );
 
       case 'auth.status':
         final managed =
@@ -506,7 +621,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
           );
         }
         final username = _delegate.currentUsername();
-        return username == null ? null : {'username': username};
+        return username == null ? null : {
+          'username': username,
+          if (manifest.apiVersion >= 2) 'id': _delegate.currentAccountId(),
+        };
 
       case 'navigation.prepare':
         final page = params['page'];

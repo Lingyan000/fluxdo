@@ -14,9 +14,11 @@ class LdcPaymentOrder {
     required this.payee,
     required this.merchant,
     required this.expiresAt,
+    this.transactionId,
   });
   final String token, orderNo, name, amount, payer, payee, merchant;
   final DateTime expiresAt;
+  final String? transactionId;
 }
 
 class LdcPaymentException implements Exception {
@@ -118,7 +120,44 @@ class LdcPaymentService {
       payee: '${order['payee_username']}',
       merchant: '${merchant['app_name']}',
       expiresAt: expires,
+      transactionId: RegExp(r'^[0-9]{1,20}$').hasMatch('${order['id']}')
+          ? '${order['id']}'
+          : null,
     );
+  }
+
+  /// 按收银台返回的 LDC 交易 ID 核对支付结果。
+  /// 收银台订单接口仅返回待付款订单，付款后的确认使用交易查询接口。
+  Future<bool> isPaid(
+    LdcPaymentOrder expected, {
+    required Future<void> Function() checkSession,
+  }) async {
+    final id = expected.transactionId;
+    if (id == null) throw const LdcPaymentException('payment_order_mismatch');
+    await checkSession();
+    final data = _data(
+      await _dio.post(
+        '$_base/api/v1/order/transactions',
+        data: {'id': id, 'page': 1, 'page_size': 1},
+        options: _options(),
+      ),
+    );
+    await checkSession();
+    if (data is! Map || data['orders'] is! List) {
+      throw const LdcPaymentException('payment_service_error');
+    }
+    final orders = data['orders'] as List;
+    if (orders.isEmpty) return false;
+    final order = orders.single;
+    if (order is! Map ||
+        '${order['id']}' != id ||
+        order['merchant_order_no'] != expected.orderNo ||
+        order['payer_username'] != expected.payer ||
+        order['payee_username'] != expected.payee ||
+        amountCents(order['amount']) != amountCents(expected.amount)) {
+      throw const LdcPaymentException('payment_order_mismatch');
+    }
+    return order['status'] == 'success';
   }
 
   Future<void> pay(

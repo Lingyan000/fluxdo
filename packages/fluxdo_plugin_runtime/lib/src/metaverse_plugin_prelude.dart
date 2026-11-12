@@ -99,7 +99,8 @@ const metaversePluginPrelude = r'''
         method: options.method || 'GET',
         headers: headers,
         body: body === undefined ? null : body,
-        auth: options.auth === true
+        auth: options.auth === true,
+        credential: options.credential === undefined ? null : String(options.credential)
       }).then(function (response) {
         response.ok = response.status >= 200 && response.status < 300;
         response.json = function () { return JSON.parse(response.body); };
@@ -111,6 +112,30 @@ const metaversePluginPrelude = r'''
       get: function (key) { return call('storage.get', { key: String(key) }); },
       set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },
       remove: function (key) { return call('storage.remove', { key: String(key) }); }
+    }),
+
+    credentials: Object.freeze({
+      request: function (name) { return call('credentials.request', {name: String(name)}); },
+      status: function (name) { return call('credentials.status', {name: String(name)}); },
+      capture: function (name, request, options) {
+        request = Object.assign({}, request);
+        if (request.body !== undefined && typeof request.body !== 'string') {
+          request.body = JSON.stringify(request.body);
+          request.headers = Object.assign({'Content-Type': 'application/json'}, request.headers || {});
+        }
+        return call('credentials.capture', Object.assign({}, options || {}, {name: String(name), request: request}));
+      },
+      remove: function (name) { return call('credentials.remove', {name: String(name)}); }
+    }),
+    connect: Object.freeze({
+      authorize: function (url) { return call('connect.authorize', {url: String(url)}); }
+    }),
+    payments: Object.freeze({
+      request: function (options) { return call('payments.request', options); }
+    }),
+    crypto: Object.freeze({
+      pkce: function () { return call('crypto.pkce'); },
+      uuid: function () { return call('crypto.uuid'); }
     }),
 
     auth: Object.freeze({
