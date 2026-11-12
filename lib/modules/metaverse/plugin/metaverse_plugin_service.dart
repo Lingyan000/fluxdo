@@ -11,6 +11,7 @@ import 'metaverse_plugin_host.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_store.dart';
 import 'ui/metaverse_plugin_dialogs.dart';
+import 'ui/metaverse_plugin_management_page.dart';
 import 'ui/metaverse_plugin_page.dart';
 import 'ui/metaverse_plugin_surface_view.dart';
 import 'ui/metaverse_widget_library.dart';
@@ -254,6 +255,10 @@ class MetaversePluginCard extends ConsumerWidget {
       ),
       onSelected: (value) async {
         switch (value) {
+          case 'manage':
+            await Navigator.of(context).push(InteractionPageRoute(
+              builder: (_) => MetaversePluginSettingsPage(pluginId: manifest.id),
+            ));
           case 'details':
             await showMetaversePluginDetails(context, manifest);
           case 'reauthorize':
@@ -267,6 +272,7 @@ class MetaversePluginCard extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        PopupMenuItem(value: 'manage', child: Text(context.l10n.metaverse_pluginManage)),
         PopupMenuItem(
           value: 'details',
           child: Text(context.l10n.common_details),

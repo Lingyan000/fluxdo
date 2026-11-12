@@ -11,6 +11,9 @@ import '../modules/metaverse/metaverse_registry.dart';
 import '../modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import '../modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import '../modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import '../modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
+import '../modules/metaverse/market/metaverse_market_page.dart';
+import '../modules/metaverse/developer/metaverse_developer_page.dart';
 import '../services/toast_service.dart';
 
 /// 元宇宙：官方服务与第三方插件服务的统一入口。
@@ -152,13 +155,35 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
     final services = ref.watch(metaverseServicesProvider);
     final container = _container;
 
-    return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar.large(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+          appBar: AppBar(
             title: Text(context.l10n.metaverse_title),
             centerTitle: false,
+            actions: [
+          IconButton(
+            tooltip: context.l10n.metaverse_developerCenter,
+            icon: const Icon(Symbols.code_rounded),
+            onPressed: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseDeveloperPage())),
           ),
+              IconButton(
+                icon: const Icon(Symbols.extension_rounded),
+                tooltip: context.l10n.metaverse_pluginManage,
+                onPressed: () => Navigator.of(context).push(InteractionPageRoute(
+                  builder: (_) => const MetaversePluginManagementPage(),
+                )),
+              ),
+            ],
+            bottom: TabBar(tabs: [
+              Tab(text: context.l10n.metaverse_myServices),
+              Tab(text: context.l10n.metaverse_market),
+            ]),
+          ),
+      body: TabBarView(children: [
+        CustomScrollView(
+        key: const PageStorageKey('metaverse-services'),
+        slivers: [
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
@@ -190,6 +215,9 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
             ),
           ),
         ],
+      ),
+      const MetaverseMarketPage(),
+      ]),
       ),
     );
   }
