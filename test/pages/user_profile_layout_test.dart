@@ -104,6 +104,7 @@ class _ProfileService implements DiscourseService {
   }
 
   final requestedFilters = <String?>[];
+  Completer<void>? pendingActions;
   int followCalls = 0;
   Completer<void>? pendingFollow;
   @override
@@ -120,6 +121,7 @@ class _ProfileService implements DiscourseService {
     bool isSilent = false,
   }) async {
     requestedFilters.add(filter);
+    await pendingActions?.future;
     return UserActionResponse(
       actions: [
         for (var index = 0; index < 8; index++)
@@ -285,6 +287,7 @@ void main() {
     _ProfileCase(width: 390, visitor: true),
     _ProfileCase(width: 390, cover: true),
     _ProfileCase(width: 390, cover: true, dark: true),
+    _ProfileCase(width: 390, cover: true, dark: true, topInset: 48),
     _ProfileCase(width: 320, cover: true, textScale: 2, visitor: true),
     _ProfileCase(width: 390, seedColor: Colors.green, visitor: true),
     _ProfileCase(width: 390, themeId: 'minimal', visitor: true),
@@ -299,7 +302,7 @@ void main() {
     testWidgets('资料页 ${variant.name}', (tester) async {
       tester.view.physicalSize = Size(width, 850);
       if (width < 760) {
-        tester.view.padding = const FakeViewPadding(top: 24);
+        tester.view.padding = FakeViewPadding(top: variant.topInset);
         addTearDown(tester.view.resetPadding);
       }
       if (captureDir.isNotEmpty) {
@@ -500,7 +503,7 @@ void main() {
         } else {
           await tester.ensureVisible(contact);
           await tester.pumpAndSettle();
-          final follow = find.widgetWithText(FilledButton, '关注');
+          final follow = find.widgetWithText(FilledButton, '关注').hitTestable();
           final contactSurface = find.descendant(
             of: contact,
             matching: find.byType(Material),
@@ -603,6 +606,7 @@ void main() {
       );
       final avatarElement = tester.element(avatar);
       final expandedPosition = tester.getTopLeft(avatar);
+      _expectProfileToolbarGeometry(tester);
       final nested = tester.widget<ExtendedNestedScrollView>(
         find.byType(ExtendedNestedScrollView),
       );
@@ -614,6 +618,36 @@ void main() {
           .whereType<UserProfileHeaderDelegate>()
           .single;
       final travel = delegate.maxExtent - delegate.minExtent;
+      final expandedCoverHeight = tester
+          .getSize(find.byKey(const ValueKey('profile-header-cover')))
+          .height;
+      for (final offset in [8.0, 16.0, 32.0, 48.0, 60.0]) {
+        nested.controller!.jumpTo(offset);
+        await tester.pumpAndSettle();
+        final cover = tester.getRect(
+          find.byKey(const ValueKey('profile-header-cover')),
+        );
+        final contentClip = tester.getRect(
+          find.byKey(const ValueKey('profile-header-content-clip')),
+        );
+        expect(cover.height, lessThan(expandedCoverHeight));
+        expect(expandedCoverHeight - cover.height, lessThan(offset));
+        expect(contentClip.top, closeTo(cover.bottom, 0.01));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('profile-header-content-clip')),
+            matching: avatar,
+          ),
+          findsNothing,
+        );
+        _expectAvatarPaintBounds(tester, avatar);
+        _expectProfileToolbarGeometry(tester);
+        if (variant.topInset == 48) {
+          await _capture(tester, captureDir, '${variant.name}-scroll-$offset');
+        }
+      }
+      nested.controller!.jumpTo(0);
+      await tester.pumpAndSettle();
       if (width == 390 &&
           !variant.cover &&
           !hidden &&
@@ -676,15 +710,51 @@ void main() {
             .whereType<UserProfileHeaderDelegate>()
             .single;
         expect(pulled.maxExtent, greaterThan(delegate.maxExtent + 10));
+        final pulledMore = tester.getCenter(
+          find.byKey(const ValueKey('profile-more-menu')),
+        );
+        expect(
+          pulledMore.dy - morePosition.dy,
+          closeTo(pulled.pullExtent, 0.01),
+        );
+        expect(
+          tester.getTopLeft(avatar).dy - expandedPosition.dy,
+          closeTo(pulled.pullExtent, 0.01),
+        );
+        await drag.moveBy(const Offset(0, 100));
+        await tester.pump();
+        expect(
+          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))).dy,
+          greaterThan(pulledMore.dy),
+        );
         await _capture(tester, captureDir, '${variant.name}-pull');
         await drag.up();
         await tester.pumpAndSettle();
         expect(service.summaryCalls, calls + 1);
         expect(tester.getTopLeft(avatar), expandedPosition);
       }
+      nested.controller!.jumpTo(32);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('profile-avatar-opacity')),
+            )
+            .opacity,
+        closeTo(0.25, 0.001),
+      );
+      await _capture(tester, captureDir, '${variant.name}-avatar-collapse');
       nested.controller!.jumpTo(travel / 2);
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('profile-avatar-opacity')),
+            )
+            .opacity,
+        lessThan(1),
+      );
       expect(
         tester.getTopLeft(avatar).dy,
         closeTo(expandedPosition.dy - travel / 2, 0.01),
@@ -704,16 +774,100 @@ void main() {
       for (var frame = 0; frame < 5; frame++) {
         await tester.pump(const Duration(milliseconds: 45));
         expect(
-          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-          morePosition,
+          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))).dy,
+          morePosition.dy,
         );
       }
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
-      expect(
-        tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-        morePosition,
+      final collapsedMorePosition = tester.getCenter(
+        find.byKey(const ValueKey('profile-more-menu')),
       );
+      expect(collapsedMorePosition.dy, morePosition.dy);
+      expect(collapsedMorePosition.dx, lessThanOrEqualTo(morePosition.dx));
+      _expectProfileToolbarGeometry(tester);
+      if (variant.topInset == 48 ||
+          (checkNavigation && variant.platform == null) ||
+          (variant.visitor && width == 390)) {
+        final moreElement = tester.element(
+          find.byKey(const ValueKey('profile-more-menu')),
+        );
+        final endOffset = nested.controller!.position.maxScrollExtent;
+        final startOffset = (endOffset - 64).clamp(0.0, endOffset);
+        final more = find.byKey(const ValueKey('profile-more-menu'));
+        nested.controller!.jumpTo(startOffset);
+        await tester.pumpAndSettle();
+        final expandedX = tester.getCenter(more).dx;
+        nested.controller!.jumpTo(endOffset);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.getCenter(more).dx, expandedX);
+        var previousFastX = expandedX;
+        for (var frame = 1; frame <= 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final currentX = tester.getCenter(more).dx;
+          expect(currentX, lessThan(previousFastX));
+          expect(tester.element(more), same(moreElement));
+          _expectProfileToolbarGeometry(tester);
+          previousFastX = currentX;
+          if (variant.topInset == 48 || variant.visitor) {
+            await _capture(tester, captureDir, '${variant.name}-fast-$frame');
+          }
+        }
+        final intermediateX = tester.getCenter(more).dx;
+        expect(intermediateX, lessThan(expandedX));
+        expect(intermediateX, greaterThan(collapsedMorePosition.dx));
+        _expectProfileToolbarGeometry(tester);
+        // 过渡途中反向滚动，保留当前画面并向原位置回退。
+        nested.controller!.jumpTo(startOffset);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.getCenter(more).dx, intermediateX);
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.getCenter(more).dx, greaterThan(intermediateX));
+        await tester.pumpAndSettle();
+        expect(tester.getCenter(more).dx, expandedX);
+        for (final direction in [1, -1]) {
+          nested.controller!.jumpTo(direction == 1 ? startOffset : endOffset);
+          await tester.pumpAndSettle();
+          var previousX = direction == 1
+              ? morePosition.dx
+              : collapsedMorePosition.dx;
+          for (var frame = 0; frame <= 32; frame++) {
+            final progress = direction == 1 ? frame / 32 : 1 - frame / 32;
+            nested.controller!.jumpTo(
+              startOffset + (endOffset - startOffset) * progress,
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 16));
+            _expectProfileToolbarGeometry(tester);
+            final position = tester.getCenter(more);
+            expect(
+              (position.dx - previousX) * direction,
+              lessThanOrEqualTo(0.01),
+            );
+            expect(tester.element(more), same(moreElement));
+            expect(
+              tester
+                  .widgetList<Opacity>(
+                    find.ancestor(of: more, matching: find.byType(Opacity)),
+                  )
+                  .every((opacity) => opacity.opacity == 1),
+              isTrue,
+            );
+            previousX = position.dx;
+            if (variant.topInset == 48 && direction == 1 && frame % 4 == 0) {
+              await _capture(
+                tester,
+                captureDir,
+                '${variant.name}-toolbar-$frame',
+              );
+            }
+          }
+        }
+        nested.controller!.jumpTo(endOffset);
+        await tester.pumpAndSettle();
+      }
       final toolbarName = find.byKey(const ValueKey('profile-toolbar-name'));
       expect(tester.getTopLeft(toolbarName).dy, lessThan(delegate.minExtent));
       if (!variant.visitor) expect(find.byTooltip('编辑资料'), findsOneWidget);
@@ -808,7 +962,38 @@ void main() {
       } else {
         expect(tester.widget<TabBar>(find.byType(TabBar)).tabs.length, 4);
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
-        await tester.tap(find.byTooltip('动态'));
+        service.pendingActions = Completer<void>();
+        final tabViewRect = tester.getRect(find.byType(TabBarView));
+        final swipe = await tester.startGesture(
+          Offset(
+            tabViewRect.right - tabViewRect.width * 0.1,
+            tabViewRect.center.dy,
+          ),
+        );
+        for (var frame = 0; frame < 8; frame++) {
+          await swipe.moveBy(Offset(-tabViewRect.width * 0.1, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+          if (variant.topInset == 48 && frame.isOdd) {
+            await _capture(tester, captureDir, '${variant.name}-tab-$frame');
+          }
+        }
+        await swipe.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          find.descendant(of: find.byType(TabBar), matching: find.text('动态')),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump();
+        expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
+        expect(find.byType(UserActionListSkeleton), findsOneWidget);
+        expect(
+          find.descendant(of: find.byType(TabBar), matching: find.text('动态')),
+          findsOneWidget,
+        );
+        service.pendingActions!.complete();
+        service.pendingActions = null;
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4,5'));
         expect(service.requestedFilters, isNot(contains(null)));
@@ -1022,13 +1207,15 @@ void main() {
           expect(find.byType(ActivityTopicCard), findsWidgets);
           await tester.dragFrom(const Offset(180, 650), const Offset(0, -700));
           await tester.pump(const Duration(milliseconds: 200));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 240));
           expect(
             find.byKey(const ValueKey('profile-more-menu')).hitTestable(),
             findsOneWidget,
           );
           expect(
             tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-            morePosition,
+            collapsedMorePosition,
           );
           final toolbarName = find.byKey(
             const ValueKey('profile-toolbar-name'),
@@ -1040,8 +1227,12 @@ void main() {
           );
           expect(toolbarOpacity.opacity, 1);
           expect(
-            tester.getTopLeft(find.byType(LoadingSpinner).first).dy,
-            greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TabBar)).dy),
+            tester
+                .getSize(
+                  find.byKey(const ValueKey('profile-refresh-indicator')),
+                )
+                .height,
+            0,
           );
           await _capture(
             tester,
@@ -1110,6 +1301,8 @@ void main() {
           );
         }
         expect(find.byTooltip('关于'), findsOneWidget);
+        await tester.ensureVisible(find.byTooltip('关于'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('关于'));
         await tester.pumpAndSettle();
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 3);
@@ -1227,6 +1420,7 @@ class _ProfileCase {
     this.themeId = 'material',
     this.seedColor = Colors.blue,
     this.platform,
+    this.topInset = 24,
   });
   final double width;
   final double textScale;
@@ -1238,8 +1432,62 @@ class _ProfileCase {
   final String themeId;
   final Color seedColor;
   final TargetPlatform? platform;
+  final double topInset;
   String get name =>
-      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}';
+      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}${topInset == 24 ? "" : "-inset$topInset"}';
+}
+
+void _expectAvatarPaintBounds(WidgetTester tester, Finder avatar) {
+  final transform = tester.renderObject<RenderTransform>(
+    find.descendant(of: avatar, matching: find.byType(Transform)).first,
+  );
+  final child = transform.child!;
+  final bounds = MatrixUtils.transformRect(
+    child.getTransformTo(null),
+    child.paintBounds,
+  );
+  RenderObject? ancestor = transform.parent;
+  while (ancestor != null) {
+    if (ancestor is RenderClipRect && ancestor.clipBehavior != Clip.none) {
+      final clip = MatrixUtils.transformRect(
+        ancestor.getTransformTo(null),
+        Offset.zero & ancestor.size,
+      ).inflate(0.01);
+      expect(clip.contains(bounds.topLeft), isTrue);
+      expect(clip.contains(bounds.bottomRight), isTrue);
+    }
+    ancestor = ancestor.parent;
+  }
+}
+
+void _expectProfileToolbarGeometry(WidgetTester tester) {
+  final buttons = find.descendant(
+    of: find.byType(AppBar),
+    matching: find.byType(IconButton),
+  );
+  final paintedBounds = <Rect>[];
+  for (final element in buttons.evaluate()) {
+    final button = find.byWidget(element.widget);
+    final surface = find
+        .descendant(of: button, matching: find.byType(Material))
+        .first;
+    expect(tester.getSize(surface), const Size.square(40));
+    final material = tester.widget<Material>(surface);
+    expect(material.shape, element.shapes.circle());
+    final visible = tester
+        .widgetList<Opacity>(
+          find.ancestor(of: button, matching: find.byType(Opacity)),
+        )
+        .every((opacity) => opacity.opacity == 1);
+    if (visible) paintedBounds.add(tester.getRect(surface));
+  }
+  paintedBounds.sort((first, second) => first.left.compareTo(second.left));
+  for (var index = 1; index < paintedBounds.length; index++) {
+    expect(
+      paintedBounds[index].left - paintedBounds[index - 1].right,
+      greaterThanOrEqualTo(7.99),
+    );
+  }
 }
 
 void _expectFollowColors(WidgetTester tester, ThemeData theme) {

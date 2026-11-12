@@ -163,6 +163,9 @@ class M3eRefreshIndicator extends StatefulWidget {
   /// 宿主可用同一刷新进度拉伸封面，取消、刷新完成时连续回到零。
   final ValueChanged<double>? onPullExtentChanged;
 
+  /// 在刷新叠层中放置指示器，传入的子节点已包含加载、淡入与退场动画。
+  final Widget Function(BuildContext, Widget)? indicatorBuilder;
+
   final ScrollNotificationPredicate notificationPredicate;
   final RefreshIndicatorTriggerMode triggerMode;
 
@@ -180,6 +183,7 @@ class M3eRefreshIndicator extends StatefulWidget {
     this.edgeOffset = 0.0,
     this.displacement = 40.0,
     this.onPullExtentChanged,
+    this.indicatorBuilder,
     this.notificationPredicate = defaultScrollNotificationPredicate,
     this.triggerMode = RefreshIndicatorTriggerMode.onEdge,
     this.edgePredicate,
@@ -213,6 +217,7 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
     if (!M3eFlags.of(context).enabled &&
         widget.onSecondaryAction == null &&
         widget.onPullExtentChanged == null &&
+        widget.indicatorBuilder == null &&
         widget.edgePredicate == null) {
       return RefreshIndicator(
         key: _fallbackKey,
@@ -230,6 +235,7 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
       edgeOffset: widget.edgeOffset,
       displacement: widget.displacement,
       onPullExtentChanged: widget.onPullExtentChanged,
+      indicatorBuilder: widget.indicatorBuilder,
       notificationPredicate: widget.notificationPredicate,
       triggerMode: widget.triggerMode,
       edgePredicate: widget.edgePredicate,
@@ -272,6 +278,7 @@ class _M3eRefreshCore extends StatefulWidget {
   final double displacement;
 
   final ValueChanged<double>? onPullExtentChanged;
+  final Widget Function(BuildContext, Widget)? indicatorBuilder;
   final ScrollNotificationPredicate notificationPredicate;
   final RefreshIndicatorTriggerMode triggerMode;
   final ScrollNotificationPredicate? edgePredicate;
@@ -286,6 +293,7 @@ class _M3eRefreshCore extends StatefulWidget {
     required this.edgeOffset,
     required this.displacement,
     this.onPullExtentChanged,
+    this.indicatorBuilder,
     required this.notificationPredicate,
     required this.triggerMode,
     this.edgePredicate,
@@ -575,8 +583,9 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     );
     // 入场淡入:position 到达 armed 阈值(1/1.5)时不透明度拉满,
     // 对应 SDK 的 valueColor alpha 渐变。
-    _opacity = _positionController.drive(
-      CurveTween(curve: const Interval(0.0, 1.0 / _kDragSizeFactorLimit)),
+    _opacity = Animation<double>.fromValueListenable(
+      _positionController,
+      transformer: (value) => (value * _kDragSizeFactorLimit).clamp(0.0, 1.0),
     );
     _scaleController = AnimationController(vsync: this);
     _scaleFactor = _scaleController.drive(Tween<double>(begin: 1.0, end: 0.0));
@@ -768,12 +777,23 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
       _status == RefreshIndicatorStatus.drag ||
           _status == RefreshIndicatorStatus.armed,
     );
+    // 拉伸封面会压缩内层列表视口，使用刷新宿主高度避免位移反向放大。
+    final viewportExtent = widget.onPullExtentChanged == null
+        ? containerExtent
+        : context.size?.height ?? containerExtent;
     double newValue =
-        _dragOffset! / (containerExtent * _kDragContainerExtentPercentage);
+        _dragOffset! / (viewportExtent * _kDragContainerExtentPercentage);
     if (_status == RefreshIndicatorStatus.armed) {
       newValue = newValue.clamp(1.0 / _kDragSizeFactorLimit, double.infinity);
     }
-    _positionController.value = newValue.clamp(0.0, 1.0);
+    // 带封面拉伸的宿主继续接收深拉进度，超过阈值后增加阻尼。
+    if (widget.onPullExtentChanged != null && newValue > 1) {
+      newValue = 1 + (newValue - 1) / (1 + (newValue - 1) / 3);
+    }
+    _positionController.value = newValue.clamp(
+      0.0,
+      widget.onPullExtentChanged == null ? 1.0 : _positionController.upperBound,
+    );
     if (_status == RefreshIndicatorStatus.drag &&
         _positionController.value >= 1.0 / _kDragSizeFactorLimit) {
       _status = RefreshIndicatorStatus.armed;
@@ -959,7 +979,13 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
             ),
           ),
         ),
-        if (_status != null && widget.onSecondaryAction == null)
+        if (_status != null &&
+            widget.onSecondaryAction == null &&
+            widget.indicatorBuilder != null)
+          widget.indicatorBuilder!(context, _buildIndicator()),
+        if (_status != null &&
+            widget.onSecondaryAction == null &&
+            widget.indicatorBuilder == null)
           Positioned(
             top: _isIndicatorAtTop! ? widget.edgeOffset : null,
             bottom: !_isIndicatorAtTop! ? widget.edgeOffset : null,
@@ -990,13 +1016,7 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
                   alignment: _isIndicatorAtTop!
                       ? Alignment.topCenter
                       : Alignment.bottomCenter,
-                  child: ScaleTransition(
-                    scale: _scaleFactor,
-                    child: FadeTransition(
-                      opacity: _opacity,
-                      child: const _SpinnerBadge(size: _kBadgeSize),
-                    ),
-                  ),
+                  child: _buildIndicator(),
                 ),
               ),
             ),
@@ -1004,6 +1024,14 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
       ],
     );
   }
+
+  Widget _buildIndicator() => ScaleTransition(
+    scale: _scaleFactor,
+    child: FadeTransition(
+      opacity: _opacity,
+      child: const _SpinnerBadge(size: _kBadgeSize),
+    ),
+  );
 }
 
 /// 加载器托底容器:surfaceContainerHigh 圆片 + 阴影,任意内容上可读。

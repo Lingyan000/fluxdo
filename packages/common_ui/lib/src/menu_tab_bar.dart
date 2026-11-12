@@ -86,42 +86,65 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     final widths = <double>[];
     for (var index = 0; index < widget.items.length; index++) {
       final item = widget.items[index];
-      if (!widget.showAllLabels && index != _selected) {
-        widths.add(48);
-        continue;
-      }
       final painter = TextPainter(
         text: TextSpan(text: item.label, style: style),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
         maxLines: 1,
       )..layout();
-      widths.add(54 + painter.width + (item.menuBuilder == null ? 0 : 22));
+      widths.add(44 + painter.width + (item.menuBuilder == null ? 0 : 22));
       painter.dispose();
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final totalWidth = widths.fold<double>(0, (sum, width) => sum + width);
-        final extra =
-            math.max(0.0, constraints.maxWidth - totalWidth) /
-            widget.items.length;
-        return TabBar(
-          controller: widget.controller,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          labelPadding: EdgeInsets.zero,
-          labelColor: theme.colorScheme.onSurface,
-          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-          labelStyle: style,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicatorColor: context.emphasis.selected,
-          indicatorWeight: 3,
-          dividerColor: theme.colorScheme.outlineVariant,
-          tabs: [
-            for (var index = 0; index < widget.items.length; index++)
-              _tab(context, widget.items[index], index, widths[index] + extra),
-          ],
+    return AnimatedBuilder(
+      animation: widget.controller.animation!,
+      builder: (context, _) {
+        // 横滑过程中 index 尚未更新，展开程度直接跟随页面位置。
+        final position = widget.controller.animation!.value;
+        final progress = [
+          for (var index = 0; index < widget.items.length; index++)
+            widget.showAllLabels
+                ? 1.0
+                : (1 - (position - index).abs()).clamp(0.0, 1.0),
+        ];
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final totalWidth = widths.fold<double>(
+              0,
+              (sum, width) => sum + width,
+            );
+            final extra =
+                math.max(0.0, constraints.maxWidth - totalWidth) /
+                widget.items.length;
+            final slotWidth = constraints.maxWidth / widget.items.length;
+            final equalSlots =
+                !widget.showAllLabels &&
+                widths.every((width) => width <= slotWidth);
+            return TabBar(
+              controller: widget.controller,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelPadding: EdgeInsets.zero,
+              labelColor: theme.colorScheme.onSurface,
+              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+              labelStyle: style,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorColor: context.emphasis.selected,
+              indicatorWeight: 3,
+              dividerColor: theme.colorScheme.outlineVariant,
+              tabs: [
+                for (var index = 0; index < widget.items.length; index++)
+                  _tab(
+                    context,
+                    widget.items[index],
+                    index,
+                    equalSlots ? slotWidth : widths[index] + extra,
+                    widths[index] - 44,
+                    progress[index],
+                  ),
+              ],
+            );
+          },
         );
       },
     );
@@ -132,25 +155,58 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     MenuTabItem<T> item,
     int index,
     double width,
+    double labelWidth,
+    double progress,
   ) {
     final active = index == _selected;
+    final direction = Directionality.of(context);
+    final labelStart = (width + 28 - labelWidth) / 2;
+    final iconStart = (width - 22 - (labelWidth + 6) * progress) / 2;
+    // 文字保持最终位置，从图标旁逐渐显露，软边遮罩避免切断字形。
+    final revealEdge = (1 - progress) * (labelWidth + 6) / 2 - 6;
     final content = SizedBox(
       width: width,
       height: 48,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
-          ExcludeSemantics(child: Icon(item.icon, size: 22)),
-          if (active || widget.showAllLabels) ...[
-            const SizedBox(width: 6),
-            Text(item.label),
-            if (item.menuBuilder != null) ...[
-              const SizedBox(width: 4),
-              const ExcludeSemantics(
-                child: Icon(Symbols.expand_more_rounded, size: 18),
+          PositionedDirectional(
+            start: iconStart,
+            child: ExcludeSemantics(child: Icon(item.icon, size: 22)),
+          ),
+          if (progress > 0 && labelWidth > 0)
+            PositionedDirectional(
+              start: labelStart,
+              width: labelWidth,
+              child: Opacity(
+                opacity: progress,
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: AlignmentDirectional.centerStart.resolve(direction),
+                    end: AlignmentDirectional.centerEnd.resolve(direction),
+                    colors: const [Colors.transparent, Colors.white],
+                    stops: [
+                      (revealEdge / labelWidth).clamp(0.0, 1.0),
+                      ((revealEdge + 6) / labelWidth).clamp(0.0, 1.0),
+                    ],
+                  ).createShader(bounds),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(item.label),
+                      if (item.menuBuilder != null) ...[
+                        const SizedBox(width: 4),
+                        const ExcludeSemantics(
+                          child: Icon(Symbols.expand_more_rounded, size: 18),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ],
+            ),
         ],
       ),
     );

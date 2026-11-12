@@ -81,13 +81,18 @@ class UserProfileHeader extends StatelessWidget {
       toolbarHeight,
       layout.height + pullExtent - shrinkOffset,
     );
-    final coverHeight = math.max(
-      toolbarHeight,
-      layout.coverHeight + pullExtent - shrinkOffset,
-    );
+    final collapsedOffset = math.max(0.0, shrinkOffset - pullExtent);
+    final remainingPull = math.max(0.0, pullExtent - shrinkOffset);
+    final collapseProgress = (collapsedOffset / (layout.height - toolbarHeight))
+        .clamp(0.0, 1.0);
+    final coverHeight =
+        toolbarHeight +
+        remainingPull +
+        (layout.coverHeight - toolbarHeight) * (1 - collapseProgress);
+    final avatarProgress = (1 - collapsedOffset / 64).clamp(0.0, 1.0);
     final blurProgress = ((shrinkOffset + pullExtent) / 80).clamp(0.0, 1.0);
     final titleOpacity =
-        ((toolbarHeight - layout.titleTop + shrinkOffset - pullExtent) /
+        ((coverHeight - layout.titleTop + shrinkOffset - pullExtent) /
                 layout.titleHeight)
             .clamp(0.0, 1.0);
 
@@ -103,6 +108,7 @@ class UserProfileHeader extends StatelessWidget {
               right: 0,
               height: coverHeight,
               child: ClipRect(
+                key: const ValueKey('profile-header-cover'),
                 child: IgnorePointer(
                   ignoring: shrinkOffset > 0 || pullExtent > 0,
                   child: Stack(
@@ -132,26 +138,33 @@ class UserProfileHeader extends StatelessWidget {
                 ),
               ),
             ),
+            // 头像跨越封面下缘独立淡出，其他资料在封面下方裁切。
+            Positioned(
+              left: wide ? 24 : 16,
+              top: layout.coverHeight + pullExtent - 16 - shrinkOffset,
+              width: 80,
+              height: 80,
+              child: KeyedSubtree(
+                key: const ValueKey('profile-avatar'),
+                child: IgnorePointer(
+                  ignoring: avatarProgress == 0,
+                  child: Opacity(
+                    key: const ValueKey('profile-avatar-opacity'),
+                    opacity: avatarProgress * avatarProgress,
+                    child: Transform.scale(
+                      scale: 0.5 + 0.5 * avatarProgress,
+                      child: avatar,
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Positioned.fill(
-              top: toolbarHeight,
+              top: coverHeight,
               child: ClipRect(
+                key: const ValueKey('profile-header-content-clip'),
                 child: Stack(
                   children: [
-                    Positioned(
-                      left: wide ? 24 : 16,
-                      top:
-                          layout.coverHeight +
-                          pullExtent -
-                          16 -
-                          shrinkOffset -
-                          toolbarHeight,
-                      width: 80,
-                      height: 80,
-                      child: KeyedSubtree(
-                        key: const ValueKey('profile-avatar'),
-                        child: avatar,
-                      ),
-                    ),
                     Positioned(
                       right: 16,
                       top:
@@ -159,7 +172,7 @@ class UserProfileHeader extends StatelessWidget {
                           pullExtent +
                           8 -
                           shrinkOffset -
-                          toolbarHeight,
+                          coverHeight,
                       child: trailing,
                     ),
                     Positioned(
@@ -169,7 +182,7 @@ class UserProfileHeader extends StatelessWidget {
                           layout.titleTop +
                           pullExtent -
                           shrinkOffset -
-                          toolbarHeight,
+                          coverHeight,
                       child: Text(
                         user.name?.trim().isNotEmpty == true
                             ? user.name!
@@ -190,7 +203,7 @@ class UserProfileHeader extends StatelessWidget {
                             4 +
                             pullExtent -
                             shrinkOffset -
-                            toolbarHeight,
+                            coverHeight,
                         child: Text(
                           '@${user.username}',
                           maxLines: 1,
@@ -205,7 +218,7 @@ class UserProfileHeader extends StatelessWidget {
             ),
             if (toolbarBuilder != null)
               Positioned(
-                top: 0,
+                top: remainingPull,
                 left: 0,
                 right: 0,
                 height: toolbarHeight,
@@ -215,6 +228,12 @@ class UserProfileHeader extends StatelessWidget {
                         (Theme.of(context).iconButtonTheme.style ??
                                 const ButtonStyle())
                             .copyWith(
+                              fixedSize: const WidgetStatePropertyAll(
+                                Size.square(40),
+                              ),
+                              shape: WidgetStatePropertyAll(
+                                context.shapes.circle() as OutlinedBorder,
+                              ),
                               foregroundColor: WidgetStatePropertyAll(
                                 scheme.onSurface,
                               ),
@@ -226,7 +245,7 @@ class UserProfileHeader extends StatelessWidget {
                   child: toolbarBuilder(
                     titleOpacity,
                     layout.coverHeight + 8 + pullExtent - shrinkOffset <=
-                        toolbarHeight,
+                        coverHeight,
                   ),
                 ),
               ),

@@ -106,10 +106,12 @@ class UserProfilePage extends ConsumerStatefulWidget {
 }
 
 class _UserProfilePageState extends ConsumerState<UserProfilePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
-  final ValueNotifier<bool> _showPinnedAction = ValueNotifier(false);
+  late final AnimationController _pinnedActionProgress;
+  bool _actionsPinned = false;
+  double? _pendingPinnedActionProgress;
   final ValueNotifier<double> _pullExtent = ValueNotifier(0);
   User? _user;
   UserSummary? _summary;
@@ -308,6 +310,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   @override
   void initState() {
     super.initState();
+    _pinnedActionProgress = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
     _shortcutScopeBinding = ShortcutScopeBinding(
       ref: ref,
       scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
@@ -327,7 +333,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     _standaloneEsc?.dispose();
     _tabController.dispose();
     _scrollController.dispose();
-    _showPinnedAction.dispose();
+    _pinnedActionProgress.dispose();
     _pullExtent.dispose();
     super.dispose();
   }
@@ -1288,6 +1294,30 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }).toList();
   }
 
+  void _updatePinnedActionProgress(double progress) {
+    if (_pendingPinnedActionProgress != null) {
+      _pendingPinnedActionProgress = progress;
+      return;
+    }
+    _pendingPinnedActionProgress = progress;
+    // 嵌套滚动一帧可多次布局，只发布最后一次布局的结果。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final latestProgress = _pendingPinnedActionProgress!;
+      _pendingPinnedActionProgress = null;
+      if (!mounted) return;
+      // 阈值两侧保留少量回差，慢拖停在边界时不会反复切换。
+      final pinned = latestProgress >= (_actionsPinned ? 0.4 : 0.6);
+      if (pinned == _actionsPinned) return;
+      _actionsPinned = pinned;
+      // 快速越过边界也播放完整过渡，反向时从当前画面接续。
+      _pinnedActionProgress.animateTo(
+        pinned ? 1 : 0,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   Widget _buildProfileToolbar(
     User? currentUser,
     double titleOpacity,
@@ -1320,14 +1350,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
     final iconOnly = actionWidth > width - 112;
     if (iconOnly) actionWidth = 48;
-    return ValueListenableBuilder<bool>(
-      valueListenable: _showPinnedAction,
-      builder: (context, showAction, _) {
+    return ValueListenableBuilder<double>(
+      valueListenable: _pinnedActionProgress,
+      builder: (context, progress, _) {
         final canPin = own ? _user!.canEdit : _user!.canFollow == true;
+        final actionProgress = canPin ? progress : 0.0;
+        final searchOpacity = 1 - actionProgress;
+        final pinnedOpacity = actionProgress;
         final actions = _buildHeaderActions(
           own,
           shareCollapsed: shareCollapsed,
-          actionsCollapsed: showAction,
+          actionsCollapsed: _actionsPinned,
         );
         return AppBar(
           titleSpacing: 4,
@@ -1369,34 +1402,65 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               : null,
           actions: [
             SizedBox(
-              width: actionWidth,
-              child: AnimatedSwitcher(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 180),
-                child: showAction && canPin
-                    ? own
-                          ? IconButton(
-                              key: const ValueKey('profile-pinned-edit'),
-                              tooltip: context.l10n.profile_editProfile,
-                              onPressed: () =>
-                                  _openPreferences(editProfile: true),
-                              icon: const Icon(Symbols.edit_rounded),
-                            )
-                          : Padding(
-                              key: const ValueKey('profile-pinned-follow'),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: _buildFollowButton(
-                                compact: true,
-                                iconOnly: iconOnly,
-                              ),
-                            )
-                    : actions.first,
+              width: actionWidth + 48,
+              height: kToolbarHeight,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PositionedDirectional(
+                    start: (actionWidth - 48) * (1 - actionProgress),
+                    width: 48,
+                    child: IgnorePointer(
+                      ignoring: canPin && _actionsPinned,
+                      child: Opacity(
+                        key: const ValueKey('profile-toolbar-search-opacity'),
+                        opacity: searchOpacity,
+                        child: Center(child: actions.first),
+                      ),
+                    ),
+                  ),
+                  if (canPin)
+                    PositionedDirectional(
+                      start: 48,
+                      width: actionWidth,
+                      child: IgnorePointer(
+                        ignoring: !_actionsPinned,
+                        child: Opacity(
+                          key: const ValueKey('profile-toolbar-action-opacity'),
+                          opacity: pinnedOpacity,
+                          child: Center(
+                            child: own
+                                ? IconButton(
+                                    key: const ValueKey('profile-pinned-edit'),
+                                    tooltip: context.l10n.profile_editProfile,
+                                    onPressed: () =>
+                                        _openPreferences(editProfile: true),
+                                    icon: const Icon(Symbols.edit_rounded),
+                                  )
+                                : Padding(
+                                    key: const ValueKey(
+                                      'profile-pinned-follow',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: _buildFollowButton(
+                                      compact: true,
+                                      iconOnly: iconOnly,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  PositionedDirectional(
+                    start: actionWidth * (1 - actionProgress),
+                    width: 48,
+                    child: Center(child: actions.last),
+                  ),
+                ],
               ),
             ),
-            actions.last,
             const SizedBox(width: 4),
           ],
         );
@@ -1441,10 +1505,43 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           behavior: ScrollConfiguration.of(context)
               .copyWith(scrollbars: false, overscroll: false),
           child: M3eRefreshIndicator(
-            edgeOffset: pinnedHeaderHeight,
             displacement: 32,
             triggerMode: RefreshIndicatorTriggerMode.anywhere,
             onPullExtentChanged: (extent) => _pullExtent.value = extent * 2,
+            indicatorBuilder: (context, indicator) => Positioned(
+              top: topInset,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_pullExtent, _scrollController]),
+                  child: indicator,
+                  builder: (context, child) {
+                    final scroll = _scrollController.hasClients
+                        ? _scrollController.offset
+                        : 0.0;
+                    return ClipRect(
+                      child: SizedBox(
+                        key: const ValueKey('profile-refresh-indicator'),
+                        height: math.max(0, _pullExtent.value - scroll),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              top: -scroll,
+                              left: 0,
+                              right: 0,
+                              height: _pullExtent.value,
+                              child: Center(child: child),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
             notificationPredicate: (notification) =>
                 notification.metrics.axis == Axis.vertical,
             edgePredicate: (notification) =>
@@ -1491,15 +1588,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 ),
                 SliverLayoutBuilder(
                   builder: (context, constraints) {
-                    final show =
-                        buttons.isNotEmpty &&
-                        constraints.scrollOffset + constraints.overlap >=
-                            actionHeight + 4;
-                    if (_showPinnedAction.value != show) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _showPinnedAction.value = show;
-                      });
-                    }
+                    final progress = buttons.isEmpty
+                        ? 0.0
+                        : ((constraints.scrollOffset +
+                                      constraints.overlap -
+                                      actionHeight +
+                                      12) /
+                                  24)
+                              .clamp(0.0, 1.0);
+                    _updatePinnedActionProgress(progress);
                     final actions = buttons.isEmpty
                         ? const SizedBox.shrink()
                         : SizedBox(

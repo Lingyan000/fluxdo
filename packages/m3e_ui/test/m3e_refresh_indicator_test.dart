@@ -102,6 +102,7 @@ void main() {
 
       await tester.drag(find.byType(ListView), const Offset(0, 400));
       await tester.pump();
+      expect(extents.any((extent) => extent > 60), isTrue);
       await tester.pump(const Duration(milliseconds: 200));
       expect(refreshes, 1);
       expect(extents.last, greaterThan(0));
