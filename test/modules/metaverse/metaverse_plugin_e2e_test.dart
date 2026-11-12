@@ -453,10 +453,7 @@ Future<void> main() async {
       );
       addTearDown(alternate.dispose);
       await openShop(
-        (_) async => [
-          InternetAddress('198.18.0.2'),
-          InternetAddress('2606:4700:4700::1111'),
-        ],
+        (_) async => [InternetAddress('2606:4700:4700::1111')],
         primary: first,
         alternate: alternate,
       );
@@ -485,9 +482,12 @@ Future<void> main() async {
       );
     });
 
-    pluginTest('仅解析到虚拟地址时，广场与商品详情均可手动转到官网', (tester) async {
+    pluginTest('Fake-IP 出口读取失败时，广场与商品详情均可手动转到官网', (tester) async {
       await tester.runAsync(
-        () => openShop((_) async => [InternetAddress('198.18.0.2')]),
+        () => openShop(
+          (_) async => [InternetAddress('198.18.0.2')],
+          primary: _ShopApi()..connectTimeout = true,
+        ),
       );
       const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
       for (final (page, label, path) in [
@@ -1029,14 +1029,17 @@ Future<void> main() async {
       expect(service.requests, hasLength(4));
     });
 
-    pluginTest('远端安装士多，渲染广场，并从帖子打开和关闭同一份商品详情', (tester) async {
+    pluginTest('双栈 Fake-IP 下远端安装士多、渲染广场并从帖子打开商品详情', (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(390, 844);
       addTearDown(tester.view.reset);
       final shop = _ShopApi();
       final network = MetaversePluginNetwork(
         dio: Dio()..httpClientAdapter = shop,
-        lookup: (_) async => [InternetAddress('8.8.8.8')],
+        lookup: (_) async => [
+          InternetAddress('2001:2::6'),
+          InternetAddress('198.18.0.6'),
+        ],
       );
       final prefs = await SharedPreferences.getInstance();
       final container = ProviderContainer(

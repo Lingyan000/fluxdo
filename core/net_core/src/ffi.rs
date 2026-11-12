@@ -589,7 +589,7 @@ pub unsafe extern "C" fn fluxdo_net_buffer_free(ptr: *mut u8, len: usize) {
 /// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u64 {
-    start_request(meta_json, false)
+    start_request(meta_json, false, false)
 }
 
 /// 开启固定目标地址的请求。只供宿主传入已经校验的公网地址。
@@ -597,10 +597,19 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
 /// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fluxdo_net_pinned_request_start(meta_json: *const c_char) -> u64 {
-    start_request(meta_json, true)
+    start_request(meta_json, true, false)
 }
 
-fn start_request(meta_json: *const c_char, pinned: bool) -> u64 {
+/// 插件出口：代理接收原域名，直连只使用宿主筛选的地址（可含 Fake-IP）。
+/// 空地址列表表示只允许代理出站，不能回退到核心自行解析直连。
+/// # Safety
+/// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_plugin_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, true, true)
+}
+
+fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bool) -> u64 {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(json) = c_str(meta_json) else {
             return 0;
@@ -618,10 +627,12 @@ fn start_request(meta_json: *const c_char, pinned: bool) -> u64 {
         };
 
         let client = if pinned {
-            if meta.pinned_addresses.is_empty() || meta.pinned_addresses.len() > 16 {
+            if (meta.pinned_addresses.is_empty() && !proxy_resolves_host)
+                || meta.pinned_addresses.len() > 16
+            {
                 return 0;
             }
-            core.pinned_client(meta.pinned_addresses.clone())
+            core.pinned_client(meta.pinned_addresses.clone(), proxy_resolves_host)
         } else {
             core.client()
         };

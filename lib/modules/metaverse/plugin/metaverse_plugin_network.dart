@@ -13,6 +13,7 @@ import '../core/metaverse_link_rule.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_checkout_types.dart';
 import 'metaverse_service_session.dart';
+import 'metaverse_socket_connection.dart';
 import 'runtime/metaverse_plugin_runtime.dart';
 
 typedef MetaverseAddressLookup = Future<List<InternetAddress>> Function(
@@ -24,6 +25,8 @@ typedef _PluginTarget = ({
   List<InternetAddress> pins,
   int resolvedV4,
   int filteredV4,
+  int fakeIpCount,
+  String? directError,
 });
 
 /// 已校验的候选地址均为 IPv6，且匿名读取在建连阶段超时。
@@ -39,18 +42,22 @@ class MetaverseIpv6ReadTimeout extends MetaversePluginCallException {
 /// 兼容模式下借用 WebView 的登录态。插件请求必须是没有任何环境凭证的
 /// 干净请求，所以这里用一个独立、无拦截器、无 Cookie 的客户端。
 ///
-/// DNS 可由宿主提供；网络核心可复用应用的代理配置，但目标仍固定为已校验的公网 IP。
+/// 直连使用宿主筛选的地址，保留 Fake-IP 交给系统路由。显式代理按原域名建隧道。
 class MetaversePluginNetwork {
   MetaversePluginNetwork({
-    Dio? dio,
+    this._dio,
+    Dio? coreDio,
     MetaverseAddressLookup? lookup,
     this.useNetworkCore,
     this.diagnosticNetwork,
-  }) : _dio = dio ?? _createDio(lookup ?? InternetAddress.lookup),
-       _coreDio = useNetworkCore == null
-           ? null
-           : (Dio(_options())
-               ..httpClientAdapter = NetCoreHttpAdapter(pinnedOnly: true)),
+  }) : _coreDio =
+           coreDio ??
+           (useNetworkCore == null
+               ? null
+               : (Dio(_options())
+                   ..httpClientAdapter = NetCoreHttpAdapter(
+                     pluginRequests: true,
+                   ))),
        _lookup = lookup ?? InternetAddress.lookup;
 
   static const maxRequestBody = 256 * 1024;
@@ -66,38 +73,31 @@ class MetaversePluginNetwork {
     validateStatus: (_) => true,
   );
 
-  static Dio _createDio(MetaverseAddressLookup lookup) => Dio(_options())
-    ..httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        return HttpClient()
-          ..findProxy = ((_) => 'DIRECT')
-          ..connectionFactory = (uri, _, _) async {
-            // 直接连接本次校验过的地址，TLS 仍校验原始主机名。
-            final address = (await _publicAddresses(
-              uri.host,
-              lookup,
-            )).pins.first;
-            final tcp = await Socket.startConnect(address, uri.port);
-            // 自定义连接工厂需要自行完成 TLS，HttpClient 不会再升级直连套接字。
-            return ConnectionTask.fromSocket(
-              tcp.socket.then(
-                (socket) => SecureSocket.secure(socket, host: uri.host),
-              ),
-              tcp.cancel,
-            );
-          };
-      },
-    );
+  static Dio _createDio(List<InternetAddress> addresses) =>
+      Dio(_options())
+        ..httpClientAdapter = IOHttpClientAdapter(
+          createHttpClient: () {
+            return HttpClient()
+              ..findProxy = ((_) => 'DIRECT')
+              ..connectionFactory = (uri, _, _) =>
+                  startMetaverseConnection(uri, addresses);
+          },
+        );
 
-  final Dio _dio;
+  final Dio? _dio;
   final Dio? _coreDio;
+  final _directClients = <Dio>{};
   final bool Function()? useNetworkCore;
   final String Function()? diagnosticNetwork;
   final MetaverseAddressLookup _lookup;
 
   void dispose() {
-    _dio.close(force: true);
+    _dio?.close(force: true);
     _coreDio?.close(force: true);
+    for (final client in _directClients) {
+      client.close(force: true);
+    }
+    _directClients.clear();
   }
 
   /// 图片请求不携带凭证，不跟随跳转，返回值仅交给宿主图片组件。
@@ -314,7 +314,8 @@ class MetaversePluginNetwork {
     List<String>? allowedHosts,
   ) async {
     if (uri.scheme != 'https' ||
-        uri.host.isEmpty ||
+        MetaverseHostPattern.normalize(uri.host) == null ||
+        uri.host.contains('*') ||
         uri.userInfo.isNotEmpty ||
         (uri.hasPort && uri.port != 443)) {
       throw const MetaversePluginCallException('只允许标准端口的 https 地址');
@@ -325,7 +326,7 @@ class MetaversePluginNetwork {
         '${uri.host} 不在清单 permissions.network 内',
       );
     }
-    // 核心直接使用本次校验的 IP；旧版直连适配器建连时也会重新校验。
+    // 本次直连使用同一份解析快照；代理可以按自己的 DNS 与路由处理域名。
     return _publicAddresses(uri.host, _lookup);
   }
 
@@ -333,29 +334,53 @@ class MetaversePluginNetwork {
     String host,
     MetaverseAddressLookup lookup,
   ) async {
-    final List<InternetAddress> addresses;
+    List<InternetAddress> addresses = const [];
+    String? directError;
     try {
       addresses = await lookup(host);
     } catch (_) {
-      throw MetaversePluginCallException('无法解析 $host');
+      directError = '无法解析 $host';
     }
-    if (addresses.isEmpty) throw MetaversePluginCallException('无法解析 $host');
+    if (addresses.isEmpty) directError = '无法解析 $host';
     final pins = <InternetAddress>[];
     var resolvedV4 = 0;
     var filteredV4 = 0;
     for (final address in addresses.toSet()) {
       final v4 = address.type == InternetAddressType.IPv4;
       if (v4) resolvedV4++;
-      if (isPrivateAddress(address)) {
+      final fakeIp = isFakeIpAddress(address);
+      if (isPrivateAddress(address) && !fakeIp) {
         if (v4) filteredV4++;
-      } else if (pins.length < 16) {
+      } else {
         pins.add(address);
       }
     }
-    if (pins.isNotEmpty) {
-      return (pins: pins, resolvedV4: resolvedV4, filteredV4: filteredV4);
+    final candidates = interleaveMetaverseAddresses(pins).take(16).toList();
+    return (
+      pins: candidates,
+      resolvedV4: resolvedV4,
+      filteredV4: filteredV4,
+      fakeIpCount: candidates.where(isFakeIpAddress).length,
+      directError: pins.isEmpty ? directError ?? '$host 只解析到内网或保留地址' : null,
+    );
+  }
+
+  /// 常用 Fake-IP 地址池，仅作为已授权域名的 DNS 传输地址。
+  /// URL 中的 IP 字面量仍由域名校验拒绝，TLS 使用原始域名。
+  static bool isFakeIpAddress(InternetAddress address) {
+    final b = address.rawAddress;
+    if (b.length == 4) return b[0] == 198 && (b[1] == 18 || b[1] == 19);
+    if (b.sublist(0, 10).every((byte) => byte == 0) &&
+        b[10] == 0xff &&
+        b[11] == 0xff) {
+      return b[12] == 198 && (b[13] == 18 || b[13] == 19);
     }
-    throw MetaversePluginCallException('$host 只解析到内网或保留地址');
+    return b[0] == 0x20 &&
+        b[1] == 1 &&
+        b[2] == 0 &&
+        b[3] == 2 &&
+        b[4] == 0 &&
+        b[5] == 0;
   }
 
   /// 是否为本机、内网或其它不应由第三方代码访问的地址。
@@ -372,7 +397,8 @@ class MetaversePluginNetwork {
       return _isPrivateV4(bytes.sublist(12));
     }
     // 只接收全球单播；排除过渡隧道和文档网段。
-    return (bytes[0] & 0xe0) != 0x20 ||
+    return isFakeIpAddress(address) ||
+        (bytes[0] & 0xe0) != 0x20 ||
         (bytes[0] == 0x20 && bytes[1] == 0x02) ||
         (bytes[0] == 0x20 &&
             bytes[1] == 0x01 &&
@@ -403,74 +429,88 @@ class MetaversePluginNetwork {
     required int maxBytes,
   }) async {
     final pins = target.pins;
-    final cancel = CancelToken();
-    final Response<ResponseBody> response;
     final core = useNetworkCore?.call() == true;
-    final route = diagnosticNetwork?.call();
+    if (!core && target.directError != null) {
+      throw MetaversePluginCallException(target.directError!);
+    }
+    final client = core ? _coreDio! : _dio ?? _createDio(pins);
+    final ownsClient = !core && _dio == null;
+    if (ownsClient) _directClients.add(client);
     try {
-      response = await (core ? _coreDio! : _dio).requestUri<ResponseBody>(
-        uri,
-        data: body,
-        cancelToken: cancel,
-        options: Options(
-          method: method,
-          extra: core
-              ? {'pinnedAddresses': pins.map((a) => a.address).toList()}
-              : null,
-          headers: headers,
-          responseType: ResponseType.stream,
-        ),
-      );
-    } on DioException catch (error) {
-      if (route != null) {
-        final v4 = pins.where((a) => a.type == InternetAddressType.IPv4).length;
-        final destinations =
-            core && error.type == DioExceptionType.connectionTimeout
-            ? ' resolvedV4=${target.resolvedV4} filteredV4=${target.filteredV4} candidates=${pins.map((a) => a.address).join(',')} ${await androidRouteSnapshot(pins)}'
-                  .trimRight()
-            : '';
-        NetworkLogger.log(
-          '[插件网络] ${uri.host} ${error.type.name} $route '
-          'transport=${core ? 'core' : 'io'} IPv4=$v4 IPv6=${pins.length - v4}$destinations',
-          level: 'warning',
+      final cancel = CancelToken();
+      final Response<ResponseBody> response;
+      final route = diagnosticNetwork?.call();
+      try {
+        response = await client.requestUri<ResponseBody>(
+          uri,
+          data: body,
+          cancelToken: cancel,
+          options: Options(
+            method: method,
+            extra: {'pinnedAddresses': pins.map((a) => a.address).toList()},
+            headers: headers,
+            responseType: ResponseType.stream,
+          ),
         );
-      }
-      if (error.error case final MetaversePluginCallException denied) {
-        throw denied;
-      }
-      if (method == 'GET' &&
-          body == null &&
-          headers.isEmpty &&
-          error.type == DioExceptionType.connectionTimeout &&
-          pins.every((a) => a.type == InternetAddressType.IPv6)) {
-        throw MetaverseIpv6ReadTimeout(uri.host);
-      }
-      throw MetaversePluginCallException('网络请求失败: ${error.type.name}');
-    }
-
-    final builder = BytesBuilder(copy: false);
-    try {
-      await for (final chunk in response.data!.stream) {
-        builder.add(chunk);
-        if (builder.length > maxBytes) {
-          cancel.cancel();
-          throw const MetaversePluginCallException('响应过大');
+      } on DioException catch (error) {
+        if (route != null) {
+          final v4 = pins
+              .where((a) => a.type == InternetAddressType.IPv4)
+              .length;
+          final destinations =
+              core && error.type == DioExceptionType.connectionTimeout
+              ? ' resolvedV4=${target.resolvedV4} filteredV4=${target.filteredV4} candidates=${pins.map((a) => a.address).join(',')} ${await androidRouteSnapshot(pins)}'
+                    .trimRight()
+              : '';
+          NetworkLogger.log(
+            '[插件网络] ${uri.host} ${error.type.name} $route '
+            'transport=${core ? 'core' : 'io'} IPv4=$v4 IPv6=${pins.length - v4} fakeIp=${target.fakeIpCount}$destinations',
+            level: 'warning',
+          );
         }
+        if (error.error case final MetaversePluginCallException denied) {
+          throw denied;
+        }
+        if (method == 'GET' &&
+            body == null &&
+            headers.isEmpty &&
+            error.type == DioExceptionType.connectionTimeout &&
+            pins.isNotEmpty &&
+            pins.every((a) => a.type == InternetAddressType.IPv6)) {
+          throw MetaverseIpv6ReadTimeout(uri.host);
+        }
+        throw MetaversePluginCallException('网络请求失败: ${error.type.name}');
       }
-    } on MetaversePluginCallException {
-      rethrow;
-    } catch (_) {
-      throw const MetaversePluginCallException('读取响应失败');
+
+      final builder = BytesBuilder(copy: false);
+      try {
+        await for (final chunk in response.data!.stream) {
+          builder.add(chunk);
+          if (builder.length > maxBytes) {
+            cancel.cancel();
+            throw const MetaversePluginCallException('响应过大');
+          }
+        }
+      } on MetaversePluginCallException {
+        rethrow;
+      } catch (_) {
+        throw const MetaversePluginCallException('读取响应失败');
+      }
+      return (
+        status: response.statusCode ?? 0,
+        headers: {
+          for (final entry in response.headers.map.entries)
+            // 不把 Set-Cookie 交给脚本：宿主不替插件维护 Cookie 会话。
+            if (entry.key.toLowerCase() != 'set-cookie')
+              entry.key.toLowerCase(): entry.value.join(', '),
+        },
+        bytes: builder.takeBytes(),
+      );
+    } finally {
+      if (ownsClient) {
+        _directClients.remove(client);
+        client.close(force: true);
+      }
     }
-    return (
-      status: response.statusCode ?? 0,
-      headers: {
-        for (final entry in response.headers.map.entries)
-          // 不把 Set-Cookie 交给脚本：宿主不替插件维护 Cookie 会话。
-          if (entry.key.toLowerCase() != 'set-cookie')
-            entry.key.toLowerCase(): entry.value.join(', '),
-      },
-      bytes: builder.takeBytes(),
-    );
   }
 }

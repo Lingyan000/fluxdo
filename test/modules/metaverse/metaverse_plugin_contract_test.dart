@@ -633,26 +633,25 @@ void main() {
       expect(adapter.requests, isEmpty);
     });
 
-    test('实际建连与预检使用同一解析器，不连接重新解析出的保留地址', () async {
+    test('请求只解析一次，传输收到同一份筛选结果', () async {
       var lookups = 0;
       final client = MetaversePluginNetwork(
+        dio: Dio()..httpClientAdapter = adapter,
         lookup: (host) async {
           expect(host, 'api.example.com');
           return ++lookups == 1
-              ? [InternetAddress('198.18.0.2'), InternetAddress('8.8.8.8')]
-              : [InternetAddress('198.18.0.2')];
+              ? [InternetAddress('10.0.0.2'), InternetAddress('8.8.8.8')]
+              : [InternetAddress('127.0.0.1')];
         },
       );
       addTearDown(client.dispose);
-      await expectLater(
-        client.fetch(
-          manifest,
-          request: {'url': 'https://api.example.com/'},
-          authToken: null,
-        ),
-        throwsA(isA<MetaversePluginCallException>()),
+      await client.fetch(
+        manifest,
+        request: {'url': 'https://api.example.com/'},
+        authToken: null,
       );
-      expect(lookups, 2);
+      expect(lookups, 1);
+      expect(adapter.requests.single.extra['pinnedAddresses'], ['8.8.8.8']);
     });
 
     test('脚本不能自己设置 Cookie 等保留请求头', () async {

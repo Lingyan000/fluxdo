@@ -58,7 +58,7 @@ MetaversePluginNetwork _createPluginNetwork(Ref ref, {required bool localDoh}) {
             : 'system'}',
     useNetworkCore: () =>
         NetworkSettingsService.instance.coreService.isRunning &&
-        NetCoreBindings.instance.supportsPinnedRequests,
+        NetCoreBindings.instance.supportsPluginRequests,
     lookup: (host) async {
       final settings = NetworkSettingsService.instance;
       if (localDoh) {

@@ -115,6 +115,7 @@ impl HandshakeFailure {
 /// 出站连接器：所有出站共用一份，持有 DNS 解析器与代理配置。
 pub struct EgressConnector {
     pinned: Option<Vec<IpAddr>>,
+    proxy_resolves_host: bool,
     dns: Option<Arc<DnsResolver>>,
     /// 应用内代理设置（用户在设置页配置的）
     upstream_proxy: Option<UpstreamProxyConfig>,
@@ -144,6 +145,7 @@ impl EgressConnector {
             });
         Self {
             pinned: None,
+            proxy_resolves_host: false,
             dns,
             upstream_proxy: upstream_proxy.filter(UpstreamProxyConfig::is_valid),
             system_proxy: system_proxy.filter(UpstreamProxyConfig::is_valid),
@@ -159,6 +161,12 @@ impl EgressConnector {
 
     pub fn with_pins(mut self, ips: Vec<IpAddr>) -> Self {
         self.pinned = Some(ips);
+        self
+    }
+
+    /// 宿主显式选择由用户配置的代理解析域名，直连仍限于 pins。
+    pub fn with_proxy_resolution(mut self, enabled: bool) -> Self {
+        self.proxy_resolves_host = enabled;
         self
     }
 
@@ -530,6 +538,16 @@ impl EgressConnector {
                     },
                 )
                 .map(Arc::new);
+            if self.proxy_resolves_host
+                && let Some(proxy) = &proxy
+            {
+                return Ok(vec![EgressTarget::Proxy(proxy.clone())]);
+            }
+            if ips.is_empty() {
+                return Err(NetError::Dns(format!(
+                    "No approved direct address for {host}"
+                )));
+            }
             let ordered =
                 interleave_families(ips.clone(), ips.first().is_some_and(IpAddr::is_ipv6));
             return Ok(ordered
@@ -1203,6 +1221,79 @@ mod tests {
             })
             .collect();
         assert_eq!(actual, ips);
+    }
+
+    #[tokio::test]
+    async fn plugin_proxy_receives_original_hostname_even_without_local_addresses() {
+        for use_system_proxy in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let proxy = UpstreamProxyConfig {
+                protocol: "http".into(),
+                host: "127.0.0.1".into(),
+                port: listener.local_addr().unwrap().port(),
+                username: None,
+                password: None,
+                cipher: None,
+            };
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(stream.read_u8().await.unwrap());
+                }
+                assert!(header.starts_with(b"CONNECT service.example:443 HTTP/1.1\r\n"));
+                stream
+                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    .await
+                    .unwrap();
+            });
+            let connector = EgressConnector::new(
+                None,
+                (!use_system_proxy).then(|| proxy.clone()),
+                use_system_proxy.then_some(proxy),
+                None,
+                TCP_TIMEOUT,
+            )
+            .with_pins(Vec::new())
+            .with_proxy_resolution(true);
+            let targets = connector
+                .egress_targets("service.example", 443)
+                .await
+                .unwrap();
+            assert_eq!(targets.len(), 1);
+            assert!(matches!(targets[0], EgressTarget::Proxy(_)));
+            open_target(&targets[0], "service.example", 443, TCP_TIMEOUT)
+                .await
+                .unwrap();
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn plugin_direct_keeps_fake_ip_candidates_and_rejects_empty_addresses() {
+        let addresses: Vec<IpAddr> = ["2001:2::6", "198.18.0.6", "2606:4700::1111"]
+            .map(|s| s.parse().unwrap())
+            .into();
+        let connector = EgressConnector::new(None, None, None, None, TCP_TIMEOUT)
+            .with_pins(addresses.clone())
+            .with_proxy_resolution(true);
+        let targets = connector
+            .egress_targets("service.example", 443)
+            .await
+            .unwrap();
+        let actual: Vec<_> = targets
+            .into_iter()
+            .map(|target| match target {
+                EgressTarget::Addr { addr, .. } => addr.ip(),
+                _ => panic!("直连候选必须保留宿主传入的地址"),
+            })
+            .collect();
+        assert_eq!(actual, addresses);
+        let connector = connector.with_pins(Vec::new());
+        assert!(matches!(
+            connector.egress_targets("service.example", 443).await,
+            Err(NetError::Dns(_))
+        ));
     }
 
     #[tokio::test]

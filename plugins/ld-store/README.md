@@ -59,15 +59,23 @@ dart run tool/pack_metaverse_plugin.dart plugins/ld-store build/plugins/ld-store
 [Core/client] Connect api2.ldspro.qzz.io:443 failed after 5001ms: Connection timeout
 ```
 
-当前代码的调用链为 `main.js → fluxdo.fetch → MetaversePluginHost → MetaversePluginNetwork → NetCoreHttpAdapter(pinnedOnly) → fluxdo_net_pinned_request_start → Core.pinned_client → EgressConnector`。相关入口如下。
+交接提交 `e9942d3` 的调用链为 `main.js → fluxdo.fetch → MetaversePluginHost → MetaversePluginNetwork → NetCoreHttpAdapter(pinnedOnly) → fluxdo_net_pinned_request_start → Core.pinned_client → EgressConnector`。该提交的相关入口如下。
 
 - `lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart` 根据网络设置选择系统解析或 DoH。核心已启动且支持固定地址请求时使用核心传输。
-- `lib/modules/metaverse/plugin/metaverse_plugin_network.dart` 校验清单域名与解析地址，筛选公网候选，再把 IP 列表传给核心。日志中的 `IPv4=0` 是筛选后结果。当前检查会排除 `198.18.0.0/15`，采用该地址段的 Fake-IP 配置值得核对。
+- `lib/modules/metaverse/plugin/metaverse_plugin_network.dart` 校验清单域名与解析地址，筛选公网候选，再把 IP 列表传给核心。日志中的 `IPv4=0` 是筛选后结果。该版本的检查会排除 `198.18.0.0/15` 中的 Fake-IP。
 - `core/net_core/src/egress.rs` 使用上述候选连接目标。当前直接 TCP 建连单次超时为 5 秒。应用内代理或系统 HTTP/SOCKS 代理存在时，经相应代理连接候选 IP。
 - `lib/services/network/android_route_snapshot.dart` 与 `android/app/src/main/kotlin/com/github/lingyan000/fluxdo/NetworkRouteChannel.kt` 在超时后读取默认网络和候选地址对应路由，用于补充诊断。
 
-目前仍需真机确认的事项包括 IPv4 是否被 Fake-IP 筛选排除、留下的 IPv6 是否被 VPN 路由覆盖，以及浏览器与核心实际采用的地址族和第一跳是否一致。已有日志不足以确定具体原因。新增的路由诊断字段尚待用户真机采集，当前分支仍保留该问题。
+网络任务后续提供了 Bettbox 的双栈 Fake-IP 输入及 Android 隔离实验。交接版本会把 `198.18.0.6` 与 `2001:2::6` 筛成仅剩 IPv6，阻断 IPv6 后会重现建连超时。原故障手机的具体目标地址仍待采集。
 
 复现时保持手机 VPN 开启，从「元宇宙 → 添加第三方服务 → LD士多」安装并启用，打开物品广场刷新一次。对齐 `[插件网络]` 与 `Egress TCP to … via … failed` 的时间，再按应用及实际目标 IP 检查 VPN 记录。现有手动 DoH 重试入口用于对照观察，其效果仍需同一设备验证。
 
 本地入口 `test/modules/metaverse/ld_store_live_test.dart` 可按上文显式开启公开只读验证。它覆盖分类、商品和详情，本地 HTTP 代理验证与 Android 真机 TUN 路径须分别验收。生产原生登录、下单与支付的接入状态见本文开头。
+
+### Fake-IP 兼容修正
+
+框架现已保留上述两个范围的 DNS 候选，交错地址族后交给核心或 Dart 应急出口。新核心的插件入口支持显式代理按域名解析与选址，直连仍限于本次筛选结果。普通私网、回环、非授权域名及 TLS 校验继续受各自检查约束。代理远端的地址限制由用户配置的代理负责，具体边界见[插件网络协议](../../docs/metaverse-plugin.md)。
+
+`test/modules/metaverse/metaverse_fake_ip_test.dart` 覆盖 IPv4 Fake-IP、双栈 Fake-IP、IPv4 Fake-IP 加真实 IPv6、IPv6 无响应回退、候选截断、取消与证书错误。Rust 出口测试验证代理收到原域名、空直连集合不能自行解析直连，以及原 pinned 契约。
+
+`test/modules/metaverse/metaverse_fake_ip_core_test.dart` 使用本地核心和回环代理核对真实 FFI 发出的 CONNECT 域名，覆盖上述三种地址组合及本地 DNS 失败。设置 `FLUXDO_LIVE=1` 后运行该用例，代理只记录请求并返回错误。真实手机的 VPN 路径仍需安装包含新核心的版本复测。

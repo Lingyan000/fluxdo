@@ -72,6 +72,8 @@ class NetCoreBindings {
   late final int Function(Pointer<Utf8>) _requestStart;
   int Function(Pointer<Utf8>)? _pinnedRequestStart;
   bool get supportsPinnedRequests => isAvailable && _pinnedRequestStart != null;
+  int Function(Pointer<Utf8>)? _pluginRequestStart;
+  bool get supportsPluginRequests => isAvailable && _pluginRequestStart != null;
   late final int Function(int, Pointer<Uint8>, int) _requestWrite;
   late final void Function(int) _requestFinish;
   late final void Function(int) _requestCancel;
@@ -163,6 +165,13 @@ class NetCoreBindings {
               Uint64 Function(Pointer<Utf8>),
               int Function(Pointer<Utf8>)
             >('fluxdo_net_pinned_request_start');
+      }
+      if (lib.providesSymbol('fluxdo_net_plugin_request_start')) {
+        _pluginRequestStart = lib
+            .lookupFunction<
+              Uint64 Function(Pointer<Utf8>),
+              int Function(Pointer<Utf8>)
+            >('fluxdo_net_plugin_request_start');
       }
       _requestWrite = lib
           .lookupFunction<
@@ -289,6 +298,11 @@ class NetCoreBindings {
 
   int pinnedRequestStart(String metaJson) {
     final start = _pinnedRequestStart;
+    return start == null ? 0 : _withUtf8(metaJson, start);
+  }
+
+  int pluginRequestStart(String metaJson) {
+    final start = _pluginRequestStart;
     return start == null ? 0 : _withUtf8(metaJson, start);
   }
 

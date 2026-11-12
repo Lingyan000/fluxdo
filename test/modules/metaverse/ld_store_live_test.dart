@@ -29,7 +29,7 @@ void main() {
     if (core) {
       ProxySettings? upstream;
       if (proxyEnabled) {
-        // 仅转发本次士多 API 的公网 IP:443，不提供通用代理。
+        // 仅允许本次士多 API 的域名及候选 IP，代理接收域名后自行选址。
         final ips =
             (await (resolver?.resolveAll('api2.ldspro.qzz.io') ??
                     InternetAddress.lookup('api2.ldspro.qzz.io')))
@@ -65,13 +65,15 @@ void main() {
                 ? Uri.tryParse('https://${line[1]}')
                 : null;
             final ip = uri == null ? null : InternetAddress.tryParse(uri.host);
-            if (ip == null || uri!.port != 443 || !ips.contains(ip)) {
+            if (uri == null ||
+                uri.port != 443 ||
+                (uri.host != 'api2.ldspro.qzz.io' && !ips.contains(ip))) {
               client.destroy();
               return;
             }
             try {
               final remote = await Socket.connect(
-                ip,
+                uri.host,
                 443,
                 timeout: const Duration(seconds: 4),
               );
@@ -106,7 +108,7 @@ void main() {
         isTrue,
       );
       addTearDown(NetCoreService.instance.stop);
-      expect(NetCoreBindings.instance.supportsPinnedRequests, isTrue);
+      expect(NetCoreBindings.instance.supportsPluginRequests, isTrue);
     }
     final client = MetaversePluginNetwork(
       lookup: lookup,
