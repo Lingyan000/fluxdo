@@ -272,6 +272,8 @@ void main() {
     Size size = const Size(390, 844),
     double scale = 1,
     LdcBiometricPayment? biometrics,
+    Brightness brightness = Brightness.light,
+    ValueChanged<Map<String, Object?>?>? onResult,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -282,20 +284,24 @@ void main() {
         Builder(
           builder: (context) => Center(
             child: FilledButton(
-              onPressed: () => showLdcPaymentSheet(
-                context,
-                payment: payment,
-                orderNo: payment.order.orderNo,
-                username: 'tester',
-                needsPassword: needsPassword,
-                biometrics: biometrics,
-              ),
+              onPressed: () async {
+                final result = await showLdcPaymentSheet(
+                  context,
+                  payment: payment,
+                  orderNo: payment.order.orderNo,
+                  username: 'tester',
+                  needsPassword: needsPassword,
+                  biometrics: biometrics,
+                );
+                onResult?.call(result);
+              },
               child: const Text('支付入口'),
             ),
           ),
         ),
         reducedMotion: reducedMotion,
         scale: scale,
+        brightness: brightness,
       ),
     );
     await tester.tap(find.text('支付入口'));
@@ -305,8 +311,6 @@ void main() {
   testWidgets('首次设置密码须二次输入，保存后回到付款确认且不自动扣款', (tester) async {
     final payment = _Payment();
     await openPayment(tester, payment, needsPassword: true);
-    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-    addTearDown(tester.view.resetViewInsets);
     await tester.enterText(find.byType(TextField).first, '123456');
     await tester.enterText(find.byType(TextField).last, '123456');
     await tester.pumpAndSettle();
@@ -344,7 +348,9 @@ void main() {
     expect(find.byType(PinInput), findsOneWidget);
     await snapshot(tester, 'payment');
     await tester.tap(
-      find.text(tester.element(find.byType(Scaffold).first).l10n.common_cancel),
+      find.byTooltip(
+        tester.element(find.byType(Scaffold).first).l10n.common_cancel,
+      ),
     );
     await tester.pumpAndSettle();
     expect(payment.payments, 0);
@@ -471,6 +477,75 @@ void main() {
     expect(find.text(l.metaverse_nativePayPending), findsNothing);
     expect(payment.payments, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('内置支付键盘输入与删除，六位输入完成不自动付款 $brightness', (tester) async {
+      final payment = _Payment();
+      await openPayment(tester, payment, brightness: brightness);
+      for (final digit in '1234567'.split('')) {
+        await tester.tap(find.byKey(ValueKey('ldc-key-$digit')));
+        await tester.pump();
+      }
+      final input = tester.widget<TextField>(find.byType(TextField));
+      expect(input.controller!.text, '123456');
+      expect(input.keyboardType, TextInputType.none);
+      expect(
+        tester.testTextInput.setClientArgs?['inputType'],
+        TextInputType.none.toJson(),
+      );
+      expect(payment.payments, 0);
+      await tester.tap(find.byKey(const ValueKey('ldc-key-delete')));
+      await tester.pump();
+      expect(input.controller!.text, '12345');
+      await snapshot(tester, 'payment-keypad-${brightness.name}');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('内置键盘设置密码可切换两次输入，保存后等待明确付款', (tester) async {
+    final payment = _Payment();
+    await openPayment(tester, payment, needsPassword: true);
+    for (final digit in '123456123456'.split('')) {
+      await tester.tap(find.byKey(ValueKey('ldc-key-$digit')));
+      await tester.pump();
+    }
+    expect(
+      tester.testTextInput.setClientArgs?['inputType'],
+      TextInputType.none.toJson(),
+    );
+    expect(payment.payments, 0);
+    for (final input in tester.widgetList<TextField>(find.byType(TextField))) {
+      expect(input.controller!.text, '123456');
+    }
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.tap(find.text(l.metaverse_nativePasswordSave));
+    await tester.pumpAndSettle();
+    expect(payment.passwords, 1);
+    expect(payment.payments, 0);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('支付结果待确认时系统返回也向订单页传递状态', (tester) async {
+    final payment = _Payment()
+      ..timeout = true
+      ..status = 'pending';
+    Map<String, Object?>? result;
+    await openPayment(tester, payment, onResult: (value) => result = value);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    await navigatorKey.currentState!.maybePop();
+    await tester.pumpAndSettle();
+    expect(result, {'state': 'pending'});
+    expect(payment.payments, 1);
+    expect(payment.refreshes, 1);
   });
 
   testWidgets('密码输入仅保留六位数字，删除与清空同步格子，读屏隐藏原文', (tester) async {
@@ -1065,7 +1140,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     expect(find.byType(M3eSuccessIndicator), findsOneWidget);
   });
 
-  testWidgets('窄屏大字体与键盘下可滚动到付款和取消入口', (tester) async {
+  testWidgets('窄屏大字体下内置键盘、付款和关闭入口可见', (tester) async {
     await preferences.clear();
     final payment = _Payment();
     final biometric = LdcBiometricPayment(
@@ -1083,8 +1158,6 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       size: const Size(320, 640),
       scale: 1.6,
     );
-    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
-    addTearDown(tester.view.resetViewInsets);
     await tester.enterText(find.byType(TextField), '123456');
     await tester.pumpAndSettle();
     final l = tester.element(find.byType(Scaffold).first).l10n;
@@ -1092,10 +1165,19 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     await tester.ensureVisible(pay);
     await tester.pumpAndSettle();
     expect(pay.hitTestable(), findsOneWidget);
-    final cancel = find.text(l.common_cancel);
+    final cancel = find.byTooltip(l.common_cancel);
     await tester.ensureVisible(cancel);
     await tester.pumpAndSettle();
     expect(cancel.hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ldc-key-0')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(
+      tester.testTextInput.setClientArgs?['inputType'],
+      TextInputType.none.toJson(),
+    );
+    await snapshot(tester, 'payment-large-text');
     expect(tester.takeException(), isNull);
     await tester.tap(cancel);
     await tester.pumpAndSettle();
