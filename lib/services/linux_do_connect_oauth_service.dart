@@ -102,8 +102,11 @@ abstract class LinuxDoConnectOAuthService {
         title: confirmTitle(dialogContext),
         message: confirmMessage(dialogContext),
         onApprove: () async {
-          final result = await LinuxDoConnectNavigator(_dio)
-              .authorize(Uri.parse(authUrl), active: () => context.mounted);
+          final result = await LinuxDoConnectNavigator(_dio).authorize(
+            Uri.parse(authUrl),
+            active: () => context.mounted,
+            callbackOrigin: Uri.parse(_baseUrl),
+          );
           final code = result.queryParameters['code'];
           final state = result.queryParameters['state'];
           if (code == null || state == null) {

@@ -18,13 +18,15 @@ class LinuxDoConnectNavigator {
   Future<Uri> authorize(
     Uri authorization, {
     required bool Function() active,
+    Uri? callbackOrigin,
   }) async {
     if (!isConnect(authorization)) {
       throw const FormatException('oauth_invalid_init');
     }
-    final callback = Uri.tryParse(
-      authorization.queryParameters['redirect_uri'] ?? '',
-    );
+    final declaredCallback = authorization.queryParameters['redirect_uri'];
+    final callback = declaredCallback == null
+        ? callbackOrigin
+        : Uri.tryParse(declaredCallback);
     if (callback == null ||
         callback.scheme != 'https' ||
         callback.host.isEmpty ||
@@ -35,7 +37,8 @@ class LinuxDoConnectNavigator {
     var approved = false;
     for (var hop = 0; hop < 8; hop++) {
       if (!active()) throw const FormatException('oauth_cancelled');
-      if (uri.origin == callback.origin && uri.path == callback.path) {
+      if (uri.origin == callback.origin &&
+          (declaredCallback == null || uri.path == callback.path)) {
         return uri;
       }
       if (!isConnect(uri) &&
