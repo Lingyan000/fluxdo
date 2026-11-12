@@ -1,6 +1,7 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../../l10n/s.dart';
 import '../../../../services/toast_service.dart';
@@ -10,7 +11,7 @@ import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
 import '../metaverse_checkout_types.dart';
 import '../metaverse_plugin_installer.dart';
-import 'metaverse_plugin_surface_view.dart';
+import 'metaverse_widget_library.dart';
 
 /// 输入清单地址。
 typedef PluginInstallChoice = ({String? url, MetaversePluginPackage? bundled});
@@ -114,203 +115,229 @@ Future<bool> showMetaversePluginInstallSheet(
   MetaversePluginManifest manifest, {
   required bool isUpdate,
 }) async {
-  final confirmed = await AppBottomSheet.show<bool>(
+  final confirmed = await AppBottomSheet.showDraggable<bool>(
     context: context,
-    title: isUpdate
-        ? context.l10n.metaverse_pluginUpdate
-        : context.l10n.metaverse_pluginInstall,
-    builder: (ctx) => _InstallReview(manifest: manifest),
+    title: manifest.name,
+    showCloseButton: true,
+    initialSize: .82,
+    minSize: .45,
+    maxSize: .95,
+    footer: Builder(
+      builder: (ctx) => PageBackdrop(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(ctx.l10n.common_cancel),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  icon: Icon(
+                    isUpdate
+                        ? Symbols.update_rounded
+                        : Symbols.download_rounded,
+                  ),
+                  label: Text(
+                    isUpdate
+                        ? ctx.l10n.metaverse_pluginUpdate
+                        : ctx.l10n.metaverse_pluginInstall,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+    bodyBuilder: (ctx, controller) =>
+        _InstallReview(manifest: manifest, controller: controller),
   );
   return confirmed ?? false;
 }
 
 class _InstallReview extends StatelessWidget {
-  const _InstallReview({required this.manifest});
+  const _InstallReview({required this.manifest, required this.controller});
 
   final MetaversePluginManifest manifest;
+  final ScrollController controller;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final linkHosts = manifest.linkHosts;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final l = context.l10n;
+    return ListView(
+      controller: controller,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Icon(
+              metaversePluginIcon(manifest.icon),
+              size: 32,
+              color: context.emphasis.accent,
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                manifest.description.isEmpty
-                    ? manifest.name
-                    : manifest.description,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                l.metaverse_pluginAuthor(manifest.author, manifest.version),
+                style: theme.textTheme.bodySmall,
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _Section(
-          icon: Symbols.public_rounded,
-          title: context.l10n.metaverse_pluginPermissions,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (manifest.networkHosts.isEmpty)
-                _Bullet(context.l10n.metaverse_pluginPermNetworkNone)
-              else ...[
-                _Bullet(context.l10n.metaverse_pluginPermNetwork),
-                const SizedBox(height: 6),
-                MetaverseHostList(hosts: manifest.networkHosts),
-              ],
-              if (manifest.publicImages)
-                _Bullet(context.l10n.metaverse_pluginPublicImages),
-              if (manifest.webLogin case final Uri login) ...[
-                _Bullet(context.l10n.metaverse_pluginWebSession),
-                MetaverseHostList(hosts: [login.host]),
-              ],
-              if (linkHosts.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _Bullet(context.l10n.metaverse_pluginPermLinks),
-                const SizedBox(height: 6),
-                MetaverseHostList(hosts: linkHosts),
-              ],
-              if (manifest.identity) ...[
-                const SizedBox(height: 10),
-                _Bullet(context.l10n.metaverse_pluginPermIdentity),
-              ],
-              if (manifest.auth.canAttachCredential) ...[
-                const SizedBox(height: 10),
-                _Bullet(
-                  manifest.auth.required
-                      ? context.l10n.metaverse_pluginPermToken
-                      : context.l10n.metaverse_pluginPermReadSession,
-                ),
-                const SizedBox(height: 6),
-                MetaverseHostList(hosts: manifest.auth.hosts),
-                if (manifest.auth.connect != null ||
-                    manifest.auth.payment != null)
-                  _Bullet(context.l10n.metaverse_nativeLoginAccess),
-                if (manifest.auth.queries.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  _Bullet(context.l10n.metaverse_pluginPermQueries),
-                  for (final url in manifest.auth.queries.values) Text(url),
-                ],
-                if (manifest.auth.checkout case final endpoints?) ...[
-                  _Bullet(context.l10n.metaverse_checkoutPermission),
-                  Text(endpoints.create),
-                  Text(endpoints.lookup),
-                ],
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          context.l10n.metaverse_pluginWarning,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.outline,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Text(
-              context.l10n.metaverse_pluginAuthor(
-                manifest.author,
-                manifest.version,
-              ),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const Spacer(),
             if (manifest.homepage case final String homepage)
-              TextButton.icon(
+              IconButton(
+                tooltip: l.metaverse_pluginSource,
                 onPressed: () => launchExternalLink(context, homepage),
-                icon: const Icon(Symbols.open_in_new_rounded, size: 16),
-                label: Text(context.l10n.metaverse_pluginSource),
+                icon: const Icon(Symbols.open_in_new_rounded),
               ),
           ],
         ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+        if (manifest.description.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(manifest.description, style: theme.textTheme.bodyMedium),
+        ],
+        const SizedBox(height: 24),
+        Text(l.metaverse_pluginPermissions, style: theme.textTheme.titleSmall),
+        const SizedBox(height: 12),
+        SegmentedCardGroup(
           children: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(context.l10n.common_cancel),
+            _PermissionRow(
+              icon: Symbols.public_rounded,
+              title: l.metaverse_permissionNetwork,
+              description: manifest.networkHosts.isEmpty
+                  ? l.metaverse_pluginPermNetworkNone
+                  : manifest.networkHosts.join(' · '),
             ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(context.l10n.metaverse_pluginInstall),
-            ),
+            if (manifest.publicImages)
+              _PermissionRow(
+                icon: Symbols.image_rounded,
+                title: l.metaverse_permissionImages,
+                description: l.metaverse_pluginPublicImages,
+              ),
+            if (manifest.auth.canAttachCredential)
+              _PermissionRow(
+                icon: Symbols.account_circle_rounded,
+                title: l.metaverse_permissionAccount,
+                description: manifest.auth.connect != null
+                    ? l.metaverse_permissionNativeLogin
+                    : manifest.auth.required
+                    ? l.metaverse_pluginPermToken
+                    : l.metaverse_pluginPermReadSession,
+                details: [
+                  ...manifest.auth.hosts,
+                  if (manifest.auth.connect != null)
+                    ...manifest.auth.connect!.values,
+                ],
+              ),
+            if (manifest.auth.queries.isNotEmpty)
+              _PermissionRow(
+                icon: Symbols.manage_search_rounded,
+                title: l.metaverse_permissionQueries,
+                description: l.metaverse_permissionQueriesNote,
+                details: manifest.auth.queries.values.toList(),
+              ),
+            if (manifest.auth.checkout case final endpoints?)
+              _PermissionRow(
+                icon: Symbols.shopping_bag_rounded,
+                title: l.metaverse_permissionOrders,
+                description: l.metaverse_permissionOrdersNote,
+                details: [endpoints.create, endpoints.lookup],
+              ),
+            if (manifest.auth.payment != null)
+              _PermissionRow(
+                icon: Symbols.payments_rounded,
+                title: l.metaverse_nativePayTitle,
+                description: l.metaverse_permissionPaymentNote,
+              ),
+            if (manifest.webLogin case final Uri login)
+              _PermissionRow(
+                icon: Symbols.language_rounded,
+                title: l.metaverse_permissionWebSession,
+                description: l.metaverse_pluginWebSession,
+                details: [login.host],
+              ),
+            if (manifest.linkHosts.isNotEmpty)
+              _PermissionRow(
+                icon: Symbols.link_rounded,
+                title: l.metaverse_permissionLinks,
+                description: l.metaverse_pluginPermLinks,
+                details: manifest.linkHosts,
+              ),
+            if (manifest.identity)
+              _PermissionRow(
+                icon: Symbols.person_rounded,
+                title: l.metaverse_pluginPermIdentity,
+              ),
           ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          l.metaverse_pluginWarning,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({
+class _PermissionRow extends StatelessWidget {
+  const _PermissionRow({
     required this.icon,
     required this.title,
-    required this.child,
+    this.description,
+    this.details = const [],
   });
-
   final IconData icon;
   final String title;
-  final Widget child;
+  final String? description;
+  final List<String> details;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: ShapeDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(16),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+    final leading = Icon(icon, size: 22, color: context.emphasis.accent);
+    final subtitle = description == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              description!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            const SizedBox(height: 10),
-            child,
-          ],
-        ),
-      ),
+          );
+    if (details.isEmpty) {
+      return ListTile(
+        leading: leading,
+        title: Text(title),
+        subtitle: subtitle,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      );
+    }
+    return ExpansionTile(
+      leading: leading,
+      title: Text(title),
+      subtitle: subtitle,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final detail in details)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: SelectableText(detail, style: theme.textTheme.bodySmall),
+          ),
+      ],
     );
   }
-}
-
-class _Bullet extends StatelessWidget {
-  const _Bullet(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(text, style: Theme.of(context).textTheme.bodyMedium);
 }
 
 /// 索取凭证。凭证由宿主保存，脚本只能通过白名单请求间接使用。

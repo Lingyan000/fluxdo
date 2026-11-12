@@ -13,11 +13,7 @@ widget Market = PageLayout(
   loading: data.loading,
   onRefresh: event "refresh" {},
   children: [
-    Row(children: [
-      Expanded(child: TextInput(label: "搜索商品", onChanged: event "input" {field: "search"}, onSubmitted: event "apply" {})),
-      Gap(size: 8),
-      IconButton(icon: "search", tooltip: "搜索商品", onPressed: event "apply" {}),
-    ]),
+    SearchInput(hint: "搜索商品", onChanged: event "input" {field: "search"}, onSubmitted: event "apply" {}),
     Gap(size: 12),
     Row(children: [
       Button(label: data.filterLabel, icon: "settings", variant: "tonal", onPressed: event "filters" {}),

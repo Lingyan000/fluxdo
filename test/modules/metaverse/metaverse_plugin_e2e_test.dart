@@ -1189,7 +1189,18 @@ Future<void> main() async {
         await settle(tester, () => find.text('测试说明').evaluate().isNotEmpty);
         expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
         expect(find.text('立即兑换'), findsOneWidget);
-        await tester.tap(find.byType(CloseButton));
+        final shell = find.byType(AppSheetScaffold);
+        expect(tester.widget<AppSheetScaffold>(shell).showDragHandle, width < 600);
+        if (width < 600) {
+          await tester.dragFrom(
+            tester.getTopLeft(shell) + Offset(width / 2, 12),
+            const Offset(0, 700),
+          );
+        } else {
+          await tester.tap(find.byTooltip(
+            MaterialLocalizations.of(tester.element(shell)).modalBarrierDismissLabel,
+          ));
+        }
         await tester.pumpAndSettle();
         expect(find.text('帖子链接'), findsOneWidget);
         expect(find.text('测试说明'), findsNothing);

@@ -8,6 +8,8 @@ import 'package:m3e_ui/m3e_ui.dart';
 // rfw 的 Switch 是界面描述里的分支节点，与 Material 的开关组件重名。
 import 'package:rfw/rfw.dart' hide Switch;
 
+import '../../../../l10n/s.dart';
+
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
 
@@ -409,6 +411,24 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   ),
 
   // 输入框：onChanged / onSubmitted 事件带 { value: String }。
+  'SearchInput': (context, source) => _PluginTextInput(
+    search: true,
+    value: source.v<String>(['value']) ?? '',
+    label: null,
+    hint: source.v<String>(['hint']),
+    obscure: false,
+    maxLines: 1,
+    onChanged: source.handler(
+      ['onChanged'],
+      (HandlerTrigger trigger) =>
+          (String value) => trigger({'value': value}),
+    ),
+    onSubmitted: source.handler(
+      ['onSubmitted'],
+      (HandlerTrigger trigger) =>
+          (String value) => trigger({'value': value}),
+    ),
+  ),
   'TextInput': (context, source) => _PluginTextInput(
     value: source.v<String>(['value']) ?? '',
     label: source.v<String>(['label']),
@@ -483,6 +503,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
       }
       Widget scroll = SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: content,
       );
       if (widget.onRefresh != null) {
@@ -588,6 +609,7 @@ class _PluginImageState extends State<_PluginImage> {
 
 class _PluginTextInput extends StatefulWidget {
   const _PluginTextInput({
+    this.search = false,
     required this.value,
     required this.label,
     required this.hint,
@@ -598,6 +620,7 @@ class _PluginTextInput extends StatefulWidget {
   });
 
   final String value;
+  final bool search;
   final String? label;
   final String? hint;
   final bool obscure;
@@ -629,6 +652,42 @@ class _PluginTextInputState extends State<_PluginTextInput> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.search) {
+      return SearchBar(
+        controller: _controller,
+        hintText: widget.hint,
+        leading: IconButton(
+          icon: const Icon(Symbols.search_rounded),
+          tooltip: widget.hint,
+          onPressed: () => _submitSearch(_controller.text),
+        ),
+        constraints: const BoxConstraints(minHeight: 48),
+        backgroundColor: WidgetStatePropertyAll(
+          PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+        ),
+        elevation: const WidgetStatePropertyAll(0),
+        onChanged: (value) {
+          setState(() {});
+          widget.onChanged?.call(value);
+        },
+        onSubmitted: _submitSearch,
+        trailing: [
+          if (_controller.text.isNotEmpty)
+            IconButton(
+              tooltip: context.l10n.common_clear,
+              icon: const Icon(Symbols.close_rounded),
+              onPressed: () {
+                setState(_controller.clear);
+                widget.onChanged?.call('');
+                _submitSearch('');
+              },
+            ),
+        ],
+      );
+    }
     return TextField(
       controller: _controller,
       obscureText: widget.obscure,
@@ -640,5 +699,10 @@ class _PluginTextInputState extends State<_PluginTextInput> {
         hintText: widget.hint,
       ),
     );
+  }
+
+  void _submitSearch(String value) {
+    FocusScope.of(context).unfocus();
+    widget.onSubmitted?.call(value);
   }
 }

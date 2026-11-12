@@ -1,8 +1,8 @@
 {
-  "schema": 6,
+  "schema": 7,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",

@@ -58,9 +58,13 @@ class MetaversePluginPage extends ConsumerWidget {
           useRootNavigator: true,
           useSafeArea: true,
           isScrollControlled: true,
-          clipBehavior: Clip.antiAlias,
-          builder: (_) =>
-              FractionallySizedBox(heightFactor: .88, child: content),
+          backgroundColor: Colors.transparent,
+          builder: (context) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: FractionallySizedBox(heightFactor: .88, child: content),
+          ),
         );
       }
       return;
@@ -127,42 +131,46 @@ class MetaversePluginPage extends ConsumerWidget {
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: modal ? const CloseButton() : null,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              spec?.title ?? plugin?.manifest.name ?? pluginId,
-              style: theme.textTheme.titleMedium,
-            ),
-            if (plugin != null)
-              Text(
-                '${plugin.manifest.name} · ${context.l10n.metaverse_thirdParty}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-          ],
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          spec?.title ?? plugin?.manifest.name ?? pluginId,
+          style: theme.textTheme.titleMedium,
         ),
-        actions: [
-          if (sourceUrl is String)
-            IconButton(
-              tooltip: context.l10n.metaverse_pluginOpen,
-              icon: const Icon(Symbols.open_in_new_rounded),
-              onPressed: () => launchExternalLink(context, sourceUrl),
+        if (plugin != null)
+          Text(
+            '${plugin.manifest.name} · ${context.l10n.metaverse_thirdParty}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-        ],
-      ),
-      body: SafeArea(
-        child: spec?.scroll == false
-            ? body
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: body,
-              ),
-      ),
+          ),
+      ],
+    );
+    final actions = <Widget>[
+      if (sourceUrl is String)
+        IconButton(
+          tooltip: context.l10n.metaverse_pluginOpen,
+          icon: const Icon(Symbols.open_in_new_rounded),
+          onPressed: () => launchExternalLink(context, sourceUrl),
+        ),
+    ];
+    final content = spec?.scroll == false
+        ? body
+        : SingleChildScrollView(padding: const EdgeInsets.all(16), child: body);
+    if (modal) {
+      return AppSheetScaffold(
+        titleWidget: title,
+        actions: actions,
+        showDragHandle: MediaQuery.sizeOf(context).width < 600,
+        expandToFill: true,
+        contentPadding: EdgeInsets.zero,
+        child: content,
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(title: title, actions: actions),
+      body: SafeArea(child: content),
     );
   }
 }

@@ -118,7 +118,7 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 6;
+  static const schemaVersion = 7;
 
   final String id;
   final String name;
