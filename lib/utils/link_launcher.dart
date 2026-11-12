@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/site_customization.dart';
 import '../constants.dart';
+import '../modules/metaverse/metaverse_link_router.dart';
 import '../modules/mini_apps/mini_app_navigation.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/image_viewer_page.dart';
@@ -75,6 +76,7 @@ Future<void> launchExternalLink(
   Future<ExternalLinkOpenChoice?> Function(String url, LinkRiskLevel risk)?
   confirm,
   Future<void> Function(String url)? showBlocked,
+  bool preferSessionBrowser = false,
 }) async {
   if (url.isEmpty) return;
   final uri = Uri.tryParse(url);
@@ -113,10 +115,12 @@ Future<void> launchExternalLink(
   final preferInApp = switch (explicitChoice) {
     ExternalLinkOpenChoice.inAppBrowser => true,
     ExternalLinkOpenChoice.systemBrowser => false,
-    null => ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(preferencesProvider).openExternalLinksInAppBrowser,
+    null =>
+      preferSessionBrowser ||
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(preferencesProvider).openExternalLinksInAppBrowser,
   };
 
   if (preferInApp && (uri.scheme == 'http' || uri.scheme == 'https')) {
@@ -164,6 +168,13 @@ Future<void> launchContentLink(
   }
 
   if (await openMiniAppLink(context, url)) return;
+  if (!context.mounted) return;
+
+  // 已开启的元宇宙服务声明接管的站外链接 → 服务自己的页面。
+  // 站内链接不会走到这里：清单校验禁止声明站点域名。
+  if (!isInternalUrlString(url) && await openMetaverseLink(context, url)) {
+    return;
+  }
   if (!context.mounted) return;
 
   // 1. 识别用户链接 /u/username

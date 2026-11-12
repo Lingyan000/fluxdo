@@ -32,6 +32,7 @@ import '../widgets/common/notification_icon_button.dart';
 import '../widgets/common/flair_badge.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../providers/app_state_refresher.dart';
+import '../modules/metaverse/metaverse_registry.dart';
 import 'metaverse_page.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
@@ -49,8 +50,6 @@ import '../widgets/cdk_balance_card.dart';
 import '../widgets/profile_stats_card.dart';
 import '../widgets/common/spotlight_overlay.dart';
 import 'profile_stats_edit_page.dart';
-import '../services/ldc_oauth_service.dart';
-import '../services/cdk_oauth_service.dart';
 import '../l10n/s.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/toast_service.dart';
@@ -127,8 +126,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       // LDC/CDK provider 现在只 watch currentUser.username，
       // refreshSilently 不会再连带触发它们 rebuild，需要显式刷新
       final prefs = ref.read(sharedPreferencesProvider);
-      final ldcEnabled = prefs.getBool('ldc_enabled') ?? false;
-      final cdkEnabled = prefs.getBool('cdk_enabled') ?? false;
+      final ldcEnabled = prefs.getBool(LdcUserInfoNotifier.enabledKey) ?? false;
+      final cdkEnabled = prefs.getBool(CdkUserInfoNotifier.enabledKey) ?? false;
       await Future.wait([
         ref.read(currentUserProvider.notifier).refreshSilently(force: true),
         ref.read(userSummaryProvider.notifier).refresh(),
@@ -309,43 +308,38 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   Future<void> _reauthorizeLdc() async {
     if (!mounted || _ldcProcessing) return;
-    setState(() => _ldcProcessing = true);
-    try {
-      final service = LdcOAuthService();
-      final result = await service.reauthorize(context);
-      if (result && mounted) {
-        await ref.read(ldcUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.profile_ldcReauthSuccess);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.showError(S.current.metaverse_authFailed(e.toString()));
-      }
-    } finally {
-      if (mounted) setState(() => _ldcProcessing = false);
-    }
+    await _reauthorizeBuiltin('ldc', (value) => _ldcProcessing = value);
   }
 
   Future<void> _reauthorizeCdk() async {
     if (!mounted || _cdkProcessing) return;
-    setState(() => _cdkProcessing = true);
+    await _reauthorizeBuiltin('cdk', (value) => _cdkProcessing = value);
+  }
+
+  /// 重新授权内置服务。
+  ///
+  /// 授权流程、会话刷新与提示文案都由服务自己提供，个人页只管转圈和提示，
+  /// 与元宇宙页共用同一套 [MetaverseService] 实现。
+  Future<void> _reauthorizeBuiltin(
+    String id,
+    void Function(bool value) setProcessing,
+  ) async {
+    final service = builtinMetaverseServices.firstWhere((s) => s.id == id);
+    setState(() => setProcessing(true));
     try {
-      final service = CdkOAuthService();
-      final result = await service.reauthorize(context);
-      if (result && mounted) {
-        await ref.read(cdkUserInfoProvider.notifier).refresh();
-        if (mounted) {
-          ToastService.showSuccess(S.current.profile_cdkReauthSuccess);
-        }
+      final done = await service.reauthorize(
+        context,
+        ProviderScope.containerOf(context, listen: false),
+      );
+      if (done && mounted) {
+        ToastService.showSuccess(service.reauthorizedMessage());
       }
     } catch (e) {
       if (mounted) {
         ToastService.showError(S.current.metaverse_authFailed(e.toString()));
       }
     } finally {
-      if (mounted) setState(() => _cdkProcessing = false);
+      if (mounted) setState(() => setProcessing(false));
     }
   }
 
@@ -655,8 +649,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return Consumer(
       builder: (context, ref, _) {
         final prefs = ref.watch(sharedPreferencesProvider);
-        final ldcEnabled = prefs.getBool('ldc_enabled') ?? false;
-        final cdkEnabled = prefs.getBool('cdk_enabled') ?? false;
+        final ldcEnabled = prefs.getBool(LdcUserInfoNotifier.enabledKey) ?? false;
+        final cdkEnabled = prefs.getBool(CdkUserInfoNotifier.enabledKey) ?? false;
 
         if (!ldcEnabled && !cdkEnabled) return const SizedBox.shrink();
 

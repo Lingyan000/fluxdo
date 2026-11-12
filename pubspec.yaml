@@ -47,6 +47,9 @@ dependencies:
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
   # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
   flutter_js: ^0.8.7
+  # 元宇宙第三方插件的原生界面:插件下发声明式界面描述,由宿主预置的
+  # Flutter 组件渲染(区别于 WebView 小程序);插件逻辑跑在上面的 flutter_js 里
+  rfw: ^2.0.0
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
@@ -235,6 +238,9 @@ flutter:
   shaders:
     - shaders/progressive_top_blur.frag
   assets:
+    - plugins/ld-store/plugin.json
+    - plugins/ld-store/ui.rfwtxt
+    - plugins/ld-store/main.js
     - assets/logo.svg
     - assets/logo_modern.svg
     - assets/logo_modern_light.svg

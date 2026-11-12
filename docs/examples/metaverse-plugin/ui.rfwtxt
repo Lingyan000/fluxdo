@@ -1,0 +1,51 @@
+// 界面描述：只能 import fluxdo（宿主组件库）。
+// data.xxx 读取脚本经 ctx.setData 写入的数据；event "名字" { 参数 } 把事件交给脚本。
+import fluxdo;
+
+widget Card = Column(
+  crossAxisAlignment: "start",
+  children: [
+    Label(text: "当前积分", style: "labelMedium", color: "onSurfaceVariant"),
+    Gap(size: 4),
+    Label(text: data.balance, style: "headlineMedium", bold: true),
+    Gap(size: 12),
+    switch data.error {
+      "": SizedBoxShrink(),
+      default: Label(text: data.error, style: "bodySmall", color: "error"),
+    },
+    Row(
+      children: [
+        Button(
+          label: "刷新",
+          icon: "refresh",
+          variant: "tonal",
+          loading: data.loading,
+          onPressed: event "refresh" { },
+        ),
+      ],
+    ),
+  ],
+);
+
+widget OrderPage = Column(
+  crossAxisAlignment: "stretch",
+  children: [
+    Surface(
+      child: Column(
+        crossAxisAlignment: "start",
+        children: [
+          Label(text: ["订单 #", data.orderId], style: "titleMedium", bold: true),
+          Gap(size: 8),
+          Label(text: data.status, color: "onSurfaceVariant"),
+        ],
+      ),
+    ),
+    Gap(size: 12),
+    ...for item in data.items:
+      ListItem(
+        title: item.name,
+        subtitle: item.price,
+        leading: Symbol(name: "shopping_cart"),
+      ),
+  ],
+);

@@ -17,7 +17,8 @@ final cdkUserInfoProvider =
 
 class CdkUserInfoNotifier extends AsyncNotifier<CdkUserInfo?> {
   static const String _cacheKey = 'cdk_user_info';
-  static const String _cdkEnabledKey = 'cdk_enabled';
+  /// 开关状态的存储键。元宇宙页与卡片都按这个键读写。
+  static const String enabledKey = 'cdk_enabled';
   static const String _cacheUserKey = 'cdk_user_info_username';
 
   // 防止 build() 与 refresh() 在 notifier 首次创建时并发触发同接口，
@@ -46,7 +47,7 @@ class CdkUserInfoNotifier extends AsyncNotifier<CdkUserInfo?> {
       await _clearCache(prefs);
       return null;
     }
-    final enabled = prefs.getBool(_cdkEnabledKey) ?? false;
+    final enabled = prefs.getBool(enabledKey) ?? false;
 
     if (!enabled) return null;
 
@@ -95,7 +96,7 @@ class CdkUserInfoNotifier extends AsyncNotifier<CdkUserInfo?> {
   Future<CdkUserInfo?> _doFetchUserInfo() async {
     final generation = _requestGeneration;
     final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_cdkEnabledKey) ?? false;
+    final enabled = prefs.getBool(enabledKey) ?? false;
 
     if (!enabled) return null;
 
@@ -112,7 +113,7 @@ class CdkUserInfoNotifier extends AsyncNotifier<CdkUserInfo?> {
     );
     if (!ref.mounted ||
         generation != _requestGeneration ||
-        !(prefs.getBool(_cdkEnabledKey) ?? false)) {
+        !(prefs.getBool(enabledKey) ?? false)) {
       return null;
     }
 
@@ -176,7 +177,7 @@ class CdkUserInfoNotifier extends AsyncNotifier<CdkUserInfo?> {
     _inFlightFetch = null;
     ref.read(cdkOAuthServiceProvider).cancelPendingRequests();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_cdkEnabledKey, false);
+    await prefs.setBool(enabledKey, false);
     await _clearCache(prefs);
     state = const AsyncValue.data(null);
   }

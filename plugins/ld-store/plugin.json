@@ -1,0 +1,64 @@
+{
+  "schema": 5,
+  "id": "community.fluxdo.ldstore",
+  "name": "LD士多",
+  "version": "1.4.0",
+  "author": "FluxDO 社区",
+  "description": "浏览物品广场、查看商品详情，在士多确认兑换并查看订单。",
+  "homepage": "https://ldcstore.com/",
+  "webLogin": "https://ldcstore.com/login",
+  "auth": {
+    "type": "readSession",
+    "hosts": ["api2.ldspro.qzz.io"],
+    "queries": {"orderQuote":"/api/shop/orders/quote"},
+    "checkout": {"create":"/api/shop/orders","lookup":"/api/shop/order-submissions"}
+  },
+  "icon": "storefront",
+  "ui": "ui.rfwtxt",
+  "script": "main.js",
+  "permissions": {
+    "network": [
+      "api2.ldspro.qzz.io"
+    ],
+    "publicImages": true
+  },
+  "card": {
+    "widget": "Card"
+  },
+  "pages": [
+    {
+      "id": "orders",
+      "widget": "BuyerOrders",
+      "title": "我的订单"
+    },
+    {
+      "id": "order",
+      "widget": "BuyerOrder",
+      "title": "订单详情",
+      "presentation": "modal"
+    },
+    {
+      "id": "market",
+      "widget": "Market",
+      "title": "物品广场"
+    },
+    {
+      "id": "review",
+      "widget": "Review",
+      "title": "兑换预览"
+    },
+    {
+      "id": "product",
+      "widget": "Product",
+      "title": "商品详情",
+      "presentation": "modal"
+    }
+  ],
+  "links": [
+    {
+      "host": "ldcstore.com",
+      "path": "/product/:id",
+      "page": "product"
+    }
+  ]
+}

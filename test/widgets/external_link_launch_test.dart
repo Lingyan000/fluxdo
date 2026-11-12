@@ -19,6 +19,23 @@ import '../support/url_launcher_test_platform.dart';
 const _url = 'https://hb.lafi.sh/tips';
 
 void main() {
+  testWidgets('网页登录默认使用内置浏览器，即使普通外链默认使用系统浏览器', (tester) async {
+    const url = 'https://linux.do/about';
+    final (prefs, launcher) = await _setUpBrowser(preferInApp: false);
+    await _pumpLauncher(
+      tester,
+      prefs,
+      (context) => launchExternalLink(context, url, preferSessionBrowser: true),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    await _expectBrowser(
+      tester,
+      launcher,
+      url,
+      ExternalLinkOpenChoice.inAppBrowser,
+    );
+  });
   for (final preferInApp in [false, true]) {
     for (final choice in [...ExternalLinkOpenChoice.values, null]) {
       testWidgets('外链本次选择 $choice 优先于内置浏览器偏好 $preferInApp', (tester) async {

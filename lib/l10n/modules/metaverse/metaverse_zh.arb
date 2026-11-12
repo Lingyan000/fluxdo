@@ -1,5 +1,14 @@
 {
+  "metaverse_checkoutConfirm": "确认创建订单",
+  "metaverse_checkoutSummary": "本次将向 {site} 创建订单。\n\n账号：{account}\n商品编号：{product}\n数量：{quantity}\n优惠券编号：{coupon}\n应付：{total}",
+  "@metaverse_checkoutSummary": {"placeholders": {"site":{"type":"String"},"account":{"type":"String"},"product":{"type":"String"},"quantity":{"type":"int"},"coupon":{"type":"String"},"total":{"type":"String"}}},
+  "metaverse_checkoutPermission": "服务方另行授权且你逐笔确认后，可以创建订单，并按提交号查找结果。",
+  "metaverse_pluginPermQueries": "服务方另行授权后，可向以下地址提交带凭证的 POST 查询",
+  "metaverse_pluginPermReadSession": "如已有该服务的授权，可向以下域名发送带凭证的 GET 请求",
+  "metaverse_pluginUseDoh": "对 {host} 使用加密 DNS，然后刷新",
+  "@metaverse_pluginUseDoh": {"placeholders": {"host": {"type": "String"}}},
   "@@locale": "zh",
+  "metaverse_pluginWebSession": "在服务网站登录并使用该网站的会话",
   "chat_thread": "线程",
   "github_commentedOn": " 评论于 ",
   "github_moreFiles": "... 还有 {count} 个文件",
@@ -11,6 +20,8 @@
     }
   },
   "github_viewFullCode": "点击查看完整代码",
+  "metaverse_addService": "添加第三方服务",
+  "metaverse_addServiceDesc": "通过清单地址安装社区开发的服务",
   "metaverse_authFailed": "授权失败: {error}",
   "@metaverse_authFailed": {
     "placeholders": {
@@ -23,11 +34,109 @@
   "metaverse_cdkDesc": "连接账户，开启 CDK 权益",
   "metaverse_cdkReauthSuccess": "CDK 重新授权成功",
   "metaverse_cdkService": "CDK 服务",
-  "metaverse_comingSoon": "更多服务接入中...",
   "metaverse_ldcAuthSuccess": "LDC 授权成功",
   "metaverse_ldcDesc": "连接账户，开启积分权益",
   "metaverse_ldcReauthSuccess": "LDC 重新授权成功",
   "metaverse_ldcService": "LDC 积分服务",
   "metaverse_myServices": "我的服务",
+  "metaverse_pluginAuthor": "作者 {author} · 版本 {version}",
+  "@metaverse_pluginAuthor": {
+    "placeholders": {
+      "author": {
+        "type": "String"
+      },
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginDisable": "停用",
+  "metaverse_pluginEnabled": "{name} 已开启",
+  "@metaverse_pluginEnabled": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginInstall": "安装",
+  "metaverse_pluginInstallFailed": "安装失败: {error}",
+  "@metaverse_pluginInstallFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginInstalled": "已安装 {name}",
+  "@metaverse_pluginInstalled": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginLoadFailed": "服务加载失败",
+  "metaverse_pluginManifestUrl": "清单地址",
+  "metaverse_pluginOpen": "打开",
+  "metaverse_pluginPermIdentity": "读取你的论坛用户名",
+  "metaverse_pluginPermLinks": "接管帖子中指向以下站点的链接",
+  "metaverse_pluginPermNetwork": "访问以下网络地址",
+  "metaverse_importFile": "从文件安装",
+  "metaverse_pluginPublicImages": "从外部网站加载公开图片（不附带登录凭证）",
+  "metaverse_pluginPermNetworkNone": "不访问网络",
+  "metaverse_pluginPermToken": "保存你填写的访问凭证，仅发往以下地址",
+  "metaverse_pluginPermissions": "将获得的权限",
+  "metaverse_pluginReauthorized": "{name} 凭证已更新",
+  "@metaverse_pluginReauthorized": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginRemoveConfirm": "移除 {name}？它的本地数据和凭证会一并删除。",
+  "@metaverse_pluginRemoveConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginResume": "恢复",
+  "metaverse_pluginSource": "来源",
+  "metaverse_pluginSuspended": "该服务因长时间无响应已暂停",
+  "metaverse_pluginToast": "{name}：{message}",
+  "@metaverse_pluginToast": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginTokenHelp": "如何获取凭证",
+  "metaverse_pluginTokenLabel": "访问凭证",
+  "metaverse_pluginTokenNote": "凭证保存在系统安全存储中，只会发往 {hosts}。",
+  "@metaverse_pluginTokenNote": {
+    "placeholders": {
+      "hosts": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginTokenTitle": "连接 {name}",
+  "@metaverse_pluginTokenTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "metaverse_pluginUpdate": "更新",
+  "metaverse_pluginWarning": "第三方服务由其作者提供，FluxDO 不对其内容负责。它只能使用下面列出的权限，无法读取你的论坛登录状态。",
+  "metaverse_thirdParty": "第三方",
   "metaverse_title": "元宇宙"
 }

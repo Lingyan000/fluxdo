@@ -289,6 +289,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  cupertino_ui:
+    dependency: transitive
+    description:
+      name: cupertino_ui
+      sha256: "369e39a1c5c030a6212589c3da1809920b1c2cfade7b02aade7695bfa4b88c3a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.6"
   dart_console:
     dependency: "direct dev"
     description:
@@ -1346,6 +1354,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.2960.0"
+  material_ui:
+    dependency: transitive
+    description:
+      name: material_ui
+      sha256: "474c135fd46b56ff1d35ca982155e8863d28fbc6464d1192acf4ee53a738680e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.11.0"
   media_kit:
     dependency: transitive
     description:
@@ -1857,6 +1873,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
+  rfw:
+    dependency: "direct main"
+    description:
+      name: rfw
+      sha256: "5e82ce64039a70de2c2db1381a055da8c1fdf45cc0069823797720f7847a281e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
   riverpod:
     dependency: transitive
     description:

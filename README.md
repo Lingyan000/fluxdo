@@ -105,6 +105,7 @@ ZIP 便携版仍通过发布页手动更新。首次使用自更新，需要先�
 - [开发环境与日常命令](docs/development.md)
 - [发版与 iOS IPA](docs/release.md)
 - [Flatpak 打包说明](docs/flatpak.md)
+- [元宇宙第三方插件](docs/metaverse-plugin.md)
 
 ## 项目结构
 
