@@ -21,8 +21,7 @@ import 'package:fluxdo/services/navigation/app_route_observer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_script_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
@@ -1539,7 +1538,7 @@ Future<void> main() async {
       await tester.runAsync(() => install(script: ''));
       final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
       await tester.pumpWidget(app(const SizedBox()));
-      surface.context = tester.element(find.byType(Scaffold));
+      host.attachSurface(surface, tester.element(find.byType(Scaffold)));
       host.dispatchUserEvent(surface, 'refresh', const {});
       final token = await host.call('navigation.prepare', {'page': 'order'});
       await host.call('auth.request', {});
@@ -1579,7 +1578,7 @@ Future<void> main() async {
         await tester.runAsync(() => install(script: ''));
         final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
         await tester.pumpWidget(app(const SizedBox()));
-        surface.context = tester.element(find.byType(Scaffold));
+        host.attachSurface(surface, tester.element(find.byType(Scaffold)));
         host.dispatchUserEvent(surface, 'refresh', const {});
         final token = await host.call('navigation.prepare', {'page': 'order'});
         switch (invalidate) {

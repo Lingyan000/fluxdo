@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:rfw/rfw.dart';
+
+import '../../../services/log/log_policy.dart';
+import '../../../services/log/log_writer.dart';
 
 import 'metaverse_plugin_installer.dart';
 import 'metaverse_checkout.dart';
@@ -10,12 +14,11 @@ import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
 import 'metaverse_service_session.dart';
-import 'runtime/metaverse_plugin_runtime.dart';
-import 'runtime/metaverse_script_engine.dart';
 import 'ui/metaverse_widget_library.dart';
 
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
+  void onShutdown() {}
   int? currentAccountId() => null;
 
   Future<Object?> payOrder(
@@ -113,8 +116,27 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   MetaversePluginRuntime? _runtime;
   Runtime? _widgets;
+  final _surfaceContexts = <MetaversePluginSurface, BuildContext>{};
+  final _surfaceData = <MetaversePluginSurface, DynamicContent>{};
+
+  /// Flutter 上下文及 RFW 数据由界面适配层持有。
+  DynamicContent attachSurface(MetaversePluginSurface surface, BuildContext context) {
+    if (_runtime?.owns(surface) != true) throw StateError('插件界面已关闭');
+    _surfaceContexts[surface] = context;
+    return _surfaceData.putIfAbsent(surface, () {
+      final content = DynamicContent();
+      for (final entry in surface.data.entries) {
+        content.update(entry.key, entry.value ?? '');
+      }
+      surface.onData = (key, value) => content.update(key, value ?? '');
+      return content;
+    });
+  }
   Future<void>? _starting;
-  Map<String, Object?> _storage = {};
+  final _runtimeId = LogPolicy.newTraceId();
+  DateTime? _logWindow;
+  int _logCount = 0;
+  int _suppressedLogs = 0;
   Timer? _idleTimer;
   int _generation = 0;
   bool _uiBusy = false;
@@ -152,6 +174,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
       _preparedNavigation = null;
     }
     runtime.closeSurface(surface);
+    _surfaceContexts.remove(surface);
+    _surfaceData.remove(surface);
     if (runtime.surfaces.isEmpty) {
       _idleTimer?.cancel();
       _idleTimer = Timer(idleTimeout, shutdown);
@@ -197,6 +221,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
+    _delegate.onShutdown();
     _dohHost = null;
     dnsRetryHost.value = null;
     _idleTimer?.cancel();
@@ -204,6 +229,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
     _starting = null;
     _runtime?.dispose();
     _runtime = null;
+    _surfaceContexts.clear();
+    _surfaceData.clear();
     _widgets = null;
     _uiBusy = false;
     _preparedNavigation = null;
@@ -214,11 +241,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
     try {
       final code = await _store.readCode(id);
       final library = MetaversePluginInstaller.validateUi(manifest, code.ui);
-      final storage = await _store.readStorage(id);
       final runtime = await MetaversePluginRuntime.start(
         engineFactory: _engineFactory,
         script: code.script,
         bridge: this,
+        executionContext: PluginExecutionContext(pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId),
         onFatal: (reason) {
           if (generation != _generation) return;
           shutdown();
@@ -230,7 +257,6 @@ class MetaversePluginHost implements MetaversePluginBridge {
         runtime.dispose();
         throw StateError('插件已停止');
       }
-      _storage = storage;
       _runtime = runtime;
       _widgets = Runtime()
         ..update(
@@ -248,7 +274,36 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   @override
   void log(String level, String message) {
-    debugPrint('[Metaverse:$id] $level $message');
+    final now = _clock();
+    if (_logWindow == null || now.difference(_logWindow!) >= const Duration(minutes: 1)) {
+      if (_suppressedLogs > 0) {
+        _writeLog('warning', 'plugin_log_throttled', '插件日志已合并', {
+          'suppressed': _suppressedLogs,
+        });
+      }
+      _logWindow = now;
+      _logCount = 0;
+      _suppressedLogs = 0;
+    }
+    if (++_logCount > 120) {
+      _suppressedLogs++;
+      return;
+    }
+    _writeLog(level, 'plugin_console', message);
+  }
+
+  void _writeLog(String level, String event, String message, [Map<String, Object?> fields = const {}]) {
+    LogWriter.instance.write({
+      ...fields,
+      'pluginId': id,
+      'pluginVersion': manifest.version,
+      'runtimeId': _runtimeId,
+      'emitter': 'plugin',
+      'type': 'plugin',
+      'event': event,
+      'level': level,
+      'message': message,
+    });
   }
 
   Future<MetaverseServiceSession?> _readSession() async {
@@ -261,7 +316,31 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   @override
-  Future<Object?> call(String method, Map<String, Object?> params) async {
+  Future<Object?> call(String method, Map<String, Object?> params) =>
+      PluginExecutionContext(
+        pluginId: id,
+        pluginVersion: manifest.version,
+        runtimeId: _runtimeId,
+        surfaceId: PluginExecutionContext.current?.surfaceId,
+        traceId: LogPolicy.newTraceId(),
+      ).run(() async {
+        final watch = Stopwatch()..start();
+        try {
+          return await _call(method, params);
+        } catch (error) {
+          LogWriter.instance.write({
+            'type': 'plugin',
+            'level': 'warning',
+            'event': 'plugin_call_failed',
+            'method': method,
+            'duration': watch.elapsedMilliseconds,
+            'message': error.toString(),
+          });
+          rethrow;
+        }
+      });
+
+  Future<Object?> _call(String method, Map<String, Object?> params) async {
     switch (method) {
       case 'fetch':
         final host = Uri.tryParse('${params['url']}')?.host;
@@ -307,7 +386,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         }
 
       case 'storage.get':
-        return _storage[_storageKey(params)];
+        return (await _store.readStorage(id))[_storageKey(params)];
       case 'storage.set':
         return _writeStorage(_storageKey(params), params['value']);
       case 'storage.remove':
@@ -469,7 +548,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
               prepared.account != _delegate.currentAccountId()) {
             throw const MetaversePluginCallException('导航预约已失效');
           }
-          final context = prepared.surface.context;
+          final context = _surfaceContexts[prepared.surface];
           _preparedNavigation = null;
           _clearActivation();
           if (context == null || !context.mounted) {
@@ -523,7 +602,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
       case 'toast':
         // 需要有可见界面，且限速：后台插件不能刷提示。
         if (_runtime?.surfaces.any(
-              (s) => s.foreground && s.context?.mounted == true,
+              (s) => s.foreground && _surfaceContexts[s]?.mounted == true,
             ) !=
             true) {
           throw const MetaversePluginCallException('没有可见的界面');
@@ -553,18 +632,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   Future<Object?> _writeStorage(String key, Object? value) async {
-    final next = {..._storage};
-    if (value == null) {
-      next.remove(key);
-    } else {
-      next[key] = value;
-    }
     try {
-      await _store.writeStorage(id, next);
+      await _store.updateStorage(id, key, value);
     } on StateError {
       throw const MetaversePluginCallException('存储空间已满');
     }
-    _storage = next;
     return null;
   }
 
@@ -579,11 +651,15 @@ class MetaversePluginHost implements MetaversePluginBridge {
       throw const MetaversePluginCallException('已有进行中的界面操作');
     }
     final activatedAt = _activatedAt;
+    final requestedSurface = PluginExecutionContext.current?.surfaceId;
+    if (requestedSurface != null && requestedSurface != _activatedSurface?.id) {
+      throw const MetaversePluginCallException('用户操作不属于当前界面');
+    }
     if (activatedAt == null ||
         _clock().difference(activatedAt) > activationWindow) {
       throw const MetaversePluginCallException('该操作须由用户点击触发');
     }
-    final context = _activatedSurface?.context;
+    final context = _surfaceContexts[_activatedSurface];
     _clearActivation();
     if (context == null || !context.mounted) {
       throw const MetaversePluginCallException('没有可见的界面');

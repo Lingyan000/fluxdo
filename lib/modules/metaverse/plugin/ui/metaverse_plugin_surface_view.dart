@@ -7,7 +7,7 @@ import 'package:rfw/rfw.dart';
 import '../../../../l10n/s.dart';
 import '../../../../services/navigation/app_route_observer.dart';
 import '../metaverse_plugin_host.dart';
-import '../runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'metaverse_widget_library.dart';
 
 /// 一块插件界面：元宇宙页里的卡片，或一个独立页面。
@@ -186,11 +186,11 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
     if (widgetName == null) {
       return MetaversePluginErrorView(message: '${widget.page}');
     }
-    surface.context = context;
+    final data = widget.host.attachSurface(surface, context);
     return RemoteWidget(
       runtime: widgets,
       widget: FullyQualifiedWidgetName(metaversePluginLibraryName, widgetName),
-      data: surface.data,
+      data: data,
       onEvent: (name, arguments) =>
           widget.host.dispatchUserEvent(surface, name, arguments),
     );

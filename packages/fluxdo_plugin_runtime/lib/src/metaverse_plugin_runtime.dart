@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/widgets.dart';
-import 'package:rfw/rfw.dart';
-
 import 'metaverse_plugin_prelude.dart';
 import 'metaverse_script_engine.dart';
+import 'plugin_execution_context.dart';
 
 /// 宿主向插件脚本提供的能力。所有权限判断都在实现里做。
 abstract class MetaversePluginBridge {
@@ -37,10 +35,17 @@ class MetaversePluginSurface {
   final Map<String, Object?> params;
 
   /// 脚本经 `ctx.setData` 写入、界面经 `data.xxx` 读取的数据。
-  final DynamicContent data = DynamicContent();
+  final Map<String, Object?> _data = {};
+  Map<String, Object?> get data => Map.unmodifiable(_data);
 
-  /// 承载该界面的 widget 上下文，供弹窗、跳转使用；界面卸载后为 null。
-  BuildContext? context;
+  /// 界面适配器订阅更新，运行时不依赖 Flutter 或组件库。
+  void Function(String key, Object? value)? onData;
+
+  void _updateData(String key, Object? value) {
+    _data[key] = value;
+    onData?.call(key, value);
+  }
+
   bool _foreground = true;
   bool _appBackgrounded = false;
   bool get foreground => _foreground;
@@ -58,7 +63,12 @@ class MetaversePluginSurface {
 /// 这一层不做权限判断（那是 [MetaversePluginBridge] 的事），只保证协议健壮：
 /// 脚本发来的任何消息都当作不可信输入校验，数量也设上限。
 class MetaversePluginRuntime {
-  MetaversePluginRuntime._(this._engine, this._bridge, this._onFatal) {
+  MetaversePluginRuntime._(
+    this._engine,
+    this._bridge,
+    this._onFatal,
+    this._executionContext,
+  ) {
     _engine
       ..onMessage = _onMessage
       ..onFatal = _handleFatal;
@@ -76,9 +86,15 @@ class MetaversePluginRuntime {
     required String script,
     required MetaversePluginBridge bridge,
     void Function(String reason)? onFatal,
+    PluginExecutionContext? executionContext,
   }) async {
     final engine = await engineFactory();
-    final runtime = MetaversePluginRuntime._(engine, bridge, onFatal);
+    final runtime = MetaversePluginRuntime._(
+      engine,
+      bridge,
+      onFatal,
+      executionContext,
+    );
     try {
       await engine.evaluate(metaversePluginPrelude, name: 'fluxdo-prelude.js');
       await engine.evaluate(script, name: 'main.js');
@@ -92,6 +108,7 @@ class MetaversePluginRuntime {
   final MetaverseScriptEngine _engine;
   final MetaversePluginBridge _bridge;
   final void Function(String reason)? _onFatal;
+  final PluginExecutionContext? _executionContext;
 
   final _surfaces = <String, MetaversePluginSurface>{};
   final _timers = <int, Timer>{};
@@ -146,7 +163,7 @@ class MetaversePluginRuntime {
   void closeSurface(MetaversePluginSurface surface) {
     if (!identical(_surfaces[surface.id], surface)) return;
     if (_surfaces.remove(surface.id) == null) return;
-    surface.context = null;
+    surface.onData = null;
     _dispatchRaw(surface, 'surface.close', const {});
   }
 
@@ -179,7 +196,7 @@ class MetaversePluginRuntime {
     }
     _timers.clear();
     for (final surface in _surfaces.values) {
-      surface.context = null;
+      surface.onData = null;
     }
     _surfaces.clear();
     _engine.dispose();
@@ -209,6 +226,24 @@ class MetaversePluginRuntime {
 
   void _onMessage(Object? message) {
     if (_disposed || message is! Map) return;
+    final owner = _executionContext;
+    if (owner == null) {
+      _processMessage(message);
+      return;
+    }
+    final surface = _surfaces[message['s']];
+    PluginExecutionContext(
+      pluginId: owner.pluginId,
+      pluginVersion: owner.pluginVersion,
+      runtimeId: owner.runtimeId,
+      surfaceId: surface?.id,
+      emitter: message['t'] == 'log' || message['t'] == 'error'
+          ? 'plugin'
+          : 'framework',
+    ).run(() => _processMessage(message));
+  }
+
+  void _processMessage(Map message) {
     switch (message['t']) {
       case 'call':
         _handleCall(message);
@@ -236,6 +271,9 @@ class MetaversePluginRuntime {
     final id = message['id'];
     final method = message['m'];
     if (id is! int || method is! String) return;
+    if (message['s'] != null && !_surfaces.containsKey(message['s'])) {
+      return _settle(id, false, '插件界面已关闭');
+    }
     if (_pendingCalls >= _maxPendingCalls) {
       return _settle(id, false, '同时进行的调用过多');
     }
@@ -250,7 +288,7 @@ class MetaversePluginRuntime {
       _settle(id, false, error.message);
     } catch (error, stack) {
       // 宿主内部错误不带细节地交还，避免向插件泄露路径、堆栈等信息。
-      debugPrint('[Metaverse] $method 处理失败: $error\n$stack');
+      _bridge.log('error', '$method 处理失败: $error\n$stack');
       _settle(id, false, '宿主处理失败');
     } finally {
       _pendingCalls--;
@@ -274,7 +312,7 @@ class MetaversePluginRuntime {
       _bridge.log('error', 'setData("$key") 数据过大，已忽略');
       return;
     }
-    surface.data.update(key, value ?? '');
+    surface._updateData(key, value ?? '');
   }
 
   /// 把 JSON 值规整成界面数据能接受的形态。

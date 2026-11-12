@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_prelude.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_script_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 
 /// 真实 JS 引擎的契约测试。

@@ -10,7 +10,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_checkout_types.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_service_session.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
-import 'package:fluxdo/modules/metaverse/plugin/runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 const _reserved = ['linux.do'];
 
@@ -307,7 +307,7 @@ void main() {
       );
     }
   });
-  test('文件安装按内容区分来源，复用清单和 UI 校验', () async {
+  test('文件安装保持插件来源稳定，复用清单和 UI 校验', () async {
     final manifest = _example();
     final installer = MetaversePluginInstaller(
       network: MetaversePluginNetwork(),
@@ -326,7 +326,12 @@ void main() {
         );
     const ui = 'import fluxdo; widget Card = Gap(); widget OrderPage = Gap();';
     final first = await bundle(ui, '// v1');
-    expect((await bundle(ui, '// v2')).source, isNot(first.source));
+    expect((await bundle(ui, '// v2')).source, first.source);
+    expect(first.source, 'file:${manifest['id']}');
+    await expectLater(
+      installer.importBundle(Stream.value(utf8.encode('{}')), expectedDigest: '0' * 64),
+      throwsA(isA<MetaversePluginInstallException>()),
+    );
     await expectLater(
       bundle('widget Bad = Gap();', ''),
       throwsA(isA<MetaversePluginInstallException>()),

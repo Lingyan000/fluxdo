@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../../constants.dart';
 import '../../../../l10n/s.dart';
 import '../../../../services/ldc_oauth_service.dart';
+import '../../../../services/log/log_writer.dart';
 import '../../../../services/ldc_payment_service.dart';
 import '../../../../services/ldc_biometric_payment.dart';
 import '../../../../services/network/exceptions/oauth_exception.dart';
@@ -29,7 +30,7 @@ import '../metaverse_plugin_manifest.dart';
 import '../metaverse_plugin_network.dart';
 import '../metaverse_plugin_store.dart';
 import '../runtime/flutter_js_script_engine.dart';
-import '../runtime/metaverse_script_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import '../ui/metaverse_plugin_dialogs.dart';
 import '../ui/metaverse_plugin_page.dart';
 import '../../../ldc_payment/ldc_payment_sheet.dart';
@@ -132,6 +133,24 @@ final metaversePluginHostsProvider = Provider<MetaversePluginHosts>((ref) {
 class MetaversePluginsController
     extends Notifier<List<InstalledMetaversePlugin>> {
   static const maxPlugins = 32;
+  final _mutations = PluginOperationQueue();
+
+  Future<InstalledMetaversePlugin> install(MetaversePluginPackage package) =>
+      _mutations.run('index', () => _install(package));
+  Future<void> setEnabled(String id, {required bool enabled}) =>
+      _mutations.run('index', () => _setEnabled(id, enabled: enabled));
+  Future<void> saveToken(String id, String token, {bool Function()? isActive}) =>
+      _mutations.run('index', () {
+        if (isActive != null && !isActive()) throw const PluginOperationCancelled();
+        return _saveToken(id, token);
+      });
+  Future<void> suspend(String id, String reason) =>
+      _mutations.run('index', () => _suspend(id, reason));
+  Future<void> resume(String id) => _mutations.run('index', () => _resume(id));
+  Future<void> remove(String id) => _mutations.run('index', () => _remove(id));
+  Future<void> resetData(String id) => _mutations.run('index', () => _resetData(id));
+  Future<void> signOutAll() => _mutations.run('index', _signOutAll);
+
 
   @override
   List<InstalledMetaversePlugin> build() => _store.loadIndex();
@@ -149,7 +168,7 @@ class MetaversePluginsController
   ///
   /// 从别的地址装来的同 id 清单视为另一个插件：已有的本地数据与凭证一并清除，
   /// 避免新清单继承旧插件的授权。
-  Future<InstalledMetaversePlugin> install(
+  Future<InstalledMetaversePlugin> _install(
     MetaversePluginPackage package,
   ) async {
     final manifest = package.manifest;
@@ -173,7 +192,11 @@ class MetaversePluginsController
     await _store.writeCode(manifest.id, package.code);
     if (changedSource || changedPermissions) {
       await _replace(
-        InstalledMetaversePlugin(manifest: manifest, source: package.source),
+        InstalledMetaversePlugin(
+          manifest: manifest,
+          source: package.source,
+          codeRevision: MetaversePluginStore.revisionOf(package.code),
+        ),
       );
     } else {
       // 同一来源的重复安装：保留开关状态（这些权限用户已经确认过）。
@@ -181,6 +204,7 @@ class MetaversePluginsController
         InstalledMetaversePlugin(
           manifest: manifest,
           source: package.source,
+          codeRevision: MetaversePluginStore.revisionOf(package.code),
           enabled: previous?.enabled ?? false,
         ),
       );
@@ -188,18 +212,18 @@ class MetaversePluginsController
     return byId(manifest.id)!;
   }
 
-  Future<void> setEnabled(String id, {required bool enabled}) async {
+  Future<void> _setEnabled(String id, {required bool enabled}) async {
     final plugin = byId(id);
     if (plugin == null) return;
     if (!enabled) {
       // 停用即撤销授权：凭证不留在设备上。
-      await _store.deleteToken(id);
       ref.read(metaversePluginHostsProvider).shutdown(id);
+      await _store.deleteToken(id);
     }
     await _replace(plugin.copyWith(enabled: enabled));
   }
 
-  Future<void> saveToken(String id, String token) async {
+  Future<void> _saveToken(String id, String token) async {
     if (byId(id)?.manifest.auth.type != MetaversePluginAuthType.token) {
       throw StateError('只有声明手填凭证的已安装插件可以保存此类凭证');
     }
@@ -211,31 +235,40 @@ class MetaversePluginsController
   }
 
   /// 脚本长时间无响应：挂起并停掉实例，等用户显式恢复。
-  Future<void> suspend(String id, String reason) async {
+  Future<void> _suspend(String id, String reason) async {
     final plugin = byId(id);
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
     await _replace(plugin.copyWith(suspendedReason: reason));
   }
 
-  Future<void> resume(String id) async {
+  Future<void> _resume(String id) async {
     final plugin = byId(id);
     if (plugin == null || plugin.suspendedReason == null) return;
     await _replace(plugin.copyWith(clearSuspended: true));
   }
 
-  Future<void> remove(String id) async {
+  Future<void> _remove(String id) async {
     final plugin = byId(id);
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
     await _store.deleteFiles(id);
     await _store.clearOrders(id);
     await _store.deleteToken(id);
+    await LogWriter.instance.clearPlugin(id);
     await _replace(plugin, remove: true);
   }
 
+  Future<void> _resetData(String id) async {
+    final plugin = byId(id);
+    if (plugin == null) return;
+    ref.read(metaversePluginHostsProvider).shutdown(id);
+    await _store.resetData(id);
+    await _replace(plugin.copyWith(enabled: false, clearSuspended: true));
+  }
+
   /// 退出登录：停掉所有插件并清除凭证（本地数据保留）。
-  Future<void> signOutAll() async {
+  Future<void> _signOutAll() async {
     ref.read(metaversePluginHostsProvider).shutdownAll();
     for (final plugin in [...state]) {
       await _store.deleteToken(plugin.id);
@@ -258,8 +291,8 @@ class MetaversePluginsController
     } else {
       next.add(plugin);
     }
-    state = next;
     await _store.saveIndex(next);
+    state = next;
   }
 }
 
@@ -307,6 +340,10 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   final Ref _ref;
   final MetaversePluginManifest _manifest;
+  int _generation = 0;
+
+  @override
+  void onShutdown() => _generation++;
 
   @override
   String? currentUsername() => _ref.read(currentUserProvider).value?.username;
@@ -335,6 +372,8 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     BuildContext context,
     MetaversePluginManifest manifest,
   ) async {
+    final generation = _generation;
+    bool active() => context.mounted && generation == _generation;
     if (manifest.auth.connect != null) {
       final account = _ref.read(currentUserProvider).value;
       if (account == null) {
@@ -347,7 +386,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
       )) {
         return false;
       }
-      if (!context.mounted || !_accountActive(account.id)) return false;
+      if (!active() || !_accountActive(account.id)) return false;
       final login = MetaverseConnectLogin(
         _ref.read(metaversePluginNetworkProvider),
       );
@@ -355,22 +394,22 @@ class _HostDelegate extends MetaversePluginHostDelegate {
         final session = await login.authorize(
           manifest,
           accountId: account.id,
-          active: () => context.mounted && _accountActive(account.id),
+          active: () => active() && _accountActive(account.id),
         );
-        if (!context.mounted || !_accountActive(account.id)) return false;
+        if (!active() || !_accountActive(account.id)) return false;
         await _ref
             .read(metaversePluginStoreProvider)
-            .writeServiceSession(manifest.id, session);
+            .writeServiceSession(manifest.id, session, isActive: () => active() && _accountActive(account.id));
         return true;
       } finally {
         login.dispose();
       }
     }
     final token = await showMetaversePluginTokenDialog(context, manifest);
-    if (token == null || token.isEmpty) return false;
+    if (token == null || token.isEmpty || !active()) return false;
     await _ref
         .read(metaversePluginsProvider.notifier)
-        .saveToken(manifest.id, token);
+        .saveToken(manifest.id, token, isActive: active);
     return true;
   }
 
@@ -380,6 +419,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     String orderNo, {
     bool cancel = false,
   }) async {
+    final generation = _generation;
     final account = _ref.read(currentUserProvider).value;
     if (account == null) {
       throw StateError(S.current.metaverse_nativeLoginRequired);
@@ -393,7 +433,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
         _ref.read(metaversePluginNetworkProvider),
         credit,
         accountId: account.id,
-        isActive: () => context.mounted && _accountActive(account.id),
+        isActive: () => context.mounted && generation == _generation && _accountActive(account.id),
       );
       try {
         await payment.checkSession();

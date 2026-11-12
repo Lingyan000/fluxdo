@@ -6,7 +6,7 @@ import 'dart:isolate';
 
 import 'package:flutter_js/flutter_js.dart';
 
-import 'metaverse_script_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 Future<MetaverseScriptEngine> createMetaverseScriptEngine() =>
     IsolateScriptEngine.spawn();

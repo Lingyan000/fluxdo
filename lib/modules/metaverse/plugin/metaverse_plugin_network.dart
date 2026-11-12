@@ -16,7 +16,7 @@ import 'metaverse_plugin_manifest.dart';
 import 'metaverse_checkout_types.dart';
 import 'metaverse_service_session.dart';
 import 'metaverse_socket_connection.dart';
-import 'runtime/metaverse_plugin_runtime.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 typedef MetaverseAddressLookup = Future<List<InternetAddress>> Function(
   String host,
@@ -357,6 +357,37 @@ class MetaversePluginNetwork {
       throw MetaversePluginCallException('下载失败（HTTP ${response.status}）');
     }
     return utf8.decode(response.bytes);
+  }
+
+  /// 市场索引与发布附件使用匿名下载，每一次重定向重新检查网络目标。
+  Future<({int status, Map<String, String> headers, Uint8List bytes})> downloadResource(
+    Uri uri, {
+    required int maxBytes,
+    String? etag,
+  }) async {
+    var current = uri;
+    for (var hop = 0; hop < 6; hop++) {
+      final target = await _checkTarget(current, null);
+      final response = await _send(
+        current,
+        target: target,
+        method: 'GET',
+        headers: {
+          'User-Agent': await AppConstants.getUserAgent(),
+          if (etag != null && current == uri) 'If-None-Match': etag,
+        },
+        body: null,
+        maxBytes: maxBytes,
+      );
+      if (response.status >= 300 && response.status < 400 && response.status != 304) {
+        final location = response.headers['location'];
+        if (location == null) throw const MetaversePluginCallException('下载重定向缺少地址');
+        current = current.resolve(location);
+        continue;
+      }
+      return response;
+    }
+    throw const MetaversePluginCallException('下载重定向次数过多');
   }
 
   /// 校验目标地址；[allowedHosts] 为 null 时只做协议与内网检查。
