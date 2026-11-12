@@ -120,6 +120,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
   bool _uiBusy = false;
   DateTime? _activatedAt;
   MetaversePluginSurface? _activatedSurface;
+  ({int token, String page, MetaversePluginSurface surface, int? account})?
+  _preparedNavigation;
+  int _navigationSequence = 0;
   DateTime? _lastToast;
 
   /// 渲染插件界面用的组件运行时；仅在 [open] 成功后可用。
@@ -145,6 +148,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
     final runtime = _runtime;
     if (runtime == null) return;
     if (identical(surface, _activatedSurface)) _clearActivation();
+    if (identical(surface, _preparedNavigation?.surface)) {
+      _preparedNavigation = null;
+    }
     runtime.closeSurface(surface);
     if (runtime.surfaces.isEmpty) {
       _idleTimer?.cancel();
@@ -157,6 +163,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
     bool foreground, {
     bool appForeground = true,
   }) {
+    if ((!appForeground || (!foreground && surface.foreground && !_uiBusy)) &&
+        identical(surface, _preparedNavigation?.surface)) {
+      _preparedNavigation = null;
+    }
     if (!foreground && identical(surface, _activatedSurface)) {
       _clearActivation();
     }
@@ -180,6 +190,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     }
     _activatedAt = _clock();
     _activatedSurface = surface;
+    _preparedNavigation = null;
     runtime.dispatch(surface, name, args);
   }
 
@@ -195,6 +206,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     _runtime = null;
     _widgets = null;
     _uiBusy = false;
+    _preparedNavigation = null;
     _clearActivation();
   }
 
@@ -417,12 +429,60 @@ class MetaversePluginHost implements MetaversePluginBridge {
         final username = _delegate.currentUsername();
         return username == null ? null : {'username': username};
 
+      case 'navigation.prepare':
+        final page = params['page'];
+        final surface = _activatedSurface;
+        final activated = _activatedAt;
+        if (page is! String || manifest.page(page) == null) {
+          throw MetaversePluginCallException('页面 $page 未在清单中声明');
+        }
+        if (_uiBusy ||
+            surface == null ||
+            !surface.foreground ||
+            activated == null ||
+            _clock().difference(activated) > activationWindow) {
+          throw const MetaversePluginCallException('该操作须由用户点击触发');
+        }
+        final token = ++_navigationSequence;
+        _preparedNavigation = (
+          token: token,
+          page: page,
+          surface: surface,
+          account: _delegate.currentAccountId(),
+        );
+        return token;
+
       case 'navigate':
         final page = params['page'];
         if (page is! String || manifest.page(page) == null) {
           throw MetaversePluginCallException('页面 $page 未在清单中声明');
         }
         final pageParams = params['params'];
+        final continuation = params['continuation'];
+        if (continuation != null) {
+          final prepared = _preparedNavigation;
+          if (prepared == null ||
+              prepared.token != continuation ||
+              prepared.page != page ||
+              _uiBusy ||
+              !prepared.surface.foreground ||
+              prepared.account != _delegate.currentAccountId()) {
+            throw const MetaversePluginCallException('导航预约已失效');
+          }
+          final context = prepared.surface.context;
+          _preparedNavigation = null;
+          _clearActivation();
+          if (context == null || !context.mounted) {
+            throw const MetaversePluginCallException('没有可见的界面');
+          }
+          _delegate.openPage(
+            context,
+            manifest,
+            page,
+            pageParams is Map ? pageParams.cast<String, Object?>() : const {},
+          );
+          return null;
+        }
         await _userInitiatedUi((context) async {
           _delegate.openPage(
             context,
@@ -511,7 +571,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 执行一个会改变用户所见界面的操作。
   ///
   /// 必须发生在用户操作之后的 [activationWindow] 内，一次操作只能换一次，
-  /// 且同一时间只允许一个——脚本没法靠它连环弹窗或自动跳转。
+  /// 且同一时间只允许一个。提前预约的页面可在操作结束后打开一次。
   Future<T> _userInitiatedUi<T>(
     Future<T> Function(BuildContext context) run,
   ) async {

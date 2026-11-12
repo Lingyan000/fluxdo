@@ -135,6 +135,15 @@ const metaversePluginPrelude = r'''
     }),
 
     navigate: function (page, params) { return call('navigate', { page: String(page), params: params || {} }); },
+    /** 在用户点击时预约一次页面导航，用于异步操作成功后的跳转。 */
+    prepareNavigation: function (page) {
+      page = String(page);
+      return call('navigation.prepare', {page: page}).then(function (token) {
+        return function (params) {
+          return call('navigate', {page: page, params: params || {}, continuation: token});
+        };
+      });
+    },
     session: Object.freeze({
       login: function () { return call('session.login'); },
       open: function (path) { return call('session.open', { path: String(path) }); }

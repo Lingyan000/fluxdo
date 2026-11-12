@@ -350,6 +350,7 @@ fluxdo.on('page.resume',(ctx,args) => {
   const s = market(ctx);
   if (!s) return;
   s.hidden = false;
+  if (s.createdNavigation) return openCreatedOrder(ctx,s);
   if (s.dirty) return refreshView(ctx);
 });
 fluxdo.on('market',() => fluxdo.navigate('market'));
@@ -499,11 +500,16 @@ async function checkoutAction(ctx,kind) {
   s.orderBusy=true;write(ctx,{orderBusy:true,orderNote:'',canSubmit:false});
   let note='';
   try {
+    const openOrder = kind !== 'finish' && typeof fluxdo.prepareNavigation === 'function'
+      ? await fluxdo.prepareNavigation('order') : null;
     const result = kind === 'submit' ? await fluxdo.checkout.submit(s.orderIntent) :
       kind === 'retry' ? await fluxdo.checkout.retry() :
       kind === 'finish' ? await fluxdo.checkout.finish(s.record.orderNo) : await fluxdo.checkout.recover();
     if (result?.state === 'created' || result?.state === 'pending') invalidateViews(s);
-    if (result?.state === 'created') showSubmission(ctx,s,result);
+    if (result?.state === 'created') {
+      showSubmission(ctx,s,result);
+      if (openOrder) s.createdNavigation = {open:openOrder,orderNo:result.orderNo};
+    }
     if (result?.state === 'rejected') {
       clearQuote(ctx,s);note='士多未接受本次订单，请重新查价并核对数量。';
     } else if (result?.issue === 'authorization') {
@@ -514,9 +520,24 @@ async function checkoutAction(ctx,kind) {
     s.orderBusy=false;
     if (market(ctx) === s) {
       write(ctx,{orderBusy:false,orderNote:note});
-      if (s.dirty && !s.hidden) await refreshView(ctx);
+      if (s.createdNavigation) await openCreatedOrder(ctx,s);
+      else if (s.dirty && !s.hidden) await refreshView(ctx);
       else if (s.record?.state !== 'created') await checkoutStatus(ctx,s);
     }
+  }
+}
+async function openCreatedOrder(ctx,s) {
+  const navigation = s.createdNavigation;
+  if (!navigation || s.hidden || s.orderBusy || market(ctx) !== s) return;
+  s.createdNavigation = null;
+  try {
+    await navigation.open({no:navigation.orderNo});
+    await fluxdo.checkout.finish(navigation.orderNo);
+    showSubmission(ctx,s,{state:'idle'});
+    clearQuote(ctx,s);
+    s.dirty = true;
+  } catch (_) {
+    write(ctx,{orderNote:'订单已创建，请打开订单查看详情。'});
   }
 }
 fluxdo.on('submitOrder',ctx => checkoutAction(ctx,'submit'));
