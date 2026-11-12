@@ -145,6 +145,36 @@ void main() {
     expect(api.calls, hasLength(1));
   });
 
+  for (final mixed in [false, true]) {
+    test('建单与恢复兼容下划线订单号，驼峰优先=$mixed', () async {
+      await signIn('alice');
+      final order = {
+        'order_no': mixed ? 'WRONG' : 'EX-1',
+        if (mixed) 'orderNo': 'EX-1',
+      };
+      api.response = {
+        'status': 201,
+        'body': jsonEncode({'success': true, 'data': order}),
+      };
+      expect(
+        (await flow.submit(intent, accept, active, retry: false))['orderNo'],
+        'EX-1',
+      );
+      await flow.finish('EX-1', active);
+      api.response = {'status': 503, 'body': '{}'};
+      await flow.submit(intent, accept, active, retry: false);
+      api.response = {
+        'status': 200,
+        'body': jsonEncode({
+          'success': true,
+          'data': {'exists': true, 'order': order},
+        }),
+      };
+      expect((await flow.recover(active))['orderNo'], 'EX-1');
+      expect(api.calls.where((call) => call.startsWith('POST')), hasLength(2));
+    });
+  }
+
   test('无法解析的成功回应、服务错误和冲突保留记录，只有明确未找到才允许原号重试', () async {
     await signIn('alice');
     api.response = {'status': 201, 'body': 'invalid'};
