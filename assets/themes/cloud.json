@@ -1,0 +1,107 @@
+{
+  "id": "cloud",
+  "name": {
+    "zh": "轻云",
+    "en": "Cloud"
+  },
+  "kind": "fixed",
+  "group": "clean",
+  "order": 50,
+  "style": {
+    "surfaces": "raised",
+    "inputs": "outlined"
+  },
+  "supportsPureBlack": true,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#F2F3F5",
+    "fg": "#1A1C1F",
+    "fgMuted": "#5E636E",
+    "border": "#E2E4E9",
+    "roles": {
+      "surfaceContainerLowest": "#FFFFFF"
+    },
+    "hues": {
+      "red": "#D9453C",
+      "orange": "#D9772B",
+      "yellow": "#B88A00",
+      "green": "#2E9A5B",
+      "cyan": "#1593A8",
+      "blue": "#2F6FED",
+      "purple": "#7A5AF0",
+      "teal": "#0F9488"
+    }
+  },
+  "dark": {
+    "bg": "#0F1113",
+    "fg": "#ECEEF1",
+    "fgMuted": "#A1A6B0",
+    "border": "#282B30",
+    "hues": {
+      "red": "#F2776E",
+      "orange": "#F0A060",
+      "yellow": "#E6C55A",
+      "green": "#5FCB8B",
+      "cyan": "#55C7DB",
+      "blue": "#6EA0FF",
+      "purple": "#A592FF",
+      "teal": "#4FCDBE"
+    }
+  },
+  "accents": [
+    {
+      "id": "indigo",
+      "name": {
+        "zh": "靛蓝",
+        "en": "Indigo"
+      },
+      "light": "#4F5FE0",
+      "dark": "#8F9BFF"
+    },
+    {
+      "id": "blue",
+      "name": {
+        "zh": "晴蓝",
+        "en": "Blue"
+      },
+      "light": "#2F6FED",
+      "dark": "#6EA0FF"
+    },
+    {
+      "id": "violet",
+      "name": {
+        "zh": "堇紫",
+        "en": "Violet"
+      },
+      "light": "#7A5AF0",
+      "dark": "#A592FF"
+    },
+    {
+      "id": "teal",
+      "name": {
+        "zh": "青碧",
+        "en": "Teal"
+      },
+      "light": "#0F9488",
+      "dark": "#4FCDBE"
+    },
+    {
+      "id": "rose",
+      "name": {
+        "zh": "蔷薇",
+        "en": "Rose"
+      },
+      "light": "#D6406E",
+      "dark": "#FF86A8"
+    },
+    {
+      "id": "amber",
+      "name": {
+        "zh": "琥珀",
+        "en": "Amber"
+      },
+      "light": "#C27A12",
+      "dark": "#F0B35E"
+    }
+  ]
+}

@@ -10,6 +10,9 @@ on:
       - .github/workflows/build.yaml
       - scripts/ci/macos/setup_signing.sh
       - scripts/ci/macos/test_setup_signing.py
+      - scripts/ci/macos/setup_package_auth.sh
+      - scripts/ci/macos/xcrun
+      - scripts/ci/macos/test_package_auth.py
   pull_request:
     paths:
       - scripts/ci/*distribution_manifests.py
@@ -17,6 +20,9 @@ on:
       - .github/workflows/build.yaml
       - scripts/ci/macos/setup_signing.sh
       - scripts/ci/macos/test_setup_signing.py
+      - scripts/ci/macos/setup_package_auth.sh
+      - scripts/ci/macos/xcrun
+      - scripts/ci/macos/test_package_auth.py
 
 permissions:
   contents: read
@@ -34,7 +40,9 @@ jobs:
         with:
           submodules: recursive
       - name: Test CI keychain setup
-        run: python3 scripts/ci/macos/test_setup_signing.py
+        run: |
+          python3 scripts/ci/macos/test_setup_signing.py
+          python3 scripts/ci/macos/test_package_auth.py
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.9'
@@ -44,6 +52,12 @@ jobs:
           P12_BASE64: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_BASE64 || '' }}
           P12_PASSWORD: ${{ matrix.signing == 'certificate' && secrets.MACOS_CODESIGN_P12_PASSWORD || '' }}
         run: bash scripts/ci/macos/setup_signing.sh
+      - name: Configure Git for CocoaPods
+        run: git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
+      - name: Configure macOS package authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/macos/setup_package_auth.sh
       - name: Resolve macOS packages and build configuration
         timeout-minutes: 10
         run: |

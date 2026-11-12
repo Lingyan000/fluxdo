@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/widgets/topic/pinned_topics_header.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
@@ -60,5 +61,51 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+  }
+
+  for (final mode in SegmentedCardMode.values) {
+    testWidgets('置顶标题行随分段卡片样式 $mode 绘制，与话题卡同一套规则', (tester) async {
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            theme: ThemeData(extensions: [SegmentedCardStyle(mode: mode)]),
+            home: Scaffold(
+              body: PinnedTopicsHeader(
+                count: 3,
+                unreadCount: 0,
+                expanded: false,
+                markingRead: false,
+                onToggle: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final item = find.byType(SegmentedCardItem);
+      expect(item, findsOneWidget);
+      expect(
+        find.text(
+          tester.element(item).l10n.topics_pinnedCount(3),
+        ),
+        findsOneWidget,
+        reason: '标题行显示置顶话题数量，不是分段数',
+      );
+      final material = tester.widget<Material>(
+        find.descendant(of: item, matching: find.byType(Material)).first,
+      );
+      switch (mode) {
+        case SegmentedCardMode.segmented:
+          expect(material.color, isNot(Colors.transparent));
+        case SegmentedCardMode.outlined:
+          // 描边模式：外框由条目自己画（折叠时整框都在这一行）
+          expect(
+            find.descendant(of: item, matching: find.byType(CustomPaint)),
+            findsWidgets,
+          );
+        case SegmentedCardMode.flat:
+          expect(material.color, Colors.transparent);
+      }
+      expect(tester.takeException(), isNull);
+    });
   }
 }

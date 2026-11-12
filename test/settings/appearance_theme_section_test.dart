@@ -130,8 +130,7 @@ void main() {
     await tester.pumpWidget(_app(c));
     await tester.pumpAndSettle();
 
-    // 「终端」既是分组名也是主题名
-    for (final group in ['取色', '经典配色', '阅读', '终端']) {
+    for (final group in ['动态取色', '素雅', '阅读', '代码配色']) {
       expect(find.text(group), findsWidgets, reason: group);
     }
     // 同族合并成一张卡

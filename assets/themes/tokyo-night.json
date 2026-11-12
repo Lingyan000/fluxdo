@@ -5,7 +5,7 @@
     "en": "Tokyo Night"
   },
   "kind": "fixed",
-  "group": "classic",
+  "group": "code",
   "order": 140,
   "style": {"dataColors": "harmonized"},
   "supportsPureBlack": false,

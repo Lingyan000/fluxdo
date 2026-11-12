@@ -5,7 +5,7 @@
     "en": "Dracula"
   },
   "kind": "fixed",
-  "group": "classic",
+  "group": "code",
   "order": 150,
   "style": {"dataColors": "harmonized"},
   "supportsPureBlack": true,

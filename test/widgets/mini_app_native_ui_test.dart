@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -17,6 +18,7 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_artwork_palette.dart';
+import 'package:fluxdo/modules/mini_apps/mini_app_card_surface.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_feedback_dialog.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_detail_page.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_embed_card.dart';
@@ -24,6 +26,7 @@ import 'package:fluxdo/modules/mini_apps/mini_app_gallery_page.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_launch_shelf.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_gallery_widgets.dart';
+import 'package:fluxdo/modules/mini_apps/mini_app_metadata.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_providers.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_service.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_runner_page.dart';
@@ -41,7 +44,10 @@ import 'package:fluxdo/services/local_notification_service.dart'
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/utils/avatar_url.dart';
+import 'package:fluxdo/utils/url_helper.dart';
 import 'package:fluxdo/widgets/keyboard_shortcut_handler.dart';
+import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,12 +92,23 @@ const _app = MiniApp(
   usageCount: 200,
 );
 
+const _narrowCardApp = MiniApp(
+  id: 'narrow-card',
+  name: '广告游戏系列_减3加5',
+  description: '图标已经说明了一切，想必逛着各种小程序的你已经准备好了。',
+  author: '野怪',
+  version: '1.1.0',
+  usageCount: 63,
+  recentUsageCount: 63,
+);
+
 class _Api extends MiniAppService {
   _Api() : super(dio: Dio());
   int ratingCalls = 0;
   final tipRequests = <String>[];
   final queries = <String>[];
   final requests = <(String, String, bool)>[];
+  Completer<MiniAppDetails>? detailsRequest;
   List<MiniApp> apps = [_app];
   @override
   Future<MiniAppDirectory> directory({
@@ -112,12 +129,18 @@ class _Api extends MiniAppService {
   }
 
   @override
-  Future<MiniAppDetails> details(String id) async => MiniAppDetails(
-    apps.firstWhere((app) => app.id == id),
-    'https://linux.do/apps/$id?embed_mode=true',
-    configuration: const {'channel': 'production', 'anonymous': false},
-    feedback: const {'can_rate': true, 'can_tip': true, 'can_report': true},
-  );
+  Future<MiniAppDetails> details(String id) async => detailsRequest != null
+      ? detailsRequest!.future
+      : MiniAppDetails(
+          apps.firstWhere((app) => app.id == id),
+          'https://linux.do/apps/$id?embed_mode=true',
+          configuration: const {'channel': 'production', 'anonymous': false},
+          feedback: const {
+            'can_rate': true,
+            'can_tip': true,
+            'can_report': true,
+          },
+        );
 
   @override
   Future<void> rate(MiniAppDetails details, int score) async {
@@ -148,6 +171,7 @@ class _Api extends MiniAppService {
 
 void main() {
   const previewDirectory = String.fromEnvironment('MINI_APP_PREVIEW_DIR');
+  const previewFont = String.fromEnvironment('MINI_APP_PREVIEW_FONT');
   final themes = ThemeResolver.resolve(
     spec: ThemeRegistry.material,
     mode: ThemeMode.system,
@@ -185,7 +209,7 @@ void main() {
           colorScheme: brightness == Brightness.light
               ? themes.light
               : themes.dark,
-          fontFamily: previewDirectory.isEmpty ? null : 'MiSans',
+          fontFamily: previewFont.isEmpty ? null : 'MiniAppPreview',
           extensions: const [M3eFlags()],
           searchBarTheme: const SearchBarThemeData(
             shape: WidgetStatePropertyAll(
@@ -211,6 +235,104 @@ void main() {
       ),
     ),
   );
+
+  for (final desktop in [false, true]) {
+    testWidgets('应用信息骨架切换为整体内容和开发者头像 ($desktop)', (tester) async {
+      PlatformUtils.debugDesktopOverride = desktop;
+      api.detailsRequest = Completer<MiniAppDetails>();
+      const avatarTemplate = '/user_avatar/linux.do/developer/{size}/1.png';
+      final avatarUrl = UrlHelper.resolveUrlWithCdn(
+        AvatarUrl.resolve(
+          avatarTemplate,
+          size: (40 * tester.view.devicePixelRatio).ceil(),
+        ),
+      );
+      await tester.runAsync(() async {
+        final directory = await Directory.systemTemp.createTemp(
+          'mini-app-avatar-',
+        );
+        await BlobImageCache.configureForTesting(root: directory);
+        final bytes = await rootBundle.load(
+          'assets/images/icon_modern_preview.png',
+        );
+        await BlobImageCache.write(
+          BlobImageCache.avatarBucket,
+          avatarUrl,
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+        );
+      });
+      addTearDown(BlobImageCache.configureForTesting);
+      await tester.pumpWidget(
+        wrap(
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => MiniAppDetailPage.show(context, _app.id),
+                child: const Text('详情'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('详情'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(MiniAppDetailsSkeleton), findsOneWidget);
+      expect(find.byType(MiniAppCardSurface), findsNothing);
+      final metadata = MiniApp.fromJson({
+        ..._app.toJson(),
+        'version': '1.5.9',
+        'recent_usage_count': 123,
+        'rating_average': 4,
+        'rating_count': 5,
+        'can_tip': true,
+        'author': {
+          'username': 'developer',
+          'name': '开发者',
+          'avatar_template': avatarTemplate,
+        },
+      });
+      api.detailsRequest!.complete(
+        MiniAppDetails(metadata, 'https://linux.do/apps/${_app.id}'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MiniAppDetailsSkeleton), findsNothing);
+      expect(find.byType(MiniAppDetailsContent), findsOneWidget);
+      expect(find.byType(MiniAppCardSurface), findsNothing);
+      expect(find.byType(SegmentedCardItem), findsNothing);
+      expect(find.byType(SmartAvatar), findsOneWidget);
+      expect(
+        tester.widget<SmartAvatar>(find.byType(SmartAvatar)).imageUrl,
+        avatarUrl,
+      );
+      expect(find.text(S.current.miniApp_recentUsage(123)), findsOneWidget);
+      expect(find.text(S.current.miniApp_usage(200)), findsOneWidget);
+      expect(find.text(S.current.miniApp_score('4.0', 5)), findsOneWidget);
+      expect(find.text(S.current.miniApp_tipAvailable), findsOneWidget);
+      expect(find.text(S.current.miniApp_version('1.5.9')), findsOneWidget);
+      final developer = find.byType(MiniAppDeveloper);
+      expect(
+        tester
+            .widget<InkWell>(
+              find.descendant(of: developer, matching: find.byType(InkWell)),
+            )
+            .onTap,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      api.detailsRequest = null;
+      await tester.pumpWidget(wrap(MiniAppDetailPage(appId: _app.id)));
+      await tester.pumpAndSettle();
+      expect(find.byType(MiniAppDetailsContent), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byType(MiniAppDetailsContent)).dy,
+        lessThan(150),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final desktop in [false, true]) {
     testWidgets(
@@ -735,6 +857,61 @@ void main() {
     },
   );
 
+  testWidgets('窄卡片切换单列，长名称与使用统计不会挤成长条', (tester) async {
+    api.apps = const [
+      _narrowCardApp,
+      _app,
+      MiniApp(id: 'third', name: '第三个应用'),
+    ];
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final (width, scale, columns) in [
+      (360.0, 1.0, 1),
+      (390.0, 1.0, 1),
+      (569.0, 1.0, 1),
+      (570.0, 1.0, 2),
+      (843.0, 1.0, 2),
+      (844.0, 1.0, 3),
+      (960.0, 1.0, 3),
+      (960.0, 1.8, 1),
+    ]) {
+      tester.view.physicalSize = Size(width, 844);
+      await tester.pumpWidget(wrap(const MiniAppGalleryPage(), scale: scale));
+      await tester.pumpAndSettle();
+      final cardType = columns == 1
+          ? MiniAppDiscoveryRow
+          : MiniAppDiscoveryCard;
+      final cards = find.byType(cardType);
+      final surface = tester.widget<MiniAppCardSurface>(
+        find.descendant(of: cards.first, matching: find.byType(MiniAppCardSurface)),
+      );
+      expect(surface.watermark, isTrue, reason: '单列与多列都展示图标渐隐背景');
+      final first = tester.getRect(cards.first);
+      final rowCount = tester
+          .elementList(cards)
+          .where(
+            (element) =>
+                tester.getTopLeft(find.byWidget(element.widget)).dy ==
+                first.top,
+          )
+          .length;
+      expect(rowCount, columns, reason: '视口 $width，字号缩放 $scale');
+      if (columns > 1) expect(first.width, greaterThanOrEqualTo(264));
+      if (scale == 1) {
+        expect(first.height, lessThan(first.width));
+        expect(
+          tester.getTopLeft(find.text('63 次使用')).dy,
+          tester.getTopLeft(find.text('近 7 天 63 次')).dy,
+          reason: '使用量和近 7 天统计同排展示，视口 $width',
+        );
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('桌面广场有刷新、滚动条和右键详情，键盘仅作用于当前工作区', (tester) async {
     PlatformUtils.debugDesktopOverride = true;
     tester.view.devicePixelRatio = 1;
@@ -883,7 +1060,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(layer.currentState!.isOpen, isFalse);
     final gallery = tester.element(find.byType(MiniAppGalleryPage));
-    expect(find.byType(MiniAppDiscoveryCard), findsOneWidget);
+    expect(find.byType(MiniAppDiscoveryRow), findsOneWidget);
     expect(api.requests, hasLength(1));
     await deep.up();
     await tester.pumpAndSettle();
@@ -1064,9 +1241,15 @@ void main() {
       await (FontLoader(
         'MaterialIcons',
       )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
-      await (FontLoader(
-        'MiSans',
-      )..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'))).load();
+      // 字体已改为按需下载，预览通过参数读取本机字体。
+      if (previewFont.isNotEmpty) {
+        await tester.runAsync(() async {
+          final bytes = await File(previewFont).readAsBytes();
+          await (FontLoader(
+            'MiniAppPreview',
+          )..addFont(Future.value(ByteData.sublistView(bytes)))).load();
+        });
+      }
       await (FontLoader(
             'packages/material_symbols_icons/${Symbols.apps_rounded.fontFamily}',
           )..addFont(
@@ -1077,11 +1260,16 @@ void main() {
           .load();
     }
     api.apps = const [
+      _narrowCardApp,
       MiniApp(
         id: 'one',
         name: '软块合成',
         description: '拖动、碰撞、合成，挑战更高的数字。',
         author: 'ffy1',
+        authorUsername: 'ffy1',
+        recentUsageCount: 287,
+        usageCount: 1234,
+        canTip: true,
         rating: 4.8,
         ratingCount: 12,
         version: '1.0.0',
@@ -1191,6 +1379,14 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        final cardType = width == 390
+            ? MiniAppDiscoveryRow
+            : MiniAppDiscoveryCard;
+        expect(
+          tester.getSize(find.byType(cardType).first).height,
+          lessThan(280),
+          reason: '卡片按内容收紧，避免固定高度撑出大块留白',
+        );
         await capture('gallery-${brightness.name}-${width.toInt()}');
         if (width == 390) {
           await tester.tap(find.byTooltip('应用信息').first);

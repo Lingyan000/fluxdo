@@ -24,13 +24,20 @@ import '../helpers/preview_fonts.dart';
 void main() {
   const dir = String.fromEnvironment('THEME_PREVIEW_DIR');
 
+  // 默认导出画廊里的全部主题；THEME_PREVIEW_IDS=a,b 时只导出指定主题
+  const only = String.fromEnvironment('THEME_PREVIEW_IDS');
+  final wanted = only.isEmpty ? null : only.split(',').toSet();
+  final ids = [
+    ThemeRegistry.materialId,
+    ThemeRegistry.minimalId,
+    for (final f in Directory('assets/themes').listSync().whereType<File>())
+      if (!f.uri.pathSegments.last.startsWith('festival-'))
+        f.uri.pathSegments.last.replaceAll('.json', ''),
+  ]..sort();
   final cases = [
-    ('material', Brightness.light),
-    ('minimal', Brightness.light),
-    ('minimal', Brightness.dark),
-    ('paper', Brightness.light),
-    ('paper', Brightness.dark),
-    ('terminal', Brightness.dark),
+    for (final id in ids)
+      if (wanted == null || wanted.contains(id))
+        for (final brightness in Brightness.values) (id, brightness),
   ];
 
   for (final (id, brightness) in cases) {
@@ -106,6 +113,8 @@ void main() {
       tester.view.physicalSize = const Size(1290, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      // 测试环境默认把阴影画成实心黑框，出图时还原成真实阴影
+      debugDisableShadows = false;
       await tester.pumpWidget(
         MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -140,6 +149,7 @@ void main() {
           '$dir/style_${id}_${brightness.name}.png',
         ).writeAsBytesSync(bytes!.buffer.asUint8List());
       });
+      debugDisableShadows = true;
       FontCatalog.setAll(const []);
       ThemeRegistry.setFixed(const []);
     });
@@ -272,7 +282,7 @@ class _HomeScreen extends StatelessWidget {
                     _TopicRow(t),
                   ],
                 ),
-                SurfaceStyle.outlined => Padding(
+                SurfaceStyle.outlined || SurfaceStyle.raised => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Card(child: _TopicRow(t)),
                 ),

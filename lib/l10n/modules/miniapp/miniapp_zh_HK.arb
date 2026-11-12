@@ -18,6 +18,8 @@
   "miniApp_hideControls": "收起控制列",
   "miniApp_supportDeveloper": "支持開發者",
   "miniApp_moreActions": "更多操作",
+  "miniApp_recentUsage": "近 7 天 {count} 次",
+  "miniApp_tipAvailable": "可賞",
   "miniApp_tipEncouragement": "給喜歡的作品一點鼓勵",
   "miniApp_pointsUnit": "積分",
   "miniApp_insufficientBalance": "目前積分不足，暫時無法打賞",

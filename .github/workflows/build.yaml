@@ -141,6 +141,12 @@ jobs:
         if: matrix.platform == 'ios' || matrix.platform == 'macos'
         run: git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
 
+      - name: Configure macOS package authentication
+        if: matrix.platform == 'macos'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/macos/setup_package_auth.sh
+
       - name: Build Android
         if: startsWith(matrix.platform, 'android')
         run: |

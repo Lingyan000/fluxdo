@@ -9,6 +9,7 @@
       }
     }
   },
+  "search_aiSearching": "AI 语义搜索中…",
   "search_applyFilter": "应用筛选",
   "search_beforeDate": "{date} 之前",
   "@search_beforeDate": {

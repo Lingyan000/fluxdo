@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart' as webview;
@@ -182,6 +183,20 @@ void main() {
     cookiesReady.complete([]);
     await priming;
     platform.cookies.readSnapshot = null;
+    const source = 'export const runtimeVersion = 1;';
+    final hash = sha256.convert(utf8.encode(source)).toString();
+    expect(
+      await request('runtimeAsset', {
+        'action': 'write',
+        'hash': hash,
+        'source': source,
+      }),
+      true,
+    );
+    expect(
+      await request('runtimeAsset', {'action': 'read', 'hash': hash}),
+      source,
+    );
     await request('launchReport', {
       'appId': app.id,
       'engine': 'lightweight',
@@ -241,6 +256,10 @@ void main() {
     );
     // 关闭后立即撤销旧能力；再次打开必须建立新会话，不能复用旧版本资料。
     await request('closed', {});
+    await expectLater(
+      request('runtimeAsset', {'action': 'read', 'hash': hash}),
+      throwsA(isA<PlatformException>()),
+    );
     await expectLater(
       request('bootstrap', {}),
       throwsA(isA<PlatformException>()),

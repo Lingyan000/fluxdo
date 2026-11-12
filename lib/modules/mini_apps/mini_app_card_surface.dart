@@ -107,24 +107,26 @@ class _MiniAppCardSurfaceState extends State<MiniAppCardSurface> {
                 height: 144,
                 child: IgnorePointer(
                   child: ExcludeSemantics(
-                    child: ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (rect) => LinearGradient(
-                        begin: Alignment.topRight,
-                        end: Alignment.bottomLeft,
-                        colors: [
-                          Colors.white.withValues(alpha: dark ? .16 : .10),
-                          Colors.transparent,
-                        ],
-                        stops: const [.05, .85],
-                      ).createShader(rect),
-                      child: DiscourseImage(
-                        url: widget.app.iconUrl,
-                        width: 144,
-                        height: 144,
-                        fit: BoxFit.cover,
-                        placeholderBuilder: (_) => const SizedBox.shrink(),
-                        errorBuilder: (_) => const SizedBox.shrink(),
+                    child: RepaintBoundary(
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback: (rect) => LinearGradient(
+                          begin: Alignment.topRight,
+                          end: Alignment.bottomLeft,
+                          colors: [
+                            Colors.white.withValues(alpha: dark ? .16 : .10),
+                            Colors.transparent,
+                          ],
+                          stops: const [.05, .85],
+                        ).createShader(rect),
+                        child: DiscourseImage(
+                          url: widget.app.iconUrl,
+                          width: 144,
+                          height: 144,
+                          fit: BoxFit.cover,
+                          placeholderBuilder: (_) => const SizedBox.shrink(),
+                          errorBuilder: (_) => const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),

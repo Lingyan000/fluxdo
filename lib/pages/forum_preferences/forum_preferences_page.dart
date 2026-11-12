@@ -1,13 +1,17 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
+import '../../settings/settings_model.dart';
+import '../../widgets/settings/settings_group_page.dart';
 import '../../models/forum_preferences.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../utils/error_utils.dart';
 import '../../widgets/common/error_view.dart';
+import '../../widgets/layout/pane_filmstrip.dart';
 import 'preference_actions.dart';
 import 'preference_controls.dart';
 import 'preference_fields.dart';
@@ -28,7 +32,8 @@ class ForumPreferencesPage extends StatefulWidget {
 
 class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
   final _service = DiscourseService();
-  final _formKey = GlobalKey<FormState>();
+  var _formKey = GlobalKey<FormState>();
+  final _searchController = TextEditingController();
   late String _username = widget.username;
   late ForumPreferenceSection? _section = widget.initialSection;
   ForumPreferences? _data;
@@ -48,6 +53,12 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load({bool preserveDraft = false}) async {
@@ -106,6 +117,7 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
     if (_section == section || !await _canLeave() || !mounted) return;
     setState(() {
       _section = section;
+      _formKey = GlobalKey<FormState>();
       _createDraft();
     });
   }
@@ -202,6 +214,10 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
               section,
               context.l10n,
             ).toLowerCase().contains(query) ||
+            preferenceSectionDescription(
+              section,
+              context.l10n,
+            ).toLowerCase().contains(query) ||
             (_data != null &&
                 preferenceFields(
                   section,
@@ -210,121 +226,330 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
                 ).any((field) => field.label.toLowerCase().contains(query)));
       }).toList();
 
-  Widget _navigation() => ListView(
+  Widget _navigation({bool compact = false}) => ListView(
+    key: const PageStorageKey('forum-preferences-navigation'),
     padding: const EdgeInsets.symmetric(vertical: 8),
     children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
         child: TextField(
+          controller: _searchController,
           decoration: InputDecoration(
             hintText: context.l10n.forumPrefs_search,
-            prefixIcon: const Icon(Symbols.search_rounded),
+            prefixIcon: const Icon(Symbols.search_rounded, size: 20),
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: context.shapes.borderRadius(24),
+              borderSide: BorderSide.none,
+            ),
+            suffixIcon: _query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: context.l10n.common_clear,
+                    icon: const Icon(Symbols.close_rounded, size: 20),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
           ),
           onChanged: (value) => setState(() => _query = value),
         ),
       ),
-      for (final section in _sections)
-        ListTile(
-          selected: _section == section,
-          title: Text(preferenceSectionLabel(section, context.l10n)),
-          trailing: const Icon(Symbols.chevron_right_rounded),
-          onTap: _saving || _operationBusy ? null : () => _select(section),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: SegmentedCardGroup(
+          children: [
+            for (final section in _sections)
+              ListTile(
+                key: ValueKey(section),
+                leading: Icon(
+                  preferenceSectionIcon(section),
+                  color: context.emphasis.accent,
+                ),
+                selected: _section == section,
+                selectedTileColor: context.emphasis.selected.withValues(
+                  alpha: 0.1,
+                ),
+                title: Text(preferenceSectionLabel(section, context.l10n)),
+                subtitle: Text(
+                  preferenceSectionDescription(section, context.l10n),
+                  maxLines: compact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: compact ? Theme.of(context).textTheme.bodySmall : null,
+                ),
+                trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
+                onTap: _saving || _operationBusy
+                    ? null
+                    : () => _select(section),
+              ),
+          ],
+        ),
+      ),
+      if (_sections.isEmpty)
+        AppEmptyState(
+          icon: const Icon(Symbols.search_rounded),
+          title: context.l10n.search_noResults,
         ),
     ],
   );
 
-  Widget _editor() {
+  SettingsGroup _imageGroup(
+    List<ForumPreferenceField> fields,
+    Widget Function(ForumPreferenceField) control,
+  ) => SettingsGroup(
+    title: fields.first.group,
+    icon: Symbols.image_rounded,
+    wrapInCard: false,
+    items: [
+      CustomModel(
+        id:
+            fields
+                .where(
+                  (field) => field.label.toLowerCase().contains(
+                    _query.trim().toLowerCase(),
+                  ),
+                )
+                .firstOrNull
+                ?.id ??
+            fields.first.id,
+        title: fields.first.group,
+        builder: (_, _) => LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth >= 560
+                ? (constraints.maxWidth - 12) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final field in fields)
+                  SizedBox(
+                    key: ValueKey(field.id),
+                    width: width,
+                    child: SegmentedCardGroup(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: control(field),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    ],
+  );
+
+  Widget _editor({bool wide = false}) {
     final data = _data!;
     final section = _section!;
     final draft = _draft!;
+    Widget control(ForumPreferenceField field) => PreferenceControl(
+      key: ValueKey('$_revision/${field.id}'),
+      field: field,
+      value: draft.values[field.id],
+      data: data,
+      onChanged: (value) => setState(() {
+        draft.update(field, value);
+        _saveError = null;
+      }),
+      onBusy: (busy) {
+        if (mounted) setState(() => _operationBusy = busy);
+      },
+    );
+    final fieldGroups = <String, List<ForumPreferenceField>>{};
+    for (final field in draft.fields) {
+      if (field.enabledBy != null && draft.values[field.enabledBy] != true) {
+        continue;
+      }
+      fieldGroups.putIfAbsent(field.group, () => []).add(field);
+    }
     return Column(
       children: [
+        if (wide)
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          preferenceSectionIcon(section),
+                          color: context.emphasis.accent,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            preferenceSectionLabel(section, context.l10n),
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        if (draft.fields.isNotEmpty) _saveButton(),
+                      ],
+                    ),
+                    if (_saveError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _saveError!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Expanded(
           child: AbsorbPointer(
             absorbing: _saving || _operationBusy,
             child: Form(
               key: _formKey,
-              child: ListView(
+              child: SettingsGroupPage(
                 key: ValueKey(section),
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-                children: [
-                  if (section == ForumPreferenceSection.interface)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      child: Text(context.l10n.forumPrefs_interfaceHelp),
-                    ),
+                title: preferenceSectionLabel(section, context.l10n),
+                embedded: true,
+                maxContentWidth: 720,
+                highlightId: _query.trim().isEmpty
+                    ? null
+                    : draft.fields
+                          .where(
+                            (field) => field.label.toLowerCase().contains(
+                              _query.trim().toLowerCase(),
+                            ),
+                          )
+                          .firstOrNull
+                          ?.id,
+                groupsBuilder: (context) => [
                   if (_loadError != null)
-                    ListTile(
-                      title: Text(ErrorUtils.getErrorInfo(_loadError!).message),
-                      trailing: IconButton(
-                        tooltip: context.l10n.common_retry,
-                        onPressed: () => _load(preserveDraft: true),
-                        icon: const Icon(Symbols.refresh_rounded),
-                      ),
+                    SettingsGroup(
+                      title: '',
+                      icon: Symbols.error_rounded,
+                      items: [
+                        ActionModel(
+                          id: 'forum-reload',
+                          title: ErrorUtils.getErrorInfo(_loadError!).message,
+                          icon: Symbols.refresh_rounded,
+                          onTap: (_, _) => _load(preserveDraft: true),
+                        ),
+                      ],
                     ),
-                  for (final field in draft.fields)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: PreferenceControl(
-                        key: ValueKey('$_revision/${field.id}'),
-                        field: field,
-                        value: draft.values[field.id],
-                        data: data,
-                        onChanged: (value) => setState(() {
-                          draft.update(field, value);
-                          _saveError = null;
-                        }),
-                        onBusy: (busy) {
-                          if (mounted) setState(() => _operationBusy = busy);
-                        },
+                  for (final group in fieldGroups.entries)
+                    if (group.value.every(
+                      (field) => field.kind == ForumPreferenceKind.image,
+                    ))
+                      _imageGroup(group.value, control)
+                    else
+                      SettingsGroup(
+                        title: group.key,
+                        icon: preferenceSectionIcon(section),
+                        items: [
+                          for (final field in group.value)
+                            if (field.kind == ForumPreferenceKind.toggle)
+                              SwitchModel(
+                                id: field.id,
+                                title: field.label,
+                                subtitle: field.help,
+                                icon: preferenceSectionIcon(section),
+                                getValue: (_) =>
+                                    draft.values[field.id] == true ||
+                                    draft.values[field.id] == 'true',
+                                onChanged: (_, value) => setState(() {
+                                  draft.update(field, value);
+                                  _saveError = null;
+                                }),
+                              )
+                            else
+                              CustomModel(
+                                id: field.id,
+                                title: field.label,
+                                builder: (_, _) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 10,
+                                  ),
+                                  child: control(field),
+                                ),
+                              ),
+                        ],
                       ),
-                    ),
-                  PreferenceActions(
-                    key: ValueKey('$_username/${section.name}'),
-                    section: section,
-                    data: data,
-                    onChanged: _afterAction,
-                    onBusy: (busy) {
-                      if (mounted) setState(() => _operationBusy = busy);
-                    },
+                  SettingsGroup(
+                    title: '',
+                    icon: preferenceSectionIcon(section),
+                    wrapInCard: false,
+                    items: [
+                      CustomModel(
+                        id: 'forum-actions-${section.name}',
+                        title: '',
+                        builder: (_, _) => PreferenceActions(
+                          key: ValueKey('$_username/${section.name}'),
+                          section: section,
+                          data: data,
+                          onChanged: _afterAction,
+                          onBusy: (busy) {
+                            if (mounted) setState(() => _operationBusy = busy);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
         ),
-        if (draft.fields.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_saveError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      _saveError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                FilledButton(
-                  onPressed: draft.dirty && !_saving && !_operationBusy
-                      ? _save
-                      : null,
-                  child: Text(
-                    _saving
-                        ? context.l10n.common_loading
-                        : context.l10n.common_save,
+        if (!wide && draft.fields.isNotEmpty)
+          PageBackdrop(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_saveError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            _saveError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      _saveButton(),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
       ],
     );
   }
+
+  Widget _saveButton() => FilledButton.icon(
+    onPressed: _draft?.dirty == true && !_saving && !_operationBusy
+        ? _save
+        : null,
+    icon: _saving
+        ? const LoadingSpinner(size: 18)
+        : const Icon(Symbols.check_rounded, size: 18),
+    label: Text(
+      _saving ? context.l10n.common_loading : context.l10n.common_save,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -348,31 +573,69 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
               },
             );
           } else if (!_data!.canEdit) {
-            body = Center(child: Text(context.l10n.forumPrefs_readOnly));
-          } else if (wide) {
-            body = Row(
-              children: [
-                SizedBox(width: 250, child: _navigation()),
-                const VerticalDivider(width: 1),
-                Expanded(
-                  child: _section == null
-                      ? Center(
-                          child: Text(
-                            context.l10n.userProfile_forumPreferences,
-                          ),
-                        )
-                      : _editor(),
-                ),
-              ],
+            body = AppEmptyState(
+              icon: const Icon(Symbols.lock_rounded),
+              title: context.l10n.forumPrefs_readOnly,
             );
           } else {
-            body = _section == null ? _navigation() : _editor();
+            return PaneFilmstrip(
+              masterWidth: wide ? 280 : constraints.maxWidth,
+              viewportPanes: wide ? 2 : 1,
+              animate: !MediaQuery.disableAnimationsOf(context),
+              dividerColor: wide ? Theme.of(context).dividerColor : null,
+              master: Scaffold(
+                appBar: AppBar(
+                  leading: BackButton(onPressed: () => _back(exit: true)),
+                  title: Text(context.l10n.userProfile_forumPreferences),
+                ),
+                body: SafeArea(top: false, child: _navigation(compact: wide)),
+              ),
+              emptyPane: PageBackdrop(
+                child: AppEmptyState(
+                  icon: const Icon(Symbols.settings_rounded),
+                  title: context.l10n.settings_selectHint,
+                ),
+              ),
+              panes: [
+                if (_section != null)
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey(('forum-preferences-pane', _section!)),
+                    tween: Tween(begin: wide ? 0 : 1, end: 1),
+                    duration: wide && !MediaQuery.disableAnimationsOf(context)
+                        ? const Duration(milliseconds: 220)
+                        : Duration.zero,
+                    curve: M3eMotion.defaultEffects.curveFor(
+                      const Duration(milliseconds: 220),
+                    ),
+                    builder: (_, value, child) => Opacity(
+                      key: const ValueKey('forum-preferences-opacity'),
+                      opacity: value,
+                      child: child,
+                    ),
+                    child: Scaffold(
+                      key: ValueKey(('forum-preferences-editor', _section!)),
+                      appBar: wide
+                          ? null
+                          : AppBar(
+                              leading: BackButton(onPressed: _back),
+                              title: Text(
+                                preferenceSectionLabel(_section!, context.l10n),
+                              ),
+                            ),
+                      body: SafeArea(
+                        top: wide,
+                        child: _editor(wide: wide),
+                      ),
+                    ),
+                  ),
+              ],
+            );
           }
           return Scaffold(
             appBar: AppBar(
               leading: BackButton(onPressed: () => _back(exit: wide)),
               title: Text(
-                _section == null
+                wide || _section == null
                     ? context.l10n.userProfile_forumPreferences
                     : preferenceSectionLabel(_section!, context.l10n),
               ),

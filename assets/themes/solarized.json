@@ -5,7 +5,7 @@
     "en": "Solarized"
   },
   "kind": "fixed",
-  "group": "classic",
+  "group": "code",
   "order": 130,
   "style": {"dataColors": "harmonized"},
   "supportsPureBlack": false,

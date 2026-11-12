@@ -623,9 +623,11 @@ void main() {
     final cards = tester
         .widgetList<CompactTopicCard>(find.byType(CompactTopicCard))
         .toList();
-    expect(cards.every((card) => card.grouped), isTrue);
-    expect(cards[0].lastInGroup, isFalse);
-    expect(cards[1].lastInGroup, isTrue);
+    // 标题行是分组第 0 项，置顶话题依次接在后面
+    expect(cards.map((card) => card.group), [
+      (index: 1, count: 3),
+      (index: 2, count: 3),
+    ]);
     // 再新增一条置顶时，旧末行缓存必须切换为中间行。
     topics.publish([
       topic(40, title: '置顶一', pinned: true, unseen: true),
@@ -637,7 +639,7 @@ void main() {
     final second = tester.widget<CompactTopicCard>(
       find.descendant(of: row(41), matching: find.byType(CompactTopicCard)),
     );
-    expect(second.lastInGroup, isFalse);
+    expect(second.group, (index: 2, count: 4));
     expect(tester.takeException(), isNull);
   });
 }

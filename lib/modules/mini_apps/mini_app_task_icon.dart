@@ -20,12 +20,7 @@ abstract final class MiniAppTaskIcon {
       try {
         final recorder = ui.PictureRecorder();
         Canvas(recorder)
-          ..clipRSuperellipse(
-            RSuperellipse.fromRectAndRadius(
-              const Rect.fromLTWH(0, 0, 96, 96),
-              const Radius.circular(96 * .3),
-            ),
-          )
+          ..clipPath(Path()..addOval(const Rect.fromLTWH(0, 0, 96, 96)))
           ..drawImage(image, Offset.zero, Paint());
         final picture = recorder.endRecording();
         try {

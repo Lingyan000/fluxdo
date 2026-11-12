@@ -3,19 +3,18 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
-import '../../pages/user_profile_page.dart';
 import '../../services/auth_session.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/platform_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../widgets/common/error_view.dart';
+import '../../widgets/common/skeleton.dart';
 import 'mini_app.dart';
 import 'mini_app_icon.dart';
-import 'mini_app_card_surface.dart';
+import 'mini_app_metadata.dart';
 import 'mini_app_providers.dart';
 import 'mini_app_runner_page.dart';
 import 'mini_app_window_session.dart';
@@ -45,33 +44,10 @@ class MiniAppDetailPage extends ConsumerWidget {
         );
       },
     );
-    Widget bodyBuilder(BuildContext context, ScrollController? controller) =>
-        Consumer(
-          builder: (context, ref, _) {
-            return ref
-                .watch(miniAppDetailsProvider(id))
-                .when(
-                  loading: () => const SizedBox(
-                    height: 160,
-                    child: Center(child: LoadingSpinner()),
-                  ),
-                  error: (e, _) => ErrorView(
-                    error: e,
-                    onRetry: () => ref.invalidate(miniAppDetailsProvider(id)),
-                  ),
-                  data: (details) => ListView(
-                    controller: controller,
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.all(20),
-                    children: [MiniAppDetailsContent(details: details)],
-                  ),
-                );
-          },
-        );
     final selected = PlatformUtils.isDesktop
         ? await _showDesktopInfo<MiniAppDetails>(
             context,
-            body: bodyBuilder(context, null),
+            body: _MiniAppDetailsBody(appId: id),
             footer: footer,
           )
         : await AppBottomSheet.show<MiniAppDetails>(
@@ -80,7 +56,7 @@ class MiniAppDetailPage extends ConsumerWidget {
             showCloseButton: true,
             footer: footer,
             contentPadding: EdgeInsets.zero,
-            builder: (context) => bodyBuilder(context, null),
+            builder: (_) => _MiniAppDetailsBody(appId: id),
           );
     if (selected == null ||
         !context.mounted ||
@@ -202,21 +178,10 @@ class MiniAppDetailPage extends ConsumerWidget {
                 },
         ),
       ),
-      body: data.when(
-        loading: () => const Center(child: LoadingSpinner()),
-        error: (e, st) => ErrorView(
-          error: e,
-          stackTrace: st,
-          onRetry: () => ref.invalidate(miniAppDetailsProvider(appId)),
-        ),
-        data: (details) => Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [MiniAppDetailsContent(details: details)],
-            ),
-          ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: _MiniAppDetailsBody(appId: appId, shrinkWrap: false),
         ),
       ),
     );
@@ -237,10 +202,43 @@ class _OpenButton extends StatelessWidget {
   );
 }
 
-/// 深链、广场详情与运行页共用身份卡、统计和介绍，保持一致的信息层次。
+class _MiniAppDetailsBody extends ConsumerWidget {
+  const _MiniAppDetailsBody({required this.appId, this.shrinkWrap = true});
+  final String appId;
+  final bool shrinkWrap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final data = ref.watch(miniAppDetailsProvider(appId));
+    return ListView(
+      shrinkWrap: shrinkWrap,
+      padding: const EdgeInsets.all(24),
+      children: [
+        AppLoadingSwitcher(
+          identity: (appId, AuthSession().generation),
+          loading: data.isLoading,
+          delay: Duration.zero,
+          loadingBuilder: (_) => const MiniAppDetailsSkeleton(),
+          child: data.when(
+            loading: () => const MiniAppDetailsSkeleton(),
+            error: (error, stackTrace) => ErrorView(
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () => ref.invalidate(miniAppDetailsProvider(appId)),
+            ),
+            data: (details) => MiniAppDetailsContent(details: details),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 信息直接排在弹框表面，深链页面与运行页沿用同一份内容。
 class MiniAppDetailsContent extends StatelessWidget {
   const MiniAppDetailsContent({super.key, required this.details});
   final MiniAppDetails details;
+
   @override
   Widget build(BuildContext context) {
     final app = details.app;
@@ -249,135 +247,73 @@ class MiniAppDetailsContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SegmentedCardItem(
-          index: 0,
-          count: 1,
-          outerRadius: 28,
-          child: MiniAppCardSurface(
-            app: app,
-            prominent: true,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+        Row(
+          children: [
+            MiniAppIcon(app, size: 64),
+            const SizedBox(width: 16),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      MiniAppIcon(app, size: 64),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(app.name, style: theme.textTheme.titleLarge),
-                            const SizedBox(height: 6),
-                            Text(
-                              l.miniApp_version(app.version),
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
+                  Text(app.name, style: theme.textTheme.titleLarge),
+                  if (app.version.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      l.miniApp_version(app.version),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 10,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Symbols.star_rounded,
-                            size: 20,
-                            color: context.emphasis.selected,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              miniAppRating(context, app),
-                              style: theme.textTheme.labelLarge,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (app.usageCount > 0)
-                        Text(
-                          l.miniApp_usage(app.usageCount),
-                          style: theme.textTheme.labelLarge,
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ),
             ),
-          ),
-        ),
-        if (app.description.trim().isNotEmpty)
-          _section(context, l.miniApp_description, app.description),
-        const SizedBox(height: 24),
-        SegmentedCardGroup(
-          children: [
-            if (app.authorUsername.isNotEmpty)
-              ListTile(
-                leading: const Icon(Symbols.person_rounded),
-                title: Text(app.author),
-                subtitle: Text(l.miniApp_developer),
-                trailing: const Icon(Symbols.chevron_right_rounded),
-                onTap: () => MiniAppWindowSession.current != null
-                    ? MiniAppWindowSession.current!.community(
-                        '/u/${Uri.encodeComponent(app.authorUsername)}',
-                      )
-                    : Navigator.of(context).push(
-                        InteractionPageRoute(
-                          builder: (_) =>
-                              UserProfilePage(username: app.authorUsername),
-                        ),
-                      ),
-              ),
-            if (app.discussionTopicId case final int topicId)
-              ListTile(
-                leading: const Icon(Symbols.forum_rounded),
-                title: Text(l.miniApp_discussion),
-                trailing: const Icon(Symbols.chevron_right_rounded),
-                onTap: () => MiniAppWindowSession.current != null
-                    ? MiniAppWindowSession.current!.community('/t/$topicId')
-                    : Navigator.of(context).push(
-                        InteractionPageRoute(
-                          builder: (_) => TopicDetailPage(topicId: topicId),
-                        ),
-                      ),
-              ),
           ],
         ),
-        if (app.releaseNotes.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: SegmentedCardItem(
-              index: 0,
-              count: 1,
-              child: ExpansionTile(
-                title: Text(
-                  l.miniApp_releaseNotes,
-                  style: theme.textTheme.titleSmall,
-                ),
-                subtitle: Text(l.miniApp_version(app.version)),
-                shape: const Border(),
-                collapsedShape: const Border(),
-                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectableText(
-                    app.releaseNotes,
-                    style: theme.textTheme.bodyMedium,
+        if (app.author.isNotEmpty || app.authorUsername.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          MiniAppDeveloper(app: app, showRole: true),
+        ],
+        const Divider(height: 32),
+        MiniAppStatistics(app: app),
+        if (app.description.trim().isNotEmpty)
+          _section(context, l.miniApp_description, app.description),
+        if (app.discussionTopicId case final int topicId) ...[
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Symbols.forum_rounded),
+            title: Text(l.miniApp_discussion),
+            trailing: const Icon(Symbols.chevron_right_rounded),
+            onTap: () => MiniAppWindowSession.current != null
+                ? MiniAppWindowSession.current!.community('/t/$topicId')
+                : Navigator.of(context).push(
+                    InteractionPageRoute(
+                      builder: (_) => TopicDetailPage(topicId: topicId),
+                    ),
                   ),
-                ],
-              ),
-            ),
           ),
+        ],
+        if (app.releaseNotes.trim().isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ExpansionTile(
+            title: Text(
+              l.miniApp_releaseNotes,
+              style: theme.textTheme.titleSmall,
+            ),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                app.releaseNotes,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -395,9 +331,54 @@ class MiniAppDetailsContent extends StatelessWidget {
   );
 }
 
-String miniAppRating(BuildContext context, MiniApp app) => app.ratingCount == 0
-    ? context.l10n.miniApp_noRating
-    : context.l10n.miniApp_score(
-        app.rating.toStringAsFixed(1),
-        app.ratingCount,
-      );
+class MiniAppDetailsSkeleton extends StatelessWidget {
+  const MiniAppDetailsSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Skeleton(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SkeletonCircle(size: 64),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(height: 24),
+                  SizedBox(height: 10),
+                  FractionallySizedBox(
+                    widthFactor: .4,
+                    child: SkeletonBox(height: 16),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 24),
+        Row(
+          children: [
+            SkeletonCircle(size: 40),
+            SizedBox(width: 8),
+            SkeletonBox(width: 100, height: 20),
+          ],
+        ),
+        SizedBox(height: 32),
+        FractionallySizedBox(widthFactor: .6, child: SkeletonBox(height: 18)),
+        SizedBox(height: 10),
+        FractionallySizedBox(widthFactor: .8, child: SkeletonBox(height: 16)),
+        SizedBox(height: 28),
+        SkeletonBox(width: 80, height: 18),
+        SizedBox(height: 12),
+        SkeletonBox(height: 16),
+        SizedBox(height: 8),
+        SkeletonBox(height: 16),
+        SizedBox(height: 8),
+        FractionallySizedBox(widthFactor: .7, child: SkeletonBox(height: 16)),
+      ],
+    ),
+  );
+}

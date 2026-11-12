@@ -42,7 +42,7 @@ abstract final class MiniAppHostAdapter {
 
   /// 官方 links.open 在权限确认后调用宿主 window.open。原生按钮的脚本点击
   /// 不具备浏览器 user activation，不能依赖 WebView 的弹窗/导航回调。
-  /// 这里只接收可信主宿主已经执行的打开操作，通过现有状态轮询交回原生；
+  /// 这里只接收可信主宿主已经执行的打开操作，通过宿主状态通知交回原生；
   /// 不监听应用 iframe 消息、不代替官方权限检查，也不创建第二个 WebView。
   static String navigationScript(Uri entry) =>
       '''(() => {
@@ -73,6 +73,7 @@ abstract final class MiniAppHostAdapter {
            !target.href.startsWith(target.origin + '/'))) return null;
       // 一个确认周期只接受一个请求，重复回调不排队轰炸用户。
       if (!pending) pending = Object.freeze({id: documentId + ':' + (++sequence), url: target.href});
+      globalThis.fluxdoMiniAppEvents?.notify();
       // 官方使用 noopener,noreferrer，本就不依赖返回窗口句柄。
       return null;
     };
@@ -150,6 +151,9 @@ abstract final class MiniAppHostAdapter {
     const audio = document.querySelector('.mini-app-page__audio-trigger');
     const loader = document.querySelector('.mini-app-loader');
     const loading = loader?.querySelector('.mini-app-loader__loading');
+    const frame = loader?.querySelector('iframe');
+    const events = globalThis.fluxdoMiniAppEvents;
+    const waitingForRender = !!loading?.hidden && !!frame && !!events && events.renderedFrame !== frame;
     const progress = loading?.querySelector('progress');
     const stage = loading?.querySelector('[data-role="stage"]');
     const detail = loading?.querySelector('[data-role="detail"]');
@@ -191,13 +195,14 @@ abstract final class MiniAppHostAdapter {
       externalLink: globalThis.fluxdoMiniAppLinks?.peek() || null,
       release,
       bootFailure,
-      performance: measure ? {startTime:measure.startTime, ...measure.detail} : null,
+      performance: measure && !waitingForRender ? {startTime:measure.startTime, ...measure.detail} : null,
       engineMounted: document.querySelector('.mini-app-page')?.hasAttribute('data-fluxdo-mounted') || false,
+      soundAvailable: !!audio && !audio.disabled || !!header?.hasAttribute('data-fluxdo-muted'),
       muted: audio ? audio.getAttribute('aria-pressed') !== 'true' :
         header?.hasAttribute('data-fluxdo-muted') ? header.getAttribute('data-fluxdo-muted') === 'true' : null,
       fullscreen: !!document.fullscreenElement,
-      ready: !!loader && !!loading?.hidden && !!loader.querySelector('iframe'),
-      loading: !!loading && !loading.hidden,
+      ready: !!loading?.hidden && !waitingForRender && !!frame,
+      loading: !!loading && (!loading.hidden || waitingForRender),
       stage: stage?.textContent?.trim() || '',
       detail: detail?.textContent?.trim() || '',
       progress: progress?.hasAttribute('value') && progress.max > 0 ? progress.value / progress.max : null,

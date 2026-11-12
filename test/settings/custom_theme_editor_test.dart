@@ -15,6 +15,7 @@ import 'package:fluxdo/settings/settings_renderer.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
+import 'package:fluxdo/theme/theme_style.dart';
 import 'package:fluxdo/theme/shape_presets.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -182,6 +183,52 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('新建主题：界面风格可逐项调整，保存后写入主题', (tester) async {
+    final c = await pump(tester);
+    await tester.tap(_choice('新建主题'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '素笺');
+
+    Future<void> choose<T>(String label) async {
+      final target = find.descendant(
+        of: find.byType(M3eButtonGroup<T>),
+        matching: find.text(label),
+      );
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    await choose<SurfaceStyle>('浮起');
+    await choose<ControlStyle>('墨色');
+    await choose<NavIndicatorStyle>('浅底');
+    await choose<InputStyle>('描边');
+    await choose<QuoteStyle>('竖条');
+    await choose<DataColorStyle>('柔和');
+    await tester.ensureVisible(find.text('纸张纹理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('纸张纹理'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(
+      c.read(themeProvider).customThemes.single.style,
+      const ThemeStyle(
+        surfaces: SurfaceStyle.raised,
+        controls: ControlStyle.ink,
+        navIndicator: NavIndicatorStyle.tint,
+        inputs: InputStyle.outlined,
+        quote: QuoteStyle.bar,
+        texture: TextureStyle.paper,
+        dataColors: DataColorStyle.muted,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('长按自定义主题可复制代码与删除', (tester) async {
     final c = await pump(tester);
     await tester.tap(_choice('新建主题'));
@@ -250,6 +297,19 @@ void main() {
       final image = await boundary.toImage(pixelRatio: 1);
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       File('$previewDir/theme_editor_shape.png')
+          .writeAsBytesSync(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+    await tester.scrollUntilVisible(
+      find.byType(M3eButtonGroup<DataColorStyle>),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: 1);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('$previewDir/theme_editor_style.png')
           .writeAsBytesSync(bytes!.buffer.asUint8List());
       image.dispose();
     });

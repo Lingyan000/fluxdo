@@ -247,7 +247,7 @@ void main() {
     final container = await _pump(tester);
     _expectAlignedShapes(tester);
     expect(find.text('让阅读更合你的习惯'), findsOneWidget);
-    expect(find.text('经典配色'), findsNothing);
+    expect(find.text('代码配色'), findsNothing);
     expect(find.text('字体下载源'), findsNothing);
     final position = tester
         .state<ScrollableState>(find.byType(Scrollable).first)
@@ -262,7 +262,7 @@ void main() {
     await tester.tap(find.text('全部主题'));
     await tester.pumpAndSettle();
     expect(find.byType(AppearanceSectionPage), findsOneWidget);
-    expect(find.text('经典配色'), findsOneWidget);
+    expect(find.text('代码配色'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('新建主题'),
       400,

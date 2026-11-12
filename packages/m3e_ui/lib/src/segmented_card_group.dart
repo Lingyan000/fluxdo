@@ -290,14 +290,27 @@ class _CardPresenceState extends State<_CardPresence>
 
 /// 分段卡片组中的单个条目块
 ///
-/// 根据 [index] / [count] 决定上下圆角。供 [SegmentedCardGroup] 内部使用；
-/// 懒加载列表（ListView.builder）中也可直接按索引使用。
+/// 根据 [index] / [count] 决定上下圆角，并按主题的 [SegmentedCardStyle]
+/// 呈现：分段模式为独立色块，描边模式为整组细线框里的一段，平铺模式不画
+/// 容器。[SegmentedCardGroup] 内部使用它；懒加载列表（ListView.builder）
+/// 中也可直接按索引使用，各模式的外观与 [SegmentedCardGroup] 一致。
 class SegmentedCardItem extends StatelessWidget {
   final int index;
   final int count;
   final double outerRadius;
   final double innerRadius;
+
+  /// 底色（含选中、高亮等状态色）。缺省时分段模式取 cardTheme，描边模式
+  /// 取 [SegmentedCardStyle.background]，平铺模式透明。
   final Color? color;
+
+  /// 分段模式下与下一项的间距，画在条目下方；懒加载列表逐项使用时传入。
+  /// 描边、平铺模式条目之间以细线分隔，不留缝（实际值见 [gapOf]）。
+  final double gap;
+
+  /// 叠在条目轮廓上的描边（例如选中态）
+  final BorderSide side;
+
   final Widget child;
 
   const SegmentedCardItem({
@@ -307,27 +320,141 @@ class SegmentedCardItem extends StatelessWidget {
     this.outerRadius = 20,
     this.innerRadius = 5,
     this.color,
+    this.gap = 0,
+    this.side = BorderSide.none,
     required this.child,
   });
+
+  /// 当前模式下条目之间实际留出的间距。
+  static double gapOf(BuildContext context, double gap) =>
+      SegmentedCardStyle.of(context).mode == SegmentedCardMode.segmented
+      ? gap
+      : 0;
+
+  /// 条目轮廓的圆角：内容自带按压、水波纹等效果时用它对齐形状。
+  static BorderRadius borderRadiusOf(
+    BuildContext context, {
+    required int index,
+    required int count,
+    double outerRadius = 20,
+    double innerRadius = 5,
+  }) {
+    final segmented =
+        SegmentedCardStyle.of(context).mode == SegmentedCardMode.segmented;
+    final inner = segmented ? innerRadius : 0.0;
+    return BorderRadius.vertical(
+      top: context.shapes.radius(index == 0 ? outerRadius : inner),
+      bottom: context.shapes.radius(index == count - 1 ? outerRadius : inner),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final background =
-        color ?? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow;
+    final scheme = theme.colorScheme;
+    final style = SegmentedCardStyle.of(context);
+    final radius = borderRadiusOf(
+      context,
+      index: index,
+      count: count,
+      outerRadius: outerRadius,
+      innerRadius: innerRadius,
+    );
+    final shape = RoundedSuperellipseBorder(borderRadius: radius, side: side);
 
-    return Material(
-      color: background,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.vertical(
-          top: context.shapes.radius(index == 0 ? outerRadius : innerRadius),
-          bottom: context.shapes.radius(
-            index == count - 1 ? outerRadius : innerRadius,
-          ),
-        ),
+    if (style.mode == SegmentedCardMode.segmented) {
+      final item = Material(
+        color: color ?? theme.cardTheme.color ?? scheme.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: shape,
+        child: child,
+      );
+      return index < count - 1 && gap > 0
+          ? Padding(padding: EdgeInsets.only(bottom: gap), child: item)
+          : item;
+    }
+
+    final outlined = style.mode == SegmentedCardMode.outlined;
+    return CustomPaint(
+      foregroundPainter: _LinedSegmentPainter(
+        divider: index > 0 ? style.dividerColor ?? scheme.outlineVariant : null,
+        outline: outlined ? style.borderColor ?? scheme.outlineVariant : null,
+        first: index == 0,
+        last: index == count - 1,
+        radius: context.shapes.radius(outerRadius),
       ),
-      child: child,
+      child: Material(
+        color:
+            color ??
+            (outlined ? style.background ?? scheme.surface : Colors.transparent),
+        clipBehavior: Clip.antiAlias,
+        shape: shape,
+        child: child,
+      ),
     );
   }
+}
+
+/// 描边 / 平铺模式下单个条目的线：顶部分隔线，以及整组外框落在本条目
+/// 范围内的那一段（外框按整组形状绘制、裁剪到本条目，逐项拼起来就是
+/// 一个连续的框）。
+class _LinedSegmentPainter extends CustomPainter {
+  _LinedSegmentPainter({
+    required this.divider,
+    required this.outline,
+    required this.first,
+    required this.last,
+    required this.radius,
+  });
+
+  final Color? divider;
+  final Color? outline;
+  final bool first;
+  final bool last;
+  final Radius radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = Offset.zero & size;
+    final outline = this.outline;
+    if (outline != null) {
+      // 不是组首 / 组尾的一侧向外延伸一个圆角，圆角就落在本条目之外
+      final reach = radius.y * 2 + 1;
+      final frame = Rect.fromLTRB(
+        0.5,
+        first ? 0.5 : -reach,
+        size.width - 0.5,
+        last ? size.height - 0.5 : size.height + reach,
+      );
+      canvas
+        ..save()
+        ..clipRect(bounds)
+        ..drawRSuperellipse(
+          RSuperellipse.fromRectAndRadius(frame, radius),
+          Paint()
+            ..color = outline
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        )
+        ..restore();
+    }
+    final divider = this.divider;
+    if (divider != null) {
+      canvas.drawLine(
+        const Offset(0, 0.3),
+        Offset(size.width, 0.3),
+        Paint()
+          ..color = divider
+          ..strokeWidth = 0.6,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LinedSegmentPainter old) =>
+      old.divider != divider ||
+      old.outline != outline ||
+      old.first != first ||
+      old.last != last ||
+      old.radius != radius;
 }

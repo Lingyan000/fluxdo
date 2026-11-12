@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
@@ -6,6 +7,9 @@ import 'package:flutter/material.dart';
 
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../pages/user_profile_page.dart';
+import '../pages/group_page.dart';
+import '../pages/groups_page.dart';
+import '../utils/category_navigation.dart';
 import '../pages/webview_login_page.dart';
 import '../pages/webview_page.dart';
 import '../constants.dart';
@@ -119,6 +123,42 @@ class DeepLinkService {
 
     if (await openMiniAppLink(context, uri.toString())) return;
     if (!context.mounted) return;
+
+    final directoryInfo = DiscourseUrlParser.parseGroupDirectory(url);
+    if (directoryInfo != null) {
+      Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) => GroupsPage(
+            initialFilter: directoryInfo.filter,
+            initialType: directoryInfo.type,
+            initialOrder: directoryInfo.order,
+            initialAscending: directoryInfo.ascending,
+            username: directoryInfo.username,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final groupInfo = DiscourseUrlParser.parseGroup(url);
+    if (groupInfo != null) {
+      Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) => GroupPage(
+            name: groupInfo.name,
+            initialSection: groupInfo.section,
+            initialActivityFilter: groupInfo.activityFilter,
+            initialCategoryId: groupInfo.categoryId,
+          ),
+        ),
+      );
+      return;
+    }
+    final categoryInfo = DiscourseUrlParser.parseCategory(url);
+    if (categoryInfo != null) {
+      await openCategoryPage(context, categoryInfo.categoryId);
+      return;
+    }
 
     // 尝试匹配用户链接 /u/username
     final userInfo = DiscourseUrlParser.parseUser(uri.path);

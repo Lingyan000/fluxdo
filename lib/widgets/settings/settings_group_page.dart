@@ -27,6 +27,9 @@ class SettingsGroupPage extends ConsumerStatefulWidget {
   /// 内容最大宽度。为 null 时铺满页面。
   final double? maxContentWidth;
 
+  /// 嵌入已有表单外壳，沿用分组、搜索定位和设置项渲染。
+  final bool embedded;
+
   const SettingsGroupPage({
     super.key,
     required this.title,
@@ -34,6 +37,7 @@ class SettingsGroupPage extends ConsumerStatefulWidget {
     this.highlightId,
     this.actions,
     this.maxContentWidth,
+    this.embedded = false,
   });
 
   @override
@@ -93,25 +97,34 @@ class _SettingsGroupPageState extends ConsumerState<SettingsGroupPage> {
       children: [
         for (final group in groups)
           if (_hasVisibleItems(group)) ...[
-            _buildSectionHeader(theme, group.title, group.icon, group.trailing),
-            const SizedBox(height: 12),
+            if (group.title.isNotEmpty) ...[
+              _buildSectionHeader(
+                theme,
+                group.title,
+                group.icon,
+                group.trailing,
+              ),
+              const SizedBox(height: 12),
+            ],
             _buildGroupItems(theme, group),
             const SizedBox(height: 24),
           ],
       ],
     );
 
+    final body = widget.maxContentWidth == null
+        ? listView
+        : Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: widget.maxContentWidth!),
+              child: listView,
+            ),
+          );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title), actions: widget.actions),
-      body: widget.maxContentWidth == null
-          ? listView
-          : Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: widget.maxContentWidth!),
-                child: listView,
-              ),
-            ),
+      body: body,
     );
   }
 

@@ -1,14 +1,14 @@
 {
   "id": "terminal",
   "name": {
-    "zh": "终端",
-    "zh_HK": "終端",
-    "zh_TW": "終端",
-    "en": "Terminal"
+    "zh": "磷光",
+    "zh_HK": "磷光",
+    "zh_TW": "磷光",
+    "en": "Phosphor"
   },
   "kind": "fixed",
-  "group": "terminal",
-  "order": 300,
+  "group": "code",
+  "order": 160,
   "style": {"surfaces": "outlined", "navIndicator": "bar", "inputs": "outlined", "shadows": false, "titleFont": "mono", "quote": "bar", "dataColors": "mono"},
   "shape": "sharp",
   "font": {"mono": "firacode"},

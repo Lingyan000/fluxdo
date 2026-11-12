@@ -10,6 +10,7 @@ import 'mini_app_card_surface.dart';
 import 'mini_app_content_panel.dart';
 import 'mini_app_detail_page.dart';
 import 'mini_app_identity.dart';
+import 'mini_app_metadata.dart';
 import 'mini_app_providers.dart';
 import 'mini_app_url.dart';
 
@@ -63,7 +64,8 @@ class MiniAppEmbedCard extends ConsumerWidget {
                             app: app,
                             subtitle: [
                               l.miniApp_contentLabel,
-                              if (app.author.isNotEmpty) app.author,
+                              if (app.version.isNotEmpty)
+                                l.miniApp_version(app.version),
                             ].join(' · '),
                           ),
                         ),
@@ -95,6 +97,12 @@ class MiniAppEmbedCard extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    if (details != null) ...[
+                      MiniAppDeveloper(app: app),
+                      const SizedBox(height: 8),
+                      MiniAppStatistics(app: app, compact: true),
+                      const SizedBox(height: 12),
+                    ],
                     Wrap(
                       spacing: 12,
                       runSpacing: 8,
@@ -118,11 +126,6 @@ class MiniAppEmbedCard extends ConsumerWidget {
                                 : l.miniApp_open,
                           ),
                         ),
-                        if (details != null && app.ratingCount > 0)
-                          Text(
-                            '★ ${app.rating.toStringAsFixed(1)}',
-                            style: theme.textTheme.labelMedium,
-                          ),
                       ],
                     ),
                   ],

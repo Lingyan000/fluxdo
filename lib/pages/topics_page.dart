@@ -3237,11 +3237,13 @@ class _TopicListState extends ConsumerState<_TopicList>
                         }
 
                         final topic = topics[topicIndex];
-                        final itemStyle = !topic.pinned
-                            ? TopicItemStyle.standard
-                            : topicIndex == _pinnedTopics.pinned.length - 1
-                            ? TopicItemStyle.lastGroupedPinned
-                            : TopicItemStyle.groupedPinned;
+                        // 置顶话题接在分组标题行（第 0 项）之后
+                        final TopicGroupSlot? group = topic.pinned
+                            ? (
+                                index: topicIndex + 1,
+                                count: _pinnedTopics.pinned.length + 1,
+                              )
+                            : null;
                         final shouldHighlight = _highlightedTopicIds.contains(
                           topic.id,
                         );
@@ -3274,7 +3276,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                               return buildTopicItem(
                                 context: context,
                                 topic: topic,
-                                style: itemStyle,
+                                group: group,
                                 isSelected: topic.id == selectedTopicId,
                                 onTap: () {
                                   _syncKeyboardFocusToTopicId(topic.id);
@@ -3291,7 +3293,7 @@ class _TopicListState extends ConsumerState<_TopicList>
 
                         final signature = (
                           topic: topic,
-                          itemStyle: itemStyle,
+                          group: group,
                           isSelected: topic.id == selectedTopicId,
                           enableLongPress: enableLongPress,
                           category: _categorySignatureFor(topic),
@@ -3315,7 +3317,7 @@ class _TopicListState extends ConsumerState<_TopicList>
                         final item = buildTopicItem(
                           context: context,
                           topic: topic,
-                          style: itemStyle,
+                          group: group,
                           isSelected: topic.id == selectedTopicId,
                           onTap: () {
                             _syncKeyboardFocusToTopicId(topic.id);

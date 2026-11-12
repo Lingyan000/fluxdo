@@ -1,8 +1,54 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/models/forum_preferences.dart';
 import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/pages/forum_preferences/preference_fields.dart';
+import 'package:fluxdo/l10n/s.dart';
 
 void main() {
+  test('原生设置保留服务端行为，过滤网页外观与侧栏配置', () {
+    final data = ForumPreferences(
+      user: {
+        'username': 'tester',
+        'can_change_tracking_preferences': true,
+        'user_option': {
+          'hide_presence': true,
+          'bookmark_auto_delete_preference': 2,
+          'theme_ids': [1],
+          'text_size': 'largest',
+          'sidebar_link_to_filtered_list': true,
+          'chat_send_shortcut': 'enter',
+          'chat_enabled': true,
+          'ignore_channel_wide_mention': true,
+        },
+      },
+      site: {},
+      settings: {'chat_enabled': true},
+    );
+    final l10n = AppLocale.zh.buildSync();
+    final fields = ForumPreferenceSection.values.expand(
+      (section) => preferenceFields(section, data, l10n),
+    );
+    final keys = fields.map((field) => field.key).toSet();
+    expect(
+      keys,
+      containsAll([
+        'hide_presence',
+        'bookmark_auto_delete_preference',
+        'chat_enabled',
+        'ignore_channel_wide_mention',
+      ]),
+    );
+    expect(
+      keys.intersection({
+        'theme_ids',
+        'text_size',
+        'sidebar_link_to_filtered_list',
+        'chat_send_shortcut',
+      }),
+      isEmpty,
+    );
+  });
+
   test('只提交修改字段，保留未知用户选项', () {
     const name = ForumPreferenceField(key: 'name', label: '名称');
     const notify = ForumPreferenceField(

@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/custom_themes.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
+import 'package:fluxdo/theme/theme_style.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 ThemeSpec _asset(String id) => ThemeSpec.fromJson(
@@ -42,6 +44,18 @@ void main() {
       expect(draft.accents.first.light, resolved.light.primary);
       // 底稿本身可解析回同样的配色
       expect(_resolve(draft).light.surface, resolved.light.surface);
+    });
+
+    test('底稿沿用原主题的界面风格', () {
+      for (final base in [ThemeRegistry.minimal, _asset('paper')]) {
+        final draft = CustomThemes.draftFrom(
+          base,
+          name: '副本',
+          resolved: _resolve(base),
+        );
+        expect(draft.style, base.style);
+        expect(draft.shape, base.shape);
+      }
     });
 
     test('固定配色主题的底稿复制配色并脱离原主题族', () {
@@ -80,6 +94,80 @@ void main() {
       final spec = CustomThemes.importFrom(code, existingIds: {'nord'});
       expect(spec.id, startsWith('custom-'));
       expect(spec.group, ThemeGroup.custom);
+    });
+
+    test('导入时补全省略的字段', () {
+      final spec = CustomThemes.importFrom(
+        jsonEncode({
+          'name': {'zh': '手写'},
+          // 旧版本的分组名，导入时忽略
+          'group': 'terminal',
+          'style': {'surfaces': 'raised'},
+          'light': {
+            'bg': '#FFFFFF',
+            'fg': '#111111',
+            'hues': {'red': '#CC0000'},
+          },
+          'dark': {'bg': '#101010', 'fg': '#EEEEEE'},
+          'accents': [
+            '#3366CC',
+            {'light': '#AA3355'},
+          ],
+        }),
+        existingIds: const {},
+      );
+      expect(spec.id, startsWith('custom-'));
+      expect(spec.group, ThemeGroup.custom);
+      expect(spec.isGenerated, isFalse);
+      expect(spec.style.surfaces, SurfaceStyle.raised);
+      // 写了的色相保留，缺省的补齐
+      expect(spec.light!.hues[AppHue.red], const Color(0xFFCC0000));
+      expect(spec.light!.hues.keys, containsAll(AppHue.basics));
+      expect(spec.dark!.hues.keys, containsAll(AppHue.basics));
+      // 次要文字、分割线落在背景与文字之间
+      final dark = spec.dark!;
+      expect(
+        dark.fgMuted.computeLuminance(),
+        inExclusiveRange(
+          dark.bg.computeLuminance(),
+          dark.fg.computeLuminance(),
+        ),
+      );
+      expect(dark.border, isNot(dark.bg));
+      // 强调色：单个颜色两侧共用，只给一侧的补到另一侧
+      expect(spec.accents.map((a) => a.id).toSet().length, 2);
+      expect(spec.accents.first.dark, const Color(0xFF3366CC));
+      expect(spec.accents.last.dark, const Color(0xFFAA3355));
+      // 补全后的主题可以正常解析，导出再导入内容不变
+      _resolve(spec);
+      final again = CustomThemes.importFrom(
+        CustomThemes.export(spec),
+        existingIds: const {},
+      );
+      expect(again.toJson(), spec.toJson());
+    });
+
+    test('补全不替写错的字段兜底', () {
+      Map<String, Object?> code({Object? bg, Object? hues, Object? accents}) =>
+          {
+            'light': {'bg': bg ?? '#FFFFFF', 'fg': '#111111', 'hues': ?hues},
+            'dark': {'bg': '#101010', 'fg': '#EEEEEE'},
+            'accents': accents ?? ['#3366CC'],
+          };
+      for (final bad in [
+        code(bg: 'white'),
+        code(hues: 'red'),
+        code(hues: {'crimson': '#CC0000'}),
+        code(accents: const []),
+        code(accents: ['blue']),
+        {'light': code()['light'], 'accents': ['#3366CC']},
+      ]) {
+        expect(
+          () => CustomThemes.importFrom(jsonEncode(bad), existingIds: const {}),
+          throwsFormatException,
+          reason: '$bad',
+        );
+      }
     });
 
     test('非法代码与生成式主题拒绝导入', () {

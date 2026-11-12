@@ -20,6 +20,7 @@ import '../../services/windows_webview_environment_service.dart';
 import 'mini_app.dart';
 import 'mini_app_engine.dart';
 import 'mini_app_launch_report.dart';
+import 'mini_app_runtime_cache.dart';
 import '../../services/log/log_writer.dart';
 import 'mini_app_providers.dart';
 import 'mini_app_task_icon.dart';
@@ -251,6 +252,9 @@ class MiniAppWindowBridge {
         case 'prime':
           await WebViewCookiePriming.instance.prime(s.entry.toString());
           return null;
+        case 'runtimeAsset':
+          final result = await MiniAppRuntimeCache.instance.handle(body);
+          return AuthSession().isValid(s.generation) ? result : null;
         case 'verifyCertificate':
           return NetworkSettingsService.instance.webViewUsesCoreMitm &&
               NetCoreBindings.instance.verifyWebViewCertificate(

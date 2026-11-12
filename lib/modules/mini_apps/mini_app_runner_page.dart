@@ -13,6 +13,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:uuid/uuid.dart';
 
 import 'mini_app_fullscreen.dart';
 import 'mini_app_window_bridge.dart';
@@ -46,6 +47,8 @@ import 'mini_app.dart';
 import 'mini_app_detail_page.dart';
 import 'mini_app_feedback_dialog.dart';
 import 'mini_app_host_adapter.dart';
+import 'mini_app_host_events.dart';
+import 'mini_app_runtime_cache.dart';
 import 'mini_app_modal_blur.dart';
 import 'mini_app_media_lifecycle.dart';
 import 'mini_app_runner_chrome.dart';
@@ -268,6 +271,10 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
   MiniAppMediaBinding? _mediaBinding;
   bool _nativeFullscreen = false, _platformFullscreen = false;
   int? _pollingEpoch;
+  String? _hostEventToken;
+  int _hostEventSequence = 0;
+  bool _hostEventsActive = false;
+  Map? _pendingHostState;
   bool _soundBusy = false,
       _compatible = false,
       _recorded = false,
@@ -574,6 +581,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     _modalBlur.reset();
     _viewEpoch++;
     _documentEpoch++;
+    _resetHostEvents();
     _invalidatePermissionAnswer();
     _bootTimer?.cancel();
     _stateTimer?.cancel();
@@ -595,6 +603,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     _modalBlur.reset();
     _viewEpoch++;
     _documentEpoch++;
+    _resetHostEvents();
     _invalidatePermissionAnswer();
     _bootTimer?.cancel();
     if (_fullscreen) _leaveFullscreen();
@@ -850,10 +859,112 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       return Future.value();
     }
     _stateTimer = Timer.periodic(
-      const Duration(milliseconds: 250),
+      _hostEventsActive
+          ? const Duration(seconds: 5)
+          : const Duration(milliseconds: 250),
       (_) => _readState(),
     );
     return _readState();
+  }
+
+  void _resetHostEvents() {
+    _hostEventToken = null;
+    _hostEventSequence = 0;
+    _hostEventsActive = false;
+    _pendingHostState = null;
+  }
+
+  bool _acceptHostMessage(
+    InAppWebViewController controller,
+    int viewEpoch,
+    JavaScriptHandlerFunctionData data,
+  ) =>
+      mounted &&
+      _active &&
+      viewEpoch == _viewEpoch &&
+      controller == _controller &&
+      AuthSession().isValid(_generation) &&
+      data.isMainFrame &&
+      data.origin.scheme == _entry?.scheme &&
+      data.origin.host == _entry?.host &&
+      data.origin.port == _entry?.port &&
+      data.requestUrl.scheme == _entry?.scheme &&
+      data.requestUrl.host == _entry?.host &&
+      data.requestUrl.port == _entry?.port &&
+      data.requestUrl.path == _entry?.path;
+
+  void _registerHostHandlers(InAppWebViewController controller, int viewEpoch) {
+    controller.addJavaScriptHandler(
+      handlerName: MiniAppHostEvents.handler,
+      callback: (JavaScriptHandlerFunctionData data) {
+        if (!_acceptHostMessage(controller, viewEpoch, data) ||
+            data.args.length != 1 ||
+            data.args.first is! Map) {
+          return false;
+        }
+        final message = data.args.first as Map;
+        final sequence = message['sequence'];
+        final state = message['state'];
+        if (_hostEventToken == null ||
+            message['token'] != _hostEventToken ||
+            sequence is! int ||
+            sequence <= _hostEventSequence ||
+            state is! Map ||
+            jsonEncode(state).length > 65536) {
+          return false;
+        }
+        _hostEventSequence = sequence;
+        _pendingHostState = state;
+        if (!_hostEventsActive) {
+          _hostEventsActive = true;
+          unawaited(_startPolling());
+        } else {
+          unawaited(_readState());
+        }
+        return true;
+      },
+    );
+    controller.addJavaScriptHandler(
+      handlerName: MiniAppRuntimeCache.handler,
+      callback: (JavaScriptHandlerFunctionData data) async {
+        if (_engine != MiniAppEngine.lightweight ||
+            !_acceptHostMessage(controller, viewEpoch, data) ||
+            data.args.length != 1 ||
+            data.args.first is! Map) {
+          return null;
+        }
+        try {
+          final request = Map<String, dynamic>.from(data.args.first as Map);
+          final session = MiniAppWindowSession.current;
+          final result = session == null
+              ? await MiniAppRuntimeCache.instance.handle(request)
+              : await session.request('runtimeAsset', request);
+          return _acceptHostMessage(controller, viewEpoch, data)
+              ? result
+              : null;
+        } catch (_) {
+          return null;
+        }
+      },
+    );
+  }
+
+  Future<Map?> _connectHostEvents(int epoch) async {
+    if (_hostEventToken != null) return null;
+    final token = _hostEventToken = const Uuid().v4();
+    try {
+      final installed = await _evaluate(
+        MiniAppHostEvents.install(_entry!, token),
+      );
+      if (epoch != _documentEpoch || token != _hostEventToken) return null;
+      if (installed is Map) return installed;
+      _resetHostEvents();
+    } catch (_) {
+      if (epoch == _documentEpoch && token == _hostEventToken) {
+        _resetHostEvents();
+      }
+    }
+    return null;
   }
 
   Future<void> _readState() async {
@@ -894,10 +1005,26 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       reportReadFailure(TimeoutException('Mini app state read delayed'));
     });
     try {
-      final raw = await _evaluate(
-        MiniAppHostAdapter.snapshot,
-        onOperation: (value) => operation = value,
-      );
+      final pending = _pendingHostState;
+      _pendingHostState = null;
+      var read =
+          pending ??
+          await _evaluate(
+            MiniAppHostAdapter.snapshot,
+            onOperation: (value) => operation = value,
+          );
+      if (mounted &&
+          epoch == _documentEpoch &&
+          read is Map &&
+          read['compatible'] == true &&
+          _hostEventToken == null) {
+        // 首次安装直接返回含首屏绘制状态的快照，避免先应用过早的 ready。
+        read = await _connectHostEvents(epoch) ?? read;
+      }
+      if (!mounted || epoch != _documentEpoch) return;
+      // 读取平台状态期间到达的事件更新于该次快照，优先应用最新状态。
+      final raw = _pendingHostState ?? read;
+      _pendingHostState = null;
       readDeadline.cancel();
       operation = 'state_apply';
       if (!mounted ||
@@ -1056,6 +1183,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         _updateDisplay(() => _documentFullscreen = documentFullscreen);
       }
       final muted = raw['muted'] as bool?;
+      if (muted != null && raw['soundAvailable'] == true) _soundKnown = true;
       if (compatible != _compatible || muted != _muted) {
         setState(() {
           _compatible = compatible;
@@ -1105,6 +1233,18 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     } finally {
       readDeadline.cancel();
       if (_pollingEpoch == epoch) _pollingEpoch = null;
+      if (mounted &&
+          epoch == _documentEpoch &&
+          _pendingHostState != null &&
+          !_permissionBusy &&
+          !_covered &&
+          !_backgrounded &&
+          widget.visible &&
+          widget.panelMotion?.moving.value != true &&
+          _active &&
+          !_switchingEngine) {
+        unawaited(_readState());
+      }
     }
   }
 
@@ -1182,7 +1322,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     await _readState();
   }
 
-  /// 切换是显式的重新启动：先移除旧平台视图，再创建新引擎。
+  /// 刷新与切换共用重新进入流程，旧平台视图卸载后再创建新实例。
   Future<void> _restartEngine(MiniAppEngine engine) async {
     if (_switchingEngine || !mounted || !AuthSession().isValid(_generation)) {
       return;
@@ -1192,13 +1332,12 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     _stateTimer?.cancel();
     _bootTimer?.cancel();
     _documentEpoch++;
+    _resetHostEvents();
     _invalidatePermissionAnswer();
     try {
-      if (_engine == MiniAppEngine.lightweight) {
-        await _evaluate('window.fluxdoMiniAppHost?.destroy();')
-            .timeout(const Duration(milliseconds: 500))
-            .catchError((_) => null);
-      }
+      await _evaluate(
+        'window.fluxdoMiniAppEvents?.dispose(); window.fluxdoMiniAppHost?.destroy();',
+      ).timeout(const Duration(milliseconds: 500)).catchError((_) => null);
       if (!mounted || !AuthSession().isValid(_generation)) return;
       _viewEpoch++;
       _controller = null;
@@ -1208,8 +1347,11 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       _lease?.release();
       _lease = null;
       _tab?.browserLease = null;
-      setState(() {
+      _updateDisplay(() {
         _engine = engine;
+        _tab?.engine = engine;
+        _documentFullscreen = false;
+        _platformFullscreen = false;
         _active = false;
         _error = null;
         _loading = true;
@@ -1719,6 +1861,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
           canRotate: PlatformUtils.isMobile,
           canDetach: !widget.independentWindow,
           canMinimize: !widget.asPanel && _tab != null,
+          canRefresh: !_switchingEngine && !_actionBusy,
           blurReady: blurReady,
           onBlurSigmaChanged: onBlur,
           filterBackdrop: filterBackdrop,
@@ -1742,6 +1885,10 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
     final generation = _generation;
     _actionBusy = true;
     try {
+      if (action == 'refresh') {
+        await _restartEngine(_engine);
+        return;
+      }
       if (action == 'share') {
         await _share();
         return;
@@ -2092,6 +2239,10 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                           return;
                                         }
                                         _controller = controller;
+                                        _registerHostHandlers(
+                                          controller,
+                                          viewEpoch,
+                                        );
                                         _bindMediaLifecycle(controller);
                                         _traceWindowsLaunch('webview-created');
                                         if (_tab case final tab?) {
@@ -2194,6 +2345,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
                                             viewEpoch == _viewEpoch) {
                                           _traceWindowsLaunch('document-start');
                                           _documentEpoch++;
+                                          _resetHostEvents();
                                           _invalidatePermissionAnswer();
                                           _modalBlur.refresh();
                                           _reportedStart = null;
