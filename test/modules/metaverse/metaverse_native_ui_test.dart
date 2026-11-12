@@ -1046,6 +1046,28 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       expect(authentications, 1);
       final l = tester.element(find.byType(Scaffold).first).l10n;
       final pay = find.widgetWithText(FilledButton, l.ldc_biometricPay);
+      final switchMode = find.byKey(
+        const ValueKey('ldc-switch-authentication'),
+      );
+      final title = find.text(l.metaverse_nativePayTitle);
+      expect(
+        tester.getCenter(switchMode).dx,
+        greaterThan(tester.getCenter(title).dx),
+      );
+      expect(
+        (tester.getCenter(switchMode).dy - tester.getCenter(title).dy).abs(),
+        lessThan(1),
+      );
+      await tester.tap(switchMode);
+      await tester.pumpAndSettle();
+      expect(find.byType(PinInput), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ldc-key-1')));
+      await tester.pump();
+      await tester.tap(switchMode);
+      await tester.pumpAndSettle();
+      expect(find.byType(PinInput), findsNothing);
+      expect(authentications, 1);
+      expect(payment.payments, 0);
       if (confirm) await snapshot(tester, 'payment-biometric');
       await tester.ensureVisible(pay);
       await tester.tap(pay);
