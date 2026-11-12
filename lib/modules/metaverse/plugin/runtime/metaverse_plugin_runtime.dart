@@ -42,6 +42,7 @@ class MetaversePluginSurface {
   /// 承载该界面的 widget 上下文，供弹窗、跳转使用；界面卸载后为 null。
   BuildContext? context;
   bool _foreground = true;
+  bool _appBackgrounded = false;
   bool get foreground => _foreground;
 
   Map<String, Object?> get _info => {
@@ -104,12 +105,22 @@ class MetaversePluginRuntime {
   bool owns(MetaversePluginSurface surface) =>
       identical(_surfaces[surface.id], surface);
 
-  void setForeground(MetaversePluginSurface surface, bool foreground) {
-    if (!owns(surface) || surface._foreground == foreground) return;
+  void setForeground(
+    MetaversePluginSurface surface,
+    bool foreground, {
+    bool appForeground = true,
+  }) {
+    if (!owns(surface)) return;
+    // 被上层路由遮住时也记录应用切后台，返回该页面后再通知恢复原因。
+    surface._appBackgrounded |= !appForeground;
+    if (surface._foreground == foreground) return;
     surface._foreground = foreground;
     if (surface.kind == 'page') {
-      dispatch(surface, foreground ? 'page.resume' : 'page.hide', const {});
+      dispatch(surface, foreground ? 'page.resume' : 'page.hide', {
+        'reason': surface._appBackgrounded ? 'app' : 'route',
+      });
     }
+    if (foreground) surface._appBackgrounded = false;
   }
 
   /// 打开一块界面并通知脚本（`card.load` / `page.open`）。

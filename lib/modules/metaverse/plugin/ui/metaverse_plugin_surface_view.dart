@@ -63,6 +63,7 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
       widget.host.setSurfaceForeground(
         surface,
         _appForeground && _routeCurrent && (_ancestorRoute?.isCurrent ?? true),
+        appForeground: _appForeground,
       );
     }
   }
