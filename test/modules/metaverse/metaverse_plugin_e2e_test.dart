@@ -266,6 +266,7 @@ class _Delegate extends MetaversePluginHostDelegate {
   @override
   int? currentAccountId() => accountId;
   final payments = <String>[];
+  Object? paymentResult = const {'state': 'checking'};
 
   @override
   Future<Object?> payOrder(
@@ -274,7 +275,7 @@ class _Delegate extends MetaversePluginHostDelegate {
     bool cancel = false,
   }) async {
     payments.add('${cancel ? 'cancel' : 'pay'}:$orderNo');
-    return {'state': 'checking'};
+    return paymentResult;
   }
 
   @override
@@ -634,6 +635,22 @@ Future<void> main() async {
       await settle(tester, () => service.requests.length == 3);
       expect(delegate.payments, ['pay:FIX-1', 'cancel:FIX-1']);
       expect(delegate.opened, isEmpty);
+      delegate.paymentResult = null;
+      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(
+        tester,
+        () =>
+            delegate.payments.length == 3 &&
+            tester
+                    .widget<FilledButton>(
+                      find.widgetWithText(FilledButton, '立即支付'),
+                    )
+                    .onPressed !=
+                null,
+      );
+      expect(service.requests, hasLength(3));
     });
 
     pluginTest('未登录入口调用宿主原生授权，取消后保留页面并可重新授权', (tester) async {
@@ -904,7 +921,14 @@ Future<void> main() async {
       );
       Future<void> click(String label) async {
         final button = find.text(label);
-        await settle(tester, () => button.evaluate().isNotEmpty);
+        await settle(tester, () {
+          final control = find.ancestor(
+            of: button,
+            matching: find.bySubtype<ButtonStyleButton>(),
+          );
+          return control.evaluate().isNotEmpty &&
+              tester.widget<ButtonStyleButton>(control).onPressed != null;
+        });
         await tester.ensureVisible(button);
         await tester.tap(button);
       }
@@ -916,7 +940,6 @@ Future<void> main() async {
         (r) => r.uri.path.startsWith('/api/shop/order-submissions/'),
       );
       await mount();
-      await click('刷新报价');
       await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
       await click('核对并创建订单');
       await settle(
@@ -934,8 +957,11 @@ Future<void> main() async {
             find.text('刷新报价').evaluate().isNotEmpty,
       );
       expect(submit, isEmpty);
-      await click('刷新报价');
-      await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
+      expect(find.text('1.00 LDC'), findsOneWidget);
+      expect(
+        service.requests.where((r) => r.uri.path.endsWith('/quote')),
+        hasLength(1),
+      );
       await click('核对并创建订单');
       await settle(
         tester,
@@ -985,7 +1011,144 @@ Future<void> main() async {
       );
     });
 
-    pluginTest('内层订单被根路由覆盖时不查单，重新可见只读服务端状态', (tester) async {
+    for (final page in ['orders', 'product', 'review']) {
+      pluginTest('$page 普通返回保留内容、分页和优惠券选择', (tester) async {
+        final service = _ShopApi();
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          await store.writeServiceSession(
+            host.id,
+            MetaverseServiceSession(
+              'fixture-session',
+              queryUrls: host.manifest.auth.queries.values,
+            ),
+          );
+        });
+        final navigator = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: navigator,
+              home: Scaffold(
+                body: SingleChildScrollView(
+                  child: MetaversePluginSurfaceView(
+                    host: host,
+                    kind: MetaversePluginSurfaceKind.page,
+                    page: page,
+                    params: const {
+                      'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec',
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        if (page == 'orders') {
+          await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+          await tester.tap(find.text('加载更多订单'));
+          await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
+        } else if (page == 'review') {
+          await settle(
+            tester,
+            () => find.text('1.00 LDC').evaluate().isNotEmpty,
+          );
+          final none = find.widgetWithText(ChoiceChip, '不使用优惠券');
+          await tester.ensureVisible(none);
+          await tester.tap(none);
+          await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
+        } else {
+          await settle(tester, () => find.text('立即兑换').evaluate().isNotEmpty);
+        }
+        final count = service.requests.length;
+        final content = tester
+            .widgetList<Text>(find.byType(Text))
+            .map((text) => text.data)
+            .toList();
+        final route = InteractionPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('详情')),
+        );
+        unawaited(navigator.currentState!.push(route));
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+        expect(service.requests, hasLength(count));
+        expect(
+          tester.widgetList<Text>(find.byType(Text)).map((text) => text.data),
+          content,
+        );
+      });
+    }
+
+    pluginTest('详情付款后只更新相关订单，返回列表重新读取一次', (tester) async {
+      final service = _ShopApi()..orderStatus = 'pending';
+      await tester.runAsync(() async {
+        await openShop(
+          (_) async => [InternetAddress('8.8.8.8')],
+          primary: service,
+        );
+        await store.writeServiceSession(
+          host.id,
+          MetaverseServiceSession('fixture-session'),
+        );
+      });
+      final navigator = GlobalKey<NavigatorState>();
+      Widget surface(String page) => Scaffold(
+        body: SingleChildScrollView(
+          child: MetaversePluginSurfaceView(
+            host: host,
+            kind: MetaversePluginSurfaceKind.page,
+            page: page,
+            params: const {'no': 'FIX-1'},
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(navigatorKey: navigator, home: surface('orders')),
+        ),
+      );
+      await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
+      unawaited(
+        navigator.currentState!.push(
+          InteractionPageRoute<void>(builder: (_) => surface('order')),
+        ),
+      );
+      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      service.orderStatus = 'delivered';
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('立即支付'));
+      await tester.tap(find.text('立即支付'));
+      await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
+      expect(
+        service.requests.where((r) => r.uri.path == '/api/shop/orders'),
+        hasLength(1),
+      );
+      navigator.currentState!.pop();
+      await settle(
+        tester,
+        () =>
+            find.text('已交付').evaluate().isNotEmpty &&
+            service.requests
+                    .where((r) => r.uri.path == '/api/shop/orders')
+                    .length ==
+                2,
+      );
+      expect(
+        service.requests.where((r) => r.uri.path == '/api/shop/orders/FIX-1'),
+        hasLength(2),
+      );
+      expect(delegate.payments, ['pay:FIX-1']);
+    });
+
+    pluginTest('内层订单被根路由覆盖时不查单，后台恢复后读取服务端状态', (tester) async {
       final service = _ShopApi()..orderStatus = 'pending';
       await tester.runAsync(() async {
         await openShop(

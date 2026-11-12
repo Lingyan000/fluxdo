@@ -152,11 +152,15 @@ class MetaversePluginHost implements MetaversePluginBridge {
     }
   }
 
-  void setSurfaceForeground(MetaversePluginSurface surface, bool foreground) {
+  void setSurfaceForeground(
+    MetaversePluginSurface surface,
+    bool foreground, {
+    bool appForeground = true,
+  }) {
     if (!foreground && identical(surface, _activatedSurface)) {
       _clearActivation();
     }
-    _runtime?.setForeground(surface, foreground);
+    _runtime?.setForeground(surface, foreground, appForeground: appForeground);
   }
 
   void _clearActivation() {
