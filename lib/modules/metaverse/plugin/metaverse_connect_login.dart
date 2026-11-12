@@ -169,7 +169,7 @@ class MetaverseConnectLogin {
       if (!active()) {
         throw const MetaversePluginCallException('oauth_cancelled');
       }
-      if (uri!.origin == callback.origin && uri.path == callback.path) {
+      if (_sameEndpoint(uri!, callback)) {
         onStage(_LoginStage.callback);
         final handoff = _readHandoff(uri);
         if (handoff is! Map ||
@@ -235,7 +235,7 @@ class MetaverseConnectLogin {
         );
       }
       final String body;
-      final String? location;
+      String? location;
       if (_isConnect(uri) || uri.host == Uri.parse(AppConstants.baseUrl).host) {
         onStage(_LoginStage.authorization);
         if (uri.scheme != 'https' ||
@@ -279,13 +279,14 @@ class MetaverseConnectLogin {
         body = response['body'] as String;
         location = (response['headers'] as Map)['location'] as String?;
         final status = response['status'] as int?;
-        // 业务回调与 Connect 同意页是两个协议阶段。服务端错误不能再被
-        // 当成缺失同意按钮，也不能刷新同一个回调来重放一次性授权码。
-        if (status == null ||
-            status < 300 ||
-            status >= 400 ||
-            location == null ||
-            location.trim().isEmpty) {
+        // 服务可以用 HTML 页面交接。提取清单声明的回跳地址后，再走相同的
+        // state / PKCE 校验；一次性回调只请求一次。
+        if (status == 200 && _responseType(response) == 'html') {
+          location = _htmlCallback(body, uri, callback)?.toString();
+        } else if (status == null || status < 300 || status >= 400) {
+          location = null;
+        }
+        if (location == null || location.trim().isEmpty) {
           throw _responseFailure(
             response,
             uri,
@@ -323,22 +324,107 @@ class MetaverseConnectLogin {
   static const _navigationAccept =
       'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
 
-  static MetaverseLoginException _responseFailure(
-    Map<String, Object?> response,
-    Uri uri, {
-    required String reason,
-  }) {
+  static bool _sameEndpoint(Uri uri, Uri expected) =>
+      uri.userInfo.isEmpty &&
+      uri.scheme == expected.scheme &&
+      uri.host == expected.host &&
+      uri.port == expected.port &&
+      uri.path == expected.path;
+
+  static Uri? _htmlCallback(String body, Uri source, Uri callback) {
+    final document = html.parse(body);
+    final candidates = <Uri>{};
+    void add(String? value) {
+      if (value == null || value.length > 32768) return;
+      final reference = Uri.tryParse(value.trim());
+      if (reference == null) return;
+      final target = source.resolveUri(reference);
+      if (_sameEndpoint(target, callback) &&
+          (RegExp(r'(?:^|&)ldsp_oauth=').hasMatch(target.fragment) ||
+              RegExp(r'(?:^|&)ldsp_oauth=').hasMatch(target.query))) {
+        candidates.add(target);
+      }
+    }
+
+    for (final link in document.querySelectorAll('a[href]')) {
+      add(link.attributes['href']);
+    }
+    for (final meta in document.querySelectorAll('meta[http-equiv]')) {
+      if (meta.attributes['http-equiv']?.trim().toLowerCase() != 'refresh') {
+        continue;
+      }
+      final match = RegExp(
+        r'''^\s*\d+(?:\.\d+)?\s*;\s*url\s*=\s*(.*?)\s*$''',
+        caseSensitive: false,
+      ).firstMatch(meta.attributes['content'] ?? '');
+      var target = match?.group(1);
+      if (target != null &&
+          target.length >= 2 &&
+          (target.startsWith('"') || target.startsWith("'")) &&
+          target.endsWith(target[0])) {
+        target = target.substring(1, target.length - 1);
+      }
+      add(target);
+    }
+    // 静态读取脚本中的字符串常量，兼容 location.replace(url)、href 赋值
+    // 和定时跳转。页面脚本不会被执行，也拿不到宿主网络或论坛凭据。
+    final literals = RegExp(
+      r'''//[^\r\n]*|/\*.*?\*/|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`''',
+      dotAll: true,
+    );
+    for (final script in document.querySelectorAll('script:not([src])')) {
+      for (final match in literals.allMatches(script.text)) {
+        if (match[0]!.startsWith('/')) continue;
+        add(_scriptString(match[0]!));
+      }
+    }
+    if (candidates.length != 1) return null;
+    return candidates.single;
+  }
+
+  static String? _scriptString(String literal) {
+    if (literal.length > 32768) return null;
+    if (literal.startsWith('`') && literal.contains(r'${')) return null;
+    try {
+      if (literal.startsWith('"')) return jsonDecode(literal) as String;
+      // 单引号和无插值模板字符串转成 JSON 字符串，保留 Unicode、斜线转义。
+      final value = literal
+          .substring(1, literal.length - 1)
+          .replaceAllMapped(
+            RegExp(r'''\\.|"''', dotAll: true),
+            (match) => switch (match[0]) {
+              r"\'" => "'",
+              r'\`' => '`',
+              '"' => r'\"',
+              _ => match[0]!,
+            },
+          );
+      return jsonDecode('"$value"') as String;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static String _responseType(Map<String, Object?> response) {
     final headers = response['headers'] as Map;
     final contentType = '${headers['content-type'] ?? ''}'
         .split(';')
         .first
         .trim()
         .toLowerCase();
-    final responseType = switch (contentType) {
+    return switch (contentType) {
       'application/json' => 'json',
       'text/html' => 'html',
       _ => 'other',
     };
+  }
+
+  static MetaverseLoginException _responseFailure(
+    Map<String, Object?> response,
+    Uri uri, {
+    required String reason,
+  }) {
+    final headers = response['headers'] as Map;
     String? serviceCode;
     try {
       final result = jsonDecode(response['body'] as String);
@@ -358,7 +444,7 @@ class MetaverseConnectLogin {
       reason,
       status: response['status'] as int?,
       callbackHost: uri.host,
-      responseType: responseType,
+      responseType: _responseType(response),
       serviceCode: serviceCode,
       requestId:
           requestId is String &&

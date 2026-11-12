@@ -27,6 +27,9 @@ class _OAuthAdapter implements HttpClientAdapter {
   int callbackStatus = 302;
   String callbackBody = '';
   String callbackType = 'text/html';
+  String Function()? callbackDocument;
+  String get callbackUrl =>
+      '$site/auth/callback${queryHandoff ? '?' : '#'}ldsp_oauth=$handoff';
   String get handoff {
     final json = jsonEncode({
       'c': 'a' * 43,
@@ -94,15 +97,12 @@ class _OAuthAdapter implements HttpClientAdapter {
         expect(options.headers.containsKey('Cookie'), isFalse);
         expect(options.headers.containsKey('Authorization'), isFalse);
         return ResponseBody.fromString(
-          callbackBody,
+          callbackDocument?.call() ?? callbackBody,
           callbackStatus,
           headers: {
             'content-type': [callbackType],
             'x-request-id': ['request-fixture-42'],
-            if (callbackStatus == 302)
-              'location': [
-                '$site/auth/callback${queryHandoff ? '?' : '#'}ldsp_oauth=$handoff',
-              ],
+            if (callbackStatus == 302) 'location': [callbackUrl],
           },
         );
       case '/api/shop/auth/exchange':
@@ -270,6 +270,153 @@ void main() {
       expect(
         api.requests.where((r) => r.uri.path.endsWith('/exchange')),
         isEmpty,
+      );
+    });
+  }
+  final htmlCallbacks = <String, String Function(String)>{
+    'meta refresh': (url) =>
+        '<meta http-equiv="Refresh" content="0; URL=$url">',
+    '带引号的 meta refresh': (url) =>
+        '<meta http-equiv="refresh" content="0;url=\'$url\'">',
+    'HTML 实体链接': (url) => '<a href="${url.replaceAll('&', '&amp;')}">继续</a>',
+    '脚本直接赋值': (url) =>
+        '<script>window.location.href = ${jsonEncode(url)};</script>',
+    '脚本变量与延时跳转': (url) =>
+        '''
+        <script>
+          // 回调页面的说明中可以有 '单引号和 "双引号
+          const target = ${jsonEncode(url)};
+          setTimeout(() => window.location.replace(target), 100);
+        </script>''',
+    '脚本单引号': (url) => "<script>location.replace('$url');</script>",
+    '脚本静态模板': (url) => '<script>location.href = `$url`;</script>',
+    '脚本 JSON 转义': (url) =>
+        '<script>location.assign('
+        '${jsonEncode(url).replaceAll('/', r'\/').replaceAll('&', r'\u0026')}'
+        ');</script>',
+    '重复的脚本和链接': (url) =>
+        '<script>location.replace(${jsonEncode(url)});</script>'
+        '<a href="${url.replaceAll('&', '&amp;')}">继续</a>',
+  };
+  for (final entry in htmlCallbacks.entries) {
+    loginTest('HTTP 200 HTML ${entry.key} 继续 PKCE 交换和账号校验', () async {
+      api.callbackStatus = 200;
+      api.queryHandoff = true;
+      api.handoffEncoding = 'standard';
+      api.callbackDocument = () =>
+          entry.value('${api.callbackUrl}&redirect=%2F');
+      final session = await login.authorize(
+        manifest,
+        accountId: 42,
+        active: () => true,
+      );
+      expect(session.accountId, 42);
+      expect(session.checkout?.subject, 'linux.do:42');
+      expect(
+        api.requests.where((r) => r.uri.path == '/api/auth/callback'),
+        hasLength(1),
+      );
+      expect(
+        api.requests.where((r) => r.uri.path.endsWith('/exchange')),
+        hasLength(1),
+      );
+      expect(api.requests.any((r) => r.uri.host == 'ldcstore.com'), isFalse);
+    });
+  }
+  loginTest('士多返回按钮与延时脚本交接同一地址时完成授权', () async {
+    // 公开接入实现记录的线上页面结构。交接内容使用测试生成的 PKCE 授权码。
+    // https://github.com/1molchuan/CFluxDo/blob/ab08774886de7be2665976a10c00bdf91326a0de/test/services/ld_store/ld_store_service_test.dart#L150
+    api.callbackStatus = 200;
+    api.handoffEncoding = 'percentJson';
+    api.callbackDocument = () {
+      final url = Uri.parse(api.callbackUrl)
+          .replace(queryParameters: {'redirect': '/'})
+          .toString();
+      return '''<!DOCTYPE html><html><body>
+        <a class="action-btn hidden" id="returnBtn" href="$url">返回</a>
+        <script>(function() {
+          const success = true;
+          const redirectUrl = ${jsonEncode(url)};
+          setTimeout(() => { window.location.replace(redirectUrl); }, 500);
+        })();</script>
+        </body></html>''';
+    };
+    final session = await login.authorize(
+      manifest,
+      accountId: 42,
+      active: () => true,
+    );
+    expect(session.accountId, 42);
+    expect(session.checkout?.subject, 'linux.do:42');
+    expect(
+      api.requests.where((r) => r.uri.path == '/api/auth/callback'),
+      hasLength(1),
+    );
+    expect(
+      api.requests.where((r) => r.uri.path.endsWith('/exchange')),
+      hasLength(1),
+    );
+  });
+  for (final issue in [
+    'host',
+    'path',
+    'http',
+    'userinfo',
+    'ambiguous',
+    'comment',
+    'externalScript',
+    'json',
+    'errorStatus',
+    'state',
+    'identity',
+  ]) {
+    loginTest('HTML 交接拒绝无效 $issue，保留授权边界', () async {
+      api.callbackStatus = issue == 'errorStatus' ? 403 : 200;
+      api.callbackType = issue == 'json' ? 'application/json' : 'text/html';
+      api.wrongState = issue == 'state';
+      api.wrongIdentity = issue == 'identity';
+      api.callbackDocument = () {
+        var url = api.callbackUrl;
+        url = switch (issue) {
+          'host' => url.replaceFirst('ldcstore.com', 'untrusted.example.org'),
+          'path' => url.replaceFirst('/auth/callback', '/other'),
+          'http' => url.replaceFirst('https:', 'http:'),
+          'userinfo' => url.replaceFirst('https://', 'https://injected@'),
+          _ => url,
+        };
+        final literal = jsonEncode(url);
+        return switch (issue) {
+          'ambiguous' =>
+            '<a href="$url">继续</a>'
+                '<a href="${url.replaceFirst('ldsp_oauth=', 'ldsp_oauth=other')}">继续</a>',
+          'comment' => '<script>/* location.href=$literal */</script>',
+          'externalScript' =>
+            '<script src="https://untrusted.example.org/code.js">'
+                'location.href=$literal;</script>',
+          _ => '<script>location.replace($literal);</script>',
+        };
+      };
+      await expectLater(
+        login.authorize(manifest, accountId: 42, active: () => true),
+        throwsA(
+          isA<MetaverseLoginException>().having(
+            (error) => error.reason,
+            '失败原因',
+            switch (issue) {
+              'state' => 'oauth_state_mismatch',
+              'identity' => 'oauth_identity_mismatch',
+              _ => 'oauth_callback_response',
+            },
+          ),
+        ),
+      );
+      expect(
+        api.requests.where((r) => r.uri.path.endsWith('/exchange')),
+        hasLength(issue == 'identity' ? 1 : 0),
+      );
+      expect(
+        api.requests.any((r) => r.uri.host == 'untrusted.example.org'),
+        isFalse,
       );
     });
   }
