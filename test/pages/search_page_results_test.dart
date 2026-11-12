@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _SearchService extends Fake implements DiscourseService {
   final pending = <Completer<SearchResult>>[];
   final queries = <String>[];
+  final pages = <int>[];
   final aiPending = <Completer<SearchResult>>[];
 
   @override
@@ -30,6 +31,7 @@ class _SearchService extends Fake implements DiscourseService {
     String? typeFilter,
   }) {
     queries.add(query);
+    pages.add(page);
     final completer = Completer<SearchResult>();
     pending.add(completer);
     return completer.future;
@@ -49,6 +51,7 @@ class _SearchService extends Fake implements DiscourseService {
 SearchResult _result({
   List<String> usernames = const [],
   List<String> blurbs = const [],
+  bool hasMorePosts = false,
 }) => SearchResult.fromJson({
   'posts': [
     for (var i = 0; i < blurbs.length; i++)
@@ -58,6 +61,7 @@ SearchResult _result({
     for (var i = 0; i < usernames.length; i++)
       {'id': i + 1, 'username': usernames[i]},
   ],
+  'grouped_search_result': {'more_full_page_results': hasMorePosts},
 });
 
 Future<ProviderContainer> _pumpSearch(
@@ -107,6 +111,12 @@ Future<ProviderContainer> _pumpSearch(
 Future<void> _submit(WidgetTester tester, String query) async {
   await tester.enterText(find.byType(TextField), query);
   await tester.testTextInput.receiveAction(TextInputAction.search);
+  await tester.pump();
+}
+
+Future<void> _scrollToBottom(WidgetTester tester) async {
+  final controller = tester.widget<ListView>(find.byType(ListView)).controller!;
+  controller.jumpTo(controller.position.maxScrollExtent);
   await tester.pump();
 }
 
@@ -179,6 +189,65 @@ void main() {
     await tester.pump();
     expect(find.text('没有找到相关结果'), findsOneWidget);
   });
+
+  for (final staleRequestFails in [false, true]) {
+    final outcome = staleRequestFails ? '失败' : '成功';
+    testWidgets('旧分页请求$outcome后，新关键词仍能在底部继续分页', (tester) async {
+      _seedSite();
+      final service = _SearchService();
+      await _pumpSearch(tester, service);
+
+      await _submit(tester, 'old');
+      service.pending.single.complete(
+        _result(
+          blurbs: List.generate(30, (index) => 'old post $index'),
+          hasMorePosts: true,
+        ),
+      );
+      await tester.pump();
+      await _scrollToBottom(tester);
+      expect(service.pages, [1, 2]);
+
+      // 旧查询的第二页仍在途，新查询先返回并滚到底部。
+      await _submit(tester, 'new');
+      service.pending[2].complete(
+        _result(
+          blurbs: List.generate(20, (index) => 'new post $index'),
+          hasMorePosts: true,
+        ),
+      );
+      await tester.pump();
+      await _scrollToBottom(tester);
+
+      if (staleRequestFails) {
+        service.pending[1].completeError(StateError('旧分页请求失败'));
+      } else {
+        service.pending[1].complete(_result(blurbs: ['stale post']));
+      }
+      await tester.pump();
+      expect(
+        tester
+            .widget<SearchPostCard>(find.byType(SearchPostCard).first)
+            .post
+            .blurb,
+        startsWith('new post '),
+      );
+
+      // 始终停留在底部附近，避免向上滚动 200px 自动解除冷却。
+      final controller = tester
+          .widget<ListView>(find.byType(ListView))
+          .controller!;
+      controller.jumpTo(controller.position.maxScrollExtent - 10);
+      await tester.pump();
+      await _scrollToBottom(tester);
+
+      expect(service.queries, ['old', 'old', 'new', 'new']);
+      expect(service.pages, [1, 2, 1, 2]);
+      service.pending.last.complete(_result());
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('关键词零结果而 AI 语义搜索还在途：先给空态并标出 AI 在搜', (tester) async {
     _seedSite(aiSearch: true);

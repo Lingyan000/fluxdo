@@ -636,10 +636,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   Future<void> _loadMore() async {
     if (_isLoadMoreFailed) return;
+    final generation = _searchGeneration;
     await _loadMoreCoordinator.loadMore(
       loadMore: _loadMorePage,
       hasMore: () => _hasMorePosts,
-      isActive: () => mounted,
+      // 过期分页结束后也不能用新查询的结果数量更新冷却状态。
+      isActive: () => mounted && generation == _searchGeneration,
       progressCount: () => _allPosts.length,
     );
   }
