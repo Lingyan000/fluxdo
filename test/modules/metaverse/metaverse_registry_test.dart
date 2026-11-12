@@ -16,6 +16,11 @@ import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Secrets implements SecretStore {
+  @override
+  Future<Map<String, String>> readScope(SecretScope scope) async => {
+    for (final entry in values.entries)
+      if (entry.key.startsWith(scope.storagePrefix)) entry.key: entry.value,
+  };
   final values = <String, String>{};
 
   @override
@@ -113,6 +118,37 @@ void main() {
     expect(services.last.id, 'com.example.points');
     expect(services.last.isEnabled(container), isFalse);
     expect(services.last.canRemove, isTrue);
+  });
+
+  test('同源 API 升级导出旧记录，切换来源清空全部记录', () async {
+    final controller = container.read(metaversePluginsProvider.notifier);
+    final store = container.read(metaversePluginStoreProvider);
+    final old = await package(const {});
+    await controller.install(old);
+    await store.writeOrder(old.manifest.id, 'scope', 'pending-fixture');
+    await store.writeOrder('example.other', 'scope', 'other-fixture');
+    final raw = Map<String, dynamic>.from(old.manifest.raw)
+      ..remove('auth')
+      ..['schema'] = 9
+      ..['apiVersion'] = 2
+      ..['version'] = '2.0.0';
+    final next = MetaversePluginPackage(
+      manifest: MetaversePluginManifest.parse(raw),
+      source: old.source,
+      code: old.code,
+    );
+    await controller.install(next);
+    expect((await store.readStorage(old.manifest.id))['legacyApi1Records'],
+      {'v1:scope': 'pending-fixture'});
+    expect(await store.readOrder(old.manifest.id, 'scope'), 'pending-fixture');
+    await controller.install(MetaversePluginPackage(
+      manifest: next.manifest,
+      source: 'https://other.example/plugin.json',
+      code: next.code,
+    ));
+    expect(await store.readStorage(old.manifest.id), isEmpty);
+    expect(await store.readOrder(old.manifest.id, 'scope'), isNull);
+    expect(await store.readOrder('example.other', 'scope'), 'other-fixture');
   });
 
   test('应用升级发现本地旧士多清单，确认更新后才获得新回调权限', () async {

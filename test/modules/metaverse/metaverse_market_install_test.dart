@@ -99,6 +99,16 @@ void main() {
     expect(await store.readCode('example.one'), (ui: 'ui', script: 'script'));
   });
 
+  test('多键写入作为一个事务，容量失败时保留全部旧值', () async {
+    await store.updateStorageEntries('example.one', {'old': 1, 'current': 2});
+    await expectLater(store.updateStorageEntries('example.one', {
+      'old': null, 'current': 'x' * MetaversePluginStore.maxStorageBytes,
+    }), throwsStateError);
+    expect(await store.readStorage('example.one'), {'old': 1, 'current': 2});
+    await store.updateStorageEntries('example.one', {'old': null, 'current': 3});
+    expect(await store.readStorage('example.one'), {'current': 3});
+  });
+
   test('重置后到达的旧订单响应无法重建已删除记录', () async {
     var active = true;
     await store.writeOrder('example.one', 'account', 'pending');

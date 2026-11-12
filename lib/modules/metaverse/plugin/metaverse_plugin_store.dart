@@ -11,6 +11,7 @@ import '../../../services/storage/secret_store.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_service_session.dart';
 import 'metaverse_credential.dart';
+import 'migrations/metaverse_legacy_storage.dart';
 
 /// 已安装的第三方插件。
 @immutable
@@ -205,16 +206,30 @@ class MetaversePluginStore {
       _operations.run(id, () => _writeStorage(id, data));
 
   Future<Map<String, Object?>> updateStorage(String id, String key, Object? value) =>
+      updateStorageEntries(id, {key: value});
+
+  Future<Map<String, Object?>> updateStorageEntries(
+    String id,
+    Map<String, Object?> entries,
+  ) =>
       _operations.run(id, () async {
         final data = await readStorage(id);
-        if (value == null) {
-          data.remove(key);
-        } else {
-          data[key] = value;
+        for (final entry in entries.entries) {
+          if (entry.value == null) {
+            data.remove(entry.key);
+          } else {
+            data[entry.key] = entry.value;
+          }
         }
         await _writeStorage(id, data);
         return data;
       });
+
+  Future<void> importLegacyStorage(String id) => _operations.run(id, () async {
+    final previous = await readStorage(id);
+    final migrated = await exportLegacyPluginStorage(_secretStore, id, previous);
+    if (!identical(previous, migrated)) await _writeStorage(id, migrated);
+  });
 
   Future<void> _writeStorage(String id, Map<String, Object?> data) async {
     final encoded = jsonEncode(data);

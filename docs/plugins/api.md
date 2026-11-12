@@ -66,6 +66,14 @@ const response = await ctx.api.fetch('https://api.example.org/v2/me', {
 
 `pkce` 返回 `{verifier, challenge, method: 'S256'}`，使用安全随机数和 SHA-256。`uuid` 返回安全随机 UUID v4。适合授权关联与业务幂等提交号。
 
+### `crypto.sha256(text)`
+
+对 UTF-8 文本计算 SHA-256，返回小写十六进制字符串。输入上限 1 MiB，可用于本地记录索引与数据摘要。
+
+### `storage.setMany(entries)`
+
+原子修改当前插件的多个键，参数为对象，值为 null 表示删除。最多 128 个键，单键长度与整体存储容量沿用 `storage.set` 的限制。返回 null，任意校验或写入失败时保留原数据。可在一次操作中保存新记录并移除旧记录。
+
 ### `payments.request({provider, url, reference, amount})`
 
 用户点击后打开应用原生收银台。当前 provider 为 `linuxDoCredit`，url 使用 LDC 收银台地址，reference 是服务订单号，amount 推荐传十进制金额字符串。宿主核对 LDC 返回的订单号、付款账号和金额，付款确认使用 LDC 交易 ID 校验收款账号、金额及状态。支付密码和生物识别由应用管理。
