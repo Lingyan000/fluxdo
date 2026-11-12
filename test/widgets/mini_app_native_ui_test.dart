@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -17,6 +18,7 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_artwork_palette.dart';
+import 'package:fluxdo/modules/mini_apps/mini_app_card_surface.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_feedback_dialog.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_detail_page.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_embed_card.dart';
@@ -24,6 +26,7 @@ import 'package:fluxdo/modules/mini_apps/mini_app_gallery_page.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_launch_shelf.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_gallery_widgets.dart';
+import 'package:fluxdo/modules/mini_apps/mini_app_metadata.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_providers.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_service.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_runner_page.dart';
@@ -41,7 +44,10 @@ import 'package:fluxdo/services/local_notification_service.dart'
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/utils/avatar_url.dart';
+import 'package:fluxdo/utils/url_helper.dart';
 import 'package:fluxdo/widgets/keyboard_shortcut_handler.dart';
+import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -92,6 +98,7 @@ class _Api extends MiniAppService {
   final tipRequests = <String>[];
   final queries = <String>[];
   final requests = <(String, String, bool)>[];
+  Completer<MiniAppDetails>? detailsRequest;
   List<MiniApp> apps = [_app];
   @override
   Future<MiniAppDirectory> directory({
@@ -112,12 +119,18 @@ class _Api extends MiniAppService {
   }
 
   @override
-  Future<MiniAppDetails> details(String id) async => MiniAppDetails(
-    apps.firstWhere((app) => app.id == id),
-    'https://linux.do/apps/$id?embed_mode=true',
-    configuration: const {'channel': 'production', 'anonymous': false},
-    feedback: const {'can_rate': true, 'can_tip': true, 'can_report': true},
-  );
+  Future<MiniAppDetails> details(String id) async => detailsRequest != null
+      ? detailsRequest!.future
+      : MiniAppDetails(
+          apps.firstWhere((app) => app.id == id),
+          'https://linux.do/apps/$id?embed_mode=true',
+          configuration: const {'channel': 'production', 'anonymous': false},
+          feedback: const {
+            'can_rate': true,
+            'can_tip': true,
+            'can_report': true,
+          },
+        );
 
   @override
   Future<void> rate(MiniAppDetails details, int score) async {
@@ -148,6 +161,7 @@ class _Api extends MiniAppService {
 
 void main() {
   const previewDirectory = String.fromEnvironment('MINI_APP_PREVIEW_DIR');
+  const previewFont = String.fromEnvironment('MINI_APP_PREVIEW_FONT');
   final themes = ThemeResolver.resolve(
     spec: ThemeRegistry.material,
     mode: ThemeMode.system,
@@ -185,7 +199,7 @@ void main() {
           colorScheme: brightness == Brightness.light
               ? themes.light
               : themes.dark,
-          fontFamily: previewDirectory.isEmpty ? null : 'MiSans',
+          fontFamily: previewFont.isEmpty ? null : 'MiniAppPreview',
           extensions: const [M3eFlags()],
           searchBarTheme: const SearchBarThemeData(
             shape: WidgetStatePropertyAll(
@@ -211,6 +225,104 @@ void main() {
       ),
     ),
   );
+
+  for (final desktop in [false, true]) {
+    testWidgets('应用信息骨架切换为整体内容和开发者头像 ($desktop)', (tester) async {
+      PlatformUtils.debugDesktopOverride = desktop;
+      api.detailsRequest = Completer<MiniAppDetails>();
+      const avatarTemplate = '/user_avatar/linux.do/developer/{size}/1.png';
+      final avatarUrl = UrlHelper.resolveUrlWithCdn(
+        AvatarUrl.resolve(
+          avatarTemplate,
+          size: (40 * tester.view.devicePixelRatio).ceil(),
+        ),
+      );
+      await tester.runAsync(() async {
+        final directory = await Directory.systemTemp.createTemp(
+          'mini-app-avatar-',
+        );
+        await BlobImageCache.configureForTesting(root: directory);
+        final bytes = await rootBundle.load(
+          'assets/images/icon_modern_preview.png',
+        );
+        await BlobImageCache.write(
+          BlobImageCache.avatarBucket,
+          avatarUrl,
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+        );
+      });
+      addTearDown(BlobImageCache.configureForTesting);
+      await tester.pumpWidget(
+        wrap(
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => MiniAppDetailPage.show(context, _app.id),
+                child: const Text('详情'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('详情'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(MiniAppDetailsSkeleton), findsOneWidget);
+      expect(find.byType(MiniAppCardSurface), findsNothing);
+      final metadata = MiniApp.fromJson({
+        ..._app.toJson(),
+        'version': '1.5.9',
+        'recent_usage_count': 123,
+        'rating_average': 4,
+        'rating_count': 5,
+        'can_tip': true,
+        'author': {
+          'username': 'developer',
+          'name': '开发者',
+          'avatar_template': avatarTemplate,
+        },
+      });
+      api.detailsRequest!.complete(
+        MiniAppDetails(metadata, 'https://linux.do/apps/${_app.id}'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(MiniAppDetailsSkeleton), findsNothing);
+      expect(find.byType(MiniAppDetailsContent), findsOneWidget);
+      expect(find.byType(MiniAppCardSurface), findsNothing);
+      expect(find.byType(SegmentedCardItem), findsNothing);
+      expect(find.byType(SmartAvatar), findsOneWidget);
+      expect(
+        tester.widget<SmartAvatar>(find.byType(SmartAvatar)).imageUrl,
+        avatarUrl,
+      );
+      expect(find.text(S.current.miniApp_recentUsage(123)), findsOneWidget);
+      expect(find.text(S.current.miniApp_usage(200)), findsOneWidget);
+      expect(find.text(S.current.miniApp_score('4.0', 5)), findsOneWidget);
+      expect(find.text(S.current.miniApp_tipAvailable), findsOneWidget);
+      expect(find.text(S.current.miniApp_version('1.5.9')), findsOneWidget);
+      final developer = find.byType(MiniAppDeveloper);
+      expect(
+        tester
+            .widget<InkWell>(
+              find.descendant(of: developer, matching: find.byType(InkWell)),
+            )
+            .onTap,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+      navigatorKey.currentState!.pop();
+      await tester.pumpAndSettle();
+      api.detailsRequest = null;
+      await tester.pumpWidget(wrap(MiniAppDetailPage(appId: _app.id)));
+      await tester.pumpAndSettle();
+      expect(find.byType(MiniAppDetailsContent), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byType(MiniAppDetailsContent)).dy,
+        lessThan(150),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final desktop in [false, true]) {
     testWidgets(
@@ -1064,9 +1176,15 @@ void main() {
       await (FontLoader(
         'MaterialIcons',
       )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
-      await (FontLoader(
-        'MiSans',
-      )..addFont(rootBundle.load('assets/fonts/MiSansVF.ttf'))).load();
+      // 字体已改为按需下载，预览通过参数读取本机字体。
+      if (previewFont.isNotEmpty) {
+        await tester.runAsync(() async {
+          final bytes = await File(previewFont).readAsBytes();
+          await (FontLoader(
+            'MiniAppPreview',
+          )..addFont(Future.value(ByteData.sublistView(bytes)))).load();
+        });
+      }
       await (FontLoader(
             'packages/material_symbols_icons/${Symbols.apps_rounded.fontFamily}',
           )..addFont(
@@ -1082,6 +1200,10 @@ void main() {
         name: '软块合成',
         description: '拖动、碰撞、合成，挑战更高的数字。',
         author: 'ffy1',
+        authorUsername: 'ffy1',
+        recentUsageCount: 287,
+        usageCount: 1234,
+        canTip: true,
         rating: 4.8,
         ratingCount: 12,
         version: '1.0.0',
@@ -1191,6 +1313,11 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        expect(
+          tester.getSize(find.byType(MiniAppDiscoveryCard).first).height,
+          lessThan(280),
+          reason: '完整元数据卡片按内容收紧，避免固定高度撑出大块留白',
+        );
         await capture('gallery-${brightness.name}-${width.toInt()}');
         if (width == 390) {
           await tester.tap(find.byTooltip('应用信息').first);

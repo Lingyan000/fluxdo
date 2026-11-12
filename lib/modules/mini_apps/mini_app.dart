@@ -8,17 +8,23 @@ class MiniApp {
     this.version = '',
     this.author = '',
     this.authorUsername = '',
+    this.authorAvatarTemplate = '',
     this.rating = 0,
     this.ratingCount = 0,
     this.usageCount = 0,
+    this.recentUsageCount,
+    this.canTip = false,
     this.favorited = false,
     this.releaseNotes = '',
     this.discussionTopicId,
   });
 
   final String id, name, description, iconUrl, version, author, authorUsername;
+  final String authorAvatarTemplate;
   final double rating;
   final int ratingCount, usageCount;
+  final int? recentUsageCount;
+  final bool canTip;
   final bool favorited;
   final String releaseNotes;
   final int? discussionTopicId;
@@ -35,9 +41,12 @@ class MiniApp {
       version: json['version'] as String? ?? '',
       author: displayName.trim().isEmpty ? username : displayName,
       authorUsername: username,
+      authorAvatarTemplate: author['avatar_template'] as String? ?? '',
       rating: (json['rating_average'] as num?)?.toDouble() ?? 0,
       ratingCount: (json['rating_count'] as num?)?.toInt() ?? 0,
       usageCount: (json['usage_count'] as num?)?.toInt() ?? 0,
+      recentUsageCount: (json['recent_usage_count'] as num?)?.toInt(),
+      canTip: json['can_tip'] == true,
       favorited: json['is_favorited'] == true,
       releaseNotes: json['release_notes'] as String? ?? '',
       discussionTopicId: (json['discussion_topic_id'] as num?)?.toInt(),
@@ -55,8 +64,14 @@ class MiniApp {
     'rating_average': rating,
     'rating_count': ratingCount,
     'usage_count': usageCount,
+    if (recentUsageCount != null) 'recent_usage_count': recentUsageCount,
+    'can_tip': canTip,
     'is_favorited': favorited,
-    'author': {'username': authorUsername, 'name': author},
+    'author': {
+      'username': authorUsername,
+      'name': author,
+      'avatar_template': authorAvatarTemplate,
+    },
   };
 }
 

@@ -476,23 +476,60 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                       },
                                     );
                                   }
-                                  return SliverGrid.builder(
-                                    gridDelegate:
-                                        SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: columns,
-                                          crossAxisSpacing: 10,
-                                          mainAxisSpacing: 10,
-                                          mainAxisExtent:
-                                              110 + scale.scale(104),
+                                  return SliverList.builder(
+                                    itemCount:
+                                        (_directory.apps.length +
+                                            columns -
+                                            1) ~/
+                                        columns,
+                                    itemBuilder: (context, row) {
+                                      final start = row * columns;
+                                      final end = (start + columns).clamp(
+                                        0,
+                                        _directory.apps.length,
+                                      );
+                                      final apps = _directory.apps.sublist(
+                                        start,
+                                        end,
+                                      );
+                                      // 每次只布局可见行的两到三张卡片，行高由实际内容决定。
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 10,
                                         ),
-                                    itemCount: _directory.apps.length,
-                                    itemBuilder: (context, index) {
-                                      final app = _directory.apps[index];
-                                      return MiniAppDiscoveryCard(
-                                        app: app,
-                                        opening: _openingAppId == app.id,
-                                        onOpen: () => _open(app),
-                                        onInfo: () => _info(app),
+                                        child: IntrinsicHeight(
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              for (final (index, app)
+                                                  in apps.indexed) ...[
+                                                if (index > 0)
+                                                  const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: MiniAppDiscoveryCard(
+                                                    key: ValueKey(app.id),
+                                                    app: app,
+                                                    opening:
+                                                        _openingAppId == app.id,
+                                                    onOpen: () => _open(app),
+                                                    onInfo: () => _info(app),
+                                                  ),
+                                                ),
+                                              ],
+                                              for (
+                                                var index = apps.length;
+                                                index < columns;
+                                                index++
+                                              ) ...[
+                                                const SizedBox(width: 10),
+                                                const Expanded(
+                                                  child: SizedBox.shrink(),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
                                       );
                                     },
                                   );

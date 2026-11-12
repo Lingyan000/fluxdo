@@ -31,6 +31,34 @@ MiniAppDetails details({int release = 428, String? favoriteUrl}) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('目录头像、近期使用和打赏状态可往返存储，兼容旧最近使用记录', () {
+    final metadata = MiniApp.fromJson({
+      'app_id': appId,
+      'name': '应用',
+      'author': {
+        'username': 'developer',
+        'name': '开发者',
+        'avatar_template': '/user_avatar/linux.do/developer/{size}/1.png',
+      },
+      'rating_average': 4,
+      'rating_count': 5,
+      'usage_count': 287,
+      'recent_usage_count': 240,
+      'can_tip': true,
+    });
+    final restored = MiniApp.fromJson(metadata.toJson());
+    expect(restored.authorAvatarTemplate, metadata.authorAvatarTemplate);
+    expect(restored.recentUsageCount, 240);
+    expect(restored.canTip, isTrue);
+    expect(restored.ratingCount, 5);
+    expect(restored.usageCount, 287);
+    final legacy = MiniApp.fromJson({'app_id': appId, 'name': '旧记录'});
+    expect(legacy.authorAvatarTemplate, isEmpty);
+    expect(legacy.recentUsageCount, isNull);
+    expect(legacy.canTip, isFalse);
+    expect(legacy.toJson().containsKey('recent_usage_count'), isFalse);
+  });
+
   test('only exact site app routes become native routes; startup parameters survive', () {
     for (final value in [
       'https://linux.do.evil.test/apps/$appId',
