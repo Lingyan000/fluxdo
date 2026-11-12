@@ -514,6 +514,59 @@ void main() {
     });
   }
 
+  for (final failure in ['network', 'decode']) {
+    testWidgets('插件图片 $failure 失败可点击重试', (tester) async {
+      var requests = 0;
+      final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+      final runtime = Runtime()
+        ..update(
+          metaverseWidgetLibraryName,
+          createMetaverseWidgetLibrary(
+            loadImage: (_) async {
+              requests++;
+              if (requests == 1) {
+                if (failure == 'network') throw StateError('offline');
+                return Uint8List(2);
+              }
+              return png;
+            },
+          ),
+        )
+        ..update(
+          metaversePluginLibraryName,
+          parseLibraryFile('''
+import fluxdo;
+widget Thumbnail = Image(url: "https://images.example.org/product.png", width: 96.0, height: 96.0);
+'''),
+        );
+      addTearDown(runtime.dispose);
+      await tester.pumpWidget(
+        app(
+          RemoteWidget(
+            runtime: runtime,
+            widget: const FullyQualifiedWidgetName(
+              metaversePluginLibraryName,
+              'Thumbnail',
+            ),
+            data: DynamicContent(),
+            onEvent: (_, _) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final retry = find.byTooltip(S.current.common_retry);
+      expect(retry, findsOneWidget);
+      expect(requests, 1);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(requests, 2);
+      expect(retry, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('通用搜索组件提交、清空与脚本更新保留标准输入行为', (tester) async {
     final runtime = Runtime()
       ..update(

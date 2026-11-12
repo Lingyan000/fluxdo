@@ -377,9 +377,51 @@ void main() {
       throwsA(isA<MetaversePluginCallException>()),
     );
     expect(adapter.requests, hasLength(1));
+    expect(adapter.requests.single.headers['User-Agent'], isNotEmpty);
+    expect(adapter.requests.single.headers['Accept'], 'image/*');
+    expect(adapter.requests.single.headers.containsKey('Cookie'), isFalse);
     expect(
       adapter.requests.single.headers.containsKey('Authorization'),
       isFalse,
+    );
+  });
+  test('公开图片支持超过 2 MiB 的原图，拒绝超限数据与 HTML 响应', () async {
+    final adapter = _Adapter()
+      ..contentType = 'image/png'
+      ..body = 'x' * 3170395;
+    final network = MetaversePluginNetwork(
+      dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')],
+    );
+    addTearDown(network.dispose);
+    final raw = _example()..['schema'] = 2;
+    (raw['permissions'] as Map)['publicImages'] = true;
+    final manifest = _parse(raw);
+    final uri = Uri.parse('https://images.example.org/large.png');
+    expect((await network.loadImage(manifest, uri)).length, 3170395);
+    adapter.body = 'x' * (MetaversePluginNetwork.maxImageBytes + 1);
+    await expectLater(
+      network.loadImage(manifest, uri),
+      throwsA(
+        isA<MetaversePluginCallException>().having(
+          (e) => e.message,
+          '大小限制',
+          '响应过大',
+        ),
+      ),
+    );
+    adapter
+      ..body = '<html>image unavailable</html>'
+      ..contentType = 'text/html';
+    await expectLater(
+      network.loadImage(manifest, uri),
+      throwsA(
+        isA<MetaversePluginCallException>().having(
+          (e) => e.message,
+          '格式检查',
+          '图片不可用',
+        ),
+      ),
     );
   });
   group('清单校验', () {

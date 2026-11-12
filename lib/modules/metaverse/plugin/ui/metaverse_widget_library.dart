@@ -577,6 +577,14 @@ class _PluginImageState extends State<_PluginImage> {
       Symbols.image_rounded,
       color: Theme.of(context).colorScheme.outline,
     );
+    final retry = Center(
+      child: IconButton(
+        tooltip: context.l10n.common_retry,
+        icon: const Icon(Symbols.refresh_rounded),
+        color: Theme.of(context).colorScheme.outline,
+        onPressed: () => setState(_update),
+      ),
+    );
     return ClipRRect(
       borderRadius: widget.radius,
       child: SizedBox(
@@ -585,6 +593,7 @@ class _PluginImageState extends State<_PluginImage> {
         child: FutureBuilder<Uint8List>(
           future: _request,
           builder: (_, snapshot) {
+            if (snapshot.hasError) return retry;
             final bytes = snapshot.data;
             if (snapshot.connectionState != ConnectionState.done ||
                 bytes == null) {
@@ -598,7 +607,7 @@ class _PluginImageState extends State<_PluginImage> {
                 policy: ResizeImagePolicy.fit,
               ),
               fit: widget.fit,
-              errorBuilder: (_, _, _) => placeholder,
+              errorBuilder: (_, _, _) => retry,
             );
           },
         ),
