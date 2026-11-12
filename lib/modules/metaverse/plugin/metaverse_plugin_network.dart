@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:mime/mime.dart';
 
 import '../../../constants.dart';
 import '../../../services/network/core/net_core_http_adapter.dart';
@@ -126,10 +127,20 @@ class MetaversePluginNetwork {
       body: null,
       maxBytes: maxImageBytes,
     );
-    if (response.status != 200 ||
-        !(response.headers['content-type'] ?? '').toLowerCase().startsWith(
-          'image/',
-        )) {
+    final contentType = (response.headers['content-type'] ?? '')
+        .split(';')
+        .first
+        .trim()
+        .toLowerCase();
+    // 部分图床返回通用二进制类型，按文件头识别，避免把错误页当成图片。
+    final imageType = switch (contentType) {
+      '' || 'application/octet-stream' => lookupMimeType(
+        '',
+        headerBytes: response.bytes,
+      ),
+      _ => contentType,
+    };
+    if (response.status != 200 || imageType?.startsWith('image/') != true) {
       throw const MetaversePluginCallException('图片不可用');
     }
     return response.bytes;
