@@ -26,7 +26,8 @@ class _Adapter implements HttpClientAdapter {
   final requests = <RequestOptions>[];
   int status = 200;
   String body = '{}';
-  String contentType = 'application/json';
+  Uint8List? bytes;
+  String? contentType = 'application/json';
 
   @override
   Future<ResponseBody> fetch(
@@ -35,11 +36,11 @@ class _Adapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
-    return ResponseBody.fromString(
-      body,
+    return ResponseBody.fromBytes(
+      bytes ?? utf8.encode(body),
       status,
       headers: {
-        'content-type': [contentType],
+        if (contentType != null) 'content-type': [contentType!],
         'set-cookie': ['sid=1'],
       },
     );
@@ -423,6 +424,46 @@ void main() {
         ),
       ),
     );
+  });
+  test('通用二进制或缺省类型按图片文件头识别，不依赖网址后缀', () async {
+    final adapter = _Adapter();
+    final network = MetaversePluginNetwork(
+      dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')],
+    );
+    addTearDown(network.dispose);
+    final raw = _example()..['schema'] = 2;
+    (raw['permissions'] as Map)['publicImages'] = true;
+    final manifest = _parse(raw);
+    final uri = Uri.parse('https://images.example.org/file');
+    for (final type in [
+      null,
+      '',
+      'application/octet-stream',
+      'Application/Octet-Stream; charset=binary',
+    ]) {
+      adapter.contentType = type;
+      for (final bytes in [
+        Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]),
+        base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+'
+          'A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        ),
+      ]) {
+        adapter.bytes = bytes;
+        expect(await network.loadImage(manifest, uri), bytes);
+      }
+      for (final body in ['', '<html>unavailable</html>', '{"error":true}']) {
+        adapter.bytes = Uint8List.fromList(utf8.encode(body));
+        await expectLater(
+          network.loadImage(
+            manifest,
+            Uri.parse('https://images.example.org/fake.jpeg'),
+          ),
+          throwsA(isA<MetaversePluginCallException>()),
+        );
+      }
+    }
   });
   group('清单校验', () {
     test('示例清单合法，声明的能力被完整解析', () {
