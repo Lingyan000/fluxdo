@@ -211,12 +211,15 @@ ctx.setData(k, v); // 写入 data.k（界面按 key 读取）
 | `fluxdo.auth.status/request/signOut()` | 查询宿主是否持有凭证、手动填写（仅 `token`）、清除本地凭证 |
 | `fluxdo.user.get()` | 读取当前用户名，需 `permissions.identity` |
 | `fluxdo.navigate(page, params)` | 打开自己声明过的页面 |
+| `await fluxdo.prepareNavigation(page)` | 在用户点击时预约一个已声明页面，返回一次性异步函数，调用时传入页面参数 |
 | `fluxdo.openUrl(url)` | 交给应用的链接安全策略打开 |
 | `fluxdo.toast(message, type)` | 提示，标题里会标明来自哪个插件 |
 | `setTimeout/clearTimeout` | 最多 64 个，单个上限 10 分钟 |
 
 `navigate`、`openUrl`、`auth.request` 需要**用户操作**才会生效：脚本在加载时、定时器里
 自行发起会被拒绝（`该操作须由用户点击触发`）。一次点击只换一次这类操作。
+
+需要在异步操作完成后打开结果页时，可在点击处理函数中先调用 `prepareNavigation`，再发起原生确认等操作，成功后调用返回的函数。预约绑定发起页面、目标页面和账号，使用一次后失效。新的插件点击、离开发起页面、关闭页面或应用进入后台都会使预约失效。由本次原生操作展示的弹框可临时遮住页面，插件应在 `page.resume` 后执行待处理导航。页面目标及参数由插件决定。旧版宿主缺少此方法，插件可检测方法是否存在并保留手动打开结果页的入口。
 
 ## 隔离与限制
 
