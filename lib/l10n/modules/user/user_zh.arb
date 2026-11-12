@@ -51,6 +51,7 @@
   "group_searchMembers": "搜索组内成员",
   "group_owner": "组管理员",
   "group_membersHidden": "此用户组的成员列表不可见",
+  "forumPrefs_noBackground": "未设置背景图",
   "forumPrefs_basicProfile": "基本资料",
   "forumPrefs_backgrounds": "背景图片",
   "forumPrefs_privacy": "隐私",

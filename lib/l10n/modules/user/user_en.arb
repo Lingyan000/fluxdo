@@ -47,6 +47,7 @@
   "group_searchMembers": "Search group members",
   "group_owner": "Group owner",
   "group_membersHidden": "This group's member list is private",
+  "forumPrefs_noBackground": "No background image",
   "forumPrefs_basicProfile": "Basic information",
   "forumPrefs_backgrounds": "Profile images",
   "forumPrefs_privacy": "Privacy",

@@ -47,6 +47,7 @@
   "group_searchMembers": "搜尋組內成員",
   "group_owner": "群組管理員",
   "group_membersHidden": "此群組的成員名單不可見",
+  "forumPrefs_noBackground": "未設定背景圖片",
   "forumPrefs_basicProfile": "基本資料",
   "forumPrefs_backgrounds": "背景圖片",
   "forumPrefs_privacy": "私隱",

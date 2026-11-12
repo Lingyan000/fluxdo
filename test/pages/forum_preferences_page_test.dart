@@ -21,6 +21,10 @@ import 'package:fluxdo/services/local_notification_service.dart';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:fluxdo/services/discourse_cache_manager.dart';
+import 'package:fluxdo/pages/forum_preferences/preference_controls.dart';
+import 'package:fluxdo/widgets/common/cached_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,7 +39,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
   const captureDir = String.fromEnvironment('PROFILE_CAPTURE_DIR');
-  for (final width in [320.0, 390.0, 1000.0]) {
+  for (final width in [320.0, 390.0, 1000.0, 1400.0]) {
     testWidgets('原生设置 $width 保存失败保留输入，仅提交改动字段', (tester) async {
       if (captureDir.isNotEmpty) {
         await tester.runAsync(() async {
@@ -60,25 +64,56 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues({'pref_dialog_blur': false});
       final preferences = await SharedPreferences.getInstance();
-      const themeState = ThemeState(
+      await tester.runAsync(() => ThemeRegistry.loadBuiltins());
+      final themeState = ThemeState(
+        themeId: width == 1400 ? 'terminal' : ThemeRegistry.materialId,
         mode: ThemeMode.system,
         seedColor: Colors.blue,
       );
       final resolved = ThemeResolver.resolve(
-        spec: ThemeRegistry.material,
+        spec: themeState.themeSpec,
         mode: ThemeMode.system,
         black: false,
         seed: themeState.seedColor,
         variant: themeState.schemeVariant,
       );
       final appTheme = buildAppTheme(
-        width == 390 ? resolved.dark : resolved.light,
-        width == 390 ? resolved.darkColors : resolved.lightColors,
+        (width == 390 || width == 1400) ? resolved.dark : resolved.light,
+        (width == 390 || width == 1400)
+            ? resolved.darkColors
+            : resolved.lightColors,
         themeState.effectiveShapes,
         themeState,
+        style: themeState.effectiveStyle,
         fullscreenSwipeBack: false,
         pageBackground: false,
       );
+      FilePicker? previousPicker;
+      try {
+        previousPicker = FilePicker.platform;
+      } catch (_) {}
+      final picker = _ImagePicker();
+      FilePicker.platform = picker;
+      addTearDown(() {
+        if (previousPicker != null) FilePicker.platform = previousPicker;
+      });
+      const backgroundUrl = 'https://example.com/preference-background.png';
+      await tester.runAsync(() async {
+        final codec = await ui.instantiateImageCodec(
+          File('assets/images/icon_modern_preview.png').readAsBytesSync(),
+        );
+        final frame = await codec.getNextFrame();
+        PaintingBinding.instance.imageCache.putIfAbsent(
+          const BlobImageProvider(
+            backgroundUrl,
+            bucket: BlobImageCache.contentBucket,
+          ),
+          () => OneFrameImageStreamCompleter(
+            Future.value(ImageInfo(image: frame.image)),
+          ),
+        );
+        codec.dispose();
+      });
       final user = <String, dynamic>{
         'id': 1,
         'username': 'tester',
@@ -86,6 +121,10 @@ void main() {
         'can_change_bio': true,
         'can_change_location': true,
         'can_change_website': true,
+        'can_upload_profile_header': true,
+        'can_upload_user_card_background': true,
+        'profile_background_upload_url': '',
+        'card_background_upload_url': backgroundUrl,
         'bio_raw': '原简介',
         'location': '原位置',
         'website': '',
@@ -238,7 +277,111 @@ void main() {
         isNull,
       );
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.widgetWithText(ListTile, '生日'));
+      final imageSettings = find.byWidgetPredicate(
+        (widget) =>
+            widget is PreferenceControl &&
+            widget.field.key == 'card_background_upload_url',
+      );
+      final profilePreview = find.byKey(
+        const ValueKey('image-preview-user.profile_background_upload_url'),
+      );
+      final cardPreview = find.byKey(
+        const ValueKey('image-preview-user.card_background_upload_url'),
+      );
+      final settingsScroll = find
+          .descendant(
+            of: find.byType(SettingsGroupPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        profilePreview,
+        200,
+        scrollable: settingsScroll,
+      );
+      await Scrollable.ensureVisible(
+        tester.element(find.text('背景图片')),
+        alignment: 0.12,
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      final profileRect = tester.getRect(profilePreview);
+      final cardRect = tester.getRect(cardPreview);
+      expect(cardRect.size, profileRect.size);
+      if (width >= 1000) {
+        expect(cardRect.top, profileRect.top);
+        expect(cardRect.left, greaterThan(profileRect.right));
+      } else {
+        expect(cardRect.left, profileRect.left);
+        expect(cardRect.top, greaterThan(profileRect.bottom));
+      }
+      expect(
+        tester
+            .widget<CachedImage>(
+              find.descendant(
+                of: imageSettings,
+                matching: find.byType(CachedImage),
+              ),
+            )
+            .fit,
+        BoxFit.contain,
+      );
+      await _capture(tester, captureDir, 'preferences-images-$width');
+      await tester.ensureVisible(
+        find.descendant(
+          of: imageSettings,
+          matching: find.widgetWithText(OutlinedButton, '更换图片'),
+        ),
+      );
+      await tester.tap(
+        find.descendant(
+          of: imageSettings,
+          matching: find.widgetWithText(OutlinedButton, '更换图片'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(picker.calls, 1);
+      expect(
+        tester.widget<PreferenceControl>(imageSettings).value,
+        backgroundUrl,
+      );
+      picker.error = PlatformException(
+        code: 'picker_failed',
+        message: '图片选择失败',
+      );
+      await tester.tap(
+        find.descendant(
+          of: imageSettings,
+          matching: find.widgetWithText(OutlinedButton, '更换图片'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(picker.calls, 2);
+      expect(
+        tester.widget<PreferenceControl>(imageSettings).value,
+        backgroundUrl,
+      );
+      expect(find.textContaining('图片选择失败'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(
+        find.descendant(of: imageSettings, matching: find.byTooltip('移除')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(cardPreview), profileRect.size);
+      expect(find.textContaining('图片选择失败'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'card_background_upload_url': ''});
+      await tester.scrollUntilVisible(
+        find.widgetWithText(ListTile, '生日'),
+        -200,
+        scrollable: settingsScroll,
+      );
+      await Scrollable.ensureVisible(
+        tester.element(find.widgetWithText(ListTile, '生日')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('2000/2/28'), findsOneWidget);
       await tester.tap(find.widgetWithText(ListTile, '生日'));
       await tester.pumpAndSettle();
@@ -249,15 +392,26 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '保存'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'date_of_birth': '2000-02-29'});
-      await tester.ensureVisible(
+      await tester.scrollUntilVisible(
         find.widgetWithText(M3eSwitchListTile, '隐藏公开资料与活动'),
+        200,
+        scrollable: settingsScroll,
       );
+      await Scrollable.ensureVisible(
+        tester.element(find.widgetWithText(M3eSwitchListTile, '隐藏公开资料与活动')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(M3eSwitchListTile, '隐藏公开资料与活动'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '保存'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'hide_profile': true});
-      await tester.ensureVisible(find.widgetWithText(TextFormField, '个人简介'));
+      await tester.scrollUntilVisible(
+        find.widgetWithText(TextFormField, '个人简介'),
+        -200,
+        scrollable: settingsScroll,
+      );
       await tester.enterText(
         find.widgetWithText(TextFormField, '个人简介'),
         '尚未保存的简介',
@@ -427,4 +581,30 @@ Future<void> _capture(WidgetTester tester, String dir, String name) async {
     File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
     image.dispose();
   });
+}
+
+class _ImagePicker extends FilePicker {
+  int calls = 0;
+  Object? error;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    void Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = false,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    calls++;
+    expect(type, FileType.image);
+    if (error != null) throw error!;
+    return null;
+  }
 }

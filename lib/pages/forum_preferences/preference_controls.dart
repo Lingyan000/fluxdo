@@ -8,13 +8,13 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../l10n/s.dart';
 import '../../models/forum_preferences.dart';
 import '../../services/discourse/discourse_service.dart';
-import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
 import '../../utils/url_helper.dart';
 import '../../utils/time_utils.dart';
 import '../../widgets/common/app_bottom_sheet.dart';
 import '../../widgets/common/tag_selection_sheet.dart';
+import '../../widgets/common/cached_image.dart';
 import '../chat/new_chat_sheet.dart';
 
 Future<bool> confirmPreferenceAction(
@@ -287,6 +287,7 @@ class PreferenceControl extends StatefulWidget {
 
 class _PreferenceControlState extends State<PreferenceControl> {
   bool _uploading = false;
+  int _imageRetry = 0;
   String? _error;
 
   Future<void> _pickUsers() async {
@@ -391,15 +392,18 @@ class _PreferenceControlState extends State<PreferenceControl> {
   }
 
   Future<void> _upload() async {
-    final selected = await FilePicker.platform.pickFiles(type: FileType.image);
-    final path = selected?.files.single.path;
-    if (path == null || !mounted) return;
+    if (_uploading) return;
     setState(() {
       _uploading = true;
       _error = null;
     });
     widget.onBusy(true);
     try {
+      final selected = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+      );
+      final path = selected?.files.single.path;
+      if (path == null || !mounted) return;
       final result = await DiscourseService().uploadFile(
         path,
         uploadType: widget.field.uploadType!,
@@ -514,50 +518,106 @@ class _PreferenceControlState extends State<PreferenceControl> {
           onTap: _pick,
         );
       case ForumPreferenceKind.image:
+        final hasImage = (widget.value as String).isNotEmpty;
+        final theme = Theme.of(context);
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(field.label, style: Theme.of(context).textTheme.titleSmall),
-            if ((widget.value as String).isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: ClipRRect(
+            Text(field.label, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 12),
+            AspectRatio(
+              key: ValueKey('image-preview-${field.id}'),
+              aspectRatio: 2,
+              child: Material(
+                color: theme.colorScheme.surfaceContainerHighest,
+                shape: RoundedSuperellipseBorder(
                   borderRadius: context.shapes.borderRadius(12),
-                  child: Image(
-                    image: discourseImageProvider(
-                      UrlHelper.resolveUrl(widget.value as String),
-                    ),
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Symbols.broken_image_rounded),
-                  ),
                 ),
+                clipBehavior: Clip.antiAlias,
+                child: hasImage
+                    ? CachedImage(
+                        key: ValueKey((widget.value, _imageRetry)),
+                        url: UrlHelper.resolveUrl(widget.value as String),
+                        fit: BoxFit.contain,
+                        placeholder: (_) =>
+                            const Center(child: LoadingSpinner(size: 24)),
+                        errorBuilder: (_, _, _) => Center(
+                          child: TextButton.icon(
+                            onPressed: () => setState(() => _imageRetry++),
+                            icon: const Icon(Symbols.refresh_rounded, size: 20),
+                            label: Text(context.l10n.common_loadFailedTapRetry),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Symbols.add_photo_alternate_rounded,
+                              size: 28,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              context.l10n.forumPrefs_noBackground,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
               ),
-            Wrap(
-              spacing: 8,
+            ),
+            const SizedBox(height: 12),
+            Row(
               children: [
-                OutlinedButton.icon(
-                  onPressed: _uploading ? null : _upload,
-                  icon: const Icon(Symbols.upload_rounded),
-                  label: Text(
-                    _uploading
-                        ? context.l10n.common_loading
-                        : context.l10n.forumPrefs_upload,
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: OutlinedButton.icon(
+                      onPressed: _uploading ? null : _upload,
+                      icon: _uploading
+                          ? const LoadingSpinner(size: 18)
+                          : Icon(
+                              hasImage
+                                  ? Symbols.edit_rounded
+                                  : Symbols.add_photo_alternate_rounded,
+                              size: 18,
+                            ),
+                      label: Text(
+                        _uploading
+                            ? context.l10n.common_loading
+                            : hasImage
+                            ? context.l10n.appearance_bgChange
+                            : context.l10n.forumPrefs_upload,
+                      ),
+                    ),
                   ),
                 ),
-                if ((widget.value as String).isNotEmpty)
-                  TextButton(
-                    onPressed: _uploading ? null : () => widget.onChanged(''),
-                    child: Text(context.l10n.common_remove),
+                if (hasImage)
+                  IconButton(
+                    tooltip: context.l10n.common_remove,
+                    onPressed: _uploading
+                        ? null
+                        : () {
+                            setState(() => _error = null);
+                            widget.onChanged('');
+                          },
+                    icon: const Icon(Symbols.delete_outline_rounded, size: 20),
                   ),
               ],
             ),
             if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
               ),
           ],
         );

@@ -294,10 +294,73 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
     ],
   );
 
+  SettingsGroup _imageGroup(
+    List<ForumPreferenceField> fields,
+    Widget Function(ForumPreferenceField) control,
+  ) => SettingsGroup(
+    title: fields.first.group,
+    icon: Symbols.image_rounded,
+    wrapInCard: false,
+    items: [
+      CustomModel(
+        id:
+            fields
+                .where(
+                  (field) => field.label.toLowerCase().contains(
+                    _query.trim().toLowerCase(),
+                  ),
+                )
+                .firstOrNull
+                ?.id ??
+            fields.first.id,
+        title: fields.first.group,
+        builder: (_, _) => LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth >= 560
+                ? (constraints.maxWidth - 12) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (final field in fields)
+                  SizedBox(
+                    key: ValueKey(field.id),
+                    width: width,
+                    child: SegmentedCardGroup(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: control(field),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    ],
+  );
+
   Widget _editor({bool wide = false}) {
     final data = _data!;
     final section = _section!;
     final draft = _draft!;
+    Widget control(ForumPreferenceField field) => PreferenceControl(
+      key: ValueKey('$_revision/${field.id}'),
+      field: field,
+      value: draft.values[field.id],
+      data: data,
+      onChanged: (value) => setState(() {
+        draft.update(field, value);
+        _saveError = null;
+      }),
+      onBusy: (busy) {
+        if (mounted) setState(() => _operationBusy = busy);
+      },
+    );
     final fieldGroups = <String, List<ForumPreferenceField>>{};
     for (final field in draft.fields) {
       if (field.enabledBy != null && draft.values[field.enabledBy] != true) {
@@ -382,53 +445,44 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
                       ],
                     ),
                   for (final group in fieldGroups.entries)
-                    SettingsGroup(
-                      title: group.key,
-                      icon: preferenceSectionIcon(section),
-                      items: [
-                        for (final field in group.value)
-                          if (field.kind == ForumPreferenceKind.toggle)
-                            SwitchModel(
-                              id: field.id,
-                              title: field.label,
-                              subtitle: field.help,
-                              icon: preferenceSectionIcon(section),
-                              getValue: (_) =>
-                                  draft.values[field.id] == true ||
-                                  draft.values[field.id] == 'true',
-                              onChanged: (_, value) => setState(() {
-                                draft.update(field, value);
-                                _saveError = null;
-                              }),
-                            )
-                          else
-                            CustomModel(
-                              id: field.id,
-                              title: field.label,
-                              builder: (_, _) => Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
-                                child: PreferenceControl(
-                                  key: ValueKey('$_revision/${field.id}'),
-                                  field: field,
-                                  value: draft.values[field.id],
-                                  data: data,
-                                  onChanged: (value) => setState(() {
-                                    draft.update(field, value);
-                                    _saveError = null;
-                                  }),
-                                  onBusy: (busy) {
-                                    if (mounted) {
-                                      setState(() => _operationBusy = busy);
-                                    }
-                                  },
+                    if (group.value.every(
+                      (field) => field.kind == ForumPreferenceKind.image,
+                    ))
+                      _imageGroup(group.value, control)
+                    else
+                      SettingsGroup(
+                        title: group.key,
+                        icon: preferenceSectionIcon(section),
+                        items: [
+                          for (final field in group.value)
+                            if (field.kind == ForumPreferenceKind.toggle)
+                              SwitchModel(
+                                id: field.id,
+                                title: field.label,
+                                subtitle: field.help,
+                                icon: preferenceSectionIcon(section),
+                                getValue: (_) =>
+                                    draft.values[field.id] == true ||
+                                    draft.values[field.id] == 'true',
+                                onChanged: (_, value) => setState(() {
+                                  draft.update(field, value);
+                                  _saveError = null;
+                                }),
+                              )
+                            else
+                              CustomModel(
+                                id: field.id,
+                                title: field.label,
+                                builder: (_, _) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 10,
+                                  ),
+                                  child: control(field),
                                 ),
                               ),
-                            ),
-                      ],
-                    ),
+                        ],
+                      ),
                   SettingsGroup(
                     title: '',
                     icon: preferenceSectionIcon(section),
