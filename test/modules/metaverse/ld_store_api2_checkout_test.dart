@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
@@ -156,6 +157,7 @@ fluxdo.on('fixture.order', async (ctx, args) => {
       await signIn(42);
       expect(((await invoke('status'))['result'] as Map)['orderNo'], 'EX-1');
       await invoke('finish', 'EX-1');
+      await store.importLegacyStorage(manifest.id);
       expect((await invoke('status'))['result'], {'state': 'idle'});
       expect(orders.requests, hasLength(1));
     });
@@ -214,6 +216,61 @@ fluxdo.on('fixture.order', async (ctx, args) => {
           (await store.readStorage(manifest.id))['submission:42'] as Map;
       expect(saved['state'], 'pending');
       expect(saved['orderNo'], isNull);
+    });
+
+    test('旧版多账号记录按所属账号原号迁移，已消费记录不会重复导入', () async {
+      String scope(int account) => sha256
+          .convert(
+            utf8.encode(
+              jsonEncode([
+                'https://api2.ldspro.qzz.io/api/shop/orders',
+                'https://api2.ldspro.qzz.io/api/shop/order-submissions',
+                'linux.do:$account',
+                'LDC',
+              ]),
+            ),
+          )
+          .toString();
+      final pending = {
+        ...intent,
+        'token': 'ord_${'a' * 32}',
+        'state': 'pending',
+      };
+      await store.writeOrder(manifest.id, scope(42), jsonEncode(pending));
+      await store.writeOrder(
+        manifest.id,
+        scope(43),
+        jsonEncode({...pending, 'token': 'ord_${'b' * 32}'}),
+      );
+      await store.importLegacyStorage(manifest.id);
+      expect(
+        ((await invoke('status'))['result'] as Map)['token'],
+        pending['token'],
+      );
+      expect(orders.requests, isEmpty);
+      var data = await store.readStorage(manifest.id);
+      expect((data['legacyApi1Records'] as Map).keys, ['v1:${scope(43)}']);
+      orders.status = 200;
+      orders.body = {
+        'success': true,
+        'data': {
+          'exists': true,
+          'order': {'orderNo': 'EX-1'},
+        },
+      };
+      await invoke('recover');
+      expect(orders.requests.single.uri.path, endsWith('/${pending['token']}'));
+      await invoke('finish', 'EX-1');
+      await store.importLegacyStorage(manifest.id);
+      expect((await invoke('status'))['result'], {'state': 'idle'});
+      await signIn(43);
+      expect(
+        ((await invoke('status'))['result'] as Map)['token'],
+        'ord_${'b' * 32}',
+      );
+      data = await store.readStorage(manifest.id);
+      expect(data['legacyApi1Records'], isNull);
+      expect(await store.readOrder(manifest.id, scope(42)), isNotNull);
     });
 
     for (final mixed in [false, true]) {

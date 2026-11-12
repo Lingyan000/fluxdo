@@ -432,6 +432,20 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return _writeStorage(_storageKey(params), params['value']);
       case 'storage.remove':
         return _writeStorage(_storageKey(params), null);
+      case 'storage.setMany':
+        final entries = params['entries'];
+        if (entries is! Map<String, dynamic> || entries.length > 128) {
+          throw const MetaversePluginCallException('存储批次不合法');
+        }
+        for (final key in entries.keys) {
+          _storageKey({'key': key});
+        }
+        try {
+          await _store.updateStorageEntries(id, entries);
+        } on StateError {
+          throw const MetaversePluginCallException('存储空间已满');
+        }
+        return null;
 
       case 'credentials.status':
         return _credentials.status(params['name'], _delegate.currentAccountId());
@@ -467,6 +481,12 @@ class MetaversePluginHost implements MetaversePluginBridge {
         };
       case 'crypto.uuid':
         return const Uuid().v4();
+      case 'crypto.sha256':
+        final input = params['text'];
+        if (input is! String || utf8.encode(input).length > 1024 * 1024) {
+          throw const MetaversePluginCallException('hash_input_invalid');
+        }
+        return sha256.convert(utf8.encode(input)).toString();
       case 'connect.authorize':
         final raw = params['url'];
         final uri = raw is String && raw.length <= 16384

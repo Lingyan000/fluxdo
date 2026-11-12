@@ -187,6 +187,9 @@ class MetaversePluginsController
     if (previous != null) {
       ref.read(metaversePluginHostsProvider).shutdown(manifest.id);
     }
+    if (!changedSource && previous?.manifest.apiVersion == 1 && manifest.apiVersion == 2) {
+      await _store.importLegacyStorage(manifest.id);
+    }
     if (changedSource || changedPermissions) {
       await _store.deleteToken(manifest.id);
       if (changedSource) {

@@ -36,6 +36,9 @@ void main() {
     await store.write(bobKey, 'bob-token');
     await store.write(deviceKey, 'ldc-secret');
 
+    expect(await store.readScope(const SecretScope(namespace: 'auth', accountId: 'alice')),
+      {aliceKey.storageKey: 'alice-token'});
+
     await store.deleteScope(
       const SecretScope(namespace: 'auth', accountId: 'alice'),
     );

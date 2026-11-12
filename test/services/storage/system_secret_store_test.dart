@@ -48,6 +48,9 @@ void main() {
     await store.write(alice, 'a');
     await store.write(bob, 'b');
 
+    expect(await store.readScope(const SecretScope(namespace: 'auth', accountId: 'alice')),
+      {alice.storageKey: 'a'});
+
     await store.deleteScope(
       const SecretScope(namespace: 'auth', accountId: 'alice'),
     );

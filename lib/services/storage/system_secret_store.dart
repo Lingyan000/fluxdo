@@ -69,6 +69,23 @@ class SystemSecretStore implements SecretStore {
   }
 
   @override
+  Future<Map<String, String>> readScope(SecretScope scope) async {
+    try {
+      final values = {..._memoryFallback, ...await _secureStorage.readAll()};
+      return {
+        for (final entry in values.entries)
+          if (entry.key.startsWith(scope.storagePrefix)) entry.key: entry.value,
+      };
+    } catch (error) {
+      throw SecretStoreException(
+        operation: 'readScope',
+        key: scope.storagePrefix,
+        cause: error,
+      );
+    }
+  }
+
+  @override
   Future<void> deleteScope(SecretScope scope) async {
     _memoryFallback.removeWhere(
       (key, _) => key.startsWith(scope.storagePrefix),

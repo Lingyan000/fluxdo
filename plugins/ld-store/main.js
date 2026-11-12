@@ -197,8 +197,7 @@ const ldStore = (() => {
       (intent.couponClaimId == null || /^[A-Za-z0-9_-]{1,128}$/.test(intent.couponClaimId));
   }
 
-  async function record(account) {
-    const saved = await fluxdo.storage.get('submission:' + account);
+  function validateRecord(saved) {
     if (saved == null) return null;
     if (!validIntent(saved) || !/^ord_[0-9a-f]{32}$/.test(saved.token || '') ||
         !['pending','missing','created'].includes(saved.state) ||
@@ -206,6 +205,28 @@ const ldStore = (() => {
       throw Error('checkout_record_invalid');
     }
     return saved;
+  }
+
+  async function record(account) {
+    const key = 'submission:' + account;
+    const saved = await fluxdo.storage.get(key);
+    if (saved != null) return validateRecord(saved);
+    const legacy = await fluxdo.storage.get('legacyApi1Records');
+    if (!legacy || typeof legacy !== 'object') return null;
+    const scope = 'v1:' + await fluxdo.crypto.sha256(JSON.stringify([
+      api + '/orders', api + '/order-submissions', 'linux.do:' + account, 'LDC',
+    ]));
+    if (!Object.prototype.hasOwnProperty.call(legacy, scope)) return null;
+    let restored;
+    try { restored = validateRecord(JSON.parse(legacy[scope])); }
+    catch (_) { throw Error('checkout_record_invalid'); }
+    await checkSession(account);
+    delete legacy[scope];
+    await fluxdo.storage.setMany({
+      [key]:restored,
+      legacyApi1Records:Object.keys(legacy).length ? legacy : null,
+    });
+    return restored;
   }
 
   async function saveRecord(account, value) {

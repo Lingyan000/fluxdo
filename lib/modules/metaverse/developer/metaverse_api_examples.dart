@@ -31,6 +31,18 @@ class MetaverseApiExample {
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
   MetaverseApiExample(
+    'storage.setMany',
+    "{current: {value: 1}, previous: null}",
+    null,
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
+    'crypto.sha256',
+    "'abc'",
+    'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    apiVersion: 2,
+  ),
+  MetaverseApiExample(
     'credentials.status',
     "'account'",
     {'authorized': true, 'expiresAt': 2000000000},

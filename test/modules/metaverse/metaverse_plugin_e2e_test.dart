@@ -36,6 +36,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _dir = 'docs/examples/metaverse-plugin';
 
 class _MemorySecrets implements SecretStore {
+  @override
+  Future<Map<String, String>> readScope(SecretScope scope) async => {
+    for (final entry in values.entries)
+      if (entry.key.startsWith(scope.storagePrefix)) entry.key: entry.value,
+  };
   final values = <String, String>{};
 
   @override

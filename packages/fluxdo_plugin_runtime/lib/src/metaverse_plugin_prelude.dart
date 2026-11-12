@@ -111,6 +111,7 @@ const metaversePluginPrelude = r'''
     storage: Object.freeze({
       get: function (key) { return call('storage.get', { key: String(key) }); },
       set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },
+      setMany: function (entries) { return call('storage.setMany', {entries: entries}); },
       remove: function (key) { return call('storage.remove', { key: String(key) }); }
     }),
 
@@ -135,7 +136,8 @@ const metaversePluginPrelude = r'''
     }),
     crypto: Object.freeze({
       pkce: function () { return call('crypto.pkce'); },
-      uuid: function () { return call('crypto.uuid'); }
+      uuid: function () { return call('crypto.uuid'); },
+      sha256: function (text) { return call('crypto.sha256', {text: String(text)}); }
     }),
 
     auth: Object.freeze({
