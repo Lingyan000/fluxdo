@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart' as html_parser;
+
+import 'linux_do_connect_navigator.dart';
 
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
@@ -14,7 +15,7 @@ import 'toast_service.dart';
 /// LDC（credit.linux.do）和 CDK（cdk.linux.do）走的是同一套流程，因此只实现
 /// 一次，站点差异（域名、确认框文案）由子类给出。
 ///
-/// 这套流程用的是主站登录态，只给官方服务用，不对第三方插件开放。
+/// 此类适配 LDC、CDK 的业务接口，授权导航复用公共 Connect 服务。
 abstract class LinuxDoConnectOAuthService {
   LinuxDoConnectOAuthService({
     required String baseUrl,
@@ -93,75 +94,27 @@ abstract class LinuxDoConnectOAuthService {
     // step1 → step2: 模拟"业务页加载完成 → 跳转到 OAuth 同意页"的导航延迟
     await OAuthFlowHelper.humanGap(minMs: 800, maxMs: 1500);
 
-    final Response response;
-    try {
-      response = await _dio.get(
-        authUrl,
-        options: Options(
-          followRedirects: false,
-          validateStatus: (status) => status != null && status < 500,
-          extra: {'skipCsrf': true, 'allowRedirectSetCookie': true},
-        ),
-      );
-    } on DioException {
-      throw Exception(S.current.oauth_networkError);
-    }
-
-    final document = html_parser.parse(response.data);
-    final approveLink = document
-        .querySelector('a[href*="/oauth2/approve/"]')
-        ?.attributes['href'];
-
     if (!context.mounted) return false;
-    if (approveLink == null) {
-      throw Exception(S.current.oauth_approvePageParseFailed);
-    }
-
     final confirmed = await showAppDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => LinuxDoConnectAuthDialog(
-        title: confirmTitle(context),
-        message: confirmMessage(context),
-        onApprove: () => _approve(approveLink),
-      ),
-    );
-    return confirmed ?? false;
-  }
-
-  Future<bool> _approve(String approveLink) async {
-    // 用户点击同意 → 浏览器发起 approve 请求, 模拟手指反应 + 浏览器导航延迟
-    await OAuthFlowHelper.humanGap(minMs: 600, maxMs: 1200);
-
-    final approveResponse = await _dio.get(
-      'https://connect.linux.do$approveLink',
-      options: Options(
-        followRedirects: false,
-        validateStatus: (status) => status != null && status < 500,
-        extra: {
-          'skipCsrf': true,
-          'skipRedirect': true,
-          'allowRedirectSetCookie': true,
+      builder: (dialogContext) => LinuxDoConnectAuthDialog(
+        title: confirmTitle(dialogContext),
+        message: confirmMessage(dialogContext),
+        onApprove: () async {
+          final result = await LinuxDoConnectNavigator(_dio)
+              .authorize(Uri.parse(authUrl), active: () => context.mounted);
+          final code = result.queryParameters['code'];
+          final state = result.queryParameters['state'];
+          if (code == null || state == null) {
+            throw Exception(S.current.oauth_missingParams);
+          }
+          await callback(code, state);
+          return true;
         },
       ),
     );
-
-    final location = approveResponse.headers.value('location');
-    if (location == null) {
-      throw Exception(S.current.oauth_noRedirectResponse);
-    }
-
-    final uri = Uri.parse(location);
-    final code = uri.queryParameters['code'];
-    final state = uri.queryParameters['state'];
-    if (code == null || state == null) {
-      throw Exception(S.current.oauth_missingParams);
-    }
-
-    // approve → callback: 浏览器跳回业务方 + 业务方 JS 提交 code 的延迟
-    await OAuthFlowHelper.humanGap(minMs: 400, maxMs: 900);
-    await callback(code, state);
-    return true;
+    return confirmed ?? false;
   }
 }
 
