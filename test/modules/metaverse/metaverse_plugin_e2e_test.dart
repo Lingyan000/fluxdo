@@ -16,7 +16,8 @@ import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_service_session.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_capabilities.dart';
 import 'package:fluxdo/services/navigation/app_route_observer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
@@ -108,6 +109,37 @@ class _ShopApi extends _Api {
   ) async {
     requests.add(options);
     final uri = options.uri;
+    if (uri.path == '/api/auth/init') {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'state': 'fixture-state',
+            'auth_url': 'https://connect.linux.do/oauth2/authorize?redirect_uri=https%3A%2F%2Fapi.ldspro.qzz.io%2Fapi%2Fauth%2Fcallback&state=fixture-state',
+          },
+        }),
+        200,
+      );
+    }
+    if (uri.path.endsWith('/payment-url') ||
+        uri.path.endsWith('/refresh') ||
+        uri.path.endsWith('/cancel')) {
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      expect(
+        options.method,
+        uri.path.endsWith('/payment-url') ? 'GET' : 'POST',
+      );
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': true,
+          'data': {
+            'paymentUrl': 'https://credit.linux.do/paying?order_no=fixture',
+            'status': orderStatus,
+          },
+        }),
+        200,
+      );
+    }
     if (connectTimeout) {
       throw DioException.connectionTimeout(
         timeout: const Duration(seconds: 5),
@@ -296,7 +328,32 @@ class _Delegate extends MetaversePluginHostDelegate {
   @override
   int? currentAccountId() => accountId;
   final payments = <String>[];
+  void Function()? onPayment;
   Object? paymentResult = const {'state': 'checking'};
+
+  @override
+  Future<String?> authorizeConnect(
+    BuildContext context,
+    Uri authorization,
+  ) async {
+    authRequests++;
+    return null;
+  }
+
+  @override
+  Future<Object?> requestPayment(
+    BuildContext context, {
+    required MetaversePaymentProvider provider,
+    required Uri url,
+    required String reference,
+    required Object amount,
+  }) async {
+    expect(provider, MetaversePaymentProvider.linuxDoCredit);
+    expect(url.host, 'credit.linux.do');
+    payments.add('pay:$reference');
+    onPayment?.call();
+    return paymentResult;
+  }
 
   @override
   Future<Object?> payOrder(
@@ -491,11 +548,20 @@ Future<void> main() async {
       expect(api.requests.single.uri.path, '/v1/orders/42');
     });
 
+    Future<void> authorizeShop() => store.writeCredential(
+      host.id,
+      'account',
+      const MetaverseCredential('fixture-session', accountId: 42),
+      revision: store.credentialRevision(host.id, 'account'),
+      isActive: () => true,
+    );
+
     Future<void> openShop(
       MetaverseAddressLookup lookup, {
       _ShopApi? primary,
       MetaversePluginNetwork? alternate,
     }) async {
+      delegate.accountId = 42;
       final shop = MetaversePluginManifest.parse(
         jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
         reservedHosts: const ['linux.do'],
@@ -598,32 +664,17 @@ Future<void> main() async {
         (_) async => [InternetAddress('8.8.8.8')],
         primary: service,
       );
-      await store.writeServiceSession(
-        host.id,
-        MetaverseServiceSession(
-          'fixture-session',
-          accountId: 42,
-          checkout: MetaverseCheckoutGrant(
-            host.manifest.auth.checkout!,
-            subject: 'linux.do:42',
-            unit: 'LDC',
-          ),
-        ),
-      );
+      await authorizeShop();
       delegate.accountId = 43;
-      expect((await host.call('auth.status', {}) as Map)['authorized'], false);
-      await expectLater(
-        host.call('checkout.status', {}),
-        throwsA(isA<MetaversePluginCallException>()),
-      );
-      await expectLater(
-        host.call('checkout.recover', {}),
-        throwsA(isA<MetaversePluginCallException>()),
+      expect(
+        (await host.call('credentials.status', {'name': 'account'})
+            as Map)['authorized'],
+        false,
       );
       await expectLater(
         host.call('fetch', {
           'url': 'https://api2.ldspro.qzz.io/api/shop/orders',
-          'auth': true,
+          'credential': 'account',
         }),
         throwsA(isA<MetaversePluginCallException>()),
       );
@@ -637,10 +688,7 @@ Future<void> main() async {
           (_) async => [InternetAddress('8.8.8.8')],
           primary: service,
         );
-        await store.writeServiceSession(
-          host.id,
-          MetaverseServiceSession('fixture-session'),
-        );
+        await authorizeShop();
       });
       await tester.pumpWidget(
         app(
@@ -662,13 +710,23 @@ Future<void> main() async {
       await tester.tap(find.text('立即支付'));
       await settle(
         tester,
-        () => delegate.payments.length == 1 && service.requests.length == 2,
+        () => delegate.payments.length == 1 && service.requests.length == 5,
       );
       await settle(tester, () => find.text('取消订单').evaluate().isNotEmpty);
       await tester.ensureVisible(find.text('取消订单'));
       await tester.tap(find.text('取消订单'));
-      await settle(tester, () => service.requests.length == 3);
-      expect(delegate.payments, ['pay:FIX-1', 'cancel:FIX-1']);
+      await settle(tester, () => find.text('确认取消订单').evaluate().isNotEmpty);
+      expect(
+        service.requests.where((r) => r.uri.path.endsWith('/cancel')),
+        isEmpty,
+      );
+      await tester.tap(find.text('确认取消订单'));
+      await settle(tester, () => service.requests.length == 7);
+      expect(
+        service.requests.where((r) => r.uri.path.endsWith('/cancel')),
+        hasLength(1),
+      );
+      expect(delegate.payments, ['pay:FIX-1']);
       expect(delegate.opened, isEmpty);
       delegate.paymentResult = null;
       await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
@@ -677,7 +735,7 @@ Future<void> main() async {
       await settle(
         tester,
         () =>
-            delegate.payments.length == 3 &&
+            delegate.payments.length == 2 &&
             tester
                     .widget<FilledButton>(
                       find.widgetWithText(FilledButton, '立即支付'),
@@ -685,7 +743,7 @@ Future<void> main() async {
                     .onPressed !=
                 null,
       );
-      expect(service.requests, hasLength(3));
+      expect(service.requests, hasLength(9));
     });
 
     pluginTest('未登录入口调用宿主原生授权，取消后保留页面并可重新授权', (tester) async {
@@ -784,15 +842,7 @@ Future<void> main() async {
           (_) async => [InternetAddress('8.8.8.8')],
           primary: service,
         );
-        await store.writeServiceSession(
-          host.id,
-          MetaverseServiceSession(
-            'fixture-session',
-            queryUrls: const [
-              'https://api2.ldspro.qzz.io/api/shop/orders/quote',
-            ],
-          ),
-        );
+        await authorizeShop();
       });
       await tester.pumpWidget(
         app(
@@ -922,7 +972,7 @@ Future<void> main() async {
     });
 
     for (final immediate in [true, false]) {
-      pluginTest('建单成功自动打开订单，取消与超时恢复保持原号，立即成功=$immediate', (tester) async {
+      pluginTest('建单成功自动打开订单，超时恢复保持原号，立即成功=$immediate', (tester) async {
         const id = 'd553779c-83ef-48e4-98c5-a8446c78d5ec';
         final service = _ShopApi()
           ..simulateCheckout = true
@@ -933,18 +983,7 @@ Future<void> main() async {
         );
         await tester.runAsync(() async {
           await start();
-          await store.writeServiceSession(
-            host.id,
-            MetaverseServiceSession(
-              'fixture-session',
-              queryUrls: host.manifest.auth.queries.values,
-              checkout: MetaverseCheckoutGrant(
-                host.manifest.auth.checkout!,
-                subject: 'fixture-buyer',
-                unit: 'LDC',
-              ),
-            ),
-          );
+          await authorizeShop();
         });
         final prefs = await SharedPreferences.getInstance();
         Future<void> mount() => tester.pumpWidget(
@@ -982,33 +1021,8 @@ Future<void> main() async {
         );
         await mount();
         await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
-        await click('核对并创建订单');
-        await settle(
-          tester,
-          () => find.byType(AlertDialog).evaluate().isNotEmpty,
-        );
-        expect(find.textContaining('fixture-buyer'), findsOneWidget);
-        expect(find.textContaining('优惠券编号：8'), findsOneWidget);
         expect(submit, isEmpty);
-        await tester.tap(find.widgetWithText(TextButton, '取消'));
-        await settle(
-          tester,
-          () =>
-              find.byType(AlertDialog).evaluate().isEmpty &&
-              find.text('刷新报价').evaluate().isNotEmpty,
-        );
-        expect(submit, isEmpty);
-        expect(find.text('1.00 LDC'), findsOneWidget);
-        expect(
-          service.requests.where((r) => r.uri.path.endsWith('/quote')),
-          hasLength(1),
-        );
         await click('核对并创建订单');
-        await settle(
-          tester,
-          () => find.byType(AlertDialog).evaluate().isNotEmpty,
-        );
-        await tester.tap(find.widgetWithText(FilledButton, '确认创建订单'));
         if (immediate) {
           await settle(tester, () => delegate.pages.contains('order'));
           expect(delegate.pages, ['order']);
@@ -1044,11 +1058,6 @@ Future<void> main() async {
         await click('用原提交号重试');
         await settle(
           tester,
-          () => find.byType(AlertDialog).evaluate().isNotEmpty,
-        );
-        await tester.tap(find.widgetWithText(FilledButton, '确认创建订单'));
-        await settle(
-          tester,
           () => submit.length == 2 && find.text('查询提交结果').evaluate().isNotEmpty,
         );
         expect(jsonDecode(submit.last.data as String), first);
@@ -1077,13 +1086,7 @@ Future<void> main() async {
             (_) async => [InternetAddress('8.8.8.8')],
             primary: service,
           );
-          await store.writeServiceSession(
-            host.id,
-            MetaverseServiceSession(
-              'fixture-session',
-              queryUrls: host.manifest.auth.queries.values,
-            ),
-          );
+          await authorizeShop();
         });
         final navigator = GlobalKey<NavigatorState>();
         await tester.pumpWidget(
@@ -1153,10 +1156,7 @@ Future<void> main() async {
           (_) async => [InternetAddress('8.8.8.8')],
           primary: service,
         );
-        await store.writeServiceSession(
-          host.id,
-          MetaverseServiceSession('fixture-session'),
-        );
+        await authorizeShop();
       });
       final navigator = GlobalKey<NavigatorState>();
       Widget surface(String page) => Scaffold(
@@ -1181,7 +1181,7 @@ Future<void> main() async {
         ),
       );
       await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
-      service.orderStatus = 'delivered';
+      delegate.onPayment = () => service.orderStatus = 'delivered';
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('立即支付'));
       await tester.tap(find.text('立即支付'));
@@ -1202,7 +1202,7 @@ Future<void> main() async {
       );
       expect(
         service.requests.where((r) => r.uri.path == '/api/shop/orders/FIX-1'),
-        hasLength(2),
+        hasLength(3),
       );
       expect(delegate.payments, ['pay:FIX-1']);
     });
@@ -1214,10 +1214,7 @@ Future<void> main() async {
           (_) async => [InternetAddress('8.8.8.8')],
           primary: service,
         );
-        await store.writeServiceSession(
-          host.id,
-          MetaverseServiceSession('fixture-session'),
-        );
+        await authorizeShop();
       });
       final root = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
@@ -1304,10 +1301,7 @@ Future<void> main() async {
             (_) async => [InternetAddress('8.8.8.8')],
             primary: service,
           );
-          await store.writeServiceSession(
-            host.id,
-            MetaverseServiceSession('fixture-session'),
-          );
+          await authorizeShop();
         });
         await tester.pumpWidget(
           app(

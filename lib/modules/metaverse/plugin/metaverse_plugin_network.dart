@@ -553,7 +553,11 @@ class MetaversePluginNetwork {
           options: Options(
             method: method,
             extra: {'pinnedAddresses': pins.map((a) => a.address).toList()},
-            headers: headers,
+            headers: {
+              if (!headers.keys.any((name) => name.toLowerCase() == 'user-agent'))
+                'User-Agent': AppConstants.userAgent,
+              ...headers,
+            },
             responseType: ResponseType.stream,
           ),
         );

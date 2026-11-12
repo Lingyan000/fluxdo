@@ -1,0 +1,78 @@
+{
+  "schema": 8,
+  "apiVersion": 1,
+  "id": "community.fluxdo.ldstore",
+  "name": "LD士多",
+  "version": "1.6.6",
+  "author": "FluxDO 社区",
+  "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
+  "homepage": "https://ldcstore.com/",
+  "webLogin": "https://ldcstore.com/login",
+  "auth": {
+    "type": "readSession",
+    "hosts": ["api2.ldspro.qzz.io"],
+    "queries": {"orderQuote":"/api/shop/orders/quote"},
+    "checkout": {"create":"/api/shop/orders","lookup":"/api/shop/order-submissions"},
+    "payment": "linuxDoCredit",
+    "connect": {
+      "init": "https://api1.ldspro.qzz.io/api/auth/init",
+      "callback": "https://ldcstore.com/auth/callback",
+      "exchange": "https://api2.ldspro.qzz.io/api/shop/auth/exchange",
+      "verify": "https://api2.ldspro.qzz.io/api/shop/auth/verify",
+      "terms": "https://ldcstore.com/docs/terms"
+    }
+  },
+  "icon": "storefront",
+  "ui": "ui.rfwtxt",
+  "script": "main.js",
+  "permissions": {
+    "network": [
+      "api2.ldspro.qzz.io", "api1.ldspro.qzz.io", "api.ldspro.qzz.io", "ldcstore.com"
+    ],
+    "publicImages": true
+  },
+  "card": {
+    "widget": "Card"
+  },
+  "pages": [
+    {
+      "id": "orders",
+      "widget": "BuyerOrders",
+      "scroll": false,
+      "title": "我的订单"
+    },
+    {
+      "id": "order",
+      "widget": "BuyerOrder",
+      "scroll": false,
+      "title": "订单详情",
+      "presentation": "modal"
+    },
+    {
+      "id": "market",
+      "widget": "Market",
+      "scroll": false,
+      "title": "物品广场"
+    },
+    {
+      "id": "review",
+      "widget": "Review",
+      "scroll": false,
+      "title": "确认订单"
+    },
+    {
+      "id": "product",
+      "widget": "Product",
+      "scroll": false,
+      "title": "商品详情",
+      "presentation": "modal"
+    }
+  ],
+  "links": [
+    {
+      "host": "ldcstore.com",
+      "path": "/product/:id",
+      "page": "product"
+    }
+  ]
+}

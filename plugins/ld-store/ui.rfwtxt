@@ -271,7 +271,7 @@ widget BuyerOrder = PageLayout(
   footer: switch data.ready {
     true: switch data.canPay {
       true: Row(children: [
-        Expanded(child: Button(label: "取消订单", variant: "text", enabled: data.paymentAvailable, onPressed: event "cancelOrder" {})),
+        Expanded(child: Button(label: data.cancelLabel, variant: "text", enabled: data.paymentAvailable, onPressed: event "cancelOrder" {})),
         Gap(size: 12),
         Expanded(child: Button(label: "立即支付", icon: "payments", loading: data.paymentBusy, onPressed: event "payOrder" {})),
       ]),

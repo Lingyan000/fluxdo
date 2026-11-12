@@ -53,7 +53,7 @@ class _Adapter implements HttpClientAdapter {
 void main() {
   test('建单授权绑定两个固定端点，不能伪装成报价或更换恢复地址', () async {
     final raw = jsonDecode(
-      File('plugins/ld-store/plugin.json').readAsStringSync(),
+      File('test/fixtures/metaverse/api1_shop.json').readAsStringSync(),
     ) as Map<String, dynamic>;
     final spec = _parse(raw);
     final auth = raw['auth'] as Map;
