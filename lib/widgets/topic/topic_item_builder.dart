@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart' show SegmentedCardItem;
 import 'package:flutter/material.dart';
 
 import '../../models/category.dart';
@@ -16,6 +17,7 @@ import 'topic_card.dart';
 import 'topic_card_layout.dart';
 import 'topic_expandable_excerpt.dart';
 import 'topic_preview_dialog.dart';
+import 'pinned_topics_header.dart';
 
 /// 话题卡排版宽:与 [buildTopicItem] 的壳层约束同源(移动 = 视口宽
 /// - 页边距 24;桌面 = 同口径再封顶 [Breakpoints.maxContentWidth])。
@@ -34,7 +36,10 @@ double topicCardWidthFor(BuildContext context) {
 const bool kUsePaintedTopicCard = true;
 
 /// 展示形态由列表选择，不由话题的站点置顶状态决定。
-enum TopicItemStyle { standard, compact, groupedPinned, lastGroupedPinned }
+enum TopicItemStyle { standard, compact }
+
+/// 话题在分组（如置顶分组）中的位置：[index] 从 0 起，[count] 含分组标题行。
+typedef TopicGroupSlot = ({int index, int count});
 
 /// 普通/私信话题卡的排版取用单一入口:[buildTopicItem] 挂载路径与
 /// [TopicCardPrewarmer] 空闲预热路径共用,保证 identity/宽度/theme/
@@ -75,6 +80,7 @@ Widget buildTopicItem({
   VoidCallback? onMiddleClick,
   required bool enableLongPress,
   TopicItemStyle style = TopicItemStyle.standard,
+  TopicGroupSlot? group,
   Color? highlightColor,
   Widget? topWidget,
   Widget? middleWidget,
@@ -85,11 +91,9 @@ Widget buildTopicItem({
   WidgetBuilder? previewCustomActionPanelBuilder,
 }) {
   final isMobile = Responsive.isMobile(context);
-  final compact = style != TopicItemStyle.standard;
-  final grouped =
-      style == TopicItemStyle.groupedPinned ||
-      style == TopicItemStyle.lastGroupedPinned;
-  final lastInGroup = style == TopicItemStyle.lastGroupedPinned;
+  final grouped = group != null;
+  final compact = style != TopicItemStyle.standard || grouped;
+  final lastInGroup = grouped && group.index == group.count - 1;
 
   // 一镜到底锚点底色与卡片外壳一致，包含页面背景与落地高亮状态。
   final theme = Theme.of(context);
@@ -170,7 +174,11 @@ Widget buildTopicItem({
   // 类名 —— 各列表页均已传)
   final Widget child = MorphingDialogAnchor(
     enabled: enableLongPress,
-    bottomGap: grouped ? (lastInGroup ? 8 : 0) : (compact ? 6 : 8),
+    bottomGap: grouped
+        ? (lastInGroup
+              ? PinnedTopicsGroup.trailingGap
+              : SegmentedCardItem.gapOf(context, PinnedTopicsGroup.gap))
+        : (compact ? 6 : 8),
     builder: (cardContext) {
       if (compact) {
         return CompactTopicCard(
@@ -182,8 +190,7 @@ Widget buildTopicItem({
           isSelected: isSelected,
           highlightColor: highlightColor,
           categoryMap: categoryMap,
-          grouped: grouped,
-          lastInGroup: lastInGroup,
+          group: group,
         );
       }
       if (paintedLayout != null) {

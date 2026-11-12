@@ -33,8 +33,7 @@ void main() {
                 width: 260,
                 child: CompactTopicCard(
                   topic: topic,
-                  grouped: true,
-                  lastInGroup: true,
+                  group: (index: 1, count: 2),
                   categoryMap: {
                     1: Category(
                       id: 1,

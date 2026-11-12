@@ -68,6 +68,7 @@ description: 编写或修改 FluxDO 页面、弹窗、列表和设置项时，�
 ## 分组列表与设置页
 
 - 分组列表用 `SegmentedCardGroup` / `SegmentedCardItem`，由 `SegmentedCardStyle` 决定分段、描边或平铺。组装 children 前过滤隐藏项，让首尾圆角落在可见条目上。
+- 懒加载列表里的分组（如首页置顶分组）逐项使用 `SegmentedCardItem(index:, count:, gap:)`，底色、圆角、分隔线和描边外框都由它按模式绘制，不再手写「整卡 + Divider」。条目内的按压面用 `SegmentedCardItem.borderRadiusOf` 对齐形状，`MorphingDialogAnchor` 等需要间距的地方用 `SegmentedCardItem.gapOf` 取当前模式的实际间距。参考 [pinned_topics_header.dart](../../../lib/widgets/topic/pinned_topics_header.dart)。
 - 设置项在 `lib/settings/definitions/` 中使用 `SettingsGroup` 和 `SwitchModel`、`ActionModel`、`DoubleSliderModel`、`IntSliderModel`、`CustomModel` 描述，再交给 `SettingsGroupPage` 渲染。每项 `id` 用于搜索与 `highlightId` 定位，需要唯一。模型见 [settings_model.dart](../../../lib/settings/settings_model.dart)。
 - 外观设置的条目 id 同步加入对应 `AppearanceSection.settingIds`，分区页面依赖这份映射筛选条目。入口见 [appearance_layout.dart](../../../lib/settings/definitions/appearance_layout.dart)。
 

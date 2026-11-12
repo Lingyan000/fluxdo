@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart' show SegmentedCardItem;
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +28,8 @@ import '../common/emoji_text.dart';
 import 'topic_expandable_excerpt.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/color_utils.dart';
+import 'topic_item_builder.dart' show TopicGroupSlot;
+import 'pinned_topics_header.dart';
 
 Widget _withDesktopTertiaryTap(Widget child, VoidCallback? onMiddleClick) {
   if (!PlatformUtils.isDesktop || onMiddleClick == null) return child;
@@ -1007,8 +1010,9 @@ class CompactTopicCard extends ConsumerWidget {
   final bool isSelected;
   final Color? highlightColor;
   final Map<int, Category>? categoryMap;
-  final bool grouped;
-  final bool lastInGroup;
+
+  /// 在置顶分组里的位置；为 null 时是普通紧凑卡
+  final TopicGroupSlot? group;
 
   const CompactTopicCard({
     super.key,
@@ -1020,8 +1024,7 @@ class CompactTopicCard extends ConsumerWidget {
     this.isSelected = false,
     this.highlightColor,
     this.categoryMap,
-    this.grouped = false,
-    this.lastInGroup = false,
+    this.group,
   });
 
   @override
@@ -1050,10 +1053,15 @@ class CompactTopicCard extends ConsumerWidget {
 
     // 同 TopicCard:Card 壳换轻装(elevation=0 主题下视觉逐项等价),
     // 砍每卡一套 AnimatedPhysicalModel 隐式动画基建。
-    final cardRadius = grouped
-        ? BorderRadius.only(
-            bottomLeft: lastInGroup ? context.shapes.radius(12) : Radius.zero,
-            bottomRight: lastInGroup ? context.shapes.radius(12) : Radius.zero,
+    final group = this.group;
+    final grouped = group != null;
+    final cardRadius = group != null
+        ? SegmentedCardItem.borderRadiusOf(
+            context,
+            index: group.index,
+            count: group.count,
+            outerRadius: PinnedTopicsGroup.outerRadius,
+            innerRadius: PinnedTopicsGroup.innerRadius,
           )
         : context.shapes.borderRadius(10);
     final compactTitleStyle =
@@ -1070,35 +1078,13 @@ class CompactTopicCard extends ConsumerWidget {
         topic.hasAcceptedAnswer ||
         topic.canHaveAnswer ||
         topic.title.contains(':');
-    return Padding(
-      padding: EdgeInsets.only(bottom: grouped ? (lastInGroup ? 8 : 0) : 6),
-      child: _clipCardIfNeeded(
-        borderRadius: cardRadius,
-        shouldClip: false,
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            color: isSelected
-                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
-                : highlightColor ??
-                      PageBackgroundScope.contentColor(
-                        context,
-                        grouped
-                          ? theme.cardTheme.color ??
-                                theme.colorScheme.surfaceContainerLow
-                          : theme.colorScheme.surfaceContainerLow.withValues(
-                              alpha: 0.5,
-                            ),
-                      ),
-            shape: RoundedSuperellipseBorder(
-              borderRadius: cardRadius,
-              side: isSelected
-                  ? BorderSide(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                    )
-                  : BorderSide.none,
-            ),
-          ),
-          child: TopicCardInteractiveSurface(
+    final selectedColor = theme.colorScheme.primaryContainer.withValues(
+      alpha: 0.4,
+    );
+    final selectedSide = BorderSide(
+      color: theme.colorScheme.primary.withValues(alpha: 0.5),
+    );
+    final surface = TopicCardInteractiveSurface(
             borderRadius: cardRadius,
             onTap: onTap,
             onLongPress: onLongPress,
@@ -1107,15 +1093,6 @@ class CompactTopicCard extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (grouped)
-                  Divider(
-                    height: 1,
-                    indent: 12,
-                    endIndent: 12,
-                    color: theme.colorScheme.outlineVariant.withValues(
-                      alpha: 0.4,
-                    ),
-                  ),
                 ConstrainedBox(
                   constraints: BoxConstraints(minHeight: grouped ? 52 : 0),
                   child: Padding(
@@ -1260,8 +1237,51 @@ class CompactTopicCard extends ConsumerWidget {
                 ),
               ],
             ),
+          );
+    if (group != null) {
+      // 置顶分组：底色、圆角、分隔线与描边按分段卡片规则逐项绘制
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: group.index == group.count - 1
+              ? PinnedTopicsGroup.trailingGap
+              : 0,
+        ),
+        child: SegmentedCardItem(
+          index: group.index,
+          count: group.count,
+          outerRadius: PinnedTopicsGroup.outerRadius,
+          innerRadius: PinnedTopicsGroup.innerRadius,
+          gap: PinnedTopicsGroup.gap,
+          color: isSelected
+              ? selectedColor
+              : highlightColor ??
+                    (PageBackgroundScope.isActive(context)
+                        ? Colors.transparent
+                        : null),
+          side: isSelected ? selectedSide : BorderSide.none,
+          child: surface,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: isSelected
+              ? selectedColor
+              : highlightColor ??
+                    PageBackgroundScope.contentColor(
+                      context,
+                      theme.colorScheme.surfaceContainerLow.withValues(
+                        alpha: 0.5,
+                      ),
+                    ),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: cardRadius,
+            side: isSelected ? selectedSide : BorderSide.none,
           ),
         ),
+        child: surface,
       ),
     );
   }

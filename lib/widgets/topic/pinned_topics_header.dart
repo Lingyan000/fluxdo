@@ -1,9 +1,21 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../utils/responsive.dart';
+
+/// 置顶话题分组的形状：标题行与各置顶话题按分段卡片的规则逐项绘制
+/// （[SegmentedCardItem]），外观随主题的分段卡片样式切换。
+abstract final class PinnedTopicsGroup {
+  static const double outerRadius = 12;
+  static const double innerRadius = 4;
+  static const double gap = 2;
+
+  /// 分组之后与普通话题之间的距离
+  static const double trailingGap = 8;
+}
 
 /// 置顶话题分组入口，折叠时仍可查看数量并一键已读。
 class PinnedTopicsHeader extends StatelessWidget {
@@ -28,13 +40,16 @@ class PinnedTopicsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    // 展开时标题行是分组首项，后面紧跟各置顶话题；折叠时自成一组
+    final segments = expanded ? count + 1 : 1;
     final shape = RoundedSuperellipseBorder(
-      borderRadius: expanded
-          ? BorderRadius.only(
-              topLeft: context.shapes.radius(12),
-              topRight: context.shapes.radius(12),
-            )
-          : context.shapes.borderRadius(12),
+      borderRadius: SegmentedCardItem.borderRadiusOf(
+        context,
+        index: 0,
+        count: segments,
+        outerRadius: PinnedTopicsGroup.outerRadius,
+        innerRadius: PinnedTopicsGroup.innerRadius,
+      ),
     );
     return Center(
       child: ConstrainedBox(
@@ -42,13 +57,16 @@ class PinnedTopicsHeader extends StatelessWidget {
           maxWidth: Breakpoints.maxContentWidth,
         ),
         child: Padding(
-          padding: EdgeInsets.only(bottom: expanded ? 0 : 8),
-          child: Material(
-            color: PageBackgroundScope.contentColor(
-              context,
-              theme.cardTheme.color ?? colors.surfaceContainerLow,
-            ),
-            shape: shape,
+          padding: EdgeInsets.only(
+            bottom: expanded ? 0 : PinnedTopicsGroup.trailingGap,
+          ),
+          child: SegmentedCardItem(
+            index: 0,
+            count: segments,
+            outerRadius: PinnedTopicsGroup.outerRadius,
+            innerRadius: PinnedTopicsGroup.innerRadius,
+            gap: PinnedTopicsGroup.gap,
+            color: _baseColor(context),
             child: Row(
               children: [
                 Expanded(
@@ -110,10 +128,7 @@ class PinnedTopicsHeader extends StatelessWidget {
                       minHeight: 48,
                     ),
                     icon: markingRead
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                        ? const LoadingSpinner(size: 20)
                         : const Icon(Symbols.done_all_rounded, size: 20),
                   ),
               ],
@@ -123,4 +138,8 @@ class PinnedTopicsHeader extends StatelessWidget {
       ),
     );
   }
+
+  /// 与置顶话题行相同的底色：有页面背景时透出背景，否则按分段卡片样式
+  static Color? _baseColor(BuildContext context) =>
+      PageBackgroundScope.isActive(context) ? Colors.transparent : null;
 }
