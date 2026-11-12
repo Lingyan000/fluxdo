@@ -71,6 +71,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
+import 'modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import 'services/windows_protocol_registrar_stub.dart'
     if (dart.library.ffi) 'services/windows_protocol_registrar_io.dart';
 import 'services/background/background_notification_service.dart';
@@ -185,13 +186,14 @@ Future<void> androidMiniAppWindowMain() async {
   await miniAppWindowMain();
 }
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   // 自定义 binding:接管标准图片解码入口,全局限制解码并发(= 限制
   // Impeller 纹理上传并发,图密话题快滚 raster 尖峰的对症闸门,
   // 见 image_decode_gate.dart)。
   FluxdoWidgetsBinding.ensureInitialized();
   // 子引擎只启动完整的微应用运行页，不重复启动消息总线、通知和网络核心。
   if (await startMiniAppWindow()) return;
+  MetaversePluginFileService.instance.initialize(arguments);
 
   // just_audio 不自带 Windows/Linux 实现,必须在创建 AudioPlayer 前注册
   // 后端,否则会落回不存在的 MethodChannel 实现。两平台后端不同:
@@ -1034,6 +1036,8 @@ class _MainPageState extends ConsumerState<MainPage>
       unawaited(
         _runStartupUiTasks().catchError((Object e, StackTrace s) {
           debugPrint('[MainPage] 启动 UI 任务失败: $e\n$s');
+        }).whenComplete(() {
+          if (mounted) MetaversePluginFileService.instance.attach(context);
         }),
       );
     });
@@ -1384,6 +1388,7 @@ class _MainPageState extends ConsumerState<MainPage>
 
   @override
   void dispose() {
+    MetaversePluginFileService.instance.detach(context);
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       WindowStateService.instance.stopListening();
     }

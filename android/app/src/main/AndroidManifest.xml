@@ -105,6 +105,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="http" android:host="linux.do" android:pathPrefix="/session/email-login/" />
             </intent-filter>
+            <!-- 插件文件。通用二进制类型由读取通道再次校验真实文件名。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/vnd.fluxdo.plugin+json" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" android:host="*" android:pathPattern=".*\\.fluxplugin" />
+            </intent-filter>
             <!-- Custom URL Scheme -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

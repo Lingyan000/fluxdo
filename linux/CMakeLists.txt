@@ -154,6 +154,9 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
 endif()
 
 # Install .desktop file for URL scheme handling
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/com.github.lingyan000.fluxdo.xml"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/mime/packages"
+  COMPONENT Runtime)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/fluxdo.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
   COMPONENT Runtime)

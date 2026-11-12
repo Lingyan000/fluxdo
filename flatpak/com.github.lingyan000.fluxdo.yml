@@ -100,6 +100,7 @@ modules:
       - bash source-tree/scripts/ci/flatpak/build_app.sh "$(pwd)/source-tree" /app/fluxdo
       - install -Dm755 source-tree/flatpak/fluxdo-wrapper.sh /app/bin/fluxdo
       - install -Dm644 source-tree/flatpak/com.github.lingyan000.fluxdo.desktop /app/share/applications/com.github.lingyan000.fluxdo.desktop
+      - install -Dm644 source-tree/linux/runner/com.github.lingyan000.fluxdo.xml /app/share/mime/packages/com.github.lingyan000.fluxdo.xml
       - install -Dm644 source-tree/flatpak/com.github.lingyan000.fluxdo.metainfo.xml /app/share/metainfo/com.github.lingyan000.fluxdo.metainfo.xml
       - install -Dm644 source-tree/flatpak/icons/com.github.lingyan000.fluxdo.png /app/share/icons/hicolor/512x512/apps/com.github.lingyan000.fluxdo.png
       # 媒体压缩:静态 ffmpeg 进 /app/bin(PATH),app 运行时按 PATH 查找。

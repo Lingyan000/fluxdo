@@ -18,6 +18,36 @@ Future<void> ensureWindowsProtocolsRegistered() async {
       debugPrint('[WindowsProtocol] 注册 $scheme:// 失败: $e');
     }
   }
+  try {
+    _registerPluginFiles();
+  } catch (e) {
+    debugPrint('[WindowsProtocol] 注册插件文件失败: $e');
+  }
+}
+
+void _registerPluginFiles() {
+  final program = Registry.currentUser.createKey(r'Software\Classes\FluxDO.Plugin');
+  try {
+    program.createValue(const RegistryValue.string('', 'FluxDO Plugin'));
+    final command = program.createKey(r'shell\open\command');
+    try {
+      command.createValue(
+        RegistryValue.string('', '"${Platform.resolvedExecutable}" "%1"'),
+      );
+    } finally {
+      command.close();
+    }
+  } finally {
+    program.close();
+  }
+  final openWith = Registry.currentUser.createKey(
+    r'Software\Classes\.fluxplugin\OpenWithProgids',
+  );
+  try {
+    openWith.createValue(const RegistryValue.string('FluxDO.Plugin', ''));
+  } finally {
+    openWith.close();
+  }
 }
 
 void _registerScheme(String scheme) {

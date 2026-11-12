@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		F17ED00C0000000000000001 /* PluginFileHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17ED00C0000000000000002 /* PluginFileHandler.swift */; };
 		196C8C0F92F9D63F13C963F1 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6E7675911BB6B250B483A600 /* Pods_RunnerTests.framework */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
@@ -56,6 +57,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		F17ED00C0000000000000002 /* PluginFileHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PluginFileHandler.swift; path = ../../darwin/PluginFileHandler.swift; sourceTree = "<group>"; };
 		2757FBE6F73A1167CD2D7714 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 			isa = PBXGroup;
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
+				F17ED00C0000000000000002 /* PluginFileHandler.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				A1B2C3D400000002000NET01 /* NetCoreLibraryHost.swift */,
 				A1B2C3D400000002000CERT0 /* DohProxyCertHandler.swift */,
@@ -478,6 +481,7 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				A1B2C3D400000001000NET01 /* NetCoreLibraryHost.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
+				F17ED00C0000000000000001 /* PluginFileHandler.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				A1B2C3D400000001000CERT0 /* DohProxyCertHandler.swift in Sources */,
 				A1B2C3D400000001000PASTE /* SyntheticPasteFix.swift in Sources */,
