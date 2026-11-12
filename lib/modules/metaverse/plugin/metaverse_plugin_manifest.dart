@@ -3,7 +3,6 @@ import 'package:collection/collection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../core/metaverse_link_rule.dart';
-import 'metaverse_checkout_types.dart';
 import 'metaverse_plugin_capabilities.dart';
 
 /// 清单不合法。[field] 是出错字段的路径，[reason] 面向插件作者。
@@ -24,9 +23,6 @@ enum MetaversePluginAuthType {
 
   /// 用户手动填写访问凭证（API Key 等），宿主存入系统安全存储
   token,
-
-  /// 业务服务签发、宿主保管的会话。仅在无请求体的 GET 上代发。
-  readSession,
 }
 
 @immutable
@@ -38,10 +34,6 @@ class MetaversePluginAuthSpec {
     this.header = 'Authorization',
     this.scheme = 'Bearer',
     this.hosts = const [],
-    this.queries = const {},
-    this.checkout,
-    this.connect,
-    this.payment,
   });
 
   final MetaversePluginAuthType type;
@@ -60,14 +52,6 @@ class MetaversePluginAuthSpec {
 
   /// 允许附带凭证的域名，须是网络白名单的子集。
   final List<String> hosts;
-
-  /// 清单声明的具名查询；实际代发还需匹配签发方授权的完整 URL。
-  final Map<String, String> queries;
-  final MetaverseCheckoutEndpoints? checkout;
-
-  /// Linux DO Connect 的 PKCE 交接端点，凭证仅由宿主交换和保存。
-  final Map<String, String>? connect;
-  final String? payment;
 
   bool get required => type == MetaversePluginAuthType.token;
   bool get canAttachCredential => type != MetaversePluginAuthType.none;
@@ -113,6 +97,7 @@ class MetaversePluginManifest {
     required this.reservedHosts,
     required this.identity,
     required this.auth,
+    required this.runtimeSupported,
     required this.capabilities,
     required this.webLogin,
     required this.cardWidget,
@@ -148,6 +133,9 @@ class MetaversePluginManifest {
   final bool identity;
 
   final MetaversePluginAuthSpec auth;
+
+  /// 旧协议仅保留管理和迁移入口，更新前不能运行。
+  final bool runtimeSupported;
   final MetaversePluginCapabilities capabilities;
 
   /// 第一方网页登录地址。会话留在浏览器中，插件只可打开同源页面。
@@ -187,10 +175,7 @@ class MetaversePluginManifest {
     auth.hosts.toSet(),
     auth.header,
     auth.scheme,
-    auth.queries,
-    auth.checkout,
-    auth.connect,
-    auth.payment,
+    runtimeSupported,
     capabilities.approval,
     links.map((r) => (r.host, r.path, r.page)).toList(),
   ];
@@ -218,6 +203,7 @@ class MetaversePluginManifest {
   static MetaversePluginManifest parse(
     Object? json, {
     List<String> reservedHosts = const [],
+    bool allowLegacyMetadata = false,
   }) {
     if (json is! Map<String, dynamic>) {
       throw const MetaverseManifestException('manifest', '必须是 JSON 对象');
@@ -253,22 +239,11 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('auth', 'API 2 使用 permissions 中的公共能力声明');
     }
 
-    final permissions = _map(json, 'permissions');
-    if (json['auth'] case {'type': 'readSession'} when schema < 3) {
-      throw const MetaverseManifestException('schema', '读取服务会话需要 schema 3');
-    }
-    if (json['auth'] case {'queries': _} when schema < 4) {
-      throw const MetaverseManifestException('schema', '具名查询需要 schema 4');
-    }
-    if (json['auth'] case {'checkout': _} when schema < 5) {
-      throw const MetaverseManifestException('schema', '原生建单需要 schema 5');
-    }
-    if (schema < 6 &&
+    final legacy =
+        allowLegacyMetadata &&
         json['auth'] is Map &&
-        ((json['auth'] as Map).containsKey('connect') ||
-            (json['auth'] as Map).containsKey('payment'))) {
-      throw const MetaverseManifestException('schema', '原生登录与支付需要 schema 6');
-    }
+        (json['auth'] as Map)['type'] == 'readSession';
+    final permissions = _map(json, 'permissions');
     if (schema < 2 &&
         (json['webLogin'] != null || permissions['publicImages'] == true)) {
       throw const MetaverseManifestException('schema', '网站会话与公开图片需要 schema 2');
@@ -413,7 +388,10 @@ class MetaversePluginManifest {
       publicImages: permissions['publicImages'] == true,
       reservedHosts: List.unmodifiable(reservedHosts),
       identity: identity,
-      auth: _auth(json['auth'], networkHosts, reservedHosts),
+      auth: legacy
+          ? const MetaversePluginAuthSpec()
+          : _auth(json['auth'], networkHosts, reservedHosts),
+      runtimeSupported: !legacy,
       capabilities: capabilities,
       webLogin: webLogin,
       cardWidget: cardWidget,
@@ -433,16 +411,9 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('auth', '必须是对象');
     }
     final type = value['type'];
-    if (type == 'none') {
-      if (value.containsKey('checkout') ||
-          value.containsKey('connect') ||
-          value.containsKey('payment')) {
-        throw const MetaverseManifestException('auth.checkout', '建单须使用服务会话');
-      }
-      return const MetaversePluginAuthSpec();
-    }
-    if (type != 'token' && type != 'readSession') {
-      throw MetaverseManifestException('auth.type', '不支持的授权方式 $type');
+    if (type == 'none') return const MetaversePluginAuthSpec();
+    if (type != 'token') {
+      throw MetaverseManifestException('auth.type', '授权协议已更新，请使用 API 2 公共能力');
     }
     final header = _optionalString(value, 'header', max: 64, prefix: 'auth');
     if (header != null &&
@@ -452,114 +423,6 @@ class MetaversePluginManifest {
     final hosts = _hosts(value['hosts'], 'auth.hosts', reservedHosts, max: 16);
     if (hosts.isEmpty) {
       throw const MetaverseManifestException('auth.hosts', '须声明凭证可发往的域名');
-    }
-    if (type == 'readSession' &&
-        (hosts.length != 1 ||
-            hosts.single.startsWith('*.') ||
-            value.keys.any(
-              (k) =>
-                  k != 'type' &&
-                  k != 'hosts' &&
-                  k != 'queries' &&
-                  k != 'checkout' &&
-                  k != 'connect' &&
-                  k != 'payment',
-            ))) {
-      throw const MetaverseManifestException(
-        'auth',
-        '服务会话只允许指定一个精确域名，使用标准 Bearer 请求头',
-      );
-    }
-    final queries = <String, String>{};
-    Map<String, String>? connect;
-    if (value['connect'] case final Map config) {
-      connect = {};
-      for (final key in ['init', 'callback', 'exchange', 'verify', 'terms']) {
-        final raw = config[key];
-        final uri = raw is String ? Uri.tryParse(raw) : null;
-        if (type != 'readSession' ||
-            uri == null ||
-            uri.scheme != 'https' ||
-            uri.userInfo.isNotEmpty ||
-            uri.port != 443 ||
-            !MetaverseHostPattern.matchesAny(networkHosts, uri.host) ||
-            uri.hasFragment) {
-          throw MetaverseManifestException(
-            'auth.connect.$key',
-            '须为已声明网络域名的 HTTPS 地址',
-          );
-        }
-        connect[key] = uri.toString();
-      }
-      if (Uri.parse(connect['exchange']!).host != hosts.single ||
-          Uri.parse(connect['verify']!).host != hosts.single) {
-        throw const MetaverseManifestException(
-          'auth.connect',
-          '会话交换和校验须使用凭证域名',
-        );
-      }
-    } else if (value.containsKey('connect')) {
-      throw const MetaverseManifestException('auth.connect', '必须是授权端点对象');
-    }
-    final payment = value['payment'];
-    if (payment != null &&
-        (payment != 'linuxDoCredit' ||
-            type != 'readSession' ||
-            !value.containsKey('checkout'))) {
-      throw const MetaverseManifestException(
-        'auth.payment',
-        '支付须使用支持的提供方和订单协议',
-      );
-    }
-    MetaverseCheckoutEndpoints? checkout;
-    if (value.containsKey('checkout')) {
-      final raw = value['checkout'];
-      if (type != 'readSession' ||
-          raw is! Map ||
-          raw.length != 2 ||
-          raw['create'] == raw['lookup'] ||
-          ![raw['create'], raw['lookup']].every(
-            (p) =>
-                p is String &&
-                p.length <= 240 &&
-                RegExp(r'^(/[A-Za-z0-9_-]+)+$').hasMatch(p),
-          )) {
-        throw const MetaverseManifestException(
-          'auth.checkout',
-          '须指定不同的建单和恢复固定路径',
-        );
-      }
-      checkout = (
-        create: Uri.https(hosts.single, raw['create'] as String).toString(),
-        lookup: Uri.https(hosts.single, raw['lookup'] as String).toString(),
-      );
-    }
-    if (value.containsKey('queries')) {
-      final raw = value['queries'];
-      if (type != 'readSession' ||
-          raw is! Map<String, dynamic> ||
-          raw.length > 16) {
-        throw const MetaverseManifestException(
-          'auth.queries',
-          '只允许服务会话声明至多 16 项查询',
-        );
-      }
-      for (final entry in raw.entries) {
-        final path = entry.value;
-        if (!RegExp(r'^[a-z][a-zA-Z0-9]{0,31}$').hasMatch(entry.key) ||
-            path is! String ||
-            path.length > 240 ||
-            !RegExp(r'^(/[A-Za-z0-9_-]+)+$').hasMatch(path)) {
-          throw const MetaverseManifestException(
-            'auth.queries',
-            '需要查询名和固定的绝对路径',
-          );
-        }
-        queries[entry.key] = Uri.https(hosts.single, path).toString();
-        if (checkout?.create == queries[entry.key]) {
-          throw const MetaverseManifestException('auth.queries', '建单端点不能声明为查询');
-        }
-      }
     }
     for (final host in hosts) {
       // 凭证只能发往白名单内的域名，通配范围也不能比白名单更宽。
@@ -578,19 +441,13 @@ class MetaversePluginManifest {
       }
     }
     return MetaversePluginAuthSpec(
-      type: type == 'readSession'
-          ? MetaversePluginAuthType.readSession
-          : MetaversePluginAuthType.token,
+      type: MetaversePluginAuthType.token,
       label: _optionalString(value, 'label', max: 40, prefix: 'auth'),
       helpUrl: _httpsUrl(value, 'helpUrl', prefix: 'auth'),
       header: header ?? 'Authorization',
       scheme:
           _optionalString(value, 'scheme', max: 32, prefix: 'auth') ?? 'Bearer',
       hosts: hosts,
-      queries: Map.unmodifiable(queries),
-      checkout: checkout,
-      connect: connect == null ? null : Map.unmodifiable(connect),
-      payment: payment as String?,
     );
   }
 

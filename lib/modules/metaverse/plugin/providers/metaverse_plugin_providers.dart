@@ -15,7 +15,6 @@ import '../../../../services/ldc_payment_session.dart';
 import '../../../../services/ldc_biometric_payment.dart';
 import '../../../../services/network/exceptions/oauth_exception.dart';
 import '../../../../services/network/discourse_dio.dart';
-import '../../../../utils/dialog_utils.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/secret_store_provider.dart';
 import '../../../../providers/theme_provider.dart';
@@ -24,11 +23,8 @@ import '../../../../services/network/core/net_core_bindings.dart';
 import '../../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../../utils/link_launcher.dart';
 import '../metaverse_plugin_host.dart';
-import '../metaverse_connect_login.dart';
 import '../metaverse_connect_capability.dart';
 import '../metaverse_credential.dart';
-import '../metaverse_payment.dart';
-import '../metaverse_checkout_types.dart';
 import '../metaverse_plugin_installer.dart';
 import '../metaverse_plugin_manifest.dart';
 import '../metaverse_plugin_capabilities.dart';
@@ -177,6 +173,11 @@ class MetaversePluginsController
     MetaversePluginPackage package,
   ) async {
     final manifest = package.manifest;
+    if (!manifest.runtimeSupported) {
+      throw MetaversePluginInstallException(
+        S.current.metaverse_pluginApiUpgradeRequired,
+      );
+    }
     final previous = byId(manifest.id);
     if (previous == null && state.length >= maxPlugins) {
       throw const MetaversePluginInstallException('已达到插件数量上限');
@@ -194,7 +195,7 @@ class MetaversePluginsController
       await _store.deleteToken(manifest.id);
       if (changedSource) {
         await _store.clearStorage(manifest.id);
-        await _store.clearOrders(manifest.id);
+        await _store.clearLegacyRecords(manifest.id);
       }
     }
     await _store.writeCode(manifest.id, package.code);
@@ -261,7 +262,7 @@ class MetaversePluginsController
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
     await _store.deleteFiles(id);
-    await _store.clearOrders(id);
+    await _store.clearLegacyRecords(id);
     await _store.deleteToken(id);
     await LogWriter.instance.clearPlugin(id);
     await _replace(plugin, remove: true);
@@ -442,13 +443,6 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   }
 
   @override
-  Future<bool> confirmOrder(
-    BuildContext context,
-    MetaverseCheckoutGrant grant,
-    MetaverseOrderIntent intent,
-  ) => showMetaverseOrderConfirmation(context, grant, intent);
-
-  @override
   Future<Object?> requestPayment(
     BuildContext context, {
     required MetaversePaymentProvider provider,
@@ -515,129 +509,12 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   ) async {
     final generation = _generation;
     bool active() => context.mounted && generation == _generation;
-    if (manifest.auth.connect != null) {
-      final account = _ref.read(currentUserProvider).value;
-      if (account == null) {
-        throw StateError(S.current.metaverse_nativeLoginRequired);
-      }
-      if (!await showMetaverseConnectConfirmation(
-        context,
-        manifest,
-        account.username,
-      )) {
-        return false;
-      }
-      if (!active() || !_accountActive(account.id)) return false;
-      final login = MetaverseConnectLogin(
-        _ref.read(metaversePluginNetworkProvider),
-      );
-      try {
-        final session = await login.authorize(
-          manifest,
-          accountId: account.id,
-          active: () => active() && _accountActive(account.id),
-        );
-        if (!active() || !_accountActive(account.id)) return false;
-        await _ref
-            .read(metaversePluginStoreProvider)
-            .writeServiceSession(manifest.id, session, isActive: () => active() && _accountActive(account.id));
-        return true;
-      } finally {
-        login.dispose();
-      }
-    }
     final token = await showMetaversePluginTokenDialog(context, manifest);
     if (token == null || token.isEmpty || !active()) return false;
     await _ref
         .read(metaversePluginsProvider.notifier)
         .saveToken(manifest.id, token, isActive: active);
     return true;
-  }
-
-  @override
-  Future<Object?> payOrder(
-    BuildContext context,
-    String orderNo, {
-    bool cancel = false,
-  }) async {
-    final generation = _generation;
-    final account = _ref.read(currentUserProvider).value;
-    if (account == null) {
-      throw StateError(S.current.metaverse_nativeLoginRequired);
-    }
-    final store = _ref.read(metaversePluginStoreProvider);
-    return store.withOrderLock(_manifest.id, () async {
-      final credit = LdcPaymentService();
-      final payment = MetaversePayment(
-        _manifest,
-        store,
-        _ref.read(metaversePluginNetworkProvider),
-        credit,
-        accountId: account.id,
-        isActive: () => context.mounted && generation == _generation && _accountActive(account.id),
-      );
-      try {
-        await payment.checkSession();
-        if (cancel) {
-          if (!context.mounted) return null;
-          final confirmed = await showAppDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text(ctx.l10n.metaverse_nativeCancelOrder),
-              content: Text(orderNo),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(ctx.l10n.common_cancel),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(ctx.l10n.common_confirm),
-                ),
-              ],
-            ),
-          );
-          if (confirmed != true) return null;
-          await payment.request(orderNo, 'cancel');
-          return {'state': 'cancelled'};
-        }
-        final oauth = LdcOAuthService();
-        var needsPassword = false;
-        try {
-          final user = await oauth.getUserInfo(
-            expectedUsername: account.username,
-          );
-          needsPassword = user?.isPayKey != true;
-        } on OAuthExpiredException {
-          if (!context.mounted ||
-              !_accountActive(account.id) ||
-              !await oauth.authorize(context)) {
-            return null;
-          }
-          final user = await oauth.getUserInfo(
-            expectedUsername: account.username,
-          );
-          needsPassword = user?.isPayKey != true;
-        }
-        await payment.checkSession();
-        if (!context.mounted) return null;
-        return await showLdcPaymentSheet(
-          context,
-          payment: payment,
-          orderNo: orderNo,
-          username: account.username,
-          needsPassword: needsPassword,
-          biometrics: LdcBiometricPayment(
-            accountId: account.id,
-            store: _ref.read(secretStoreProvider),
-            preferences: _ref.read(sharedPreferencesProvider),
-            checkSession: payment.checkSession,
-          ),
-        );
-      } finally {
-        credit.dispose();
-      }
-    });
   }
 
   @override

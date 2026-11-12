@@ -5,8 +5,8 @@ async function loadBalance(ctx) {
   ctx.setData('loading', true);
   ctx.setData('error', '');
   try {
-    // auth: true —— 由宿主附带用户填写的凭证，脚本本身拿不到凭证内容。
-    const res = await fluxdo.fetch(API + '/v1/balance', { auth: true });
+    // 宿主按 account 声明的 origin、路径和方法附带凭证。
+    const res = await fluxdo.fetch(API + '/v1/balance', { credential: 'account' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     ctx.setData('balance', String(res.json().balance));
   } catch (e) {
@@ -31,8 +31,12 @@ fluxdo.on('page.open', async (ctx) => {
   ctx.setData('orderId', ctx.params.id);
   ctx.setData('status', '加载中…');
   ctx.setData('items', []);
-  const res = await fluxdo.fetch(API + '/v1/orders/' + encodeURIComponent(ctx.params.id), { auth: true });
+  const res = await fluxdo.fetch(API + '/v1/orders/' + encodeURIComponent(ctx.params.id), { credential: 'account' });
   const order = res.json();
   ctx.setData('status', order.status);
   ctx.setData('items', order.items);
+});
+
+fluxdo.on('login', async (ctx) => {
+  if (await ctx.api.credentials.request('account')) await loadBalance(ctx);
 });

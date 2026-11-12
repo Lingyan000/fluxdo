@@ -4,6 +4,9 @@ import 'package:crypto/crypto.dart';
 
 import '../../../../services/storage/secret_store.dart';
 
+Future<void> clearLegacyPluginRecords(SecretStore secrets, String pluginId) =>
+    secrets.deleteScope(SecretScope(namespace: 'metaverse_orders:$pluginId'));
+
 /// 将 API 1 的持久记录原样交给所属插件，具体字段由插件迁移。
 /// 旧加密副本保留到用户清空数据，安装失败时旧代码仍能恢复记录。
 Future<Map<String, Object?>> exportLegacyPluginStorage(

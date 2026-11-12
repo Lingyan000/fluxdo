@@ -1,12 +1,16 @@
 import 'dart:io';
 import 'dart:convert';
 
+import '../../fixtures/metaverse/legacy_storage.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/constants.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
@@ -14,6 +18,12 @@ import 'package:fluxdo/providers/secret_store_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+
+class _UnsupportedDelegate extends MetaversePluginHostDelegate {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _Secrets implements SecretStore {
   @override
@@ -125,8 +135,8 @@ void main() {
     final store = container.read(metaversePluginStoreProvider);
     final old = await package(const {});
     await controller.install(old);
-    await store.writeOrder(old.manifest.id, 'scope', 'pending-fixture');
-    await store.writeOrder('example.other', 'scope', 'other-fixture');
+    await container.read(secretStoreProvider).writeLegacyRecord(old.manifest.id, 'scope', 'pending-fixture');
+    await container.read(secretStoreProvider).writeLegacyRecord('example.other', 'scope', 'other-fixture');
     final raw = Map<String, dynamic>.from(old.manifest.raw)
       ..remove('auth')
       ..['schema'] = 9
@@ -140,15 +150,63 @@ void main() {
     await controller.install(next);
     expect((await store.readStorage(old.manifest.id))['legacyApi1Records'],
       {'v1:scope': 'pending-fixture'});
-    expect(await store.readOrder(old.manifest.id, 'scope'), 'pending-fixture');
+    expect(await container.read(secretStoreProvider).readLegacyRecord(old.manifest.id, 'scope'), 'pending-fixture');
     await controller.install(MetaversePluginPackage(
       manifest: next.manifest,
       source: 'https://other.example/plugin.json',
       code: next.code,
     ));
     expect(await store.readStorage(old.manifest.id), isEmpty);
-    expect(await store.readOrder(old.manifest.id, 'scope'), isNull);
-    expect(await store.readOrder('example.other', 'scope'), 'other-fixture');
+    expect(await container.read(secretStoreProvider).readLegacyRecord(old.manifest.id, 'scope'), isNull);
+    expect(await container.read(secretStoreProvider).readLegacyRecord('example.other', 'scope'), 'other-fixture');
+  });
+
+  test('已安装旧业务插件保留管理数据，禁止启动并可同源升级', () async {
+    final store = container.read(metaversePluginStoreProvider);
+    final raw = jsonDecode(
+      File('test/fixtures/metaverse/api1_shop.json').readAsStringSync(),
+    );
+    final old = MetaversePluginManifest.parse(raw, allowLegacyMetadata: true);
+    const source = 'https://example.org/plugin.json';
+    await store.saveIndex([
+      InstalledMetaversePlugin(manifest: old, source: source, enabled: true),
+    ]);
+    await container.read(secretStoreProvider).writeLegacyRecord(
+      old.id, 'scope', 'pending',
+    );
+    final controller = container.read(metaversePluginsProvider.notifier);
+    expect(controller.byId(old.id)?.manifest.runtimeSupported, isFalse);
+    expect(store.loadIndex().single.enabled, isTrue);
+    final host = MetaversePluginHost(
+      manifest: old,
+      store: store,
+      network: MetaversePluginNetwork(),
+      engineFactory: () async => throw StateError('旧插件不得启动脚本引擎'),
+      delegate: _UnsupportedDelegate(),
+    );
+    await expectLater(
+      host.open(kind: 'card'),
+      throwsA(isA<MetaversePluginCallException>().having(
+        (error) => error.message, 'message', 'plugin_api_upgrade_required',
+      )),
+    );
+    host.shutdown();
+    final next = MetaversePluginManifest.parse(
+      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+    );
+    await controller.install(MetaversePluginPackage(
+      manifest: next,
+      source: source,
+      code: (
+        ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: File('plugins/ld-store/main.js').readAsStringSync(),
+      ),
+    ));
+    expect(controller.byId(old.id)?.manifest.runtimeSupported, isTrue);
+    expect(
+      (await store.readStorage(old.id))['legacyApi1Records'],
+      {'v1:scope': 'pending'},
+    );
   });
 
   test('应用升级发现本地旧士多清单，确认更新后才获得新回调权限', () async {
@@ -269,27 +327,6 @@ void main() {
     expect(await store.readToken('com.example.points'), isNull);
   });
 
-  test('服务读会话不能从旧的手填凭证恢复，也不接受新的手填凭证', () async {
-    final controller = container.read(metaversePluginsProvider.notifier);
-    final plugin = await controller.install(
-      await package(const {
-        'schema': 4,
-        'auth': {
-          'type': 'readSession',
-          'hosts': ['api.example.com'],
-        },
-      }),
-    );
-    final store = container.read(metaversePluginStoreProvider);
-    await store.writeToken(plugin.id, 'previous-manual-key');
-    expect(await store.readServiceSession(plugin.id), isNull);
-    await expectLater(
-      controller.saveToken(plugin.id, 'manual'),
-      throwsStateError,
-    );
-    expect(await store.readToken(plugin.id), 'previous-manual-key');
-  });
-
   test('同一来源的重复安装保留开关；换来源视为另一个插件并清凭证与本地数据', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
     final store = container.read(metaversePluginStoreProvider);
@@ -321,14 +358,14 @@ void main() {
     final plugin = await controller.install(await package({}, source: source));
     await controller.setEnabled(plugin.id, enabled: true);
     await controller.saveToken(plugin.id, 'example');
-    await store.writeOrder(plugin.id, 'fixture-buyer-scope', 'last-submission');
+    await container.read(secretStoreProvider).writeLegacyRecord(plugin.id, 'fixture-buyer-scope', 'last-submission');
     await controller.install(
       await package({'version': '1.1.0'}, source: source),
     );
     expect(controller.byId(plugin.id)?.enabled, true);
     expect(await store.readToken(plugin.id), 'example');
     expect(
-      await store.readOrder(plugin.id, 'fixture-buyer-scope'),
+      await container.read(secretStoreProvider).readLegacyRecord(plugin.id, 'fixture-buyer-scope'),
       'last-submission',
     );
     await controller.install(
@@ -343,13 +380,13 @@ void main() {
     expect(controller.byId(plugin.id)?.enabled, false);
     expect(await store.readToken(plugin.id), isNull);
     expect(
-      await store.readOrder(plugin.id, 'fixture-buyer-scope'),
+      await container.read(secretStoreProvider).readLegacyRecord(plugin.id, 'fixture-buyer-scope'),
       'last-submission',
     );
     await controller.install(
       await package({}, source: 'https://other.example.net/plugin.json'),
     );
-    expect(await store.readOrder(plugin.id, 'fixture-buyer-scope'), isNull);
+    expect(await container.read(secretStoreProvider).readLegacyRecord(plugin.id, 'fixture-buyer-scope'), isNull);
   });
 
   test('移除插件后注册表恢复为只有官方服务', () async {

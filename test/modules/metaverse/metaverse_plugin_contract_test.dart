@@ -6,16 +6,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/core/metaverse_link_rule.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_checkout_types.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_service_session.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 const _reserved = ['linux.do'];
 
 Map<String, dynamic> _example() => jsonDecode(
-  File('docs/examples/metaverse-plugin/plugin.json').readAsStringSync(),
+  File('test/fixtures/metaverse/api1_token.json').readAsStringSync(),
 ) as Map<String, dynamic>;
 
 MetaversePluginManifest _parse(Map<String, dynamic> json) =>
@@ -51,228 +49,14 @@ class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
-  test('建单授权绑定两个固定端点，不能伪装成报价或更换恢复地址', () async {
-    final raw = jsonDecode(
-      File('test/fixtures/metaverse/api1_shop.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
-    final spec = _parse(raw);
-    final auth = raw['auth'] as Map;
-    final endpoints = spec.auth.checkout!;
-    for (final bad in [
-      {...raw, 'schema': 4},
-      {
-        ...raw,
-        'auth': {
-          ...auth,
-          'checkout': {'create': '/orders', 'lookup': '//other.example/lookup'},
-        },
-      },
-      {
-        ...raw,
-        'auth': {
-          ...auth,
-          'queries': {'bad': '/api/shop/orders'},
-        },
-      },
-    ]) {
-      expect(() => _parse(bad), throwsA(isA<MetaverseManifestException>()));
-    }
-    final adapter = _Adapter(),
-        client = MetaversePluginNetwork(
-          dio: Dio()..httpClientAdapter = adapter,
-          lookup: (_) async => [InternetAddress('8.8.8.8')],
-        );
-    addTearDown(client.dispose);
-    final intent = MetaverseOrderIntent.parse({
-      'productId': 'prod',
-      'quantity': 2,
-      'expectedAmount': 0,
-    })!;
-    final token = 'ord_${'0' * 32}';
-    for (final session in [
-      MetaverseServiceSession('read', queryUrls: [endpoints.create]),
-      MetaverseServiceSession(
-        'wrong',
-        checkout: MetaverseCheckoutGrant(
-          (create: endpoints.create, lookup: 'https://other.example/lookup'),
-          subject: 'buyer',
-          unit: 'LDC',
-        ),
-      ),
-    ]) {
-      await expectLater(
-        client.orderRequest(
-          spec,
-          session,
-          token,
-          create: intent,
-          checkSession: () async {},
-        ),
-        throwsA(isA<MetaversePluginCallException>()),
-      );
-    }
-    final granted = MetaverseServiceSession(
-      'valid',
-      checkout: MetaverseCheckoutGrant(
-        endpoints,
-        subject: 'buyer',
-        unit: 'LDC',
-      ),
-    );
-    await expectLater(
-      client.orderRequest(
-        spec,
-        granted,
-        '../another',
-        checkSession: () async {},
-      ),
-      throwsA(isA<MetaversePluginCallException>()),
-    );
-    expect(adapter.requests, isEmpty);
-    await expectLater(
-      client.orderRequest(
-        spec,
-        granted,
-        token,
-        create: intent,
-        checkSession: () async => throw StateError('确认后已切换账号'),
-      ),
-      throwsStateError,
-    );
-    expect(adapter.requests, isEmpty);
-    await client.orderRequest(
-      spec,
-      granted,
-      token,
-      create: intent,
-      checkSession: () async {},
-    );
-    await client.orderRequest(spec, granted, token, checkSession: () async {});
-    expect(adapter.requests.map((r) => r.uri.toString()), [
-      endpoints.create,
-      '${endpoints.lookup}/$token',
-    ]);
-    expect(jsonDecode(adapter.requests.first.data as String), {
-      ...intent.toJson(),
-      'submissionToken': token,
-    });
-    expect(adapter.requests.last.data, isNull);
-  });
-  test('脚本清单与签发方授权缺一不可，具名查询不开放任意请求', () async {
-    final raw = {
-      ..._example(),
-      'schema': 4,
-      'permissions': {
-        'network': ['api.example.org'],
-      },
-      'auth': {
-        'type': 'readSession',
-        'hosts': ['api.example.org'],
-        'queries': {'quote': '/orders/quote'},
-      },
-    };
-    final manifest = _parse(raw);
-    expect(
-      () => _parse({...raw, 'schema': 3}),
-      throwsA(isA<MetaverseManifestException>()),
-    );
-    final adapter = _Adapter();
-    final client = MetaversePluginNetwork(
-      dio: Dio()..httpClientAdapter = adapter,
-      lookup: (_) async => [InternetAddress('8.8.8.8')],
-    );
-    addTearDown(client.dispose);
-    final valid = MetaverseServiceSession(
-      'fixture',
-      queryUrls: ['https://api.example.org/orders/quote'],
-    );
-    for (final (name, grant) in [
-      ('create', valid),
-      ('quote', MetaverseServiceSession('old-get-only')),
-      (
-        'quote',
-        MetaverseServiceSession(
-          'fixture',
-          queryUrls: ['https://another.example.org/orders/quote'],
-        ),
-      ),
-    ]) {
-      await expectLater(
-        client.query(manifest, name, {}, grant),
-        throwsA(isA<MetaversePluginCallException>()),
-      );
-    }
-    expect(adapter.requests, isEmpty);
-    await client.query(manifest, 'quote', {'quantity': 2}, valid);
-    expect(
-      adapter.requests.single.uri.toString(),
-      'https://api.example.org/orders/quote',
-    );
-    expect(adapter.requests.single.method, 'POST');
-  });
-  test('服务会话可选、不手填，只向单个精确域名的普通 GET 代发', () async {
-    final raw = {
-      ..._example(),
-      'schema': 3,
-      'permissions': {
-        'network': [
-          'api.example.org',
-          'img.example.org',
-          '*.images.example.org',
-        ],
-      },
-      'auth': {
-        'type': 'readSession',
-        'hosts': ['api.example.org'],
-      },
-    };
-    final manifest = _parse(raw);
-    expect(manifest.auth.required, isFalse);
-    expect(manifest.auth.canAttachCredential, isTrue);
-    for (final bad in [
-      {...raw, 'schema': 2},
-      {
-        ...raw,
-        'auth': {
-          'type': 'readSession',
-          'hosts': ['*.images.example.org'],
-        },
-      },
-      {
-        ...raw,
-        'auth': {
-          'type': 'readSession',
-          'hosts': ['api.example.org'],
-          'header': 'X-Test',
-        },
-      },
-    ]) {
-      expect(() => _parse(bad), throwsA(isA<MetaverseManifestException>()));
-    }
-    final adapter = _Adapter();
-    final client = MetaversePluginNetwork(
-      dio: Dio()..httpClientAdapter = adapter,
-      lookup: (_) async => [InternetAddress('8.8.8.8')],
-    );
-    addTearDown(client.dispose);
-    const get = {'url': 'https://api.example.org/orders', 'auth': true};
-    for (final bad in [
-      {...get, 'url': 'https://img.example.org/'},
-      {...get, 'method': 'POST'},
-      {...get, 'body': 'x'},
-      {
-        ...get,
-        'headers': {'X-HTTP-Method-Override': 'DELETE'},
-      },
-    ]) {
-      await expectLater(
-        client.fetch(manifest, request: bad, authToken: 'fixture'),
-        throwsA(isA<MetaversePluginCallException>()),
-      );
-    }
-    expect(adapter.requests, isEmpty);
-    await client.fetch(manifest, request: get, authToken: 'fixture');
-    expect(adapter.requests.single.headers['Authorization'], 'Bearer fixture');
+  test('历史业务清单只能作为升级元数据读取，新安装拒绝旧协议', () {
+    final raw = jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync());
+    expect(() => MetaversePluginManifest.parse(raw), throwsA(isA<MetaverseManifestException>()));
+    final old = MetaversePluginManifest.parse(raw, allowLegacyMetadata: true);
+    expect(old.runtimeSupported, isFalse);
+    expect(old.auth.canAttachCredential, isFalse);
+    expect(old.raw, raw);
+    expect(old.sameApprovalAs(_parse(_example())), isFalse);
   });
   test('网站会话只接受公开的登录地址，后续入口须为同源路径', () {
     final shop = _parse({

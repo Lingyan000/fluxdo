@@ -30,6 +30,7 @@
   "metaverse_marketInstall": "安装插件",
   "metaverse_marketInstalled": "已安装",
   "metaverse_marketUpdate": "更新插件",
+  "metaverse_pluginApiUpgradeRequired": "此插件使用旧版业务接口，请更新插件后使用",
   "metaverse_marketUpdates": "可更新",
   "metaverse_marketSources": "市场源",
   "metaverse_marketAddSource": "添加 GitHub 源",

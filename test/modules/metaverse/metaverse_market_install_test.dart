@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
@@ -109,30 +110,25 @@ void main() {
     expect(await store.readStorage('example.one'), {'current': 3});
   });
 
-  test('重置后到达的旧订单响应无法重建已删除记录', () async {
+  test('重置后到达的旧凭证响应无法重建已删除记录', () async {
     var active = true;
-    await store.writeOrder('example.one', 'account', 'pending');
+    final revision = store.credentialRevision('example.one', 'account');
+    Future<void> write(String secret) => store.writeCredential(
+      'example.one', 'account', MetaverseCredential(secret, accountId: 42),
+      revision: revision, isActive: () => active,
+    );
+    await write('pending');
     active = false;
     await store.resetData('example.one');
     await expectLater(
-      store.writeOrder(
-        'example.one',
-        'account',
-        'created',
-        isActive: () => active,
-      ),
+      write('created'),
       throwsA(isA<PluginOperationCancelled>()),
     );
-    expect(await store.readOrder('example.one', 'account'), isNull);
+    expect(await store.readCredential('example.one', 'account'), isNull);
     active = true;
-    final queued = store.writeOrder(
-      'example.one',
-      'account',
-      'stale',
-      isActive: () => active,
-    );
+    final queued = write('stale');
     active = false;
     await expectLater(queued, throwsA(isA<PluginOperationCancelled>()));
-    expect(await store.readOrder('example.one', 'account'), isNull);
+    expect(await store.readCredential('example.one', 'account'), isNull);
   });
 }

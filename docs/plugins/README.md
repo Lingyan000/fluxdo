@@ -4,7 +4,7 @@
 
 ## 文档导航
 
-- [API 参考](api.md)覆盖脚本环境、事件、网络、存储、账号、导航和当前交易接口。
+- [API 参考](api.md)覆盖脚本环境、事件、网络、存储、账号、导航和应用支付接口。
 - [组件参考](components.md)覆盖当前注册的宿主组件及 rfw 布局组件。
 - [清单、权限与现有协议](../metaverse-plugin.md)介绍安装格式、网络限制和授权协议。
 - [架构审计与改造方案](architecture-review.md)记录现状、参考项目、日志与数据管理、插件源和迁移验收。
@@ -62,7 +62,7 @@ sequenceDiagram
 - 网络、凭证和跳转检查由 Dart 宿主执行。使用公开 SDK 即可获得一致的检查行为。
 - `console` 写入结构化日志，包含插件 ID、版本和运行实例。插件管理中的日志入口支持查看、导出与仅清空当前插件。事件处理中使用 `ctx.api` 可以附带 surfaceId。
 - `storage` 是每插件共享的普通 JSON 数据，账号会话使用宿主管理的安全存储。业务数据包含账号差异时，插件需要在自身数据结构中体现账号范围。
-- API 2 使用 `credentials`、`connect` 和 `payments` 能力。API 1 的 `auth.connect`、`auth.query` 和 `checkout` 仍依赖既定授权、订单协议，士多 2.0 已迁出这些接口。
+- API 2 使用 `credentials`、`connect` 和 `payments` 能力。API 1 仅兼容通用网络、界面与手填 token。旧服务授权和订单接口已删除，相关已安装插件更新后恢复使用。
 
 ## 文档入口
 

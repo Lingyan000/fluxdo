@@ -53,12 +53,12 @@ flowchart TD
 
 | 位置 | 已核对内容 | 建议归属 |
 | --- | --- | --- |
-| [metaverse_connect_login.dart](../../lib/modules/metaverse/plugin/metaverse_connect_login.dart) | 服务初始化、回调、交换、验证、条款接口，`ldsp_oauth` 交接字段，用户标识和服务响应语义 | 士多协议进入插件。Connect 交互、回调关联和凭证保管进入公共能力 |
-| [metaverse_checkout_types.dart](../../lib/modules/metaverse/plugin/metaverse_checkout_types.dart) | productId、quantity、couponClaimId、expectedAmount 和 create/lookup 授权 | 商品与券模型进入插件，公共提交保障接收不透明业务参数 |
-| [metaverse_checkout.dart](../../lib/modules/metaverse/plugin/metaverse_checkout.dart) | `ord_` 提交号、exists/order/orderNo 字段、特定服务错误码和订单恢复状态 | 士多业务状态进入插件，事务记录和幂等支持抽成通用能力 |
-| [metaverse_payment.dart](../../lib/modules/metaverse/plugin/metaverse_payment.dart) | pending 订单、支付 URL 字段、paid/delivered/completed 状态映射 | 士多订单解析进入插件，LDC 凭证与付款验证由应用支付能力处理 |
+| [metaverse_connect_login.dart](https://github.com/Lingyan000/fluxdo/blob/8679b7ab/lib/modules/metaverse/plugin/metaverse_connect_login.dart) | 服务初始化、回调、交换、验证、条款接口，`ldsp_oauth` 交接字段，用户标识和服务响应语义 | 士多协议进入插件。Connect 交互、回调关联和凭证保管进入公共能力 |
+| [metaverse_checkout_types.dart](https://github.com/Lingyan000/fluxdo/blob/8679b7ab/lib/modules/metaverse/plugin/metaverse_checkout_types.dart) | productId、quantity、couponClaimId、expectedAmount 和 create/lookup 授权 | 商品与券模型进入插件，公共提交保障接收不透明业务参数 |
+| [metaverse_checkout.dart](https://github.com/Lingyan000/fluxdo/blob/8679b7ab/lib/modules/metaverse/plugin/metaverse_checkout.dart) | `ord_` 提交号、exists/order/orderNo 字段、特定服务错误码和订单恢复状态 | 士多业务状态进入插件，事务记录和幂等支持抽成通用能力 |
+| [metaverse_payment.dart](https://github.com/Lingyan000/fluxdo/blob/8679b7ab/lib/modules/metaverse/plugin/metaverse_payment.dart) | pending 订单、支付 URL 字段、paid/delivered/completed 状态映射 | 士多订单解析进入插件，LDC 凭证与付款验证由应用支付能力处理 |
 | [metaverse_plugin_network.dart](../../lib/modules/metaverse/plugin/metaverse_plugin_network.dart) | `role=buyer`、payment-url、refresh、cancel 等请求规则 | 业务 URL 由插件构造，网络权限与出口策略由宿主和网络核心检查 |
-| [metaverse_service_session.dart](../../lib/modules/metaverse/plugin/metaverse_service_session.dart) | token、账号和过期时间与 query/checkout 授权绑定 | 通用凭证句柄与权限范围，业务能力由插件声明和使用 |
+| [metaverse_service_session.dart](https://github.com/Lingyan000/fluxdo/blob/8679b7ab/lib/modules/metaverse/plugin/metaverse_service_session.dart) | token、账号和过期时间与 query/checkout 授权绑定 | 通用凭证句柄与权限范围，业务能力由插件声明和使用 |
 | [metaverse_plugin_manifest.dart](../../lib/modules/metaverse/plugin/metaverse_plugin_manifest.dart) | readSession、queries、checkout、payment 相互依赖 | 规范化宿主能力声明，业务接口定义留在插件 |
 | [metaverse_plugin_store.dart](../../lib/modules/metaverse/plugin/metaverse_plugin_store.dart) | 普通数据之外还管理业务订单锁与提交记录 | 存储原语与业务记录分层 |
 | [metaverse_plugin_providers.dart](../../lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart) | 组装服务登录、订单适配与 LDC 收银台 | 宿主集成负责能力注入，服务协议交给业务插件 |
@@ -282,4 +282,6 @@ API 2 已提供具名凭证、Connect 回调、PKCE、UUID 和应用 LDC 收银�
 
 旧开发版持久记录已通过通用迁移入口原样交给所属插件，士多脚本按账号恢复原提交号。批量存储一次提交，迁移摘要防止已消费记录被重新导入，安装失败时保留旧加密副本。开发中心补充批量存储与 SHA-256 示例，共 32 个。插件、支付、日志、存储及架构回归通过 381 项，2 项实时网络测试跳过。
 
-宿主仍保留 API 1 的服务专用接口，下一步删除其实现。士多 2.0 尚未发布到公共目录，市场仍提供 1.6.6。五平台文件关联和高层 UI 组件扩展尚待完成。运行时原生脚本中断与内存硬上限仍受现有引擎约束。
+宿主旧的服务授权、订单模型、提交记录锁和订单请求实现已删除，SDK 移除具名业务查询与 checkout。API 1 继续兼容通用界面、网络及手填 token。旧业务插件保留在管理列表，启动前提示升级，同源升级经过原始记录迁移。最小示例已改为 API 2，开发中心保留 21 个公共能力示例。原业务适配测试由插件脚本协议测试接替，并增加服务地址归属和宿主业务接口守卫。当前相关测试通过 307 项，2 项实时网络测试跳过，静态检查通过。
+
+五平台文件关联、高层 UI 组件扩展和网络核心完整日志归属尚待完成。运行时原生脚本中断与内存硬上限仍受现有引擎约束。

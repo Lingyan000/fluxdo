@@ -60,7 +60,8 @@ class MetaversePluginService extends MetaverseService {
 
   @override
   List<MetaverseLinkRule> get linkRules =>
-      plugin.suspendedReason != null ? const [] : manifest.links;
+      plugin.suspendedReason != null || !manifest.runtimeSupported
+          ? const [] : manifest.links;
 
   @override
   Future<bool> enable(BuildContext context, ProviderContainer container) async {
@@ -143,7 +144,8 @@ class MetaversePluginCard extends ConsumerWidget {
           (item) => item.id == service.id,
           orElse: () => service.plugin,
         );
-    final suspended = plugin.suspendedReason;
+    final suspended = plugin.suspendedReason ??
+        (!manifest.runtimeSupported ? context.l10n.metaverse_pluginApiUpgradeRequired : null);
     final pluginHost = ref
         .read(metaversePluginHostsProvider)
         .hostFor(plugin);

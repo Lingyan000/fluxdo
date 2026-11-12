@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 9,
   "id": "com.example.points",
   "name": "示例积分",
   "version": "1.0.0",
@@ -10,20 +10,41 @@
   "ui": "ui.rfwtxt",
   "script": "main.js",
   "permissions": {
-    "network": ["api.example.com"],
-    "identity": true
+    "network": [
+      "api.example.com"
+    ],
+    "identity": true,
+    "credentials": {
+      "account": {
+        "label": "API Key",
+        "requests": [
+          {
+            "origin": "https://api.example.com",
+            "pathPrefix": "/v1",
+            "methods": [
+              "GET"
+            ]
+          }
+        ]
+      }
+    }
   },
-  "auth": {
-    "type": "token",
-    "label": "API Key",
-    "helpUrl": "https://example.com/points/keys",
-    "hosts": ["api.example.com"]
+  "card": {
+    "widget": "Card"
   },
-  "card": { "widget": "Card" },
   "pages": [
-    { "id": "order", "widget": "OrderPage", "title": "订单详情" }
+    {
+      "id": "order",
+      "widget": "OrderPage",
+      "title": "订单详情"
+    }
   ],
   "links": [
-    { "host": "example.com", "path": "/orders/:id", "page": "order" }
-  ]
+    {
+      "host": "example.com",
+      "path": "/orders/:id",
+      "page": "order"
+    }
+  ],
+  "apiVersion": 2
 }

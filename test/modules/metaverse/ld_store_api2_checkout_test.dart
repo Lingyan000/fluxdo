@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../fixtures/metaverse/legacy_storage.dart';
+
 import 'package:dio/dio.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +73,7 @@ Future<void> main() async {
   group('士多脚本管理提交记录', skip: unavailable, () {
     late Directory root;
     late MetaversePluginStore store;
+    late InMemorySecretStore secrets;
     late MetaversePluginHost host;
     late MetaversePluginNetwork network;
     late _Orders orders;
@@ -104,9 +107,10 @@ Future<void> main() async {
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       root = await Directory.systemTemp.createTemp('ld-store-orders-');
+      secrets = InMemorySecretStore();
       store = MetaversePluginStore(
         preferences: await SharedPreferences.getInstance(),
-        secretStore: InMemorySecretStore(),
+        secretStore: secrets,
         rootDirectory: () async => root,
       );
       orders = _Orders();
@@ -236,8 +240,8 @@ fluxdo.on('fixture.order', async (ctx, args) => {
         'token': 'ord_${'a' * 32}',
         'state': 'pending',
       };
-      await store.writeOrder(manifest.id, scope(42), jsonEncode(pending));
-      await store.writeOrder(
+      await secrets.writeLegacyRecord(manifest.id, scope(42), jsonEncode(pending));
+      await secrets.writeLegacyRecord(
         manifest.id,
         scope(43),
         jsonEncode({...pending, 'token': 'ord_${'b' * 32}'}),
@@ -270,7 +274,7 @@ fluxdo.on('fixture.order', async (ctx, args) => {
       );
       data = await store.readStorage(manifest.id);
       expect(data['legacyApi1Records'], isNull);
-      expect(await store.readOrder(manifest.id, scope(42)), isNotNull);
+      expect(await secrets.readLegacyRecord(manifest.id, scope(42)), isNotNull);
     });
 
     for (final mixed in [false, true]) {
