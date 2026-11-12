@@ -369,13 +369,11 @@ class MetaversePluginCard extends ConsumerWidget {
       constraints: const BoxConstraints(maxHeight: 320),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: ClipRRect(
-          borderRadius: context.shapes.borderRadius(16),
-          child: SingleChildScrollView(
-            child: MetaversePluginSurfaceView(
-              host: pluginHost,
-              kind: MetaversePluginSurfaceKind.card,
-            ),
+        // 外壳负责圆角；内容边界只按滚动视口裁切，避免削掉末行文字。
+        child: SingleChildScrollView(
+          child: MetaversePluginSurfaceView(
+            host: pluginHost,
+            kind: MetaversePluginSurfaceKind.card,
           ),
         ),
       ),

@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/metaverse_page.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
+import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -94,6 +95,11 @@ class _MemoryCodeStore extends MetaversePluginStore {
   Future<void> writeCode(String id, MetaversePluginCode code) async {
     written = code;
   }
+
+  @override
+  Future<MetaversePluginCode> readCode(String id) async => written!;
+  @override
+  Future<Map<String, Object?>> readStorage(String id) async => {};
 }
 
 class _EmptyPlugins extends MetaversePluginsController {
@@ -728,6 +734,101 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       }
       expect(find.text('添加入口'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final scale in [1.0, 1.4]) {
+    testWidgets('实际插件卡片的登录错误完整显示 scale=$scale', (tester) async {
+      await preferences.clear();
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const error = '登录在「服务回调」阶段收到异常响应（HTTP 403），请重试。';
+      final store = _MemoryCodeStore(preferences)
+        ..written = (
+          ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
+          script:
+              '''
+            fluxdo.on('card.load', ctx => {
+              ctx.setData('loginLabel', '登录士多');
+              ctx.setData('loginError', ${jsonEncode(error)});
+              ctx.setData('authorized', false);
+              ctx.setData('authBusy', false);
+            });
+          ''',
+        );
+      final plugin = InstalledMetaversePlugin(
+        manifest: MetaversePluginManifest.parse(
+          jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+        ),
+        source: 'asset:plugins/ld-store/plugin.json',
+        enabled: true,
+      );
+      await store.saveIndex([plugin]);
+      await tester.pumpWidget(
+        app(
+          SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: MetaversePluginCard(
+                service: MetaversePluginService(plugin),
+                host: MetaverseCardHost(
+                  isProcessing: false,
+                  onDisable: () {},
+                  onReauthorize: () {},
+                ),
+              ),
+            ),
+          ),
+          pluginStore: store,
+          scale: scale,
+        ),
+      );
+      final errorText = find.text(error);
+      // QuickJS 运行在真实 isolate；允许其消息进入测试的虚拟时钟。
+      for (
+        var attempt = 0;
+        attempt < 40 && errorText.evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(errorText, findsOneWidget);
+      final paragraph = tester.renderObject<RenderParagraph>(errorText);
+      // 检查所有文字落在祖先真正的裁切区域内，能复现内层圆角削字问题。
+      RenderObject? child = paragraph;
+      RenderObject? parent = child.parent;
+      while (parent != null) {
+        if (parent is RenderClipRRect) {
+          final rect = MatrixUtils.transformRect(
+            paragraph.getTransformTo(parent),
+            paragraph.paintBounds,
+          );
+          final clip = parent.borderRadius
+              .resolve(TextDirection.ltr)
+              .toRRect(Offset.zero & parent.size);
+          for (final point in [
+            rect.topLeft,
+            rect.bottomLeft,
+            rect.topRight,
+            rect.bottomRight,
+          ]) {
+            expect(clip.contains(point), isTrue, reason: '文字边缘被圆角裁掉');
+          }
+        }
+        child = parent;
+        parent = child.parent;
+      }
+      expect(tester.takeException(), isNull);
+      await snapshot(tester, 'login-error-$scale');
+      await tester.pumpWidget(const SizedBox());
+      // 脚本引擎退出消息未返回时，宿主在两秒后兜底释放 isolate。
+      await tester.pump(const Duration(seconds: 2));
     });
   }
 
