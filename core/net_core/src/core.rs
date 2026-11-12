@@ -141,6 +141,19 @@ impl Core {
         self.client.clone()
     }
 
+    /// 每次插件请求使用独立客户端，不复用论坛会话、连接池或 Alt-Svc。
+    pub fn pinned_client(&self, ips: Vec<std::net::IpAddr>) -> Arc<HttpEgressClient> {
+        let connector = EgressConnector::new(
+            None,
+            self.config.upstream_proxy.clone(),
+            self.config.system_proxy.clone(),
+            None,
+            Duration::from_secs(self.config.timeout_secs),
+        )
+        .with_pins(ips);
+        Arc::new(HttpEgressClient::new(Arc::new(connector), None))
+    }
+
     pub fn port(&self) -> Option<u16> {
         self.listener.port()
     }

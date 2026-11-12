@@ -22,10 +22,11 @@ const String netCoreConnectionExtraKey = 'netCoreConnection';
 /// 相比旧的本地网关少一跳回环 socket，也不再需要系统网络栈：
 /// 核心按 WebView 的指纹直接出站。
 class NetCoreHttpAdapter implements HttpClientAdapter {
-  NetCoreHttpAdapter({NetCoreBindings? bindings})
+  NetCoreHttpAdapter({NetCoreBindings? bindings, this.pinnedOnly = false})
     : _bindings = bindings ?? NetCoreBindings.instance;
 
   final NetCoreBindings _bindings;
+  final bool pinnedOnly;
 
   /// 在途请求：核心的事件按 id 投递到这里。
   static final Map<int, _PendingRequest> _pending = {};
@@ -113,7 +114,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
 
     options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
     options.extra.putIfAbsent('attemptId', LogPolicy.newTraceId);
-    final trace = CsrfSessionTrace.captureDispatch(options);
+    final trace = pinnedOnly ? null : CsrfSessionTrace.captureDispatch(options);
     if (trace != null) {
       trace['sentBodyBytes'] = 0;
       trace['sentBodyChunks'] = 0;
@@ -122,6 +123,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
     }
     final meta = jsonEncode({
       'method': options.method.toUpperCase(),
+      if (pinnedOnly) 'pinned_addresses': options.extra['pinnedAddresses'],
       'url': options.uri.toString(),
       'headers': _headerPairs(options.headers),
       'has_body': requestStream != null,
@@ -131,7 +133,9 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       'receive_timeout_ms': ?options.receiveTimeout?.inMilliseconds,
       'send_timeout_ms': ?options.sendTimeout?.inMilliseconds,
     });
-    final id = _bindings.requestStart(meta);
+    final id = pinnedOnly
+        ? _bindings.pinnedRequestStart(meta)
+        : _bindings.requestStart(meta);
     options.extra['coreRequestId'] = id;
     if (id == 0) {
       throw DioException.connectionError(

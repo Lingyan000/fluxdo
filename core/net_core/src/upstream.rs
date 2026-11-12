@@ -95,7 +95,10 @@ pub async fn connect_http_tunnel(
         ));
     }
 
-    let authority = format!("{}:{}", target_host, target_port);
+    let authority = match target_host.parse::<IpAddr>() {
+        Ok(ip) => SocketAddr::new(ip, target_port).to_string(),
+        Err(_) => format!("{target_host}:{target_port}"),
+    };
     info!(
         "Connecting to upstream HTTP proxy {} for {}",
         proxy.proxy_url(),
@@ -275,8 +278,21 @@ pub async fn connect_socks5_tunnel(
     }
 
     let mut request = Vec::with_capacity(7 + host_bytes.len());
-    request.extend_from_slice(&[0x05, 0x01, 0x00, 0x03, host_bytes.len() as u8]);
-    request.extend_from_slice(host_bytes);
+    request.extend_from_slice(&[0x05, 0x01, 0x00]);
+    match target_host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            request.push(1);
+            request.extend(ip.octets());
+        }
+        Ok(IpAddr::V6(ip)) => {
+            request.push(4);
+            request.extend(ip.octets());
+        }
+        Err(_) => {
+            request.extend_from_slice(&[3, host_bytes.len() as u8]);
+            request.extend_from_slice(host_bytes);
+        }
+    }
     request.push((target_port >> 8) as u8);
     request.push((target_port & 0xff) as u8);
     stream.write_all(&request).await?;
@@ -356,7 +372,10 @@ pub async fn connect_shadowsocks_tunnel(
     let server_config = ServerConfig::new(server_addr, password.to_string(), cipher)
         .map_err(|error| NetError::Proxy(format!("Invalid Shadowsocks config: {}", error)))?;
     let context = Context::new_shared(ServerType::Local);
-    let target = Address::from((target_host.to_string(), target_port));
+    let target = match target_host.parse::<IpAddr>() {
+        Ok(ip) => Address::from(SocketAddr::new(ip, target_port)),
+        Err(_) => Address::from((target_host.to_string(), target_port)),
+    };
 
     info!(
         "Connecting to upstream Shadowsocks proxy {} for {}:{} with cipher {}",
@@ -392,6 +411,56 @@ fn build_server_addr(host: &str, port: u16) -> ServerAddr {
     match host.parse::<IpAddr>() {
         Ok(ip) => ServerAddr::SocketAddr(SocketAddr::new(ip, port)),
         Err(_) => ServerAddr::DomainName(host.to_string(), port),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn ipv6_proxy_target_is_an_address_not_a_domain() {
+        let ip: std::net::Ipv6Addr = "2606:4700:4700::1111".parse().unwrap();
+        for protocol in ["http", "socks5"] {
+            let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let cfg = UpstreamProxyConfig {
+                protocol: protocol.into(),
+                host: "127.0.0.1".into(),
+                port: server.local_addr().unwrap().port(),
+                username: None,
+                password: None,
+                cipher: None,
+            };
+            let observe = tokio::spawn(async move {
+                let (mut stream, _) = server.accept().await.unwrap();
+                if protocol == "http" {
+                    let mut first = String::new();
+                    BufReader::new(&mut stream)
+                        .read_line(&mut first)
+                        .await
+                        .unwrap();
+                    assert_eq!(first, format!("CONNECT [{ip}]:443 HTTP/1.1\r\n"));
+                    stream.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                } else {
+                    let mut hello = [0; 3];
+                    stream.read_exact(&mut hello).await.unwrap();
+                    stream.write_all(&[5, 0]).await.unwrap();
+                    let mut request = [0; 22];
+                    stream.read_exact(&mut request).await.unwrap();
+                    assert_eq!(&request[..4], &[5, 1, 0, 4]);
+                    assert_eq!(&request[4..20], &ip.octets());
+                    assert_eq!(&request[20..], &443u16.to_be_bytes());
+                    stream
+                        .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+                        .await
+                        .unwrap();
+                }
+            });
+            let result = connect_tunnel(&cfg, &ip.to_string(), 443).await;
+            observe.await.unwrap();
+            assert!(result.is_ok());
+        }
     }
 }
 

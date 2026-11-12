@@ -578,7 +578,10 @@ impl HttpEgressClient {
                     self.h3
                         .observe_at(target.key, target.host, response.headers(), h3_generation);
                 }
-                if target.secure && checkout.conn.version != Version::HTTP_3 {
+                if target.secure
+                    && checkout.conn.version != Version::HTTP_3
+                    && !self.egress.is_pinned()
+                {
                     self.h3.observe_and_upgrade(
                         target,
                         response.headers(),

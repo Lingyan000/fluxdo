@@ -51,6 +51,8 @@ const CLIENT_TLS_BACKUP_DELAY: Duration = Duration::from_millis(1500);
 pub enum EgressTarget {
     /// 经代理隧道，由代理负责解析目标域名
     Proxy(Arc<UpstreamProxyConfig>),
+    /// 插件经可信代理出站时仍固定目标 IP，不让代理重新解析域名。
+    PinnedProxy(Arc<UpstreamProxyConfig>, IpAddr),
     /// 直连已解析的地址；`sticky` 表示来自最近一次成功记录
     Addr { addr: SocketAddr, sticky: bool },
 }
@@ -59,6 +61,9 @@ impl fmt::Display for EgressTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Proxy(proxy) => write!(f, "proxy {}:{}", proxy.host, proxy.port),
+            Self::PinnedProxy(proxy, ip) => {
+                write!(f, "proxy {}:{} -> {ip}", proxy.host, proxy.port)
+            }
             Self::Addr { addr, .. } => write!(f, "{addr}"),
         }
     }
@@ -109,6 +114,7 @@ impl HandshakeFailure {
 
 /// 出站连接器：所有出站共用一份，持有 DNS 解析器与代理配置。
 pub struct EgressConnector {
+    pinned: Option<Vec<IpAddr>>,
     dns: Option<Arc<DnsResolver>>,
     /// 应用内代理设置（用户在设置页配置的）
     upstream_proxy: Option<UpstreamProxyConfig>,
@@ -137,6 +143,7 @@ impl EgressConnector {
                 })
             });
         Self {
+            pinned: None,
             dns,
             upstream_proxy: upstream_proxy.filter(UpstreamProxyConfig::is_valid),
             system_proxy: system_proxy.filter(UpstreamProxyConfig::is_valid),
@@ -148,6 +155,15 @@ impl EgressConnector {
     /// 固定 TCP 代理无需发起 QUIC 探测；PAC 仍保留逐目标出口检查。
     pub fn has_fixed_proxy(&self) -> bool {
         self.upstream_proxy.is_some() || self.system_proxy.is_some()
+    }
+
+    pub fn with_pins(mut self, ips: Vec<IpAddr>) -> Self {
+        self.pinned = Some(ips);
+        self
+    }
+
+    pub fn is_pinned(&self) -> bool {
+        self.pinned.is_some()
     }
 
     pub fn dns(&self) -> Option<&Arc<DnsResolver>> {
@@ -503,6 +519,30 @@ impl EgressConnector {
 
     /// 候选上游，按优先级排列。
     async fn egress_targets(&self, host: &str, port: u16) -> Result<Vec<EgressTarget>> {
+        if let Some(ips) = &self.pinned {
+            let proxy = self
+                .upstream_proxy
+                .clone()
+                .or_else(
+                    || match system_proxy::choose(self.system_proxy.as_ref(), host, port) {
+                        ProxyChoice::Proxy(proxy) => Some(proxy),
+                        _ => None,
+                    },
+                )
+                .map(Arc::new);
+            let ordered =
+                interleave_families(ips.clone(), ips.first().is_some_and(IpAddr::is_ipv6));
+            return Ok(ordered
+                .into_iter()
+                .map(|ip| match &proxy {
+                    Some(proxy) => EgressTarget::PinnedProxy(proxy.clone(), ip),
+                    None => EgressTarget::Addr {
+                        addr: SocketAddr::new(ip, port),
+                        sticky: false,
+                    },
+                })
+                .collect());
+        }
         // 应用内代理优先：用户显式配置的出口
         if let Some(proxy) = self.upstream_proxy.clone() {
             return Ok(vec![EgressTarget::Proxy(Arc::new(proxy))]);
@@ -586,6 +626,11 @@ async fn open_target(
     match target {
         EgressTarget::Proxy(proxy) => {
             tokio::time::timeout(timeout, connect_tunnel(proxy, host, port))
+                .await
+                .map_err(|_| NetError::Timeout)?
+        }
+        EgressTarget::PinnedProxy(proxy, ip) => {
+            tokio::time::timeout(timeout, connect_tunnel(proxy, &ip.to_string(), port))
                 .await
                 .map_err(|_| NetError::Timeout)?
         }
@@ -1128,6 +1173,36 @@ mod tests {
             password: None,
             cipher: None,
         }))
+    }
+
+    #[tokio::test]
+    async fn pinned_plugin_proxy_uses_only_approved_addresses() {
+        let EgressTarget::Proxy(proxy) = silent_listener().await else {
+            unreachable!()
+        };
+        let ips: Vec<IpAddr> = ["1.1.1.1", "2606:4700:4700::1111"]
+            .map(|s| s.parse().unwrap())
+            .into();
+        let connector = EgressConnector::new(
+            None,
+            Some((*proxy).clone()),
+            None,
+            Some("127.0.0.1"),
+            TCP_TIMEOUT,
+        )
+        .with_pins(ips.clone());
+        let targets = connector
+            .egress_targets("service.example", 443)
+            .await
+            .unwrap();
+        let actual: Vec<_> = targets
+            .into_iter()
+            .map(|t| match t {
+                EgressTarget::PinnedProxy(p, ip) if p.port == proxy.port => ip,
+                _ => panic!("插件应通过指定代理连接已校验的 IP"),
+            })
+            .collect();
+        assert_eq!(actual, ips);
     }
 
     #[tokio::test]

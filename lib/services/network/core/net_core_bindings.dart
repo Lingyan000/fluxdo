@@ -70,6 +70,8 @@ class NetCoreBindings {
   late final void Function() _clearDnsCache;
   late final int Function(Pointer<Utf8>) _setEchDnsPolicy;
   late final int Function(Pointer<Utf8>) _requestStart;
+  int Function(Pointer<Utf8>)? _pinnedRequestStart;
+  bool get supportsPinnedRequests => isAvailable && _pinnedRequestStart != null;
   late final int Function(int, Pointer<Uint8>, int) _requestWrite;
   late final void Function(int) _requestFinish;
   late final void Function(int) _requestCancel;
@@ -155,6 +157,13 @@ class NetCoreBindings {
             Uint64 Function(Pointer<Utf8>),
             int Function(Pointer<Utf8>)
           >('fluxdo_net_request_start');
+      if (lib.providesSymbol('fluxdo_net_pinned_request_start')) {
+        _pinnedRequestStart = lib
+            .lookupFunction<
+              Uint64 Function(Pointer<Utf8>),
+              int Function(Pointer<Utf8>)
+            >('fluxdo_net_pinned_request_start');
+      }
       _requestWrite = lib
           .lookupFunction<
             Int32 Function(Uint64, Pointer<Uint8>, Size),
@@ -277,6 +286,11 @@ class NetCoreBindings {
       _withUtf8(policyJson, _setEchDnsPolicy);
 
   int requestStart(String metaJson) => _withUtf8(metaJson, _requestStart);
+
+  int pinnedRequestStart(String metaJson) {
+    final start = _pinnedRequestStart;
+    return start == null ? 0 : _withUtf8(metaJson, start);
+  }
 
   int requestWrite(int id, Pointer<Uint8> data, int length) =>
       _requestWrite(id, data, length);

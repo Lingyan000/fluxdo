@@ -165,6 +165,8 @@ fn emit_error(events: RequestEvents, error: &NetError) {
 /// 宿主发起请求时给出的元信息。
 #[derive(Debug, Deserialize)]
 struct RequestMeta {
+    #[serde(default)]
+    pinned_addresses: Vec<std::net::IpAddr>,
     method: String,
     url: String,
     #[serde(default)]
@@ -587,6 +589,18 @@ pub unsafe extern "C" fn fluxdo_net_buffer_free(ptr: *mut u8, len: usize) {
 /// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, false)
+}
+
+/// 开启固定目标地址的请求。只供宿主传入已经校验的公网地址。
+/// # Safety
+/// `meta_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_pinned_request_start(meta_json: *const c_char) -> u64 {
+    start_request(meta_json, true)
+}
+
+fn start_request(meta_json: *const c_char, pinned: bool) -> u64 {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(json) = c_str(meta_json) else {
             return 0;
@@ -603,6 +617,14 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
             return 0;
         };
 
+        let client = if pinned {
+            if meta.pinned_addresses.is_empty() || meta.pinned_addresses.len() > 16 {
+                return 0;
+            }
+            core.pinned_client(meta.pinned_addresses.clone())
+        } else {
+            core.client()
+        };
         let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
         let events = RequestEvents::new(id);
         let cancel = CancellationToken::new();
@@ -623,7 +645,6 @@ pub unsafe extern "C" fn fluxdo_net_request_start(meta_json: *const c_char) -> u
             },
         );
 
-        let client = core.client();
         runtime().spawn(
             async move {
                 let started = std::time::Instant::now();
