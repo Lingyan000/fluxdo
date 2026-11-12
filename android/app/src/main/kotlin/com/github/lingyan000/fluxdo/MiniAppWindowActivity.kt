@@ -96,7 +96,7 @@ internal object MiniAppWindows {
         // 网络未返回前仍能区分任务，不借用客户端图标冒充小程序。
         val hue = (id.hashCode().toLong() and 0x7fffffff).rem(360).toFloat()
         paint.color = Color.HSVToColor(floatArrayOf(hue, .18f, .94f))
-        canvas.drawRoundRect(0f, 0f, 96f, 96f, 29f, 29f, paint)
+        canvas.drawCircle(48f, 48f, 48f, paint)
         paint.color = Color.HSVToColor(floatArrayOf(hue, .42f, .32f))
         paint.textSize = 42f
         paint.textAlign = Paint.Align.CENTER

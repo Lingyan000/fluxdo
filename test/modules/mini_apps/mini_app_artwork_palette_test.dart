@@ -138,7 +138,11 @@ Future<void> _expectTaskIcon(String url, Color color) async {
       final pixels = (await frame.image.toByteData(
         format: ui.ImageByteFormat.rawStraightRgba,
       ))!.buffer.asUint8List();
-      expect(pixels[3], 0, reason: '系统图标沿用应用图标的圆角');
+      // 角部与圆内都取样，避免圆角方形也通过只检查单个角像素的断言。
+      for (final (x, y) in [(0, 0), (12, 12), (84, 12), (12, 84), (84, 84)]) {
+        expect(pixels[(y * 96 + x) * 4 + 3], 0, reason: '系统图标圆形外透明');
+      }
+      expect(pixels[(24 * 96 + 24) * 4 + 3], 255, reason: '圆形内部保留图像');
       for (final x in [12, 48, 84]) {
         final offset = (48 * 96 + x) * 4;
         expect(

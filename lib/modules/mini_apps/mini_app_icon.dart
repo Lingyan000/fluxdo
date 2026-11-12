@@ -37,8 +37,8 @@ class MiniAppIcon extends StatelessWidget {
     );
     return SizedBox.square(
       dimension: size,
-      child: ClipRSuperellipse(
-        borderRadius: BorderRadius.circular(size * .3),
+      // 图标按圆形制作，图片、加载占位与首字兜底使用同一个圆形边界。
+      child: ClipOval(
         child: app.iconUrl.isEmpty
             ? fallback(context)
             : DiscourseImage(
