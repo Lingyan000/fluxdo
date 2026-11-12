@@ -167,6 +167,7 @@ class MiniAppRunnerToolbar extends StatelessWidget
 }
 
 enum MiniAppMenuAction {
+  refresh,
   minimize,
   separateWindow,
   info,
@@ -192,6 +193,7 @@ Future<MiniAppMenuAction?> showMiniAppMenu(
   bool canRotate = false,
   bool canDetach = false,
   bool canMinimize = false,
+  bool canRefresh = false,
   bool blur = true,
   ValueChanged<double>? onBlurSigmaChanged,
   ValueListenable<bool>? blurReady,
@@ -199,6 +201,8 @@ Future<MiniAppMenuAction?> showMiniAppMenu(
 }) {
   final l = context.l10n;
   final entries = <(MiniAppMenuAction, IconData, String)>[
+    if (canRefresh)
+      (MiniAppMenuAction.refresh, Symbols.refresh_rounded, l.common_refresh),
     (MiniAppMenuAction.info, Symbols.info_rounded, l.miniApp_info),
     if (canMinimize)
       (

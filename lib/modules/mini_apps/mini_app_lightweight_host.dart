@@ -170,6 +170,7 @@ $script
     if (closed) return;
     closed = true;
     lifetime.abort();
+    window.fluxdoMiniAppEvents?.dispose();
     runtimeTracking?.abort();
     runtime?.destroy();
     provider?.destroy();
@@ -255,6 +256,7 @@ $script
   }
   function fail(error) {
     if (closed) return;
+    lifetime.abort();
     runtime?.destroy();
     provider?.destroy();
     runtime = provider = null;
@@ -281,6 +283,81 @@ $script
         'NotSupportedError'].includes(diagnostic.errorName) ? ' · ' + diagnostic.errorName : '') + ']';
     root.querySelector('[data-action="retry"]').hidden = false;
   }
+  async function importLoader(url) {
+    const bridge = window.flutter_inappwebview;
+    if (typeof bridge?.callHandler !== 'function') return import(url);
+    const hash = new URL(url).pathname.match(/loader-([a-f0-9]{64})\.js$/)[1];
+    let objectUrl, readDeadline;
+    try {
+      // 只交换公开运行器源码。每次启动仍以最新资源表选择的哈希为准。
+      let source = await Promise.race([
+        bridge.callHandler('fluxdoMiniAppRuntime', {action:'read', hash}),
+        new Promise(resolve => { readDeadline = setTimeout(() => resolve(null), 500); }),
+      ]).finally(() => clearTimeout(readDeadline));
+      active();
+      const cached = typeof source === 'string';
+      if (typeof source !== 'string') {
+        const response = await fetch(url, {credentials:'same-origin', redirect:'error',
+          signal:AbortSignal.any([lifetime.signal, AbortSignal.timeout(20000)])});
+        if (!response.ok || !response.body) throw invalid('INVALID_RUNTIME_ASSET');
+        const reader = response.body.getReader(), chunks = [];
+        let size = 0;
+        try {
+          for (;;) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            size += value.byteLength;
+            if (size > 4 * 1024 * 1024) throw invalid('INVALID_RUNTIME_ASSET');
+            chunks.push(value);
+          }
+        } finally { await reader.cancel().catch(() => {}); }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        source = new TextDecoder('utf-8', {fatal:true}).decode(bytes);
+      }
+      active();
+      const bytes = new TextEncoder().encode(source);
+      if (bytes.byteLength > 4 * 1024 * 1024) throw invalid('INVALID_RUNTIME_ASSET');
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+        value => value.toString(16).padStart(2, '0')).join('');
+      if (digest !== hash) throw invalid('INVALID_RUNTIME_ASSET');
+      active();
+      objectUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+      const loader = await import(objectUrl);
+      active();
+      // 缓存写入独立于首屏，哈希不符、存储不可用均不会写入。
+      if (!cached) bridge.callHandler('fluxdoMiniAppRuntime', {action:'write', hash, source}).catch(() => {});
+      return loader;
+    } catch {
+      active();
+      // 后续运行器若使用相对模块导入，继续由原地址完成模块解析。
+      return import(url);
+    } finally { if (objectUrl) URL.revokeObjectURL(objectUrl); }
+  }
+  async function prepareLoader(config) {
+    const assets = await json('/mini-app-api/runtime-assets.json');
+    active();
+    try {
+      for (const key of ['runtimeAssets','sdkUrl','sdkSha256','sdkFallbackUrl','sdkByteLength']) {
+        if (Object.hasOwn(assets, key)) config[key] = assets[key];
+      }
+      const runtimeAssets = config.runtimeAssets;
+      const loaderUrl = asset(runtimeAssets?.loader, 'loader');
+      asset(runtimeAssets?.packageWorker, 'package-worker', true);
+      asset(runtimeAssets?.preflightWorker, 'package-preflight-worker', true);
+      for (const [key, kind] of [['frameHostStyle','frame-host'],['errorStyle','error']]) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet'; link.href = asset(runtimeAssets?.[key], kind, false, 'css');
+        document.head.append(link);
+      }
+      phase = 'loader_import';
+      return await importLoader(loaderUrl);
+    } catch (error) {
+      throw {code:error?.code, name:error?.name,
+        phase:error?.code === 'INVALID_RUNTIME_ASSET' ? 'runtime_assets' : 'loader_import'};
+    }
+  }
   async function start() {
     const expected = new URL(boot.entry);
     if (!isSecureContext || location.origin !== expected.origin) throw invalid('BROWSER_UNSUPPORTED');
@@ -290,10 +367,11 @@ $script
     phase = 'bootstrap';
     const config = {...boot.configuration};
     const anonymous = config.anonymous === true;
-    const assetsPromise = json('/mini-app-api/runtime-assets.json');
+    // 模块准备与身份请求同时进行，挂载始终等待三项全部成功。
+    const loaderPromise = prepareLoader(config);
     const sessionPromise = anonymous ? Promise.resolve(null) : json('/session/current.json');
     const csrfPromise = anonymous ? Promise.resolve(null) : json('/session/csrf');
-    const [assets, session, csrf] = await Promise.all([assetsPromise, sessionPromise, csrfPromise]);
+    const [loader, session, csrf] = await Promise.all([loaderPromise, sessionPromise, csrfPromise]);
     active();
     phase = 'identity';
     const current = anonymous ? null : session?.current_user;
@@ -302,22 +380,7 @@ $script
         (boot.expectedUserId != null && current.id !== boot.expectedUserId))) throw invalid('INVALID_USER');
     if (!anonymous && (typeof csrf?.csrf !== 'string' || !csrf.csrf)) throw invalid('ACCESS_DENIED');
     document.querySelector('meta[name="csrf-token"]').content = csrf?.csrf || '';
-    phase = 'runtime_assets';
-    for (const key of ['runtimeAssets','sdkUrl','sdkSha256','sdkFallbackUrl','sdkByteLength']) {
-      if (Object.hasOwn(assets, key)) config[key] = assets[key];
-    }
-    const runtimeAssets = config.runtimeAssets;
-    const loaderUrl = asset(runtimeAssets?.loader, 'loader');
-    asset(runtimeAssets?.packageWorker, 'package-worker', true);
-    asset(runtimeAssets?.preflightWorker, 'package-preflight-worker', true);
-    for (const [key, kind] of [['frameHostStyle','frame-host'],['errorStyle','error']]) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet'; link.href = asset(runtimeAssets?.[key], kind, false, 'css');
-      document.head.append(link);
-    }
     phase = 'loader_import';
-    const loader = await import(loaderUrl);
-    active();
     if (typeof loader.mountLoader !== 'function' || typeof loader.createUserDataProvider !== 'function') {
       throw invalid('INVALID_RUNTIME_ASSET');
     }

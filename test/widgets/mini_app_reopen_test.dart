@@ -216,7 +216,7 @@ class _Controller extends CfTestController {
       hostSuspended = suspend;
       return null;
     }
-    if (source == 'window.fluxdoMiniAppHost?.destroy();') {
+    if (source.contains('window.fluxdoMiniAppHost?.destroy();')) {
       destroyed = true;
       return null;
     }
