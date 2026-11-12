@@ -152,6 +152,80 @@ void main() {
     }
   });
 
+  group('输入框外壳', () {
+    Future<void> pump(WidgetTester tester, {required bool focus}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: _build(ThemeRegistry.minimal.style),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 240,
+                child: InputFieldShell(
+                  height: 40,
+                  padding: const EdgeInsets.only(left: 8),
+                  radius: 20,
+                  child: TextField(
+                    autofocus: focus,
+                    decoration: const InputDecoration(border: InputBorder.none),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      // 自动聚焦在下一帧生效，外壳收到焦点变化后再重建一次
+      await tester.pump();
+      await tester.pump();
+    }
+
+    BorderSide shellSide(WidgetTester tester) {
+      final container = tester.widget<Container>(
+        find.descendant(
+          of: find.byType(InputFieldShell),
+          matching: find.byType(Container),
+        ),
+      );
+      final decoration = container.foregroundDecoration as ShapeDecoration?;
+      final shape = decoration?.shape as RoundedSuperellipseBorder?;
+      return shape?.side ?? BorderSide.none;
+    }
+
+    testWidgets('主题边框画在外壳轮廓上，聚焦时换高亮色', (tester) async {
+      final theme = _build(ThemeRegistry.minimal.style);
+      await pump(tester, focus: false);
+      expect(shellSide(tester).color, theme.colorScheme.outlineVariant);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      expect(shellSide(tester).width, 1.5);
+      expect(shellSide(tester).color, theme.colorScheme.onSurface);
+    });
+
+    testWidgets('里面的输入框不再画自己的边框，不会与外壳错位', (tester) async {
+      await pump(tester, focus: true);
+      final decorator = tester.widget<InputDecorator>(
+        find.byType(InputDecorator),
+      );
+      expect(decorator.decoration.focusedBorder, InputBorder.none);
+      expect(decorator.decoration.enabledBorder, InputBorder.none);
+    });
+
+    testWidgets('Material 主题没有输入框边框，外壳不画线', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: _build(ThemeStyle.material),
+          home: const Scaffold(
+            body: InputFieldShell(child: TextField(autofocus: true)),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(shellSide(tester), BorderSide.none);
+    });
+  });
+
   group('正文排版风格', () {
     test('Material 不改正文', () {
       final style = _build(ThemeStyle.material).extension<FluxdoRenderStyle>();

@@ -63,6 +63,8 @@ description: 编写或修改 FluxDO 页面、弹窗、列表和设置项时，�
 | M3E 底部导航 | `M3eNavigationBar` | 指示器跟随主题，应用主导航通过 `AdaptiveScaffold` 接入 |
 | 动画曲线 | `M3eMotion` | 位置、尺寸、形状优先用 spatial，颜色、透明度优先用 effects |
 
+带底色和圆角的输入框（搜索胶囊、面板里的搜索栏）用 `InputFieldShell` 包住 `TextField`，不要自己写 `Container` 加 `ShapeDecoration`。主题配置的输入框边框和聚焦高亮由外壳画在自己的轮廓上，与底色、圆角对齐；外壳会屏蔽里面输入框的边框，避免出现缩在内容区、与容器错位的第二个框。
+
 `M3eButtonGroup` 是单选接口，多选需求先核对组件能力。M3E 的开关与回退由组件读取 `M3eFlags` 处理，调用方可直接使用公共入口。接口见 [m3e_button_group.dart](../../../packages/m3e_ui/lib/src/m3e_button_group.dart)。
 
 ## 分组列表与设置页

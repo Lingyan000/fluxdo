@@ -849,18 +849,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             flightShuttleBuilder: searchCapsuleFlightShuttle,
             child: MediaQuery.withClampedTextScaling(
               maxScaleFactor: 1.2,
-              child: Container(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                // 主题的输入框边框（含聚焦高亮）画在胶囊轮廓上
+                child: InputFieldShell(
                 height: 40,
-                margin: const EdgeInsets.only(right: 4),
                 padding: const EdgeInsets.only(left: 8),
-                decoration: ShapeDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.5,
-                  ),
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(20),
-                  ),
-                ),
+                radius: 20,
                 // Hero child 需要 Material 语境（飞行时脱离原位）。
                 // hint 自绘覆盖层：普通 Text + Stack 居中对齐（与首页
                 // 胶囊 hint 同布局方式），彻底绕开 InputDecorator 的
@@ -888,7 +883,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     ],
                   ),
                 ),
-              ),
+              )),
             ),
           )
         : searchField;

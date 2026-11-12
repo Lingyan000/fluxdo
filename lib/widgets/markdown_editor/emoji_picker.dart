@@ -725,16 +725,12 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                 tooltip: S.current.common_cancel,
               ),
               Expanded(
-                child: Container(
+                child: InputFieldShell(
                   height: 36,
-                  decoration: ShapeDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: context.shapes.borderRadius(10),
-                    ),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
                   ),
+                  radius: 10,
                   child: TextField(
                     controller: _searchController,
                     focusNode: _searchFocusNode,
@@ -898,15 +894,12 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
             child: Row(
               children: [
                 Expanded(
-                  child: Container(
+                  child: InputFieldShell(
                     height: 44,
-                    decoration: ShapeDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: context.shapes.borderRadius(12),
-                      ),
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
                     ),
+                    radius: 12,
                     child: TextField(
                       controller: _searchController,
                       focusNode: _searchFocusNode,

@@ -266,15 +266,11 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                     Row(
                       children: [
                         Expanded(
-                          child: Container(
+                          child: InputFieldShell(
                             height: 44,
-                            decoration: ShapeDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              shape: RoundedSuperellipseBorder(
-                                borderRadius: context.shapes.borderRadius(12),
-                              ),
-                            ),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            radius: 12,
                             child: TextField(
                               controller: _searchController,
                               focusNode: _searchFocusNode,
