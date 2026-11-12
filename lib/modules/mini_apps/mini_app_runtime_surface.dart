@@ -83,15 +83,14 @@ class MiniAppLaunchSurface extends StatelessWidget {
                   children: [
                     SizedBox.square(
                       dimension: 104,
-                      child: SegmentedCardItem(
-                        index: 0,
-                        count: 1,
-                        outerRadius: 30,
-                        child: MiniAppCardSurface(
-                          app: app,
-                          prominent: true,
-                          watermark: false,
-                          child: Center(child: MiniAppIcon(app, size: 72)),
+                      child: ClipOval(
+                        child: Material(
+                          child: MiniAppCardSurface(
+                            app: app,
+                            prominent: true,
+                            watermark: false,
+                            child: Center(child: MiniAppIcon(app, size: 72)),
+                          ),
                         ),
                       ),
                     ),

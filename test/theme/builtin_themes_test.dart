@@ -6,6 +6,7 @@ import 'package:fluxdo/theme/color_contrast.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
+import 'package:fluxdo/theme/theme_style.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -114,6 +115,29 @@ void main() {
               );
             }
           }
+        }
+      }
+    }
+  });
+
+  test('浮起风格的容器与页面底分得开', () {
+    final raised = specs.where((s) => s.style.surfaces == SurfaceStyle.raised);
+    expect(raised, isNotEmpty);
+    for (final spec in raised) {
+      for (final black in [false, if (spec.supportsPureBlack) true]) {
+        final themes = ThemeResolver.resolve(
+          spec: spec,
+          mode: ThemeMode.system,
+          black: black,
+          seed: Colors.blue,
+          variant: DynamicSchemeVariant.tonalSpot,
+        );
+        for (final scheme in [themes.light, themes.dark]) {
+          expect(
+            ColorContrast.ratio(raisedSurfaceColor(scheme), scheme.surface),
+            greaterThanOrEqualTo(1.08),
+            reason: '${spec.id} ${scheme.brightness.name} black=$black',
+          );
         }
       }
     }

@@ -85,6 +85,8 @@
       }
     }
   },
+  "miniApp_recentUsage": "{count} in the last 7 days",
+  "miniApp_tipAvailable": "Tips available",
   "miniApp_usage": "{count} uses",
   "@miniApp_usage": {
     "placeholders": {

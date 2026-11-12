@@ -72,18 +72,30 @@ class BrowserTestController extends PlatformInAppWebViewController {
   Future<String?> Function()? titleCallback;
   String currentUrl = 'https://example.com/current';
   String title = '恢复后的标题';
+  final handlers = <String, Function>{};
+  final evaluated = <String>[];
+  Object? Function(String source)? evaluate;
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
   @override
   void addJavaScriptHandler({
     required String handlerName,
     required Function callback,
-  }) {}
+  }) {
+    handlers[handlerName] = callback;
+  }
+
+  final screenshotRequests = <ScreenshotConfiguration?>[];
   @override
   Future<Uint8List?> takeScreenshot({
     ScreenshotConfiguration? screenshotConfiguration,
-  }) async =>
-      screenshotCallback != null ? await screenshotCallback!() : screenshot;
+  }) async {
+    screenshotRequests.add(screenshotConfiguration);
+    return screenshotCallback != null
+        ? await screenshotCallback!()
+        : screenshot;
+  }
+
   @override
   Future<WebUri?> getUrl() async => WebUri(currentUrl);
   @override
@@ -130,7 +142,10 @@ class BrowserTestController extends PlatformInAppWebViewController {
   Future<dynamic> evaluateJavascript({
     required String source,
     ContentWorld? contentWorld,
-  }) async => null;
+  }) async {
+    evaluated.add(source);
+    return evaluate?.call(source);
+  }
 
   @override
   Future<void> disposeKeepAlive(InAppWebViewKeepAlive keepAlive) async {

@@ -43,9 +43,9 @@ String _groupName(BuildContext context, ThemeGroup group) {
   final l10n = context.l10n;
   return switch (group) {
     ThemeGroup.generated => l10n.appearance_themeGroupGenerated,
-    ThemeGroup.classic => l10n.appearance_themeGroupClassic,
+    ThemeGroup.clean => l10n.appearance_themeGroupClean,
     ThemeGroup.reading => l10n.appearance_themeGroupReading,
-    ThemeGroup.terminal => l10n.appearance_themeGroupTerminal,
+    ThemeGroup.code => l10n.appearance_themeGroupCode,
     ThemeGroup.custom => l10n.appearance_themeGroupCustom,
     ThemeGroup.festival => '',
   };
@@ -82,6 +82,7 @@ class _ThemeLivePreview extends ConsumerWidget {
                     child: _MiniScreen(
                       scheme: scheme,
                       shapes: shapes,
+                      style: context.themeStyle,
                       cornerRadius: 12,
                     ),
                   ),
@@ -156,6 +157,7 @@ class _MiniScreen extends StatelessWidget {
   const _MiniScreen({
     required this.scheme,
     required this.shapes,
+    required this.style,
     required this.cornerRadius,
   });
 
@@ -163,6 +165,9 @@ class _MiniScreen extends StatelessWidget {
 
   /// 缩略图内元素的圆角风格（外框是设备轮廓，不随风格变化）。
   final UiShapes shapes;
+
+  /// 界面风格：容器、悬浮按钮、底栏按它绘制
+  final ThemeStyle style;
   final double cornerRadius;
 
   @override
@@ -179,7 +184,7 @@ class _MiniScreen extends StatelessWidget {
       child: ClipRSuperellipse(
         borderRadius: radius,
         child: CustomPaint(
-          painter: _MiniHomePainter(scheme, shapes),
+          painter: _MiniHomePainter(scheme, shapes, style),
           child: const SizedBox.expand(),
         ),
       ),
@@ -188,12 +193,14 @@ class _MiniScreen extends StatelessWidget {
 }
 
 /// 首页草图：顶栏、分类标签、话题卡、悬浮按钮、底栏，全部用 [scheme]
-/// 的 role 上色，几何按画布尺寸等比缩放，圆角按 [shapes] 风格换算。
+/// 的 role 上色，几何按画布尺寸等比缩放，圆角按 [shapes] 风格换算，
+/// 容器、控件与导航标记按 [style] 的界面风格绘制。
 class _MiniHomePainter extends CustomPainter {
-  _MiniHomePainter(this.scheme, this.shapes);
+  _MiniHomePainter(this.scheme, this.shapes, this.style);
 
   final ColorScheme scheme;
   final UiShapes shapes;
+  final ThemeStyle style;
 
   /// 缩略图里的普通圆角：按设计值 16 处的缩放比例等比换算。
   double _corner(double r) => r * shapes.resolve(16) / 16;
@@ -219,6 +226,14 @@ class _MiniHomePainter extends CustomPainter {
 
     final pad = w * 0.07;
     final line = h * 0.016;
+    final hairline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = scheme.outlineVariant;
+    final material = style.hasMaterialComponents;
+    final ink = style.controls == ControlStyle.ink;
+    final control = ink ? scheme.onSurface : scheme.primary;
+    final onControl = ink ? scheme.surface : scheme.onPrimary;
 
     // 顶栏：标题 + 搜索按钮
     rrect(
@@ -249,7 +264,29 @@ class _MiniHomePainter extends CustomPainter {
     var index = 0;
     while (y + cardH <= navTop - gap) {
       final card = Rect.fromLTWH(pad, y, w - pad * 2, cardH);
-      rrect(card, _corner(w * 0.05), scheme.surfaceContainerLow);
+      final cardRadius = _corner(w * 0.05);
+      switch (style.surfaces) {
+        case SurfaceStyle.filled:
+          rrect(card, cardRadius, scheme.surfaceContainerLow);
+        case SurfaceStyle.outlined || SurfaceStyle.raised:
+          if (style.surfaces == SurfaceStyle.raised) {
+            rrect(card, cardRadius, raisedSurfaceColor(scheme));
+          }
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(
+              card.deflate(0.5),
+              Radius.circular(cardRadius),
+            ),
+            hairline,
+          );
+        case SurfaceStyle.flat:
+          final dividerY = card.bottom + gap / 2;
+          canvas.drawLine(
+            Offset(card.left, dividerY),
+            Offset(card.right, dividerY),
+            hairline,
+          );
+      }
       final cx = card.left + w * 0.05;
       paint.color = scheme.primaryContainer;
       canvas.drawCircle(
@@ -306,61 +343,91 @@ class _MiniHomePainter extends CustomPainter {
     rrect(
       Rect.fromLTWH(w - pad - fab, navTop - fab - gap, fab, fab),
       _corner(fab * 0.3),
-      scheme.primaryContainer,
+      material ? scheme.primaryContainer : control,
     );
+    final fabIcon = material ? scheme.onPrimaryContainer : onControl;
     final plus = fab * 0.32;
     final fc = Offset(w - pad - fab / 2, navTop - gap - fab / 2);
     rrect(
       Rect.fromCenter(center: fc, width: plus, height: plus * 0.2),
       plus * 0.1,
-      scheme.onPrimaryContainer,
+      fabIcon,
     );
     rrect(
       Rect.fromCenter(center: fc, width: plus * 0.2, height: plus),
       plus * 0.1,
-      scheme.onPrimaryContainer,
+      fabIcon,
     );
 
     // 底栏：首项选中
-    paint.color = scheme.surfaceContainer;
-    canvas.drawRect(Rect.fromLTWH(0, navTop, w, h - navTop), paint);
+    if (style.surfaces == SurfaceStyle.filled) {
+      paint.color = scheme.surfaceContainer;
+      canvas.drawRect(Rect.fromLTWH(0, navTop, w, h - navTop), paint);
+    } else {
+      // 栏与页面同色，顶边一条细线
+      paint.color = scheme.surface;
+      canvas.drawRect(Rect.fromLTWH(0, navTop, w, h - navTop), paint);
+      canvas.drawLine(Offset(0, navTop), Offset(w, navTop), hairline);
+    }
     const items = 4;
     final cell = w / items;
     final cy = navTop + (h - navTop) * 0.45;
     for (var i = 0; i < items; i++) {
       final center = Offset(cell * (i + 0.5), cy);
       if (i == 0) {
-        rrect(
-          Rect.fromCenter(center: center, width: cell * 0.62, height: h * 0.04),
-          _pill(h * 0.02),
-          scheme.secondaryContainer,
+        final indicator = Rect.fromCenter(
+          center: center,
+          width: cell * 0.62,
+          height: h * 0.04,
         );
+        switch (style.navIndicator) {
+          case NavIndicatorStyle.pill:
+            rrect(indicator, _pill(h * 0.02), scheme.secondaryContainer);
+          case NavIndicatorStyle.tint:
+            rrect(
+              indicator,
+              _corner(h * 0.012),
+              scheme.onSurface.withValues(alpha: 0.08),
+            );
+          case NavIndicatorStyle.bar:
+            rrect(
+              Rect.fromCenter(
+                center: Offset(center.dx, indicator.bottom),
+                width: cell * 0.3,
+                height: line * 0.6,
+              ),
+              line * 0.3,
+              scheme.primary,
+            );
+        }
       }
       rrect(
         Rect.fromCenter(center: center, width: h * 0.022, height: h * 0.022),
         h * 0.006,
-        i == 0
+        i != 0
+            ? scheme.onSurfaceVariant.withValues(alpha: 0.7)
+            : style.navIndicator == NavIndicatorStyle.pill
             ? scheme.onSecondaryContainer
-            : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+            : scheme.onSurface,
       );
     }
   }
 
   @override
   bool shouldRepaint(_MiniHomePainter oldDelegate) =>
-      oldDelegate.scheme != scheme || oldDelegate.shapes != shapes;
+      oldDelegate.scheme != scheme ||
+      oldDelegate.shapes != shapes ||
+      oldDelegate.style != style;
 }
 
 /// 主题画廊：按分组列出全部主题，同族主题合并成一张卡。
 class _ThemeGallery extends ConsumerWidget {
   const _ThemeGallery();
 
-  static const _groups = [
-    ThemeGroup.generated,
-    ThemeGroup.classic,
-    ThemeGroup.reading,
-    ThemeGroup.terminal,
-    ThemeGroup.custom,
+  /// 画廊分组按枚举顺序排列；节日主题随日期自动生效，不出现在画廊
+  static final _groups = [
+    for (final group in ThemeGroup.values)
+      if (group != ThemeGroup.festival) group,
   ];
 
   @override
@@ -427,6 +494,7 @@ class _ThemeGallery extends ConsumerWidget {
                         name: _themeName(context, spec),
                         scheme: _galleryScheme(spec, themeState, brightness),
                         shapes: (themeState.shapeOverride ?? spec.shape).shapes,
+                        style: spec.style,
                         selected: spec.familyId == current.familyId,
                         onTap: () {
                           if (spec.familyId == current.familyId) return;
@@ -454,6 +522,7 @@ class _ThemeCard extends StatelessWidget {
     required this.name,
     required this.scheme,
     required this.shapes,
+    required this.style,
     required this.selected,
     required this.onTap,
     this.onMore,
@@ -465,6 +534,7 @@ class _ThemeCard extends StatelessWidget {
   final String name;
   final ColorScheme scheme;
   final UiShapes shapes;
+  final ThemeStyle style;
   final bool selected;
   final VoidCallback onTap;
 
@@ -476,6 +546,7 @@ class _ThemeCard extends StatelessWidget {
     final preview = _MiniScreen(
       scheme: scheme,
       shapes: shapes,
+      style: style,
       cornerRadius: 10,
     );
     return SizedBox(

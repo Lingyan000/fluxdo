@@ -8,8 +8,6 @@ enum ForumPreferenceSection {
   emails,
   tracking,
   users,
-  interface,
-  navigation,
   chat,
   apps,
   calendar,
@@ -28,6 +26,7 @@ enum ForumPreferenceKind {
   image,
   schedule,
   multiChoice,
+  birthday,
 }
 
 /// 字段同时描述读取位置与 API 的序列化方式，保存时只提交修改项。
@@ -42,6 +41,8 @@ class ForumPreferenceField {
     this.required = false,
     this.emptyValue,
     this.uploadType,
+    this.group = '',
+    this.enabledBy,
   });
 
   final String key;
@@ -53,6 +54,8 @@ class ForumPreferenceField {
   final bool required;
   final Object? emptyValue;
   final String? uploadType;
+  final String group;
+  final String? enabledBy;
 
   String get id => '${container ?? "user"}.$key';
 

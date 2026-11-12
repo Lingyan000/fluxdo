@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/material.dart';
 
 import 'mini_app_artwork_image.dart';
@@ -11,10 +12,20 @@ abstract final class MiniAppArtworkPalette {
   static final _cache = <(String, Brightness), Future<Color?>>{};
 
   static Future<Color?> resolve(String url, Brightness brightness) {
-    if (url.isEmpty) return Future.value();
+    if (url.isEmpty) return SynchronousFuture(null);
     final key = (url, brightness);
     final cached = _cache.remove(key);
-    final value = cached ?? _load(url, brightness);
+    late final Future<Color?> value;
+    value =
+        cached ??
+        _load(url, brightness).then((color) {
+          // 回收后重挂载直接使用已取到的颜色，避免默认色闪回和重复渐变。
+          // 已淘汰的请求完成时不重新占用缓存。
+          if (identical(_cache[key], value)) {
+            _cache[key] = SynchronousFuture(color);
+          }
+          return color;
+        });
     _cache[key] = value;
     while (_cache.length > 128) {
       _cache.remove(_cache.keys.first);

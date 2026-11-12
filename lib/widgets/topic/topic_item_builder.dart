@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart' show SegmentedCardItem;
 import 'package:flutter/material.dart';
 
 import '../../models/category.dart';
@@ -16,6 +17,7 @@ import 'topic_card.dart';
 import 'topic_card_layout.dart';
 import 'topic_expandable_excerpt.dart';
 import 'topic_preview_dialog.dart';
+import 'pinned_topics_header.dart';
 
 /// 话题卡排版宽:与 [buildTopicItem] 的壳层约束同源(移动 = 视口宽
 /// - 页边距 24;桌面 = 同口径再封顶 [Breakpoints.maxContentWidth])。
@@ -34,7 +36,10 @@ double topicCardWidthFor(BuildContext context) {
 const bool kUsePaintedTopicCard = true;
 
 /// 展示形态由列表选择，不由话题的站点置顶状态决定。
-enum TopicItemStyle { standard, compact, groupedPinned, lastGroupedPinned }
+enum TopicItemStyle { standard, compact }
+
+/// 话题在分组（如置顶分组）中的位置：[index] 从 0 起，[count] 含分组标题行。
+typedef TopicGroupSlot = ({int index, int count});
 
 /// 普通/私信话题卡的排版取用单一入口:[buildTopicItem] 挂载路径与
 /// [TopicCardPrewarmer] 空闲预热路径共用,保证 identity/宽度/theme/
@@ -44,10 +49,11 @@ TopicCardLayout obtainTopicItemLayout({
   required BuildContext context,
   required Topic topic,
   Map<int, Category>? categoryMap,
+  double? availableWidth,
   double? statsAvailableWidth,
   bool messageStyle = false,
 }) {
-  final cardWidth = topicCardWidthFor(context);
+  final cardWidth = availableWidth ?? topicCardWidthFor(context);
   final categoryId = int.tryParse(topic.categoryId);
   return TopicCardLayout.obtain(
     identity: 'topic:${topic.id}',
@@ -67,6 +73,8 @@ TopicCardLayout obtainTopicItemLayout({
 /// 宽度包装。普通/私信话题卡默认走自绘(单渲染对象,挂载帧纯绘制,
 /// 见 [TopicCardLayout]);带自定义 topWidget/middleWidget 的调用方
 /// (书签有专用自绘接线)与显式指定的紧凑卡走 widget 版。
+/// 已统一页面宽度的调用方通过 LayoutBuilder 传入 [availableWidth]，
+/// 排版使用该实际宽度，并跳过默认的桌面居中限宽。
 Widget buildTopicItem({
   required BuildContext context,
   required Topic topic,
@@ -75,21 +83,21 @@ Widget buildTopicItem({
   VoidCallback? onMiddleClick,
   required bool enableLongPress,
   TopicItemStyle style = TopicItemStyle.standard,
+  TopicGroupSlot? group,
   Color? highlightColor,
   Widget? topWidget,
   Widget? middleWidget,
   bool messageStyle = false,
   Map<int, Category>? categoryMap,
+  double? availableWidth,
   double? statsAvailableWidth,
   List<PreviewAction>? previewActions,
   WidgetBuilder? previewCustomActionPanelBuilder,
 }) {
   final isMobile = Responsive.isMobile(context);
-  final compact = style != TopicItemStyle.standard;
-  final grouped =
-      style == TopicItemStyle.groupedPinned ||
-      style == TopicItemStyle.lastGroupedPinned;
-  final lastInGroup = style == TopicItemStyle.lastGroupedPinned;
+  final grouped = group != null;
+  final compact = style != TopicItemStyle.standard || grouped;
+  final lastInGroup = grouped && group.index == group.count - 1;
 
   // 一镜到底锚点底色与卡片外壳一致，包含页面背景与落地高亮状态。
   final theme = Theme.of(context);
@@ -98,10 +106,10 @@ Widget buildTopicItem({
       PageBackgroundScope.contentColor(
         context,
         grouped
-          ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
-          : compact
-          ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
-          : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
+            ? theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow
+            : compact
+            ? theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
+            : theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
       );
 
   // 从实际卡身接管画面；桌面的居中约束留在来源外层。
@@ -160,6 +168,7 @@ Widget buildTopicItem({
           context: context,
           topic: topic,
           categoryMap: categoryMap,
+          availableWidth: availableWidth,
           statsAvailableWidth: statsAvailableWidth,
           messageStyle: messageStyle,
         )
@@ -170,7 +179,11 @@ Widget buildTopicItem({
   // 类名 —— 各列表页均已传)
   final Widget child = MorphingDialogAnchor(
     enabled: enableLongPress,
-    bottomGap: grouped ? (lastInGroup ? 8 : 0) : (compact ? 6 : 8),
+    bottomGap: grouped
+        ? (lastInGroup
+              ? PinnedTopicsGroup.trailingGap
+              : SegmentedCardItem.gapOf(context, PinnedTopicsGroup.gap))
+        : (compact ? 6 : 8),
     builder: (cardContext) {
       if (compact) {
         return CompactTopicCard(
@@ -182,8 +195,7 @@ Widget buildTopicItem({
           isSelected: isSelected,
           highlightColor: highlightColor,
           categoryMap: categoryMap,
-          grouped: grouped,
-          lastInGroup: lastInGroup,
+          group: group,
         );
       }
       if (paintedLayout != null) {
@@ -214,7 +226,7 @@ Widget buildTopicItem({
     },
   );
 
-  if (!isMobile) {
+  if (!isMobile && availableWidth == null) {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(

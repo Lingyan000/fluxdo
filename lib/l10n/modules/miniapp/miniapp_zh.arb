@@ -85,6 +85,13 @@
       }
     }
   },
+  "miniApp_recentUsage": "近 7 天 {count} 次",
+  "miniApp_tipAvailable": "可赏",
+  "@miniApp_recentUsage": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "miniApp_usage": "{count} 次使用",
   "@miniApp_usage": {
     "placeholders": {

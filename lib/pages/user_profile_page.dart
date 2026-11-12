@@ -15,7 +15,6 @@ import '../models/topic.dart';
 import '../providers/discourse_providers.dart';
 import '../services/discourse_cache_manager.dart';
 import '../utils/time_utils.dart';
-import '../widgets/common/relative_time_text.dart';
 import '../utils/number_utils.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
@@ -23,7 +22,7 @@ import '../services/emoji_handler.dart';
 
 import 'package:dio/dio.dart';
 
-import '../utils/url_helper.dart';
+import '../utils/category_navigation.dart';
 import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
 import '../providers/preferences_provider.dart';
@@ -44,11 +43,12 @@ import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
 import '../widgets/user/user_profile_header.dart';
+import '../widgets/user/activity_post_card.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/user/ignore_duration_picker.dart';
-import '../widgets/topic/topic_card_prewarmer.dart';
-import '../widgets/topic/topic_item_builder.dart';
-import '../widgets/topic/topic_list_skeleton.dart';
+import '../widgets/common/morphing_dialog_anchor.dart';
+import '../widgets/topic/topic_preview_dialog.dart';
+import '../services/topic_preview_preloader.dart';
 import '../widgets/post/post_boost/boost_content.dart';
 import '../widgets/badge/badge_ui_utils.dart';
 import '../services/toast_service.dart';
@@ -58,6 +58,7 @@ import 'search_page.dart';
 import 'follow_list_page.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
+import 'group_page.dart';
 import 'chat/channel/chat_channel_page.dart';
 import 'forum_preferences/forum_preferences_page.dart';
 
@@ -109,6 +110,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<bool> _showPinnedAction = ValueNotifier(false);
+  final ValueNotifier<double> _pullExtent = ValueNotifier(0);
   User? _user;
   UserSummary? _summary;
   bool _summaryLoading = false;
@@ -122,6 +124,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   String get _username => _renamedUsername ?? widget.username;
   int? _savingBadgeId;
   String _activityFilter = 'all';
+  int _activeTabIndex = 0;
   bool _isLoading = true;
   Object? _error;
   StackTrace? _errorStack;
@@ -272,8 +275,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   // 一级栏目用于导航，动态类型在动态栏目内部筛选。
   static const List<String> _tabFilters = [
-    'activity',
     'summary',
+    'activity',
     'badges',
     'about',
   ];
@@ -325,14 +328,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     _tabController.dispose();
     _scrollController.dispose();
     _showPinnedAction.dispose();
+    _pullExtent.dispose();
     super.dispose();
   }
 
   void _onTabChanged() {
     if (_tabController.indexIsChanging) return;
     if (_user == null || _user!.profileHidden) return;
+    final changed = _activeTabIndex != _tabController.index;
+    _activeTabIndex = _tabController.index;
     final section = _tabFilters[_tabController.index];
-    if (section == 'activity') _loadActivity();
+    if (section == 'activity') _loadActivity(refresh: changed);
     if (section == 'badges' &&
         _badges == null &&
         !_badgesLoading &&
@@ -341,37 +347,41 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  void _loadActivity() {
+  void _loadActivity({bool refresh = false}) {
     if (_summary?.canSeeUserActions == false) return;
     switch (_activityFilter) {
       case 'reactions':
-        if (_reactionsCache == null &&
-            !_reactionsLoading &&
-            !_actionErrors.containsKey('reactions')) {
+        if (!_reactionsLoading &&
+            (refresh ||
+                (_reactionsCache == null &&
+                    !_actionErrors.containsKey('reactions')))) {
           _loadReactions();
         }
       case 'boosts':
-        if (_boostsCache == null &&
-            !_boostsLoading &&
-            !_actionErrors.containsKey('boosts')) {
+        if (!_boostsLoading &&
+            (refresh ||
+                (_boostsCache == null &&
+                    !_actionErrors.containsKey('boosts')))) {
           _loadBoosts();
         }
       case 'votes':
-        if (_votesCache == null &&
-            !_votesLoading &&
-            !_actionErrors.containsKey('votes')) {
+        if (!_votesLoading &&
+            (refresh ||
+                (_votesCache == null && !_actionErrors.containsKey('votes')))) {
           _loadVotes();
         }
       case 'solved':
-        if (_solvedCache == null &&
-            !_solvedLoading &&
-            !_actionErrors.containsKey('solved')) {
+        if (!_solvedLoading &&
+            (refresh ||
+                (_solvedCache == null &&
+                    !_actionErrors.containsKey('solved')))) {
           _loadSolved();
         }
       default:
-        if (!_actionsCache.containsKey(_activityFilter) &&
-            _loadingCache[_activityFilter] != true &&
-            !_actionErrors.containsKey(_activityFilter)) {
+        if (_loadingCache[_activityFilter] != true &&
+            (refresh ||
+                (!_actionsCache.containsKey(_activityFilter) &&
+                    !_actionErrors.containsKey(_activityFilter)))) {
           _loadActions(_activityFilter);
         }
     }
@@ -379,11 +389,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   void _showActivity(String filter) {
     setState(() => _activityFilter = filter);
-    _tabController.animateTo(_tabFilters.indexOf('activity'));
-    _loadActivity();
+    _activeTabIndex = _tabFilters.indexOf('activity');
+    _tabController.animateTo(_activeTabIndex);
+    _loadActivity(refresh: true);
   }
 
-  Future<void> _loadUser() async {
+  Future<void> _loadUser({bool refresh = false}) async {
     final username = _username;
     try {
       final service = ref.read(discourseServiceProvider);
@@ -402,8 +413,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _isLoading = false;
         });
         if (!user.profileHidden) {
-          _loadSummary();
-          _onTabChanged();
+          if (refresh) {
+            await _loadSummary(forceRefresh: true);
+          } else {
+            _loadSummary();
+            _onTabChanged();
+          }
         }
       }
     } catch (e, s) {
@@ -658,7 +673,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     _tabController.animateTo(_tabFilters.indexOf('about'));
   }
 
-  /// 关于弹窗中的封禁/禁言区块
+  /// 资料详情中的封禁/禁言区块
   Widget _buildRestrictionSection(
     ThemeData theme, {
     required IconData icon,
@@ -898,7 +913,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       final offset = loadMore ? (_actionsCache[filter]?.length ?? 0) : 0;
       final response = await service.getUserActions(
         _username,
-        filter: filter == 'all' ? null : filter,
+        // 与网页的活动流一致，「所有」只请求用户发表的话题和回复。
+        filter: filter == 'all'
+            ? '${UserActionType.newTopic},${UserActionType.reply}'
+            : filter,
         offset: offset,
       );
 
@@ -1187,8 +1205,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = ref.watch(currentUserProvider).value;
-    // 话题卡自定义样式:改设置触发 rebuild(投票 tab 的话题卡直读全局快照)
-    ref.watch(preferencesProvider.select((p) => p.topicCardStyle));
 
     if (_isLoading) {
       return UserProfileSkeleton(
@@ -1233,7 +1249,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       builder: (context, constraints) {
         final width = math.min(
           constraints.maxWidth,
-          Breakpoints.maxContentWidth,
+          UserProfileWideLayout.maxWidth,
         );
         return PageBackdrop(
           child: Align(
@@ -1262,25 +1278,57 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       final filter = entry.value;
       return ExtendedVisibilityDetector(
         uniqueKey: Key('tab_$index'),
-        child: _constrainWide(switch (filter) {
+        child: switch (filter) {
           'summary' => _buildSummaryTab(),
-          'activity' => _buildActivityTab(),
-          'badges' => _buildBadgesTab(),
-          _ => _buildAboutTab(),
-        }),
+          'activity' => _constrainWide(_buildActivityTab()),
+          'badges' => _constrainWide(_buildBadgesTab()),
+          _ => _constrainWide(_buildProfileInformation()),
+        },
       );
     }).toList();
   }
 
-  Widget _buildProfileToolbar(User? currentUser, double titleOpacity) {
+  Widget _buildProfileToolbar(
+    User? currentUser,
+    double titleOpacity,
+    bool shareCollapsed,
+    double width,
+  ) {
     final own = currentUser?.id == _user!.id;
     final theme = Theme.of(context);
+    var actionWidth = 48.0;
+    if (!own && _user!.canFollow == true) {
+      final painter = TextPainter(
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      );
+      for (final label in [
+        context.l10n.userProfile_follow,
+        context.l10n.userProfile_followed,
+      ]) {
+        painter.text = TextSpan(
+          text: label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        );
+        painter.layout();
+        actionWidth = math.max(actionWidth, painter.width + 40);
+      }
+      painter.dispose();
+    }
+    final iconOnly = actionWidth > width - 112;
+    if (iconOnly) actionWidth = 48;
     return ValueListenableBuilder<bool>(
       valueListenable: _showPinnedAction,
       builder: (context, showAction, _) {
-        showAction = showAction &&
-            (own ? _user!.canEdit : _user!.canFollow == true);
-        final actions = _buildHeaderActions(own);
+        final canPin = own ? _user!.canEdit : _user!.canFollow == true;
+        final actions = _buildHeaderActions(
+          own,
+          shareCollapsed: shareCollapsed,
+          actionsCollapsed: showAction,
+        );
         return AppBar(
           titleSpacing: 4,
           foregroundColor: theme.colorScheme.onSurface,
@@ -1320,43 +1368,67 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               ? BackButton(onPressed: widget.onEmbeddedBack)
               : null,
           actions: [
-            AnimatedSwitcher(
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : const Duration(milliseconds: 180),
-              switchInCurve: M3eMotion.fastEffects.curveFor(
-                const Duration(milliseconds: 180),
-              ),
-              child: Row(
-                key: ValueKey(showAction),
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!showAction) actions.first,
-                  actions.last,
-                  if (showAction)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: own
+            SizedBox(
+              width: actionWidth,
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                child: showAction && canPin
+                    ? own
                           ? IconButton(
+                              key: const ValueKey('profile-pinned-edit'),
                               tooltip: context.l10n.profile_editProfile,
                               onPressed: () =>
                                   _openPreferences(editProfile: true),
                               icon: const Icon(Symbols.edit_rounded),
                             )
-                          : _buildFollowButton(compact: true),
-                    ),
-                ],
+                          : Padding(
+                              key: const ValueKey('profile-pinned-follow'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: _buildFollowButton(
+                                compact: true,
+                                iconOnly: iconOnly,
+                              ),
+                            )
+                    : actions.first,
               ),
             ),
+            actions.last,
+            const SizedBox(width: 4),
           ],
         );
       },
     );
   }
 
+  Future<void> _refreshProfile() async {
+    await _loadUser(refresh: true);
+    if (!mounted || _user?.profileHidden == true) return;
+    switch (_tabFilters[_tabController.index]) {
+      case 'activity':
+        await switch (_activityFilter) {
+          'reactions' => _loadReactions(),
+          'boosts' => _loadBoosts(),
+          'votes' => _loadVotes(),
+          'solved' => _loadSolved(),
+          _ => _loadActions(_activityFilter),
+        };
+      case 'badges':
+        await _loadBadges();
+    }
+  }
+
   Widget _buildProfileBody(ThemeData theme, User? currentUser, double width) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final buttons = _buildProfileActionButtons(theme, currentUser);
+    final pinnedHeaderHeight =
+        topInset + kToolbarHeight + (_user!.profileHidden ? 0 : 48);
+    final wide =
+        width >= UserProfileWideLayout.minWidth &&
+        width >= MediaQuery.textScalerOf(context).scale(14) * 60;
+    final buttons = _buildProfileActionButtons(theme, currentUser, wide: wide);
     final actionHeight = math.max(
       48.0,
       MediaQuery.textScalerOf(context).scale(14) * 1.4 + 12,
@@ -1368,74 +1440,134 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         child: ScrollConfiguration(
           behavior: ScrollConfiguration.of(context)
               .copyWith(scrollbars: false, overscroll: false),
-          child: ExtendedNestedScrollView(
-            controller: _scrollController,
-            pinnedHeaderSliverHeightBuilder: () =>
-                topInset + kToolbarHeight + (_user!.profileHidden ? 0 : 48),
-            onlyOneScrollInBody: true,
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: UserProfileHeaderDelegate(
-                  context: context,
-                  width: width,
-                  header: _buildProfileHeader(theme, currentUser),
-                  toolbarBuilder: (opacity) =>
-                      _buildProfileToolbar(currentUser, opacity),
-                  topInset: topInset,
-                ),
+          child: M3eRefreshIndicator(
+            edgeOffset: pinnedHeaderHeight,
+            displacement: 32,
+            triggerMode: RefreshIndicatorTriggerMode.anywhere,
+            onPullExtentChanged: (extent) => _pullExtent.value = extent * 2,
+            notificationPredicate: (notification) =>
+                notification.metrics.axis == Axis.vertical,
+            edgePredicate: (notification) =>
+                notification.metrics.extentBefore == 0 &&
+                (!_scrollController.hasClients ||
+                    _scrollController.offset <= 0),
+            onRefresh: _refreshProfile,
+            child: ExtendedNestedScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: ClampingScrollPhysics(),
               ),
-              SliverToBoxAdapter(child: _buildProfileDetails(theme)),
-              if (buttons.isNotEmpty)
+              controller: _scrollController,
+              pinnedHeaderSliverHeightBuilder: () => pinnedHeaderHeight,
+              onlyOneScrollInBody: true,
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                ValueListenableBuilder<double>(
+                  valueListenable: _pullExtent,
+                  builder: (context, extent, _) => SliverPersistentHeader(
+                    pinned: true,
+                    delegate: UserProfileHeaderDelegate(
+                      context: context,
+                      width: width,
+                      header: _buildProfileHeader(
+                        theme,
+                        currentUser,
+                        wide: wide,
+                      ),
+                      toolbarBuilder: (opacity, shareCollapsed) =>
+                          _buildProfileToolbar(
+                            currentUser,
+                            opacity,
+                            shareCollapsed,
+                            width,
+                          ),
+                      topInset: topInset,
+                      pullExtent: extent,
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: wide
+                      ? const SizedBox.shrink()
+                      : _buildProfileDetails(theme),
+                ),
                 SliverLayoutBuilder(
                   builder: (context, constraints) {
-                    final canPin = currentUser?.id == _user!.id
-                        ? _user!.canEdit
-                        : _user!.canFollow == true;
                     final show =
-                        canPin &&
+                        buttons.isNotEmpty &&
                         constraints.scrollOffset + constraints.overlap >=
-                            actionHeight + 8;
+                            actionHeight + 4;
                     if (_showPinnedAction.value != show) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) _showPinnedAction.value = show;
                       });
                     }
+                    final actions = buttons.isEmpty
+                        ? const SizedBox.shrink()
+                        : SizedBox(
+                            key: const ValueKey('profile-primary-actions'),
+                            height: actionHeight,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < buttons.length;
+                                  index++
+                                ) ...[
+                                  if (index > 0) const SizedBox(width: 8),
+                                  Expanded(child: buttons[index]),
+                                ],
+                              ],
+                            ),
+                          );
                     return SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        child: SizedBox(
-                          key: const ValueKey('profile-primary-actions'),
-                          height: actionHeight,
-                          child: Row(
-                            children: [
-                              for (
-                                var index = 0;
-                                index < buttons.length;
-                                index++
-                              ) ...[
-                                if (index > 0) const SizedBox(width: 8),
-                                Expanded(child: buttons[index]),
-                              ],
-                            ],
-                          ),
+                        padding: EdgeInsets.fromLTRB(
+                          wide ? 0 : 16,
+                          4,
+                          16,
+                          wide ? 20 : 8,
                         ),
+                        child: wide
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _buildProfileDetails(
+                                      theme,
+                                      wide: true,
+                                    ),
+                                  ),
+                                  if (buttons.isNotEmpty) ...[
+                                    const SizedBox(width: 24),
+                                    SizedBox(
+                                      width:
+                                          buttons.length * 120 +
+                                          (buttons.length - 1) * 8,
+                                      child: actions,
+                                    ),
+                                  ],
+                                ],
+                              )
+                            : actions,
                       ),
                     );
                   },
                 ),
-              if (!_user!.profileHidden)
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _ProfileTabsDelegate(child: _buildTabBar(theme)),
-                ),
-            ],
-            body: _user!.profileHidden
-                ? _buildHiddenProfile()
-                : TabBarView(
-                    controller: _tabController,
-                    children: _buildTabViews(),
+                if (!_user!.profileHidden)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _ProfileTabsDelegate(
+                      child: _buildTabBar(theme, wide: wide),
+                    ),
                   ),
+              ],
+              body: _user!.profileHidden
+                  ? _buildHiddenProfile()
+                  : TabBarView(
+                      controller: _tabController,
+                      children: _buildTabViews(),
+                    ),
+            ),
           ),
         ),
       ),
@@ -1455,9 +1587,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  UserProfileHeader _buildProfileHeader(ThemeData theme, User? currentUser) {
+  UserProfileHeader _buildProfileHeader(
+    ThemeData theme,
+    User? currentUser, {
+    bool wide = false,
+  }) {
     return UserProfileHeader(
       user: _user!,
+      wide: wide,
       avatar: _buildTappableAvatar(
         radius: 40,
         flairSize: 28,
@@ -1474,13 +1611,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       onBackground: () {
         final background = _user!.backgroundUrl;
         if (background?.isNotEmpty == true) {
-          ImageViewerPage.open(context, background!);
+          const style = ViewerSourceStyle.cover(radius: 0);
+          ImageViewerPage.open(
+            context,
+            background!,
+            heroTag: 'user_cover_${_user!.username}',
+            thumbnailUrl: background,
+            heroSourceFit: style.openViewerArgs.fit,
+            heroSourceRadius: style.openViewerArgs.radius,
+          );
         }
       },
     );
   }
 
-  List<Widget> _buildProfileActionButtons(ThemeData theme, User? currentUser) {
+  List<Widget> _buildProfileActionButtons(
+    ThemeData theme,
+    User? currentUser, {
+    bool wide = false,
+  }) {
     final user = _user!;
     final own = currentUser?.id == user.id;
     final canMessage =
@@ -1493,6 +1642,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       side: BorderSide(color: theme.colorScheme.outlineVariant),
+      minimumSize: const Size(0, 40),
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
     return [
       if (own && user.canEdit)
@@ -1505,62 +1657,85 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             overflow: TextOverflow.ellipsis,
           ),
         ),
-      if (canMessage && canChat)
-        SwipeDismissiblePopupMenuButton<String>(
-          tooltip: context.l10n.userProfile_contact,
-          padding: EdgeInsets.zero,
-          borderRadius: context.shapes.borderRadius(9999),
-          onSelected: (value) {
-            if (value == 'message') _openMessageDialog();
-            if (value == 'chat') _startChat();
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'message',
-              child: Text(context.l10n.userProfile_message),
-            ),
-            PopupMenuItem(
-              value: 'chat',
-              enabled: !_isStartingChat,
-              child: Text(context.l10n.chat_title),
-            ),
-          ],
-          child: Container(
-            alignment: Alignment.center,
-            decoration: ShapeDecoration(
-              shape: RoundedSuperellipseBorder(
-                borderRadius: context.shapes.borderRadius(9999),
-                side: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-            ),
-            child: Text(
-              context.l10n.userProfile_contact,
-              style: theme.textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+      if (canMessage && canChat && !wide)
+        Builder(
+          builder: (anchorContext) => OutlinedButton(
+            style: style,
+            onPressed: () => _showContactMenu(anchorContext),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    context.l10n.userProfile_contact,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Symbols.expand_more_rounded, size: 18),
+              ],
             ),
           ),
         )
-      else if (canMessage || canChat)
-        OutlinedButton(
-          style: style,
-          onPressed: canMessage
-              ? _openMessageDialog
-              : (_isStartingChat ? null : _startChat),
-          child: Text(
-            canMessage
-                ? context.l10n.userProfile_message
-                : context.l10n.chat_title,
+      else ...[
+        if (canMessage)
+          OutlinedButton.icon(
+            style: style,
+            onPressed: _openMessageDialog,
+            icon: const Icon(Symbols.mail_rounded, size: 18),
+            label: Text(context.l10n.userProfile_message),
           ),
-        ),
+        if (canChat)
+          OutlinedButton.icon(
+            style: style,
+            onPressed: _isStartingChat ? null : _startChat,
+            icon: const Icon(Symbols.chat_bubble_rounded, size: 18),
+            label: Text(context.l10n.chat_title),
+          ),
+      ],
       if (!own && user.canFollow == true) _buildFollowButton(),
     ];
   }
 
-  Widget _buildProfileDetails(ThemeData theme) {
+  Future<void> _showContactMenu(BuildContext anchorContext) async {
+    final overlay =
+        Navigator.of(anchorContext).overlay!.context.findRenderObject()
+            as RenderBox;
+    final anchor = anchorContext.findRenderObject() as RenderBox;
+    final rect =
+        anchor.localToGlobal(Offset.zero, ancestor: overlay) & anchor.size;
+    final value = await showSwipeDismissibleMenu<String>(
+      context: anchorContext,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(rect.left, rect.bottom + 4, rect.width, 0),
+        Offset.zero & overlay.size,
+      ),
+      animationAnchorRect: rect,
+      items: [
+        _profileMenuItem(
+          'message',
+          Symbols.mail_rounded,
+          context.l10n.userProfile_message,
+        ),
+        _profileMenuItem(
+          'chat',
+          Symbols.chat_bubble_rounded,
+          context.l10n.chat_title,
+          enabled: !_isStartingChat,
+        ),
+      ],
+    );
+    if (!mounted) return;
+    if (value == 'message') _openMessageDialog();
+    if (value == 'chat') _startChat();
+  }
+
+  Widget _buildProfileDetails(ThemeData theme, {bool wide = false}) {
     final user = _user!;
     return UserProfileDetails(
       user: user,
+      showUsername: !wide,
       statusIcon: user.status?.emoji?.isNotEmpty == true
           ? _buildStatusEmoji(user.status!)
           : null,
@@ -1688,10 +1863,22 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  Widget _buildFollowButton({bool compact = false}) {
+  Widget _buildFollowButton({bool compact = false, bool iconOnly = false}) {
     final theme = Theme.of(context);
     final label = _isFollowLoading
         ? const LoadingSpinner(size: 16)
+        : iconOnly
+        ? Tooltip(
+            message: _isFollowed
+                ? context.l10n.userProfile_followed
+                : context.l10n.userProfile_follow,
+            child: Icon(
+              _isFollowed
+                  ? Symbols.how_to_reg_rounded
+                  : Symbols.person_add_rounded,
+              size: 18,
+            ),
+          )
         : Text(
             _isFollowed
                 ? context.l10n.userProfile_followed
@@ -1700,8 +1887,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             overflow: TextOverflow.ellipsis,
           );
     final style = FilledButton.styleFrom(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 20),
+      padding: EdgeInsets.symmetric(
+        horizontal: iconOnly
+            ? 8
+            : compact
+            ? 16
+            : 20,
+      ),
       minimumSize: Size(compact ? 72 : 0, 40),
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       backgroundColor: theme.colorScheme.onSurface,
       foregroundColor: theme.colorScheme.surface,
       textStyle: theme.textTheme.labelLarge?.copyWith(
@@ -1711,6 +1906,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     return _isFollowed
         ? OutlinedButton(
             style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.symmetric(
+                horizontal: iconOnly
+                    ? 8
+                    : compact
+                    ? 16
+                    : 20,
+              ),
+              minimumSize: Size(compact ? 72 : 0, 40),
+              visualDensity: VisualDensity.standard,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               foregroundColor: theme.colorScheme.onSurface,
               textStyle: theme.textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.w700,
@@ -1725,46 +1930,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             onPressed: _isFollowLoading ? null : _toggleFollow,
             child: label,
           );
-  }
-
-  Widget _buildWideStat(
-    String value,
-    String label,
-    int rawValue, {
-    VoidCallback? onTap,
-  }) {
-    final theme = Theme.of(context);
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-    return Tooltip(
-      message: '$rawValue',
-      child: onTap == null
-          ? content
-          : InkWell(
-              onTap: onTap,
-              customBorder: RoundedSuperellipseBorder(
-                borderRadius: context.shapes.borderRadius(8),
-              ),
-              child: content,
-            ),
-    );
   }
 
   /// 全屏形态的平行视界宿主组装:栈空=资料页独占全宽(自己的宽屏
@@ -1833,45 +1998,51 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     'solved': context.l10n.userProfile_tabSolved,
   };
 
-  Widget _buildTabBar(ThemeData theme) => MenuTabBar<String>(
-    controller: _tabController,
-    items: [
-      for (final section in _tabFilters)
-        switch (section) {
-          'activity' => MenuTabItem(
-            label: _activityFilter == 'all'
-                ? context.l10n.userProfile_tabActivity
-                : _activityFilters[_activityFilter]!,
-            icon: Symbols.article_rounded,
-            selectedValue: _activityFilter,
-            onSelected: _showActivity,
-            menuBuilder: (_) => [
-              for (final filter in _activityFilters.entries)
-                CheckedPopupMenuItem(
-                  value: filter.key,
-                  checked: filter.key == _activityFilter,
-                  child: Text(filter.value),
-                ),
-            ],
-          ),
-          'summary' => MenuTabItem(
-            label: context.l10n.userProfile_overview,
-            icon: Symbols.bar_chart_rounded,
-          ),
-          'badges' => MenuTabItem(
-            label: context.l10n.userProfile_badges,
-            icon: Symbols.workspace_premium_rounded,
-          ),
-          _ => MenuTabItem(
-            label: context.l10n.common_about,
-            icon: Symbols.person_rounded,
-          ),
-        },
-    ],
-  );
+  Widget _buildTabBar(ThemeData theme, {bool wide = false}) =>
+      MenuTabBar<String>(
+        controller: _tabController,
+        showAllLabels: wide,
+        items: [
+          for (final section in _tabFilters)
+            switch (section) {
+              'activity' => MenuTabItem(
+                label: _activityFilter == 'all'
+                    ? context.l10n.userProfile_tabActivity
+                    : _activityFilters[_activityFilter]!,
+                icon: Symbols.article_rounded,
+                selectedValue: _activityFilter,
+                onSelected: _showActivity,
+                menuBuilder: (_) => [
+                  for (final filter in _activityFilters.entries)
+                    CheckedPopupMenuItem(
+                      value: filter.key,
+                      checked: filter.key == _activityFilter,
+                      child: Text(filter.value),
+                    ),
+                ],
+              ),
+              'summary' => MenuTabItem(
+                label: context.l10n.userProfile_overview,
+                icon: Symbols.bar_chart_rounded,
+              ),
+              'badges' => MenuTabItem(
+                label: context.l10n.userProfile_badges,
+                icon: Symbols.workspace_premium_rounded,
+              ),
+              _ => MenuTabItem(
+                label: context.l10n.common_about,
+                icon: Symbols.info_rounded,
+              ),
+            },
+        ],
+      );
 
   /// 顶部统一放置搜索与更多操作，联系入口位于资料头部。
-  List<Widget> _buildHeaderActions(bool isOwnProfile) {
+  List<Widget> _buildHeaderActions(
+    bool isOwnProfile, {
+    required bool shareCollapsed,
+    required bool actionsCollapsed,
+  }) {
     return <Widget>[
       IconButton(
         icon: const Icon(Symbols.search_rounded),
@@ -1879,11 +2050,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         tooltip: context.l10n.common_search,
       ),
       SwipeDismissiblePopupMenuButton<String>(
+        key: const ValueKey('profile-more-menu'),
+        tooltip: context.l10n.common_more,
         icon: const Icon(Symbols.more_vert_rounded),
         onSelected: (value) {
           switch (value) {
-            case 'about':
-              _showUserInfo();
+            case 'search':
+              _openUserSearch();
+            case 'message':
+              _openMessageDialog();
+            case 'chat':
+              _startChat();
             case 'share':
               _shareUser();
             case 'preferences':
@@ -1900,44 +2077,44 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           final theme = Theme.of(context);
           return [
             if (isOwnProfile && _user?.canEdit == true)
-              PopupMenuItem<String>(
-                value: 'preferences',
-                child: Text(context.l10n.userProfile_forumPreferences),
+              _profileMenuItem(
+                'preferences',
+                Symbols.settings_rounded,
+                context.l10n.userProfile_forumPreferences,
               ),
-            if (_user?.profileHidden != true)
-              PopupMenuItem<String>(
-                value: 'about',
-                child: Row(
-                  children: [
-                    Icon(
-                      Symbols.info_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(context.l10n.common_about),
-                  ],
-                ),
+            if (actionsCollapsed &&
+                (isOwnProfile ? _user!.canEdit : _user!.canFollow == true))
+              _profileMenuItem(
+                'search',
+                Symbols.search_rounded,
+                context.l10n.common_search,
               ),
-            PopupMenuItem<String>(
-              value: 'share',
-              child: Row(
-                children: [
-                  Icon(
-                    Symbols.share_rounded,
-                    size: 20,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(context.l10n.userProfile_shareUser),
-                ],
+            if (shareCollapsed)
+              _profileMenuItem(
+                'share',
+                Symbols.share_rounded,
+                context.l10n.userProfile_shareUser,
               ),
-            ),
+            if (actionsCollapsed &&
+                !isOwnProfile &&
+                _user?.canSendPrivateMessageToUser == true)
+              _profileMenuItem(
+                'message',
+                Symbols.mail_rounded,
+                context.l10n.userProfile_message,
+              ),
+            if (actionsCollapsed && !isOwnProfile && _user?.canChatUser == true)
+              _profileMenuItem(
+                'chat',
+                Symbols.chat_bubble_rounded,
+                context.l10n.chat_title,
+                enabled: !_isStartingChat,
+              ),
             // 非自己才显示订阅级别选项
             if (!isOwnProfile &&
                 _user != null &&
                 ref.read(currentUserProvider).value != null) ...[
-              const PopupMenuDivider(),
+              if (shareCollapsed) const PopupMenuDivider(),
               PopupMenuItem<String>(
                 value: 'level_normal',
                 child: Row(
@@ -2006,6 +2183,23 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       ),
     ];
   }
+
+  PopupMenuItem<String> _profileMenuItem(
+    String value,
+    IconData icon,
+    String label, {
+    bool enabled = true,
+  }) => PopupMenuItem(
+    value: value,
+    enabled: enabled,
+    child: Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label)),
+      ],
+    ),
+  );
 
   Widget _buildRestrictionBanner({
     required IconData icon,
@@ -2086,7 +2280,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Widget _buildActivityTab() {
     if (_summary?.canSeeUserActions == false) {
-      return Center(child: Text(context.l10n.userProfile_activityPrivate));
+      return AppEmptyState(
+        icon: const Icon(Symbols.lock_rounded),
+        title: context.l10n.userProfile_activityPrivate,
+      );
     }
     return KeyedSubtree(
       key: ValueKey(_activityFilter),
@@ -2096,7 +2293,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Widget _buildBadgesTab() {
     if (_badgesLoading && _badges == null) {
-      return const UserActionListSkeleton();
+      return const UserBadgeListSkeleton();
     }
     if (_badgesError != null) {
       return ErrorView(
@@ -2108,84 +2305,80 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final badges = _badges ?? const <badge_model.UserBadge>[];
     final own = ref.watch(currentUserProvider).value?.id == _user?.id;
     final theme = Theme.of(context);
-    return M3eRefreshIndicator(
-      onRefresh: _loadBadges,
-      child: ListView(
-        key: PageStorageKey('user_${_username}_badges'),
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (badges.isEmpty)
+    return ListView(
+      key: PageStorageKey('user_${_username}_badges'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      children: [
+        if (badges.isEmpty)
+          AppEmptyState(
+            icon: const Icon(Symbols.workspace_premium_rounded),
+            title: context.l10n.myBadges_empty,
+          ),
+        for (final type in badge_model.BadgeType.values)
+          if (badges.any((entry) => entry.badge?.badgeType == type)) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 48),
-              child: Text(
-                context.l10n.myBadges_empty,
-                textAlign: TextAlign.center,
-              ),
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Text(type.label, style: theme.textTheme.titleSmall),
             ),
-          for (final type in badge_model.BadgeType.values)
-            if (badges.any((entry) => entry.badge?.badgeType == type)) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 8),
-                child: Text(type.label, style: theme.textTheme.titleSmall),
-              ),
-              for (final entry in badges.where(
-                (item) => item.badge?.badgeType == type,
-              ))
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: FaIcon(
-                    BadgeUIUtils.getBadgeIcon(type),
-                    color: BadgeUIUtils.getBadgeColor(context, type),
-                    size: 24,
-                  ),
-                  title: Text(entry.badge!.name),
-                  subtitle: CollapsedHtmlContent(
-                    html: entry.badge!.description,
-                    textStyle: theme.textTheme.bodySmall,
-                  ),
-                  onTap: () => Navigator.of(context).push(
-                    InteractionPageRoute(
-                      builder: (_) => BadgePage(
-                        badgeId: entry.badgeId,
-                        username: _username,
+            SegmentedCardGroup(
+              children: [
+                for (final entry in badges.where(
+                  (item) => item.badge?.badgeType == type,
+                ))
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: FaIcon(
+                      BadgeUIUtils.getBadgeIcon(type),
+                      color: BadgeUIUtils.getBadgeColor(context, type),
+                      size: 24,
+                    ),
+                    title: Text(entry.badge!.name),
+                    subtitle: CollapsedHtmlContent(
+                      html: entry.badge!.description,
+                      textStyle: theme.textTheme.bodySmall,
+                    ),
+                    onTap: () => Navigator.of(context).push(
+                      InteractionPageRoute(
+                        builder: (_) => BadgePage(
+                          badgeId: entry.badgeId,
+                          username: _username,
+                        ),
                       ),
                     ),
+                    trailing: own && entry.canFavorite == true
+                        ? IconButton(
+                            tooltip: entry.isFavorite == true
+                                ? context.l10n.userProfile_unfeatureBadge
+                                : context.l10n.userProfile_featureBadge,
+                            isSelected: entry.isFavorite == true,
+                            selectedIcon: const Icon(
+                              Symbols.star_rounded,
+                              fill: 1,
+                            ),
+                            icon: _savingBadgeId == entry.id
+                                ? const LoadingSpinner(size: 20)
+                                : const Icon(Symbols.star_rounded),
+                            onPressed: _savingBadgeId == null
+                                ? () => _toggleFavoriteBadge(entry)
+                                : null,
+                          )
+                        : entry.count > 1
+                        ? Text('× ${entry.count}')
+                        : null,
                   ),
-                  trailing: own && entry.canFavorite == true
-                      ? IconButton(
-                          tooltip: entry.isFavorite == true
-                              ? context.l10n.userProfile_unfeatureBadge
-                              : context.l10n.userProfile_featureBadge,
-                          isSelected: entry.isFavorite == true,
-                          selectedIcon: const Icon(
-                            Symbols.star_rounded,
-                            fill: 1,
-                          ),
-                          icon: _savingBadgeId == entry.id
-                              ? const SizedBox.square(
-                                  dimension: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Symbols.star_rounded),
-                          onPressed: _savingBadgeId == null
-                              ? () => _toggleFavoriteBadge(entry)
-                              : null,
-                        )
-                      : entry.count > 1
-                      ? Text('× ${entry.count}')
-                      : null,
-                ),
-              const SizedBox(height: 16),
-            ],
-        ],
-      ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+      ],
     );
   }
 
-  Widget _buildAboutTab() {
+  Widget _buildProfileInformation() {
     final user = _user!;
     final theme = Theme.of(context);
     final fields =
@@ -2291,11 +2484,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 .map(
                   (group) => ActionChip(
                     label: Text(group.displayName),
-                    onPressed: () => launchUrl(
-                      Uri.parse(
-                        UrlHelper.resolveUrl(
-                          '/g/${Uri.encodeComponent(group.name)}',
-                        ),
+                    onPressed: () => Navigator.of(context).push(
+                      InteractionPageRoute(
+                        builder: (_) => GroupPage(name: group.name),
                       ),
                     ),
                   ),
@@ -2390,7 +2581,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && actions == null) {
-      return const UserActionListSkeleton();
+      final actionType = int.tryParse(filter);
+      final ownPost =
+          filter == 'all' ||
+          actionType == UserActionType.newTopic ||
+          actionType == UserActionType.reply;
+      return UserActionListSkeleton(
+        type: ownPost
+            ? UserActivitySkeletonType.post
+            : UserActivitySkeletonType.quoted,
+      );
     }
 
     // 空状态
@@ -2413,24 +2613,24 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: M3eRefreshIndicator(
-        onRefresh: () => _loadActions(filter),
-        child: ListView.builder(
-          key: PageStorageKey('user_${_username}_$filter'),
-          padding: EdgeInsets.zero,
-          itemCount: actions.length + 1,
-          itemBuilder: (context, index) {
-            if (index == actions.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
-                onRetry: () => _loadMoreActions(filter),
-              );
-            }
-            return _buildActionItem(actions[index]);
-          },
-        ),
+      child: ListView.builder(
+        key: PageStorageKey('user_${_username}_$filter'),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: actions.length + 1,
+        itemBuilder: (context, index) {
+          if (index == actions.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
+              onRetry: () => _loadMoreActions(filter),
+            );
+          }
+          return _buildActionItem(actions[index], (
+            index: index,
+            count: actions.length,
+          ));
+        },
       ),
     );
   }
@@ -2444,242 +2644,396 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       );
     }
     if (_summary == null) {
-      return const UserActionListSkeleton();
+      return const SingleChildScrollView(child: UserSummaryStatsSkeleton());
     }
 
     final theme = Theme.of(context);
     final summary = _summary!;
 
-    return M3eRefreshIndicator(
-      onRefresh: () => _loadSummary(forceRefresh: true),
-      child: ListView(
-        key: PageStorageKey('user_${_username}_summary'),
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        children: [
-          if (summary.canSeeSummaryStats) ...[
-            _buildSummaryStats(summary),
-            const SizedBox(height: 12),
-            ExpansionTile(
-              key: PageStorageKey('$_username/reading-stats'),
-              tilePadding: EdgeInsets.zero,
-              title: Text(context.l10n.userProfile_readingStats),
+    return ListView(
+      key: PageStorageKey('user_${_username}_summary'),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      children: [
+        if (summary.canSeeSummaryStats) ...[
+          _buildSummaryStats(summary),
+          const SizedBox(height: 12),
+          SegmentedCardGroup(
+            children: [
+              ExpansionTile(
+                leading: Icon(
+                  Symbols.menu_book_rounded,
+                  color: context.emphasis.accent,
+                ),
+                shape: const Border(),
+                collapsedShape: const Border(),
+                key: PageStorageKey('$_username/reading-stats'),
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                title: Text(context.l10n.userProfile_readingStats),
+                children: [
+                  _buildSummaryMetric(
+                    context.l10n.profileStats_daysVisited,
+                    '${summary.daysVisited}',
+                  ),
+                  _buildSummaryMetric(
+                    context.l10n.profileStats_topicsEntered,
+                    '${summary.topicsEntered}',
+                  ),
+                  _buildSummaryMetric(
+                    context.l10n.profileStats_postsRead,
+                    '${summary.postsReadCount}',
+                  ),
+                  _buildSummaryMetric(
+                    context.l10n.profileStats_timeRead,
+                    _readingDuration(summary.timeRead),
+                  ),
+                  _buildSummaryMetric(
+                    context.l10n.profileStats_recentTimeRead,
+                    _readingDuration(summary.recentTimeRead),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+        _buildSummarySections([
+          if (_user?.featuredTopic != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSummaryMetric(
-                  context.l10n.profileStats_daysVisited,
-                  '${summary.daysVisited}',
+                _buildSectionHeader(
+                  theme,
+                  Symbols.push_pin_rounded,
+                  context.l10n.userProfile_featuredTopic,
                 ),
-                _buildSummaryMetric(
-                  context.l10n.profileStats_topicsEntered,
-                  '${summary.topicsEntered}',
-                ),
-                _buildSummaryMetric(
-                  context.l10n.profileStats_postsRead,
-                  '${summary.postsReadCount}',
-                ),
-                _buildSummaryMetric(
-                  context.l10n.profileStats_timeRead,
-                  _readingDuration(summary.timeRead),
-                ),
-                _buildSummaryMetric(
-                  context.l10n.profileStats_recentTimeRead,
-                  _readingDuration(summary.recentTimeRead),
-                ),
-                _buildSummaryMetric(
-                  context.l10n.profileStats_likesGiven,
-                  '${summary.likesGiven}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-          ],
-          if (_user?.featuredTopic != null) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.push_pin_rounded,
-              context.l10n.userProfile_featuredTopic,
-            ),
-            const SizedBox(height: 8),
-            _buildSummaryTopicItem(theme, _user!.featuredTopic!),
-            const SizedBox(height: 20),
-          ],
-          // 热门话题
-          if (summary.topics.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.article_rounded,
-              context.l10n.userProfile_topTopics,
-              onTap: summary.canSeeUserActions
-                  ? () => _showActivity('4')
-                  : null,
-            ),
-            const SizedBox(height: 8),
-            ...summary.topics.map(
-              (topic) => _buildSummaryTopicItem(theme, topic),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // 热门回复
-          if (summary.replies.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.chat_bubble_rounded,
-              context.l10n.userProfile_topReplies,
-              onTap: summary.canSeeUserActions
-                  ? () => _showActivity('5')
-                  : null,
-            ),
-            const SizedBox(height: 8),
-            ...summary.replies.map(
-              (reply) => _buildSummaryReplyItem(theme, reply),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // 热门链接
-          if (summary.links.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.link_rounded,
-              context.l10n.userProfile_topLinks,
-            ),
-            const SizedBox(height: 8),
-            ...summary.links.map((link) => _buildSummaryLinkItem(theme, link)),
-            const SizedBox(height: 20),
-          ],
-
-          // 最多回复至
-          if (summary.mostRepliedToUsers.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.reply_rounded,
-              context.l10n.userProfile_mostRepliedTo,
-            ),
-            const SizedBox(height: 8),
-            _buildUserChips(theme, summary.mostRepliedToUsers),
-            const SizedBox(height: 20),
-          ],
-
-          // 被谁赞的最多
-          if (summary.mostLikedByUsers.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.favorite_rounded,
-              context.l10n.userProfile_mostLikedBy,
-            ),
-            const SizedBox(height: 8),
-            _buildUserChips(theme, summary.mostLikedByUsers),
-            const SizedBox(height: 20),
-          ],
-
-          // 赞最多
-          if (summary.mostLikedUsers.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.thumb_up_rounded,
-              context.l10n.userProfile_mostLiked,
-            ),
-            const SizedBox(height: 8),
-            _buildUserChips(theme, summary.mostLikedUsers),
-            const SizedBox(height: 20),
-          ],
-
-          // 热门类别
-          if (summary.topCategories.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.category_rounded,
-              context.l10n.userProfile_topCategories,
-            ),
-            const SizedBox(height: 8),
-            ...summary.topCategories.map(
-              (cat) => _buildSummaryCategoryItem(theme, cat),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // 热门徽章
-          if (summary.badges.isNotEmpty) ...[
-            _buildSectionHeader(
-              theme,
-              Symbols.military_tech_rounded,
-              context.l10n.userProfile_topBadges,
-              onTap: () => _tabController.animateTo(2),
-            ),
-            const SizedBox(height: 8),
-            _buildBadgeChips(theme, summary.badges),
-            const SizedBox(height: 20),
-          ],
-
-          // 若所有列表都为空
-          if (!summary.canSeeSummaryStats &&
-              _user?.featuredTopic == null &&
-              summary.topics.isEmpty &&
-              summary.replies.isEmpty &&
-              summary.links.isEmpty &&
-              summary.mostRepliedToUsers.isEmpty &&
-              summary.mostLikedByUsers.isEmpty &&
-              summary.mostLikedUsers.isEmpty &&
-              summary.topCategories.isEmpty &&
-              summary.badges.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 80),
-                child: Column(
+                const SizedBox(height: 8),
+                SegmentedCardGroup(
                   children: [
-                    Icon(
-                      Symbols.summarize_rounded,
-                      size: 48,
-                      color: context.appColors.grey[400],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      context.l10n.userProfile_noSummary,
-                      style: TextStyle(color: context.appColors.grey[600]),
-                    ),
+                    _buildSummaryTopicItem(theme, _user!.featuredTopic!),
                   ],
                 ),
-              ),
+                const SizedBox(height: 20),
+              ],
             ),
-        ],
-      ),
+          // 热门话题
+          if (summary.topics.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.article_rounded,
+                  context.l10n.userProfile_topTopics,
+                  onTap: summary.canSeeUserActions
+                      ? () => _showActivity('4')
+                      : null,
+                ),
+                const SizedBox(height: 8),
+                SegmentedCardGroup(
+                  children: [
+                    for (final topic in summary.topics)
+                      _buildSummaryTopicItem(theme, topic),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 热门回复
+          if (summary.replies.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.chat_bubble_rounded,
+                  context.l10n.userProfile_topReplies,
+                  onTap: summary.canSeeUserActions
+                      ? () => _showActivity('5')
+                      : null,
+                ),
+                const SizedBox(height: 8),
+                SegmentedCardGroup(
+                  children: [
+                    for (final reply in summary.replies)
+                      _buildSummaryReplyItem(theme, reply),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 热门链接
+          if (summary.links.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.link_rounded,
+                  context.l10n.userProfile_topLinks,
+                ),
+                const SizedBox(height: 8),
+                SegmentedCardGroup(
+                  children: [
+                    for (final link in summary.links)
+                      _buildSummaryLinkItem(theme, link),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 最多回复至
+          if (summary.mostRepliedToUsers.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.reply_rounded,
+                  context.l10n.userProfile_mostRepliedTo,
+                ),
+                const SizedBox(height: 8),
+                _buildUserChips(theme, summary.mostRepliedToUsers),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 被谁赞的最多
+          if (summary.mostLikedByUsers.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.favorite_rounded,
+                  context.l10n.userProfile_mostLikedBy,
+                ),
+                const SizedBox(height: 8),
+                _buildUserChips(theme, summary.mostLikedByUsers),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 赞最多
+          if (summary.mostLikedUsers.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.thumb_up_rounded,
+                  context.l10n.userProfile_mostLiked,
+                ),
+                const SizedBox(height: 8),
+                _buildUserChips(theme, summary.mostLikedUsers),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 热门类别
+          if (summary.topCategories.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.category_rounded,
+                  context.l10n.userProfile_topCategories,
+                ),
+                const SizedBox(height: 8),
+                SegmentedCardGroup(
+                  children: [
+                    for (final category in summary.topCategories)
+                      _buildSummaryCategoryItem(theme, category),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+
+          // 热门徽章
+          if (summary.badges.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionHeader(
+                  theme,
+                  Symbols.military_tech_rounded,
+                  context.l10n.userProfile_topBadges,
+                  onTap: () => _tabController.animateTo(2),
+                ),
+                const SizedBox(height: 8),
+                _buildBadgeChips(theme, summary.badges),
+                const SizedBox(height: 20),
+              ],
+            ),
+        ]),
+
+        // 若所有列表都为空
+        if (!summary.canSeeSummaryStats &&
+            _user?.featuredTopic == null &&
+            summary.topics.isEmpty &&
+            summary.replies.isEmpty &&
+            summary.links.isEmpty &&
+            summary.mostRepliedToUsers.isEmpty &&
+            summary.mostLikedByUsers.isEmpty &&
+            summary.mostLikedUsers.isEmpty &&
+            summary.topCategories.isEmpty &&
+            summary.badges.isEmpty)
+          AppEmptyState(
+            icon: const Icon(Symbols.summarize_rounded),
+            title: context.l10n.userProfile_noSummary,
+          ),
+      ],
     );
   }
 
+  Widget _buildSummarySections(List<Widget> sections) => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide =
+          constraints.maxWidth >= UserProfileWideLayout.minWidth &&
+          constraints.maxWidth >=
+              MediaQuery.textScalerOf(context).scale(14) * 60;
+      if (!wide) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: sections,
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var column = 0; column < 2; column++) ...[
+            if (column > 0) const SizedBox(width: 24),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = column; index < sections.length; index += 2)
+                    sections[index],
+                ],
+              ),
+            ),
+          ],
+        ],
+      );
+    },
+  );
+
   Widget _buildSummaryStats(UserSummary summary) {
     final metrics = [
-      (summary.topicCount, context.l10n.userProfile_statsTopics, '4'),
-      (summary.postCount, context.l10n.userProfile_statsReplies, '5'),
-      (summary.likesReceived, context.l10n.userProfile_statsLikes, '2'),
-      (summary.likesGiven, context.l10n.profileStats_likesGiven, '1'),
+      (
+        summary.topicCount,
+        context.l10n.userProfile_statsTopics,
+        '4',
+        Symbols.article_rounded,
+      ),
+      (
+        summary.postCount,
+        context.l10n.userProfile_statsReplies,
+        '5',
+        Symbols.chat_bubble_rounded,
+      ),
+      (
+        summary.likesReceived,
+        context.l10n.userProfile_statsLikes,
+        '2',
+        Symbols.favorite_rounded,
+      ),
+      (
+        summary.likesGiven,
+        context.l10n.profileStats_likesGiven,
+        '1',
+        Symbols.thumb_up_rounded,
+      ),
     ];
+    final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns =
-            constraints.maxWidth < 320 ||
-                MediaQuery.textScalerOf(context).scale(14) > 20
+        final available =
+            constraints.maxWidth / MediaQuery.textScalerOf(context).scale(14);
+        final columns = available >= 52
+            ? 4
+            : available >= 14
             ? 2
-            : 4;
-        final width = (constraints.maxWidth - (columns - 1) * 16) / columns;
-        return Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: metrics
-              .map(
-                (metric) => SizedBox(
-                  width: width,
-                  child: _buildWideStat(
-                    NumberUtils.formatCount(metric.$1),
-                    metric.$2,
-                    metric.$1,
-                    onTap: summary.canSeeUserActions
-                        ? () => _showActivity(metric.$3)
-                        : null,
-                  ),
+            : 1;
+        return SegmentedCardGroup(
+          children: [
+            for (var row = 0; row < metrics.length; row += columns)
+              IntrinsicHeight(
+                child: Row(
+                  children: [
+                    for (
+                      var index = row;
+                      index < math.min(row + columns, metrics.length);
+                      index++
+                    ) ...[
+                      if (index > row)
+                        VerticalDivider(
+                          width: 1,
+                          indent: 16,
+                          endIndent: 16,
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: summary.canSeeUserActions
+                              ? () => _showActivity(metrics[index].$3)
+                              : null,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      metrics[index].$4,
+                                      size: 18,
+                                      color: context.emphasis.accent,
+                                    ),
+                                    const Spacer(),
+                                    if (summary.canSeeUserActions)
+                                      Icon(
+                                        Symbols.chevron_right_rounded,
+                                        size: 16,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Tooltip(
+                                  message: '${metrics[index].$1}',
+                                  child: Text(
+                                    NumberUtils.formatCount(metrics[index].$1),
+                                    style: theme.textTheme.headlineSmall
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  metrics[index].$2,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              )
-              .toList(),
+              ),
+          ],
         );
       },
     );
@@ -2692,11 +3046,29 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildSummaryMetric(String label, String value) {
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      trailing: Text(value),
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.titleSmall,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2731,13 +3103,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildSummaryTopicItem(ThemeData theme, SummaryTopic topic) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _openTopic(topicId: topic.id, initialTitle: topic.title),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Expanded(
@@ -2776,8 +3148,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topic = reply.topic;
     final targetTopicId = topic?.id ?? reply.topicId;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: targetTopicId != null
@@ -2788,7 +3160,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               )
             : null,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Expanded(
@@ -2827,8 +3199,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildSummaryLinkItem(ThemeData theme, SummaryLink link) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return Material(
+      color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
@@ -2843,7 +3215,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           }
         },
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Icon(
@@ -2969,45 +3341,63 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       fallback: theme.colorScheme.primary,
     );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: ShapeDecoration(
-                color: color,
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(3),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => openCategoryPage(context, cat.id, useWorkspace: false),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: ShapeDecoration(
+                  color: color,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(3),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                cat.name,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      cat.name,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          context.l10n.userProfile_catTopicCount(
+                            cat.topicCount,
+                          ),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          context.l10n.userProfile_catPostCount(cat.postCount),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-            Text(
-              context.l10n.userProfile_catTopicCount(cat.topicCount),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              context.l10n.userProfile_catPostCount(cat.postCount),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              const Icon(Symbols.chevron_right_rounded, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -3065,7 +3455,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && reactions == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(
+        type: UserActivitySkeletonType.reaction,
+      );
     }
 
     // 空状态
@@ -3103,24 +3495,24 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: M3eRefreshIndicator(
-        onRefresh: () => _loadReactions(),
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: reactions.length + 1,
-          itemBuilder: (context, index) {
-            if (index == reactions.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore:
-                    _reactionsLoadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _reactionsLoadMoreFailed,
-                onRetry: _loadMoreReactions,
-              );
-            }
-            return _buildReactionItem(reactions[index]);
-          },
-        ),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: reactions.length + 1,
+        itemBuilder: (context, index) {
+          if (index == reactions.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore:
+                  _reactionsLoadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _reactionsLoadMoreFailed,
+              onRetry: _loadMoreReactions,
+            );
+          }
+          return _buildReactionItem(reactions[index], (
+            index: index,
+            count: reactions.length,
+          ));
+        },
       ),
     );
   }
@@ -3133,7 +3525,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && boosts == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.boost);
     }
 
     // 空状态
@@ -3169,24 +3561,23 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: M3eRefreshIndicator(
-        onRefresh: () => _loadBoosts(),
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: boosts.length + 1,
-          itemBuilder: (context, index) {
-            if (index == boosts.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore:
-                    _boostsLoadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _boostsLoadMoreFailed,
-                onRetry: _loadMoreBoosts,
-              );
-            }
-            return _buildBoostItem(boosts[index]);
-          },
-        ),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: boosts.length + 1,
+        itemBuilder: (context, index) {
+          if (index == boosts.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore: _boostsLoadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _boostsLoadMoreFailed,
+              onRetry: _loadMoreBoosts,
+            );
+          }
+          return _buildBoostItem(boosts[index], (
+            index: index,
+            count: boosts.length,
+          ));
+        },
       ),
     );
   }
@@ -3196,36 +3587,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
+    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
 
     // 优先检查 loading 状态
     if (isLoading && topics == null) {
-      return const TopicListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.topic);
     }
 
     // 空状态
     if (topics == null || topics.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Symbols.how_to_vote_rounded,
-              size: 48,
-              color: context.appColors.grey[400],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              context.l10n.userProfile_noVotes,
-              style: TextStyle(color: context.appColors.grey[600]),
-            ),
-          ],
-        ),
+      return AppEmptyState(
+        icon: const Icon(Symbols.how_to_vote_rounded),
+        title: context.l10n.userProfile_noVotes,
       );
     }
 
     final enableLongPress = ref.watch(
       preferencesProvider.select((p) => p.longPressPreview),
     );
+    final categories = ref.watch(categoryMapProvider).value ?? const {};
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -3239,41 +3619,58 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: M3eRefreshIndicator(
-        onRefresh: () => _loadVotes(),
-        child: TopicCardPrewarmScope(
-          topics: topics,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: topics.length + 1,
-            itemBuilder: (context, index) {
-              if (index == topics.length) {
-                return PagedListFooter(
-                  hasMore: hasMore,
-                  isLoadingMore:
-                      _votesLoadMoreCoordinator.isRunning && isLoading,
-                  isLoadMoreFailed: _votesLoadMoreFailed,
-                  onRetry: _loadMoreVotes,
-                );
-              }
-              final topic = topics[index];
-              return buildTopicItem(
-                context: context,
-                topic: topic,
-                isSelected: false,
-                onTap: () => _openTopic(
-                  topicId: topic.id,
-                  initialTitle: topic.title,
-                  scrollToPostNumber:
-                      ref.read(preferencesProvider).defaultNestedView
-                      ? null
-                      : topic.lastReadPostNumber,
-                ),
-                enableLongPress: enableLongPress,
-              );
-            },
-          ),
-        ),
+      child: ListView.builder(
+        padding: padding,
+        itemCount: topics.length + 1,
+        itemBuilder: (context, index) {
+          if (index == topics.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _votesLoadMoreFailed,
+              onRetry: _loadMoreVotes,
+            );
+          }
+          final topic = topics[index];
+          void openTopic() => _openTopic(
+            topicId: topic.id,
+            initialTitle: topic.title,
+            scrollToPostNumber: ref.read(preferencesProvider).defaultNestedView
+                ? null
+                : topic.lastReadPostNumber,
+          );
+          return MorphingDialogAnchor(
+            enabled: enableLongPress,
+            bottomGap: index == topics.length - 1
+                ? 0
+                : SegmentedCardItem.gapOf(context, 4),
+            builder: (cardContext) => ActivityTopicCard(
+              topic: topic,
+              position: (index: index, count: topics.length),
+              categories: categories,
+              onTap: openTopic,
+              onPreviewIntent: enableLongPress
+                  ? () => TopicPreviewPreloader.preload(
+                      ref.read(discourseServiceProvider),
+                      topic.id,
+                    )
+                  : null,
+              onLongPress: enableLongPress
+                  ? () => TopicPreviewDialog.show(
+                      context,
+                      topic: topic,
+                      onOpen: openTopic,
+                      sourceContext: cardContext,
+                      anchorColor: PageBackgroundScope.contentColor(
+                        context,
+                        Theme.of(context).cardTheme.color ??
+                            Theme.of(context).colorScheme.surfaceContainerLow,
+                      ),
+                    )
+                  : null,
+            ),
+          );
+        },
       ),
     );
   }
@@ -3322,388 +3719,131 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: M3eRefreshIndicator(
-        onRefresh: () => _loadSolved(),
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          itemCount: posts.length + 1,
-          itemBuilder: (context, index) {
-            if (index == posts.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore:
-                    _solvedLoadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _solvedLoadMoreFailed,
-                onRetry: _loadMoreSolved,
-              );
-            }
-            return _buildSolvedItem(posts[index]);
-          },
-        ),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: posts.length + 1,
+        itemBuilder: (context, index) {
+          if (index == posts.length) {
+            return PagedListFooter(
+              hasMore: hasMore,
+              isLoadingMore: _solvedLoadMoreCoordinator.isRunning && isLoading,
+              isLoadMoreFailed: _solvedLoadMoreFailed,
+              onRetry: _loadMoreSolved,
+            );
+          }
+          return _buildSolvedItem(posts[index], (
+            index: index,
+            count: posts.length,
+          ));
+        },
       ),
     );
   }
 
-  Widget _buildBoostItem(UserBoost boost) {
-    final theme = Theme.of(context);
-    final boostText = BoostContentParser.parse(boost.cooked).displayText;
+  TopicUser get _activityOwner => TopicUser(
+    id: _user!.id,
+    username: _user!.username,
+    name: _user!.name,
+    avatarTemplate: _user!.avatarTemplate ?? '',
+  );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: boost.topicId,
-          scrollToPostNumber: boost.postNumber,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：Boost 内容和时间
-              Row(
-                children: [
-                  Icon(
-                    Symbols.rocket_launch_rounded,
-                    size: 16,
-                    color: context.emphasis.accent,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      boostText.isNotEmpty
-                          ? boostText
-                          : context.l10n.userProfile_boosted,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: context.emphasis.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (boost.createdAt != null) ...[
-                    const SizedBox(width: 8),
-                    RelativeTimeText(
-                      dateTime: boost.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 话题标题
-              if (boost.topicTitle != null && boost.topicTitle!.isNotEmpty)
-                Text(
-                  boost.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 帖子内容摘要
-              if (boost.excerpt != null && boost.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  boost.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+  Widget _buildBoostItem(UserBoost boost, ({int index, int count}) position) {
+    final text = BoostContentParser.parse(boost.cooked).displayText;
+    return ActivityPostCard(
+      position: position,
+      author: boost.author,
+      title: boost.topicTitle ?? '',
+      actionLabel: context.l10n.userProfile_tabBoosts,
+      actionIcon: Symbols.rocket_launch_rounded,
+      occurredAt: boost.createdAt,
+      postNumber: boost.postNumber,
+      excerpt: boost.excerpt,
+      categoryId: boost.categoryId,
+      categories: ref.watch(categoryMapProvider).value ?? const {},
+      boostNote: text.isEmpty
+          ? null
+          : ActivityBoostNote(actor: _activityOwner, text: text),
+      onTap: () => _openTopic(
+        topicId: boost.topicId,
+        scrollToPostNumber: boost.postNumber,
       ),
     );
   }
 
-  Widget _buildSolvedItem(SolvedPost post) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
+  Widget _buildSolvedItem(SolvedPost post, ({int index, int count}) position) =>
+      ActivityPostCard(
+        position: position,
+        author: post.author ?? _activityOwner,
+        title: post.topicTitle ?? '',
+        actionLabel: context.l10n.post_solutionAccepted,
+        actionIcon: Symbols.check_circle_rounded,
+        accepted: true,
+        occurredAt: post.createdAt,
+        postNumber: post.postNumber,
+        excerpt: post.excerpt,
+        categoryId: post.categoryId,
+        categories: ref.watch(categoryMapProvider).value ?? const {},
         onTap: () => _openTopic(
           topicId: post.topicId,
           scrollToPostNumber: post.postNumber,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：已解决标记和时间
-              Row(
-                children: [
-                  Icon(
-                    Symbols.check_circle_rounded,
-                    size: 16,
-                    color: context.emphasis.selected,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.userProfile_solvedLabel,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: context.emphasis.selected,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (post.createdAt != null)
-                    RelativeTimeText(
-                      dateTime: post.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
+      );
 
-              // 话题标题
-              if (post.topicTitle != null && post.topicTitle!.isNotEmpty)
-                Text(
-                  post.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 被采纳回答摘要
-              if (post.excerpt != null && post.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  post.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+  Widget _buildActionItem(
+    UserAction action,
+    ({int index, int count}) position,
+  ) {
+    final ownPost =
+        action.actionType == UserActionType.newTopic ||
+        action.actionType == UserActionType.reply;
+    final author = action.author ?? (ownPost ? _activityOwner : null);
+    final actor = TopicUser(
+      id: 0,
+      username: action.username ?? _user!.username,
+      avatarTemplate: action.avatarTemplate ?? _user!.avatarTemplate ?? '',
+    );
+    return ActivityPostCard(
+      position: position,
+      author: author,
+      title: action.title,
+      actionLabel: action.actionType == UserActionType.wasLiked
+          ? context.l10n.userProfile_actionLike
+          : _getActionLabel(action.actionType),
+      actionIcon: _getActionIcon(action.actionType),
+      actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
+      occurredAt: action.actingAt,
+      postNumber: action.postNumber,
+      excerpt: action.excerpt,
+      quoteExcerpt: !ownPost,
+      categoryId: action.categoryId,
+      categories: ref.watch(categoryMapProvider).value ?? const {},
+      onTap: () => _openTopic(
+        topicId: action.topicId,
+        scrollToPostNumber: action.postNumber,
       ),
     );
   }
 
-  Widget _buildActionItem(UserAction action) {
-    final theme = Theme.of(context);
-    final actor = action.username ?? _user!.username;
-    final avatar = action.avatarTemplate == null
-        ? _user!.getAvatarUrl(size: 96)
-        : action.getAvatarUrl(size: 96);
-    return Material(
-      color: PageBackgroundScope.contentColor(
-        context,
-        theme.colorScheme.surface,
-      ),
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: action.topicId,
-          scrollToPostNumber: action.postNumber,
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-              ),
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SmartAvatar(
-                imageUrl: avatar,
-                radius: 20,
-                fallbackText: actor,
-                backgroundColor: theme.colorScheme.secondaryContainer,
-                foregroundColor: theme.colorScheme.onSecondaryContainer,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            actor,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        if (action.actingAt != null)
-                          RelativeTimeText(
-                            dateTime: action.actingAt,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      action.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (action.excerpt?.isNotEmpty == true) ...[
-                      const SizedBox(height: 6),
-                      CollapsedHtmlContent(
-                        html: action.excerpt!,
-                        maxLines: 4,
-                        textStyle: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Icon(
-                          _getActionIcon(action.actionType),
-                          size: 16,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _getActionLabel(action.actionType),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 获取 emoji 图片 URL（未加载完成时返回空字符串，由 errorBuilder 处理）
-  String _getEmojiUrl(String emojiName) {
-    return EmojiHandler().getEmojiUrl(emojiName);
-  }
-
-  Widget _buildReactionItem(UserReaction reaction) {
-    final theme = Theme.of(context);
-    final emojiUrl = reaction.reactionValue != null
-        ? _getEmojiUrl(reaction.reactionValue!)
-        : null;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(16),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => _openTopic(
-          topicId: reaction.topicId,
-          scrollToPostNumber: reaction.postNumber,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部：回应 emoji 和时间
-              Row(
-                children: [
-                  if (emojiUrl != null)
-                    Image(
-                      image: emojiImageProvider(emojiUrl),
-                      width: 20,
-                      height: 20,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Symbols.emoji_emotions_rounded, size: 20),
-                    )
-                  else
-                    const Icon(Symbols.emoji_emotions_rounded, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.userProfile_reacted,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (reaction.createdAt != null)
-                    RelativeTimeText(
-                      dateTime: reaction.createdAt,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // 话题标题
-              if (reaction.topicTitle != null &&
-                  reaction.topicTitle!.isNotEmpty)
-                Text(
-                  reaction.topicTitle!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-
-              // 帖子内容摘要
-              if (reaction.excerpt != null && reaction.excerpt!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  reaction.excerpt!.replaceAll(RegExp(r'<[^>]*>'), ''),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildReactionItem(
+    UserReaction reaction,
+    ({int index, int count}) position,
+  ) => ActivityPostCard(
+    position: position,
+    author: reaction.author,
+    title: reaction.topicTitle ?? '',
+    actionLabel: context.l10n.userProfile_tabReactions,
+    occurredAt: reaction.createdAt,
+    postNumber: reaction.postNumber,
+    excerpt: reaction.excerpt,
+    quoteExcerpt: true,
+    reactionId: reaction.reactionValue,
+    categoryId: reaction.categoryId,
+    categories: ref.watch(categoryMapProvider).value ?? const {},
+    onTap: () => _openTopic(
+      topicId: reaction.topicId,
+      scrollToPostNumber: reaction.postNumber,
+    ),
+  );
 
   IconData _getActionIcon(int? type) {
     switch (type) {
@@ -3720,6 +3860,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  String _getEmojiUrl(String emojiName) =>
+      EmojiHandler().getEmojiUrl(emojiName);
+
   String _getActionLabel(int? type) {
     switch (type) {
       case UserActionType.like:
@@ -3729,7 +3872,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       case UserActionType.newTopic:
         return S.current.userProfile_actionCreatedTopic;
       case UserActionType.reply:
-        return S.current.userProfile_actionReplied;
+        return S.current.common_reply;
       default:
         return S.current.userProfile_actionDefault;
     }

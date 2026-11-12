@@ -184,9 +184,13 @@ ThemeData buildAppTheme(
       SegmentedCardStyle(
         mode: switch (style.surfaces) {
           SurfaceStyle.filled => SegmentedCardMode.segmented,
-          SurfaceStyle.outlined => SegmentedCardMode.outlined,
+          SurfaceStyle.outlined ||
+          SurfaceStyle.raised => SegmentedCardMode.outlined,
           SurfaceStyle.flat => SegmentedCardMode.flat,
         },
+        background: style.surfaces == SurfaceStyle.raised
+            ? raisedSurfaceColor(scheme)
+            : null,
       ),
     ],
     // year2023: false 启用进度条/滑块的 M3E 翻新(圆角端点/track gap/
@@ -370,11 +374,25 @@ ThemeData _applyStyle(
   final control = ink ? scheme.onSurface : scheme.primary;
   final onControl = ink ? scheme.surface : scheme.onPrimary;
   final hairline = scheme.outlineVariant;
-  final flat = style.surfaces == SurfaceStyle.flat;
-  // 容器底色：描边 = 与页面同色；平铺 = 透明（让纸张纹理透出）
-  final cardColor = flat ? Colors.transparent : scheme.surface;
-  // 浮层（对话框、弹层、菜单）需要实底：平铺风格取比纸面略亮的一层
-  final overlayColor = flat ? scheme.surfaceContainerLowest : scheme.surface;
+  final filled = style.surfaces == SurfaceStyle.filled;
+  // 容器底色：色块 = 沿用 Material 的容器色；描边 = 与页面同色；
+  // 平铺 = 透明（让纸张纹理透出）；浮起 = 比页面底亮一级
+  final cardColor = switch (style.surfaces) {
+    SurfaceStyle.filled => base.cardTheme.color,
+    SurfaceStyle.outlined => scheme.surface,
+    SurfaceStyle.flat => Colors.transparent,
+    SurfaceStyle.raised => raisedSurfaceColor(scheme),
+  };
+  // 浮层（对话框、弹层、菜单）需要实底：色块风格沿用 Material 默认；
+  // 平铺风格取比纸面略亮的一层，浮起风格再比容器高一级
+  final overlayColor = switch (style.surfaces) {
+    SurfaceStyle.filled => null,
+    SurfaceStyle.outlined => scheme.surface,
+    SurfaceStyle.flat => scheme.surfaceContainerLowest,
+    SurfaceStyle.raised => raisedOverlayColor(scheme),
+  };
+  // 栏（底部导航、侧栏）：色块风格靠 Material 的栏底色区分，其余与页面同色
+  final barColor = filled ? null : scheme.surface;
   final elevation = style.shadows ? null : 0.0;
   final hairlineSide = BorderSide(color: hairline);
 
@@ -463,7 +481,7 @@ ThemeData _applyStyle(
       elevation: 0,
       shape: RoundedSuperellipseBorder(
         borderRadius: shapes.borderRadius(12),
-        side: hairlineSide,
+        side: filled ? BorderSide.none : hairlineSide,
       ),
     ),
     dialogTheme: base.dialogTheme.copyWith(
@@ -493,7 +511,9 @@ ThemeData _applyStyle(
     ),
     menuTheme: MenuThemeData(
       style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(overlayColor),
+        backgroundColor: overlayColor == null
+            ? null
+            : WidgetStatePropertyAll(overlayColor),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: WidgetStatePropertyAll(elevation),
         shape: WidgetStatePropertyAll(
@@ -577,7 +597,7 @@ ThemeData _applyStyle(
       ),
     ),
     navigationBarTheme: base.navigationBarTheme.copyWith(
-      backgroundColor: scheme.surface,
+      backgroundColor: barColor,
       surfaceTintColor: Colors.transparent,
       elevation: elevation,
       indicatorColor: navIndicatorColor,
@@ -586,7 +606,7 @@ ThemeData _applyStyle(
       labelTextStyle: navTint || navBar ? navLabel : null,
     ),
     navigationRailTheme: base.navigationRailTheme.copyWith(
-      backgroundColor: scheme.surface,
+      backgroundColor: barColor,
       indicatorColor: navIndicatorColor,
       indicatorShape: navIndicatorShape,
       selectedIconTheme: IconThemeData(color: scheme.onSurface),

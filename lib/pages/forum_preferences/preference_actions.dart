@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,9 @@ import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/user/ignore_duration_picker.dart';
 import '../webview_page.dart';
 import 'preference_controls.dart';
+import 'preference_fields.dart';
+import 'status_dialog.dart';
+import '../chat/new_chat_sheet.dart';
 
 class PreferenceActions extends StatefulWidget {
   const PreferenceActions({
@@ -100,19 +104,47 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     }
   }
 
-  Widget _heading(String title) => Padding(
-    padding: const EdgeInsets.only(top: 20, bottom: 8),
-    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+  Widget _group(String title, List<Widget> children) => Padding(
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (title.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: context.emphasis.accent),
+            ),
+          ),
+        SegmentedCardGroup(children: children),
+      ],
+    ),
   );
   Widget _action(
     String title,
     VoidCallback action, {
     String? subtitle,
     IconData? icon,
+    Widget? leading,
+    bool destructive = false,
   }) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: icon == null ? null : Icon(icon),
-    title: Text(title),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+    leading:
+        leading ??
+        Icon(
+          icon ?? preferenceSectionIcon(widget.section),
+          color: destructive
+              ? Theme.of(context).colorScheme.error
+              : context.emphasis.accent,
+        ),
+    title: Text(
+      title,
+      style: destructive
+          ? TextStyle(color: Theme.of(context).colorScheme.error)
+          : null,
+    ),
     subtitle: subtitle == null ? null : Text(subtitle),
     trailing: const Icon(Symbols.chevron_right_rounded),
     onTap: _busy ? null : action,
@@ -204,181 +236,218 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     final user = widget.data.user;
     final avatar = User.fromJson(user).getAvatarUrl(size: 144);
     return [
-      _action(
-        l.forumPrefs_title,
-        _chooseTitle,
-        subtitle: user['title'] as String?,
-      ),
-      if (user['can_edit_username'] == true)
-        _action(l.forumPrefs_username, _changeUsername, subtitle: _username),
-      _heading(l.forumPrefs_avatar),
-      Row(
-        children: [
-          SmartAvatar(imageUrl: avatar, radius: 32, fallbackText: _username),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Wrap(
-              spacing: 8,
-              children: [
-                if (widget
-                            .data
-                            .settings['discourse_connect_overrides_avatar'] !=
-                        true &&
-                    widget.data.settings['auth_overrides_avatar'] != true) ...[
-                  OutlinedButton(
-                    onPressed: _busy ? null : _avatar,
-                    child: Text(l.forumPrefs_upload),
-                  ),
-                  TextButton(
-                    onPressed: _busy ? null : () => _avatar(reset: true),
-                    child: Text(l.common_reset),
-                  ),
-                ],
-              ],
-            ),
+      _group(l.forumPrefs_avatar, [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SmartAvatar(
+                imageUrl: avatar,
+                radius: 32,
+                fallbackText: _username,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    if (widget
+                                .data
+                                .settings['discourse_connect_overrides_avatar'] !=
+                            true &&
+                        widget.data.settings['auth_overrides_avatar'] !=
+                            true) ...[
+                      OutlinedButton(
+                        onPressed: _busy ? null : _avatar,
+                        child: Text(l.forumPrefs_upload),
+                      ),
+                      TextButton(
+                        onPressed: _busy ? null : () => _avatar(reset: true),
+                        child: Text(l.common_reset),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      _heading(l.forumPrefs_email),
-      if (_emails == null && _error == null) const M3eLinearProgress(),
-      if (_emails != null) ...[
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('${_emails!['email'] ?? ''}'),
-          trailing: user['can_edit_email'] == true
-              ? IconButton(
-                  tooltip: l.common_edit,
-                  icon: const Icon(Symbols.edit_rounded),
-                  onPressed: _busy ? null : _changeEmail,
-                )
-              : null,
         ),
-        for (final email in _emails!['secondary_emails'] as List? ?? [])
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('$email'),
-            trailing: Wrap(
-              children: [
-                if (user['can_edit_email'] == true)
-                  IconButton(
-                    tooltip: l.forumPrefs_makePrimary,
-                    onPressed: _busy
-                        ? null
-                        : () => _emailAction('$email', primary: true),
-                    icon: const Icon(Symbols.star_rounded),
-                  ),
-                if (user['can_edit_email'] == true)
-                  IconButton(
-                    tooltip: l.common_remove,
-                    onPressed: _busy ? null : () => _emailAction('$email'),
-                    icon: const Icon(Symbols.delete_rounded),
-                  ),
-              ],
+      ]),
+      if (widget.data.settings['enable_user_status'] == true)
+        _group('', [
+          _action(
+            l.forumPrefs_status,
+            _editStatus,
+            subtitle:
+                (user['status'] as Map?)?['description'] as String? ??
+                l.forumPrefs_statusPrompt,
+            leading: PreferenceStatusEmoji(
+              (user['status'] as Map?)?['emoji'] as String? ?? 'speech_balloon',
             ),
           ),
-        for (final email in _emails!['unconfirmed_emails'] as List? ?? [])
+        ]),
+      _group('', [
+        _action(
+          l.forumPrefs_title,
+          _chooseTitle,
+          icon: Symbols.badge_rounded,
+          subtitle: user['title'] as String?,
+        ),
+        if (user['can_edit_username'] == true)
+          _action(
+            l.forumPrefs_username,
+            _changeUsername,
+            subtitle: _username,
+            icon: Symbols.alternate_email_rounded,
+          ),
+      ]),
+      _group(l.forumPrefs_email, [
+        if (_emails == null && _error == null) const M3eLinearProgress(),
+        if (_emails != null) ...[
           ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('$email'),
-            subtitle: Text(l.forumPrefs_pendingEmail),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: Text('${_emails!['email'] ?? ''}'),
             trailing: user['can_edit_email'] == true
                 ? IconButton(
-                    tooltip: l.common_remove,
-                    onPressed: _busy ? null : () => _emailAction('$email'),
-                    icon: const Icon(Symbols.delete_rounded),
+                    tooltip: l.common_edit,
+                    icon: const Icon(Symbols.edit_rounded),
+                    onPressed: _busy ? null : _changeEmail,
                   )
                 : null,
           ),
-      ],
-      if (user['can_edit_email'] == true &&
-          ((widget.data.settings['max_allowed_secondary_emails'] as num?) ??
-                  0) >
-              0)
-        _action(l.forumPrefs_addEmail, () => _changeEmail(add: true)),
-      if (widget.data.settings['enable_user_status'] == true) ...[
-        _heading(l.forumPrefs_status),
-        _action(
-          l.forumPrefs_status,
-          _editStatus,
-          subtitle: (user['status'] as Map?)?['description'] as String?,
-        ),
-      ],
-      if (widget.data.records('associated_accounts').isNotEmpty)
-        _heading(l.forumPrefs_connectedAccounts),
-      for (final account in widget.data.records('associated_accounts'))
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('${account['name'] ?? account['provider_name']}'),
-          subtitle: Text('${account['description'] ?? ''}'),
-          trailing: TextButton(
-            onPressed: _busy
-                ? null
-                : () => _run(() async {
-                    if (!await confirmPreferenceAction(
-                      context,
-                      l.forumPrefs_revokeConfirm,
-                    )) {
-                      return;
-                    }
-                    await _service.revokePreferenceAccount(
-                      _username,
-                      '${account['name'] ?? account['provider_name']}',
-                    );
-                    await widget.onChanged();
-                  }),
-            child: Text(l.forumPrefs_revoke),
-          ),
-        ),
-      if ((widget.data.site['auth_providers'] as List? ?? []).isNotEmpty)
-        _action(
-          l.forumPrefs_connectedAccountAdd,
-          () => _run(() async {
-            await WebViewPage.open(
-              context,
-              UrlHelper.resolveUrl(
-                '/u/${Uri.encodeComponent(_username)}/preferences/account',
+          for (final email in _emails!['secondary_emails'] as List? ?? [])
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: Text('$email'),
+              trailing: Wrap(
+                children: [
+                  if (user['can_edit_email'] == true)
+                    IconButton(
+                      tooltip: l.forumPrefs_makePrimary,
+                      onPressed: _busy
+                          ? null
+                          : () => _emailAction('$email', primary: true),
+                      icon: const Icon(Symbols.star_rounded),
+                    ),
+                  if (user['can_edit_email'] == true)
+                    IconButton(
+                      tooltip: l.common_remove,
+                      onPressed: _busy ? null : () => _emailAction('$email'),
+                      icon: const Icon(Symbols.delete_rounded),
+                    ),
+                ],
               ),
-              title: l.forumPrefs_connectedAccounts,
-            );
-            await widget.onChanged();
-          }),
-        ),
-      _action(
-        l.forumPrefs_exportArchive,
-        () => _run(() async {
-          if (!await confirmPreferenceAction(
-            context,
-            l.forumPrefs_exportArchive,
-            message: l.forumPrefs_exportArchiveHelp,
-          )) {
-            return;
-          }
-          await _service.exportPreferenceArchive();
-          if (mounted) ToastService.showSuccess(l.forumPrefs_archiveRequested);
-        }),
-      ),
-      if (widget.data.settings['enable_discourse_connect'] != true &&
-          PreloadedDataService().currentUserSync?['can_delete_account'] == true)
+            ),
+          for (final email in _emails!['unconfirmed_emails'] as List? ?? [])
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: Text('$email'),
+              subtitle: Text(l.forumPrefs_pendingEmail),
+              trailing: user['can_edit_email'] == true
+                  ? IconButton(
+                      tooltip: l.common_remove,
+                      onPressed: _busy ? null : () => _emailAction('$email'),
+                      icon: const Icon(Symbols.delete_rounded),
+                    )
+                  : null,
+            ),
+        ],
+        if (user['can_edit_email'] == true &&
+            ((widget.data.settings['max_allowed_secondary_emails'] as num?) ??
+                    0) >
+                0)
+          _action(
+            l.forumPrefs_addEmail,
+            () => _changeEmail(add: true),
+            icon: Symbols.add_rounded,
+          ),
+      ]),
+      if (widget.data.records('associated_accounts').isNotEmpty ||
+          (widget.data.site['auth_providers'] as List? ?? []).isNotEmpty)
+        _group(l.forumPrefs_connectedAccounts, [
+          for (final account in widget.data.records('associated_accounts'))
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: Text('${account['name'] ?? account['provider_name']}'),
+              subtitle: Text('${account['description'] ?? ''}'),
+              trailing: TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run(() async {
+                        if (!await confirmPreferenceAction(
+                          context,
+                          l.forumPrefs_revokeConfirm,
+                        )) {
+                          return;
+                        }
+                        await _service.revokePreferenceAccount(
+                          _username,
+                          '${account['name'] ?? account['provider_name']}',
+                        );
+                        await widget.onChanged();
+                      }),
+                child: Text(l.forumPrefs_revoke),
+              ),
+            ),
+          if ((widget.data.site['auth_providers'] as List? ?? []).isNotEmpty)
+            _action(
+              l.forumPrefs_connectedAccountAdd,
+              () => _run(() async {
+                await WebViewPage.open(
+                  context,
+                  UrlHelper.resolveUrl(
+                    '/u/${Uri.encodeComponent(_username)}/preferences/account',
+                  ),
+                  title: l.forumPrefs_connectedAccounts,
+                );
+                await widget.onChanged();
+              }),
+            ),
+        ]),
+      _group(l.forumPrefs_accountData, [
         _action(
-          l.forumPrefs_deleteAccount,
+          l.forumPrefs_exportArchive,
+          icon: Symbols.download_rounded,
           () => _run(() async {
-            final deleted = await editPreferenceValue(
+            if (!await confirmPreferenceAction(
               context,
-              title: l.forumPrefs_deleteAccount,
-              help: l.forumPrefs_deleteAccountHelp,
-              submit: (value) async {
-                if (value != _username) {
-                  throw FormatException(l.forumPrefs_invalidValue);
-                }
-                await _service.deletePreferenceAccount(_username);
-              },
-            );
-            if (deleted) {
-              await _service.logout(callApi: false);
-              await widget.onChanged(signedOut: true);
+              l.forumPrefs_exportArchive,
+              message: l.forumPrefs_exportArchiveHelp,
+            )) {
+              return;
+            }
+            await _service.exportPreferenceArchive();
+            if (mounted) {
+              ToastService.showSuccess(l.forumPrefs_archiveRequested);
             }
           }),
         ),
+        if (widget.data.settings['enable_discourse_connect'] != true &&
+            PreloadedDataService().currentUserSync?['can_delete_account'] ==
+                true)
+          _action(
+            l.forumPrefs_deleteAccount,
+            destructive: true,
+            icon: Symbols.delete_outline_rounded,
+            () => _run(() async {
+              final deleted = await editPreferenceValue(
+                context,
+                title: l.forumPrefs_deleteAccount,
+                help: l.forumPrefs_deleteAccountHelp,
+                submit: (value) async {
+                  if (value != _username) {
+                    throw FormatException(l.forumPrefs_invalidValue);
+                  }
+                  await _service.deletePreferenceAccount(_username);
+                },
+              );
+              if (deleted) {
+                await _service.logout(callApi: false);
+                await widget.onChanged(signedOut: true);
+              }
+            }),
+          ),
+      ]),
     ];
   }
 
@@ -414,7 +483,8 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     );
     final saved = await showAppDialog<bool>(
       context: context,
-      builder: (_) => _StatusDialog(
+      barrierDismissible: false,
+      builder: (_) => StatusDialog(
         status: status,
         submit: (value) =>
             _service.saveForumPreferences(_username, {'status': value}),
@@ -424,39 +494,44 @@ class _PreferenceActionsState extends State<PreferenceActions> {
   });
 
   List<Widget> _profile() => [
-    _heading(context.l10n.forumPrefs_featuredTopic),
-    _action(
-      context.l10n.forumPrefs_featuredTopic,
-      () => _run(() async {
-        final saved = await editPreferenceValue(
-          context,
-          title: context.l10n.forumPrefs_featuredTopic,
-          help: context.l10n.forumPrefs_featuredTopicHint,
-          submit: (value) async {
-            final id =
-                int.tryParse(value) ??
-                DiscourseUrlParser.parseTopic(value)?.topicId;
-            if (id == null || id <= 0) {
-              throw FormatException(context.l10n.forumPrefs_invalidValue);
-            }
-            await _service.featureProfileTopic(_username, id);
-          },
-        );
-        if (saved) await widget.onChanged();
-      }),
-      subtitle:
-          (widget.data.user['featured_topic'] as Map?)?['title'] as String?,
+    SegmentedCardGroup(
+      children: [
+        _action(
+          context.l10n.forumPrefs_featuredTopic,
+          () => _run(() async {
+            final saved = await editPreferenceValue(
+              context,
+              title: context.l10n.forumPrefs_featuredTopic,
+              help: context.l10n.forumPrefs_featuredTopicHint,
+              submit: (value) async {
+                final id =
+                    int.tryParse(value) ??
+                    DiscourseUrlParser.parseTopic(value)?.topicId;
+                if (id == null || id <= 0) {
+                  throw FormatException(context.l10n.forumPrefs_invalidValue);
+                }
+                await _service.featureProfileTopic(_username, id);
+              },
+            );
+            if (saved) await widget.onChanged();
+          }),
+          icon: Symbols.push_pin_rounded,
+          subtitle:
+              (widget.data.user['featured_topic'] as Map?)?['title'] as String?,
+        ),
+        if (widget.data.user['featured_topic'] != null)
+          TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _run(() async {
+                    await _service.featureProfileTopic(_username, null);
+                    await widget.onChanged();
+                  }),
+            icon: const Icon(Symbols.delete_outline_rounded),
+            label: Text(context.l10n.common_remove),
+          ),
+      ],
     ),
-    if (widget.data.user['featured_topic'] != null)
-      TextButton(
-        onPressed: _busy
-            ? null
-            : () => _run(() async {
-                await _service.featureProfileTopic(_username, null);
-                await widget.onChanged();
-              }),
-        child: Text(context.l10n.common_remove),
-      ),
   ];
 
   Future<void> _loadFactors() => _run(() async {
@@ -595,256 +670,281 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     final l = context.l10n;
     return [
       if (_localLogin) ...[
-        _heading(l.forumPrefs_password),
-        _action(
-          l.forumPrefs_resetPassword,
-          () => _run(() async {
-            await _service.sendPreferencePasswordReset(_username);
-            if (mounted) {
-              ToastService.showSuccess(
-                context.l10n.forumPrefs_confirmationSent,
-              );
-            }
-          }),
-        ),
-        if (widget.data.user['no_password'] != true &&
-            (widget.data.records('associated_accounts').isNotEmpty ||
-                widget.data.records('user_passkeys').isNotEmpty))
+        _group(l.forumPrefs_password, [
           _action(
-            l.forumPrefs_removePassword,
+            l.forumPrefs_resetPassword,
             () => _run(() async {
-              if (!await confirmPreferenceAction(
-                context,
-                l.forumPrefs_removePassword,
-                message: l.forumPrefs_removePasswordHelp,
-              )) {
-                return;
+              await _service.sendPreferencePasswordReset(_username);
+              if (mounted) {
+                ToastService.showSuccess(
+                  context.l10n.forumPrefs_confirmationSent,
+                );
               }
-              if (!await _trusted()) return;
-              await _service.removePreferencePassword(_username);
+            }),
+          ),
+          if (widget.data.user['no_password'] != true &&
+              (widget.data.records('associated_accounts').isNotEmpty ||
+                  widget.data.records('user_passkeys').isNotEmpty))
+            _action(
+              l.forumPrefs_removePassword,
+              () => _run(() async {
+                if (!await confirmPreferenceAction(
+                  context,
+                  l.forumPrefs_removePassword,
+                  message: l.forumPrefs_removePasswordHelp,
+                )) {
+                  return;
+                }
+                if (!await _trusted()) return;
+                await _service.removePreferencePassword(_username);
+                await widget.onChanged();
+              }),
+            ),
+        ]),
+        _group(l.forumPrefs_twoFactor, [
+          _action(l.forumPrefs_addAuthenticator, _addTotp),
+          if (_factors == null)
+            _action(l.forumPrefs_authenticator, _loadFactors),
+          if (_factors != null) ...[
+            for (final factor in _factors!['totps'] as List? ?? [])
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                title: Text('${factor['name']}'),
+                trailing: Wrap(
+                  children: [
+                    IconButton(
+                      tooltip: l.common_edit,
+                      onPressed: _busy
+                          ? null
+                          : () => _factorAction(factor as Map),
+                      icon: const Icon(Symbols.edit_rounded),
+                    ),
+                    IconButton(
+                      tooltip: l.common_delete,
+                      onPressed: _busy
+                          ? null
+                          : () => _factorAction(factor as Map, remove: true),
+                      icon: const Icon(Symbols.delete_rounded),
+                    ),
+                  ],
+                ),
+              ),
+            for (final factor in _factors!['security_keys'] as List? ?? [])
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                title: Text('${factor['name']}'),
+                trailing: Wrap(
+                  children: [
+                    IconButton(
+                      tooltip: l.common_edit,
+                      onPressed: _busy
+                          ? null
+                          : () =>
+                                _factorAction(factor as Map, securityKey: true),
+                      icon: const Icon(Symbols.edit_rounded),
+                    ),
+                    IconButton(
+                      tooltip: l.common_delete,
+                      onPressed: _busy
+                          ? null
+                          : () => _factorAction(
+                              factor as Map,
+                              securityKey: true,
+                              remove: true,
+                            ),
+                      icon: const Icon(Symbols.delete_rounded),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          if (widget.data.user['second_factor_enabled'] == true)
+            _action(l.forumPrefs_generateCodes, _backupCodes),
+        ]),
+        if (widget.data.settings['enable_passkeys'] == true &&
+            widget.data.records('user_passkeys').isNotEmpty)
+          _group(l.forumPrefs_passkeys, [
+            for (final passkey in widget.data.records('user_passkeys'))
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                title: Text('${passkey['name']}'),
+                trailing: Wrap(
+                  children: [
+                    IconButton(
+                      tooltip: l.common_edit,
+                      onPressed: _busy ? null : () => _passkeyAction(passkey),
+                      icon: const Icon(Symbols.edit_rounded),
+                    ),
+                    IconButton(
+                      tooltip: l.common_delete,
+                      onPressed: _busy
+                          ? null
+                          : () => _passkeyAction(passkey, remove: true),
+                      icon: const Icon(Symbols.delete_rounded),
+                    ),
+                  ],
+                ),
+              ),
+          ]),
+        _group('', [
+          _action(
+            l.forumPrefs_browserSecurity,
+            icon: Symbols.open_in_browser_rounded,
+            () => _run(() async {
+              await WebViewPage.open(
+                context,
+                UrlHelper.resolveUrl(
+                  '/u/${Uri.encodeComponent(_username)}/preferences/second-factor',
+                ),
+                title: l.forumPrefs_security,
+              );
               await widget.onChanged();
             }),
           ),
-        _heading(l.forumPrefs_twoFactor),
-        _action(l.forumPrefs_addAuthenticator, _addTotp),
-        if (_factors == null) _action(l.forumPrefs_authenticator, _loadFactors),
-        if (_factors != null) ...[
-          for (final factor in _factors!['totps'] as List? ?? [])
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${factor['name']}'),
-              trailing: Wrap(
-                children: [
-                  IconButton(
-                    tooltip: l.common_edit,
-                    onPressed: _busy
-                        ? null
-                        : () => _factorAction(factor as Map),
-                    icon: const Icon(Symbols.edit_rounded),
-                  ),
-                  IconButton(
-                    tooltip: l.common_delete,
-                    onPressed: _busy
-                        ? null
-                        : () => _factorAction(factor as Map, remove: true),
-                    icon: const Icon(Symbols.delete_rounded),
-                  ),
-                ],
-              ),
-            ),
-          if ((_factors!['security_keys'] as List? ?? []).isNotEmpty)
-            _heading(l.forumPrefs_securityKeys),
-          for (final factor in _factors!['security_keys'] as List? ?? [])
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${factor['name']}'),
-              trailing: Wrap(
-                children: [
-                  IconButton(
-                    tooltip: l.common_edit,
-                    onPressed: _busy
-                        ? null
-                        : () => _factorAction(factor as Map, securityKey: true),
-                    icon: const Icon(Symbols.edit_rounded),
-                  ),
-                  IconButton(
-                    tooltip: l.common_delete,
-                    onPressed: _busy
-                        ? null
-                        : () => _factorAction(
-                            factor as Map,
-                            securityKey: true,
-                            remove: true,
-                          ),
-                    icon: const Icon(Symbols.delete_rounded),
-                  ),
-                ],
-              ),
-            ),
-        ],
-        if (widget.data.user['second_factor_enabled'] == true)
-          _action(l.forumPrefs_generateCodes, _backupCodes),
-        if (widget.data.settings['enable_passkeys'] == true) ...[
-          _heading(l.forumPrefs_passkeys),
-          for (final passkey in widget.data.records('user_passkeys'))
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('${passkey['name']}'),
-              trailing: Wrap(
-                children: [
-                  IconButton(
-                    tooltip: l.common_edit,
-                    onPressed: _busy ? null : () => _passkeyAction(passkey),
-                    icon: const Icon(Symbols.edit_rounded),
-                  ),
-                  IconButton(
-                    tooltip: l.common_delete,
-                    onPressed: _busy
-                        ? null
-                        : () => _passkeyAction(passkey, remove: true),
-                    icon: const Icon(Symbols.delete_rounded),
-                  ),
-                ],
-              ),
-            ),
-        ],
-        _action(
-          l.forumPrefs_browserSecurity,
-          () => _run(() async {
-            await WebViewPage.open(
-              context,
-              UrlHelper.resolveUrl(
-                '/u/${Uri.encodeComponent(_username)}/preferences/second-factor',
-              ),
-              title: l.forumPrefs_security,
-            );
-            await widget.onChanged();
-          }),
-        ),
+        ]),
       ],
-      _heading(l.forumPrefs_sessions),
-      for (final session in widget.data.records('user_auth_tokens'))
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            '${session['device'] ?? ''} · ${session['browser'] ?? ''}',
+      _group(l.forumPrefs_sessions, [
+        for (final session in widget.data.records('user_auth_tokens'))
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: Text(
+              '${session['device'] ?? ''} · ${session['browser'] ?? ''}',
+            ),
+            subtitle: Text(
+              [
+                if (session['is_active'] == true) l.forumPrefs_currentSession,
+                '${session['location'] ?? ''}',
+                TimeUtils.formatFullDate(
+                  TimeUtils.parseUtcTime(session['seen_at'] as String?),
+                ),
+              ].where((value) => value.isNotEmpty).join('\n'),
+            ),
+            trailing: IconButton(
+              tooltip: l.forumPrefs_revoke,
+              onPressed: _busy
+                  ? null
+                  : () => _run(() async {
+                      if (!await confirmPreferenceAction(
+                        context,
+                        l.forumPrefs_revokeConfirm,
+                      )) {
+                        return;
+                      }
+                      await _service.revokePreferenceSession(
+                        _username,
+                        session['id'] as Object,
+                      );
+                      if (session['is_active'] == true) {
+                        await _service.logout(callApi: false);
+                      }
+                      await widget.onChanged(
+                        signedOut: session['is_active'] == true,
+                      );
+                    }),
+              icon: const Icon(Symbols.logout_rounded),
+            ),
           ),
-          subtitle: Text(
-            [
-              if (session['is_active'] == true) l.forumPrefs_currentSession,
-              '${session['location'] ?? ''}',
-              TimeUtils.formatFullDate(
-                TimeUtils.parseUtcTime(session['seen_at'] as String?),
-              ),
-            ].where((value) => value.isNotEmpty).join('\n'),
-          ),
-          trailing: IconButton(
-            tooltip: l.forumPrefs_revoke,
-            onPressed: _busy
-                ? null
-                : () => _run(() async {
-                    if (!await confirmPreferenceAction(
-                      context,
-                      l.forumPrefs_revokeConfirm,
-                    )) {
-                      return;
-                    }
-                    await _service.revokePreferenceSession(
-                      _username,
-                      session['id'] as Object,
-                    );
-                    if (session['is_active'] == true) {
-                      await _service.logout(callApi: false);
-                    }
-                    await widget.onChanged(
-                      signedOut: session['is_active'] == true,
-                    );
-                  }),
-            icon: const Icon(Symbols.logout_rounded),
-          ),
-        ),
+      ]),
     ];
   }
 
   List<Widget> _users() => [
-    if (widget.data.user['can_ignore_users'] == true) ...[
-      _heading(context.l10n.forumPrefs_ignoredUsers),
-      for (final username
-          in widget.data.user['ignored_usernames'] as List? ?? [])
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('$username'),
-          trailing: IconButton(
-            tooltip: context.l10n.common_remove,
-            onPressed: _busy
-                ? null
-                : () => _run(() async {
-                    await _service.updateUserNotificationLevel(
-                      '$username',
-                      level: 'normal',
-                    );
-                    await widget.onChanged();
-                  }),
-            icon: const Icon(Symbols.remove_circle_outline_rounded),
+    if (widget.data.user['can_ignore_users'] == true)
+      _group(context.l10n.forumPrefs_ignoredUsers, [
+        for (final username
+            in widget.data.user['ignored_usernames'] as List? ?? [])
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            title: Text('$username'),
+            trailing: IconButton(
+              tooltip: context.l10n.common_remove,
+              onPressed: _busy
+                  ? null
+                  : () => _run(() async {
+                      await _service.updateUserNotificationLevel(
+                        '$username',
+                        level: 'normal',
+                      );
+                      await widget.onChanged();
+                    }),
+              icon: const Icon(Symbols.remove_circle_outline_rounded),
+            ),
           ),
+        _action(
+          context.l10n.common_add,
+          () => _run(() async {
+            final selected = await showUserPickerSheet(
+              context,
+              title: context.l10n.forumPrefs_ignoredUsers,
+              confirmLabel: (_) => context.l10n.common_confirm,
+            );
+            if (selected == null || selected.isEmpty || !mounted) return;
+            final expiry = await showIgnoreDurationPicker(context);
+            if (expiry == null || !mounted) return;
+            try {
+              for (final user in selected) {
+                await _service.updateUserNotificationLevel(
+                  user.username,
+                  level: 'ignore',
+                  expiringAt: expiry,
+                );
+              }
+            } finally {
+              await widget.onChanged();
+            }
+          }),
         ),
-      _action(
-        context.l10n.common_add,
-        () => _run(() async {
-          final saved = await editPreferenceValue(
-            context,
-            title: context.l10n.forumPrefs_ignoredUsers,
-            submit: (username) async {
-              final expiry = await showIgnoreDurationPicker(context);
-              if (expiry == null || !mounted) return;
-              await _service.updateUserNotificationLevel(
-                username,
-                level: 'ignore',
-                expiringAt: expiry,
-              );
-            },
-          );
-          if (saved) await widget.onChanged();
-        }),
-      ),
-    ],
+      ]),
   ];
 
   List<Widget> _apps() {
     final apps = widget.data.records('user_api_keys');
     return [
-      if (apps.isEmpty) Text(context.l10n.forumPrefs_empty),
-      for (final app in apps)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('${app['application_name']}'),
-          subtitle: Text((app['scopes'] as List? ?? []).join('\n')),
-          trailing: TextButton(
-            onPressed: _busy
-                ? null
-                : () => _run(() async {
-                    final id = app['id'] as Object;
-                    final restore = app['revoked'] == true;
-                    if (!restore &&
-                        !await confirmPreferenceAction(
-                          context,
-                          context.l10n.forumPrefs_revokeConfirm,
-                          message: '${app['application_name']}',
-                        )) {
-                      return;
-                    }
-                    await _service.revokePreferenceApp(id, restore: restore);
-                    setState(() {
-                      app['revoked'] = !restore;
-                      widget.data.user['user_api_keys'] = apps;
-                    });
-                  }),
-            child: Text(
-              app['revoked'] == true
-                  ? context.l10n.forumPrefs_restore
-                  : context.l10n.forumPrefs_revoke,
-            ),
-          ),
+      if (apps.isEmpty)
+        AppEmptyState(
+          icon: const Icon(Symbols.apps_rounded),
+          title: context.l10n.forumPrefs_empty,
+          message: context.l10n.forumPrefs_appsDescription,
+        ),
+      if (apps.isNotEmpty)
+        SegmentedCardGroup(
+          children: [
+            for (final app in apps)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                title: Text('${app['application_name']}'),
+                subtitle: Text((app['scopes'] as List? ?? []).join('\n')),
+                trailing: TextButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() async {
+                          final id = app['id'] as Object;
+                          final restore = app['revoked'] == true;
+                          if (!restore &&
+                              !await confirmPreferenceAction(
+                                context,
+                                context.l10n.forumPrefs_revokeConfirm,
+                                message: '${app['application_name']}',
+                              )) {
+                            return;
+                          }
+                          await _service.revokePreferenceApp(
+                            id,
+                            restore: restore,
+                          );
+                          setState(() {
+                            app['revoked'] = !restore;
+                            widget.data.user['user_api_keys'] = apps;
+                          });
+                        }),
+                  child: Text(
+                    app['revoked'] == true
+                        ? context.l10n.forumPrefs_restore
+                        : context.l10n.forumPrefs_revoke,
+                  ),
+                ),
+              ),
+          ],
         ),
     ];
   }
@@ -856,62 +956,83 @@ class _PreferenceActionsState extends State<PreferenceActions> {
     final active = _calendar!['has_subscription'] == true;
     final urls = _calendar!['urls'] as Map? ?? {};
     return [
-      Text(
-        active
-            ? context.l10n.forumPrefs_calendarActive
-            : context.l10n.forumPrefs_calendarInactive,
-      ),
-      for (final url in urls.entries)
+      _group('', [
         ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('${url.key}'),
-          subtitle: SelectableText('${url.value}'),
-          trailing: IconButton(
-            tooltip: context.l10n.common_copy,
-            onPressed: () =>
-                Clipboard.setData(ClipboardData(text: '${url.value}')),
-            icon: const Icon(Symbols.content_copy_rounded),
+          leading: const Icon(Symbols.calendar_month_rounded),
+          title: Text(
+            active
+                ? context.l10n.forumPrefs_calendarActive
+                : context.l10n.forumPrefs_calendarInactive,
           ),
+          subtitle: Text(context.l10n.forumPrefs_calendarDescription),
         ),
-      _action(
-        active
-            ? context.l10n.forumPrefs_rotateCalendar
-            : context.l10n.forumPrefs_generateCalendar,
-        () => _run(() async {
-          if (active &&
-              !await confirmPreferenceAction(
-                context,
-                context.l10n.forumPrefs_rotateCalendar,
-                message: context.l10n.forumPrefs_rotateCalendarConfirm,
-              )) {
-            return;
-          }
-          final result = await _service.preferenceCalendarSubscription(
-            generate: true,
-          );
-          if (mounted) {
-            setState(() => _calendar = {...result, 'has_subscription': true});
-          }
-        }),
-      ),
-      if (active)
-        TextButton(
-          onPressed: _busy
-              ? null
-              : () => _run(() async {
-                  if (!await confirmPreferenceAction(
-                    context,
-                    context.l10n.forumPrefs_revokeConfirm,
-                  )) {
-                    return;
-                  }
-                  await _service.preferenceCalendarSubscription(revoke: true);
+      ]),
+      if (urls.isNotEmpty)
+        _group('', [
+          for (final url in urls.entries)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: Text(
+                url.key == 'bookmarks'
+                    ? context.l10n.forumPrefs_bookmarks
+                    : '${url.key}',
+              ),
+              subtitle: SelectableText('${url.value}'),
+              trailing: IconButton(
+                tooltip: context.l10n.common_copy,
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: '${url.value}'));
                   if (mounted) {
-                    setState(() => _calendar = {'has_subscription': false});
+                    ToastService.showSuccess(
+                      context.l10n.common_copiedToClipboard,
+                    );
                   }
-                }),
-          child: Text(context.l10n.forumPrefs_revoke),
+                },
+                icon: const Icon(Symbols.content_copy_rounded),
+              ),
+            ),
+        ]),
+      _group('', [
+        _action(
+          active
+              ? context.l10n.forumPrefs_rotateCalendar
+              : context.l10n.forumPrefs_generateCalendar,
+          () => _run(() async {
+            if (active &&
+                !await confirmPreferenceAction(
+                  context,
+                  context.l10n.forumPrefs_rotateCalendar,
+                  message: context.l10n.forumPrefs_rotateCalendarConfirm,
+                )) {
+              return;
+            }
+            final result = await _service.preferenceCalendarSubscription(
+              generate: true,
+            );
+            if (mounted) {
+              setState(() => _calendar = {...result, 'has_subscription': true});
+            }
+          }),
         ),
+        if (active)
+          TextButton(
+            onPressed: _busy
+                ? null
+                : () => _run(() async {
+                    if (!await confirmPreferenceAction(
+                      context,
+                      context.l10n.forumPrefs_revokeConfirm,
+                    )) {
+                      return;
+                    }
+                    await _service.preferenceCalendarSubscription(revoke: true);
+                    if (mounted) {
+                      setState(() => _calendar = {'has_subscription': false});
+                    }
+                  }),
+            child: Text(context.l10n.forumPrefs_revoke),
+          ),
+      ]),
     ];
   }
 
@@ -919,7 +1040,8 @@ class _PreferenceActionsState extends State<PreferenceActions> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      if (_busy) const M3eLinearProgress(),
+      if (_busy && (ModalRoute.isCurrentOf(context) ?? true))
+        const M3eLinearProgress(),
       if (_error != null)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -948,18 +1070,6 @@ class _PreferenceActionsState extends State<PreferenceActions> {
         ForumPreferenceSection.users => _users(),
         ForumPreferenceSection.apps => _apps(),
         ForumPreferenceSection.calendar => _calendarWidgets(),
-        ForumPreferenceSection.interface => [
-          _action(
-            context.l10n.forumPrefs_resetTips,
-            () => _run(() async {
-              await _service.saveForumPreferences(_username, {
-                'skip_new_user_tips': false,
-                'seen_popups': null,
-              });
-              await widget.onChanged();
-            }),
-          ),
-        ],
         _ => <Widget>[],
       },
     ],
@@ -1101,134 +1211,6 @@ class _TotpDialogState extends State<_TotpDialog> {
           child: Text(
             _saving ? context.l10n.common_loading : context.l10n.common_save,
           ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _StatusDialog extends StatefulWidget {
-  const _StatusDialog({required this.status, required this.submit});
-  final Map<String, dynamic> status;
-  final Future<void> Function(Map<String, dynamic>?) submit;
-  @override
-  State<_StatusDialog> createState() => _StatusDialogState();
-}
-
-class _StatusDialogState extends State<_StatusDialog> {
-  late final _description = TextEditingController(
-    text: '${widget.status['description'] ?? ''}',
-  );
-  late final _emoji = TextEditingController(
-    text: '${widget.status['emoji'] ?? ''}',
-  );
-  bool _saving = false;
-  int _expirySeconds = -1;
-  String? _error;
-  @override
-  void dispose() {
-    _description.dispose();
-    _emoji.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save({bool clear = false}) async {
-    setState(() => _saving = true);
-    try {
-      await widget.submit(
-        clear
-            ? null
-            : {
-                'description': _description.text.trim(),
-                'emoji': _emoji.text.trim(),
-                'ends_at': clear || _expirySeconds == 0
-                    ? null
-                    : _expirySeconds == -1
-                    ? widget.status['ends_at']
-                    : DateTime.now()
-                          .toUtc()
-                          .add(Duration(seconds: _expirySeconds))
-                          .toIso8601String(),
-              },
-      );
-      if (mounted) Navigator.of(context).pop(true);
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = ErrorUtils.getErrorInfo(error).message);
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: !_saving,
-    child: AlertDialog(
-      title: Text(context.l10n.forumPrefs_status),
-      content: SizedBox(
-        width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _description,
-                decoration: InputDecoration(
-                  labelText: context.l10n.forumPrefs_statusDescription,
-                ),
-              ),
-              TextField(
-                controller: _emoji,
-                decoration: InputDecoration(
-                  labelText: context.l10n.forumPrefs_statusEmoji,
-                ),
-              ),
-              DropdownButtonFormField<int>(
-                initialValue: _expirySeconds,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: context.l10n.forumPrefs_statusExpiry,
-                ),
-                items:
-                    {
-                          -1: context.l10n.forumPrefs_keepExpiry,
-                          0: context.l10n.forumPrefs_noExpiry,
-                          3600: context.l10n.forumPrefs_hour1,
-                          86400: context.l10n.forumPrefs_day1,
-                        }.entries
-                        .map(
-                          (entry) => DropdownMenuItem(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          ),
-                        )
-                        .toList(),
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _expirySeconds = value!),
-              ),
-              if (_error != null)
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => _save(clear: true),
-          child: Text(context.l10n.common_remove),
-        ),
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
-          child: Text(context.l10n.common_cancel),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(context.l10n.common_save),
         ),
       ],
     ),

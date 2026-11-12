@@ -3,12 +3,20 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/s.dart';
 import '../common/cached_image.dart';
+import '../common/hero_image.dart';
+import '../../services/discourse_cache_manager.dart';
 
 /// 自定义封面优先，默认景深随主题的表面色与强调色实时绘制。
 class UserProfileCover extends StatelessWidget {
-  const UserProfileCover({super.key, this.imageUrl, required this.onTap});
+  const UserProfileCover({
+    super.key,
+    this.imageUrl,
+    this.heroTag,
+    required this.onTap,
+  });
 
   final String? imageUrl;
+  final String? heroTag;
   final VoidCallback onTap;
 
   @override
@@ -30,7 +38,10 @@ class UserProfileCover extends StatelessWidget {
     return Semantics(
       button: true,
       label: context.l10n.userProfile_viewBackground,
-      child: InkWell(
+      child: HeroImage(
+        heroTag: heroTag ?? 'profile_cover_$url',
+        style: const ViewerSourceStyle.cover(radius: 0),
+        flightImage: discourseImageProvider(url),
         onTap: onTap,
         child: CachedImage(
           url: url,

@@ -339,6 +339,10 @@ class FluxdoRenderCallbacks {
   /// Mention chip 点击 → 在当前平行视界栈或普通导航中打开用户资料。
   static MentionTapHandler get _mentionTapHandler => (ctx, username, href) {
     // 优先 href 解析(group/user 路由不同);兜底走 username
+    if (DiscourseUrlParser.parseGroup(href) != null) {
+      launchContentLink(ctx, href);
+      return;
+    }
     final user = DiscourseUrlParser.parseUser(href);
     EmbeddedStackScope.openProfile(ctx, user?.username ?? username);
   };

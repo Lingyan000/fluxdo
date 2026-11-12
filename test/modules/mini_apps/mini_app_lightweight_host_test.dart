@@ -280,7 +280,8 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const settle = async () => { for(let i=0;i<12;i++) await new Promise(setImmediate); };
 async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=false,anonymous=false,
-  requestFailure=null,importFailure=false,mountFailure=false,insecure=false,runtimeFailure=null}={}) {
+  requestFailure=null,importFailure=false,mountFailure=false,insecure=false,runtimeFailure=null,
+  delayIdentity=false,nativeCache=null}={}) {
   const calls=[], imports=[], lifecycle={}, listeners={}, links=[];
   let documentLoad;
   const stage={textContent:''},detail={textContent:''},progress={},retry={hidden:true};
@@ -299,7 +300,9 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     querySelector:s=>({'.mini-app-loader':root,'.mini-app-page':page,
       '.mini-app-page__audio-trigger':audio,'meta[name="csrf-token"]':csrfMeta})[s]};
   let runtime,options,providerOptions,disposed=0,providerDisposed=0,resolveFetch;
-  const hash='a'.repeat(64);
+  const moduleSource='export const version = 1;';
+  const moduleBytes=new TextEncoder().encode(moduleSource);
+  const hash=nativeCache?require('node:crypto').createHash('sha256').update(moduleSource).digest('hex'):'a'.repeat(64);
   const assets={runtimeAssets:{
     loader:(badAsset?'https://evil.example':'')+'/plugins/discourse-mini-app/runtime/loader-'+hash+'.js',
     packageWorker:'/mini-app-api/workers/package-worker-'+hash+'.js',
@@ -309,14 +312,31 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   },sdkSha256:hash};
   const gate=new Promise(resolve=>resolveFetch=resolve);
   const window={addEventListener:(name,fn)=>lifecycle[name]=fn};
+  const nativeCalls=[];
+  if(nativeCache) window.flutter_inappwebview={callHandler:async(name,request)=>{
+    assert.equal(name,'fluxdoMiniAppRuntime');nativeCalls.push(request);
+    if(nativeCache==='unavailable') throw Error('bridge unavailable');
+    if(nativeCache==='pending') return gate;
+    if(request.action==='read') return nativeCache==='hit'?moduleSource:nativeCache==='corrupt'?'changed':null;
+    assert.equal(request.hash,hash);assert.equal(request.source,moduleSource);return true;
+  }};
   const location=new URL(badOrigin?'https://evil.example/':entry);
   const context=vm.createContext({
     boot:{configuration:{...configuration,anonymous},entry,prefix:'',expectedUserId:2,failureMessage:'失败'},
     document,window,location,isSecureContext:!insecure,URL,AbortController,AbortSignal,
+    setTimeout,clearTimeout,TextEncoder,TextDecoder,Blob,crypto:require('node:crypto').webcrypto,
     history:{replaceState(_state,_title,value){ location.href=value; }},
     fetch:async(path,request)=>{
       calls.push({path,request});
+      if(path.includes('/loader-')) {
+        let sent=false;
+        return {ok:true,body:{getReader:()=>({
+          read:async()=>sent?{done:true}:(sent=true,{done:false,value:moduleBytes}),
+          cancel:async()=>{},
+        })}};
+      }
       if(delay) await gate;
+      if(delayIdentity && !path.includes('runtime-assets')) await gate;
       if(requestFailure && path===requestFailure.path) {
         if(requestFailure.status) return {ok:false,status:requestFailure.status};
         if(requestFailure.json) return {ok:true,json:async()=>{throw new SyntaxError('secret-response');}};
@@ -348,8 +368,26 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     imports.push(url);return module;
   }}).runInContext(context);
   await settle();
+  if(nativeCache && nativeCache!=='pending') {
+    // WebCrypto 在线程池完成，等待挂载结果，避免 CPU 忙时只清空微任务仍过早断言。
+    for(let attempt=0;attempt<200 && !options && retry.hidden;attempt++) {
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+  }
+  if(delayIdentity) {
+    assert.equal(imports.length,1,'身份请求未返回时运行器已经准备');
+    assert.equal(options,undefined,'身份校验前不得挂载应用');
+    resolveFetch();
+    await settle();
+  }
   if(delay){window.fluxdoMiniAppHost.destroy();resolveFetch();await settle();
     assert.equal(imports.length,0);assert.equal(disposed,0);return;}
+  if(nativeCache==='pending') {
+    assert.equal(nativeCalls.length,1);
+    window.fluxdoMiniAppHost.destroy();resolveFetch(moduleSource);await settle();
+    assert.equal(imports.length,0,'关闭后不导入迟到的缓存运行器');
+    assert.equal(options,undefined);return;
+  }
   if(runtimeFailure) {
     let message, tracking;
     const app={contentWindow:{}};
@@ -388,7 +426,8 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     return;
   }
   if(badOrigin||badAsset||wrongUser||requestFailure||importFailure||mountFailure||insecure){
-    assert.equal(imports.length,mountFailure?1:0);
+    if(!requestFailure) assert.equal(imports.length,mountFailure||wrongUser?1:0);
+    if(wrongUser||requestFailure) assert.equal(options,undefined);
     assert.equal(retry.hidden,false);assert.equal(stage.textContent,'失败');
     const diagnostic=JSON.parse(bootFailure.textContent);
     assert.equal(diagnostic.appId,configuration.appId);
@@ -406,7 +445,11 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
   }
   assert.equal(bootFailure.textContent,'');
   assert.equal(imports.length,1,detail.textContent);
-  assert.equal(imports[0],'https://linux.do/plugins/discourse-mini-app/runtime/loader-'+hash+'.js');
+  if(nativeCache==='hit'||nativeCache==='miss') {
+    assert.equal(imports[0].startsWith('blob:'),true);
+    assert.equal(calls.filter(call=>call.path.includes('/loader-')).length,nativeCache==='hit'?0:1);
+    assert.equal(nativeCalls.filter(call=>call.action==='write').length,nativeCache==='hit'?0:1);
+  } else assert.equal(imports[0],'https://linux.do/plugins/discourse-mini-app/runtime/loader-'+hash+'.js');
   assert.equal(page['data-fluxdo-mounted'],'');
   assert.equal(options.sdkSha256,hash);
   assert.equal(links.length,2);
@@ -426,7 +469,7 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
     window.fluxdoMiniAppHost.setSuspended(false)]);
   assert.equal(audio['aria-pressed'],'true');
   assert.equal(calls.some(c=>c.path.includes('/apps/')),false);
-  assert.equal(calls.every(c=>c.request.cache==='no-store'),true);
+  assert.equal(calls.filter(c=>!c.path.includes('/loader-')).every(c=>c.request.cache==='no-store'),true);
   lifecycle.pagehide();window.fluxdoMiniAppHost.destroy();
   assert.equal(disposed,1);assert.equal(providerDisposed,1);
   assert.equal(calls.every(c=>c.request.signal.aborted),true);
@@ -434,6 +477,8 @@ async function scenario({badOrigin=false,badAsset=false,wrongUser=false,delay=fa
 (async()=>{
   await scenario();await scenario({anonymous:true});await scenario({badOrigin:true});
   await scenario({badAsset:true});await scenario({wrongUser:true});await scenario({delay:true});
+  await scenario({delayIdentity:true});
+  for(const nativeCache of ['hit','miss','corrupt','unavailable','pending']) await scenario({nativeCache});
   await scenario({insecure:true});await scenario({importFailure:true});await scenario({mountFailure:true});
   await scenario({requestFailure:{path:'/session/current.json',phase:'session',status:403}});
   await scenario({requestFailure:{path:'/session/csrf',phase:'csrf',json:true}});

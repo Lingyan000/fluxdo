@@ -13,7 +13,8 @@ import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
-import 'webview_page.dart';
+import 'forum_preferences/forum_preferences_page.dart';
+import 'groups_page.dart';
 import 'login_page.dart';
 import '../widgets/auth/qr_login_sheet.dart';
 import 'browsing_history_page.dart';
@@ -345,35 +346,18 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
 
   Future<void> _openProfileEdit() async {
     final username = ref.read(currentUserProvider).value?.username;
-    if (username != null && username.isNotEmpty) {
-      await WebViewPage.open(
-        context,
-        'https://linux.do/u/$username/preferences/account',
-        title: context.l10n.profile_editProfile,
-        injectCss: '''
-          .new-user-content-wrapper {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            z-index: 100 !important;
-            background: var(--d-content-background, var(--secondary)) !important;
-            overflow-y: auto !important;
-            padding: 20px !important;
-            box-sizing: border-box !important;
-          }
-          .d-header {
-            display: none !important;
-          }
-        ''',
-      );
-
-      // 返回后静默刷新数据
-      if (mounted) {
-        ref.read(currentUserProvider.notifier).refreshSilently().ignore();
-        ref.read(userSummaryProvider.notifier).refresh();
-      }
+    if (username == null || username.isEmpty) return;
+    final changed = await Navigator.of(context).push<String>(
+      InteractionPageRoute(
+        builder: (_) => ForumPreferencesPage(
+          username: username,
+          initialSection: ForumPreferenceSection.profile,
+        ),
+      ),
+    );
+    if (changed != null && mounted) {
+      await ref.read(currentUserProvider.notifier).refreshSilently(force: true);
+      if (mounted) await ref.read(userSummaryProvider.notifier).refresh();
     }
   }
 
@@ -875,6 +859,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           onTap: () => Navigator.push(
             context,
             InteractionPageRoute(builder: (_) => const ChatListPage()),
+          ),
+        ),
+        _buildOptionTile(
+          icon: Symbols.groups_rounded,
+          title: context.l10n.userProfile_groups,
+          onTap: () => Navigator.push(
+            context,
+            InteractionPageRoute(builder: (_) => const GroupsPage()),
           ),
         ),
         _buildOptionTile(

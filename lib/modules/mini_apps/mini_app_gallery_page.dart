@@ -445,12 +445,13 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                   final scale = MediaQuery.textScalerOf(
                                     context,
                                   );
+                                  // 给标题和完整统计留足宽度，窄屏及大字号使用单列。
+                                  final minCardWidth =
+                                      264 *
+                                      (scale.scale(14) / 14).clamp(1.0, 2.0);
                                   final columns =
-                                      (constraints.crossAxisExtent /
-                                              (164 *
-                                                  scale
-                                                      .scale(1)
-                                                      .clamp(1.0, 1.6)))
+                                      ((constraints.crossAxisExtent + 10) /
+                                              (minCardWidth + 10))
                                           .floor()
                                           .clamp(1, 3);
                                   if (columns == 1) {
@@ -476,23 +477,62 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                       },
                                     );
                                   }
-                                  return SliverGrid.builder(
-                                    gridDelegate:
-                                        SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: columns,
-                                          crossAxisSpacing: 10,
-                                          mainAxisSpacing: 10,
-                                          mainAxisExtent:
-                                              110 + scale.scale(104),
+                                  return SliverList.builder(
+                                    itemCount:
+                                        (_directory.apps.length +
+                                            columns -
+                                            1) ~/
+                                        columns,
+                                    itemBuilder: (context, row) {
+                                      final start = row * columns;
+                                      final end = (start + columns).clamp(
+                                        0,
+                                        _directory.apps.length,
+                                      );
+                                      final apps = _directory.apps.sublist(
+                                        start,
+                                        end,
+                                      );
+                                      // 每次只布局可见行的两到三张卡片，行高由实际内容决定。
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 10,
                                         ),
-                                    itemCount: _directory.apps.length,
-                                    itemBuilder: (context, index) {
-                                      final app = _directory.apps[index];
-                                      return MiniAppDiscoveryCard(
-                                        app: app,
-                                        opening: _openingAppId == app.id,
-                                        onOpen: () => _open(app),
-                                        onInfo: () => _info(app),
+                                        child: IntrinsicHeight(
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              for (final (index, app)
+                                                  in apps.indexed) ...[
+                                                if (index > 0)
+                                                  const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: RepaintBoundary(
+                                                    child: MiniAppDiscoveryCard(
+                                                      key: ValueKey(app.id),
+                                                      app: app,
+                                                      opening:
+                                                          _openingAppId == app.id,
+                                                      onOpen: () => _open(app),
+                                                      onInfo: () => _info(app),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                              for (
+                                                var index = apps.length;
+                                                index < columns;
+                                                index++
+                                              ) ...[
+                                                const SizedBox(width: 10),
+                                                const Expanded(
+                                                  child: SizedBox.shrink(),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
                                       );
                                     },
                                   );

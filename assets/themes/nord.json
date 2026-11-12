@@ -5,7 +5,7 @@
     "en": "Nord"
   },
   "kind": "fixed",
-  "group": "classic",
+  "group": "code",
   "order": 110,
   "style": {"dataColors": "harmonized"},
   "supportsPureBlack": false,

@@ -216,7 +216,7 @@ class _Controller extends CfTestController {
       hostSuspended = suspend;
       return null;
     }
-    if (source == 'window.fluxdoMiniAppHost?.destroy();') {
+    if (source.contains('window.fluxdoMiniAppHost?.destroy();')) {
       destroyed = true;
       return null;
     }
@@ -328,6 +328,22 @@ class _Controller extends CfTestController {
 }
 
 void main() {
+  setUp(() {
+    // Cookie 预热也会读取原生存储，与 WebView 测试平台保持空存储一致。
+    // 显式响应平台调用，避免 FakeAsync 中等待未注册的原生通道。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.fluxdo/raw_cookie'),
+          (call) async => call.method == 'getAllCookieInfos' ? [] : null,
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.fluxdo/raw_cookie'),
+          null,
+        );
+  });
   for (final engine in MiniAppEngine.values) {
     testWidgets('官方授权后外链接续、导航竞态与过期取消 (${engine.name})', (tester) async {
       final platform = _Platform();
