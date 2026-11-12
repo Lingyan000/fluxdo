@@ -226,7 +226,7 @@
   "metaverse_title": "元宇宙",
   "metaverse_nativeLoginTitle": "登录 {name}",
   "metaverse_nativeLoginAccount": "使用 Linux DO 账号 @{username}",
-  "metaverse_nativeLoginAccess": "授权后可查看订单、查询报价，并在确认后下单。付款时需要单独确认和输入 LDC 支付密码。",
+  "metaverse_nativeLoginAccess": "使用当前 Linux DO 账号授权给该服务。服务会话用于安装时批准的网络地址和操作。",
   "metaverse_nativeTerms": "查看服务条款",
   "metaverse_nativeTermsAgree": "我已阅读并同意服务条款",
   "metaverse_nativePayTitle": "LDC 支付",

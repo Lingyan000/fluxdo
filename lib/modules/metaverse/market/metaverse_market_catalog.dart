@@ -1,4 +1,5 @@
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+import '../plugin/metaverse_plugin_manifest.dart';
 
 class MetaverseMarketSource {
   const MetaverseMarketSource(this.url, {this.enabled = true});
@@ -90,7 +91,7 @@ class MetaverseMarketEntry {
   final int apiVersion;
   final List<String> categories, screenshots;
   final MetaverseMarketSource source;
-  bool get compatible => apiVersion == 1;
+  bool get compatible => MetaversePluginManifest.supportedApiVersions.contains(apiVersion);
   bool newerThan(String installed) =>
       PluginVersion.parse(version).compareTo(PluginVersion.parse(installed)) >
       0;

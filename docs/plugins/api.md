@@ -1,6 +1,78 @@
 # 脚本 API 参考
 
-本文对应脚本 API 版本 1。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
+当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9，提供通用凭证、Connect 和支付接口。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
+
+## API 2 通用能力
+
+服务插件负责发起授权、处理回调、交换服务凭证、调用业务接口及刷新交付结果。宿主提供 Connect 账号授权、按范围注入凭证、原生 LDC 收银台。每次调用仍须通过安装时批准的权限检查。
+
+```json
+{
+  "schema": 9,
+  "apiVersion": 2,
+  "permissions": {
+    "network": ["api.example.org"],
+    "identity": true,
+    "connect": ["https://api.example.org/callback"],
+    "credentials": {
+      "account": {
+        "label": "服务访问凭证",
+        "header": "Authorization",
+        "scheme": "Bearer",
+        "requests": [{
+          "origin": "https://api.example.org",
+          "pathPrefix": "/v2",
+          "methods": ["GET", "POST"]
+        }]
+      }
+    },
+    "payments": ["linuxDoCredit"]
+  }
+}
+```
+
+以上片段展示新增字段，完整清单仍须包含身份、版本及界面资源。API 2 清单通过 `permissions` 声明能力。`credentials` 的名称由插件定义，请求限制按 origin、路径前缀和方法共同匹配，路径按段匹配。凭证头默认为 `Authorization`，scheme 默认为 `Bearer`，空 scheme 可用于 API key。Connect 回调须为网络权限内的 HTTPS 精确地址。
+
+### `credentials.status(name)`、`credentials.remove(name)`
+
+`status` 返回 `{authorized, expiresAt}`，过期时间为 Unix 秒或 null。有效性包含当前应用账号绑定和过期检查。`remove` 返回 null，移除该具名凭证，并取消正在保存或使用旧版本凭证的调用。清空插件数据也会移除全部凭证。
+
+### `credentials.request(name)`
+
+用户点击后打开原生凭证输入弹框，保存成功返回 true，取消返回 false。插件通过具名凭证调用网络接口，输入内容保存在宿主安全存储。
+
+### `credentials.capture(name, request, options)`
+
+用于服务端响应中的凭证交换。`request` 使用 `fetch` 的 url、method、headers、body 字段。`options.tokenPath` 是 JSON 字段名或数组索引构成的路径，长度 1–16，可选 `expiresAtPath` 提取 Unix 秒。`jwt: true` 可解码 JWT 的 claims 和 exp。JWT 的签发身份、业务账号和服务权限须由插件通过服务验证接口核对。
+
+```js
+const captured = await ctx.api.credentials.capture('account', {
+  url: 'https://api.example.org/token',
+  method: 'POST',
+  body: {code, verifier}
+}, {tokenPath: ['access', 'value'], jwt: true});
+const response = await ctx.api.fetch('https://api.example.org/v2/me', {
+  credential: 'account'
+});
+```
+
+返回 `{authorized: true, expiresAt, claims?}`。宿主直接保存选中的凭证，返回值仅包含状态及选定的 JWT 声明。交换请求须满足网络权限，成功状态为 HTTP 2xx，JSON 或字段无效会拒绝保存。交换期间账号变化、插件停用、移除凭证或清空数据都会取消操作。
+
+### `connect.authorize(url)`
+
+用户点击后调用公共 Linux DO Connect，使用当前应用账号完成授权。返回服务回调 URL，取消返回 null。宿主检查授权地址、redirect_uri、回调地址和 state。插件随后请求回调并处理服务协议。服务初始化接口、PKCE 关联和凭证交换由插件实现。
+
+### `crypto.pkce()`、`crypto.uuid()`
+
+`pkce` 返回 `{verifier, challenge, method: 'S256'}`，使用安全随机数和 SHA-256。`uuid` 返回安全随机 UUID v4。适合授权关联与业务幂等提交号。
+
+### `payments.request({provider, url, reference, amount})`
+
+用户点击后打开应用原生收银台。当前 provider 为 `linuxDoCredit`，url 使用 LDC 收银台地址，reference 是服务订单号，amount 推荐传十进制金额字符串。宿主核对 LDC 返回的订单号、付款账号和金额，付款确认使用 LDC 交易 ID 校验收款账号、金额及状态。支付密码和生物识别由应用管理。
+
+返回收银台结果 `{state: 'paid'}`，已提交但尚未确认时返回 `{state: 'pending'}`，提交前关闭返回 null。付款成功后，插件刷新自己的订单与交付接口。测试和应用内开发中心使用模拟桥。
+
+API 2 的 `user.get()` 返回当前账号的 `{id, username}`，需要 identity 权限。通用网络、存储、界面与导航接口沿用下文签名。下文 `auth.*` 和 `checkout.*` 为 API 1 迁移期接口。
 
 ## 环境与结果
 

@@ -11,8 +11,10 @@ import '../../../../l10n/s.dart';
 import '../../../../services/ldc_oauth_service.dart';
 import '../../../../services/log/log_writer.dart';
 import '../../../../services/ldc_payment_service.dart';
+import '../../../../services/ldc_payment_session.dart';
 import '../../../../services/ldc_biometric_payment.dart';
 import '../../../../services/network/exceptions/oauth_exception.dart';
+import '../../../../services/network/discourse_dio.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/secret_store_provider.dart';
@@ -23,10 +25,13 @@ import '../../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../../utils/link_launcher.dart';
 import '../metaverse_plugin_host.dart';
 import '../metaverse_connect_login.dart';
+import '../metaverse_connect_capability.dart';
+import '../metaverse_credential.dart';
 import '../metaverse_payment.dart';
 import '../metaverse_checkout_types.dart';
 import '../metaverse_plugin_installer.dart';
 import '../metaverse_plugin_manifest.dart';
+import '../metaverse_plugin_capabilities.dart';
 import '../metaverse_plugin_network.dart';
 import '../metaverse_plugin_store.dart';
 import '../runtime/flutter_js_script_engine.dart';
@@ -361,11 +366,144 @@ class _HostDelegate extends MetaversePluginHostDelegate {
           true;
 
   @override
+  Future<String?> authorizeConnect(BuildContext context, Uri authorization) async {
+    final generation = _generation;
+    final account = _ref.read(currentUserProvider).value;
+    if (account == null) throw StateError(S.current.metaverse_nativeLoginRequired);
+    final callback = MetaverseConnectCapability.callback(
+      _manifest,
+      authorization,
+    );
+    if (!await showMetaverseConnectConfirmation(
+      context,
+      _manifest,
+      account.username,
+      callback: callback,
+    )) {
+      return null;
+    }
+    bool active() => context.mounted &&
+        generation == _generation &&
+        _accountActive(account.id);
+    if (!active()) throw const PluginOperationCancelled();
+    final client = DiscourseDio.create(
+      enableNetworkLog: false,
+      enableRetry: false,
+      enableCfChallenge: false,
+    );
+    try {
+      return await MetaverseConnectCapability(client).authorize(
+        _manifest,
+        authorization,
+        isActive: active,
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  @override
+  Future<bool> requestCredential(BuildContext context, String name) async {
+    final spec = _manifest.capabilities.credentials[name];
+    if (spec == null) {
+      throw const MetaversePluginCallException('credential_not_declared');
+    }
+    final generation = _generation;
+    final accountId = currentAccountId();
+    final store = _ref.read(metaversePluginStoreProvider);
+    final revision = store.credentialRevision(_manifest.id, name);
+    final secret = await showMetaversePluginTokenDialog(
+      context,
+      _manifest,
+      label: spec.label,
+      hosts: spec.scopes.map((scope) => scope.origin.host).toSet().toList(),
+    );
+    if (secret == null || secret.isEmpty) return false;
+    final credential = MetaverseCredential.parse({
+      'secret': secret,
+      'accountId': accountId,
+    });
+    if (credential == null) {
+      throw const MetaversePluginCallException('credential_invalid');
+    }
+    await store.writeCredential(
+      _manifest.id,
+      name,
+      credential,
+      revision: revision,
+      isActive: () => context.mounted &&
+          generation == _generation &&
+          currentAccountId() == accountId,
+    );
+    return true;
+  }
+
+  @override
   Future<bool> confirmOrder(
     BuildContext context,
     MetaverseCheckoutGrant grant,
     MetaverseOrderIntent intent,
   ) => showMetaverseOrderConfirmation(context, grant, intent);
+
+  @override
+  Future<Object?> requestPayment(
+    BuildContext context, {
+    required MetaversePaymentProvider provider,
+    required Uri url,
+    required String reference,
+    required Object amount,
+  }) async {
+    final generation = _generation;
+    final account = _ref.read(currentUserProvider).value;
+    if (account == null) throw StateError(S.current.metaverse_nativeLoginRequired);
+    Future<void> checkSession() async {
+      if (!context.mounted ||
+          generation != _generation ||
+          !_accountActive(account.id)) {
+        throw const PluginOperationCancelled();
+      }
+    }
+    final service = LdcPaymentService();
+    final payment = switch (provider) {
+      MetaversePaymentProvider.linuxDoCredit => LdcPaymentSession(
+        service: service,
+        paymentUrl: url,
+        reference: reference,
+        amount: amount,
+        checkSession: checkSession,
+      ),
+    };
+    try {
+      final oauth = LdcOAuthService();
+      var needsPassword = false;
+      try {
+        final user = await oauth.getUserInfo(expectedUsername: account.username);
+        needsPassword = user?.isPayKey != true;
+      } on OAuthExpiredException {
+        await checkSession();
+        if (!context.mounted || !await oauth.authorize(context)) return null;
+        final user = await oauth.getUserInfo(expectedUsername: account.username);
+        needsPassword = user?.isPayKey != true;
+      }
+      await checkSession();
+      if (!context.mounted) return null;
+      return await showLdcPaymentSheet(
+        context,
+        payment: payment,
+        orderNo: reference,
+        username: account.username,
+        needsPassword: needsPassword,
+        biometrics: LdcBiometricPayment(
+          accountId: account.id,
+          store: _ref.read(secretStoreProvider),
+          preferences: _ref.read(sharedPreferencesProvider),
+          checkSession: checkSession,
+        ),
+      );
+    } finally {
+      service.dispose();
+    }
+  }
 
   @override
   Future<bool> requestAuth(

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/storage/secret_store.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_service_session.dart';
+import 'metaverse_credential.dart';
 
 /// 已安装的第三方插件。
 @immutable
@@ -88,6 +89,10 @@ class MetaversePluginStore {
   final List<String> reservedHosts;
   final _operations = PluginOperationQueue();
   final _stagedCode = <String, String>{};
+  final _credentialGenerations = <String, int>{};
+
+  (int, int) credentialRevision(String id, String name) =>
+      (_operations.generation(id), _credentialGenerations['$id/$name'] ?? 0);
 
   /// 读取已安装插件；清单已不合法的条目直接跳过。
   List<InstalledMetaversePlugin> loadIndex() {
@@ -333,6 +338,39 @@ class MetaversePluginStore {
     await Future.wait([
       _secretStore.delete(_tokenKey(id)),
       _secretStore.delete(_sessionKey(id)),
+      _secretStore.deleteScope(SecretScope(namespace: 'metaverse_credentials:$id')),
     ]);
+  }
+
+  SecretKey _credentialKey(String id, String name) =>
+      SecretKey(namespace: 'metaverse_credentials:$id', name: name);
+
+  Future<MetaverseCredential?> readCredential(String id, String name) async {
+    final encoded = await _secretStore.read(_credentialKey(id, name));
+    if (encoded == null) return null;
+    try {
+      return MetaverseCredential.parse(jsonDecode(encoded));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> writeCredential(
+    String id,
+    String name,
+    MetaverseCredential credential, {
+    required bool Function() isActive,
+    required (int, int) revision,
+  }) => _operations.run(id, () async {
+    if (!isActive() || credentialRevision(id, name) != revision) {
+      throw const PluginOperationCancelled();
+    }
+    await _secretStore.write(_credentialKey(id, name), jsonEncode(credential.toJson()));
+  });
+
+  Future<void> removeCredential(String id, String name) {
+    final key = '$id/$name';
+    _credentialGenerations[key] = (_credentialGenerations[key] ?? 0) + 1;
+    return _operations.run(id, () => _secretStore.delete(_credentialKey(id, name)));
   }
 }

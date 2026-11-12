@@ -4,12 +4,15 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/ldc_payment_service.dart';
+import 'package:fluxdo/services/ldc_payment_session.dart';
 
 class _Cashier implements HttpClientAdapter {
   final requests = <RequestOptions>[];
   String merchantNo = 'store-order', payer = 'tester', amount = '12.50';
   bool timeout = false;
   bool hasPassword = false;
+  String transactionStatus = 'success';
+  String transactionPayee = 'seller';
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -17,6 +20,34 @@ class _Cashier implements HttpClientAdapter {
     Future<void>? cancel,
   ) async {
     requests.add(options);
+    if (options.uri.path == '/api/v1/order/transactions') {
+      expect(options.data, {
+        'id': '9000000000000000001',
+        'page': 1,
+        'page_size': 1,
+      });
+      return ResponseBody.fromString(
+        jsonEncode({
+          'error_msg': '',
+          'data': {
+            'orders': [
+              {
+                'id': '9000000000000000001',
+                'merchant_order_no': merchantNo,
+                'amount': amount,
+                'payer_username': payer,
+                'payee_username': transactionPayee,
+                'status': transactionStatus,
+              },
+            ],
+          },
+        }),
+        200,
+        headers: {
+          'content-type': ['application/json'],
+        },
+      );
+    }
     if (options.uri.path == '/api/v1/oauth/user-info') {
       return ResponseBody.fromString(
         jsonEncode({
@@ -64,6 +95,7 @@ class _Cashier implements HttpClientAdapter {
         'error_msg': '',
         'data': {
           'order': {
+            'id': '9000000000000000001',
             'merchant_order_no': merchantNo,
             'payer_username': payer,
             'payee_username': 'seller',
@@ -105,6 +137,31 @@ void main() {
     service = LdcPaymentService(dio: Dio()..httpClientAdapter = api);
   });
   tearDown(() => service.dispose());
+  test('公共支付会话独立从 LDC 核验结果，核对收付款账号和金额', () async {
+    final payment = LdcPaymentSession(
+      service: service,
+      paymentUrl: url,
+      reference: 'store-order',
+      amount: '12.50',
+      checkSession: () async {},
+    );
+    await payment.prepare('store-order', 'tester');
+    expect(await payment.refreshPayment('store-order'), isTrue);
+    api.transactionStatus = 'pending';
+    expect(await payment.refreshPayment('store-order'), isFalse);
+    api.transactionStatus = 'success';
+    api.transactionPayee = 'someone-else';
+    await expectLater(
+      payment.refreshPayment('store-order'),
+      throwsA(isA<LdcPaymentException>()),
+    );
+    expect(
+      api.requests.where(
+        (request) => request.uri.path == '/api/v1/merchant/payment',
+      ),
+      isEmpty,
+    );
+  });
   test('首次设置密码单独提交，已有密码时保留原设置', () async {
     await service.setInitialPassword(
       '123456',
