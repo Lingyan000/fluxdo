@@ -15,19 +15,19 @@ enum ThemeColorKind {
   fixed,
 }
 
-/// 主题在画廊中的分组。
+/// 主题在画廊中的分组，按用途划分。
 enum ThemeGroup {
-  /// 取色（Material / 简约）
+  /// 动态取色：由种子色生成（Material / 简约）
   generated,
 
-  /// 经典配色（Catppuccin、Nord……）
-  classic,
+  /// 素雅：日常使用的干净中性色（轻云、燕麦）
+  clean,
 
-  /// 阅读（纸质、豆沙绿）
+  /// 阅读：长时间阅读（纸质、豆沙绿）
   reading,
 
-  /// 终端
-  terminal,
+  /// 代码配色：编辑器与终端里常见的配色（Catppuccin、Nord、磷光……）
+  code,
 
   /// 用户自定义 / 导入
   custom,
@@ -314,6 +314,7 @@ class ThemeSpec {
     ThemePalette? dark,
     List<ThemeAccent>? accents,
     ShapePreset? shape,
+    ThemeStyle? style,
     bool clearFamily = false,
   }) => ThemeSpec(
     id: id ?? this.id,
@@ -324,7 +325,7 @@ class ThemeSpec {
     variantName: clearFamily ? const {} : variantName,
     order: order,
     shape: shape ?? this.shape,
-    style: style,
+    style: style ?? this.style,
     fontBody: fontBody,
     fontMono: fontMono,
     surface: surface,

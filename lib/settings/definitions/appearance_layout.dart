@@ -297,6 +297,7 @@ class _ThemeQuickGallery extends ConsumerWidget {
                       Theme.of(context).brightness,
                     ),
                     shapes: (state.shapeOverride ?? spec.shape).shapes,
+                    style: spec.style,
                     selected: spec.familyId == current.familyId,
                     onTap: () {
                       if (spec.id == current.id) return;

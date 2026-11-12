@@ -5,7 +5,7 @@
     "en": "Gruvbox"
   },
   "kind": "fixed",
-  "group": "classic",
+  "group": "code",
   "order": 120,
   "style": {"dataColors": "harmonized"},
   "supportsPureBlack": true,

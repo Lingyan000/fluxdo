@@ -1,0 +1,102 @@
+{
+  "id": "oat",
+  "name": {
+    "zh": "燕麦",
+    "en": "Oat"
+  },
+  "kind": "fixed",
+  "group": "clean",
+  "order": 60,
+  "style": {
+    "surfaces": "raised",
+    "controls": "ink",
+    "navIndicator": "tint",
+    "inputs": "outlined",
+    "quote": "bar",
+    "dataColors": "muted"
+  },
+  "supportsPureBlack": false,
+  "allowCustomAccent": true,
+  "light": {
+    "bg": "#F4F1EB",
+    "fg": "#211D18",
+    "fgMuted": "#6E665B",
+    "border": "#E6E0D5",
+    "roles": {
+      "surfaceContainerLowest": "#FFFDFA"
+    },
+    "hues": {
+      "red": "#C8483A",
+      "orange": "#C9722E",
+      "yellow": "#A98514",
+      "green": "#5E8C4A",
+      "cyan": "#3C8C8C",
+      "blue": "#4474A6",
+      "purple": "#8765A8",
+      "teal": "#3F8F7A"
+    }
+  },
+  "dark": {
+    "bg": "#181614",
+    "fg": "#EEE9E1",
+    "fgMuted": "#ADA498",
+    "border": "#322E29",
+    "hues": {
+      "red": "#E88475",
+      "orange": "#E6A06A",
+      "yellow": "#DDBE6A",
+      "green": "#9CC084",
+      "cyan": "#7FC2C0",
+      "blue": "#8FB3DC",
+      "purple": "#BCA0D8",
+      "teal": "#7EC4B0"
+    }
+  },
+  "accents": [
+    {
+      "id": "terracotta",
+      "name": {
+        "zh": "陶土",
+        "en": "Terracotta"
+      },
+      "light": "#B9532F",
+      "dark": "#E9916F"
+    },
+    {
+      "id": "olive",
+      "name": {
+        "zh": "橄榄",
+        "en": "Olive"
+      },
+      "light": "#66793A",
+      "dark": "#A9BD78"
+    },
+    {
+      "id": "ochre",
+      "name": {
+        "zh": "赭黄",
+        "en": "Ochre"
+      },
+      "light": "#A9781A",
+      "dark": "#E0B860"
+    },
+    {
+      "id": "slate",
+      "name": {
+        "zh": "岩蓝",
+        "en": "Slate"
+      },
+      "light": "#4A6A8A",
+      "dark": "#93B4D6"
+    },
+    {
+      "id": "plum",
+      "name": {
+        "zh": "梅紫",
+        "en": "Plum"
+      },
+      "light": "#8A4F6E",
+      "dark": "#D29BBA"
+    }
+  ]
+}

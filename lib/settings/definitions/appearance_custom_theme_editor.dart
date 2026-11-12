@@ -291,6 +291,7 @@ class _CustomThemeEditorPageState
                 child: _MiniScreen(
                   scheme: scheme,
                   shapes: _spec.shape.shapes,
+                  style: _spec.style,
                   cornerRadius: 20,
                 ),
               ),

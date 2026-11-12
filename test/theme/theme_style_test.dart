@@ -8,6 +8,7 @@ import 'package:fluxdo/utils/color_utils.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show FluxdoRenderStyle;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 ThemeData _build(ThemeStyle style, {Brightness brightness = Brightness.light}) {
   final scheme = ColorScheme.fromSeed(
@@ -55,6 +56,38 @@ void main() {
       const style = ThemeStyle(dataColors: DataColorStyle.harmonized);
       expect(style.isMaterial, isFalse);
       expect(style.hasMaterialComponents, isTrue);
+    });
+  });
+
+  group('容器风格', () {
+    test('浮起：浅色容器取最亮一级，深色比页面抬亮，都带细线', () {
+      const style = ThemeStyle(surfaces: SurfaceStyle.raised);
+      expect(ThemeStyle.fromJson(style.toJson()), style);
+      for (final brightness in Brightness.values) {
+        final theme = _build(style, brightness: brightness);
+        final scheme = theme.colorScheme;
+        expect(theme.cardTheme.color, raisedSurfaceColor(scheme));
+        expect(theme.cardTheme.color, isNot(scheme.surface));
+        final shape = theme.cardTheme.shape! as OutlinedBorder;
+        expect(shape.side.color, scheme.outlineVariant);
+        // 栏与页面同色，分层靠容器明度
+        expect(theme.navigationBarTheme.backgroundColor, scheme.surface);
+        final groups = theme.extension<SegmentedCardStyle>()!;
+        expect(groups.mode, SegmentedCardMode.outlined);
+        expect(groups.background, raisedSurfaceColor(scheme));
+      }
+    });
+
+    test('色块容器配其他开关时，卡片仍是色块底、不描边', () {
+      final material = _build(ThemeStyle.material);
+      final theme = _build(const ThemeStyle(controls: ControlStyle.ink));
+      expect(theme.cardTheme.color, material.cardTheme.color);
+      expect(theme.cardTheme.color, isNot(theme.colorScheme.surface));
+      expect((theme.cardTheme.shape! as OutlinedBorder).side, BorderSide.none);
+      expect(
+        theme.extension<SegmentedCardStyle>()!.mode,
+        SegmentedCardMode.segmented,
+      );
     });
   });
 

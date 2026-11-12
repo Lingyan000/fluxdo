@@ -10,7 +10,27 @@ enum SurfaceStyle {
 
   /// 不画容器：平铺在页面上，相邻项之间细线分隔
   flat,
+
+  /// 浮起：容器比页面底更亮一级，外加一圈细线；层级靠底色明度区分
+  raised;
+
+  /// 容器是否带一圈细线
+  bool get hasOutline => this == outlined || this == raised;
 }
+
+/// 浮起风格的容器底色：浅色取最亮的一级（比页面底更白），深色在页面底
+/// 上抬亮一级。容器里的色块（标签、代码块、输入框）用更高的几级，
+/// 仍能与容器区分。
+Color raisedSurfaceColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.light
+    ? scheme.surfaceContainerLowest
+    : scheme.surfaceContainer;
+
+/// 浮起风格的浮层底色：浅色与容器同为最亮一级，深色比容器再高一级。
+Color raisedOverlayColor(ColorScheme scheme) =>
+    scheme.brightness == Brightness.light
+    ? scheme.surfaceContainerLowest
+    : scheme.surfaceContainerHigh;
 
 /// 实心控件（实心按钮、开关、单选 / 复选、悬浮按钮、选中标签）的颜色。
 enum ControlStyle {

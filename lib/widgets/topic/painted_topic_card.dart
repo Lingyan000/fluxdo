@@ -104,7 +104,7 @@ class _PaintedTopicCardState extends State<PaintedTopicCard> {
               ? BorderSide(
                   color: theme.colorScheme.primary.withValues(alpha: 0.5),
                 )
-              : surfaces == SurfaceStyle.outlined
+              : surfaces.hasOutline
               ? BorderSide(color: theme.colorScheme.outlineVariant)
               : BorderSide.none,
         ),
