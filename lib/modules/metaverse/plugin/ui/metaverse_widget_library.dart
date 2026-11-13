@@ -11,6 +11,7 @@ import 'package:rfw/rfw.dart' hide Switch;
 
 import '../../../../l10n/s.dart';
 import '../../../../utils/svg_utils.dart';
+import '../../../../widgets/common/image_placeholder.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
 
 part 'metaverse_page_components.dart';
@@ -600,18 +601,8 @@ class _PluginImageState extends State<_PluginImage> {
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = Icon(
-      Symbols.image_rounded,
-      color: Theme.of(context).colorScheme.outline,
-    );
-    final retry = Center(
-      child: IconButton(
-        tooltip: context.l10n.common_retry,
-        icon: const Icon(Symbols.refresh_rounded),
-        color: Theme.of(context).colorScheme.outline,
-        onPressed: () => setState(_update),
-      ),
-    );
+    final placeholder = ImagePlaceholder(loading: _request != null);
+    final retry = ImagePlaceholder(onRetry: () => setState(_update));
     return ClipRRect(
       borderRadius: widget.radius,
       child: SizedBox(
@@ -620,12 +611,12 @@ class _PluginImageState extends State<_PluginImage> {
         child: FutureBuilder<Uint8List>(
           future: _request,
           builder: (_, snapshot) {
-            if (snapshot.hasError) return retry;
-            final bytes = snapshot.data;
-            if (snapshot.connectionState != ConnectionState.done ||
-                bytes == null) {
+            if (snapshot.connectionState != ConnectionState.done) {
               return placeholder;
             }
+            if (snapshot.hasError) return retry;
+            final bytes = snapshot.data;
+            if (bytes == null) return placeholder;
             if (SvgUtils.isSvgBytes(bytes)) {
               try {
                 // 复用应用的静态 SVG 渲染器，外链子资源不会自行发起网络请求。
@@ -646,6 +637,8 @@ class _PluginImageState extends State<_PluginImage> {
                 policy: ResizeImagePolicy.fit,
               ),
               fit: widget.fit,
+              frameBuilder: (_, child, frame, loaded) =>
+                  loaded || frame != null ? child : placeholder,
               errorBuilder: (_, _, _) => retry,
             );
           },

@@ -63,6 +63,7 @@
   "common_later": "稍后",
   "common_linkCopied": "链接已复制",
   "common_loadFailed": "加载失败",
+  "common_imageUnavailable": "图片暂不可用",
   "common_loadFailedRetry": "加载失败，请重试",
   "common_loadFailedTapRetry": "加载失败，点击重试",
   "common_loading": "加载中...",

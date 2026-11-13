@@ -56,6 +56,7 @@
   "common_later": "Later",
   "common_linkCopied": "Link copied",
   "common_loadFailed": "Failed to load",
+  "common_imageUnavailable": "Image unavailable",
   "common_loadFailedRetry": "Failed to load, please retry",
   "common_loadFailedTapRetry": "Failed to load, tap to retry",
   "common_loading": "Loading...",
