@@ -66,9 +66,9 @@ class ForumPreferenceField {
         : (user[container] as Map?)?[key];
     return switch (kind) {
       ForumPreferenceKind.flair => value ?? 0,
-      ForumPreferenceKind.categories ||
       ForumPreferenceKind.tags ||
-      ForumPreferenceKind.tagNames ||
+      ForumPreferenceKind.tagNames => _tagNames(value),
+      ForumPreferenceKind.categories ||
       ForumPreferenceKind.theme ||
       ForumPreferenceKind.usernames ||
       ForumPreferenceKind.multiChoice =>
@@ -87,6 +87,21 @@ class ForumPreferenceField {
     };
   }
 
+  // Discourse 返回标签对象，旧数据也可能是名称列表或逗号分隔字符串。
+  static List<String> _tagNames(dynamic value) {
+    final items = value is List
+        ? value
+        : value is String
+        ? value.split(',')
+        : const [];
+    return items
+        .map((item) => item is Map ? item['name'] : item)
+        .whereType<String>()
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
   dynamic serialize(dynamic value) {
     if (kind == ForumPreferenceKind.flair && value == 0) return '';
     if (container == 'user_fields' &&
@@ -97,14 +112,17 @@ class ForumPreferenceField {
     if (container == 'user_fields' && kind == ForumPreferenceKind.toggle) {
       return value == true ? 'true' : 'false';
     }
-    if (kind == ForumPreferenceKind.tagNames && (value as List).isEmpty) {
-      return null;
+    if (kind == ForumPreferenceKind.tags) {
+      return _tagNames(value).join(',');
+    }
+    if (kind == ForumPreferenceKind.tagNames) {
+      final names = _tagNames(value);
+      return names.isEmpty ? null : names;
     }
     if (kind == ForumPreferenceKind.categories && (value as List).isEmpty) {
       return emptyValue;
     }
-    if (kind == ForumPreferenceKind.tags ||
-        kind == ForumPreferenceKind.usernames) {
+    if (kind == ForumPreferenceKind.usernames) {
       return (value as List).join(',');
     }
     return value;

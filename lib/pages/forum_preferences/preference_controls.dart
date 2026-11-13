@@ -15,7 +15,6 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
 import '../../utils/url_helper.dart';
 import '../../utils/time_utils.dart';
-import '../../widgets/common/app_bottom_sheet.dart';
 import '../../widgets/common/tag_selection_sheet.dart';
 import '../../widgets/common/cached_image.dart';
 import '../chat/new_chat_sheet.dart';
@@ -355,10 +354,12 @@ class _PreferenceControlState extends State<PreferenceControl> {
     final field = widget.field;
     if (field.kind == ForumPreferenceKind.tags ||
         field.kind == ForumPreferenceKind.tagNames) {
-      final selected = await AppBottomSheet.show<List<String>>(
+      final selected = await showAppBottomSheet<List<String>>(
         context: context,
-        title: field.label,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
         builder: (_) => TagSelectionSheet(
+          title: field.label,
           availableTags: const [],
           selectedTags: List<String>.from(widget.value as List),
           maxTags: 1000,

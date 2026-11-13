@@ -142,6 +142,65 @@ void main() {
     });
   });
 
+  test('标签通知读取对象和历史名称格式，跨级别移动后提交名称', () {
+    final data = ForumPreferences(
+      user: {
+        'username': 'tester',
+        'can_change_tracking_preferences': true,
+        'watched_tags': [
+          {'id': 1, 'name': '开发', 'slug': 'development'},
+          'flutter',
+        ],
+        'tracked_tags': 'dart, linux',
+        'watching_first_post_tags': null,
+        'muted_tags': [
+          {'id': 2, 'name': '闲聊', 'slug': 'chat'},
+        ],
+      },
+      site: {},
+      settings: {'tagging_enabled': true},
+    );
+    final fields = preferenceFields(
+      ForumPreferenceSection.tracking,
+      data,
+      AppLocale.zh.buildSync(),
+    ).where((field) => field.kind == ForumPreferenceKind.tags).toList();
+    expect(fields, hasLength(4));
+    final draft = ForumPreferenceDraft(fields, data.user);
+    expect(draft.values['user.watched_tags'], ['开发', 'flutter']);
+    expect(draft.values['user.tracked_tags'], ['dart', 'linux']);
+    expect(draft.values['user.watching_first_post_tags'], isEmpty);
+    expect(draft.values['user.muted_tags'], ['闲聊']);
+    expect(draft.dirty, false);
+    final muted = fields.singleWhere((field) => field.key == 'muted_tags');
+    draft.update(muted, ['闲聊', '开发']);
+    expect(draft.payload, {'watched_tags': 'flutter', 'muted_tags': '闲聊,开发'});
+    expect(muted.serialize(data.user['muted_tags']), '闲聊');
+    expect((data.user['watched_tags'] as List).first, isA<Map>());
+    draft.update(muted, <String>[]);
+    expect(draft.payload['muted_tags'], '');
+  });
+
+  test('标签名称读取过滤空项并保留有效名称', () {
+    const field = ForumPreferenceField(
+      key: 'sidebar_tag_names',
+      label: '标签',
+      kind: ForumPreferenceKind.tagNames,
+    );
+    final input = [
+      ' dart ',
+      {'id': 1, 'name': 'flutter'},
+      null,
+      {},
+      {'name': ''},
+      '',
+    ];
+    expect(field.read({'sidebar_tag_names': input}), ['dart', 'flutter']);
+    expect(field.serialize(input), ['dart', 'flutter']);
+    expect(field.read({}), isEmpty);
+    expect(field.serialize([]), isNull);
+  });
+
   test('改变分类通知级别时同时清空旧级别', () {
     const watched = ForumPreferenceField(
       key: 'watched_category_ids',

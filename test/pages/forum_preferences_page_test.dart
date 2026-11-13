@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -26,6 +28,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/pages/forum_preferences/preference_controls.dart';
 import 'package:fluxdo/widgets/common/cached_image.dart';
+import 'package:fluxdo/widgets/common/tag_selection_sheet.dart';
+import 'package:fluxdo/widgets/common/topic_badges.dart';
 import 'package:fluxdo/widgets/common/flair_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -148,6 +152,10 @@ void main() {
         'location': '原位置',
         'website': '',
         'date_of_birth': '2000-02-28',
+        'can_change_tracking_preferences': true,
+        'muted_tags': [
+          {'id': 1, 'name': '静音标签', 'slug': 'muted'},
+        ],
         'can_mute_users': true,
         'muted_usernames': ['existing'],
         'status': {
@@ -160,12 +168,8 @@ void main() {
       await tester.runAsync(
         () => PreloadedDataService().hydrateFromHtml(
           '<meta id="data-discourse-setup"><script id="data-preloaded" type="application/json">${jsonEncode({
-            'currentUser': {
-              'id': 1,
-              'username': 'tester',
-              'status': user['status'],
-            },
-            'siteSettings': {'enable_user_status': true},
+            'currentUser': {'id': 1, 'username': 'tester', 'status': user['status']},
+            'siteSettings': {'enable_user_status': true, 'tagging_enabled': true},
             'site': {'categories': []},
           })}</script>',
         ),
@@ -180,6 +184,9 @@ void main() {
             profileReads++;
           }
           Object data = {'user': user};
+          if (options.path == '/tags/filter/search') {
+            data = {'results': []};
+          }
           if (options.path == '/u/search/users') {
             data = {
               'users': [
@@ -702,6 +709,44 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '保存'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'muted_usernames': 'existing,alice'});
+      if (width < 860) {
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+      }
+      final tracking = find.byKey(
+        const ValueKey(ForumPreferenceSection.tracking),
+      );
+      await tester.ensureVisible(tracking);
+      await tester.tap(tracking);
+      await tester.pumpAndSettle();
+      final mutedTags = find.widgetWithText(ListTile, '静音的标签');
+      await tester.scrollUntilVisible(
+        mutedTags,
+        300,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await Scrollable.ensureVisible(tester.element(mutedTags), alignment: 0.5);
+      await tester.pumpAndSettle();
+      expect(find.text('静音标签'), findsOneWidget);
+      await tester.tap(mutedTags);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AppSheetScaffold), findsOneWidget);
+      expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+      expect(
+        tester
+            .widget<TagSelectionSheet>(find.byType(TagSelectionSheet))
+            .selectedTags,
+        ['静音标签'],
+      );
+      await tester.tap(find.widgetWithText(RemovableTagBadge, '静音标签'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '确定'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'muted_tags': ''});
+
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();

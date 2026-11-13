@@ -9,10 +9,11 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/tag_search_result.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/toast_service.dart';
-import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
 import 'package:fluxdo/widgets/common/topic_badges.dart';
 
 class TagSelectionSheet extends StatefulWidget {
+  final String? title;
+
   /// 分类 ID（用于联动过滤标签）
   final int? categoryId;
 
@@ -36,6 +37,7 @@ class TagSelectionSheet extends StatefulWidget {
 
   const TagSelectionSheet({
     super.key,
+    this.title,
     this.categoryId,
     required this.availableTags,
     required this.selectedTags,
@@ -198,8 +200,9 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
       expand: false,
       builder: (context, scrollController) {
         return AppSheetScaffold(
+          title: widget.title,
           expandToFill: true,
-          showCloseButton: false,
+          showCloseButton: widget.title != null,
           contentPadding: EdgeInsets.zero,
           child: Column(
             children: [
