@@ -82,10 +82,16 @@ widget Product = PageLayout(
   loading: data.loading,
   onRefresh: event "retry" {},
   footer: switch data.ready {
-    true: Row(children: [
-      Expanded(child: Label(text: data.price, style: "titleLarge", color: "primary", bold: true)),
-      Gap(size: 12),
-      Button(label: "立即兑换", enabled: data.buy, onPressed: event "review" {}),
+    true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+      ExternalFeedback(),
+      Row(children: [
+        Expanded(child: Label(text: data.price, style: "titleLarge", color: "primary", bold: true)),
+        Gap(size: 12),
+        switch data.linkProduct {
+          true: Button(label: "查看兑换方式", icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
+          default: Button(label: "立即兑换", enabled: data.buy, onPressed: event "review" {}),
+        },
+      ]),
     ]),
     default: SizedBoxShrink(),
   },
@@ -230,11 +236,19 @@ widget ReviewAction = switch data.ready {
       default: SizedBoxShrink(),
     },
     default: switch data.linkProduct {
-      true: Button(label: "查看兑换方式", icon: "open_in_new", enabled: data.buy, onPressed: event "buy" {}),
+      true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+        ExternalFeedback(),
+        Button(label: "查看兑换方式", icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
+      ]),
       default: LoginButton(),
     },
   },
   default: SizedBoxShrink(),
+};
+
+widget ExternalFeedback = switch data.externalError {
+  "": SizedBoxShrink(),
+  default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.externalError, color: "error")),
 };
 
 widget BuyerOrders = PageLayout(loading: data.loading, onRefresh: event "ordersRefresh" {}, children: [

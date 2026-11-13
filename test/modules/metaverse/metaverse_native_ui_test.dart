@@ -1328,6 +1328,13 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     'authBusy': false,
     'ready': true,
     'error': '',
+    'externalError': '',
+    'externalBusy': false,
+    'comments': <Object?>[],
+    'commentsError': '',
+    'commentsMessage': '暂无评论',
+    'commentsMore': false,
+    'commentsLoading': false,
     'message': '',
     'filters': false,
     'filterLabel': '筛选与排序',
@@ -1443,6 +1450,35 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           expect(tester.takeException(), isNull, reason: name);
           if (width == 390) {
             await snapshot(tester, '${name.toLowerCase()}-${brightness.name}');
+          }
+          if (name == 'Product') {
+            for (final failed in [false, true]) {
+              await tester.pumpWidget(app(
+                RemoteWidget(
+                  runtime: runtime,
+                  widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
+                  data: DynamicContent({
+                    ...data,
+                    'linkProduct': true,
+                    'externalError': failed ? '读取兑换地址失败（HTTP 503）' : '',
+                  }),
+                ),
+                brightness: brightness,
+                scale: width == 320 ? 1.4 : 1,
+              ));
+              await tester.pumpAndSettle();
+              expect(tester.takeException(), isNull, reason: '链接商品 $failed');
+              final action = find.text('查看兑换方式');
+              expect(action, findsOneWidget);
+              expect(tester.getRect(action).bottom, lessThan(844));
+              if (failed) {
+                expect(tester.getRect(find.text('读取兑换地址失败（HTTP 503）')).bottom,
+                    lessThan(tester.getRect(action).top));
+              }
+              if (width == 390) {
+                await snapshot(tester, 'product-link-$failed-${brightness.name}');
+              }
+            }
           }
         }
       });

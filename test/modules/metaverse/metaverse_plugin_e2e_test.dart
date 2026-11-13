@@ -104,6 +104,9 @@ class _ShopApi extends _Api {
   bool checkoutSucceeds = false;
   bool lookupExists = false;
   Completer<void>? waitQuote;
+  Completer<void>? waitExternalLink;
+  String externalLink = 'https://merchant.example.org/redeem/item';
+  int externalStatus = 200;
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
@@ -152,6 +155,17 @@ class _ShopApi extends _Api {
     if (uri.host == 'packages.example.org') {
       final file = File('plugins/ld-store/${uri.pathSegments.last}');
       return ResponseBody.fromString(file.readAsStringSync(), 200);
+    }
+    if (uri.path.endsWith('/external-link')) {
+      expect(options.method, 'GET');
+      await waitExternalLink?.future;
+      return ResponseBody.fromString(
+        jsonEncode({
+          'success': externalStatus == 200,
+          'data': {'paymentLink': externalLink},
+        }),
+        externalStatus,
+      );
     }
     if (uri.path.endsWith('/comments')) {
       return ResponseBody.fromString(
@@ -776,6 +790,132 @@ Future<void> main() async {
       await tester.tap(find.text('登录士多'));
       await settle(tester, () => delegate.authRequests == 2);
       expect(delegate.opened, isEmpty);
+    });
+
+    for (final authorized in [false, true]) {
+      pluginTest('链接商品直接读取兑换地址并打开，授权状态 $authorized', (tester) async {
+        final service = _ShopApi()
+          ..productFields = {'productType': 'link'}
+          ..waitExternalLink = Completer<void>();
+        await tester.runAsync(() async {
+          await openShop(
+            (_) async => [InternetAddress('8.8.8.8')],
+            primary: service,
+          );
+          if (authorized) await authorizeShop();
+        });
+        await tester.pumpWidget(app(MetaversePluginSurfaceView(
+          host: host,
+          kind: MetaversePluginSurfaceKind.page,
+          page: 'product',
+          params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+        )));
+        final action = find.text('查看兑换方式');
+        await settle(tester, () => action.evaluate().isNotEmpty);
+        expect(find.text('立即兑换'), findsNothing);
+        await tester.tap(action);
+        await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+        final request = service.requests.where((r) => r.path.endsWith('/external-link')).single;
+        expect(request.headers['Authorization'], authorized ? 'Bearer fixture-session' : isNull);
+        expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '查看兑换方式')).onPressed, isNull);
+        expect(delegate.opened, isEmpty);
+        service.waitExternalLink!.complete();
+        await settle(tester, () => delegate.opened.isNotEmpty);
+        expect(delegate.opened, [service.externalLink]);
+        expect(delegate.pages, isEmpty);
+        expect(delegate.payments, isEmpty);
+        expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(1));
+        expect(service.requests.every((r) => r.method == 'GET'), isTrue);
+      });
+    }
+
+    pluginTest('链接商品失败或地址无效时原地反馈，重试成功', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..externalStatus = 503;
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'review',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      final action = find.text('查看兑换方式');
+      await settle(tester, () => action.evaluate().isNotEmpty);
+      await tester.tap(action);
+      await settle(tester, () => find.text('读取兑换地址失败（HTTP 503）').evaluate().isNotEmpty);
+      expect(delegate.opened, isEmpty);
+      service.externalStatus = 200;
+      service.externalLink = 'javascript:alert(1)';
+      await tester.tap(action);
+      await settle(tester, () => find.text('士多返回的兑换地址无效').evaluate().isNotEmpty);
+      expect(delegate.opened, isEmpty);
+      service.externalLink = 'https://merchant.example.org/redeem/item';
+      await tester.tap(action);
+      await settle(tester, () => delegate.opened.isNotEmpty);
+      expect(delegate.opened, [service.externalLink]);
+      expect(find.text('士多返回的兑换地址无效'), findsNothing);
+      expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(3));
+    });
+
+    pluginTest('链接商品读取期间离开页面后不打开晚到地址', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..waitExternalLink = Completer<void>();
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'product',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      await settle(tester, () => find.text('查看兑换方式').evaluate().isNotEmpty);
+      await tester.tap(find.text('查看兑换方式'));
+      await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+      await tester.pumpWidget(app(const Text('已返回')));
+      service.waitExternalLink!.complete();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 80)));
+      await tester.pump();
+      expect(delegate.opened, isEmpty);
+      expect(delegate.pages, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    pluginTest('链接商品读取期间后台恢复忽略旧结果，再次点击可打开', (tester) async {
+      final service = _ShopApi()
+        ..productFields = {'productType': 'link'}
+        ..waitExternalLink = Completer<void>();
+      await tester.runAsync(() => openShop(
+        (_) async => [InternetAddress('8.8.8.8')], primary: service,
+      ));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: 'product',
+        params: const {'id': 'd553779c-83ef-48e4-98c5-a8446c78d5ec'},
+      )));
+      final action = find.widgetWithText(FilledButton, '查看兑换方式');
+      await settle(tester, () => action.evaluate().isNotEmpty);
+      await tester.tap(action);
+      await settle(tester, () => service.requests.any((r) => r.path.endsWith('/external-link')));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      service.waitExternalLink!.complete();
+      await settle(tester, () => tester.widget<FilledButton>(action).onPressed != null);
+      expect(delegate.opened, isEmpty);
+      await tester.tap(action);
+      await settle(tester, () => delegate.opened.isNotEmpty);
+      expect(delegate.opened, [service.externalLink]);
+      expect(service.requests.where((r) => r.path.endsWith('/external-link')), hasLength(2));
+      expect(service.requests.where((r) => r.path.endsWith('/d553779c-83ef-48e4-98c5-a8446c78d5ec')), hasLength(1));
     });
 
     pluginTest('匿名兑换预览采用实际可用库存，零库存不会被原始不限库存覆盖', (tester) async {
