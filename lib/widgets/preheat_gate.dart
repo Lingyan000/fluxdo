@@ -86,7 +86,8 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
         .getString('pref_app_icon');
     _iconStyle = saved == 'modern' ? AppIconStyle.modern : AppIconStyle.classic;
     _entry.addStatusListener((_) => _updateLogoShown());
-    LaunchSplashHandoff.nativeSplashVisible.addListener(_updateLogoShown);
+    LaunchSplashHandoff.nativeSplashVisible.addListener(_onNativeSplashChanged);
+    LaunchSplashHandoff.nativeLogo.addListener(_onNativeLogoChanged);
     if (LaunchSplashHandoff.nativeDrewLogo) {
       // 原生启动屏已播完同一段描线：首帧直接接手完整 logo
       _entry.value = 1;
@@ -103,6 +104,23 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     Future.microtask(_run);
   }
 
+  /// 原生屏实际没画 logo（系统改用了纯色启动屏）：先清空，撤下后从空白描线
+  bool _strokeAfterNative = false;
+
+  void _onNativeLogoChanged() {
+    if (LaunchSplashHandoff.nativeLogo.value || _reduceMotion) return;
+    _entry.value = 0;
+    _strokeAfterNative = true;
+  }
+
+  void _onNativeSplashChanged() {
+    if (_strokeAfterNative && !LaunchSplashHandoff.nativeSplashVisible.value) {
+      _strokeAfterNative = false;
+      _entry.forward();
+    }
+    _updateLogoShown();
+  }
+
   void _updateLogoShown() {
     _logoShown.value =
         _entry.isCompleted && !LaunchSplashHandoff.nativeSplashVisible.value;
@@ -110,7 +128,10 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
 
   @override
   void dispose() {
-    LaunchSplashHandoff.nativeSplashVisible.removeListener(_updateLogoShown);
+    LaunchSplashHandoff.nativeSplashVisible.removeListener(
+      _onNativeSplashChanged,
+    );
+    LaunchSplashHandoff.nativeLogo.removeListener(_onNativeLogoChanged);
     _logoShown.dispose();
     _entry.dispose();
     _exit.dispose();

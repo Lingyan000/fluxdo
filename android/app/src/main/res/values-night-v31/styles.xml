@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowFullscreen">false</item>
@@ -14,14 +14,18 @@
     </style>
     <!-- 运行时按当前图标登记的启动屏主题(Android 13+ setSplashScreenTheme)。
          activity-alias 不能单独指定 theme，静态 LaunchTheme 拿不到当前图标。
-         图标是由 tool/gen_splash_motion.dart 生成的描线动画，与 Flutter 启动页同源。 -->
+         图标是由 tool/gen_splash_motion.dart 生成的描线动画，与 Flutter 启动页同源。
+         icon_preferred：从通知、其他应用等入口启动时，系统默认改用无图标的纯色启动屏，
+         描线会整段丢失；声明后任何入口都显示图标。 -->
     <style name="SplashTheme.Classic" parent="LaunchTheme">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_classic</item>
         <item name="android:windowSplashScreenAnimationDuration">@integer/splash_motion_duration</item>
+        <item name="android:windowSplashScreenBehavior" tools:targetApi="33">icon_preferred</item>
     </style>
     <style name="SplashTheme.Modern" parent="LaunchTheme">
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo_modern</item>
         <item name="android:windowSplashScreenAnimationDuration">@integer/splash_motion_duration</item>
+        <item name="android:windowSplashScreenBehavior" tools:targetApi="33">icon_preferred</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>

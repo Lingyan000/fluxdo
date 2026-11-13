@@ -18,8 +18,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -69,6 +71,13 @@ class MainActivity : FlutterActivity() {
         private const val SPLASH_PREFS_FILE = "launch_splash"
         private const val SPLASH_REGISTERED_KEY = "registered_theme"
         private const val SPLASH_NIGHT_MODE_KEY = "night_mode"
+
+        // 原生描线播完后多停的时长（约两帧）
+        private const val SPLASH_HOLD_MARGIN_MS = 34L
+        // 透明背景帧提交后等待上屏的刷新次数
+        private const val SPLASH_PRESENT_FRAMES = 2
+        // 等 Dart 改为从头描线的最长时间
+        private const val SPLASH_RESTART_TIMEOUT_MS = 300L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,7 +98,8 @@ class MainActivity : FlutterActivity() {
     // Flutter 首帧若早于描线播完，原生屏停留到播完再撤下；Flutter 下层已是
     // 同一帧的完整 logo。先提交透明背景帧，再释放原生 logo 的独立 Surface，
     // 避免 Surface 先消失、背景后撤下时露出一帧空底。
-    // 撤下后通知 Dart 开始光晕、角标与退场。
+    // 撤下后通知 Dart 开始光晕、角标与退场，并附上本次交接时序写入日志。
+    // 系统仍可能改用无图标的纯色启动屏，此时先让 Dart 改为从头描线再撤下。
 
     private val SPLASH_CHANNEL = "com.github.lingyan000.fluxdo/splash"
     private var nativeSplashLogo = false
@@ -122,28 +132,81 @@ class MainActivity : FlutterActivity() {
     private fun holdSplashUntilLogoDrawn() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         splashScreen.setOnExitAnimationListener { view ->
+            val exitAt = SystemClock.uptimeMillis()
+            if (view.iconView == null) {
+                // 纯色启动屏：原生没画 logo，Flutter 下层的完整 logo 不能直接露出
+                nativeSplashLogo = false
+                val trace = mutableMapOf<String, Any?>("iconShown" to false)
+                requestStrokeRestart {
+                    trace["heldMs"] = SystemClock.uptimeMillis() - exitAt
+                    revealFlutterBeforeRemovingSplash(view, trace)
+                }
+                return@setOnExitAnimationListener
+            }
             val start = view.iconAnimationStart
             val duration = view.iconAnimationDuration
+            // 系统记录的起点可能早于描线实际上屏，多留一点余量再撤下
             val remaining = if (start != null && duration != null) {
-                (duration - Duration.between(start, Instant.now())).toMillis().coerceAtLeast(0L)
+                (duration - Duration.between(start, Instant.now())).toMillis()
             } else {
                 0L
             }
+            val delay = if (start != null && duration != null) {
+                (remaining + SPLASH_HOLD_MARGIN_MS).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            val trace = mutableMapOf<String, Any?>(
+                "iconShown" to true,
+                "remainingMs" to remaining,
+            )
             view.postDelayed({
-                revealFlutterBeforeRemovingSplash(view)
-            }, remaining)
+                trace["heldMs"] = SystemClock.uptimeMillis() - exitAt
+                revealFlutterBeforeRemovingSplash(view, trace)
+            }, delay)
         }
     }
 
+    /** 请 Dart 把启动页改为从空白描线，确认画好后（或超时）再继续 */
+    private fun requestStrokeRestart(then: () -> Unit) {
+        val channel = splashChannel
+        if (channel == null) {
+            then()
+            return
+        }
+        var done = false
+        val finish = Runnable {
+            if (done) return@Runnable
+            done = true
+            then()
+        }
+        mainHandler.postDelayed(finish, SPLASH_RESTART_TIMEOUT_MS)
+        val ack = {
+            mainHandler.removeCallbacks(finish)
+            finish.run()
+        }
+        channel.invokeMethod("restartStroke", null, object : MethodChannel.Result {
+            override fun success(result: Any?) = ack()
+            override fun error(code: String, message: String?, details: Any?) = ack()
+            override fun notImplemented() = ack()
+        })
+    }
+
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun revealFlutterBeforeRemovingSplash(view: SplashScreenView) {
+    private fun revealFlutterBeforeRemovingSplash(
+        view: SplashScreenView,
+        trace: MutableMap<String, Any?>,
+    ) {
+        val revealAt = SystemClock.uptimeMillis()
         val remove = Runnable {
             if (nativeSplashRemoved) return@Runnable
             view.remove()
             nativeSplashRemoved = true
-            splashChannel?.invokeMethod("removed", null)
+            trace["revealToRemoveMs"] = SystemClock.uptimeMillis() - revealAt
+            splashChannel?.invokeMethod("removed", trace)
         }
         if (isDestroyed || !view.isAttachedToWindow) {
+            trace["detached"] = true
             remove.run()
             return
         }
@@ -154,14 +217,25 @@ class MainActivity : FlutterActivity() {
         view.setBackgroundColor(Color.TRANSPARENT)
         if (view.isHardwareAccelerated) {
             view.viewTreeObserver.registerFrameCommitCallback {
-                // 通过主线程消息移除视图并通知 Dart，不在绘制回调内修改视图树。
-                mainHandler.post(remove)
+                // 提交不等于上屏：再等两次刷新，确保透明背景帧已显示，
+                // 图标 Surface 才释放。移除走主线程消息，不在绘制回调内改视图树。
+                mainHandler.post {
+                    afterFrames(SPLASH_PRESENT_FRAMES) { mainHandler.post(remove) }
+                }
             }
             view.invalidate()
         } else {
             // 软件渲染没有提交回调：跨过一次完整绘制，再在下一帧移除。
             view.postOnAnimation { view.postOnAnimation(remove) }
         }
+    }
+
+    private fun afterFrames(frames: Int, action: () -> Unit) {
+        if (frames <= 0) {
+            action()
+            return
+        }
+        Choreographer.getInstance().postFrameCallback { afterFrames(frames - 1, action) }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
