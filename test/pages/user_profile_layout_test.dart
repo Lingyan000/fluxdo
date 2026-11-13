@@ -291,6 +291,8 @@ void main() {
     _ProfileCase(width: 390, platform: TargetPlatform.iOS),
     _ProfileCase(width: 390, dark: true),
     _ProfileCase(width: 390, visitor: true),
+    _ProfileCase(width: 390, visitor: true, admin: true),
+    _ProfileCase(width: 390, visitor: true, moderator: true),
     _ProfileCase(width: 390, cover: true),
     _ProfileCase(width: 390, cover: true, dark: true),
     _ProfileCase(width: 390, cover: true, dark: true, topInset: 48),
@@ -447,7 +449,13 @@ void main() {
             currentUserProvider.overrideWith(
               () => _SignedInUser(
                 variant.visitor
-                    ? User(id: 2, username: 'visitor', trustLevel: 2)
+                    ? User(
+                        id: 2,
+                        username: 'visitor',
+                        trustLevel: 2,
+                        admin: variant.admin,
+                        moderator: variant.moderator,
+                      )
                     : user,
               ),
             ),
@@ -496,6 +504,7 @@ void main() {
       if (!hidden) {
         expect(service.requestedFilters, isEmpty);
       }
+      final canSeeReceivedLikes = !variant.visitor || variant.admin;
       await _capture(tester, captureDir, '${variant.name}-expanded');
       if (variant.visitor && textScale == 1) {
         _expectFollowColors(tester, theme);
@@ -884,6 +893,16 @@ void main() {
       }
       _expectToolbarColor(tester, theme);
       if (!hidden && !failSummary) {
+        final stat = find.ancestor(
+          of: find.text('获赞'),
+          matching: find.byType(InkWell),
+        ).first;
+        expect(tester.widget<InkWell>(stat).onTap != null, canSeeReceivedLikes);
+        expect(find.descendant(of: stat, matching: find.text('100')), findsOneWidget);
+        expect(
+          find.descendant(of: stat, matching: find.byIcon(Symbols.chevron_right_rounded)),
+          canSeeReceivedLikes ? findsOneWidget : findsNothing,
+        );
         final summaryScrollable = find.descendant(
           of: find.byKey(const PageStorageKey('user_tester_summary')),
           matching: find.byType(Scrollable),
@@ -1009,13 +1028,23 @@ void main() {
         await tester.pumpAndSettle();
         await _capture(tester, captureDir, '${variant.name}-menu');
         expect(find.byType(CheckedPopupMenuItem<String>), findsWidgets);
+        expect(
+          find.widgetWithText(CheckedPopupMenuItem<String>, '获赞'),
+          canSeeReceivedLikes ? findsOneWidget : findsNothing,
+        );
         await tester.tapAt(tester.getCenter(find.text('话题').last));
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4'));
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
         var selectedLabel = '话题';
         if (checkNavigation) {
-          for (final label in ['赞', '获赞', '回应', 'Boost', '已解决']) {
+          for (final label in [
+            '赞',
+            if (canSeeReceivedLikes) '获赞',
+            '回应',
+            'Boost',
+            '已解决',
+          ]) {
             await tester.tap(find.byTooltip(selectedLabel));
             await tester.pumpAndSettle();
             if (label == '已解决') service.pendingSolved = Completer<void>();
@@ -1424,6 +1453,8 @@ class _ProfileCase {
     this.cover = false,
     this.dark = false,
     this.visitor = false,
+    this.admin = false,
+    this.moderator = false,
     this.themeId = 'material',
     this.seedColor = Colors.blue,
     this.platform,
@@ -1436,12 +1467,14 @@ class _ProfileCase {
   final bool cover;
   final bool dark;
   final bool visitor;
+  final bool admin;
+  final bool moderator;
   final String themeId;
   final Color seedColor;
   final TargetPlatform? platform;
   final double topInset;
   String get name =>
-      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}${topInset == 24 ? "" : "-inset$topInset"}';
+      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}${admin ? "-admin" : ""}${moderator ? "-moderator" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}${topInset == 24 ? "" : "-inset$topInset"}';
 }
 
 void _expectAvatarPaintBounds(WidgetTester tester, Finder avatar) {

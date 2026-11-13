@@ -354,8 +354,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  bool _canSeeActivity(String filter) {
+    if (_summary?.canSeeUserActions == false) return false;
+    if (filter != '${UserActionType.wasLiked}') return true;
+    final viewer = ref.read(currentUserProvider).value;
+    return viewer != null && (viewer.id == _user?.id || viewer.admin);
+  }
+
   void _loadActivity({bool refresh = false}) {
-    if (_summary?.canSeeUserActions == false) return;
+    if (!_canSeeActivity(_activityFilter)) return;
     switch (_activityFilter) {
       case 'reactions':
         if (!_reactionsLoading &&
@@ -395,6 +402,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   void _showActivity(String filter) {
+    if (!_canSeeActivity(filter)) return;
     setState(() => _activityFilter = filter);
     _activeTabIndex = _tabFilters.indexOf('activity');
     _tabController.animateTo(_activeTabIndex);
@@ -902,6 +910,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Future<void> _loadActions(String filter, {bool loadMore = false}) async {
+    if (!_canSeeActivity(filter)) return;
     // 如果已有数据且正在加载，跳过（防止重复加载更多）
     if (_loadingCache[filter] == true && _actionsCache.containsKey(filter)) {
       return;
@@ -2095,7 +2104,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     '4': context.l10n.userProfile_tabTopics,
     '5': context.l10n.userProfile_tabReplies,
     '1': context.l10n.userProfile_tabLikes,
-    '2': context.l10n.userProfile_statsLikes,
+    if (_canSeeActivity('${UserActionType.wasLiked}'))
+      '${UserActionType.wasLiked}': context.l10n.userProfile_statsLikes,
     'reactions': context.l10n.userProfile_tabReactions,
     'boosts': context.l10n.userProfile_tabBoosts,
     'votes': context.l10n.userProfile_tabVotes,
@@ -2112,7 +2122,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               'activity' => MenuTabItem(
                 label: _activityFilter == 'all'
                     ? context.l10n.userProfile_tabActivity
-                    : _activityFilters[_activityFilter]!,
+                    : _activityFilters[_activityFilter] ??
+                          context.l10n.userProfile_tabActivity,
                 icon: Symbols.article_rounded,
                 selectedValue: _activityFilter,
                 onSelected: _showActivity,
@@ -2383,7 +2394,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildActivityTab() {
-    if (_summary?.canSeeUserActions == false) {
+    if (!_canSeeActivity(_activityFilter)) {
       return AppEmptyState(
         icon: const Icon(Symbols.lock_rounded),
         title: context.l10n.userProfile_activityPrivate,
@@ -3087,7 +3098,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         ),
                       Expanded(
                         child: InkWell(
-                          onTap: summary.canSeeUserActions
+                          onTap: _canSeeActivity(metrics[index].$3)
                               ? () => _showActivity(metrics[index].$3)
                               : null,
                           child: Padding(
@@ -3103,7 +3114,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                       color: context.emphasis.accent,
                                     ),
                                     const Spacer(),
-                                    if (summary.canSeeUserActions)
+                                    if (_canSeeActivity(metrics[index].$3))
                                       Icon(
                                         Symbols.chevron_right_rounded,
                                         size: 16,
