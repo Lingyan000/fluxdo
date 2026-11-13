@@ -209,9 +209,20 @@ class _RenderMenuMorph extends RenderProxyBox {
     );
   }
 
+  /// 起点轮廓:入口比菜单还宽或还高时,以入口中心收到不超过菜单的尺寸,
+  /// 否则轮廓会比铺满它的内容更大,多出的一条成为第二道边框。
+  Rect get _start {
+    final source = _source;
+    return Rect.fromCenter(
+      center: source.center,
+      width: math.min(source.width, size.width),
+      height: math.min(source.height, size.height),
+    );
+  }
+
   /// 中心与尺寸分开插值:中心先到位,尺寸随后长满。
   Rect get _frame {
-    final source = _source;
+    final source = _start;
     final extent = Size.lerp(source.size, size, _grow)!;
     return Rect.fromCenter(
       center: Offset.lerp(source.center, size.center(Offset.zero), _move)!,
@@ -222,9 +233,7 @@ class _RenderMenuMorph extends RenderProxyBox {
 
   ShapeBorder get _frameShape => ShapeBorder.lerp(
     RoundedSuperellipseBorder(
-      borderRadius: _configuration.shapes.borderRadius(
-        _source.shortestSide / 2,
-      ),
+      borderRadius: _configuration.shapes.borderRadius(_start.shortestSide / 2),
     ),
     _configuration.shape,
     _grow,
@@ -252,9 +261,13 @@ class _RenderMenuMorph extends RenderProxyBox {
         0,
       );
     }
-    // 内容按轮廓宽度等比缩放,贴住远离入口的那一角:靠近入口的边先冲出再回收,
-    // 远端的边单调到位,内容跟着它走才不会来回摆;不足的部分由轮廓裁掉。
-    final scale = math.min(1.0, frame.width / size.width);
+    // 内容等比缩放到铺满轮廓(两个方向都不露出空框),贴住远离入口的那一角:
+    // 靠近入口的边先冲出再回收,远端的边单调到位,内容跟着它走才不会来回摆;
+    // 多出轮廓的部分由轮廓裁掉。
+    final scale = math.min(
+      1.0,
+      math.max(frame.width / size.width, frame.height / size.height),
+    );
     final pin = _farCorner;
     final content = size * scale;
     return Matrix4.identity()

@@ -129,6 +129,65 @@ void main() {
     );
   });
 
+  for (final wide in [true, false]) {
+    testWidgets('入口${wide ? '比菜单宽' : '比菜单高'}时外框不超出内容，不留第二道边框', (tester) async {
+      final screenKey = GlobalKey();
+      const anchorKey = ValueKey('outline-anchor');
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: screenKey,
+          child: MaterialApp(
+            home: Scaffold(
+              backgroundColor: Colors.white,
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 60),
+                  child: SwipeDismissiblePopupMenuButton<int>(
+                    position: PopupMenuPosition.under,
+                    color: Colors.green,
+                    constraints: wide
+                        ? null
+                        : const BoxConstraints(minWidth: 280, maxWidth: 280),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 1, child: Text('A')),
+                      PopupMenuItem(value: 2, child: Text('B')),
+                    ],
+                    child: SizedBox(
+                      key: anchorKey,
+                      width: wide ? 420 : 40,
+                      height: wide ? 40 : 120,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(anchorKey));
+      await tester.pump();
+      final menu = find.byWidgetPredicate(
+        (w) => w is Material && w.color == Colors.green,
+      );
+      for (var frame = 0; frame < 16; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final content = tester.getRect(menu);
+        // 外框若比内容大，多出的一条会露出菜单色，形成第二道边框。
+        final probe = wide
+            ? Offset(content.right + 12, content.center.dy)
+            : Offset(content.center.dx, content.top - 12);
+        final color = await _pixelAt(tester, screenKey, probe);
+        expect(
+          color.g - color.r,
+          lessThan(.15),
+          reason: '第 $frame 帧内容之外不应再有菜单外框',
+        );
+      }
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('向下展开时内容贴远端，不会先冲过终点再爬回', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
