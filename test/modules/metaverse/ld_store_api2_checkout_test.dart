@@ -62,7 +62,7 @@ Future<void> main() async {
     unavailable = '脚本引擎原生库不可用 $error';
   }
   final manifest = MetaversePluginManifest.parse(
-    jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+    jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
   );
   const intent = {
     'productId': 'example',
@@ -121,8 +121,8 @@ Future<void> main() async {
         lookup: (_) async => [InternetAddress('198.18.0.6')],
       );
       await store.writeCode(manifest.id, (
-        ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
-        script: '''${File('plugins/ld-store/main.js').readAsStringSync()}
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: '''${File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync()}
 fluxdo.on('fixture.order', async (ctx, args) => {
   try {
     const result = args.action === 'parallel'

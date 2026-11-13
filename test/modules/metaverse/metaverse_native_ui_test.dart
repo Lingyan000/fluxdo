@@ -27,7 +27,6 @@ import 'package:fluxdo/widgets/ldc_balance_card.dart';
 import 'package:fluxdo/modules/ldc_reward/models/ldc_reward_credentials.dart';
 import 'package:fluxdo/modules/ldc_reward/providers/ldc_reward_provider.dart';
 import 'package:fluxdo/modules/ldc_reward/widgets/ldc_reward_config_tile.dart';
-import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
@@ -193,7 +192,6 @@ void main() {
     double scale = 1,
     bool reducedMotion = false,
     MetaversePluginStore? pluginStore,
-    List<MetaversePluginPackage>? bundled,
   }) {
     const seed = Colors.indigo;
     final theme = buildAppTheme(
@@ -221,8 +219,6 @@ void main() {
             ],
           ),
         ],
-        if (bundled != null)
-          metaverseBundledPluginsProvider.overrideWith((ref) async => bundled),
       ],
       child: RepaintBoundary(
         key: captureKey,
@@ -896,7 +892,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final manifest = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
     await tester.pumpWidget(app(
       Builder(builder: (context) => TextButton(
@@ -923,7 +919,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final manifest = MetaversePluginManifest.parse(
-        jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+        jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
       );
       bool? result;
       await tester.pumpWidget(
@@ -1007,20 +1003,12 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     });
   }
 
-  for (final choice in ['bundled', 'file', 'url']) {
+  for (final choice in ['file', 'url']) {
     testWidgets('添加插件分组选择 $choice，小屏大字可操作', (tester) async {
       tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      final manifest = MetaversePluginManifest.parse(
-        jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
-      );
-      final package = MetaversePluginPackage(
-        manifest: manifest,
-        source: 'asset:plugins/ld-store/plugin.json',
-        code: (script: '', ui: ''),
-      );
       PluginInstallChoice? result;
       await tester.pumpWidget(
         app(
@@ -1028,8 +1016,6 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
             builder: (context) => TextButton(
               onPressed: () async => result = await showMetaversePluginPicker(
                 context,
-                [package],
-                installedIds: {manifest.id},
               ),
               child: const Text('添加入口'),
             ),
@@ -1046,16 +1032,13 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
             .showDragHandle,
         isTrue,
       );
-      if (choice == 'bundled') {
-        await snapshot(tester, 'plugin-picker');
-        await tester.tap(find.widgetWithText(ListTile, manifest.name));
-        await tester.pumpAndSettle();
-        expect(result?.bundled, same(package));
-      } else if (choice == 'file') {
+      expect(find.descendant(of: find.byType(AppSheetScaffold), matching: find.text('LD士多')), findsNothing);
+      await snapshot(tester, 'plugin-picker');
+      if (choice == 'file') {
         await tester.ensureVisible(find.text(l.metaverse_importFile));
         await tester.tap(find.text(l.metaverse_importFile));
         await tester.pumpAndSettle();
-        expect(result, (url: null, bundled: null));
+        expect(result, (url: null));
       } else {
         await tester.ensureVisible(find.text(l.metaverse_installFromUrl));
         await tester.tap(find.text(l.metaverse_installFromUrl));
@@ -1098,7 +1081,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       const error = '登录在「服务回调」阶段收到异常响应（HTTP 403），请重试。';
       final store = _MemoryCodeStore(preferences)
         ..written = (
-          ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
+          ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
           script:
               '''
             fluxdo.on('card.load', ctx => {
@@ -1111,7 +1094,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         );
       final plugin = InstalledMetaversePlugin(
         manifest: MetaversePluginManifest.parse(
-          jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+          jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
         ),
         source: 'asset:plugins/ld-store/plugin.json',
         enabled: true,
@@ -1184,71 +1167,25 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
   }
 
   for (final enabled in [true, false]) {
-    for (final confirm in [true, false]) {
-      testWidgets('服务卡片直接更新旧清单 enabled=$enabled confirm=$confirm', (
-        tester,
-      ) async {
-        await preferences.clear();
-        tester.view.physicalSize = const Size(390, 844);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        final newJson = jsonDecode(
-          File('plugins/ld-store/plugin.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        final latest = MetaversePluginPackage(
-          manifest: MetaversePluginManifest.parse(newJson),
+    testWidgets('应用更新保留原有插件 enabled=$enabled', (tester) async {
+      await preferences.clear();
+      final oldJson = jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync()) as Map<String, dynamic>;
+      oldJson['version'] = '1.6.0';
+      final store = _MemoryCodeStore(preferences);
+      await store.saveIndex([
+        InstalledMetaversePlugin(
+          manifest: MetaversePluginManifest.parse(oldJson, allowLegacyMetadata: true),
           source: 'asset:plugins/ld-store/plugin.json',
-          code: (script: '', ui: ''),
-        );
-        final oldJson = jsonDecode(
-          File('test/fixtures/metaverse/api1_shop.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        oldJson['version'] = '1.6.0';
-        final store = _MemoryCodeStore(preferences);
-        await store.saveIndex([
-          InstalledMetaversePlugin(
-            manifest: MetaversePluginManifest.parse(oldJson, allowLegacyMetadata: true),
-            source: latest.source,
-            enabled: enabled,
-            suspendedReason: enabled ? '测试暂停运行' : null,
-          ),
-        ]);
-        await tester.pumpWidget(
-          app(const MetaversePage(), pluginStore: store, bundled: [latest]),
-        );
-        await tester.pumpAndSettle();
-        final l = tester.element(find.byType(Scaffold).first).l10n;
-        if (enabled) {
-          expect(find.text(l.metaverse_pluginApiUpgradeRequired), findsOneWidget);
-          expect(find.text(l.metaverse_pluginResume), findsNothing);
-        }
-        final update = find.text(
-          l.metaverse_pluginUpdateTo(latest.manifest.version),
-        );
-        await tester.ensureVisible(update);
-        expect(update.hitTestable(), findsOneWidget);
-        expect(store.written, isNull);
-        await tester.tap(update);
-        await tester.pump();
-        await tester.pump(const Duration(seconds: 1));
-        expect(find.byType(AppSheetScaffold), findsOneWidget);
-        expect(store.loadIndex().single.manifest.version, '1.6.0');
-        await tester.tap(
-          confirm
-              ? find.widgetWithText(FilledButton, l.metaverse_pluginUpdate)
-              : find.widgetWithText(TextButton, l.common_cancel),
-        );
-        await tester.pumpAndSettle();
-        expect(
-          store.loadIndex().single.manifest.version,
-          confirm ? latest.manifest.version : '1.6.0',
-        );
-        expect(store.written != null, confirm);
-        expect(update, confirm ? findsNothing : findsOneWidget);
-        expect(tester.takeException(), isNull);
-      });
-    }
+          enabled: enabled,
+        ),
+      ]);
+      await tester.pumpWidget(app(const MetaversePage(), pluginStore: store));
+      await tester.pumpAndSettle();
+      expect(store.loadIndex().single.manifest.version, '1.6.0');
+      expect(store.loadIndex().single.enabled, enabled);
+      expect(store.written, isNull);
+      expect(tester.takeException(), isNull);
+    });
   }
 
   for (final confirm in [true, false]) {
@@ -1526,7 +1463,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           ..update(
             metaversePluginLibraryName,
             parseLibraryFile(
-              File('plugins/ld-store/ui.rfwtxt')
+              File('test/fixtures/metaverse/ld-store/ui.rfwtxt')
                   .readAsStringSync()
                   .replaceAll('\r\n', '\n'),
             ),

@@ -15,7 +15,7 @@ TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 
 - [清单、权限与现有协议](../metaverse-plugin.md)介绍安装格式、网络限制和授权协议。
 - [架构审计与改造方案](architecture-review.md)记录现状、参考项目、日志与数据管理、插件源和迁移验收。
 - [最小示例](../examples/metaverse-plugin/)可用于首次安装与事件联调。
-- [LD士多实现](../../plugins/ld-store/)展示多页面商城接入。
+- [LD士多实现](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)展示多页面商城接入。
 
 ## 创建与安装
 

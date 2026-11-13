@@ -15,7 +15,7 @@ import 'package:fluxdo/services/network/proxy/proxy_settings_service.dart';
 void main() {
   test('原生网络读取士多分类、商品和详情', () async {
     final manifest = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
     const server = String.fromEnvironment('LD_STORE_TEST_DOH');
     final resolver = server.isEmpty

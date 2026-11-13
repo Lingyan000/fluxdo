@@ -30,14 +30,14 @@ void main() {
 
   test('市场包校验摘要且保留稳定来源', () async {
     final manifest = jsonDecode(
-      File('plugins/ld-store/plugin.json').readAsStringSync(),
+      File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync(),
     ) as Map<String, dynamic>;
     final bytes = utf8.encode(
       jsonEncode({
         'manifest': manifest,
         'files': {
-          'main.js': File('plugins/ld-store/main.js').readAsStringSync(),
-          'ui.rfwtxt': File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
+          'main.js': File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync(),
+          'ui.rfwtxt': File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
         },
       }),
     );
@@ -61,7 +61,7 @@ void main() {
 
   test('新代码未提交索引时继续读取完整旧版本', () async {
     final manifest = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
     const first = (ui: 'old ui', script: 'old script');
     const second = (ui: 'new ui', script: 'new script');
