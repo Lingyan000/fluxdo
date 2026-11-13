@@ -704,6 +704,8 @@ void main() {
   for (final failure in ['network', 'decode']) {
     testWidgets('插件图片 $failure 失败可点击重试', (tester) async {
       var requests = 0;
+      final retriedImage = Completer<Uint8List>();
+      final semantics = tester.ensureSemantics();
       final png = base64Decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
       );
@@ -717,7 +719,7 @@ void main() {
                 if (failure == 'network') throw StateError('offline');
                 return Uint8List(2);
               }
-              return png;
+              return retriedImage.future;
             },
           ),
         )
@@ -745,12 +747,23 @@ widget Thumbnail = Image(url: "https://images.example.org/product.png", width: 9
       await tester.pumpAndSettle();
       final retry = find.byTooltip(S.current.common_retry);
       expect(retry, findsOneWidget);
+      expect(
+        find.bySemanticsLabel(S.current.common_imageUnavailable),
+        findsOneWidget,
+      );
       expect(requests, 1);
-      await tester.tap(retry);
+      // 占位区域的边缘也可以重试，等待请求时移除重试操作。
+      await tester.tapAt(tester.getTopLeft(retry) + const Offset(4, 4));
+      await tester.pump();
+      expect(retry, findsNothing);
+      expect(find.bySemanticsLabel(S.current.common_loading), findsOneWidget);
+      expect(requests, 2);
+      retriedImage.complete(png);
       await tester.pumpAndSettle();
       expect(requests, 2);
       expect(retry, findsNothing);
       expect(tester.takeException(), isNull);
+      semantics.dispose();
     });
   }
 
@@ -1442,7 +1455,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     'title': '开发者工具包',
     'seller': '卖家 · tester',
     'price': '12.50 LDC',
-    'image': '',
+    'image': 'https://images.example.org/unavailable.png',
     'buy': true,
     'description': '包含开发工具使用说明。兑换后可在订单中查看交付内容。',
     'details': '工具 · 库存 18 · 已售 32',
@@ -1481,7 +1494,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         'title': '开发者工具包',
         'price': '12.50 LDC',
         'stock': '库存 18',
-        'image': '',
+        'image': 'https://images.example.org/unavailable.png',
         'no': 'LD202611120042',
         'state': '待支付',
         'amount': '12.50 LDC',

@@ -63,6 +63,7 @@
   "common_later": "稍後",
   "common_linkCopied": "連結已複製",
   "common_loadFailed": "載入失敗",
+  "common_imageUnavailable": "圖片暫時無法顯示",
   "common_loadFailedRetry": "載入失敗，請重試",
   "common_loadFailedTapRetry": "載入失敗，點選重試",
   "common_loading": "載入中...",

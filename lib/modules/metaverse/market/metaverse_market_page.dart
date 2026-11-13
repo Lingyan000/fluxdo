@@ -10,6 +10,7 @@ import '../../../l10n/s.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/link_launcher.dart';
+import '../../../widgets/common/image_placeholder.dart';
 import '../plugin/providers/metaverse_plugin_providers.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_plugin_management_page.dart';
@@ -443,13 +444,13 @@ class _MarketScreenshot extends ConsumerWidget {
               bytes,
               fit: BoxFit.contain,
               cacheWidth: 720,
-              errorBuilder: (_, _, _) =>
-                  const Icon(Symbols.broken_image_rounded),
+              errorBuilder: (_, _, _) => ImagePlaceholder(
+                onRetry: () => ref.invalidate(_screenshotProvider(url)),
+              ),
             ),
-            loading: () => const Center(child: LoadingSpinner()),
-            error: (_, _) => IconButton(
-              onPressed: () => ref.invalidate(_screenshotProvider(url)),
-              icon: const Icon(Symbols.refresh_rounded),
+            loading: () => const ImagePlaceholder(loading: true),
+            error: (_, _) => ImagePlaceholder(
+              onRetry: () => ref.invalidate(_screenshotProvider(url)),
             ),
           ),
     ),
