@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
+import 'package:jovial_svg/jovial_svg.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -752,6 +753,69 @@ widget Thumbnail = Image(url: "https://images.example.org/product.png", width: 9
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('插件按实际内容渲染 SVG 并在地址切换后释放旧矢量图', (tester) async {
+    var requests = 0;
+    final runtime = Runtime()
+      ..update(
+        metaverseWidgetLibraryName,
+        createMetaverseWidgetLibrary(
+          loadImage: (uri) async {
+            requests++;
+            return Uint8List.fromList(
+              utf8.encode(
+                uri.path == '/bad.ico'
+                    ? '<svg broken'
+                    : '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">'
+                          '<rect width="40" height="40" fill="red"/>'
+                          '<image href="https://unlisted.example.org/private.png"/>'
+                          '</svg>',
+              ),
+            );
+          },
+        ),
+      )
+      ..update(
+        metaversePluginLibraryName,
+        parseLibraryFile('''
+import fluxdo;
+widget Thumbnail = Image(url: data.url, width: 96.0, height: 96.0);
+'''),
+      );
+    addTearDown(runtime.dispose);
+    final content = DynamicContent({
+      'url': 'https://images.example.org/favicon.ico',
+    });
+    await tester.pumpWidget(
+      app(
+        RemoteWidget(
+          runtime: runtime,
+          widget: const FullyQualifiedWidgetName(
+            metaversePluginLibraryName,
+            'Thumbnail',
+          ),
+          data: content,
+          onEvent: (_, _) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((widget) => widget is ScalableImageWidget),
+      findsOneWidget,
+    );
+    expect(requests, 1);
+    expect(find.byTooltip(S.current.common_retry), findsNothing);
+    content.update('url', 'https://images.example.org/bad.ico');
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((widget) => widget is ScalableImageWidget),
+      findsNothing,
+    );
+    expect(find.byTooltip(S.current.common_retry), findsOneWidget);
+    expect(requests, 2);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('通用搜索组件提交、清空与脚本更新保留标准输入行为', (tester) async {
     final runtime = Runtime()

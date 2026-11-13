@@ -11,6 +11,7 @@ import '../../../constants.dart';
 import '../../../services/network/core/net_core_http_adapter.dart';
 import '../../../services/network/android_route_snapshot.dart';
 import '../../../services/network_logger.dart';
+import '../../../utils/svg_utils.dart';
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_capabilities.dart';
@@ -101,44 +102,23 @@ class MetaversePluginNetwork {
     _directClients.clear();
   }
 
-  /// 图片请求不携带凭证，不跟随跳转，返回值仅交给宿主图片组件。
+  /// 图片匿名下载，每一跳重新检查权限、宿主保留域名与公网地址。
   Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri) async {
-    if (MetaverseHostPattern.normalize(
-          uri.host,
-          reservedHosts: manifest.reservedHosts,
-        ) ==
-        null) {
-      throw const MetaversePluginCallException('图片域名不合法');
-    }
-    final target = await _checkTarget(
+    final response = await downloadResource(
       uri,
-      manifest.publicImages ? null : manifest.networkHosts,
-    );
-    final response = await _send(
-      uri,
-      target: target,
-      method: 'GET',
-      headers: {
-        'User-Agent': await AppConstants.getUserAgent(),
-        'Accept': 'image/*',
-      },
-      body: null,
       maxBytes: maxImageBytes,
+      imageManifest: manifest,
     );
     final contentType = (response.headers['content-type'] ?? '')
         .split(';')
         .first
         .trim()
         .toLowerCase();
-    // 部分图床返回通用二进制类型，按文件头识别，避免把错误页当成图片。
-    final imageType = switch (contentType) {
-      '' || 'application/octet-stream' => lookupMimeType(
-        '',
-        headerBytes: response.bytes,
-      ),
-      _ => contentType,
-    };
-    if (response.status != 200 || imageType?.startsWith('image/') != true) {
+    // 图床可能把真实 JPEG 标成 jpg 或通用二进制，优先识别实际文件头。
+    final imageType = SvgUtils.isSvgBytes(response.bytes)
+        ? 'image/svg+xml'
+        : lookupMimeType('', headerBytes: response.bytes) ?? contentType;
+    if (response.status != 200 || !imageType.startsWith('image/')) {
       throw const MetaversePluginCallException('图片不可用');
     }
     return response.bytes;
@@ -261,21 +241,39 @@ class MetaversePluginNetwork {
     return utf8.decode(response.bytes);
   }
 
-  /// 市场索引与发布附件使用匿名下载，每一次重定向重新检查网络目标。
+  /// 图片、市场索引与发布附件匿名下载，每一次重定向重新检查网络目标。
   Future<({int status, Map<String, String> headers, Uint8List bytes})> downloadResource(
     Uri uri, {
     required int maxBytes,
     String? etag,
+    MetaversePluginManifest? imageManifest,
   }) async {
     var current = uri;
+    final homepage = Uri.tryParse(imageManifest?.homepage ?? '');
     for (var hop = 0; hop < 6; hop++) {
-      final target = await _checkTarget(current, null);
+      // 与 HTTPS 网页的图片升级行为一致，每次连接仍要求 TLS 校验。
+      if (imageManifest != null && current.scheme == 'http') {
+        current = current.replace(scheme: 'https');
+      }
+      final target = await _checkTarget(
+        current,
+        imageManifest?.publicImages == false ? imageManifest!.networkHosts : null,
+        image: imageManifest != null,
+        reservedHosts: imageManifest?.reservedHosts ?? const [],
+      );
       final response = await _send(
         current,
         target: target,
         method: 'GET',
         headers: {
           'User-Agent': await AppConstants.getUserAgent(),
+          if (imageManifest != null) 'Accept': 'image/*',
+          // 与网站跨域图片请求一致，只发送清单公开主页的 origin。
+          if (imageManifest != null &&
+              homepage?.scheme == 'https' &&
+              homepage!.host.isNotEmpty &&
+              homepage.userInfo.isEmpty)
+            'Referer': '${homepage.origin}/',
           if (etag != null && current == uri) 'If-None-Match': etag,
         },
         body: null,
@@ -295,14 +293,25 @@ class MetaversePluginNetwork {
   /// 校验目标地址；[allowedHosts] 为 null 时只做协议与内网检查。
   Future<_PluginTarget> _checkTarget(
     Uri uri,
-    List<String>? allowedHosts,
-  ) async {
+    List<String>? allowedHosts, {
+    bool image = false,
+    List<String> reservedHosts = const [],
+  }) async {
     if (uri.scheme != 'https' ||
-        MetaverseHostPattern.normalize(uri.host) == null ||
+        MetaverseHostPattern.normalize(
+              uri.host,
+              reservedHosts: reservedHosts,
+              resourceHost: image,
+            ) ==
+            null ||
         uri.host.contains('*') ||
         uri.userInfo.isNotEmpty ||
-        (uri.hasPort && uri.port != 443)) {
-      throw const MetaversePluginCallException('只允许标准端口的 https 地址');
+        uri.port < 1 ||
+        uri.port > 65535 ||
+        (!image && uri.hasPort && uri.port != 443)) {
+      throw MetaversePluginCallException(
+        image ? '图片地址不合法' : '只允许标准端口的 https 地址',
+      );
     }
     if (allowedHosts != null &&
         !MetaverseHostPattern.matchesAny(allowedHosts, uri.host)) {
@@ -431,6 +440,8 @@ class MetaversePluginNetwork {
           cancelToken: cancel,
           options: Options(
             method: method,
+            followRedirects: false,
+            validateStatus: (_) => true,
             extra: {'pinnedAddresses': pins.map((a) => a.address).toList()},
             headers: {
               if (!headers.keys.any((name) => name.toLowerCase() == 'user-agent'))
