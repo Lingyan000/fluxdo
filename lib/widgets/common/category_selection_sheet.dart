@@ -139,7 +139,6 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                 hintStyle: TextStyle(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
-                                border: InputBorder.none,
                                 isDense: true,
                                 contentPadding: const EdgeInsets.only(
                                   left: 0,
@@ -164,7 +163,7 @@ class _CategorySelectionSheetState extends State<CategorySelectionSheet> {
                                         },
                                       )
                                     : null,
-                              ),
+                              ).withoutBorder(),
                               onChanged: (value) =>
                                   setState(() => _searchQuery = value),
                             ),

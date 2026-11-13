@@ -721,10 +721,9 @@ class _PreferenceControlState extends State<PreferenceControl> {
             helperMaxLines: 3,
             alignLabelWithHint: true,
             filled: false,
-            border: InputBorder.none,
             floatingLabelBehavior: FloatingLabelBehavior.always,
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
-          ),
+          ).withoutBorder(),
           minLines: field.kind == ForumPreferenceKind.multiline ? 4 : 1,
           maxLines: field.kind == ForumPreferenceKind.multiline ? 10 : 1,
           validator: (value) {

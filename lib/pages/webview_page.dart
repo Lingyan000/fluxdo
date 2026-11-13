@@ -1463,8 +1463,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
               focusNode: _findFocus,
               decoration: InputDecoration(
                 hintText: context.l10n.webview_findInPage,
-                border: InputBorder.none,
-              ),
+              ).withoutBorder(),
               onChanged: _findChanged,
               textInputAction: TextInputAction.search,
               onSubmitted: (text) {

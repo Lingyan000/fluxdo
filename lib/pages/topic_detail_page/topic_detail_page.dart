@@ -1257,9 +1257,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           autofocus: true,
           decoration: InputDecoration(
             hintText: context.l10n.topicDetail_searchHint,
-            border: InputBorder.none,
             hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-          ),
+          ).withoutBorder(),
           style: theme.textTheme.bodyLarge,
           textInputAction: TextInputAction.search,
           onSubmitted: (query) {

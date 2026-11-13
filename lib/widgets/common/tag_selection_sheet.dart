@@ -292,7 +292,6 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                                   .onSurfaceVariant),
                                   fontSize: 14,
                                 ),
-                                border: InputBorder.none,
                                 isDense: true,
                                 contentPadding: const EdgeInsets.only(
                                   left: 0,
@@ -326,7 +325,7 @@ class _TagSelectionSheetState extends State<TagSelectionSheet> {
                                         },
                                       )
                                     : null,
-                              ),
+                              ).withoutBorder(),
                               onChanged: _onSearchChanged,
                             ),
                           ),

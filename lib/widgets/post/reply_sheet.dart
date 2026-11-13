@@ -1241,11 +1241,10 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
                             controller: _titleController,
                             decoration: InputDecoration(
                               hintText: context.l10n.common_title,
-                              border: InputBorder.none,
                               contentPadding: const EdgeInsets.symmetric(
                                 vertical: 12,
                               ),
-                            ),
+                            ).withoutBorder(),
                             style: const TextStyle(fontWeight: FontWeight.w600),
                             textInputAction: TextInputAction.next,
                             onTap: () {

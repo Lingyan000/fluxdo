@@ -20,10 +20,11 @@ description: 新增或调整 FluxDO 主题，处理主题下的颜色、圆角�
 | 分类、标签色 | `ColorUtils.category(hex, theme)`、`ColorUtils.themed(color, theme)` | 自己写 `int.parse` 解析 |
 | 链接 | `colorScheme.primary` | — |
 | 判断组件风格 | `context.themeStyle`（例如 `surfaces == SurfaceStyle.flat`） | 按主题 id 判断 |
+| 无边框输入框（标题、正文、自带容器的搜索栏） | `InputDecoration(...).withoutBorder()`；带底色圆角的容器用 `InputFieldShell` | 只写 `border: InputBorder.none`（主题的 enabledBorder / focusedBorder 会盖过它） |
 
 头像、状态圆点、色点、徽标这类本来就是圆的元素，继续用 `BoxShape.circle`。
-守卫测试 `test/architecture/radius_literal_ratchet_test.dart`、`theme_emphasis_ratchet_test.dart`
-会拦截新增的写死用法。基线用于豁免合理的存量用法，按 AGENTS.md 的约定只降不升。
+守卫测试 `test/architecture/radius_literal_ratchet_test.dart`、`theme_emphasis_ratchet_test.dart`、
+`borderless_input_test.dart` 会拦截新增的写死用法。基线用于豁免合理的存量用法，按 AGENTS.md 的约定只降不升。
 
 ## 页面背景与表面
 

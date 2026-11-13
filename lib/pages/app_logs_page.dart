@@ -785,8 +785,7 @@ class _AppLogsPageState extends State<AppLogsPage> {
           autofocus: true,
           decoration: InputDecoration(
             hintText: context.l10n.appLogs_search,
-            border: InputBorder.none,
-          ),
+          ).withoutBorder(),
           textInputAction: TextInputAction.search,
           onChanged: (_) => setState(_applyFilters),
         ),

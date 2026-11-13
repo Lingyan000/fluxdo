@@ -858,7 +858,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         // hint 垂直对齐在定高容器里不可控（isDense 偏上 / isCollapsed
         // 偏下，均已翻车），不再依赖
         hintText: widget.heroCapsule ? null : context.l10n.search_hintText,
-        border: InputBorder.none,
         isDense: true,
         contentPadding: EdgeInsets.symmetric(
           horizontal: 8,
@@ -870,7 +869,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 onPressed: _clearSearch,
               )
             : null,
-      ),
+      ).withoutBorder(),
       onChanged: (value) {
         setState(() {});
       },

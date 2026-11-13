@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:chat_bottom_container/chat_bottom_container.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
@@ -930,11 +931,10 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
         hintText: widget.hintText.isEmpty
             ? S.current.editor_hintText
             : widget.hintText,
-        border: InputBorder.none,
         filled: false,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
-      ),
+      ).withoutBorder(),
     );
 
     // 用 Listener 捕获点击：readOnly 模式下点击切回键盘
