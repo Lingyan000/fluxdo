@@ -314,9 +314,15 @@ class _CurrentUser extends CurrentUserNotifier {
   _CurrentUser({required this.signedIn});
   final bool signedIn;
   final refreshes = <bool>[];
+  final preservedStatuses = <bool>[];
   @override
-  Future<void> refreshSilently({bool force = false}) async =>
-      refreshes.add(force);
+  Future<void> refreshSilently({
+    bool force = false,
+    bool preserveStatus = false,
+  }) async {
+    refreshes.add(force);
+    preservedStatuses.add(preserveStatus);
+  }
   @override
   Future<User?> build() async =>
       signedIn ? User(id: 99, username: 'viewer', trustLevel: 1) : null;
@@ -632,10 +638,11 @@ void main() {
         context,
       ) as ForumPreferencesPage;
       expect(edit.username, 'viewer');
-      expect(edit.initialSection, ForumPreferenceSection.profile);
+      expect(edit.initialSection, ForumPreferenceSection.account);
       Navigator.of(context).pop('viewer');
       await tester.pumpAndSettle();
       expect(currentUser.refreshes, [true]);
+      expect(currentUser.preservedStatuses, [true]);
       expect(summary.refreshes, 1);
       await tester.tap(find.byTooltip('编辑资料'));
       Navigator.of(context).pop();

@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/providers/message_bus/session_channel_providers.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/models/category.dart';
@@ -262,6 +263,11 @@ class _ProfileRouteObserver extends NavigatorObserver {
       latest = route;
 }
 
+class _UserStatuses extends UserStatusNotifier {
+  @override
+  Map<int, UserStatus?> build() => {};
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(ThemeRegistry.loadBuiltins);
@@ -435,6 +441,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            userStatusProvider.overrideWith(_UserStatuses.new),
             sharedPreferencesProvider.overrideWithValue(preferences),
             discourseServiceProvider.overrideWithValue(service),
             currentUserProvider.overrideWith(

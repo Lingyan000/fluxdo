@@ -26,6 +26,7 @@ import '../utils/category_navigation.dart';
 import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/message_bus/session_channel_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
@@ -524,14 +525,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       InteractionPageRoute(
         builder: (_) => ForumPreferencesPage(
           username: _username,
-          initialSection: editProfile ? ForumPreferenceSection.profile : null,
+          initialSection: editProfile ? ForumPreferenceSection.account : null,
         ),
       ),
     );
     if (changed != null && mounted) {
       _renamedUsername = changed;
-      ref.invalidate(currentUserProvider);
-      await _loadUser();
+      await ref
+          .read(currentUserProvider.notifier)
+          .refreshSilently(force: true, preserveStatus: true);
+      if (mounted) await _loadUser();
     }
   }
 
@@ -1211,6 +1214,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = ref.watch(currentUserProvider).value;
+    if (_user != null && _user!.id == currentUser?.id) {
+      _user = _user!.copyWith(identity: currentUser);
+    }
 
     if (_isLoading) {
       return UserProfileSkeleton(
@@ -1829,7 +1835,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildProfileDetails(ThemeData theme, {bool wide = false}) {
-    final user = _user!;
+    final status = ref.watch(userStatusForProvider((userId: _user!.id, initial: _user!.status)));
+    final user = _user!.copyWith(status: status, clearStatus: status == null);
     return UserProfileDetails(
       user: user,
       showUsername: !wide,

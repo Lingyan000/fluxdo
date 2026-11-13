@@ -1,6 +1,11 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/utils/avatar_url.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../providers/core_providers.dart';
+import '../../../../providers/message_bus/session_channel_providers.dart';
+
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -50,7 +55,7 @@ class _PostAnniversaryIcon extends StatelessWidget {
 }
 
 /// 帖子头像组件（独立widget避免不必要的重建）
-class PostAvatar extends StatefulWidget {
+class PostAvatar extends ConsumerStatefulWidget {
   final Post post;
   final ThemeData theme;
   final double radius;
@@ -69,10 +74,10 @@ class PostAvatar extends StatefulWidget {
   });
 
   @override
-  State<PostAvatar> createState() => _PostAvatarState();
+  ConsumerState<PostAvatar> createState() => _PostAvatarState();
 }
 
-class _PostAvatarState extends State<PostAvatar> {
+class _PostAvatarState extends ConsumerState<PostAvatar> {
   final LayerLink _link = LayerLink();
 
   void _openUserCard() {
@@ -98,7 +103,12 @@ class _PostAvatarState extends State<PostAvatar> {
 
   @override
   Widget build(BuildContext context) {
-    final avatarUrl = widget.post.getAvatarUrl();
+    final current = ref.watch(
+      currentUserProvider.select(
+        (value) => value.value?.id == widget.post.userId ? value.value : null,
+      ),
+    );
+    final avatarUrl = current?.getAvatarUrl() ?? widget.post.getAvatarUrl();
     final glowColor = AppConstants.siteCustomization.matchAvatarGlow(
       widget.post,
     );
@@ -107,10 +117,12 @@ class _PostAvatarState extends State<PostAvatar> {
       flairSize: widget.radius * 0.85,
       flairRight: -4,
       flairBottom: -2,
-      flairUrl: widget.post.flairUrl,
-      flairName: widget.post.flairName,
-      flairBgColor: widget.post.flairBgColor,
-      flairColor: widget.post.flairColor,
+      flairUrl: current != null ? current.flairUrl : widget.post.flairUrl,
+      flairName: current != null ? current.flairName : widget.post.flairName,
+      flairBgColor: current != null
+          ? current.flairBgColor
+          : widget.post.flairBgColor,
+      flairColor: current != null ? current.flairColor : widget.post.flairColor,
       avatar: SmartAvatar(
         imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
         radius: widget.radius,
@@ -154,7 +166,7 @@ class _PostAvatarState extends State<PostAvatar> {
 }
 
 /// 帖子头部组件（头像、用户名、时间、徽章）
-class PostHeader extends StatelessWidget {
+class PostHeader extends ConsumerWidget {
   final Post post;
   final int topicId;
   final bool isTopicOwner;
@@ -201,8 +213,11 @@ class PostHeader extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final userStatus = ref.watch(
+      userStatusForProvider((userId: post.userId, initial: post.userStatus)),
+    );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -242,13 +257,13 @@ class PostHeader extends StatelessWidget {
                     ),
                   ],
                   // 用户状态 emoji
-                  if (post.userStatus?.emoji != null) ...[
+                  if (userStatus != null && userStatus.emoji != null) ...[
                     const SizedBox(width: 4),
                     Tooltip(
-                      message: post.userStatus!.description ?? '',
+                      message: userStatus.description ?? '',
                       child: Image(
                         image: emojiImageProvider(
-                          _getEmojiUrl(post.userStatus!.emoji!),
+                          _getEmojiUrl(userStatus.emoji!),
                         ),
                         width: 16,
                         height: 16,

@@ -15,6 +15,8 @@ import '../widgets/desktop_refresh_indicator.dart';
 import '../services/discourse_cache_manager.dart';
 import 'forum_preferences/forum_preferences_page.dart';
 import 'groups_page.dart';
+import 'forum_preferences/status_dialog.dart';
+import '../services/preloaded_data_service.dart';
 import 'login_page.dart';
 import '../widgets/auth/qr_login_sheet.dart';
 import 'browsing_history_page.dart';
@@ -357,12 +359,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       InteractionPageRoute(
         builder: (_) => ForumPreferencesPage(
           username: username,
-          initialSection: ForumPreferenceSection.profile,
+          initialSection: ForumPreferenceSection.account,
         ),
       ),
     );
     if (changed != null && mounted) {
-      await ref.read(currentUserProvider.notifier).refreshSilently(force: true);
+      await ref
+          .read(currentUserProvider.notifier)
+          .refreshSilently(force: true, preserveStatus: true);
       if (mounted) await ref.read(userSummaryProvider.notifier).refresh();
     }
   }
@@ -1265,7 +1269,27 @@ class _ProfileInfoSection extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (status != null) _buildStatusChip(status, theme),
+              if (PreloadedDataService()
+                      .siteSettingsSync?['enable_user_status'] ==
+                  true)
+                ActionChip(
+                  avatar: PreferenceStatusEmoji(
+                    status?.emoji ?? 'speech_balloon',
+                    size: 18,
+                  ),
+                  label: Text(
+                    status?.description ?? context.l10n.forumPrefs_statusPrompt,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: () => editUserStatus(
+                    context,
+                    ref,
+                    ref.read(currentUserProvider).value!,
+                  ),
+                )
+              else if (status != null)
+                _buildStatusChip(status, theme),
             ],
           ),
         ] else ...[

@@ -13,6 +13,7 @@ import '../helpers/preview_fonts.dart';
 import 'package:fluxdo/widgets/settings/settings_group_page.dart';
 import 'package:fluxdo/widgets/markdown_editor/emoji_picker.dart';
 import 'package:fluxdo/models/emoji.dart';
+import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/providers/emoji_provider.dart';
 import 'package:fluxdo/pages/forum_preferences/status_dialog.dart';
 import 'package:fluxdo/utils/time_utils.dart';
@@ -32,6 +33,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/forum_preferences/forum_preferences_page.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -117,6 +119,7 @@ void main() {
       final user = <String, dynamic>{
         'id': 1,
         'username': 'tester',
+        'system_avatar_template': backgroundUrl,
         'can_edit': true,
         'can_change_bio': true,
         'can_change_location': true,
@@ -134,24 +137,32 @@ void main() {
         'status': {
           'emoji': 'coffee',
           'description': '原状态',
-          'ends_at': '2027-01-01T09:00:00Z',
+          'ends_at': '2027-01-01T09:00:00.000Z',
         },
         'user_option': {'hide_profile': false, 'future_option': 8},
       };
       await tester.runAsync(
         () => PreloadedDataService().hydrateFromHtml(
           '<meta id="data-discourse-setup"><script id="data-preloaded" type="application/json">${jsonEncode({
-            'currentUser': {'id': 1, 'username': 'tester'},
+            'currentUser': {
+              'id': 1,
+              'username': 'tester',
+              'status': user['status'],
+            },
             'siteSettings': {'enable_user_status': true},
             'site': {'categories': []},
           })}</script>',
         ),
       );
       var failSave = true;
+      var profileReads = 0;
       final payloads = <Map<String, dynamic>>[];
       final service = DiscourseService();
       final mock = InterceptorsWrapper(
         onRequest: (options, handler) {
+          if (options.method == 'GET' && options.path == '/u/tester.json') {
+            profileReads++;
+          }
           Object data = {'user': user};
           if (options.path == '/u/search/users') {
             data = {
@@ -162,6 +173,25 @@ void main() {
           }
           if (options.path.endsWith('/emails.json')) {
             data = {'email': 'tester@example.com'};
+          }
+          if (options.path == '/user-status.json') {
+            expect(options.method, anyOf('PUT', 'DELETE'));
+            expect(options.extra['noRecovery'], true);
+            final status = options.method == 'DELETE' ? null : options.data;
+            payloads.add({'status': status});
+            // 模拟状态已保存，但资料读取仍返回旧快照。
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                data: failSave
+                    ? {'success': false, 'error': '测试保存失败'}
+                    : {'success': true},
+              ),
+            );
+            return;
+          }
+          if (options.path.endsWith('/preferences/avatar/pick') && !failSave) {
+            user['avatar_template'] = backgroundUrl;
           }
           if (options.method == 'PUT') {
             payloads.add(Map<String, dynamic>.from(options.data as Map));
@@ -445,10 +475,43 @@ void main() {
         );
         await tester.pumpAndSettle();
       }
+      picker.error = null;
+      picker.path = File('assets/images/icon_modern_preview.png').absolute.path;
+      final avatarChange = find.widgetWithText(OutlinedButton, '更换图片');
+      await tester.ensureVisible(avatarChange);
+      await tester.runAsync(
+        () => precacheImage(
+          FileImage(File(picker.path!)),
+          tester.element(avatarChange),
+        ),
+      );
+      final beforeAvatar = payloads.length;
+      await tester.tap(avatarChange);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+      expect(payloads.length, beforeAvatar);
+      expect(find.byType(LoadingSpinner), findsNothing);
+      picker.path = null;
+      failSave = false;
+      await tester.tap(find.widgetWithText(TextButton, '重置'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'upload_id': 0, 'type': 'system'});
+      final session = ProviderScope.containerOf(
+        tester.element(find.byType(ForumPreferencesPage)),
+      );
+      final current = session.read(currentUserProvider).value!;
+      expect(current.avatarTemplate, backgroundUrl);
+      expect(
+        PreloadedDataService().currentUserSync!['avatar_template'],
+        backgroundUrl,
+      );
       final statusRow = find.widgetWithText(ListTile, '用户状态');
       await tester.ensureVisible(statusRow);
       await tester.pumpAndSettle();
       await _capture(tester, captureDir, 'preferences-account-$width');
+      final readsBeforeStatus = profileReads;
       await tester.tap(statusRow);
       await tester.pumpAndSettle();
       expect(find.byType(StatusDialog), findsOneWidget);
@@ -482,12 +545,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('已选择表情'), findsOneWidget);
+      expect(find.text('已选择表情'), findsNWidgets(2));
       expect(payloads.last, {
         'status': {
           'emoji': 'smile',
           'description': '已选择表情',
-          'ends_at': '2027-01-01T09:00:00Z',
+          'ends_at': '2027-01-01T09:00:00.000Z',
         },
       });
       failSave = false;
@@ -506,9 +569,32 @@ void main() {
         'status': {'emoji': 'smile', 'description': '已选择表情', 'ends_at': null},
       });
       expect(find.byType(StatusDialog), findsNothing);
+      expect(profileReads, readsBeforeStatus);
+      expect(
+        find.descendant(of: statusRow, matching: find.text('已选择表情')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
+      await session.read(currentUserProvider.notifier).updateIdentity(
+        'tester',
+        status: UserStatus(description: '外部修改', emoji: 'coffee'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: statusRow, matching: find.text('外部修改')),
+        findsOneWidget,
+      );
       await tester.tap(statusRow);
       await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(
+          find.descendant(
+            of: find.byType(StatusDialog),
+            matching: find.byType(TextField),
+          ),
+        ).controller!.text,
+        '外部修改',
+      );
       await tester.tap(find.widgetWithText(TextButton, '移除'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'status': null});
@@ -586,6 +672,7 @@ Future<void> _capture(WidgetTester tester, String dir, String name) async {
 class _ImagePicker extends FilePicker {
   int calls = 0;
   Object? error;
+  String? path;
 
   @override
   Future<FilePickerResult?> pickFiles({
@@ -605,6 +692,10 @@ class _ImagePicker extends FilePicker {
     calls++;
     expect(type, FileType.image);
     if (error != null) throw error!;
-    return null;
+    return path == null
+        ? null
+        : FilePickerResult([
+            PlatformFile(name: 'avatar.png', size: 0, path: path),
+          ]);
   }
 }

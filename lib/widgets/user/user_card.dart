@@ -682,7 +682,9 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final user = _user;
+    final current = ref.watch(currentUserProvider.select((value) =>
+      value.value?.id == _user?.id ? value.value : null));
+    final user = current == null ? _user : _user?.copyWith(identity: current);
     final bg = user?.backgroundUrl;
     final hasBg = bg != null && bg.isNotEmpty;
     final surface = theme.colorScheme.surface;
@@ -798,10 +800,10 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         flairSize: 18,
         flairRight: -2,
         flairBottom: -2,
-        flairUrl: user?.flairUrl ?? widget.flairUrl,
-        flairName: user?.flairName ?? widget.flairName,
-        flairBgColor: user?.flairBgColor ?? widget.flairBgColor,
-        flairColor: user?.flairColor ?? widget.flairColor,
+        flairUrl: user != null ? user.flairUrl : widget.flairUrl,
+        flairName: user != null ? user.flairName : widget.flairName,
+        flairBgColor: user != null ? user.flairBgColor : widget.flairBgColor,
+        flairColor: user != null ? user.flairColor : widget.flairColor,
         avatar: SmartAvatar(
           imageUrl: (avatarUrl?.isNotEmpty ?? false) ? avatarUrl : null,
           radius: _kAvatarRadius,

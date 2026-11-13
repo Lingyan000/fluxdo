@@ -1,15 +1,18 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../models/forum_preferences.dart';
 import '../../models/user.dart';
+import '../../providers/core_providers.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/toast_service.dart';
 import '../../services/preloaded_data_service.dart';
@@ -26,7 +29,7 @@ import 'preference_fields.dart';
 import 'status_dialog.dart';
 import '../chat/new_chat_sheet.dart';
 
-class PreferenceActions extends StatefulWidget {
+class PreferenceActions extends ConsumerStatefulWidget {
   const PreferenceActions({
     super.key,
     required this.section,
@@ -36,15 +39,17 @@ class PreferenceActions extends StatefulWidget {
   });
   final ForumPreferenceSection section;
   final ForumPreferences data;
-  final Future<void> Function({String? username, bool signedOut}) onChanged;
+  final Future<void> Function({String? username, bool signedOut, bool reload})
+  onChanged;
   final ValueChanged<bool> onBusy;
   @override
-  State<PreferenceActions> createState() => _PreferenceActionsState();
+  ConsumerState<PreferenceActions> createState() => _PreferenceActionsState();
 }
 
-class _PreferenceActionsState extends State<PreferenceActions> {
+class _PreferenceActionsState extends ConsumerState<PreferenceActions> {
   final _service = DiscourseService();
   bool _busy = false;
+  bool _avatarBusy = false;
   String? _error;
   Map<String, dynamic>? _emails;
   Map<String, dynamic>? _factors;
@@ -211,29 +216,92 @@ class _PreferenceActionsState extends State<PreferenceActions> {
         await widget.onChanged();
       });
 
-  Future<void> _avatar({bool reset = false}) => _run(() async {
-    int uploadId = 0;
-    if (!reset) {
-      final selected = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-      );
-      final path = selected?.files.single.path;
-      if (path == null) return;
-      final upload = await _service.uploadFile(path, uploadType: 'avatar');
-      if (upload.id == null) throw StateError('Missing avatar upload ID');
-      uploadId = upload.id!;
+  Future<void> _avatar({bool reset = false}) async {
+    if (_busy) return;
+    try {
+      await _run(() async {
+        int uploadId = 0;
+        String? avatarTemplate;
+        if (!reset) {
+          final selected = await FilePicker.platform.pickFiles(
+            type: FileType.image,
+          );
+          final path = selected?.files.single.path;
+          if (path == null || !mounted) return;
+          final confirmed = await showAppDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(context.l10n.forumPrefs_avatar),
+              content: SizedBox(
+                width: 240,
+                height: 240,
+                child: ClipOval(
+                  child: Image.file(File(path), fit: BoxFit.cover),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(context.l10n.common_cancel),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(context.l10n.common_save),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !mounted) return;
+          setState(() => _avatarBusy = true);
+          final upload = await _service.uploadFile(path, uploadType: 'avatar');
+          if (upload.id == null) throw StateError('Missing avatar upload ID');
+          uploadId = upload.id!;
+          avatarTemplate = upload.url;
+        } else {
+          avatarTemplate =
+              widget.data.user['system_avatar_template'] as String?;
+        }
+        if (mounted) setState(() => _avatarBusy = true);
+        await _service.pickPreferenceAvatar(
+          _username,
+          uploadId,
+          reset ? 'system' : 'uploaded',
+        );
+        avatarTemplate ??= (await _service.getUser(_username)).avatarTemplate;
+        if (avatarTemplate != null) {
+          widget.data.user['avatar_template'] = avatarTemplate;
+          await ref
+              .read(currentUserProvider.notifier)
+              .updateIdentity(
+                _username,
+                avatarTemplate: UrlHelper.resolveUrl(avatarTemplate),
+              );
+        }
+        ToastService.showSuccess(S.current.forumPrefs_saved);
+        // 网页重新加载会读取服务端生成的头像模板；原生端静默取得同一份资料。
+        try {
+          final user = await _service.getUser(_username);
+          if (!mounted) return;
+          await ref
+              .read(currentUserProvider.notifier)
+              .updateIdentity(_username, identity: user);
+        } catch (_) {
+          // 保存已成功，读取失败时沿用刚提交的头像，后续刷新再取得正式模板。
+        }
+        await widget.onChanged();
+      });
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
     }
-    await _service.pickPreferenceAvatar(
-      _username,
-      uploadId,
-      reset ? 'system' : 'uploaded',
-    );
-    await widget.onChanged();
-  });
+  }
 
   List<Widget> _account() {
     final l = context.l10n;
     final user = widget.data.user;
+    final current = ref.watch(currentUserProvider).value;
+    final status = current?.id == user['id']
+        ? current?.status
+        : User.fromJson(user).status;
     final avatar = User.fromJson(user).getAvatarUrl(size: 144);
     return [
       _group(l.forumPrefs_avatar, [
@@ -257,9 +325,16 @@ class _PreferenceActionsState extends State<PreferenceActions> {
                             true &&
                         widget.data.settings['auth_overrides_avatar'] !=
                             true) ...[
-                      OutlinedButton(
+                      OutlinedButton.icon(
                         onPressed: _busy ? null : _avatar,
-                        child: Text(l.forumPrefs_upload),
+                        icon: _avatarBusy
+                            ? const LoadingSpinner(size: 18)
+                            : const Icon(Symbols.edit_rounded, size: 18),
+                        label: Text(
+                          _avatarBusy
+                              ? l.common_loading
+                              : l.appearance_bgChange,
+                        ),
                       ),
                       TextButton(
                         onPressed: _busy ? null : () => _avatar(reset: true),
@@ -278,11 +353,9 @@ class _PreferenceActionsState extends State<PreferenceActions> {
           _action(
             l.forumPrefs_status,
             _editStatus,
-            subtitle:
-                (user['status'] as Map?)?['description'] as String? ??
-                l.forumPrefs_statusPrompt,
+            subtitle: status?.description ?? l.forumPrefs_statusPrompt,
             leading: PreferenceStatusEmoji(
-              (user['status'] as Map?)?['emoji'] as String? ?? 'speech_balloon',
+              status?.emoji ?? 'speech_balloon',
             ),
           ),
         ]),
@@ -478,19 +551,12 @@ class _PreferenceActionsState extends State<PreferenceActions> {
   });
 
   Future<void> _editStatus() => _run(() async {
-    final status = Map<String, dynamic>.from(
-      widget.data.user['status'] as Map? ?? {},
+    final saved = await editUserStatus(
+      context,
+      ref,
+      User.fromJson(widget.data.user),
     );
-    final saved = await showAppDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => StatusDialog(
-        status: status,
-        submit: (value) =>
-            _service.saveForumPreferences(_username, {'status': value}),
-      ),
-    );
-    if (saved == true) await widget.onChanged();
+    if (saved == true) await widget.onChanged(reload: false);
   });
 
   List<Widget> _profile() => [

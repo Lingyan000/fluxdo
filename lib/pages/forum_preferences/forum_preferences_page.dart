@@ -189,7 +189,11 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
     }
   }
 
-  Future<void> _afterAction({String? username, bool signedOut = false}) async {
+  Future<void> _afterAction({
+    String? username,
+    bool signedOut = false,
+    bool reload = true,
+  }) async {
     if (!mounted) return;
     _changed = true;
     if (username != null) _username = username;
@@ -200,7 +204,7 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
       });
       return;
     }
-    await _load(preserveDraft: true);
+    if (reload) await _load(preserveDraft: true);
   }
 
   List<ForumPreferenceSection> get _sections =>
