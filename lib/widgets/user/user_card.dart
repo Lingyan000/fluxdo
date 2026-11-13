@@ -111,6 +111,10 @@ void showUserCard({
     // 用 OverlayEntry（无 barrier）+ 半透明 Listener：卡外按下即关闭，
     // 滚轮/拖动等事件穿透到下层页面，背景照常滚动。
     final overlay = Overlay.of(context, rootOverlay: true);
+    final anchorBox = context.findRenderObject();
+    final anchorOffset = anchorBox is RenderBox && anchorBox.hasSize
+        ? anchorBox.globalToLocal(anchorRect.topLeft)
+        : null;
     OverlayEntry? entry;
     var removed = false;
     void close() {
@@ -122,52 +126,32 @@ void showUserCard({
     entry = OverlayEntry(
       builder: (ctx) {
         final animatedCard = _CardEntryAnimation(child: buildCard(close));
-        // 有 LayerLink：卡片跟随头像滚动（对齐网页版）；否则按锚点矩形静态定位。
-        // 边界处理：锚点在下半屏 → 卡片底对齐锚点底向上生长；右侧放不下
-        // 宽度 → 挂到锚点左侧。maxHeight 按实际可用空间收紧,不再溢出屏幕。
-        final screen = MediaQuery.of(ctx).size;
-        final alignBottom = anchorRect.center.dy > screen.height * 0.55;
-        final placeLeft =
-            anchorRect.right + _kGap + _kFloatingWidth >
-            screen.width - _kScreenMargin;
-        final availableHeight = alignBottom
-            ? anchorRect.bottom - _kScreenMargin
-            : screen.height - anchorRect.top - _kScreenMargin;
-        final maxHeight = availableHeight
-            .clamp(200.0, screen.height * 0.8)
-            .toDouble();
-        final Widget positioned = layerLink != null
-            ? CompositedTransformFollower(
-                link: layerLink,
-                showWhenUnlinked: false,
-                targetAnchor: placeLeft
-                    ? (alignBottom ? Alignment.bottomLeft : Alignment.topLeft)
-                    : (alignBottom
-                          ? Alignment.bottomRight
-                          : Alignment.topRight),
-                followerAnchor: placeLeft
-                    ? (alignBottom ? Alignment.bottomRight : Alignment.topRight)
-                    : (alignBottom ? Alignment.bottomLeft : Alignment.topLeft),
-                offset: Offset(
-                  placeLeft ? -_kGap : _kGap,
-                  alignBottom ? 8 : -8,
-                ),
-                child: Align(
-                  alignment: alignBottom
-                      ? (placeLeft
-                            ? Alignment.bottomRight
-                            : Alignment.bottomLeft)
-                      : (placeLeft ? Alignment.topRight : Alignment.topLeft),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: _kFloatingWidth,
-                      maxHeight: maxHeight,
-                    ),
-                    child: animatedCard,
-                  ),
-                ),
-              )
-            : _FloatingLayer(anchorRect: anchorRect, child: animatedCard);
+        final positioned = LayoutBuilder(
+          builder: (_, _) {
+            // 窗口缩放后头像可能换位，在布局阶段读取更新后的坐标。
+            final currentAnchorRect =
+                anchorBox is RenderBox &&
+                    anchorBox.attached &&
+                    anchorBox.hasSize &&
+                    anchorOffset != null
+                ? anchorBox.localToGlobal(anchorOffset) & anchorRect.size
+                : anchorRect;
+            final floatingLayer = _FloatingLayer(
+              anchorRect: currentAnchorRect,
+              child: animatedCard,
+            );
+            // 共用屏幕边界定位，再还原跟随层的坐标原点；
+            // 页面滚动仍由 LayerLink 直接跟随，无需逐帧重建卡片。
+            return layerLink != null
+                ? CompositedTransformFollower(
+                    link: layerLink,
+                    showWhenUnlinked: false,
+                    offset: -currentAnchorRect.topLeft,
+                    child: floatingLayer,
+                  )
+                : floatingLayer;
+          },
+        );
 
         return Stack(
           children: [
@@ -425,15 +409,21 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final maxWidth = math.min(
       _kFloatingWidth,
-      constraints.maxWidth - _kScreenMargin * 2,
+      math.max(
+        0.0,
+        constraints.maxWidth - safeInsets.horizontal - _kScreenMargin * 2,
+      ),
     );
     final maxHeight =
-        constraints.maxHeight - safeInsets.vertical - _kScreenMargin * 2;
+        constraints.maxHeight -
+        safeInsets.vertical -
+        _kScreenMargin * 2 -
+        _kAvatarOverflow;
     return BoxConstraints(
       minWidth: 0,
       maxWidth: maxWidth,
       minHeight: 0,
-      maxHeight: math.max(160.0, maxHeight),
+      maxHeight: math.max(0.0, maxHeight),
     );
   }
 
@@ -442,31 +432,32 @@ class _FloatingLayoutDelegate extends SingleChildLayoutDelegate {
     // 顶部额外留出头像戳出的高度，避免被裁
     final topLimit = safeInsets.top + _kScreenMargin + _kAvatarOverflow;
     final bottomLimit = size.height - safeInsets.bottom - _kScreenMargin;
+    final leftLimit = safeInsets.left + _kScreenMargin;
+    final rightLimit = size.width - safeInsets.right - _kScreenMargin;
 
     double clampY(double y) =>
         y.clamp(topLimit, math.max(topLimit, bottomLimit - childSize.height));
 
     // 优先右侧
     final rightX = anchorRect.right + _kGap;
-    if (rightX + childSize.width <= size.width - _kScreenMargin) {
+    if (rightX + childSize.width <= rightLimit) {
       return Offset(rightX, clampY(anchorRect.top));
     }
     // 其次左侧
     final leftX = anchorRect.left - _kGap - childSize.width;
-    if (leftX >= _kScreenMargin) {
+    if (leftX >= leftLimit) {
       return Offset(leftX, clampY(anchorRect.top));
     }
     // 再次下方/上方，水平以锚点居中并 clamp
-    final dx = (anchorRect.center.dx - childSize.width / 2).clamp(
-      _kScreenMargin,
-      size.width - childSize.width - _kScreenMargin,
-    );
+    final dx = (anchorRect.center.dx - childSize.width / 2)
+        .clamp(leftLimit, math.max(leftLimit, rightLimit - childSize.width))
+        .toDouble();
     final belowTop = anchorRect.bottom + _kGap;
     if (belowTop + childSize.height <= bottomLimit) {
-      return Offset(dx, belowTop);
+      return Offset(dx, clampY(belowTop));
     }
     final aboveTop = anchorRect.top - _kGap - childSize.height;
-    return Offset(dx, math.max(topLimit, aboveTop));
+    return Offset(dx, clampY(aboveTop));
   }
 
   @override
