@@ -54,7 +54,7 @@ widget SearchPage = PageLayout(
 | `Button` | `label`、`icon`、`variant`、`enabled: true`、`loading: false` | `onPressed`。variant 支持 tonal、outlined、text，默认填充按钮。loading 时显示进度并禁用 |
 | `IconButton` | `icon`、`tooltip` | `onPressed`。未知图标使用 extension，省略回调时禁用 |
 | `Symbol` | `name`、`size`、`color` | 未知图标使用 extension |
-| `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0` | HTTPS 匿名加载，遵循图片权限，失败后可点击重试。响应最多 16 MiB，解码尺寸受组件限制 |
+| `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
 | `ListItem` | `title`、`subtitle`、`leading`、`trailing` | `onTap`，空 subtitle 隐藏 |
 | `Divider` | 无参数 | 高度 1 的分隔组件 |
 | `Spinner` | `size: 32` | 应用统一加载指示器 |

@@ -4,11 +4,13 @@ import 'dart:async';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 // rfw 的 Switch 是界面描述里的分支节点，与 Material 的开关组件重名。
 import 'package:rfw/rfw.dart' hide Switch;
 
 import '../../../../l10n/s.dart';
+import '../../../../utils/svg_utils.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
 
 part 'metaverse_page_components.dart';
@@ -575,9 +577,13 @@ class _PluginImage extends StatefulWidget {
 
 class _PluginImageState extends State<_PluginImage> {
   Future<Uint8List>? _request;
+  ScalableImage? _svg;
   void _update() {
+    _svg = null;
     final uri = Uri.tryParse(widget.url);
-    _request = uri?.scheme == 'https' ? widget.load(uri!) : null;
+    _request = uri != null && (uri.scheme == 'https' || uri.scheme == 'http')
+        ? widget.load(uri)
+        : null;
   }
 
   @override
@@ -619,6 +625,18 @@ class _PluginImageState extends State<_PluginImage> {
             if (snapshot.connectionState != ConnectionState.done ||
                 bytes == null) {
               return placeholder;
+            }
+            if (SvgUtils.isSvgBytes(bytes)) {
+              try {
+                // 复用应用的静态 SVG 渲染器，外链子资源不会自行发起网络请求。
+                _svg ??= ScalableImage.fromSvgString(
+                  SvgUtils.decodeSvgBytes(bytes),
+                  warnF: (_) {},
+                );
+                return ScalableImageWidget(si: _svg!, fit: widget.fit);
+              } catch (_) {
+                return retry;
+              }
             }
             return Image(
               image: ResizeImage(

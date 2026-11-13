@@ -7,6 +7,10 @@ abstract final class MetaverseHostPattern {
   static final _pattern = RegExp(
     r'^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$',
   );
+  // 浏览器可访问含下划线的资源主机；脚本权限声明仍使用严格域名语法。
+  static final _resourcePattern = RegExp(
+    r'^([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63}$',
+  );
 
   /// 只在内网/本机解析的后缀：第三方插件不该碰用户的局域网。
   static const _privateSuffixes = {
@@ -29,9 +33,11 @@ abstract final class MetaverseHostPattern {
   static String? normalize(
     String value, {
     List<String> reservedHosts = const [],
+    bool resourceHost = false,
   }) {
     final pattern = value.trim().toLowerCase();
-    if (pattern.length > 253 || !_pattern.hasMatch(pattern)) return null;
+    final syntax = resourceHost ? _resourcePattern : _pattern;
+    if (pattern.length > 253 || !syntax.hasMatch(pattern)) return null;
     final domain = pattern.startsWith('*.') ? pattern.substring(2) : pattern;
     if (_privateSuffixes.contains(domain.split('.').last)) return null;
     for (final reserved in reservedHosts) {

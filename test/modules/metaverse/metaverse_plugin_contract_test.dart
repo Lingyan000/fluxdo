@@ -26,6 +26,7 @@ class _Adapter implements HttpClientAdapter {
   String body = '{}';
   Uint8List? bytes;
   String? contentType = 'application/json';
+  ResponseBody Function(RequestOptions)? responseFor;
 
   @override
   Future<ResponseBody> fetch(
@@ -34,6 +35,7 @@ class _Adapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     requests.add(options);
+    if (responseFor case final respond?) return respond(options);
     return ResponseBody.fromBytes(
       bytes ?? utf8.encode(body),
       status,
@@ -214,7 +216,7 @@ void main() {
       ),
     );
   });
-  test('通用二进制或缺省类型按图片文件头识别，不依赖网址后缀', () async {
+  test('缺省或错误 MIME 按图片文件头识别，不依赖网址后缀', () async {
     final adapter = _Adapter();
     final network = MetaversePluginNetwork(
       dio: Dio()..httpClientAdapter = adapter,
@@ -230,6 +232,8 @@ void main() {
       '',
       'application/octet-stream',
       'Application/Octet-Stream; charset=binary',
+      'jpg',
+      'text/plain',
     ]) {
       adapter.contentType = type;
       for (final bytes in [
@@ -238,6 +242,9 @@ void main() {
           'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+'
           'A8AAQUBAScY42YAAAAASUVORK5CYII=',
         ),
+        Uint8List.fromList(utf8.encode(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>',
+        )),
       ]) {
         adapter.bytes = bytes;
         expect(await network.loadImage(manifest, uri), bytes);
@@ -254,6 +261,148 @@ void main() {
       }
     }
   });
+  test('图片跳转逐跳校验且保持匿名，仅发送公开主页 origin', () async {
+    final adapter = _Adapter()
+      ..responseFor = (request) {
+        if (request.uri.path == '/start') {
+          return ResponseBody.fromString(
+            '',
+            302,
+            headers: {
+              'location': ['/next'],
+            },
+          );
+        }
+        if (request.uri.path == '/next') {
+          return ResponseBody.fromString(
+            '',
+            301,
+            headers: {
+              'location': ['http://image_bed.example.org:8443/end'],
+              'set-cookie': ['image_session=never-forward'],
+            },
+          );
+        }
+        return ResponseBody.fromBytes(
+          [0xff, 0xd8, 0xff, 0xe0],
+          200,
+          headers: {
+            'content-type': ['jpg'],
+          },
+        );
+      };
+    final network = MetaversePluginNetwork(
+      dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')],
+    );
+    addTearDown(network.dispose);
+    final raw = _example()..['schema'] = 2;
+    raw['homepage'] = 'https://service.example.org/about?private=query';
+    (raw['permissions'] as Map)['publicImages'] = true;
+    final manifest = _parse(raw);
+    expect(
+      await network.loadImage(
+        manifest,
+        Uri.parse('http://images.example.org/start'),
+      ),
+      [0xff, 0xd8, 0xff, 0xe0],
+    );
+    expect(adapter.requests, hasLength(3));
+    for (final request in adapter.requests) {
+      expect(request.headers['Referer'], 'https://service.example.org/');
+      expect(request.uri.scheme, 'https');
+      expect(request.headers.containsKey('Cookie'), isFalse);
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      expect(request.followRedirects, isFalse);
+    }
+    // 图片地址兼容不会扩大脚本请求的地址范围。
+    await expectLater(
+      network.fetch(
+        manifest,
+        request: {'url': 'https://image_bed.example.org:8443/end'},
+        authToken: null,
+      ),
+      throwsA(isA<MetaversePluginCallException>()),
+    );
+    expect(adapter.requests, hasLength(3));
+  });
+
+  test('图片跳转拒绝内网、宿主域名和地址凭证并限制跳转次数', () async {
+    var location = '';
+    final adapter = _Adapter()
+      ..responseFor = (_) => ResponseBody.fromString(
+        '',
+        302,
+        headers: {
+          'location': [location],
+        },
+      );
+    final network = MetaversePluginNetwork(
+      dio: Dio()..httpClientAdapter = adapter,
+      lookup: (host) async => [
+        InternetAddress(
+          host == 'private.example.org' ? '127.0.0.1' : '198.18.0.6',
+        ),
+      ],
+    );
+    addTearDown(network.dispose);
+    final raw = _example()..['schema'] = 2;
+    (raw['permissions'] as Map)['publicImages'] = true;
+    final manifest = _parse(raw);
+    final source = Uri.parse('https://images.example.org/start');
+    for (final target in [
+      'https://private.example.org:8443/a',
+      'http://private.example.org/a',
+      'https://linux.do/a',
+      'https://sub.linux.do/a',
+      'https://127.0.0.1/a',
+      'file:///private/image.png',
+      'https://user:password@images.example.org/a',
+      'https://images.example.org:0/a',
+      'https://images.example.org:65536/a',
+    ]) {
+      location = target;
+      adapter.requests.clear();
+      await expectLater(
+        network.loadImage(manifest, source),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(adapter.requests, hasLength(1), reason: target);
+    }
+    location = source.toString();
+    adapter.requests.clear();
+    await expectLater(
+      network.loadImage(manifest, source),
+      throwsA(isA<MetaversePluginCallException>()),
+    );
+    expect(adapter.requests, hasLength(6));
+  });
+
+  test('没有公开图片权限时重定向仍受声明域名约束', () async {
+    final adapter = _Adapter()
+      ..responseFor = (_) => ResponseBody.fromString(
+        '',
+        302,
+        headers: {
+          'location': ['https://unlisted.example.org/image.png'],
+        },
+      );
+    final network = MetaversePluginNetwork(
+      dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')],
+    );
+    addTearDown(network.dispose);
+    final manifest = _parse(_example());
+    await expectLater(
+      network.loadImage(
+        manifest,
+        Uri.parse('https://${manifest.networkHosts.first}/image.png'),
+      ),
+      throwsA(isA<MetaversePluginCallException>()),
+    );
+    expect(adapter.requests, hasLength(1));
+  });
+
   group('清单校验', () {
     test('示例清单合法，声明的能力被完整解析', () {
       final manifest = _parse(_example());
