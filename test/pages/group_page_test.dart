@@ -27,6 +27,8 @@ import 'package:fluxdo/pages/user_profile_page.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/services/preloaded_data_service.dart';
+import 'package:fluxdo/pages/forum_preferences/status_dialog.dart';
 import 'package:fluxdo/services/deep_link_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -323,9 +325,13 @@ class _CurrentUser extends CurrentUserNotifier {
     refreshes.add(force);
     preservedStatuses.add(preserveStatus);
   }
+
   @override
   Future<User?> build() async =>
       signedIn ? User(id: 99, username: 'viewer', trustLevel: 1) : null;
+  void setStatus(UserStatus? status) => state = AsyncData(
+    state.value!.copyWith(status: status, clearStatus: status == null),
+  );
   void signIn() =>
       state = AsyncData(User(id: 99, username: 'viewer', trustLevel: 1));
 }
@@ -617,6 +623,67 @@ void main() {
       Navigator.of(context).pop();
       await tester.pumpAndSettle();
       expect(service.directoryRequests.length, 2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final (width, scale, themeId) in [
+    (390.0, 1.0, 'material'),
+    (390.0, 1.0, 'terminal'),
+    (1000.0, 1.0, 'material'),
+    (320.0, 2.0, 'terminal'),
+  ]) {
+    testWidgets('我的身份标签对齐 $width/$scale/$themeId', (tester) async {
+      final preloaded = PreloadedDataService();
+      preloaded.debugSeed(siteSettings: {'enable_user_status': true});
+      addTearDown(() => preloaded.debugSeed());
+      final (context, _) = await _pump(
+        tester,
+        _Service(),
+        home: const ProfilePage(),
+        width: width,
+        textScale: scale,
+        themeId: themeId,
+      );
+      final currentUser = ProviderScope.containerOf(
+        context,
+      ).read(currentUserProvider.notifier) as _CurrentUser;
+      for (final description in ['带娃中', '正在休息，稍后回复消息', '']) {
+        currentUser.setStatus(
+          UserStatus(description: description, emoji: 'baby'),
+        );
+        await tester.pumpAndSettle();
+        final level = find.byKey(const ValueKey('my-profile-level'));
+        final status = find.byKey(const ValueKey('my-profile-status'));
+        final name = find.text('viewer');
+        final username = find.text('@viewer');
+        expect(
+          tester.getCenter(level).dy,
+          closeTo(tester.getCenter(name).dy, 0.5),
+        );
+        expect(tester.getTopLeft(username).dx, tester.getTopLeft(name).dx);
+        expect(tester.getTopLeft(status).dx, tester.getTopLeft(name).dx);
+        expect(
+          tester.getTopLeft(status).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(username).dy),
+        );
+        expect(
+          tester.getBottomRight(status).dx,
+          lessThanOrEqualTo(
+            tester.getTopLeft(find.byTooltip(context.l10n.login_qrShowCode)).dx,
+          ),
+        );
+        expect(find.byTooltip('L1 基本用户'), findsOneWidget);
+        if (description == '带娃中') {
+          await _capture(tester, 'identity-$width-$scale-$themeId');
+        }
+        expect(tester.takeException(), isNull);
+      }
+      currentUser.setStatus(null);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('my-profile-status')));
+      await tester.pumpAndSettle();
+      expect(find.byType(StatusDialog), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

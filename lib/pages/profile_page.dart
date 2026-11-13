@@ -6,13 +6,11 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/user.dart';
 import '../modules/mini_apps/mini_app_navigation.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
-import '../services/discourse_cache_manager.dart';
 import 'forum_preferences/forum_preferences_page.dart';
 import 'groups_page.dart';
 import 'forum_preferences/status_dialog.dart';
@@ -59,7 +57,6 @@ import '../navigation/nav_action_bus.dart';
 import '../services/toast_service.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/responsive.dart';
-import '../services/emoji_handler.dart';
 import '../services/log/log_writer.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
@@ -1109,56 +1106,33 @@ class _ProfileHeader extends ConsumerWidget {
 
     return GestureDetector(
       onTap: canNavigate
-          ? () {
-              Navigator.push(
-                context,
-                InteractionPageRoute(
-                  builder: (_) => UserProfilePage(username: username),
-                ),
-              );
-            }
+          ? () => Navigator.push(
+              context,
+              InteractionPageRoute(
+                builder: (_) => UserProfilePage(username: username),
+              ),
+            )
           : null,
-      child: Container(
-        color: Colors.transparent,
-        child: Row(
-          children: [
-            _ProfileAvatarSection(userId: userId, isLoggedIn: isLoggedIn),
-            const SizedBox(width: 20),
-            const Expanded(child: _ProfileInfoSection()),
-            if (isLoggedIn) ...[
-              Tooltip(
-                message: context.l10n.login_qrShowCode,
-                child: GestureDetector(
-                  // 独立手势:在竞技场胜出,不冒泡到外层跳 UserProfilePage
-                  onTap: () => showQrLoginSheet(context, username: username),
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                    child: Icon(
-                      Symbols.qr_code_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest,
-                child: Icon(
-                  Symbols.arrow_forward_ios_rounded,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          _ProfileAvatarSection(userId: userId, isLoggedIn: isLoggedIn),
+          const SizedBox(width: 16),
+          const Expanded(child: _ProfileInfoSection()),
+          if (isLoggedIn) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: context.l10n.login_qrShowCode,
+              onPressed: () => showQrLoginSheet(context, username: username),
+              icon: const Icon(Symbols.qr_code_rounded, size: 20),
+            ),
+            Icon(
+              Symbols.chevron_right_rounded,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1214,10 +1188,7 @@ class _ProfileInfoSection extends ConsumerWidget {
       currentUserProvider.select((value) => value.value?.username),
     );
     final trustLevel = ref.watch(
-      currentUserProvider.select((value) => value.value?.trustLevel),
-    );
-    final status = ref.watch(
-      currentUserProvider.select((value) => value.value?.status),
+      currentUserProvider.select((value) => value.value?.trustLevel ?? 0),
     );
     final isLoggedIn = ref.watch(
       currentUserProvider.select((value) => value.value != null),
@@ -1226,72 +1197,64 @@ class _ProfileInfoSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name ??
-              username ??
-              (isLoggedIn
-                  ? context.l10n.common_loading
-                  : context.l10n.profile_notLoggedIn),
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: 22,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                name?.trim().isNotEmpty == true
+                    ? name!
+                    : username ??
+                          (isLoggedIn
+                              ? context.l10n.common_loading
+                              : context.l10n.profile_notLoggedIn),
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 22,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isLoggedIn) ...[
+              const SizedBox(width: 8),
+              Tooltip(
+                message: _getTrustLevelLabel(trustLevel),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: ShapeDecoration(
+                    color: theme.colorScheme.secondaryContainer,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(4),
+                    ),
+                  ),
+                  child: Text(
+                    context.l10n.user_trustLevelShort(trustLevel),
+                    key: const ValueKey('my-profile-level'),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSecondaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         if (isLoggedIn) ...[
           const SizedBox(height: 4),
           Text(
             '@${username ?? ''}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: ShapeDecoration(
-                  color: theme.colorScheme.secondaryContainer,
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(6),
-                  ),
-                ),
-                child: Text(
-                  _getTrustLevelLabel(trustLevel ?? 0),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSecondaryContainer,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (PreloadedDataService()
-                      .siteSettingsSync?['enable_user_status'] ==
-                  true)
-                ActionChip(
-                  avatar: PreferenceStatusEmoji(
-                    status?.emoji ?? 'speech_balloon',
-                    size: 18,
-                  ),
-                  label: Text(
-                    status?.description ?? context.l10n.forumPrefs_statusPrompt,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onPressed: () => editUserStatus(
-                    context,
-                    ref,
-                    ref.read(currentUserProvider).value!,
-                  ),
-                )
-              else if (status != null)
-                _buildStatusChip(status, theme),
-            ],
-          ),
+          const _ProfileStatusSection(),
         ] else ...[
           const SizedBox(height: 4),
           Text(
@@ -1302,6 +1265,58 @@ class _ProfileInfoSection extends ConsumerWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _ProfileStatusSection extends ConsumerWidget {
+  const _ProfileStatusSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final status = ref.watch(
+      currentUserProvider.select((value) => value.value?.status),
+    );
+    final canEdit =
+        PreloadedDataService().siteSettingsSync?['enable_user_status'] == true;
+    if (!canEdit &&
+        !(status?.description?.isNotEmpty ?? false) &&
+        !(status?.emoji?.isNotEmpty ?? false)) {
+      return const SizedBox.shrink();
+    }
+    final content = _ProfileStatusContent(
+      text:
+          status?.description ??
+          (canEdit ? context.l10n.forumPrefs_statusPrompt : ''),
+      emoji: status?.emoji ?? (canEdit ? 'speech_balloon' : null),
+    );
+    if (!canEdit) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: DefaultTextStyle.merge(
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          child: content,
+        ),
+      );
+    }
+    return TextButton(
+      key: const ValueKey('my-profile-status'),
+      style: TextButton.styleFrom(
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        textStyle: theme.textTheme.bodyMedium,
+        alignment: AlignmentDirectional.centerStart,
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(0, 40),
+        shape: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(6),
+        ),
+      ),
+      onPressed: () =>
+          editUserStatus(context, ref, ref.read(currentUserProvider).value!),
+      child: content,
     );
   }
 }
@@ -1406,68 +1421,31 @@ String _getTrustLevelLabel(int level) {
   }
 }
 
-Widget _buildStatusEmoji(UserStatus status) {
-  final emoji = status.emoji;
-  if (emoji == null || emoji.isEmpty) return const SizedBox.shrink();
+/// 状态文字和表情共用中线，点击范围随内容宽度收拢。
+class _ProfileStatusContent extends StatelessWidget {
+  const _ProfileStatusContent({required this.text, this.emoji});
 
-  final isEmojiName =
-      emoji.contains(RegExp(r'[a-zA-Z0-9_]')) &&
-      !emoji.contains(RegExp(r'[^\x00-\x7F]'));
+  final String text;
+  final String? emoji;
 
-  if (isEmojiName) {
-    final cleanName = emoji.replaceAll(':', '');
-    final emojiUrl = EmojiHandler().getEmojiUrl(cleanName);
-
-    return Image(
-      image: emojiImageProvider(emojiUrl),
-      width: 14,
-      height: 14,
-      fit: BoxFit.contain,
-      errorBuilder: (_, _, _) => const SizedBox.shrink(),
-    );
-  }
-
-  return Text(emoji, style: const TextStyle(fontSize: 12, height: 1.2));
-}
-
-Widget _buildStatusChip(UserStatus status, ThemeData theme) {
-  final emoji = status.emoji;
-  final description = status.description;
-
-  if ((emoji == null || emoji.isEmpty) &&
-      (description == null || description.isEmpty)) {
-    return const SizedBox.shrink();
-  }
-
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: ShapeDecoration(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      shape: RoundedSuperellipseBorder(
-        borderRadius: UiShapes.current.borderRadius(6),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
-      ),
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: BoxConstraints(
+      minHeight: MediaQuery.textScalerOf(context).scale(20),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (emoji != null && emoji.isNotEmpty) ...[
-          _buildStatusEmoji(status),
-          if (description != null && description.isNotEmpty)
-            const SizedBox(width: 4),
+        if (emoji?.isNotEmpty ?? false) ...[
+          if (RegExp(r'[^\x00-\x7F]').hasMatch(emoji!))
+            Text(emoji!, style: const TextStyle(fontSize: 18, height: 1))
+          else
+            PreferenceStatusEmoji(emoji!, size: 18),
+          if (text.isNotEmpty) const SizedBox(width: 6),
         ],
-        if (description != null && description.isNotEmpty)
+        if (text.isNotEmpty)
           Flexible(
-            child: Text(
-              description,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
       ],
     ),

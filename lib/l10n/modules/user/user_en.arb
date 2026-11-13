@@ -492,6 +492,8 @@
   "userProfile_twoMonths": "Two months",
   "userProfile_twoWeeks": "Two weeks",
   "userProfile_website": "Website",
+  "user_trustLevelShort": "L{level}",
+  "@user_trustLevelShort": {"placeholders": {"level": {"type": "int"}}},
   "user_trustLevel0": "L0 New User",
   "user_trustLevel1": "L1 Basic User",
   "user_trustLevel2": "L2 Member",

@@ -555,6 +555,8 @@
   "userProfile_twoMonths": "兩個月",
   "userProfile_twoWeeks": "兩週",
   "userProfile_website": "網站",
+  "user_trustLevelShort": "L{level}",
+  "@user_trustLevelShort": {"placeholders": {"level": {"type": "int"}}},
   "user_trustLevel0": "L0 新使用者",
   "user_trustLevel1": "L1 基本使用者",
   "user_trustLevel2": "L2 成員",
