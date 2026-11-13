@@ -22,6 +22,7 @@ import '../../../widgets/post/post_item/post_item.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
+import 'topic_status_notices.dart';
 import 'private_message_participants.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
@@ -717,8 +718,13 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
           (ns.hasMoreRoots || ns.isLoadingMore))
         (key: 'load-more', builder: _buildLoadMore),
 
-      // 帖子流末尾的推荐区(同平铺视图,根节点全部加载完才出现;
-      // context 定位模式只展示局部,不放推荐区)
+      // 同平铺视图，根节点全部加载完后展示话题提示和推荐区。
+      // context 定位模式只展示局部帖子。
+      if (!contextMode && !ns.hasMoreRoots)
+        (
+          key: 'topic-status-notices',
+          builder: (context) => TopicStatusNotices(detail: widget.detail),
+        ),
       if (!contextMode && !ns.hasMoreRoots)
         (
           key: 'suggested',

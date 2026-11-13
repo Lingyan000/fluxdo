@@ -1,4 +1,10 @@
 {
+  "topicDetail_slowModeNotice": "請在此話題的兩次發文之間等待 {duration}",
+  "topicDetail_autoDeleteRepliesNotice": "此話題的回覆會在 {duration}後自動刪除。",
+  "topicDetail_noticeDays": "{count} 天",
+  "topicDetail_noticeHours": "{count} 小時",
+  "topicDetail_noticeMinutes": "{count} 分鐘",
+  "topicDetail_noticeSeconds": "{count} 秒",
   "topics_viewNewOnlyTopics": "檢視 {count} 個新話題",
   "@topics_viewNewOnlyTopics": {"placeholders": {"count": {"type": "int"}}},
   "topics_viewUnreadTopics": "檢視 {count} 個未讀話題",

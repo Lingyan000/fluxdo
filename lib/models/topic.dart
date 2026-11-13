@@ -1831,6 +1831,25 @@ class AcceptedAnswer {
   }
 }
 
+/// 话题定时任务，时长单位与 Discourse 的 duration_minutes 保持一致。
+class TopicTimer {
+  final String statusType;
+  final num durationMinutes;
+  final DateTime? executeAt;
+
+  const TopicTimer({
+    required this.statusType,
+    this.durationMinutes = 0,
+    this.executeAt,
+  });
+
+  factory TopicTimer.fromJson(Map<String, dynamic> json) => TopicTimer(
+    statusType: json['status_type'] as String? ?? '',
+    durationMinutes: json['duration_minutes'] as num? ?? 0,
+    executeAt: TimeUtils.parseUtcTime(json['execute_at'] as String?),
+  );
+}
+
 /// 话题详情模型
 class TopicDetail {
   final int id;
@@ -1848,6 +1867,8 @@ class TopicDetail {
   final bool visible;
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
   final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
+  final int slowModeSeconds;
+  final TopicTimer? topicTimer;
 
   // 投票相关字段
   final bool canVote; // 是否可以投票
@@ -1966,6 +1987,8 @@ class TopicDetail {
     this.visible = true,
     this.lastReadPostNumber,
     this.highestPostNumber = 0,
+    this.slowModeSeconds = 0,
+    this.topicTimer,
     this.canVote = false,
     this.voteCount = 0,
     this.userVoted = false,
@@ -2164,6 +2187,10 @@ class TopicDetail {
       visible: json['visible'] as bool? ?? true,
       lastReadPostNumber: json['last_read_post_number'] as int?,
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
+      slowModeSeconds: json['slow_mode_seconds'] as int? ?? 0,
+      topicTimer: json['topic_timer'] is Map<String, dynamic>
+          ? TopicTimer.fromJson(json['topic_timer'] as Map<String, dynamic>)
+          : null,
       canVote: json['can_vote'] as bool? ?? false,
       voteCount: json['vote_count'] as int? ?? 0,
       userVoted: json['user_voted'] as bool? ?? false,
@@ -2298,6 +2325,9 @@ class TopicDetail {
     bool? visible,
     int? lastReadPostNumber,
     int? highestPostNumber,
+    int? slowModeSeconds,
+    TopicTimer? topicTimer,
+    bool clearTopicTimer = false,
     bool? canVote,
     int? voteCount,
     bool? userVoted,
@@ -2349,6 +2379,8 @@ class TopicDetail {
       visible: visible ?? this.visible,
       lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
+      slowModeSeconds: slowModeSeconds ?? this.slowModeSeconds,
+      topicTimer: clearTopicTimer ? null : (topicTimer ?? this.topicTimer),
       canVote: canVote ?? this.canVote,
       voteCount: voteCount ?? this.voteCount,
       userVoted: userVoted ?? this.userVoted,

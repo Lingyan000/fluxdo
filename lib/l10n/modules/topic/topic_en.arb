@@ -1,4 +1,10 @@
 {
+  "topicDetail_slowModeNotice": "Please wait {duration} between posts in this topic.",
+  "topicDetail_autoDeleteRepliesNotice": "Replies to this topic are automatically deleted after {duration}.",
+  "topicDetail_noticeDays": "{count, plural, one {1 day} other {{count} days}}",
+  "topicDetail_noticeHours": "{count, plural, one {1 hour} other {{count} hours}}",
+  "topicDetail_noticeMinutes": "{count, plural, one {1 minute} other {{count} minutes}}",
+  "topicDetail_noticeSeconds": "{count, plural, one {1 second} other {{count} seconds}}",
   "topics_viewNewOnlyTopics": "See {count} new topics",
   "topics_viewUnreadTopics": "See {count} unread topics",
   "@@locale": "en",

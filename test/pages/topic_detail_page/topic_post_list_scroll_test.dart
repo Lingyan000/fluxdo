@@ -11,6 +11,7 @@ import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_detail_controller.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_toc_controller.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_status_notices.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
@@ -19,6 +20,11 @@ import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _MessageBusInit extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
 
 class _TestTopicChannel extends TopicChannelNotifier {
   _TestTopicChannel() : super(42);
@@ -119,6 +125,7 @@ void main() {
         (ref) => const AsyncValue.data(<int, Category>{}),
       ),
       topicChannelProvider(42).overrideWith(_TestTopicChannel.new),
+      messageBusInitProvider.overrideWith(_MessageBusInit.new),
     ],
     child: TranslationProvider(
       child: MaterialApp(
@@ -797,6 +804,33 @@ void main() {
     details.value = topic(originalPosts);
     await tester.pump();
     expect(tester.getTopLeft(floor(60)).dy, closeTo(0, 0.5));
+    await disposeList(tester);
+  });
+
+  testWidgets('帖子加载到末尾后显示话题提示，元数据改变时更新', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = false;
+    details.value = topic([post(1)]).copyWith(slowModeSeconds: 3600);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.byType(TopicStatusNotices), findsNothing);
+
+    hasMoreAfter = false;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final stream = tester.widget<PositionedStreamList>(
+      find.byType(PositionedStreamList),
+    );
+    final done = controller.postListController.jumpToIndex(
+      stream.itemKeys.indexOf('topic-status-notices'),
+    );
+    await tester.pumpAndSettle();
+    await done;
+    expect(find.text('请在此话题的两次发帖之间等待 1 小时'), findsOneWidget);
+
+    details.value = details.value.copyWith(slowModeSeconds: 0);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('两次发帖'), findsNothing);
     await disposeList(tester);
   });
 

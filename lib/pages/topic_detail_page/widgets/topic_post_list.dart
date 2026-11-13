@@ -44,6 +44,7 @@ import '../../../widgets/post/quote_image_scope.dart';
 import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
+import 'topic_status_notices.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
 import 'private_message_participants.dart';
@@ -999,6 +1000,7 @@ class _TopicPostListState extends State<TopicPostList> {
       'pending-posts',
       'typing',
       'load-more',
+      'topic-status-notices',
       'suggested-topics',
       'pm-participants',
       'bottom-padding',
@@ -1096,7 +1098,7 @@ class _TopicPostListState extends State<TopicPostList> {
   }
 
   Widget _buildTrailingRow(BuildContext context, int index) {
-    if (index == 5) {
+    if (index == 6) {
       return SizedBox(height: 80 + MediaQuery.paddingOf(context).bottom);
     }
     if (hasMoreAfter) {
@@ -1141,8 +1143,10 @@ class _TopicPostListState extends State<TopicPostList> {
           ),
         );
       case 3:
-        return _wrapContent(context, MoreTopicsSection(detail: detail));
+        return _wrapContent(context, TopicStatusNotices(detail: detail));
       case 4:
+        return _wrapContent(context, MoreTopicsSection(detail: detail));
+      case 5:
         return PrivateMessageParticipants.shouldShowAtBottom(detail)
             ? _wrapContent(
                 context,

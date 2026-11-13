@@ -11,6 +11,7 @@ import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/nested_post_list.dart';
 import 'package:fluxdo/providers/nested_reading_provider.dart';
 import 'package:fluxdo/providers/nested_topic_provider.dart';
+import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/nested/nested_post_card.dart';
@@ -41,6 +42,11 @@ final _detail = TopicDetail.fromJson({
   'post_stream': {'posts': [], 'stream': []},
 });
 
+class _MessageBusInit extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
+
 class _Nested extends NestedTopicNotifier {
   _Nested(this.preset) : super(const NestedTopicParams(topicId: 1));
   final NestedTopicState preset;
@@ -56,6 +62,7 @@ class _Nested extends NestedTopicNotifier {
 Future<void> _pump(
   WidgetTester tester, {
   required NestedTopicState state,
+  TopicDetail? detail,
   Size size = const Size(375, 812),
   double scale = 1,
   bool dark = false,
@@ -75,6 +82,7 @@ Future<void> _pump(
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
+      messageBusInitProvider.overrideWith(_MessageBusInit.new),
       categoryMapProvider.overrideWith(
         (_) => const AsyncData(<int, Category>{}),
       ),
@@ -124,7 +132,7 @@ Future<void> _pump(
                           .value ??
                       state,
                   params: const NestedTopicParams(topicId: 1),
-                  detail: _detail,
+                  detail: detail ?? _detail,
                   blockedUsernames: const {},
                   topicId: 1,
                   scrollController: scroll,
@@ -156,6 +164,21 @@ Future<void> _pump(
 }
 
 void main() {
+  for (final hasMore in [true, false]) {
+    testWidgets('嵌套列表只在加载到末尾后展示话题提示 hasMore=$hasMore', (tester) async {
+      await _pump(
+        tester,
+        state: NestedTopicState(roots: const [], hasMoreRoots: hasMore),
+        detail: _detail.copyWith(slowModeSeconds: 3600),
+      );
+      expect(
+        find.text('请在此话题的两次发帖之间等待 1 小时'),
+        hasMore ? findsNothing : findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('继续主题弹层按需构建子回复并保持拖拽与阅读上报', (tester) async {
     final node = NestedNode(
       post: _post(2),
