@@ -237,9 +237,7 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
     Widget? backdrop,
     double readiness = 1,
   }) {
-    final gray = recipe.tintGrayFor(
-      Theme.of(context).brightness == Brightness.dark,
-    );
+    final tint = GlassRecipe.tintFor(Theme.of(context).colorScheme);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -256,18 +254,13 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
           drawOpticalBorder: false,
         ),
         if (backdrop != null)
-          // 首帧尚未到达时先用同一配方的中性底色，避免清晰网页穿透。
+          // 首帧尚未到达时先用玻璃同一色罩色，避免清晰网页穿透。
           // 只淡出这层保护色，不对每次截图重新淡入，也不延迟菜单操作。
           DecoratedBox(
             key: const ValueKey('mini-app-dock-frame-cover'),
             decoration: ShapeDecoration(
               shape: shape,
-              color: Color.from(
-                alpha: 1 - readiness,
-                red: gray,
-                green: gray,
-                blue: gray,
-              ),
+              color: tint.withValues(alpha: 1 - readiness),
             ),
           ),
       ],

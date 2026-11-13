@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
@@ -6,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/theme/theme_registry.dart';
+import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:fluxdo/widgets/common/app_glass_settings.dart';
 import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_island.dart';
@@ -104,5 +108,54 @@ void main() {
       reason: '全局玻璃设置不控制弹窗背景模糊',
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('主题只决定自动档的质感与外壳阴影，用户明确的档位优先', (tester) async {
+    ThemeRegistry.setFixed([
+      ThemeSpec.fromJson(
+        jsonDecode(File('assets/themes/paper.json').readAsStringSync())
+            as Map<String, dynamic>,
+      ),
+    ]);
+    addTearDown(() => ThemeRegistry.setFixed(const []));
+    SharedPreferences.setMockInitialValues({'theme_id': 'paper'});
+    final prefs = await SharedPreferences.getInstance();
+    final container = ProviderContainer(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    );
+    addTearDown(container.dispose);
+    final probe = GlobalKey();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          builder: (_, child) => AppGlassSettings(child: child!),
+          home: SizedBox(key: probe),
+        ),
+      ),
+    );
+    GlassSettings settings() => GlassSettingsScope.of(probe.currentContext!);
+    bool optics() =>
+        settings().allowsOptics(shaderSupported: true, highContrast: false);
+
+    // 纸质主题：自动档只用基础磨砂，外壳不投影
+    expect(settings().shadows, isFalse);
+    expect(optics(), isFalse);
+    // 用户明确选完整玻璃时以用户为准
+    await container
+        .read(preferencesProvider.notifier)
+        .setGlassEffectLevel(GlassEffectLevel.full);
+    await tester.pump();
+    expect(optics(), isTrue);
+    // 换回 Material 主题，自动档恢复折射与阴影
+    await container
+        .read(preferencesProvider.notifier)
+        .setGlassEffectLevel(GlassEffectLevel.auto);
+    await container
+        .read(themeProvider.notifier)
+        .setThemeId(ThemeRegistry.materialId);
+    await tester.pump();
+    expect(settings().shadows, isTrue);
+    expect(optics(), isTrue);
   });
 }

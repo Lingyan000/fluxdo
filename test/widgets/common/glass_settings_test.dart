@@ -5,33 +5,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('自动按后端能力选择，基础不折射，关闭和高对比度优先', () {
+  test('关闭和高对比度优先，用户明确的档位优先于主题，主题只决定自动档', () {
     for (final level in GlassEffectLevel.values) {
       for (final enabled in [false, true]) {
         for (final supported in [false, true]) {
           for (final highContrast in [false, true]) {
-            final settings = GlassSettings(enabled: enabled, level: level);
-            expect(
-              settings.allowsBlur(highContrast: highContrast),
-              enabled && !highContrast,
-            );
-            expect(
-              settings.allowsOptics(
-                shaderSupported: supported,
-                highContrast: highContrast,
-              ),
-              enabled &&
-                  !highContrast &&
-                  supported &&
-                  level != GlassEffectLevel.basic,
-            );
-            expect(
-              settings.allowsBlur(
-                highContrast: highContrast,
-                locallyEnabled: false,
-              ),
-              isFalse,
-            );
+            for (final autoOptics in [false, true]) {
+              final settings = GlassSettings(
+                enabled: enabled,
+                level: level,
+                autoOptics: autoOptics,
+              );
+              expect(
+                settings.allowsBlur(highContrast: highContrast),
+                enabled && !highContrast,
+              );
+              expect(
+                settings.allowsOptics(
+                  shaderSupported: supported,
+                  highContrast: highContrast,
+                ),
+                enabled &&
+                    !highContrast &&
+                    supported &&
+                    (level == GlassEffectLevel.full ||
+                        level == GlassEffectLevel.auto && autoOptics),
+              );
+              expect(
+                settings.allowsBlur(
+                  highContrast: highContrast,
+                  locallyEnabled: false,
+                ),
+                isFalse,
+              );
+            }
           }
         }
       }

@@ -41,6 +41,7 @@ void main() {
         quote: QuoteStyle.bar,
         texture: TextureStyle.paper,
         dataColors: DataColorStyle.muted,
+        glass: GlassStyle.frosted,
       );
       expect(ThemeStyle.fromJson(style.toJson()), style);
     });
@@ -52,10 +53,14 @@ void main() {
       );
     });
 
-    test('只改数据色时组件仍按 Material', () {
-      const style = ThemeStyle(dataColors: DataColorStyle.harmonized);
-      expect(style.isMaterial, isFalse);
-      expect(style.hasMaterialComponents, isTrue);
+    test('只改数据色或玻璃质感时组件仍按 Material', () {
+      for (final style in const [
+        ThemeStyle(dataColors: DataColorStyle.harmonized),
+        ThemeStyle(glass: GlassStyle.frosted),
+      ]) {
+        expect(style.isMaterial, isFalse);
+        expect(style.hasMaterialComponents, isTrue);
+      }
     });
   });
 

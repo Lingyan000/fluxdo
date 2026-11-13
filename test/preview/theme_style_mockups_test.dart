@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -20,7 +21,10 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../helpers/preview_fonts.dart';
 
 /// 界面风格效果图：THEME_PREVIEW_DIR=<目录> 时为每个主题 × 明暗导出一张
-/// 「首页 / 帖子 / 设置」三联图。只用于视觉评审，平时不运行。
+/// 「首页 / 帖子 / 设置 / 玻璃」四联图。只用于视觉评审，平时不运行。
+///
+/// 测试环境不支持 shader 滤镜，玻璃屏只能出基础磨砂（模糊 + 色罩 + 降级
+/// 边缘光），折射与光学边缘光要在应用里看。
 void main() {
   const dir = String.fromEnvironment('THEME_PREVIEW_DIR');
 
@@ -110,7 +114,7 @@ void main() {
         await tester.runAsync(() => PaperTexture.obtain(brightness));
       }
 
-      tester.view.physicalSize = const Size(1290, 900);
+      tester.view.physicalSize = const Size(1710, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       // 测试环境默认把阴影画成实心黑框，出图时还原成真实阴影
@@ -119,6 +123,14 @@ void main() {
         MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: theme,
+          // 与应用宿主相同的合成方式：主题决定自动档质感与外壳阴影
+          builder: (_, child) => GlassSettingsScope(
+            settings: GlassSettings(
+              autoOptics: spec.style.glass == GlassStyle.optical,
+              shadows: spec.style.shadows,
+            ),
+            child: child!,
+          ),
           home: RepaintBoundary(
             key: const ValueKey('sheet'),
             child: ColoredBox(
@@ -131,6 +143,7 @@ void main() {
                     _Phone(child: _HomeScreen()),
                     _Phone(child: _PostScreen()),
                     _Phone(child: _SettingsScreen()),
+                    _Phone(child: _GlassScreen()),
                   ],
                 ),
               ),
@@ -239,7 +252,10 @@ const _topics = [
 ];
 
 class _HomeScreen extends StatelessWidget {
-  const _HomeScreen();
+  const _HomeScreen({this.chrome = true});
+
+  /// 是否带悬浮按钮与贴底导航；玻璃屏自己画悬浮胶囊。
+  final bool chrome;
 
   @override
   Widget build(BuildContext context) {
@@ -293,20 +309,114 @@ class _HomeScreen extends StatelessWidget {
               },
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {},
-          child: const Icon(Icons.edit_outlined),
-        ),
-        bottomNavigationBar: M3eNavigationBar(
-          selectedIndex: 0,
-          onDestinationSelected: (_) {},
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), label: '首页'),
-            NavigationDestination(icon: Icon(Icons.forum_outlined), label: '消息'),
-            NavigationDestination(icon: Icon(Icons.explore_outlined), label: '发现'),
-            NavigationDestination(icon: Icon(Icons.person_outline), label: '我的'),
-          ],
-        ),
+        floatingActionButton: !chrome
+            ? null
+            : FloatingActionButton(
+                onPressed: () {},
+                child: const Icon(Icons.edit_outlined),
+              ),
+        bottomNavigationBar: !chrome
+            ? null
+            : M3eNavigationBar(
+                selectedIndex: 0,
+                onDestinationSelected: (_) {},
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    label: '首页',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.forum_outlined),
+                    label: '消息',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.explore_outlined),
+                    label: '发现',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.person_outline),
+                    label: '我的',
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+/// 玻璃屏：首页列表上叠悬浮胶囊导航（导航配方）与提示条（菜单配方）。
+class _GlassScreen extends StatelessWidget {
+  const _GlassScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    const icons = [
+      Icons.home_outlined,
+      Icons.forum_outlined,
+      Icons.explore_outlined,
+      Icons.person_outline,
+    ];
+    // 叠层在 Scaffold 之外，补上 Material 提供默认文字样式
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: [
+          const _HomeScreen(chrome: false),
+          Positioned(
+            left: 40,
+            right: 40,
+            top: 300,
+            child: GlassSurfaceFrame(
+              radius: 28,
+              recipe: GlassRecipe.menu,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline, color: cs.primary),
+                    const SizedBox(width: 10),
+                    Text('链接已复制', style: theme.textTheme.bodyLarge),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 48,
+            right: 48,
+            bottom: 16,
+            height: 64,
+            child: GlassSurfaceFrame(
+              radius: 9999,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Row(
+                  children: [
+                    for (final (i, icon) in icons.indexed)
+                      Expanded(
+                        child: DecoratedBox(
+                          decoration: ShapeDecoration(
+                            shape: const StadiumBorder(),
+                            color: i == 0
+                                ? cs.primary.withValues(alpha: 0.09)
+                                : Colors.transparent,
+                          ),
+                          child: Center(
+                            child: Icon(
+                              icon,
+                              color: i == 0 ? cs.primary : cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

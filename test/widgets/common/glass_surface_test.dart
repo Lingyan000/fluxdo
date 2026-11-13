@@ -25,10 +25,13 @@ void main() {
     bool enabled = true,
     bool framed = true,
     Brightness brightness = Brightness.light,
+    GlassSettings settings = const GlassSettings(),
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(brightness: brightness),
+        builder: (_, child) =>
+            GlassSettingsScope(settings: settings, child: child!),
         home: MediaQuery(
           // 刻意不修改 tester.view 的 DPR，防止误用进程首个视图。
           data: MediaQueryData(devicePixelRatio: dpr),
@@ -119,7 +122,7 @@ void main() {
     }
   });
 
-  testWidgets('共用外壳只画一层方向性边缘光，色罩保持中性', (tester) async {
+  testWidgets('共用外壳只画一层方向性边缘光，色罩取主题的浮层中性色', (tester) async {
     for (final brightness in Brightness.values) {
       await pumpGlass(tester, brightness: brightness);
       final surface = tester.widget<GlassSurface>(find.byType(GlassSurface));
@@ -134,14 +137,34 @@ void main() {
         findsOneWidget,
       );
       final color = decoration.color!;
-      final gray = GlassRecipe.navigation.tintGrayFor(
-        brightness == Brightness.dark,
-      );
-      expect(color.r, closeTo(gray, 0.001));
-      expect(color.g, closeTo(gray, 0.001));
-      expect(color.b, closeTo(gray, 0.001));
+      final scheme = Theme.of(
+        tester.element(find.byType(GlassSurface)),
+      ).colorScheme;
+      final tint = brightness == Brightness.dark
+          ? scheme.surfaceContainer
+          : scheme.surfaceContainerLowest;
+      expect(color.withValues(alpha: 1), isSameColorAs(tint));
       expect(color.a, closeTo(GlassRecipe.navigation.tintAlpha + 0.08, 0.001));
     }
+  });
+
+  testWidgets('外壳阴影跟随主题的阴影开关', (tester) async {
+    ShapeDecoration frame() =>
+        tester
+                .widget<DecoratedBox>(
+                  find
+                      .descendant(
+                        of: find.byType(GlassSurfaceFrame),
+                        matching: find.byType(DecoratedBox),
+                      )
+                      .first,
+                )
+                .decoration
+            as ShapeDecoration;
+    await pumpGlass(tester);
+    expect(frame().shadows, isNotEmpty);
+    await pumpGlass(tester, settings: const GlassSettings(shadows: false));
+    expect(frame().shadows, isNull);
   });
 
   testWidgets('独立玻璃保留默认细描边', (tester) async {
