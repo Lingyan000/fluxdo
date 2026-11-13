@@ -4,6 +4,85 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_anchored_panel.dart';
 
 void main() {
+  testWidgets('浮层在键盘、安全区和尺寸约束变化后重新布局', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    late StateSetter update;
+    var insets = EdgeInsets.zero;
+    var padding = const EdgeInsets.only(top: 48);
+    Rect? viewport;
+    var width = 320.0;
+    var maxHeight = 440.0;
+    const panelKey = ValueKey('panel-content');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(viewPadding: padding, viewInsets: insets),
+              child: ComposerAnchoredSurface(
+                anchor: const Rect.fromLTWH(16, 100, 40, 40),
+                animation: const AlwaysStoppedAnimation(1),
+                fitBesideAnchor: false,
+                viewport: viewport,
+                width: width,
+                maxHeight: maxHeight,
+                child: const SizedBox(
+                  key: panelKey,
+                  height: 1000,
+                  child: Text('测试菜单项'),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    void expectPanel(Size size, Rect bounds) {
+      expect(tester.takeException(), isNull);
+      final panel = find.byKey(panelKey);
+      expect(tester.getSize(panel), size);
+      final rect = tester.getRect(panel);
+      expect(rect.left, greaterThanOrEqualTo(bounds.left));
+      expect(rect.top, greaterThanOrEqualTo(bounds.top));
+      expect(rect.right, lessThanOrEqualTo(bounds.right));
+      expect(rect.bottom, lessThanOrEqualTo(bounds.bottom));
+    }
+
+    expectPanel(const Size(320, 440), const Rect.fromLTRB(8, 56, 392, 792));
+    update(() => insets = const EdgeInsets.only(bottom: 500));
+    await tester.pump();
+    expectPanel(const Size(320, 236), const Rect.fromLTRB(8, 56, 392, 292));
+
+    update(() => insets = EdgeInsets.zero);
+    await tester.pump();
+    expectPanel(const Size(320, 440), const Rect.fromLTRB(8, 56, 392, 792));
+
+    update(() => viewport = const Rect.fromLTRB(0, 100, 400, 300));
+    await tester.pump();
+    expectPanel(const Size(320, 184), const Rect.fromLTRB(8, 108, 392, 292));
+
+    update(() {
+      viewport = null;
+      padding = const EdgeInsets.only(top: 48, left: 100, right: 100);
+    });
+    await tester.pump();
+    expectPanel(const Size(184, 440), const Rect.fromLTRB(108, 56, 292, 792));
+
+    update(() {
+      width = 120;
+      maxHeight = 160;
+    });
+    await tester.pump();
+    expectPanel(const Size(120, 160), const Rect.fromLTRB(108, 56, 292, 792));
+  });
+
   for (final scenario in ['nested', 'keyboard', 'large-text']) {
     testWidgets('anchored panel bounds and actions: $scenario', (tester) async {
       final landscape = scenario == 'keyboard';
