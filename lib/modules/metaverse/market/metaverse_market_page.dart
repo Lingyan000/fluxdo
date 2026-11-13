@@ -13,6 +13,7 @@ import '../../../utils/link_launcher.dart';
 import '../plugin/providers/metaverse_plugin_providers.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_plugin_management_page.dart';
+import '../plugin/ui/metaverse_plugin_tile.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
 import 'metaverse_market_catalog.dart';
 import 'metaverse_market_provider.dart';
@@ -26,10 +27,17 @@ class MetaverseMarketPage extends ConsumerStatefulWidget {
 class _MarketPageState extends ConsumerState<MetaverseMarketPage>
     with AutomaticKeepAliveClientMixin {
   String _query = '';
+  final _searchController = TextEditingController();
   String? _category;
   bool _updatesOnly = false;
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +70,7 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
       for (final entry in market.entries) ...entry.categories,
     }.toList()..sort();
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
@@ -71,9 +80,25 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                 child: InputFieldShell(
                   radius: 24,
                   child: TextField(
+                    controller: _searchController,
+                    textAlignVertical: TextAlignVertical.center,
+                    textInputAction: TextInputAction.search,
+                    style: Theme.of(context).textTheme.bodyLarge,
                     decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
                       hintText: l.metaverse_marketSearch,
                       prefixIcon: const Icon(Symbols.search_rounded),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: l.common_clear,
+                              icon: const Icon(Symbols.close_rounded),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _query = '');
+                              },
+                            ),
                     ),
                     onChanged: (value) => setState(() => _query = value),
                   ),
@@ -154,26 +179,34 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                     itemCount: entries.length,
                     itemBuilder: (context, index) {
                       final entry = entries[index];
-                      return Card(
-                        elevation: 0,
+                      return SegmentedCardItem(
+                        index: index,
+                        count: entries.length,
+                        gap: 3,
                         color: PageBackgroundScope.contentColor(
                           context,
                           Theme.of(context).colorScheme.surfaceContainerLow,
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(16),
-                          leading: Icon(
-                            metaversePluginIcon(entry.icon),
-                            color: context.emphasis.accent,
-                          ),
-                          title: Text(entry.name),
-                          subtitle: Text(
-                            '${entry.summary}\n${entry.author} · ${entry.version}',
-                          ),
+                        child: MetaversePluginTile(
+                          name: entry.name,
+                          icon: entry.icon,
+                          description: entry.summary,
+                          metadata: '${entry.author} · ${entry.version}',
                           trailing: hasUpdate(entry)
-                              ? const Icon(Symbols.update_rounded)
+                              ? Tooltip(
+                                  message: l.metaverse_marketUpdates,
+                                  child: Icon(
+                                    Symbols.update_rounded,
+                                    color: context.emphasis.accent,
+                                  ),
+                                )
                               : installed.containsKey(entry.id)
-                              ? const Icon(Symbols.check_circle_rounded)
+                              ? Tooltip(
+                                  message: l.metaverse_marketInstalled,
+                                  child: const Icon(
+                                    Symbols.check_circle_rounded,
+                                  ),
+                                )
                               : const Icon(Symbols.chevron_right_rounded),
                           onTap: () => Navigator.of(context).push(
                             InteractionPageRoute(
@@ -318,19 +351,27 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             SelectableText(entry.description),
           ],
           const SizedBox(height: 20),
-          ListTile(
-            title: Text(l.metaverse_marketCompatibility),
-            subtitle: Text('SDK ${entry.apiVersion}'),
-          ),
-          ListTile(
-            title: Text(l.metaverse_pluginSource),
-            subtitle: SelectableText(entry.source.url),
-          ),
-          ListTile(
-            title: Text(l.metaverse_marketRepository),
-            subtitle: Text(entry.repository),
-            trailing: const Icon(Symbols.open_in_new_rounded),
-            onTap: () => launchExternalLink(context, entry.repository),
+          SegmentedCardGroup(
+            color: PageBackgroundScope.contentColor(
+              context,
+              theme.colorScheme.surfaceContainerLow,
+            ),
+            children: [
+              ListTile(
+                title: Text(l.metaverse_marketCompatibility),
+                subtitle: Text('SDK ${entry.apiVersion}'),
+              ),
+              ListTile(
+                title: Text(l.metaverse_pluginSource),
+                subtitle: SelectableText(entry.source.url),
+              ),
+              ListTile(
+                title: Text(l.metaverse_marketRepository),
+                subtitle: Text(entry.repository),
+                trailing: const Icon(Symbols.open_in_new_rounded),
+                onTap: () => launchExternalLink(context, entry.repository),
+              ),
+            ],
           ),
           if (entry.changelog.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -473,62 +514,77 @@ class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
             label: Text(l.metaverse_marketAddSource),
           ),
           if (_busy || market.refreshing) const LinearProgressIndicator(),
-          for (final source in market.sources)
-            Column(
-              children: [
-                M3eSwitchListTile(
-                  title: Text(Uri.parse(source.url).host),
-                  subtitle: Text(source.url),
-                  value: source.enabled,
-                  onChanged: _busy
-                      ? null
-                      : (value) =>
-                            _run(() => controller.setEnabled(source.id, value)),
-                ),
-                if (market.errors[source.id] case final error?)
-                  Text(
-                    error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: TextButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () async {
-                            final confirmed = await showAppDialog<bool>(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Text(
-                                  ctx.l10n.metaverse_marketSourceRemove,
-                                ),
-                                content: Text(source.url),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx, false),
-                                    child: Text(ctx.l10n.common_cancel),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () => Navigator.pop(ctx, true),
-                                    child: Text(ctx.l10n.common_remove),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirmed == true && mounted) {
-                              await _run(
-                                () => controller.removeSource(source.id),
-                              );
-                            }
-                          },
-                    icon: const Icon(Symbols.delete_rounded),
-                    label: Text(l.common_remove),
-                  ),
-                ),
-              ],
+          const SizedBox(height: 24),
+          SegmentedCardGroup(
+            color: PageBackgroundScope.contentColor(
+              context,
+              Theme.of(context).colorScheme.surfaceContainerLow,
             ),
+            children: [
+              for (final source in market.sources)
+                Column(
+                  children: [
+                    M3eSwitchListTile(
+                      title: Text(Uri.parse(source.url).host),
+                      subtitle: Text(source.url),
+                      value: source.enabled,
+                      onChanged: _busy
+                          ? null
+                          : (value) => _run(
+                              () => controller.setEnabled(source.id, value),
+                            ),
+                    ),
+                    if (market.errors[source.id] case final error?)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          error,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: TextButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () async {
+                                final confirmed = await showAppDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text(
+                                      ctx.l10n.metaverse_marketSourceRemove,
+                                    ),
+                                    content: Text(source.url),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: Text(ctx.l10n.common_cancel),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: Text(ctx.l10n.common_remove),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed == true && mounted) {
+                                  await _run(
+                                    () => controller.removeSource(source.id),
+                                  );
+                                }
+                              },
+                        icon: const Icon(Symbols.delete_rounded),
+                        label: Text(l.common_remove),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
         ],
       ),
     );
