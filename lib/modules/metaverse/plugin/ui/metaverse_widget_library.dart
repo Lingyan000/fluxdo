@@ -686,7 +686,11 @@ class _PluginTextInputState extends State<_PluginTextInput> {
       return InputFieldShell(child: TextField(
         controller: _controller,
         textInputAction: TextInputAction.search,
+        textAlignVertical: TextAlignVertical.center,
+        style: Theme.of(context).textTheme.bodyLarge,
         decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
           hintText: widget.hint,
           prefixIcon: IconButton(
           icon: const Icon(Symbols.search_rounded),

@@ -52,11 +52,22 @@ class _ComponentGallery extends StatefulWidget {
 
 class _ComponentGalleryState extends State<_ComponentGallery> {
   String _query = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final examples = metaverseComponentExamples(context.l10n)
-        .where((e) => e.name.toLowerCase().contains(_query.toLowerCase()))
+        .where(
+          (e) => '${e.name} ${e.description}'.toLowerCase().contains(
+            _query.trim().toLowerCase(),
+          ),
+        )
         .toList();
     return Column(
       children: [
@@ -64,9 +75,24 @@ class _ComponentGalleryState extends State<_ComponentGallery> {
           padding: const EdgeInsets.all(16),
           child: InputFieldShell(
             child: TextField(
+              controller: _searchController,
+              textAlignVertical: TextAlignVertical.center,
+              style: Theme.of(context).textTheme.bodyLarge,
               decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 hintText: context.l10n.metaverse_developerSearch,
                 prefixIcon: const Icon(Symbols.search_rounded),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: context.l10n.common_clear,
+                        icon: const Icon(Symbols.close_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
               ),
               onChanged: (value) => setState(() => _query = value),
             ),
@@ -74,16 +100,31 @@ class _ComponentGalleryState extends State<_ComponentGallery> {
         ),
         Expanded(
           child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             itemCount: examples.length,
-            itemBuilder: (context, index) => ListTile(
-              leading: const Icon(Symbols.widgets_rounded),
-              title: Text(examples[index].name),
-              subtitle: Text(examples[index].parameters.keys.join(' · ')),
-              trailing: const Icon(Symbols.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push(
-                InteractionPageRoute(
-                  builder: (_) =>
-                      MetaverseComponentPreviewPage(example: examples[index]),
+            itemBuilder: (context, index) => SegmentedCardItem(
+              index: index,
+              count: examples.length,
+              gap: 3,
+              color: PageBackgroundScope.contentColor(
+                context,
+                Theme.of(context).colorScheme.surfaceContainerLow,
+              ),
+              child: ListTile(
+                title: Text(
+                  examples[index].name,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                subtitle: Text(
+                  examples[index].description,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                trailing: const Icon(Symbols.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  InteractionPageRoute(
+                    builder: (_) =>
+                        MetaverseComponentPreviewPage(example: examples[index]),
+                  ),
                 ),
               ),
             ),
@@ -419,10 +460,22 @@ class _CodeBlock extends StatelessWidget {
           ),
         ],
       ),
-      SelectableText(
-        code,
-        style: Theme.of(context).textTheme.bodySmall
-            ?.copyWith(fontFamily: 'monospace'),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: ShapeDecoration(
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
+        ),
+        child: SelectableText(
+          code,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(fontFamily: 'monospace', height: 1.6),
+        ),
       ),
     ],
   );
@@ -434,25 +487,74 @@ class _DeveloperGuides extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l10n;
     final sections = [
-      (Symbols.description_rounded, l.metaverse_developerManifestGuide),
-      (Symbols.widgets_rounded, l.metaverse_developerUiGuide),
-      (Symbols.code_rounded, l.metaverse_developerScriptGuide),
-      (Symbols.security_rounded, l.metaverse_developerPermissionGuide),
-      (Symbols.bug_report_rounded, l.metaverse_developerDiagnosticsGuide),
-      (Symbols.publish_rounded, l.metaverse_developerPublishGuide),
+      (
+        Symbols.description_rounded,
+        'plugin.json',
+        l.metaverse_developerManifestGuide,
+      ),
+      (Symbols.code_rounded, 'main.js', l.metaverse_developerScriptGuide),
+      (Symbols.widgets_rounded, 'ui.rfwtxt', l.metaverse_developerUiGuide),
+      (
+        Symbols.security_rounded,
+        l.metaverse_marketPermissions,
+        l.metaverse_developerPermissionGuide,
+      ),
+      (
+        Symbols.bug_report_rounded,
+        l.metaverse_pluginManage,
+        l.metaverse_developerDiagnosticsGuide,
+      ),
+      (
+        Symbols.publish_rounded,
+        '.fluxplugin',
+        l.metaverse_developerPublishGuide,
+      ),
     ];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final section in sections)
-          Card(
-            elevation: 0,
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: Icon(section.$1, color: context.emphasis.accent),
-              title: Text(section.$2),
-            ),
+        Text(
+          l.metaverse_developerLanguageTitle,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 12),
+        Text(l.metaverse_developerLanguageGuide),
+        const SizedBox(height: 12),
+        Text(
+          l.metaverse_developerTypeScriptGuide,
+          style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 24),
+        SegmentedCardGroup(
+          color: PageBackgroundScope.contentColor(
+            context,
+            Theme.of(context).colorScheme.surfaceContainerLow,
           ),
+          children: [
+            for (final section in sections)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                titleAlignment: ListTileTitleAlignment.top,
+                leading: Icon(section.$1, color: context.emphasis.accent),
+                title: Text(
+                  section.$2,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    section.$3,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
         ListTile(
           title: Text(l.metaverse_marketRepository),
           subtitle: const Text('Lingyan000/fluxdo-plugins'),

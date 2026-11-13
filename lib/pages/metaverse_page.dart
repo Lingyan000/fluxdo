@@ -13,7 +13,6 @@ import '../modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import '../modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
 import '../modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
 import '../modules/metaverse/market/metaverse_market_page.dart';
-import '../modules/metaverse/developer/metaverse_developer_page.dart';
 import '../services/toast_service.dart';
 
 /// 元宇宙：官方服务与第三方插件服务的统一入口。
@@ -162,11 +161,6 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
             title: Text(context.l10n.metaverse_title),
             centerTitle: false,
             actions: [
-          IconButton(
-            tooltip: context.l10n.metaverse_developerCenter,
-            icon: const Icon(Symbols.code_rounded),
-            onPressed: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseDeveloperPage())),
-          ),
               IconButton(
                 icon: const Icon(Symbols.extension_rounded),
                 tooltip: context.l10n.metaverse_pluginManage,

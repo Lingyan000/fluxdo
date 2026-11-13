@@ -68,6 +68,9 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
           SegmentedCardItem(
             index: index,
             count: items.length,
+            gap: 3,
+            color: PageBackgroundScope.contentColor(context,
+                Theme.of(context).colorScheme.surfaceContainerLow),
             child: items[index],
           ),
         if (items.isNotEmpty && error.isNotEmpty)

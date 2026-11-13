@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -783,11 +784,20 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         ),
       ),
     );
+    expect(
+      (tester.getCenter(find.text('搜索')).dy -
+              tester.getCenter(find.byIcon(Symbols.search_rounded)).dy).abs(),
+      lessThanOrEqualTo(2),
+    );
     await tester.enterText(find.byType(TextField), '卡密');
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
     expect(find.byType(InputFieldShell), findsOneWidget);
     expect(events, ['change:卡密', 'submit:卡密']);
+    expect(
+      tester.getCenter(find.byIcon(Symbols.search_rounded)).dy,
+      tester.getCenter(find.byIcon(Symbols.close_rounded)).dy,
+    );
     await tester.tap(
       find.byTooltip(
         tester.element(find.byType(Scaffold).first).l10n.common_clear,
@@ -801,6 +811,32 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       '新查询',
     );
+  });
+
+  testWidgets('已安装插件详情展示真实权限且可滚动', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final manifest = MetaversePluginManifest.parse(
+      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+    );
+    await tester.pumpWidget(app(
+      Builder(builder: (context) => TextButton(
+        onPressed: () => showMetaversePluginDetails(context, manifest),
+        child: const Text('权限入口'),
+      )),
+      scale: 1.4,
+    ));
+    await tester.tap(find.text('权限入口'));
+    await tester.pumpAndSettle();
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    expect(find.text(l.metaverse_pluginPermissions), findsOneWidget);
+    expect(find.text(l.metaverse_permissionNetwork), findsOneWidget);
+    expect(find.text(l.metaverse_pluginInstall), findsNothing);
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   for (final width in [320.0, 390.0, 800.0]) {

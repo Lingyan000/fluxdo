@@ -8,9 +8,10 @@ import '../../../../l10n/s.dart';
 import '../../../../pages/app_logs_page.dart';
 import '../../../../services/toast_service.dart';
 import '../../../../utils/dialog_utils.dart';
+import '../../developer/metaverse_developer_page.dart';
 import '../providers/metaverse_plugin_providers.dart';
 import 'metaverse_plugin_dialogs.dart';
-import 'metaverse_widget_library.dart';
+import 'metaverse_plugin_tile.dart';
 
 class MetaversePluginManagementPage extends ConsumerWidget {
   const MetaversePluginManagementPage({super.key});
@@ -19,7 +20,24 @@ class MetaversePluginManagementPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final installed = ref.watch(metaversePluginsProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.metaverse_pluginManage)),
+      appBar: AppBar(
+        title: Text(context.l10n.metaverse_pluginManage),
+        actions: [
+          SwipeDismissiblePopupMenuButton<VoidCallback>(
+            onSelected: (action) => action(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: () => Navigator.of(context).push(
+                  InteractionPageRoute(
+                    builder: (_) => const MetaverseDeveloperPage(),
+                  ),
+                ),
+                child: Text(context.l10n.metaverse_developerCenter),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: installed.isEmpty
           ? AppEmptyState(
               icon: const Icon(Symbols.extension_rounded),
@@ -30,17 +48,25 @@ class MetaversePluginManagementPage extends ConsumerWidget {
               itemCount: installed.length,
               itemBuilder: (context, index) {
                 final plugin = installed[index];
-                return ListTile(
-                  leading: Icon(metaversePluginIcon(plugin.manifest.icon)),
-                  title: Text(plugin.manifest.name),
-                  subtitle: Text(
-                    '${plugin.manifest.version} · ${plugin.manifest.author}',
+                return SegmentedCardItem(
+                  index: index,
+                  count: installed.length,
+                  gap: 3,
+                  color: PageBackgroundScope.contentColor(
+                    context,
+                    Theme.of(context).colorScheme.surfaceContainerLow,
                   ),
-                  trailing: const Icon(Symbols.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).push(
-                    InteractionPageRoute(
-                      builder: (_) =>
-                          MetaversePluginSettingsPage(pluginId: plugin.id),
+                  child: MetaversePluginTile(
+                    name: plugin.manifest.name,
+                    icon: plugin.manifest.icon,
+                    metadata:
+                        '${plugin.manifest.author} · ${plugin.manifest.version}',
+                    trailing: const Icon(Symbols.chevron_right_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      InteractionPageRoute(
+                        builder: (_) =>
+                            MetaversePluginSettingsPage(pluginId: plugin.id),
+                      ),
                     ),
                   ),
                 );
@@ -140,86 +166,108 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 16),
-                M3eSwitchListTile(
-                  title: Text(l.common_enable),
-                  value: plugin.enabled,
-                  onChanged: _busy
-                      ? null
-                      : (value) => _run(
-                          () => ref
-                              .read(metaversePluginsProvider.notifier)
-                              .setEnabled(plugin.id, enabled: value),
-                        ),
-                ),
-                ListTile(
-                  title: Text(
-                    l.metaverse_pluginAuthor(
-                      plugin.manifest.author,
-                      plugin.manifest.version,
-                    ),
+                SegmentedCardGroup(
+                  color: PageBackgroundScope.contentColor(
+                    context,
+                    Theme.of(context).colorScheme.surfaceContainerLow,
                   ),
-                ),
-                ListTile(
-                  title: Text(l.metaverse_pluginSource),
-                  subtitle: SelectableText(plugin.source),
-                ),
-                ListTile(
-                  leading: const Icon(Symbols.shield_rounded),
-                  title: Text(l.metaverse_marketPermissions),
-                  trailing: const Icon(Symbols.chevron_right_rounded),
-                  onTap: () =>
-                      showMetaversePluginDetails(context, plugin.manifest),
-                ),
-                ListTile(
-                  leading: const Icon(Symbols.receipt_long_rounded),
-                  title: Text(l.metaverse_pluginLogs),
-                  trailing: const Icon(Symbols.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).push(
-                    InteractionPageRoute(
-                      builder: (_) => AppLogsPage(
-                        pluginId: plugin.id,
-                        pluginName: plugin.manifest.name,
-                      ),
-                    ),
-                  ),
-                ),
-                FutureBuilder<int>(
-                  future: _size,
-                  builder: (context, snapshot) => ListTile(
-                    leading: const Icon(Symbols.storage_rounded),
-                    title: Text(l.metaverse_pluginData),
-                    subtitle: snapshot.hasData
-                        ? Text(
-                            l.metaverse_pluginStorageSize(
-                              '${(snapshot.data! / 1024).toStringAsFixed(1)} KiB',
-                            ),
-                          )
-                        : null,
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Symbols.restart_alt_rounded),
-                  title: Text(l.metaverse_resetPluginData),
-                  onTap: _busy ? null : () => _reset(plugin.manifest.name),
-                ),
-                ListTile(
-                  leading: const Icon(Symbols.delete_rounded),
-                  title: Text(l.common_remove),
-                  onTap: _busy
-                      ? null
-                      : () async {
-                          if (await showMetaversePluginRemoveDialog(
-                                context,
-                                plugin.manifest,
-                              ) &&
-                              mounted) {
-                            await _run(
+                  children: [
+                    M3eSwitchListTile(
+                      title: Text(l.common_enable),
+                      value: plugin.enabled,
+                      onChanged: _busy
+                          ? null
+                          : (value) => _run(
                               () => ref
                                   .read(metaversePluginsProvider.notifier)
-                                  .remove(plugin.id),
-                            );
-                          }
-                        },
+                                  .setEnabled(plugin.id, enabled: value),
+                            ),
+                    ),
+                    ListTile(
+                      title: Text(
+                        l.metaverse_pluginAuthor(
+                          plugin.manifest.author,
+                          plugin.manifest.version,
+                        ),
+                      ),
+                    ),
+                    ListTile(
+                      title: Text(l.metaverse_pluginSource),
+                      subtitle: SelectableText(plugin.source),
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.shield_rounded),
+                      title: Text(l.metaverse_marketPermissions),
+                      trailing: const Icon(Symbols.chevron_right_rounded),
+                      onTap: () =>
+                          showMetaversePluginDetails(context, plugin.manifest),
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.receipt_long_rounded),
+                      title: Text(l.metaverse_pluginLogs),
+                      trailing: const Icon(Symbols.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(
+                        InteractionPageRoute(
+                          builder: (_) => AppLogsPage(
+                            pluginId: plugin.id,
+                            pluginName: plugin.manifest.name,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SegmentedCardGroup(
+                  color: PageBackgroundScope.contentColor(
+                    context,
+                    Theme.of(context).colorScheme.surfaceContainerLow,
+                  ),
+                  children: [
+                    FutureBuilder<int>(
+                      future: _size,
+                      builder: (context, snapshot) => ListTile(
+                        leading: const Icon(Symbols.storage_rounded),
+                        title: Text(l.metaverse_pluginData),
+                        subtitle: snapshot.hasData
+                            ? Text(
+                                l.metaverse_pluginStorageSize(
+                                  '${(snapshot.data! / 1024).toStringAsFixed(1)} KiB',
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.restart_alt_rounded),
+                      title: Text(l.metaverse_resetPluginData),
+                      onTap: _busy ? null : () => _reset(plugin.manifest.name),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SegmentedCardGroup(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Symbols.delete_rounded),
+                      title: Text(l.common_remove),
+                      onTap: _busy
+                          ? null
+                          : () async {
+                              if (await showMetaversePluginRemoveDialog(
+                                    context,
+                                    plugin.manifest,
+                                  ) &&
+                                  mounted) {
+                                await _run(
+                                  () => ref
+                                      .read(metaversePluginsProvider.notifier)
+                                      .remove(plugin.id),
+                                );
+                              }
+                            },
+                    ),
+                  ],
                 ),
                 if (_busy) const LinearProgressIndicator(),
               ],

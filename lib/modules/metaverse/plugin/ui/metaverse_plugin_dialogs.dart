@@ -11,6 +11,7 @@ import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
 import '../metaverse_plugin_installer.dart';
 import 'metaverse_widget_library.dart';
+import 'metaverse_plugin_tile.dart';
 
 /// 输入清单地址。
 typedef PluginInstallChoice = ({String? url, MetaversePluginPackage? bundled});
@@ -18,34 +19,15 @@ typedef PluginInstallChoice = ({String? url, MetaversePluginPackage? bundled});
 Future<void> showMetaversePluginDetails(
   BuildContext context,
   MetaversePluginManifest manifest,
-) => showAppDialog<void>(
+) => AppBottomSheet.showDraggable<void>(
   context: context,
-  builder: (ctx) => AlertDialog(
-    title: Text(manifest.name),
-    scrollable: true,
-    content: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(manifest.description),
-        const SizedBox(height: 16),
-        Text(
-          ctx.l10n.metaverse_pluginAuthor(manifest.author, manifest.version),
-          style: Theme.of(ctx).textTheme.bodySmall,
-        ),
-      ],
-    ),
-    actions: [
-      if (manifest.homepage case final String url)
-        TextButton(
-          onPressed: () => launchExternalLink(ctx, url),
-          child: Text(ctx.l10n.metaverse_pluginSource),
-        ),
-      FilledButton(
-        onPressed: () => Navigator.of(ctx).pop(),
-        child: Text(ctx.l10n.common_close),
-      ),
-    ],
-  ),
+  title: manifest.name,
+  showCloseButton: true,
+  initialSize: .7,
+  minSize: .4,
+  maxSize: .95,
+  bodyBuilder: (ctx, controller) =>
+      _InstallReview(manifest: manifest, controller: controller),
 );
 
 Future<PluginInstallChoice?> showMetaversePluginPicker(
@@ -74,22 +56,11 @@ Future<PluginInstallChoice?> showMetaversePluginPicker(
         SegmentedCardGroup(
           children: [
             for (final package in bundled)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                leading: Icon(
-                  metaversePluginIcon(package.manifest.icon),
-                  color: ctx.emphasis.accent,
-                  size: 28,
-                ),
-                title: Text(package.manifest.name),
-                subtitle: Text(
-                  package.manifest.description,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              MetaversePluginTile(
+                name: package.manifest.name,
+                icon: package.manifest.icon,
+                description: package.manifest.description,
+                metadata: '${package.manifest.author} · ${package.manifest.version}',
                 trailing: Icon(
                   installedIds.contains(package.manifest.id)
                       ? Symbols.update_rounded
