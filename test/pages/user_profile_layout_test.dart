@@ -286,6 +286,7 @@ void main() {
     _ProfileCase(width: 1100, failSummary: true, cover: true),
     _ProfileCase(width: 1100, dark: true, visitor: true),
     _ProfileCase(width: 1440),
+    _ProfileCase(width: 1440, platform: TargetPlatform.macOS),
     _ProfileCase(width: 390, hidden: true),
     _ProfileCase(width: 390),
     _ProfileCase(width: 390, platform: TargetPlatform.iOS),
@@ -1217,8 +1218,23 @@ void main() {
           await tester.pump();
           expect(nested.controller!.offset, lessThan(collapsedOffset));
           expect(service.votesCalls, initialCalls);
-          await drag.moveBy(Offset(0, nested.controller!.offset + 320));
+          await drag.moveBy(Offset(0, nested.controller!.offset + 40));
           await tester.pump(const Duration(milliseconds: 80));
+          final pullProgress = find.byKey(
+            const ValueKey('refresh-pull-progress'),
+          );
+          expect(
+            tester.widget<M3eCircularProgress>(pullProgress).value,
+            inExclusiveRange(0, 1),
+          );
+          expect(service.votesCalls, initialCalls);
+          await _capture(tester, captureDir, '${variant.name}-refresh-pulling');
+          await drag.moveBy(const Offset(0, 65));
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(tester.widget<M3eCircularProgress>(pullProgress).value, 1);
+          expect(service.votesCalls, initialCalls);
+          await tester.pump(const Duration(milliseconds: 200));
+          await _capture(tester, captureDir, '${variant.name}-refresh-armed');
           expect(nested.controller!.offset, 0);
           expect(
             tester
@@ -1235,6 +1251,15 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
           expect(service.votesCalls, initialCalls + 1);
+          expect(pullProgress, findsNothing);
+          expect(
+            find.descendant(
+              of: find.byKey(const ValueKey('profile-refresh-indicator')),
+              matching: find.byType(Text),
+            ),
+            findsNothing,
+          );
+          await _capture(tester, captureDir, '${variant.name}-refresh-loading');
 
           // 请求等待期间仍能收起资料头和滚动，且只刷新当前投票列表一次。
           await tester.dragFrom(const Offset(180, 650), const Offset(0, -200));
@@ -1301,11 +1326,34 @@ void main() {
           }
           expect(service.votesCalls, votesCalls + 1);
           expect(service.solvedCalls, solvedCalls + 1);
+          // 切换筛选项的请求尚未结束时刷新，指示器必须等待同一请求。
+          nested.controller!.jumpTo(0);
+          await tester.pump();
+          var refreshCompleted = false;
+          final refresh = tester
+              .state<M3eRefreshIndicatorState>(find.byType(M3eRefreshIndicator))
+              .show()
+              .then((_) => refreshCompleted = true);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(refreshCompleted, isFalse);
+          expect(service.votesCalls, votesCalls + 1);
+          expect(
+            tester
+                .getSize(
+                  find.byKey(const ValueKey('profile-refresh-indicator')),
+                )
+                .height,
+            greaterThan(0),
+          );
           service.pendingSolved!.complete();
           service.pendingVotes!.complete();
           service.pendingSolved = null;
           service.pendingVotes = null;
           await tester.pumpAndSettle();
+          await refresh;
+          expect(refreshCompleted, isTrue);
 
           // 从外层页签回到活动也重新加载，动画完成回调不能重复请求。
           await tester.tap(find.byTooltip('关于'));
@@ -1313,6 +1361,42 @@ void main() {
           await tester.tap(find.byTooltip('投票'));
           await tester.pumpAndSettle();
           expect(service.votesCalls, votesCalls + 2);
+          expect(tester.takeException(), isNull);
+        }
+        if (variant.platform == TargetPlatform.macOS) {
+          Scrollable.of(tester.element(voteCard)).position.jumpTo(0);
+          await tester.pumpAndSettle();
+          nested.controller!.jumpTo(0);
+          await tester.pumpAndSettle();
+          expect(nested.controller!.offset, 0);
+          final initialCalls = service.votesCalls;
+          service.pendingVotes = Completer<void>();
+          final drag = await tester.startGesture(
+            tester.getRect(voteCard).topLeft + const Offset(40, 40),
+            kind: ui.PointerDeviceKind.trackpad,
+          );
+          await drag.moveBy(const Offset(0, 20));
+          await tester.pump();
+          await drag.moveBy(const Offset(0, 40));
+          await tester.pump();
+          final pullProgress = find.byKey(
+            const ValueKey('refresh-pull-progress'),
+          );
+          expect(
+            tester.widget<M3eCircularProgress>(pullProgress).value,
+            inExclusiveRange(0, 1),
+          );
+          await drag.moveBy(const Offset(0, 65));
+          await tester.pump();
+          expect(tester.widget<M3eCircularProgress>(pullProgress).value, 1);
+          await drag.up();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          expect(service.votesCalls, initialCalls + 1);
+          expect(pullProgress, findsNothing);
+          service.pendingVotes!.complete();
+          service.pendingVotes = null;
+          await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
         }
         if (width == 1440) {

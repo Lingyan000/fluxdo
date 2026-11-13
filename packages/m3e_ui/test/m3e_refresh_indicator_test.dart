@@ -1,10 +1,184 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
+  for (final decorated in [false, true]) {
+    testWidgets('普通刷新默认使用 M3E 进度并衔接加载图案 decorated=$decorated', (tester) async {
+      final completion = Completer<void>();
+      var refreshes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(extensions: const [M3eFlags(enabled: true)]),
+          home: UiDecor(
+            loadingIndicator: decorated ? _testLoadingDecoration : null,
+            child: Scaffold(
+              body: M3eRefreshIndicator(
+                onRefresh: () {
+                  refreshes++;
+                  return completion.future;
+                },
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: ClampingScrollPhysics(),
+                  ),
+                  children: const [SizedBox(height: 1200)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final drag = await tester.startGesture(const Offset(200, 150));
+      await drag.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await drag.moveBy(const Offset(0, 50));
+      await tester.pump();
+      expect(_pullProgress(tester), inExclusiveRange(0, 1));
+      expect(find.byType(LoadingSpinner), findsNothing);
+      expect(
+        find.byKey(const ValueKey('test-loading-decoration')),
+        findsNothing,
+      );
+      final progress = tester.widget<M3eCircularProgress>(
+        find.byType(M3eCircularProgress),
+      );
+      expect(progress.size, 26);
+      await drag.moveBy(const Offset(0, 60));
+      await tester.pump();
+      expect(_pullProgress(tester), 1);
+      expect(
+        tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale,
+        1.12,
+      );
+      await drag.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(refreshes, 1);
+      expect(find.byType(M3eCircularProgress), findsNothing);
+      expect(
+        decorated
+            ? find.byKey(const ValueKey('test-loading-decoration'))
+            : find.byType(LoadingSpinner),
+        findsOneWidget,
+      );
+      completion.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final height in [600.0, 1200.0]) {
+    for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.trackpad]) {
+      testWidgets('固定触发距离不随窗口高度增加 $height $kind', (tester) async {
+        tester.view.physicalSize = Size(800, height);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final completion = Completer<void>();
+        var refreshes = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: TargetPlatform.macOS),
+            home: Scaffold(
+              body: M3eRefreshIndicator(
+                triggerDistance: 96,
+                onPullExtentChanged: (_) {},
+                onRefresh: () {
+                  refreshes++;
+                  return completion.future;
+                },
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: ClampingScrollPhysics(),
+                  ),
+                  children: const [SizedBox(height: 1800)],
+                ),
+              ),
+            ),
+          ),
+        );
+        final drag = await tester.startGesture(
+          const Offset(200, 150),
+          kind: kind,
+        );
+        await drag.moveBy(const Offset(0, 20));
+        await tester.pump();
+        await drag.moveBy(const Offset(0, 50));
+        await tester.pump();
+        expect(_pullProgress(tester), inExclusiveRange(0, 1));
+        expect(refreshes, 0);
+        await drag.moveBy(const Offset(0, 50));
+        await tester.pump();
+        expect(_pullProgress(tester), 1);
+        expect(refreshes, 0);
+        await drag.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(refreshes, 1);
+        completion.complete();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  for (final expressive in [true, false]) {
+    testWidgets('达到提示阈值后松手立即刷新，M3E=$expressive', (tester) async {
+      final completion = Completer<void>();
+      var refreshes = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(extensions: [M3eFlags(enabled: expressive)]),
+          home: Scaffold(
+            body: M3eRefreshIndicator(
+              onPullExtentChanged: (_) {},
+              onRefresh: () {
+                refreshes++;
+                return completion.future;
+              },
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: ClampingScrollPhysics(),
+                ),
+                children: const [SizedBox(height: 1200)],
+              ),
+            ),
+          ),
+        ),
+      );
+      final drag = await tester.startGesture(const Offset(200, 150));
+      await drag.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await drag.moveBy(const Offset(0, 50));
+      await tester.pump();
+      expect(_pullProgress(tester), inExclusiveRange(0, 1));
+      expect(refreshes, 0);
+      // 600 高视口的触发距离为 100，覆盖旧逻辑错误取消的 100～150 区间。
+      await drag.moveBy(const Offset(0, 60));
+      await tester.pump();
+      expect(_pullProgress(tester), 1);
+      expect(refreshes, 0);
+      await drag.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(refreshes, 1);
+      expect(find.byType(M3eCircularProgress), findsNothing);
+      expect(find.byType(LoadingSpinner), findsOneWidget);
+      completion.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(LoadingSpinner), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byType(LoadingSpinner), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final mode in RefreshIndicatorTriggerMode.values) {
     for (final variant in [
       (expressive: true, stretch: false),
@@ -161,7 +335,10 @@ void main() {
             onRefresh: () async => refreshed++,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              children: [for (var i = 0; i < 20; i++) SizedBox(height: 40, child: Text('$i'))],
+              children: [
+                for (var i = 0; i < 20; i++)
+                  SizedBox(height: 40, child: Text('$i')),
+              ],
             ),
           ),
         ),
@@ -176,3 +353,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+double _pullProgress(WidgetTester tester) => tester
+    .widget<M3eCircularProgress>(
+      find.byKey(const ValueKey('refresh-pull-progress')),
+    )
+    .value!;
+
+Widget _testLoadingDecoration(BuildContext context, double size) =>
+    SizedBox.square(
+      key: const ValueKey('test-loading-decoration'),
+      dimension: size,
+    );

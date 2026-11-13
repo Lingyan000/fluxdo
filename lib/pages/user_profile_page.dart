@@ -114,9 +114,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   bool _actionsPinned = false;
   double? _pendingPinnedActionProgress;
   final ValueNotifier<double> _pullExtent = ValueNotifier(0);
+  final Map<String, ({Future<void> future, bool refresh})> _profileRequests = {};
   User? _user;
   UserSummary? _summary;
-  bool _summaryLoading = false;
   Object? _summaryError;
   StackTrace? _summaryErrorStack;
   List<badge_model.UserBadge>? _badges;
@@ -447,11 +447,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadSummary({bool forceRefresh = false}) async {
-    if (_summaryLoading || _user?.profileHidden == true) return;
+  Future<void> _loadSummary({bool forceRefresh = false}) => _runProfileRequest(
+    'summary',
+    refresh: forceRefresh,
+    load: () => _fetchSummary(forceRefresh: forceRefresh),
+  );
+
+  Future<void> _fetchSummary({bool forceRefresh = false}) async {
+    if (_user?.profileHidden == true) return;
     final username = _username;
     setState(() {
-      _summaryLoading = true;
       _summaryError = null;
       _summaryErrorStack = null;
     });
@@ -473,15 +478,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _summaryErrorStack = stack;
         });
       }
-    } finally {
-      if (mounted && _username == username) {
-        setState(() => _summaryLoading = false);
-      }
     }
   }
 
-  Future<void> _loadBadges() async {
-    if (_badgesLoading || _user?.profileHidden == true) return;
+  Future<void> _loadBadges() =>
+      _runProfileRequest('badges', refresh: true, load: () => _fetchBadges());
+
+  Future<void> _fetchBadges() async {
+    if (_user?.profileHidden == true) return;
     final username = _username;
     setState(() {
       _badgesLoading = true;
@@ -909,12 +913,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  Future<void> _loadActions(String filter, {bool loadMore = false}) async {
+  Future<void> _loadActions(String filter, {bool loadMore = false}) =>
+      _runProfileRequest(
+        'actions/$filter',
+        refresh: !loadMore,
+        load: () => _fetchActions(filter, loadMore: loadMore),
+      );
+
+  Future<void> _fetchActions(String filter, {bool loadMore = false}) async {
     if (!_canSeeActivity(filter)) return;
-    // 如果已有数据且正在加载，跳过（防止重复加载更多）
-    if (_loadingCache[filter] == true && _actionsCache.containsKey(filter)) {
-      return;
-    }
 
     if (!loadMore) {
       _actionLoadMoreCoordinator(filter).resetCooldown();
@@ -975,9 +982,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadReactions({bool loadMore = false}) async {
-    if (_reactionsLoading) return;
+  Future<void> _loadReactions({bool loadMore = false}) => _runProfileRequest(
+    'reactions',
+    refresh: !loadMore,
+    load: () => _fetchReactions(loadMore: loadMore),
+  );
 
+  Future<void> _fetchReactions({bool loadMore = false}) async {
     if (!loadMore) {
       _reactionsLoadMoreCoordinator.resetCooldown();
     }
@@ -1036,9 +1047,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadBoosts({bool loadMore = false}) async {
-    if (_boostsLoading) return;
+  Future<void> _loadBoosts({bool loadMore = false}) => _runProfileRequest(
+    'boosts',
+    refresh: !loadMore,
+    load: () => _fetchBoosts(loadMore: loadMore),
+  );
 
+  Future<void> _fetchBoosts({bool loadMore = false}) async {
     if (!loadMore) {
       _boostsLoadMoreCoordinator.resetCooldown();
     }
@@ -1097,9 +1112,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadVotes({bool loadMore = false}) async {
-    if (_votesLoading) return;
+  Future<void> _loadVotes({bool loadMore = false}) => _runProfileRequest(
+    'votes',
+    refresh: !loadMore,
+    load: () => _fetchVotes(loadMore: loadMore),
+  );
 
+  Future<void> _fetchVotes({bool loadMore = false}) async {
     if (!loadMore) {
       _votesLoadMoreCoordinator.resetCooldown();
     }
@@ -1147,9 +1166,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadSolved({bool loadMore = false}) async {
-    if (_solvedLoading) return;
+  Future<void> _loadSolved({bool loadMore = false}) => _runProfileRequest(
+    'solved',
+    refresh: !loadMore,
+    load: () => _fetchSolved(loadMore: loadMore),
+  );
 
+  Future<void> _fetchSolved({bool loadMore = false}) async {
     if (!loadMore) {
       _solvedLoadMoreCoordinator.resetCooldown();
     }
@@ -1483,17 +1506,51 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
+  /// 重复进入同一列表时共享请求，刷新遇到分页请求则排队重载首页。
+  Future<void> _runProfileRequest(
+    String section, {
+    required bool refresh,
+    required Future<void> Function() load,
+  }) {
+    final username = _username;
+    final key = '$username/$section';
+    final active = _profileRequests[key];
+    if (active != null) {
+      if (refresh && !active.refresh) {
+        return active.future.then((_) async {
+          if (!mounted || _username != username) return;
+          await _runProfileRequest(section, refresh: true, load: load);
+        });
+      }
+      return active.future;
+    }
+    late final Future<void> request;
+    request = Future<void>.sync(load).whenComplete(() {
+      if (identical(_profileRequests[key]?.future, request)) {
+        _profileRequests.remove(key);
+      }
+    });
+    _profileRequests[key] = (future: request, refresh: refresh);
+    return request;
+  }
+
   Future<void> _refreshProfile() async {
+    final username = _username;
+    final section = _tabFilters[_tabController.index];
+    final filter = _activityFilter;
     await _loadUser(refresh: true);
-    if (!mounted || _user?.profileHidden == true) return;
-    switch (_tabFilters[_tabController.index]) {
+    if (!mounted || username != _username || _user?.profileHidden == true) {
+      return;
+    }
+    switch (section) {
       case 'activity':
-        await switch (_activityFilter) {
+        if (!_canSeeActivity(filter)) return;
+        await switch (filter) {
           'reactions' => _loadReactions(),
           'boosts' => _loadBoosts(),
           'votes' => _loadVotes(),
           'solved' => _loadSolved(),
-          _ => _loadActions(_activityFilter),
+          _ => _loadActions(filter),
         };
       case 'badges':
         await _loadBadges();
@@ -1517,10 +1574,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         top: false,
         bottom: false,
         child: ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context)
-              .copyWith(scrollbars: false, overscroll: false),
+          behavior: ScrollConfiguration.of(context).copyWith(
+            scrollbars: false,
+            overscroll: false,
+            // 内外列表使用相同物理，避免内层弹性滚动重复衰减下拉进度。
+            physics: const ClampingScrollPhysics(),
+          ),
           child: M3eRefreshIndicator(
             displacement: 32,
+            triggerDistance: 96,
             triggerMode: RefreshIndicatorTriggerMode.anywhere,
             onPullExtentChanged: (extent) => _pullExtent.value = extent * 2,
             indicatorBuilder: (context, indicator) => Positioned(

@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import 'loading_spinner.dart';
 import 'm3e_flags.dart';
+import 'm3e_circular_progress.dart';
+import 'm3e_motion.dart';
 
 /// Lets a containing home surface move as one sheet, including its toolbar.
 class RefreshRevealNotification extends Notification {
@@ -140,9 +142,10 @@ class RefreshRevealScrollPhysics extends ScrollPhysics {
 /// 均翻车:SDK 的 onStatusChange 不通知 snap→refresh 与收尾→null
 /// 两个转移,外挂层必然漏状态(卡半截/闪现),该路线已废弃。
 ///
-/// 展示层:LoadingSpinner 圆片托底,随下拉从顶缘裁剪滑出(与原生
+/// 展示层:圆片内的 M3eCircularProgress 随下拉填充，到达阈值轻微放大。
+/// 圆片随下拉从顶缘裁剪滑出(与原生
 /// RefreshIndicator 同款揭示式入场,轻拉只露一条边,不会凭空出现
-/// 完整小圆片),刷新中形状 morph 即加载状态,完成后缩放收没。
+/// 完整小圆片),刷新中切换 LoadingSpinner 形变动画,完成后缩放收没。
 ///
 /// M3E 开关关闭时回退原生 [RefreshIndicator]。
 class M3eRefreshIndicator extends StatefulWidget {
@@ -159,6 +162,9 @@ class M3eRefreshIndicator extends StatefulWidget {
 
   /// 指示器悬停位(圆片顶边到 [edgeOffset] 的距离)。
   final double displacement;
+
+  /// 到达刷新阈值所需的拖动距离，单位为逻辑像素。未指定时按视口比例计算。
+  final double? triggerDistance;
 
   /// 宿主可用同一刷新进度拉伸封面，取消、刷新完成时连续回到零。
   final ValueChanged<double>? onPullExtentChanged;
@@ -182,12 +188,13 @@ class M3eRefreshIndicator extends StatefulWidget {
     this.secondaryActionBuilder,
     this.edgeOffset = 0.0,
     this.displacement = 40.0,
+    this.triggerDistance,
     this.onPullExtentChanged,
     this.indicatorBuilder,
     this.notificationPredicate = defaultScrollNotificationPredicate,
     this.triggerMode = RefreshIndicatorTriggerMode.onEdge,
     this.edgePredicate,
-  });
+  }) : assert(triggerDistance == null || triggerDistance > 0);
 
   @override
   State<M3eRefreshIndicator> createState() => M3eRefreshIndicatorState();
@@ -218,6 +225,7 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
         widget.onSecondaryAction == null &&
         widget.onPullExtentChanged == null &&
         widget.indicatorBuilder == null &&
+        widget.triggerDistance == null &&
         widget.edgePredicate == null) {
       return RefreshIndicator(
         key: _fallbackKey,
@@ -234,6 +242,7 @@ class M3eRefreshIndicatorState extends State<M3eRefreshIndicator> {
       onRefresh: widget.onRefresh,
       edgeOffset: widget.edgeOffset,
       displacement: widget.displacement,
+      triggerDistance: widget.triggerDistance,
       onPullExtentChanged: widget.onPullExtentChanged,
       indicatorBuilder: widget.indicatorBuilder,
       notificationPredicate: widget.notificationPredicate,
@@ -276,6 +285,7 @@ class _M3eRefreshCore extends StatefulWidget {
   final RefreshCallback onRefresh;
   final double edgeOffset;
   final double displacement;
+  final double? triggerDistance;
 
   final ValueChanged<double>? onPullExtentChanged;
   final Widget Function(BuildContext, Widget)? indicatorBuilder;
@@ -292,6 +302,7 @@ class _M3eRefreshCore extends StatefulWidget {
     required this.onRefresh,
     required this.edgeOffset,
     required this.displacement,
+    this.triggerDistance,
     this.onPullExtentChanged,
     this.indicatorBuilder,
     required this.notificationPredicate,
@@ -718,7 +729,7 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     } else if (notification is ScrollEndNotification) {
       switch (_status) {
         case RefreshIndicatorStatus.armed:
-          if (_positionController.value < 1.0) {
+          if (_positionController.value < 1.0 / _kDragSizeFactorLimit) {
             _dismiss(RefreshIndicatorStatus.canceled);
           } else {
             _show();
@@ -781,8 +792,10 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     final viewportExtent = widget.onPullExtentChanged == null
         ? containerExtent
         : context.size?.height ?? containerExtent;
-    double newValue =
-        _dragOffset! / (viewportExtent * _kDragContainerExtentPercentage);
+    final dragExtent = widget.triggerDistance == null
+        ? viewportExtent * _kDragContainerExtentPercentage
+        : widget.triggerDistance! * _kDragSizeFactorLimit;
+    double newValue = _dragOffset! / dragExtent;
     if (_status == RefreshIndicatorStatus.armed) {
       newValue = newValue.clamp(1.0 / _kDragSizeFactorLimit, double.infinity);
     }
@@ -1029,9 +1042,62 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     scale: _scaleFactor,
     child: FadeTransition(
       opacity: _opacity,
-      child: const _SpinnerBadge(size: _kBadgeSize),
+      child: AnimatedBuilder(
+        animation: _positionController,
+        builder: (context, _) {
+          final dragging =
+              _dragging || _status == RefreshIndicatorStatus.canceled;
+          return _SpinnerBadge(
+            size: _kBadgeSize,
+            child: M3eRefreshProgress(
+              progress: _positionFactor.value,
+              armed: _status == RefreshIndicatorStatus.armed,
+              refreshing: !dragging,
+            ),
+          );
+        },
+      ),
     ),
   );
+}
+
+/// 刷新阶段的统一图案，供普通圆片和自定义下拉容器共同使用。
+class M3eRefreshProgress extends StatelessWidget {
+  const M3eRefreshProgress({
+    super.key,
+    required this.progress,
+    required this.armed,
+    required this.refreshing,
+    this.size = 26,
+  });
+
+  final double progress;
+  final bool armed;
+  final bool refreshing;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (refreshing) {
+      return UiDecor.maybeOf(context)?.loadingIndicator?.call(context, size) ??
+          LoadingSpinner(size: size);
+    }
+    const transition = Duration(milliseconds: 160);
+    return AnimatedScale(
+      scale: armed ? 1.12 : 1,
+      duration: transition,
+      curve: M3eMotion.fastSpatial.curveFor(transition),
+      child: Semantics(
+        label: MaterialLocalizations.of(context).refreshIndicatorSemanticLabel,
+        child: M3eCircularProgress(
+          key: const ValueKey('refresh-pull-progress'),
+          value: progress.clamp(0.0, 1.0),
+          size: size,
+          strokeWidth: size * 2.5 / 26,
+        ),
+      ),
+    );
+  }
 }
 
 /// 加载器托底容器:surfaceContainerHigh 圆片 + 阴影,任意内容上可读。
@@ -1039,8 +1105,9 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
 /// size + 2 × [_kBadgeShadowMargin]。
 class _SpinnerBadge extends StatelessWidget {
   final double size;
+  final Widget child;
 
-  const _SpinnerBadge({required this.size});
+  const _SpinnerBadge({required this.size, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1055,15 +1122,7 @@ class _SpinnerBadge extends StatelessWidget {
         child: SizedBox(
           width: size,
           height: size,
-          child: Center(
-            // 宿主可替换加载动画（例如节日图案）
-            child:
-                UiDecor.maybeOf(context)?.loadingIndicator?.call(
-                  context,
-                  size - 18,
-                ) ??
-                LoadingSpinner(size: size - 18),
-          ),
+          child: Center(child: child),
         ),
       ),
     );

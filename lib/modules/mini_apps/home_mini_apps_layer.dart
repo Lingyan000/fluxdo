@@ -494,9 +494,20 @@ class _PullFeedback extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              MiniAppRefreshLogo(
-                progress: sheet.offset / sheet.refreshExtent,
-                refreshing: sheet.refreshing,
+              SizedBox.square(
+                key: const ValueKey('mini-app-refresh-feedback'),
+                dimension: 40,
+                child: sheet.armed && !sheet.refreshing
+                    ? MiniAppRefreshLogo(
+                        progress: sheet.offset / sheet.refreshExtent,
+                        refreshing: false,
+                      )
+                    : M3eRefreshProgress(
+                        progress: sheet.offset / sheet.refreshExtent,
+                        armed: sheet.refreshArmed,
+                        refreshing: sheet.refreshing,
+                        size: 40,
+                      ),
               ),
               const SizedBox(height: 8),
               Text(
