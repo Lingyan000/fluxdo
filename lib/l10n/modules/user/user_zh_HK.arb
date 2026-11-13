@@ -400,6 +400,7 @@
   "userProfile_actionDefault": "動態",
   "userProfile_actionLike": "點贊",
   "userProfile_actionLiked": "被贊",
+  "userProfile_likedThisPost": "讚好這則內容",
   "userProfile_actionReplied": "回覆了",
   "userProfile_bio": "個人簡介",
   "userProfile_boosted": "Boost 了",

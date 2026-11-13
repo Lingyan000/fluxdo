@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../models/category.dart';
 import '../../models/topic.dart';
@@ -20,7 +19,7 @@ import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
 import '../content/collapsed_html_content.dart';
 import '../post/post_item/widgets/reaction_emoji.dart';
-import '../topic/topic_card.dart' show TopicCardInteractiveSurface;
+import 'activity_card_layout.dart';
 
 /// 资料页与用户组共用活动卡；作者、动作与所引用的帖子分别呈现。
 class ActivityPostCard extends StatelessWidget {
@@ -39,6 +38,7 @@ class ActivityPostCard extends StatelessWidget {
     this.postNumber,
     this.excerpt,
     this.quoteExcerpt = false,
+    this.bodyFirst = false,
     this.accepted = false,
     this.reactionId,
     this.boostNote,
@@ -61,6 +61,7 @@ class ActivityPostCard extends StatelessWidget {
   final int? postNumber;
   final String? excerpt;
   final bool quoteExcerpt;
+  final bool bodyFirst;
   final bool accepted;
   final String? reactionId;
   final Widget? boostNote;
@@ -77,15 +78,11 @@ class ActivityPostCard extends StatelessWidget {
     );
     final category = categories[categoryId];
     final parent = categories[category?.parentCategoryId];
-    final radius = SegmentedCardItem.borderRadiusOf(
-      context,
-      index: position.index,
-      count: position.count,
-    );
     final body = excerpt?.trim();
+    final showBodyFirst = bodyFirst && body != null && body.isNotEmpty;
     final reaction = normalizeEmojiShortcodeName(reactionId ?? '');
     final metadata = Wrap(
-      spacing: 12,
+      spacing: 8,
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
@@ -93,122 +90,192 @@ class ActivityPostCard extends StatelessWidget {
           spacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (actionIcon != null)
+            if (actionIcon != null && actionActor == null)
               Icon(
                 actionIcon,
                 size: 15,
                 color: accepted ? context.emphasis.selected : secondary,
-              ),
-            if (actionActor != null)
-              _ActivityLink(
-                minimumSize: Size.zero,
-                onTap: () => EmbeddedStackScope.openProfile(
-                  context,
-                  actionActor!.username,
-                ),
-                child: Text(
-                  '@${actionActor!.username}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: metaStyle,
-                ),
               ),
             Text(actionLabel, style: metaStyle),
           ],
         ),
         if (postNumber != null && postNumber! > 0)
           Text('#$postNumber', style: metaStyle),
-        if (occurredAt != null)
-          RelativeTimeText(dateTime: occurredAt, style: metaStyle),
       ],
     );
-    return SegmentedCardItem(
-      index: position.index,
-      count: position.count,
-      gap: 4,
-      color: PageBackgroundScope.contentColor(
-        context,
-        theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
-      ),
-      child: TopicCardInteractiveSurface(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        onPreviewIntent: onPreviewIntent,
-        borderRadius: radius,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (author != null) ...[
-                _ActivityAuthor(author: author!),
-                const SizedBox(height: 4),
-              ],
-              metadata,
-              if (title.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                EmojiText(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    height: 1.4,
+    return ActivityCardFrame(
+      position: position,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      onPreviewIntent: onPreviewIntent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (actionActor != null) ...[
+            ActivityCardHeader(
+              timestamp: occurredAt == null
+                  ? null
+                  : RelativeTimeText(dateTime: occurredAt, style: metaStyle),
+              metadata: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height:
+                        MediaQuery.textScalerOf(context)
+                            .scale(metaStyle?.fontSize ?? 12) *
+                        1.4,
+                    child: Icon(
+                      Symbols.favorite_rounded,
+                      size: 15,
+                      color: context.emphasis.accent,
+                    ),
                   ),
-                ),
-              ],
-              if (reaction.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Semantics(
-                  image: true,
-                  label: ':$reaction:',
-                  child: ReactionEmoji(reactionId: reaction, size: 28),
-                ),
-              ],
-              if (body != null && body.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                _ActivityExcerpt(html: body, quoted: quoteExcerpt),
-              ],
-              if (boostNote != null) ...[
-                const SizedBox(height: 10),
-                boostNote!,
-              ],
-              if (category != null) ...[
-                const SizedBox(height: 4),
-                _ActivityLink(
-                  onTap: () => openCategoryPage(
-                    context,
-                    category.id,
-                    useWorkspace: false,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Symbols.circle,
-                        size: 8,
-                        color: ColorUtils.category(category.color, theme),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          [
-                            if (parent != null) parent.name,
-                            category.name,
-                          ].join(' › '),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _ActivityLink(
+                          minimumSize: Size.zero,
+                          padding: EdgeInsets.zero,
+                          onTap: () => EmbeddedStackScope.openProfile(
+                            context,
+                            actionActor!.username,
+                          ),
+                          child: Text(
+                            '@${actionActor!.username}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: metaStyle?.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          context.l10n.userProfile_likedThisPost,
                           style: metaStyle,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          ActivityCardHeader(
+            avatar: author == null
+                ? null
+                : _ActivityLink(
+                    alignment: AlignmentDirectional.centerStart,
+                    onTap: () => EmbeddedStackScope.openProfile(
+                      context,
+                      author!.username,
+                    ),
+                    child: SmartAvatar(
+                      imageUrl: author!.avatarTemplate.isEmpty
+                          ? ''
+                          : author!.getAvatarUrl(size: 80),
+                      radius: 18,
+                      fallbackText: author!.username,
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
+                      foregroundColor: secondary,
+                    ),
+                  ),
+            identity: author == null ? null : _ActivityAuthor(author: author!),
+            metadata: metadata,
+            timestamp: occurredAt == null || actionActor != null
+                ? null
+                : RelativeTimeText(dateTime: occurredAt, style: metaStyle),
+          ),
+          if (showBodyFirst) ...[
+            const SizedBox(height: 12),
+            _ActivityExcerpt(html: body, quoted: quoteExcerpt),
+          ],
+          if (title.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (showBodyFirst) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Symbols.chat_bubble_outline_rounded,
+                      size: 15,
+                      color: secondary,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: EmojiText(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: showBodyFirst
+                        ? theme.textTheme.bodySmall?.copyWith(
+                            color: secondary,
+                            height: 1.5,
+                          )
+                        : theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
                   ),
                 ),
               ],
-              if (footer != null) ...[const SizedBox(height: 4), footer!],
-            ],
-          ),
-        ),
+            ),
+          ],
+          if (reaction.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Semantics(
+              image: true,
+              label: ':$reaction:',
+              child: ReactionEmoji(reactionId: reaction, size: 28),
+            ),
+          ],
+          if (!showBodyFirst && body != null && body.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _ActivityExcerpt(html: body, quoted: quoteExcerpt),
+          ],
+          if (boostNote != null) ...[const SizedBox(height: 10), boostNote!],
+          if (category != null) ...[
+            const SizedBox(height: 4),
+            _ActivityLink(
+              onTap: () =>
+                  openCategoryPage(context, category.id, useWorkspace: false),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Symbols.circle,
+                    size: 8,
+                    color: ColorUtils.category(category.color, theme),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      [
+                        if (parent != null) parent.name,
+                        category.name,
+                      ].join(' › '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: metaStyle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (footer != null) ...[const SizedBox(height: 4), footer!],
+        ],
       ),
     );
   }
@@ -336,46 +403,31 @@ class _ActivityAuthor extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: _ActivityLink(
+        minimumSize: Size.zero,
+        padding: EdgeInsets.zero,
         onTap: () => EmbeddedStackScope.openProfile(context, author.username),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            SmartAvatar(
-              imageUrl: author.avatarTemplate.isEmpty
-                  ? ''
-                  : author.getAvatarUrl(size: 80),
-              radius: 16,
-              fallbackText: author.username,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              foregroundColor: theme.colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 2,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    author.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (author.displayName != author.username)
-                    Text(
-                      '@${author.username}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
+            Text(
+              author.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
               ),
             ),
+            if (author.displayName != author.username)
+              Text(
+                '@${author.username}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
           ],
         ),
       ),
@@ -389,11 +441,15 @@ class _ActivityLink extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.minimumSize = const Size(44, 44),
+    this.padding = const EdgeInsets.symmetric(vertical: 4),
+    this.alignment = Alignment.center,
   });
 
   final VoidCallback onTap;
   final Widget child;
   final Size minimumSize;
+  final EdgeInsetsGeometry padding;
+  final AlignmentGeometry alignment;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -411,8 +467,13 @@ class _ActivityLink extends StatelessWidget {
         minHeight: minimumSize.height,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Align(widthFactor: 1, heightFactor: 1, child: child),
+        padding: padding,
+        child: Align(
+          alignment: alignment,
+          widthFactor: 1,
+          heightFactor: 1,
+          child: child,
+        ),
       ),
     ),
   );
@@ -429,7 +490,9 @@ class _ActivityExcerpt extends StatelessWidget {
     final text = CollapsedHtmlContent(
       html: html,
       maxLines: 4,
-      textStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+      textStyle:
+          (quoted ? theme.textTheme.bodyMedium : theme.textTheme.bodyLarge)
+              ?.copyWith(height: 1.5),
     );
     if (!quoted) return text;
     final bar = context.themeStyle.quote == QuoteStyle.bar;

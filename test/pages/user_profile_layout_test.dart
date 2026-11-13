@@ -1060,7 +1060,7 @@ void main() {
                       find.byType(UserActionListSkeleton),
                     )
                     .type,
-                UserActivitySkeletonType.post,
+                UserActivitySkeletonType.reply,
               );
               await _capture(
                 tester,
@@ -1081,7 +1081,7 @@ void main() {
             expect(card.quoteExcerpt, label != '已解决' && label != 'Boost');
             if (label == '获赞') {
               expect(card.actionActor?.username, user.username);
-              expect(card.actionLabel, '点赞');
+              expect(card.actionLabel, '发布了话题');
               expect(card.boostNote, isNull);
             }
             if (label == 'Boost') {
@@ -1153,8 +1153,8 @@ void main() {
             matching: find.byType(ActivityPostCard),
           ),
         );
-        expect(cardRect.left, listRect.left + 16);
-        expect(cardRect.right, listRect.right - 16);
+        expect(cardRect.left, listRect.left);
+        expect(cardRect.right, listRect.right);
         expect(cardRect.left, skeletonRect.left);
         expect(cardRect.right, skeletonRect.right);
         final voteSegment = tester.widget<SegmentedCardItem>(

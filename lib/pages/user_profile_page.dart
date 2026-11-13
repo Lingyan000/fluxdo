@@ -2702,7 +2702,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           actionType == UserActionType.newTopic ||
           actionType == UserActionType.reply;
       return UserActionListSkeleton(
-        type: ownPost
+        type: actionType == UserActionType.wasLiked
+            ? UserActivitySkeletonType.receivedLike
+            : filter == 'all' || actionType == UserActionType.reply
+            ? UserActivitySkeletonType.reply
+            : ownPost
             ? UserActivitySkeletonType.post
             : UserActivitySkeletonType.quoted,
       );
@@ -2730,7 +2734,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       },
       child: ListView.builder(
         key: PageStorageKey('user_${_username}_$filter'),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: actions.length + 1,
         itemBuilder: (context, index) {
           if (index == actions.length) {
@@ -3611,7 +3615,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: reactions.length + 1,
         itemBuilder: (context, index) {
           if (index == reactions.length) {
@@ -3677,7 +3681,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: boosts.length + 1,
         itemBuilder: (context, index) {
           if (index == boosts.length) {
@@ -3702,7 +3706,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
-    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+    const padding = EdgeInsets.symmetric(vertical: 12);
 
     // 优先检查 loading 状态
     if (isLoading && topics == null) {
@@ -3798,7 +3802,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && posts == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.reply);
     }
 
     // 空状态
@@ -3835,7 +3839,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: posts.length + 1,
         itemBuilder: (context, index) {
           if (index == posts.length) {
@@ -3893,6 +3897,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         actionLabel: context.l10n.post_solutionAccepted,
         actionIcon: Symbols.check_circle_rounded,
         accepted: true,
+        bodyFirst: true,
         occurredAt: post.createdAt,
         postNumber: post.postNumber,
         excerpt: post.excerpt,
@@ -3922,7 +3927,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       author: author,
       title: action.title,
       actionLabel: action.actionType == UserActionType.wasLiked
-          ? context.l10n.userProfile_actionLike
+          ? action.postNumber == 1
+                ? context.l10n.userProfile_actionCreatedTopic
+                : context.l10n.common_reply
           : _getActionLabel(action.actionType),
       actionIcon: _getActionIcon(action.actionType),
       actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
@@ -3930,6 +3937,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       postNumber: action.postNumber,
       excerpt: action.excerpt,
       quoteExcerpt: !ownPost,
+      bodyFirst: action.actionType == UserActionType.reply,
       categoryId: action.categoryId,
       categories: ref.watch(categoryMapProvider).value ?? const {},
       onTap: () => _openTopic(

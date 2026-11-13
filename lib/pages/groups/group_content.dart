@@ -227,6 +227,7 @@ class GroupPostTile extends StatelessWidget {
     occurredAt: post.createdAt,
     postNumber: post.postNumber,
     excerpt: post.excerpt,
+    bodyFirst: post.postNumber > 1,
     categoryId: post.categoryId,
     categories: {...categories, ?category?.id: ?category},
     onTap: () =>

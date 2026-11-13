@@ -387,6 +387,7 @@
   "userProfile_actionDefault": "Activity",
   "userProfile_actionLike": "Liked",
   "userProfile_actionLiked": "Was liked",
+  "userProfile_likedThisPost": "liked this post",
   "userProfile_actionReplied": "Replied",
   "userProfile_bio": "Bio",
   "userProfile_boosted": "Boosted",

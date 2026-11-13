@@ -405,6 +405,7 @@
   "userProfile_actionDefault": "动态",
   "userProfile_actionLike": "点赞",
   "userProfile_actionLiked": "被赞",
+  "userProfile_likedThisPost": "赞了这条内容",
   "userProfile_actionReplied": "回复了",
   "userProfile_bio": "个人简介",
   "userProfile_boosted": "Boost 了",

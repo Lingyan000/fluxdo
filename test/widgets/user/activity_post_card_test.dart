@@ -25,9 +25,11 @@ import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/common/emoji_text.dart';
 import 'package:fluxdo/widgets/common/relative_time_text.dart';
+import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:fluxdo/widgets/content/collapsed_html_content.dart';
 import 'package:fluxdo/widgets/post/post_item/widgets/reaction_emoji.dart';
 import 'package:fluxdo/widgets/user/activity_post_card.dart';
+import 'package:fluxdo/widgets/user/activity_card_layout.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -217,7 +219,7 @@ void main() {
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 1080),
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           child: Column(
                             children: [
                               for (final (index, label, icon, title, excerpt) in [
@@ -230,7 +232,7 @@ void main() {
                                 ),
                                 (
                                   1,
-                                  '点赞',
+                                  '回复',
                                   Symbols.favorite_border_rounded,
                                   '从可用到好用，记录这次客户端更新',
                                   '国庆节的时候，我们上架了 iOS App 的首个可用版本，并发布了公告。\n\n\n'
@@ -272,6 +274,7 @@ void main() {
                                     const Duration(hours: 3),
                                   ),
                                   excerpt: excerpt,
+                                  bodyFirst: index == 0 || index == 4,
                                   quoteExcerpt: index == 1 || index == 3,
                                   reactionId: index == 3 ? ':+1:' : null,
                                   accepted: index == 4,
@@ -327,9 +330,29 @@ void main() {
       expect(tester.takeException(), isNull);
       final cards = find.byType(ActivityPostCard);
       final firstRect = tester.getRect(cards.first);
+      if (width < 600) {
+        expect(firstRect.left, 0);
+        expect(firstRect.right, width);
+      }
       for (var i = 1; i < 6; i++) {
         expect(tester.getRect(cards.at(i)).left, firstRect.left);
         expect(tester.getRect(cards.at(i)).right, firstRect.right);
+      }
+      for (var i = 0; i < 6; i++) {
+        final avatar = find
+            .descendant(of: cards.at(i), matching: find.byType(SmartAvatar))
+            .first;
+        final header = find
+            .ancestor(of: avatar, matching: find.byType(ActivityCardHeader))
+            .first;
+        final identity = find
+            .descendant(of: header, matching: find.byType(Column))
+            .first;
+        expect(tester.getRect(avatar).left, firstRect.left + 16);
+        expect(
+          tester.getCenter(avatar).dy,
+          closeTo(tester.getCenter(identity).dy, 0.1),
+        );
       }
       expect(
         find.text('主题 & 字号都可以跟随自己的习惯。', findRichText: true),
@@ -421,7 +444,7 @@ void main() {
         greaterThanOrEqualTo(tester.getRect(boostExcerpt).bottom + 10),
       );
 
-      // 宽窄屏的动作信息均位于作者下方，点赞人、动作、楼层与时间共用基线。
+      // 获赞事件独立呈现，点赞人、描述和发生时间对齐。
       final likeCard = cards.at(1);
       final likeAuthor = find
           .ancestor(
@@ -431,20 +454,33 @@ void main() {
           .first;
       final likeLabel = find.descendant(
         of: likeCard,
-        matching: find.text('点赞'),
+        matching: find.text('回复'),
       );
+      expect(tester.getRect(likeLabel).left, tester.getRect(likeAuthor).left);
       final likerLink = find
           .ancestor(of: find.text('@neo'), matching: find.byType(InkWell))
           .first;
       expect(
         tester.getRect(likerLink).top,
-        greaterThanOrEqualTo(tester.getRect(likeAuthor).bottom + 4),
+        lessThan(tester.getRect(likeAuthor).top),
       );
       final likeIcon = find.descendant(
         of: likeCard,
-        matching: find.byIcon(Symbols.favorite_border_rounded),
+        matching: find.byIcon(Symbols.favorite_rounded),
       );
-      expect(tester.getRect(likeIcon).left, firstRect.left + 16);
+      final contentLeft = firstRect.left + 16;
+      expect(tester.getRect(likeIcon).left, closeTo(contentLeft, 1));
+      final receivedLabel = find.text('赞了这条内容');
+      if (scale == 1) {
+        expect(
+          tester.getRect(likerLink).top,
+          closeTo(tester.getRect(receivedLabel).top, 0.1),
+        );
+        expect(
+          tester.getCenter(likeIcon).dy,
+          closeTo(tester.getCenter(receivedLabel).dy, 0.5),
+        );
+      }
       if (scale == 1) {
         final likeTime = find.descendant(
           of: find.descendant(
@@ -464,7 +500,7 @@ void main() {
               labelParagraph.constraints,
               TextBaseline.alphabetic,
             )!;
-        for (final label in [find.text('@neo'), likeFloor, likeTime]) {
+        for (final label in [likeFloor]) {
           final paragraph = tester.renderObject<RenderParagraph>(label);
           final baseline =
               tester.getTopLeft(label).dy +
@@ -474,6 +510,7 @@ void main() {
               )!;
           expect(baseline, closeTo(labelBaseline, 0.1));
         }
+        expect(tester.getRect(likeTime).top, tester.getRect(likerLink).top);
       }
       final authorLink = find
           .ancestor(of: find.text('林间').first, matching: find.byType(InkWell))
@@ -491,7 +528,18 @@ void main() {
             matching: find.byType(InkWell),
           )
           .first;
-      expect(tester.getRect(categoryLink).left, firstRect.left + 16);
+      expect(tester.getRect(categoryLink).left, contentLeft);
+      final replyBody = find.descendant(
+        of: cards.first,
+        matching: find.byType(CollapsedHtmlContent),
+      );
+      final replyTitle = find.text('Version 1.0.5 Build 7');
+      expect(tester.getRect(replyBody).left, contentLeft);
+      expect(
+        tester.getRect(replyTitle).top,
+        greaterThan(tester.getRect(replyBody).bottom),
+      );
+      expect(tester.getRect(replyTitle).left, contentLeft + 21);
       for (final link in [authorLink, categoryLink]) {
         final ink = tester.widget<InkWell>(link);
         expect(
