@@ -81,6 +81,7 @@ just release -- patch --dry-run
 - `just test` 会自动执行测试所需的 `pub get + l10n`
 - `just release` / `just prerelease` 会在真正写入版本号和打 tag 前自动执行发版前检查
 - `just sync` 不是 hook，而是手动的显式预热命令；日常直接 `just run` / `just build` 即可
+- 插件界面的 rfw 核心组件包含动态图标解码，统一入口对 profile/release 默认传入 `--no-tree-shake-icons`。直接调用 `flutter build` 时需要自行传入该选项，命令行显式指定的裁剪选项会保留。
 
 ## 国际化工作流
 

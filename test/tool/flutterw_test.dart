@@ -146,7 +146,7 @@ void main(List<String> args) {
           '--profile',
           '--target-platform=android-arm64',
         ],
-        ['fake_flutter.dart', 'run', '--profile', '-d', 'phone-1234'],
+        ['fake_flutter.dart', 'run', '--profile', '--no-tree-shake-icons', '-d', 'phone-1234'],
       ]);
     },
   );
@@ -255,6 +255,32 @@ void main(List<String> args) {
         '--release',
         '--target-platform=android-arm64',
       ]);
+      expect(calls().last, contains('--no-tree-shake-icons'));
     },
   );
+
+  for (final target in ['appbundle', 'ios', 'macos', 'linux', 'windows', 'web']) {
+    test('$target 默认构建保留动态组件图标', () async {
+      final result = await run(['build', target]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(calls().last, ['fake_flutter.dart', 'build', target, '--no-tree-shake-icons']);
+    });
+  }
+
+  for (final explicit in ['--tree-shake-icons', '--no-tree-shake-icons']) {
+    test('保留显式图标裁剪选项 $explicit', () async {
+      final result = await run(['build', 'apk', explicit]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(calls().last, ['fake_flutter.dart', 'build', 'apk', explicit]);
+    });
+  }
+
+  test('debug 构建和测试命令沿用原参数', () async {
+    final debug = await run(['build', 'apk', '--debug']);
+    expect(debug.exitCode, 0, reason: '${debug.stdout}\n${debug.stderr}');
+    expect(calls().last, ['fake_flutter.dart', 'build', 'apk', '--debug']);
+    final tests = await run(['test', 'test/example_test.dart']);
+    expect(tests.exitCode, 0, reason: '${tests.stdout}\n${tests.stderr}');
+    expect(calls().last, ['fake_flutter.dart', 'test', 'test/example_test.dart']);
+  });
 }
