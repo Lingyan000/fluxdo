@@ -1,6 +1,6 @@
 # 原生组件参考
 
-适用基线为 `8679b7ab`，注册表位于 [metaverse_widget_library.dart](../../lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart)。当前提供 20 个宿主组件和 33 个 rfw 基础组件。界面文件使用 `import fluxdo;`。
+注册表位于 [metaverse_widget_library.dart](../../lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart)。当前提供 24 个宿主组件和 33 个 rfw 基础组件。界面文件使用 `import fluxdo;`。应用内开发中心提供每个宿主组件的真实预览、参数调整与事件记录。
 
 ## 参数和事件
 
@@ -41,6 +41,10 @@ widget SearchPage = PageLayout(
 | 组件 | 参数与默认值 | 事件及行为 |
 | --- | --- | --- |
 | `PageLayout` | `children`、可选 `footer`、`loading: false` | `onRefresh`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
+| `ListPage` | `items`、可选 `search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，可点击加载更多，刷新保留已有条目 |
+| `DetailPage` | `sections`、可选 `header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
+| `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
+| `ActionBar` | `actions` 组件列表 | 操作靠右排列，窄屏自动换为纵向；事件由内部按钮声明 |
 | `TileGrid` | `children` | 按可用宽度选择列数，720 及以上三列，320 及以上两列，其余一列，间距 12 |
 | `Choice` | `label`、`selected: false` | `onSelected`，事件沿用声明参数，选择值由脚本管理 |
 | `EmptyState` | `title`、可选 `message`、`icon`、`action` | 空内容或错误状态，默认购物袋图标，通用场景建议指定 icon |
@@ -111,6 +115,43 @@ widget SearchPage = PageLayout(
 
 生产界面优先使用宿主组件承载文本、表单、图片和操作，基础组件用于布局。列表或网格需要明确约束，避免在无界滚动区域放置 Expanded。所有布局都应检查窄屏、大字体、键盘弹出和底部安全区域。
 
-## 后续扩展
+## 页面与表单
 
-列表页、详情页、表单页、分页、字段校验与动作菜单拟作为高层组件补充，具体设计见架构审计。这些组件尚未注册，当前插件应使用上表中的组件。
+`ListPage`、`DetailPage` 和 `FormPage` 管理自己的滚动区域，清单页面设 `scroll: false`。`ListPage.actions` 和 `DetailPage.actions` 接收单个组件，通常使用 `ActionBar`。`FormPage.actions` 接收组件列表，在提交按钮前展示附加操作。附加操作的禁用状态由插件传入。
+
+列表的 `items` 是条目组件列表。空列表会显示加载、错误或空态，非空列表在刷新时保留当前条目。声明 `onLoadMore` 后，`hasMore: true` 显示加载更多按钮，`loadingMore: true` 显示分页进度，`hasMore: false` 显示末尾提示。插件负责页码、追加数据和请求去重，分页请求失败时通过 `error` 与 `onRetry` 提供恢复入口。
+
+表单字段使用以下结构。
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 必填且唯一的非空字符串，用于提交结果的键 |
+| `label`、`hint` | 显示名称与输入提示，label 默认使用 name |
+| `type` | text、multiline、password、toggle、choice，默认 text |
+| `value` | toggle 使用布尔值，其他类型使用字符串。choice 的值必须存在于 options 中，否则清空选择 |
+| `required` | 默认 false。必填文本去除首尾空白后不能为空，必填开关需要开启，必填选择需要选中 |
+| `maxLength` | 可选正整数，按用户感知字符数量校验文本长度 |
+| `error` | 服务端字段错误，非空时显示并阻止提交。插件处理完错误后清空该值 |
+| `options` | choice 的选项列表，每项包含唯一字符串 value 和可选 label |
+
+```text
+import fluxdo;
+
+widget Settings = FormPage(
+  resetKey: data.resetKey,
+  loading: data.saving,
+  fields: [
+    {name: "title", label: "名称", value: data.title, required: true, maxLength: 40},
+    {name: "notes", label: "备注", type: "multiline"},
+    {name: "enabled", label: "启用提醒", type: "toggle", value: true},
+    {name: "frequency", label: "频率", type: "choice", value: "daily",
+      options: [{value: "daily", label: "每天"}, {value: "weekly", label: "每周"}]},
+  ],
+  onChanged: event "field.changed" {},
+  onSubmit: event "settings.save" {},
+);
+```
+
+`onSubmit` 的 `args.values` 包含所有当前字段。表单内部保留用户编辑，脚本更新 loading 或其他无关状态不会覆盖输入。脚本显式改变字段 value 会更新该字段，改变 resetKey 会按声明值重置整个表单。删除字段后，该字段也会从提交结果移除。
+
+password 字段用于插件自己的业务输入。LDC 支付调用 `payments.request`，支付密码与生物识别由应用收银台管理。详情、列表、表单与操作区的颜色和形状沿用应用主题。

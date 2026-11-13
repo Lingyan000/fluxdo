@@ -2,10 +2,16 @@ import '../../../l10n/s.dart';
 
 /// 参数直接绑定到生产组件库的数据树，预览与插件使用同一份实现。
 class MetaverseComponentExample {
-  const MetaverseComponentExample(this.name, this.source, this.parameters);
+  const MetaverseComponentExample(
+    this.name,
+    this.source,
+    this.parameters, {
+    this.previewHeight = 200,
+  });
   final String name;
   final String source;
   final Map<String, Object> parameters;
+  final double previewHeight;
 }
 
 List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
@@ -17,6 +23,30 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
       'PageLayout',
       'PageLayout(loading: data.loading, onRefresh: event "refresh" {}, children: [Label(text: data.title), Gap(), Button(label: data.message, onPressed: event "action" {})], footer: Button(label: data.title, onPressed: event "footer" {}))',
       {...title, 'loading': false},
+      previewHeight: 360,
+    ),
+    MetaverseComponentExample(
+      'ListPage',
+      'ListPage(loading: data.loading, hasMore: data.hasMore, onRefresh: event "refresh" {}, onLoadMore: event "loadMore" {}, search: SearchInput(value: data.value, hint: data.title, onChanged: event "change" {}), items: [ListItem(title: data.title, subtitle: data.message, onTap: event "open" {id: "one"}), ListItem(title: data.message, onTap: event "open" {id: "two"})])',
+      {...title, 'loading': false, 'hasMore': true, 'value': ''},
+      previewHeight: 400,
+    ),
+    MetaverseComponentExample(
+      'DetailPage',
+      'DetailPage(loading: data.loading, onRefresh: event "refresh" {}, header: Label(text: data.title, style: "headlineSmall"), sections: [Surface(child: SelectableLabel(text: data.message))], actions: ActionBar(actions: [Button(label: data.title, onPressed: event "action" {})]))',
+      {...title, 'loading': false},
+      previewHeight: 360,
+    ),
+    MetaverseComponentExample(
+      'FormPage',
+      'FormPage(loading: data.loading, fields: [{name: "name", label: data.title, required: true, maxLength: 40}, {name: "notes", label: data.message, type: "multiline"}, {name: "enabled", label: data.title, type: "toggle", value: true}], onChanged: event "formChanged" {}, onSubmit: event "submit" {})',
+      {...title, 'loading': false},
+      previewHeight: 440,
+    ),
+    MetaverseComponentExample(
+      'ActionBar',
+      'ActionBar(actions: [Button(label: data.secondary, variant: "text", onPressed: event "secondary" {}), Button(label: data.label, loading: data.loading, onPressed: event "primary" {})])',
+      {...label, 'secondary': l.common_cancel, 'loading': false},
     ),
     MetaverseComponentExample(
       'TileGrid',
