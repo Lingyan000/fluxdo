@@ -188,7 +188,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     await LogWriter.instance.flushNow();
     final rows = const LineSplitter()
-        .convert(await (await LogWriter.getLogFile()).readAsString())
+        .convert(await LogWriter.readAllContent())
         .map((line) => jsonDecode(line) as Map)
         .toList();
     for (var index = 0; index < responses.length; index++) {
