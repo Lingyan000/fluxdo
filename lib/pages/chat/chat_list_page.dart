@@ -19,6 +19,7 @@ import '../../widgets/common/relative_time_text.dart';
 import '../../widgets/common/skeleton.dart';
 import '../../widgets/common/smart_avatar.dart';
 import '../../widgets/desktop_refresh_indicator.dart';
+import '../../widgets/layout/bottom_nav_clearance.dart';
 import '../../widgets/layout/master_detail_layout.dart';
 import 'chat_browse_channels_page.dart';
 import 'chat_search_page.dart';
@@ -272,16 +273,18 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         ),
       ),
       // 新建会话只对私信有意义;频道 tab 隐藏 FAB
-      floatingActionButton: AnimatedBuilder(
-        animation: _tabController,
-        builder: (context, _) => _tabController.index == 1
-            ? FloatingActionButton(
-                heroTag: 'newChat',
-                onPressed: _openNewChat,
-                tooltip: context.l10n.chat_newChat,
-                child: const Icon(Symbols.add_comment_rounded),
-              )
-            : const SizedBox.shrink(),
+      floatingActionButton: BottomNavClearance(
+        child: AnimatedBuilder(
+          animation: _tabController,
+          builder: (context, _) => _tabController.index == 1
+              ? FloatingActionButton(
+                  heroTag: 'newChat',
+                  onPressed: _openNewChat,
+                  tooltip: context.l10n.chat_newChat,
+                  child: const Icon(Symbols.add_comment_rounded),
+                )
+              : const SizedBox.shrink(),
+        ),
       ),
     );
 
