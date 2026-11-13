@@ -48,11 +48,90 @@ class _MenuRowSurface extends StatelessWidget {
   }
 }
 
+/// 临界阻尼弹簧按时间采样成的曲线:route 仍用线性时长驱动,形态由弹簧决定。
+/// [response] 是弹簧周期,[span] 是曲线覆盖的时长(均为秒);末端归一,保证到点。
+///
+/// [velocity] 是起步速度相对弹簧角频率的比例:0 为从静止起步,接近 1 为一出手
+/// 就满速、随即减速(手指松开后立即响应的形态)。
+class _SpringCurve extends Curve {
+  const _SpringCurve(this.response, this.span, {this.velocity = 0});
+  final double response, span, velocity;
+
+  double _at(double seconds) {
+    final double omega = 2 * math.pi / response;
+    return 1 -
+        (1 + omega * (1 - velocity) * seconds) * math.exp(-omega * seconds);
+  }
+
+  @override
+  double transformInternal(double t) => _at(span * t) / _at(span);
+}
+
+/// 形变的三条进度:位置、尺寸、透明度共用同一个线性驱动,各自套用曲线。
+class _MenuMorphMotion {
+  _MenuMorphMotion(
+    Animation<double> parent, {
+    required Curve moveIn,
+    required Curve growIn,
+    required Curve fadeIn,
+    required Curve moveOut,
+    required Curve growOut,
+    required Curve fadeOut,
+  }) : move = CurvedAnimation(
+         parent: parent,
+         curve: moveIn,
+         reverseCurve: moveOut,
+       ),
+       grow = CurvedAnimation(
+         parent: parent,
+         curve: growIn,
+         reverseCurve: growOut,
+       ),
+       opacity = CurvedAnimation(
+         parent: parent,
+         curve: fadeIn,
+         reverseCurve: fadeOut,
+       );
+
+  _MenuMorphMotion.menu(Animation<double> parent)
+    : this(
+        parent,
+        moveIn: _kMenuOpenMove,
+        growIn: _kMenuOpenGrow,
+        fadeIn: _kMenuFadeIn,
+        moveOut: _kMenuCloseMove,
+        growOut: _kMenuCloseGrow,
+        fadeOut: _kMenuFadeOut,
+      );
+
+  _MenuMorphMotion.submenu(Animation<double> parent)
+    : this(
+        parent,
+        moveIn: _kSubmenuOpen,
+        growIn: _kSubmenuOpen,
+        fadeIn: _kSubmenuFadeIn,
+        moveOut: _kSubmenuClose,
+        growOut: _kSubmenuClose,
+        fadeOut: _kSubmenuFadeOut,
+      );
+
+  final CurvedAnimation move, grow, opacity;
+
+  void dispose() {
+    move.dispose();
+    grow.dispose();
+    opacity.dispose();
+  }
+}
+
 /// 内容只布局一次。动画改变绘制轮廓与位置，不逐帧改变文字排版或行高。
+///
+/// [scaleContent] 为 true 时内容随轮廓宽度等比缩放(菜单从入口长出);
+/// 为 false 时内容保持原尺寸,由轮廓向下揭开(子面板从入口行升起)。
 class _MenuMorphTransition extends SingleChildRenderObjectWidget {
   const _MenuMorphTransition({
     super.key,
-    required this.animation,
+    required this.motion,
     required this.anchor,
     required this.shape,
     required this.shapes,
@@ -60,18 +139,18 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
     required this.shadowColor,
     required this.elevation,
     required this.textDirection,
-    required this.chainRoute,
+    this.scaleContent = true,
     this.anchorRectOf,
     required super.child,
   });
-  final Animation<double> animation;
+  final _MenuMorphMotion motion;
   final Rect anchor;
   final ShapeBorder shape;
   final UiShapes shapes;
   final Color color, shadowColor;
   final double elevation;
   final TextDirection textDirection;
-  final _MenuChainRoute<dynamic> chainRoute;
+  final bool scaleContent;
   final Rect? Function()? anchorRectOf;
 
   @override
@@ -87,17 +166,11 @@ class _MenuMorphTransition extends SingleChildRenderObjectWidget {
 class _RenderMenuMorph extends RenderProxyBox {
   _RenderMenuMorph(this._configuration);
   _MenuMorphTransition _configuration;
-  double? _chainStartProgress;
-
-  void _freezeForChainClose() {
-    _chainStartProgress = _progress;
-    markNeedsPaint();
-  }
 
   set configuration(_MenuMorphTransition value) {
-    if (attached && value.animation != _configuration.animation) {
-      _configuration.animation.removeListener(_tick);
-      value.animation.addListener(_tick);
+    if (attached && value.motion != _configuration.motion) {
+      _configuration.motion.grow.removeListener(_tick);
+      value.motion.grow.addListener(_tick);
     }
     _configuration = value;
     _tick();
@@ -106,14 +179,12 @@ class _RenderMenuMorph extends RenderProxyBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    _configuration.animation.addListener(_tick);
-    _configuration.chainRoute.freezeForChainClose = _freezeForChainClose;
+    _configuration.motion.grow.addListener(_tick);
   }
 
   @override
   void detach() {
-    _configuration.chainRoute.freezeForChainClose = null;
-    _configuration.animation.removeListener(_tick);
+    _configuration.motion.grow.removeListener(_tick);
     super.detach();
   }
 
@@ -125,8 +196,10 @@ class _RenderMenuMorph extends RenderProxyBox {
   @override
   bool get alwaysNeedsCompositing => true;
 
-  double get _progress =>
-      _chainStartProgress ?? _configuration.animation.value.clamp(0.0, 1.0);
+  double get _move => _configuration.motion.move.value.clamp(0.0, 1.0);
+  double get _grow => _configuration.motion.grow.value.clamp(0.0, 1.0);
+  double get _opacity => _configuration.motion.opacity.value.clamp(0.0, 1.0);
+  bool get _settled => _move >= 1 && _grow >= 1;
 
   Rect get _source {
     final anchor = _configuration.anchorRectOf?.call() ?? _configuration.anchor;
@@ -136,7 +209,16 @@ class _RenderMenuMorph extends RenderProxyBox {
     );
   }
 
-  Rect get _frame => Rect.lerp(_source, Offset.zero & size, _progress)!;
+  /// 中心与尺寸分开插值:中心先到位,尺寸随后长满。
+  Rect get _frame {
+    final source = _source;
+    final extent = Size.lerp(source.size, size, _grow)!;
+    return Rect.fromCenter(
+      center: Offset.lerp(source.center, size.center(Offset.zero), _move)!,
+      width: extent.width,
+      height: extent.height,
+    );
+  }
 
   ShapeBorder get _frameShape => ShapeBorder.lerp(
     RoundedSuperellipseBorder(
@@ -145,7 +227,7 @@ class _RenderMenuMorph extends RenderProxyBox {
       ),
     ),
     _configuration.shape,
-    _progress,
+    _grow,
   )!;
 
   Path get _outline => _frameShape.getOuterPath(
@@ -153,15 +235,36 @@ class _RenderMenuMorph extends RenderProxyBox {
     textDirection: _configuration.textDirection,
   );
 
-  double get _contentOpacity => ((_progress - .22) / .78).clamp(0.0, 1.0);
+  /// 菜单上离入口最远的角;入口与菜单在某个方向上居中对齐时该方向取中。
+  Alignment get _farCorner {
+    final offset = _source.center - size.center(Offset.zero);
+    double away(double delta) => delta.abs() < 1 ? 0 : -delta.sign;
+    return Alignment(away(offset.dx), away(offset.dy));
+  }
 
   Matrix4 get _contentTransform {
     final frame = _frame;
-    final scale = .96 + .04 * _progress;
+    if (!_configuration.scaleContent) {
+      // 面板被屏幕边缘挤开时,头部从入口行的位置滑到最终位置,不与入口错位重影。
+      return Matrix4.translationValues(
+        _source.left * (1 - _grow),
+        frame.top,
+        0,
+      );
+    }
+    // 内容按轮廓宽度等比缩放,贴住远离入口的那一角:靠近入口的边先冲出再回收,
+    // 远端的边单调到位,内容跟着它走才不会来回摆;不足的部分由轮廓裁掉。
+    final scale = math.min(1.0, frame.width / size.width);
+    final pin = _farCorner;
+    final content = size * scale;
     return Matrix4.identity()
       ..translateByDouble(
-        frame.center.dx - size.width * scale / 2,
-        frame.top,
+        frame.center.dx +
+            pin.x * (frame.width - content.width) / 2 -
+            content.width / 2,
+        frame.center.dy +
+            pin.y * (frame.height - content.height) / 2 -
+            content.height / 2,
         0,
         1,
       )
@@ -173,58 +276,31 @@ class _RenderMenuMorph extends RenderProxyBox {
       ? (Offset.zero & size).expandToInclude(_source).inflate(32)
       : super.paintBounds;
 
-  Matrix4? get _chainTransform {
-    final group = _configuration.chainRoute.chainClose;
-    return group?.transformAt(globalToLocal(group.pivot));
-  }
-
   @override
   void paint(PaintingContext context, Offset offset) {
     if (child == null || size.isEmpty) return;
-    // 单面板保留完整的轮廓形变；多面板冻结当前外形后共用整组收回进度。
-    _configuration.chainRoute.menuPivotAlignment = _pointToAlignment(
-      _source.center,
-      Offset.zero & size,
-    );
-    final group = _configuration.chainRoute.chainClose;
-    if (group != null) {
-      context.pushOpacity(offset, (255 * group.opacity).round(), (
-        context,
-        offset,
-      ) {
-        context.pushTransform(
-          needsCompositing,
-          offset,
-          _chainTransform!,
-          _paintMorph,
-        );
-      });
-    } else {
-      _paintMorph(context, offset);
-    }
-  }
-
-  void _paintMorph(PaintingContext context, Offset offset) {
-    final progress = _progress;
-    if (progress >= 1) {
+    final opacity = _opacity;
+    if (_settled && opacity >= 1) {
       super.paint(context, offset);
       return;
     }
-    if (progress <= 0) return;
-
-    // 外形、边框、阴影与内容一起淡出，末帧不留下轮廓或切换到旧按钮截图。
-    final visibility = (progress / .3).clamp(0.0, 1.0);
-    context.pushOpacity(offset, (255 * visibility).round(), _paintFrame);
+    if (opacity <= 0) return;
+    // 外形、边框、阴影与内容一起淡入淡出，末帧不留下轮廓或切换到旧按钮截图。
+    context.pushOpacity(offset, (255 * opacity).round(), _paintFrame);
   }
 
   void _paintFrame(PaintingContext context, Offset offset) {
+    if (_settled) {
+      super.paint(context, offset);
+      return;
+    }
     final outline = _outline;
     final paintedPath = outline.shift(offset);
     final canvas = context.canvas;
     canvas.drawShadow(
       paintedPath,
       _configuration.shadowColor,
-      _configuration.elevation * _progress,
+      _configuration.elevation * _grow,
       true,
     );
     canvas.drawPath(paintedPath, Paint()..color = _configuration.color);
@@ -238,27 +314,21 @@ class _RenderMenuMorph extends RenderProxyBox {
       context,
       offset,
     ) {
-      context.pushOpacity(offset, (255 * _contentOpacity).round(), (
-        context,
+      context.pushTransform(
+        needsCompositing,
         offset,
-      ) {
-        context.pushTransform(
-          needsCompositing,
-          offset,
-          _contentTransform,
-          (context, offset) => super.paint(context, offset),
-        );
-      });
+        _contentTransform,
+        (context, offset) => super.paint(context, offset),
+      );
     }, clipBehavior: Clip.antiAlias);
   }
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    if (_configuration.chainRoute.chainClose != null) return false;
-    if (!hasSize || _progress <= 0) return false;
-    if (_progress >= 1) return super.hitTest(result, position: position);
+    if (!hasSize || _opacity <= 0) return false;
+    if (_settled) return super.hitTest(result, position: position);
     if (!_outline.contains(position)) return false;
-    if (_contentOpacity > .5) {
+    if (_opacity > .5) {
       result.addWithPaintTransform(
         transform: _contentTransform,
         position: position,
@@ -273,14 +343,12 @@ class _RenderMenuMorph extends RenderProxyBox {
 
   @override
   void applyPaintTransform(RenderBox child, Matrix4 transform) {
-    final chain = _chainTransform;
-    if (chain != null) transform.multiply(chain);
-    if (_progress < 1) transform.multiply(_contentTransform);
+    if (!_settled) transform.multiply(_contentTransform);
   }
 
   @override
   Rect? describeApproximatePaintClip(RenderObject child) =>
-      _progress < 1 ? _frame : null;
+      _settled ? null : _frame;
 }
 
 /// 轮廓可以完整回到入口，入口本身保持实时绘制；在入口边缘渐隐避让图文，

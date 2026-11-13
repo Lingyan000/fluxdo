@@ -495,7 +495,11 @@ void main() {
     final movingText = tester.getRect(find.text('Newest'));
     await tester.pumpAndSettle();
     final finalText = tester.getRect(find.text('Newest'));
-    expect(movingText.width / finalText.width, inInclusiveRange(.95, 1));
+    expect(movingText.width / finalText.width, lessThan(.95));
+    expect(
+      movingText.height / movingText.width,
+      closeTo(finalText.height / finalText.width, .01),
+    );
     expect(movingText.top, isNot(closeTo(finalText.top, 1)));
     await tester.tap(find.text('Disabled'));
     await tester.pumpAndSettle();

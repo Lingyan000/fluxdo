@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -71,7 +73,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Choose'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump(const Duration(milliseconds: 80));
     final anchor = tester.getRect(find.byKey(anchorKey));
     final returning = await _pixelAt(
       tester,
@@ -87,10 +89,223 @@ void main() {
     expect(find.text('Choose'), findsNothing);
   });
 
+  testWidgets('展开时内容随轮廓宽度等比放大', (tester) async {
+    const anchorKey = ValueKey('grow-anchor');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 60),
+              child: SwipeDismissiblePopupMenuButton<int>(
+                position: PopupMenuPosition.under,
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 1, child: Text('Choose')),
+                ],
+                child: const SizedBox(
+                  key: anchorKey,
+                  width: 40,
+                  height: 40,
+                  child: Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(anchorKey));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 32));
+    final early = tester.getRect(find.text('Choose'));
+    await tester.pumpAndSettle();
+    final settled = tester.getRect(find.text('Choose'));
+    expect(early.width / settled.width, lessThan(.9), reason: '内容应随轮廓宽度缩放');
+    expect(
+      early.height / early.width,
+      closeTo(settled.height / settled.width, .01),
+      reason: '内容必须等比缩放，不能拉伸',
+    );
+  });
+
+  testWidgets('向下展开时内容贴远端，不会先冲过终点再爬回', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SwipeDismissiblePopupMenuButton<int>(
+                position: PopupMenuPosition.under,
+                itemBuilder: (_) => [
+                  for (var i = 0; i < 8; i++)
+                    PopupMenuItem(value: i, child: Text('Item $i')),
+                ],
+                child: const SizedBox(
+                  width: 48,
+                  height: 40,
+                  child: Text('Open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    final first = <double>[], last = <double>[];
+    for (var frame = 0; frame < 30; frame++) {
+      first.add(tester.getRect(find.text('Item 0')).top);
+      last.add(tester.getRect(find.text('Item 7')).bottom);
+      await tester.pump(const Duration(microseconds: 11111));
+    }
+    await tester.pumpAndSettle();
+    final firstEnd = tester.getRect(find.text('Item 0')).top;
+    for (var i = 1; i < last.length; i++) {
+      expect(
+        last[i],
+        greaterThanOrEqualTo(last[i - 1] - .001),
+        reason: '远端第 $i 帧',
+      );
+    }
+    expect(
+      first.reduce(math.max) - firstEnd,
+      lessThan(12),
+      reason: '靠近入口的一侧只允许轻微冲出',
+    );
+  });
+
+  testWidgets('菜单贴屏幕右缘时子面板与入口行同宽，揭开全程不错位', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topRight,
+            child: SwipeDismissiblePopupMenuButton<int>(
+              position: PopupMenuPosition.under,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 1, child: Text('Parent')),
+                ExpandablePopupMenuEntry<int>(
+                  icon: Icons.sort,
+                  label: 'Sort',
+                  children: [
+                    ExpandableMenuChild(
+                      value: 2,
+                      icon: Icons.check,
+                      label: 'Child',
+                    ),
+                  ],
+                ),
+              ],
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final entry = tester.getRect(find.text('Sort'));
+    final parentWidth = tester.getSize(find.byType(ListBody)).width;
+    await tester.tap(find.text('Sort'));
+    await tester.pump();
+    for (var frame = 0; frame < 20; frame++) {
+      expect(
+        tester.getRect(find.text('Sort').last).left,
+        closeTo(entry.left, .5),
+        reason: '第 $frame 帧头部与入口错位会出现重影',
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(SingleChildScrollView).last).width,
+      closeTo(parentWidth, .5),
+      reason: '内容放得下时子面板与一级菜单同宽',
+    );
+  });
+
+  testWidgets('子菜单从入口行原地揭开，箭头转向上方，返回时转回', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SwipeDismissiblePopupMenuButton<int>(
+              position: PopupMenuPosition.under,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 1, child: Text('Parent')),
+                ExpandablePopupMenuEntry<int>(
+                  icon: Icons.sort,
+                  label: 'Sort',
+                  children: [
+                    ExpandableMenuChild(
+                      value: 2,
+                      icon: Icons.check,
+                      label: 'Child',
+                    ),
+                  ],
+                ),
+              ],
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final entry = tester.getRect(find.text('Sort'));
+    double chevronTurns() => tester
+        .widget<RotationTransition>(
+          find.ancestor(
+            of: find.byIcon(Symbols.keyboard_arrow_right_rounded).last,
+            matching: find.byType(RotationTransition),
+          ),
+        )
+        .turns
+        .value;
+
+    await tester.tap(find.text('Sort'));
+    await tester.pump();
+    final header = find.text('Sort').last;
+    expect(
+      (tester.getRect(header).topLeft - entry.topLeft).distance,
+      lessThan(.5),
+      reason: '面板头部应从入口行原位升起，与入口逐像素重合',
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      entry.top - tester.getRect(header).top,
+      greaterThan(3),
+      reason: '松手后立即起步，不能从静止慢慢加速',
+    );
+    expect(tester.getRect(header).left, closeTo(entry.left, .5));
+    expect(
+      tester.getRect(header).height,
+      closeTo(entry.height, .01),
+      reason: '揭开过程中内容保持原尺寸',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getRect(header).left, closeTo(entry.left, .5));
+    expect(tester.getRect(header).top, closeTo(entry.top - 16, .5));
+    expect(chevronTurns(), closeTo(-.25, 1e-6));
+
+    await Navigator.of(tester.element(find.text('Child'))).maybePop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(chevronTurns(), greaterThan(-.25));
+    await tester.pumpAndSettle();
+    expect(find.text('Child'), findsNothing);
+    expect(find.text('Sort'), findsOneWidget);
+  });
+
   for (final mode in ['展开完成后', '展开途中', '划选松手后']) {
     final partial = mode == '展开途中';
     final drag = mode == '划选松手后';
-    testWidgets('一级和二级$mode整体收回，父菜单不先回弹放大', (tester) async {
+    testWidgets('一级和二级$mode关闭，子菜单立即消失，一级菜单归位后收回', (tester) async {
       const entryKey = ValueKey('chain-anchor');
       await tester.pumpWidget(
         MaterialApp(
@@ -136,11 +351,14 @@ void main() {
         await tester.tap(find.byKey(entryKey));
       }
       await tester.pumpAndSettle();
+      final parent = find.text('Parent marker');
+      final child = find.text('Child marker');
+      final parentRest = tester.getCenter(parent);
       if (drag) {
         await gesture!.moveTo(tester.getCenter(find.text('Sort')));
         await tester.pump(const Duration(milliseconds: 450));
         await tester.pumpAndSettle();
-        await gesture.moveTo(tester.getCenter(find.text('Child marker')));
+        await gesture.moveTo(tester.getCenter(child));
       } else {
         await tester.tap(find.text('Sort'));
       }
@@ -150,11 +368,7 @@ void main() {
       } else {
         await tester.pumpAndSettle();
       }
-      final pivot = tester.getCenter(find.byKey(entryKey));
-      final parent = find.text('Parent marker');
-      final child = find.text('Child marker');
-      final parentStart = tester.getCenter(parent) - pivot;
-      final childStart = tester.getCenter(child) - pivot;
+      expect(child, findsOneWidget);
       if (drag) {
         await gesture!.up();
       } else if (partial) {
@@ -164,39 +378,28 @@ void main() {
         await tester.tap(child);
       }
       await tester.pump();
+      expect(child, findsNothing, reason: '子菜单应立即移除，不参与收回动画');
       expect(
-        (tester.getCenter(parent) - pivot - parentStart).distance,
+        (tester.getCenter(parent) - parentRest).distance,
         lessThan(.1),
-        reason: '开始关闭不能跳到完整尺寸',
+        reason: '一级菜单先归位，再从完整状态收回',
       );
-      expect(
-        (tester.getCenter(child) - pivot - childStart).distance,
-        lessThan(.1),
-      );
-      var previousScale = 1.0;
-      for (var elapsed = 16; elapsed <= 208; elapsed += 16) {
+      // 靠近入口的边会先略微冲出再回收,远端的边才是单调收回的参照。
+      final pivot = tester.getCenter(find.byKey(entryKey));
+      final far = find.text('Sort');
+      var previous = (tester.getCenter(far) - pivot).distance;
+      for (var elapsed = 16; elapsed <= 160; elapsed += 16) {
         await tester.pump(const Duration(milliseconds: 16));
-        final parentVector = tester.getCenter(parent) - pivot;
-        final childVector = tester.getCenter(child) - pivot;
-        final parentScale = parentVector.dy / parentStart.dy;
-        final childScale = childVector.dy / childStart.dy;
+        final distance = (tester.getCenter(far) - pivot).distance;
         expect(
-          parentScale,
-          lessThanOrEqualTo(previousScale + .001),
-          reason: '一级菜单不能先放大',
+          distance,
+          lessThanOrEqualTo(previous + .001),
+          reason: '$elapsed ms 一级菜单只能朝入口收回',
         );
-        expect(
-          parentScale,
-          closeTo(childScale, .002),
-          reason: '$elapsed ms 两层必须共用整体收回进度',
-        );
-        expect(parentVector.dx, closeTo(parentStart.dx * parentScale, .1));
-        expect(childVector.dx, closeTo(childStart.dx * parentScale, .1));
-        previousScale = parentScale;
+        previous = distance;
       }
       await tester.pumpAndSettle();
       expect(parent, findsNothing);
-      expect(child, findsNothing);
       await gesture?.removePointer();
     });
   }
