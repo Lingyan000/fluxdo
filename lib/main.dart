@@ -106,6 +106,7 @@ import 'widgets/common/app_background_layer.dart';
 import 'widgets/common/paper_texture.dart';
 import 'widgets/festival/festival_decor.dart';
 import 'widgets/festival/festival_pattern.dart';
+import 'widgets/layout/immersive_insets_hold.dart';
 import 'theme/app_background.dart';
 import 'utils/time_utils.dart';
 
@@ -919,6 +920,10 @@ class MainApp extends ConsumerWidget {
                     child: result,
                   );
                 }
+
+                // 图片查看器沉浸期间冻结安全区,底下页面不跟着塌陷;
+                // 须在 HyperOS 钳位之内,读到的是钳过的值
+                result = ImmersiveInsetsHoldScope(child: result);
 
                 // 修复小米 HyperOS 小窗(freeform)页面空白只剩底栏:
                 // 引擎(API 35+)把 viewPaddingTop 抬到 WindowInsets captionBar
