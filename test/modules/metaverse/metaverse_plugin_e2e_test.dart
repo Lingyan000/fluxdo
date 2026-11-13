@@ -395,8 +395,12 @@ class _Delegate extends MetaversePluginHostDelegate {
       opened.add(url.toString());
 
   @override
-  Future<void> openWebSession(BuildContext context, Uri url) async =>
-      opened.add(url.toString());
+  Future<void> openWebSession(BuildContext context, Uri url) async {
+    opened.add(url.toString());
+    browserOpened.add(url.toString());
+  }
+
+  final browserOpened = <String>[];
 
   @override
   void toast(String message, String type) {}
@@ -1606,6 +1610,7 @@ Future<void> main() async {
           const tried = [];
           for (const run of [
             () => fluxdo.openUrl('https://evil.example.org/phish'),
+            () => fluxdo.browser.open('https://example.org'),
             () => fluxdo.navigate('order', {id: '1'}),
             () => fluxdo.prepareNavigation('order'),
             () => fluxdo.credentials.request('account'),
@@ -1615,7 +1620,7 @@ Future<void> main() async {
           ctx.setData('balance', tried.join(','));
         });
         fluxdo.on('refresh', async (ctx) => {
-          await fluxdo.openUrl('https://example.com/a');
+          await fluxdo.browser.open('https://example.com/a');
           try { await fluxdo.openUrl('https://example.com/b'); }
           catch (e) { ctx.setData('balance', 'second-denied'); }
         });
@@ -1632,7 +1637,7 @@ Future<void> main() async {
       );
       await settle(
         tester,
-        () => find.text('denied,denied,denied,denied').evaluate().isNotEmpty,
+        () => find.text('denied,denied,denied,denied,denied').evaluate().isNotEmpty,
       );
       expect(delegate.opened, isEmpty);
       expect(delegate.pages, isEmpty);
@@ -1645,6 +1650,7 @@ Future<void> main() async {
         () => find.text('second-denied').evaluate().isNotEmpty,
       );
       expect(delegate.opened, ['https://example.com/a']);
+      expect(delegate.browserOpened, ['https://example.com/a']);
     });
 
     pluginTest('导航预约在异步操作后只使用一次，并消耗本次点击', (tester) async {

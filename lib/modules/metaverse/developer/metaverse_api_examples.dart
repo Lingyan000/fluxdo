@@ -1,5 +1,7 @@
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
+import '../../../l10n/s.dart';
+
 class MetaverseApiExample {
   const MetaverseApiExample(
     this.name,
@@ -17,15 +19,42 @@ class MetaverseApiExample {
   final int apiVersion;
   final bool userAction;
   final String afterCall;
-  String get script =>
+  String get script => scriptWith(arguments);
+  String scriptWith(String input) =>
       '''fluxdo.on('${userAction ? 'action' : 'card.load'}', async (ctx) => {
   try {
-    const result = await ctx.api.$name($arguments);
+    const result = await ctx.api.$name($input);
     $afterCall
   } catch (error) {
     console.error(error.message);
   }
 });''';
+
+  String description(AppLocalizations l) => switch (name) {
+    'storage.get' => l.metaverse_apiStorageGet,
+    'storage.set' => l.metaverse_apiStorageSet,
+    'storage.setMany' => l.metaverse_apiStorageSetMany,
+    'storage.remove' => l.metaverse_apiStorageRemove,
+    'crypto.sha256' => l.metaverse_apiSha256,
+    'crypto.pkce' => l.metaverse_apiPkce,
+    'crypto.uuid' => l.metaverse_apiUuid,
+    'credentials.status' => l.metaverse_apiCredentialStatus,
+    'credentials.capture' => l.metaverse_apiCredentialCapture,
+    'credentials.remove' => l.metaverse_apiCredentialRemove,
+    'credentials.request' => l.metaverse_apiCredentialRequest,
+    'connect.authorize' => l.metaverse_apiConnect,
+    'payments.request' => l.metaverse_apiPayment,
+    'fetch' => l.metaverse_apiFetch,
+    'user.get' => l.metaverse_apiUser,
+    'navigate' => l.metaverse_apiNavigate,
+    'prepareNavigation' => l.metaverse_apiPrepareNavigation,
+    'session.login' => l.metaverse_apiSessionLogin,
+    'session.open' => l.metaverse_apiSessionOpen,
+    'openUrl' => l.metaverse_apiOpenUrl,
+    'browser.open' => l.metaverse_apiBrowserOpen,
+    'toast' => l.metaverse_apiToast,
+    _ => name,
+  };
 }
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
@@ -144,18 +173,27 @@ const metaverseApiExamples = [
     userAction: true,
   ),
   MetaverseApiExample('toast', "'Example', 'info'", null),
+  MetaverseApiExample(
+    'browser.open',
+    "'https://example.org'",
+    null,
+    userAction: true,
+  ),
 ];
 
-/// 开发中心始终注入这个演示桥，独立于已安装插件、账号、网络和支付服务。
+/// 开发中心的演示桥。界面回调由预览页提供，服务数据使用演示结果。
 class MetaverseDocumentationBridge implements MetaversePluginBridge {
   MetaverseDocumentationBridge({
     required this.example,
     required this.failure,
     required this.onLog,
+    this.onCall,
   });
   final MetaverseApiExample example;
   final bool failure;
   final void Function(String level, String message) onLog;
+  final Future<Object?> Function(String method, Map<String, Object?> params)?
+  onCall;
 
   @override
   Future<Object?> call(String method, Map<String, Object?> params) async {
@@ -163,7 +201,7 @@ class MetaverseDocumentationBridge implements MetaversePluginBridge {
     if (failure) {
       throw const MetaversePluginCallException('demo_permission_denied');
     }
-    return example.result;
+    return onCall == null ? example.result : await onCall!(method, params);
   }
 
   @override

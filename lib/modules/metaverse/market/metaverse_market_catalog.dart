@@ -8,6 +8,13 @@ class MetaverseMarketSource {
   final String url;
   final bool enabled;
   String get id => url;
+  String get displayName {
+    final uri = Uri.parse(url);
+    if (uri.host == 'raw.githubusercontent.com' && uri.pathSegments.length >= 4) {
+      return uri.pathSegments.take(2).join('/');
+    }
+    return uri.host;
+  }
 
   static Uri httpsUri(Object? raw) {
     final uri = raw is String && raw.length <= 4096 ? Uri.tryParse(raw) : null;

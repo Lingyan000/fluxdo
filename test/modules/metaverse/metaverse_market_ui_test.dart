@@ -8,7 +8,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/modules/metaverse/developer/metaverse_api_examples.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_catalog.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_page.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_provider.dart';
@@ -25,6 +27,14 @@ import 'package:fluxdo/theme/app_theme.dart';
 import '../../helpers/preview_fonts.dart';
 
 class _Catalog extends MetaverseMarketController {
+  @override
+  Future<void> addSource(String input) async {
+    state = MetaverseMarketState(
+      sources: [...state.sources, MetaverseMarketSource.fromInput(input)],
+      entries: state.entries,
+    );
+  }
+
   @override
   MetaverseMarketState build() {
     const source = MetaverseMarketSource(MetaverseMarketSource.defaultUrl);
@@ -63,13 +73,17 @@ class _Plugins extends MetaversePluginsController {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const snapshots = bool.fromEnvironment('PLUGIN_SNAPSHOTS');
+  late SharedPreferences preferences;
   setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    preferences = await SharedPreferences.getInstance();
     if (!snapshots) return;
     expect(
       await loadPreviewCjkFont(),
       isTrue,
       reason: '截图需要可用的中文字体，可设置 PREVIEW_CJK_FONT',
     );
+    expect(await loadPreviewCjkFont(family: 'monospace'), isTrue);
     await (FontLoader('packages/material_symbols_icons/MaterialSymbolsRounded')
           ..addFont(
             rootBundle.load(
@@ -91,26 +105,27 @@ void main() {
     );
     return ProviderScope(
       overrides: [
+        sharedPreferencesProvider.overrideWithValue(preferences),
         metaverseMarketProvider.overrideWith(_Catalog.new),
         metaversePluginsProvider.overrideWith(_Plugins.new),
       ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          navigatorKey: navigatorKey,
-          debugShowCheckedModeBanner: false,
-          theme: snapshots
-              ? theme.copyWith(
-                  textTheme: theme.textTheme.apply(fontFamily: 'MiSans'),
-                )
-              : theme,
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: TextScaler.linear(scale)),
-            child: child!,
-          ),
-          home: RepaintBoundary(
-            key: capture,
-            child:
+      child: RepaintBoundary(
+        key: capture,
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            debugShowCheckedModeBanner: false,
+            theme: snapshots
+                ? theme.copyWith(
+                    textTheme: theme.textTheme.apply(fontFamily: 'MiSans'),
+                  )
+                : theme,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(scale)),
+              child: child!,
+            ),
+            home:
                 page ??
                 Builder(
                   builder: (context) => DefaultTabController(
@@ -229,4 +244,210 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+  for (final dark in [false, true]) {
+    for (final scale in [1.0, 1.4]) {
+      testWidgets('市场源输入与校验 $dark $scale', (tester) async {
+        tester.view.physicalSize = Size(scale > 1 ? 320 : 390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          app(
+            dark: dark,
+            scale: scale,
+            page: const MetaverseMarketSourcesPage(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Lingyan000/fluxdo-plugins'), findsOneWidget);
+        final field = find.byType(TextField);
+        final hint = find.text('https://github.com/owner/repo');
+        expect(
+          (tester.getCenter(hint).dy -
+                  tester.getCenter(find.byIcon(Symbols.link_rounded)).dy)
+              .abs(),
+          lessThanOrEqualTo(2),
+        );
+        await screenshot(tester, 'sources-$dark-$scale');
+        await tester.enterText(field, 'invalid');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(
+          find.text(S.current.metaverse_marketSourceInvalid),
+          findsOneWidget,
+        );
+        await tester.enterText(field, 'https://github.com/example/catalog');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(find.text('example/catalog'), findsOneWidget);
+        expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+        expect(
+          find.text(S.current.metaverse_marketSourceInvalid),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+    testWidgets('API 搜索详情与真实 Toast $dark', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        app(dark: dark, page: const MetaverseDeveloperPage()),
+      );
+      await tester.tap(find.text(S.current.metaverse_developerApis));
+      await tester.pumpAndSettle();
+      await screenshot(tester, 'api-list-$dark');
+      await tester.enterText(find.byType(TextField), 'toast');
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'toast'), findsOneWidget);
+      expect(find.text('storage.get'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'toast'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MetaverseApiPreviewPage), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        app(
+          dark: dark,
+          page: MetaverseApiPreviewPage(
+            example: metaverseApiExamples.firstWhere((e) => e.name == 'toast'),
+          ),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '交互演示已触发');
+      await tester.tap(find.text('success'));
+      final run = find.widgetWithText(
+        FilledButton,
+        S.current.metaverse_developerRun,
+      );
+      await tester.ensureVisible(run);
+      await tester.tap(run);
+      for (var attempt = 0; attempt < 40; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 10));
+        if (tester.widget<FilledButton>(run).onPressed != null &&
+            find
+                .text(
+                  S.current.metaverse_pluginToast(
+                    S.current.metaverse_developerExample,
+                    '交互演示已触发',
+                  ),
+                )
+                .evaluate()
+                .isNotEmpty) {
+          break;
+        }
+      }
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.text(
+          S.current.metaverse_pluginToast(
+            S.current.metaverse_developerExample,
+            '交互演示已触发',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+      tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byType(ListView).first,
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position
+          .jumpTo(0);
+      await tester.pump();
+      await screenshot(tester, 'api-toast-$dark');
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.metaverse_developerSimulateFailure));
+      await tester.pump();
+      await tester.ensureVisible(run);
+      await tester.tap(run);
+      for (var attempt = 0; attempt < 40; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 30)),
+        );
+        await tester.pump(const Duration(milliseconds: 10));
+        if (tester.widget<FilledButton>(run).onPressed != null) break;
+      }
+      expect(
+        find.text(
+          S.current.metaverse_pluginToast(
+            S.current.metaverse_developerExample,
+            '交互演示已触发',
+          ),
+        ),
+        findsNothing,
+      );
+      await tester.ensureVisible(find.text(S.current.metaverse_apiResult));
+      expect(find.text('demo_permission_denied'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 2));
+    });
+  }
+
+  testWidgets('支付 API 演示使用内存订单完成收银台交互', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      app(
+        page: MetaverseApiPreviewPage(
+          example: metaverseApiExamples.firstWhere(
+            (e) => e.name == 'payments.request',
+          ),
+        ),
+      ),
+    );
+    final run = find.widgetWithText(
+      FilledButton,
+      S.current.metaverse_developerRun,
+    );
+    await tester.ensureVisible(run);
+    await tester.tap(run);
+    for (var attempt = 0; attempt < 40; attempt++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      if (find.byType(PinInput).evaluate().isNotEmpty) break;
+    }
+    await tester.pump(const Duration(seconds: 1));
+    await screenshot(tester, 'api-payment-initial');
+    expect(find.byType(PinInput), findsOneWidget, reason: tester.widgetList<SelectableText>(find.byType(SelectableText)).map((w) => w.data).join('\n'));
+    expect(find.text(S.current.metaverse_apiPaymentDemo), findsOneWidget);
+    for (final digit in ['1', '2', '3', '4', '5', '6']) {
+      await tester.tap(find.byKey(ValueKey('ldc-key-$digit')));
+      await tester.pump();
+    }
+    await tester.tap(find.text(S.current.metaverse_nativePayConfirm('1.00')));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text(S.current.metaverse_nativePaySuccess), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await screenshot(tester, 'api-payment-success');
+    await tester.tap(find.text(S.current.metaverse_nativePayViewOrder));
+    await tester.pump(const Duration(seconds: 1));
+    for (var attempt = 0; attempt < 40; attempt++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      if (tester.widget<FilledButton>(run).onPressed != null) break;
+    }
+    await tester.ensureVisible(find.text(S.current.metaverse_apiResult));
+    expect(find.textContaining('"state": "paid"'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 2));
+  });
 }
