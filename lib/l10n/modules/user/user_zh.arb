@@ -105,6 +105,7 @@
   "forumPrefs_title": "头衔",
   "forumPrefs_primaryGroup": "主要群组",
   "forumPrefs_flairGroup": "头像标识群组",
+  "forumPrefs_flairHelp": "标识会显示在你的头像旁边。",
   "forumPrefs_bio": "个人简介",
   "forumPrefs_website": "网站",
   "forumPrefs_location": "位置",

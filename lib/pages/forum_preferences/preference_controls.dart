@@ -7,6 +7,9 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../l10n/s.dart';
 import '../../models/forum_preferences.dart';
+import '../../models/user.dart';
+import '../../widgets/common/flair_badge.dart';
+import '../../widgets/common/smart_avatar.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
@@ -165,6 +168,7 @@ Future<List<Object>?> selectPreferenceValues(
   required Map<Object, String> choices,
   required List<Object> selected,
   bool multiple = true,
+  Widget Function(Object value)? leadingBuilder,
 }) => showAppDialog<List<Object>>(
   context: context,
   builder: (_) => _PreferenceSelection(
@@ -172,6 +176,7 @@ Future<List<Object>?> selectPreferenceValues(
     choices: choices,
     selected: selected,
     multiple: multiple,
+    leadingBuilder: leadingBuilder,
   ),
 );
 
@@ -181,11 +186,13 @@ class _PreferenceSelection extends StatefulWidget {
     required this.choices,
     required this.selected,
     required this.multiple,
+    this.leadingBuilder,
   });
   final String title;
   final Map<Object, String> choices;
   final List<Object> selected;
   final bool multiple;
+  final Widget Function(Object value)? leadingBuilder;
   @override
   State<_PreferenceSelection> createState() => _PreferenceSelectionState();
 }
@@ -226,6 +233,7 @@ class _PreferenceSelectionState extends State<_PreferenceSelection> {
                   final item = entries[index];
                   if (!widget.multiple) {
                     return ListTile(
+                      leading: widget.leadingBuilder?.call(item.key),
                       title: Text(item.value),
                       selected: _selected.contains(item.key),
                       trailing: _selected.contains(item.key)
@@ -372,8 +380,15 @@ class _PreferenceControlState extends State<PreferenceControl> {
     final values = multiple || field.kind == ForumPreferenceKind.theme
         ? List<Object>.from(widget.value as List)
         : [if (widget.value != null) widget.value as Object];
-    for (final value in values) {
-      choices.putIfAbsent(value, () => '$value');
+    if (field.kind == ForumPreferenceKind.flair) {
+      if (!choices.containsKey(widget.value)) {
+        values.clear();
+        values.add(0);
+      }
+    } else {
+      for (final value in values) {
+        choices.putIfAbsent(value, () => '$value');
+      }
     }
     final selected = await selectPreferenceValues(
       context,
@@ -381,6 +396,9 @@ class _PreferenceControlState extends State<PreferenceControl> {
       choices: choices,
       selected: values,
       multiple: multiple,
+      leadingBuilder: field.kind == ForumPreferenceKind.flair
+          ? (value) => _flairPreview(value)
+          : null,
     );
     if (selected != null && mounted) {
       widget.onChanged(
@@ -389,6 +407,45 @@ class _PreferenceControlState extends State<PreferenceControl> {
             : selected.first,
       );
     }
+  }
+
+  Widget _flairPreview(Object? value, {bool withAvatar = false}) {
+    final group = widget.data
+        .records('groups')
+        .where((group) => group['id'] == value)
+        .firstOrNull;
+    final url = group?['flair_url'] as String?;
+    final name = group?['name'] as String?;
+    final background = group?['flair_bg_color'] as String?;
+    final color = group?['flair_color'] as String?;
+    if (withAvatar) {
+      final user = User.fromJson(widget.data.user);
+      return AvatarWithFlair(
+        avatar: SmartAvatar(
+          imageUrl: user.getAvatarUrl(size: 96),
+          radius: 24,
+          fallbackText: user.username,
+        ),
+        flairUrl: url,
+        flairName: name,
+        flairBgColor: background,
+        flairColor: color,
+        flairSize: 22,
+      );
+    }
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: url == null || url.isEmpty
+          ? const Icon(Symbols.block_rounded, size: 22)
+          : FlairBadge(
+              flairUrl: url,
+              flairName: name,
+              flairBgColor: background,
+              flairColor: color,
+              size: 28,
+            ),
+    );
   }
 
   Future<void> _upload() async {
@@ -488,6 +545,32 @@ class _PreferenceControlState extends State<PreferenceControl> {
             value: widget.value == true || widget.value == 'true',
             onChanged: widget.onChanged,
           ),
+        );
+      case ForumPreferenceKind.flair:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: _flairPreview(widget.value, withAvatar: true),
+              title: Text(field.label),
+              subtitle: Text(
+                field.choices[widget.value] ?? context.l10n.forumPrefs_none,
+              ),
+              trailing: const Icon(Symbols.expand_more_rounded),
+              onTap: _pick,
+            ),
+            if (field.help != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                child: Text(
+                  field.help!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
         );
       case ForumPreferenceKind.choice ||
           ForumPreferenceKind.categories ||

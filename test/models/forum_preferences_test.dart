@@ -5,6 +5,40 @@ import 'package:fluxdo/pages/forum_preferences/preference_fields.dart';
 import 'package:fluxdo/l10n/s.dart';
 
 void main() {
+  test('头像标识过滤空标识，未选择时默认无，清除提交空值', () {
+    final data = ForumPreferences(
+      user: {
+        'username': 'tester',
+        'groups': [
+          {'id': 1, 'name': 'empty', 'flair_url': ''},
+          {'id': 2, 'name': 'image', 'flair_url': '/badge.png'},
+          {'id': 3, 'name': 'icon', 'flair_url': 'star'},
+        ],
+      },
+      site: {},
+      settings: {},
+    );
+    final field = preferenceFields(
+      ForumPreferenceSection.account,
+      data,
+      AppLocale.zh.buildSync(),
+    ).singleWhere((field) => field.kind == ForumPreferenceKind.flair);
+    expect(field.choices.keys, [0, 2, 3]);
+    expect(field.read(data.user), 0);
+    final draft = ForumPreferenceDraft([field], {'flair_group_id': 2});
+    draft.update(field, 0);
+    expect(draft.payload, {'flair_group_id': ''});
+    data.user['groups'] = [];
+    expect(
+      preferenceFields(
+        ForumPreferenceSection.account,
+        data,
+        AppLocale.zh.buildSync(),
+      ).where((field) => field.kind == ForumPreferenceKind.flair),
+      isEmpty,
+    );
+  });
+
   test('原生设置保留服务端行为，过滤网页外观与侧栏配置', () {
     final data = ForumPreferences(
       user: {

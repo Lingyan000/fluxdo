@@ -148,14 +148,14 @@ List<ForumPreferenceField> preferenceFields(
       final flairGroups = data
           .records('groups')
           .where(
-            (group) =>
-                group['flair_url'] != null || group['flair_icon'] != null,
+            (group) => (group['flair_url'] as String?)?.isNotEmpty == true,
           );
-      if (flairGroups.isNotEmpty || user['flair_group_id'] != null) {
+      if (flairGroups.isNotEmpty) {
         field(
           'flair_group_id',
           l.forumPrefs_flairGroup,
-          kind: ForumPreferenceKind.choice,
+          kind: ForumPreferenceKind.flair,
+          help: l.forumPrefs_flairHelp,
           choices: {
             0: l.forumPrefs_none,
             for (final group in flairGroups)

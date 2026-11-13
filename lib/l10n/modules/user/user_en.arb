@@ -101,6 +101,7 @@
   "forumPrefs_title": "Title",
   "forumPrefs_primaryGroup": "Primary group",
   "forumPrefs_flairGroup": "Avatar flair group",
+  "forumPrefs_flairHelp": "The flair appears beside your avatar.",
   "forumPrefs_bio": "About me",
   "forumPrefs_website": "Website",
   "forumPrefs_location": "Location",

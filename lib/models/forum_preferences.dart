@@ -18,6 +18,7 @@ enum ForumPreferenceKind {
   multiline,
   toggle,
   choice,
+  flair,
   categories,
   tags,
   tagNames,
@@ -64,6 +65,7 @@ class ForumPreferenceField {
         ? user[key]
         : (user[container] as Map?)?[key];
     return switch (kind) {
+      ForumPreferenceKind.flair => value ?? 0,
       ForumPreferenceKind.categories ||
       ForumPreferenceKind.tags ||
       ForumPreferenceKind.tagNames ||
@@ -86,6 +88,7 @@ class ForumPreferenceField {
   }
 
   dynamic serialize(dynamic value) {
+    if (kind == ForumPreferenceKind.flair && value == 0) return '';
     if (container == 'user_fields' &&
         kind == ForumPreferenceKind.multiChoice &&
         (value as List).isEmpty) {

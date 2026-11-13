@@ -26,6 +26,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/pages/forum_preferences/preference_controls.dart';
 import 'package:fluxdo/widgets/common/cached_image.dart';
+import 'package:fluxdo/widgets/common/flair_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,7 +52,10 @@ void main() {
           ) as List;
           for (final entry in manifest) {
             final family = entry['family'] as String;
-            if (!family.contains('Material')) continue;
+            if (!family.contains('Material') &&
+                !family.contains('FontAwesome')) {
+              continue;
+            }
             final loader = FontLoader(family);
             for (final font in entry['fonts'] as List) {
               loader.addFont(rootBundle.load(font['asset'] as String));
@@ -120,6 +124,18 @@ void main() {
         'id': 1,
         'username': 'tester',
         'system_avatar_template': backgroundUrl,
+        'flair_group_id': 11,
+        'groups': [
+          {'id': 11, 'name': 'g-s-acgn', 'flair_url': backgroundUrl},
+          {
+            'id': 12,
+            'name': 'g-star',
+            'flair_url': 'star',
+            'flair_bg_color': '336699',
+            'flair_color': 'ffffff',
+          },
+          {'id': 13, 'name': 'empty-flair', 'flair_url': ''},
+        ],
         'can_edit': true,
         'can_change_bio': true,
         'can_change_location': true,
@@ -507,6 +523,44 @@ void main() {
         PreloadedDataService().currentUserSync!['avatar_template'],
         backgroundUrl,
       );
+      final flairRow = find.widgetWithText(ListTile, '头像标识群组');
+      await tester.ensureVisible(flairRow);
+      await tester.pumpAndSettle();
+      await _capture(tester, captureDir, 'preferences-flair-$width');
+      await tester.tap(flairRow);
+      await tester.pumpAndSettle();
+      expect(find.text('empty-flair'), findsNothing);
+      final iconChoice = find.widgetWithText(ListTile, 'g-star');
+      final badge = tester.widget<FlairBadge>(
+        find.descendant(of: iconChoice, matching: find.byType(FlairBadge)),
+      );
+      expect(badge.flairUrl, 'star');
+      expect(badge.flairBgColor, '336699');
+      expect(badge.flairColor, 'ffffff');
+      await _capture(tester, captureDir, 'preferences-flair-options-$width');
+      await tester.tap(iconChoice);
+      await tester.pumpAndSettle();
+      final preview = tester.widget<AvatarWithFlair>(
+        find.descendant(of: flairRow, matching: find.byType(AvatarWithFlair)),
+      );
+      expect(preview.flairUrl, 'star');
+      failSave = true;
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'flair_group_id': 12});
+      expect(find.text('g-star'), findsOneWidget);
+      failSave = false;
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(session.read(currentUserProvider).value!.flairUrl, 'star');
+      await tester.tap(flairRow);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, '无'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'flair_group_id': ''});
+      expect(session.read(currentUserProvider).value!.flairUrl, isNull);
       final statusRow = find.widgetWithText(ListTile, '用户状态');
       await tester.ensureVisible(statusRow);
       await tester.pumpAndSettle();

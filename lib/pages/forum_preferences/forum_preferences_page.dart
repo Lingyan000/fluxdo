@@ -1,6 +1,11 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../providers/core_providers.dart';
+import '../../models/user.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
@@ -18,7 +23,7 @@ import 'preference_fields.dart';
 
 export '../../models/forum_preferences.dart' show ForumPreferenceSection;
 
-class ForumPreferencesPage extends StatefulWidget {
+class ForumPreferencesPage extends ConsumerStatefulWidget {
   const ForumPreferencesPage({
     super.key,
     required this.username,
@@ -27,10 +32,11 @@ class ForumPreferencesPage extends StatefulWidget {
   final String username;
   final ForumPreferenceSection? initialSection;
   @override
-  State<ForumPreferencesPage> createState() => _ForumPreferencesPageState();
+  ConsumerState<ForumPreferencesPage> createState() =>
+      _ForumPreferencesPageState();
 }
 
-class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
+class _ForumPreferencesPageState extends ConsumerState<ForumPreferencesPage> {
   final _service = DiscourseService();
   var _formKey = GlobalKey<FormState>();
   final _searchController = TextEditingController();
@@ -164,6 +170,10 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
       _saveError = null;
     });
     try {
+      final flairChanged = draft.fields.any(
+        (field) =>
+            field.kind == ForumPreferenceKind.flair && draft.isChanged(field),
+      );
       await _service.saveForumPreferences(_username, draft.payload);
       if (!mounted) return;
       _loadGeneration++;
@@ -179,7 +189,23 @@ class _ForumPreferencesPageState extends State<ForumPreferencesPage> {
         }
       }
       setState(() => _changed = true);
-      ToastService.showSuccess(context.l10n.forumPrefs_saved);
+      if (flairChanged) {
+        final group = _data!
+            .records('groups')
+            .where((group) => group['id'] == draft.user['flair_group_id'])
+            .firstOrNull;
+        draft.user.addAll({
+          'flair_group_id': group?['id'],
+          'flair_url': group?['flair_url'],
+          'flair_name': group?['name'],
+          'flair_bg_color': group?['flair_bg_color'],
+          'flair_color': group?['flair_color'],
+        });
+        await ref
+            .read(currentUserProvider.notifier)
+            .updateIdentity(_username, identity: User.fromJson(draft.user));
+      }
+      if (mounted) ToastService.showSuccess(context.l10n.forumPrefs_saved);
     } catch (error) {
       if (mounted) {
         setState(() => _saveError = ErrorUtils.getErrorInfo(error).message);
