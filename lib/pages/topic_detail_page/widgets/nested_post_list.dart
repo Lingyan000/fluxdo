@@ -14,6 +14,7 @@ import '../../../models/nested_reading_position.dart';
 import '../../../widgets/common/positioned_stream_list.dart';
 import '../../../widgets/nested/nested_reading_scope.dart';
 import '../../../models/topic.dart';
+import '../../../models/pending_post.dart';
 import '../../../providers/nested_topic_provider.dart';
 import '../../../utils/blocked_user_filter.dart';
 import '../../../utils/responsive.dart';
@@ -24,6 +25,7 @@ import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
 import 'topic_status_notices.dart';
 import 'private_message_participants.dart';
+import 'pending_posts_section.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
 class NestedPostList extends ConsumerStatefulWidget {
@@ -35,6 +37,8 @@ class NestedPostList extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final GlobalKey headerKey;
   final bool isLoggedIn;
+  final void Function(PendingPost pending)? onWithdrawPendingPost;
+  final void Function(PendingPost pending)? onWithdrawAndEditPendingPost;
   final int? removingPrivateMessageParticipantId;
   final String? removingPrivateMessageGroupName;
   final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
@@ -83,6 +87,8 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.scrollController,
     required this.headerKey,
     required this.isLoggedIn,
+    this.onWithdrawPendingPost,
+    this.onWithdrawAndEditPendingPost,
     this.removingPrivateMessageParticipantId,
     this.removingPrivateMessageGroupName,
     this.onRemovePrivateMessageParticipant,
@@ -717,6 +723,20 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       if ((!contextMode || contextChain == null) &&
           (ns.hasMoreRoots || ns.isLoadingMore))
         (key: 'load-more', builder: _buildLoadMore),
+
+      if (!contextMode &&
+          !ns.hasMoreRoots &&
+          widget.detail.pendingPosts.isNotEmpty &&
+          widget.onWithdrawPendingPost != null &&
+          widget.onWithdrawAndEditPendingPost != null)
+        (
+          key: 'pending-posts',
+          builder: (context) => PendingPostsSection(
+            pendingPosts: widget.detail.pendingPosts,
+            onWithdraw: widget.onWithdrawPendingPost!,
+            onWithdrawAndEdit: widget.onWithdrawAndEditPendingPost!,
+          ),
+        ),
 
       // 同平铺视图，根节点全部加载完后展示话题提示和推荐区。
       // context 定位模式只展示局部帖子。

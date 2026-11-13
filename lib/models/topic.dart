@@ -212,6 +212,7 @@ class TopicUser {
   final String? name;
   final String avatarTemplate;
   final String? animatedAvatar;
+  final int postCount;
 
   TopicUser({
     required this.id,
@@ -219,6 +220,7 @@ class TopicUser {
     this.name,
     required this.avatarTemplate,
     this.animatedAvatar,
+    this.postCount = 0,
   });
 
   /// 显示名:优先昵称,空则回退 username
@@ -234,6 +236,7 @@ class TopicUser {
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String? ?? '',
       animatedAvatar: json['animated_avatar'] as String?,
+      postCount: json['post_count'] as int? ?? 0,
     );
   }
 
@@ -1836,17 +1839,38 @@ class TopicTimer {
   final String statusType;
   final num durationMinutes;
   final DateTime? executeAt;
+  final bool basedOnLastPost;
+  final int? categoryId;
 
   const TopicTimer({
     required this.statusType,
     this.durationMinutes = 0,
     this.executeAt,
+    this.basedOnLastPost = false,
+    this.categoryId,
   });
 
   factory TopicTimer.fromJson(Map<String, dynamic> json) => TopicTimer(
     statusType: json['status_type'] as String? ?? '',
     durationMinutes: json['duration_minutes'] as num? ?? 0,
     executeAt: TimeUtils.parseUtcTime(json['execute_at'] as String?),
+    basedOnLastPost: json['based_on_last_post'] == true,
+    categoryId: json['category_id'] as int?,
+  );
+}
+
+/// 话题详情统计区中的链接及点击量。
+class TopicLink {
+  final String url;
+  final String title;
+  final int clicks;
+
+  const TopicLink({required this.url, this.title = '', this.clicks = 0});
+
+  factory TopicLink.fromJson(Map<String, dynamic> json) => TopicLink(
+    url: json['url'] as String? ?? '',
+    title: json['title'] as String? ?? '',
+    clicks: json['clicks'] as int? ?? 0,
   );
 }
 
@@ -1869,6 +1893,13 @@ class TopicDetail {
   final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
   final int slowModeSeconds;
   final TopicTimer? topicTimer;
+  final int visibilityReasonId;
+  final bool isWarning;
+  final int queuedPostsCount;
+  final int wordCount;
+  final int participantCount;
+  final List<TopicUser> participants;
+  final List<TopicLink> links;
 
   // 投票相关字段
   final bool canVote; // 是否可以投票
@@ -1989,6 +2020,13 @@ class TopicDetail {
     this.highestPostNumber = 0,
     this.slowModeSeconds = 0,
     this.topicTimer,
+    this.visibilityReasonId = 99,
+    this.isWarning = false,
+    this.queuedPostsCount = 0,
+    this.wordCount = 0,
+    this.participantCount = 0,
+    this.participants = const [],
+    this.links = const [],
     this.canVote = false,
     this.voteCount = 0,
     this.userVoted = false,
@@ -2188,6 +2226,20 @@ class TopicDetail {
       lastReadPostNumber: json['last_read_post_number'] as int?,
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
       slowModeSeconds: json['slow_mode_seconds'] as int? ?? 0,
+      visibilityReasonId: json['visibility_reason_id'] as int? ?? 99,
+      isWarning: json['is_warning'] == true,
+      queuedPostsCount: json['queued_posts_count'] as int? ?? 0,
+      wordCount: json['word_count'] as int? ?? 0,
+      participantCount: json['participant_count'] as int? ?? 0,
+      participants: (details['participants'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicUser.fromJson)
+          .toList(growable: false),
+      links: (details['links'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(TopicLink.fromJson)
+          .where((link) => link.url.isNotEmpty)
+          .toList(growable: false),
       topicTimer: json['topic_timer'] is Map<String, dynamic>
           ? TopicTimer.fromJson(json['topic_timer'] as Map<String, dynamic>)
           : null,
@@ -2328,6 +2380,13 @@ class TopicDetail {
     int? slowModeSeconds,
     TopicTimer? topicTimer,
     bool clearTopicTimer = false,
+    int? visibilityReasonId,
+    bool? isWarning,
+    int? queuedPostsCount,
+    int? wordCount,
+    int? participantCount,
+    List<TopicUser>? participants,
+    List<TopicLink>? links,
     bool? canVote,
     int? voteCount,
     bool? userVoted,
@@ -2381,6 +2440,13 @@ class TopicDetail {
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       slowModeSeconds: slowModeSeconds ?? this.slowModeSeconds,
       topicTimer: clearTopicTimer ? null : (topicTimer ?? this.topicTimer),
+      visibilityReasonId: visibilityReasonId ?? this.visibilityReasonId,
+      isWarning: isWarning ?? this.isWarning,
+      queuedPostsCount: queuedPostsCount ?? this.queuedPostsCount,
+      wordCount: wordCount ?? this.wordCount,
+      participantCount: participantCount ?? this.participantCount,
+      participants: participants ?? this.participants,
+      links: links ?? this.links,
       canVote: canVote ?? this.canVote,
       voteCount: voteCount ?? this.voteCount,
       userVoted: userVoted ?? this.userVoted,

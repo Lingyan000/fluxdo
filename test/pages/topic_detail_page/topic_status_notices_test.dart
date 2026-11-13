@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/models/category.dart';
+import 'package:fluxdo/providers/category_provider.dart';
+import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_status_notices.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -26,17 +30,33 @@ Widget _app(
   double textScale = 1,
 }) {
   LocaleSettings.setLocaleSync(locale);
-  return TranslationProvider(
-    child: MaterialApp(
-      locale: Locale(locale.languageCode, locale.countryCode),
-      supportedLocales: AppLocaleUtils.supportedLocales,
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: ThemeData(brightness: brightness),
-      home: Scaffold(
-        body: MediaQuery(
-          data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
-          child: SingleChildScrollView(
-            child: TopicStatusNotices(detail: detail),
+  return ProviderScope(
+    overrides: [
+      categoryMapProvider.overrideWith(
+        (ref) => AsyncData({
+          7: Category(
+            id: 7,
+            name: '测试分类',
+            color: '0088CC',
+            textColor: 'FFFFFF',
+            slug: 'test',
+          ),
+        }),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        navigatorKey: navigatorKey,
+        locale: Locale(locale.languageCode, locale.countryCode),
+        supportedLocales: AppLocaleUtils.supportedLocales,
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        theme: ThemeData(brightness: brightness),
+        home: Scaffold(
+          body: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+            child: SingleChildScrollView(
+              child: TopicStatusNotices(detail: detail),
+            ),
           ),
         ),
       ),
@@ -51,6 +71,107 @@ void main() {
     }
   });
   tearDown(() => LocaleSettings.setLocaleSync(AppLocale.zh));
+
+  testWidgets('显示全部公开定时任务和目标分类', (tester) async {
+    for (final entry in {
+      'close': '自动关闭',
+      'silent_close': '自动关闭',
+      'open': '自动开启',
+      'delete': '自动删除',
+      'bump': '自动顶帖',
+      'publish_to_category': '发布到「测试分类」分类',
+    }.entries) {
+      await tester.pumpWidget(
+        _app(
+          _detail(
+            fields: {
+              'closed': entry.key == 'open',
+              'topic_timer': {
+                'status_type': entry.key,
+                'category_id': 7,
+                'execute_at': DateTime.now()
+                    .add(const Duration(hours: 2))
+                    .toUtc()
+                    .toIso8601String(),
+              },
+            },
+          ),
+        ),
+      );
+      expect(find.textContaining(entry.value), findsOneWidget);
+      expect(find.textContaining('2 小时'), findsOneWidget);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('最后回复计时使用时长，过期执行时间仍显示规则', (tester) async {
+    for (final status in ['close', 'silent_close', 'delete']) {
+      await tester.pumpWidget(
+        _app(
+          _detail(
+            fields: {
+              'topic_timer': {
+                ..._timer,
+                'status_type': status,
+                'based_on_last_post': true,
+              },
+            },
+          ),
+        ),
+      );
+      expect(find.textContaining('最后一次回复的 7 天后'), findsOneWidget);
+    }
+  });
+
+  testWidgets('已执行任务、已生效状态和未知任务不展示', (tester) async {
+    for (final fields in [
+      {
+        'topic_timer': {..._timer, 'status_type': 'delete'},
+      },
+      {
+        'closed': true,
+        'topic_timer': {
+          ..._timer,
+          'status_type': 'close',
+          'based_on_last_post': true,
+        },
+      },
+      {
+        'topic_timer': {
+          ..._timer,
+          'status_type': 'open',
+          'execute_at': '2099-01-01T00:00:00Z',
+        },
+      },
+      {
+        'topic_timer': {
+          ..._timer,
+          'status_type': 'unknown',
+          'execute_at': '2099-01-01T00:00:00Z',
+        },
+      },
+    ]) {
+      await tester.pumpWidget(_app(_detail(fields: fields)));
+      expect(find.byType(SegmentedCardGroup), findsNothing);
+    }
+  });
+
+  testWidgets('待审核总数仅使用服务端单独下发的计数', (tester) async {
+    await tester.pumpWidget(_app(_detail(fields: {'queued_posts_count': 3})));
+    expect(find.text('此话题有 3 条回复等待审核。'), findsOneWidget);
+    await tester.pumpWidget(
+      _app(
+        _detail(
+          fields: {
+            'pending_posts': [
+              {'id': 1, 'raw': '自己的回复'},
+            ],
+          },
+        ),
+      ),
+    );
+    expect(find.byType(SegmentedCardGroup), findsNothing);
+  });
 
   test('兼容缺少字段的数据，解析 UTC 和保留时长并支持复制与清除', () {
     final empty = _detail();
