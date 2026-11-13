@@ -34,6 +34,7 @@ import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_provi
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
 import 'package:fluxdo/modules/ldc_payment/ldc_payment_sheet.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
+import 'package:fluxdo/modules/metaverse/developer/metaverse_component_examples.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/ldc_payment_service.dart';
 import 'package:fluxdo/services/ldc_biometric_payment.dart';
@@ -185,6 +186,7 @@ void main() {
 
   Widget app(
     Widget child, {
+    String title = 'LD士多',
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reducedMotion = false,
@@ -239,7 +241,7 @@ void main() {
               child: child!,
             ),
             home: Scaffold(
-              appBar: AppBar(title: const Text('LD士多')),
+              appBar: AppBar(title: Text(title)),
               body: child,
             ),
           ),
@@ -550,6 +552,43 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final brightness in Brightness.values) {
+    testWidgets('通用页面组件应用主题 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(
+          metaverseWidgetLibraryName,
+          createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)),
+        );
+      addTearDown(runtime.dispose);
+      await tester.pumpWidget(app(const SizedBox(), brightness: brightness));
+      for (final example in metaverseComponentExamples(S.current)
+          .where((example) => example.previewHeight > 200)) {
+        runtime.update(
+          metaversePluginLibraryName,
+          parseLibraryFile('import fluxdo; widget Preview = ${example.source};'),
+        );
+        await tester.pumpWidget(app(
+          SafeArea(
+            child: RemoteWidget(
+              runtime: runtime,
+              widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Preview'),
+              data: DynamicContent(example.parameters),
+              onEvent: (_, _) {},
+            ),
+          ),
+          title: example.name,
+          brightness: brightness,
+        ));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: example.name);
+        await snapshot(tester, 'component-${example.name}-${brightness.name}');
+      }
+    });
+  }
   for (final brightness in Brightness.values) {
     testWidgets('内置支付键盘输入与删除，六位输入完成不自动付款 $brightness', (tester) async {
       final payment = _Payment();

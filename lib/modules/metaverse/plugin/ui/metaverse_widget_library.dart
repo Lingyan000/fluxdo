@@ -9,6 +9,10 @@ import 'package:m3e_ui/m3e_ui.dart';
 import 'package:rfw/rfw.dart' hide Switch;
 
 import '../../../../l10n/s.dart';
+import '../../../../widgets/common/paged_list_footer.dart';
+
+part 'metaverse_page_components.dart';
+part 'metaverse_form_component.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -214,6 +218,7 @@ Widget? _icon(BuildContext context, DataSource source, List<Object> key) {
 Map<String, LocalWidgetBuilder> _hostWidgets(
   Future<Uint8List> Function(Uri) loadImage,
 ) => {
+  ..._pageWidgets(),
   'PageLayout': (context, source) => _PluginPageLayout(
     loading: source.v<bool>(['loading']) == true,
     onRefresh: source.voidHandler(['onRefresh']),
@@ -454,11 +459,13 @@ class _PluginPageLayout extends StatefulWidget {
     this.footer,
     this.onRefresh,
     required this.loading,
+    this.lazy = false,
   });
   final List<Widget> children;
   final Widget? footer;
   final VoidCallback? onRefresh;
   final bool loading;
+  final bool lazy;
   @override
   State<_PluginPageLayout> createState() => _PluginPageLayoutState();
 }
@@ -506,6 +513,20 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: content,
       );
+      if (widget.lazy) {
+        scroll = Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              physics: const AlwaysScrollableScrollPhysics(),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              itemCount: widget.children.length,
+              itemBuilder: (_, index) => widget.children[index],
+            ),
+          ),
+        );
+      }
       if (widget.onRefresh != null) {
         scroll = M3eRefreshIndicator(
           onRefresh: () {

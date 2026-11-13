@@ -203,7 +203,7 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
               theme.colorScheme.surfaceContainerLow,
             ),
             child: SizedBox(
-              height: widget.example.name == 'PageLayout' ? 360 : 200,
+              height: widget.example.previewHeight,
               child: Center(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
