@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import 'log/log_writer.dart';
 import 'network/doh/network_settings_service.dart';
+import 'network/proxy/proxy_settings_service.dart';
+import 'network/vpn_auto_toggle_service.dart';
 
 /// CF 验证日志服务
 ///
@@ -33,6 +35,25 @@ class CfChallengeLogger {
   }
 
   static bool get isEnabled => _enabled;
+
+  /// 仅读取已有内存状态，常规挑战日志也可调用，不触发网络或平台查询。
+  /// VPN 检测可能漏报；这些字段描述检测/配置状态，实际出口需对齐服务端记录。
+  static Map<String, dynamic> networkContext() {
+    final settings = NetworkSettingsService.instance;
+    final core = settings.coreService.status;
+    final vpn = VpnAutoToggleService.instance;
+    return {
+      'networkSettingsVersion': settings.version,
+      'dohConfigured': settings.current.dohEnabled,
+      'appProxyConfigured': ProxySettingsService.instance.current.isValid,
+      'systemProxyConfigured': core.systemProxy,
+      'coreRunning': core.running,
+      'coreWebViewMitmEnabled': core.webViewMitm,
+      'webViewProxyOverrideRegistered': settings.webViewProxyOverrideRegistered,
+      'vpnDetectionReportedActive': vpn.vpnActive,
+      'vpnDetectionMode': vpn.detectionMode.name,
+    };
+  }
 
   /// 写入一条 CF 验证日志
   static void log(

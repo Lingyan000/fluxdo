@@ -353,11 +353,13 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
+    // 验证页面结束与 Cookie 快照落库是两个时刻。排队恢复及此时新到达的
+    // 请求都要等本轮同步完成，再由后续 CookieManager 读取凭证。
     final ready = BrowserTrustCoordinator.instance
         .waitForActiveBrowserTrust(
           reason: '${options.method.toUpperCase()} ${options.uri}',
         )
-        .then<void>((_) {});
+        .then<void>((_) => CfChallengeService().waitForCompletionCookieSync());
     final token = options.cancelToken;
     if (token == null) return ready;
     await Future.any<void>([ready, token.whenCancel.then((_) {})]);

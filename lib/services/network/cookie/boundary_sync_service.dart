@@ -438,6 +438,7 @@ class BoundarySyncService {
             '跳过异值替换（valueLength=${value.length}）',
         'name': name,
         'valueLength': value.length,
+        'candidateValueHash': CookieLogger.valueHash(value),
         'url': url,
       });
     }

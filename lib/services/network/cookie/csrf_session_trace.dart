@@ -200,5 +200,28 @@ class CsrfSessionTrace {
     return fields;
   }
 
+  /// 日志字段明确标识摘要，避免 Cookie/Token 的原始头名触发二次脱敏。
+  /// 核心原始快照仍保留头名，供适配器入口与核心准备阶段逐项比较。
+  static Map<String, dynamic> forLog(Map trace) {
+    final fields = Map<String, dynamic>.from(trace);
+    fields['csrfTraceVersion'] = 3;
+    final inputHashes = fields['csrfInputHeaderHashes'];
+    if (inputHashes is Map) {
+      fields['csrfInputHeaderHashes'] = _namedHeaderHashes(inputHashes);
+    }
+    final prepared = fields['corePreparedRequest'];
+    if (prepared is Map && prepared['header_hashes'] is Map) {
+      fields['corePreparedRequest'] = {
+        ...prepared,
+        'header_hashes': _namedHeaderHashes(prepared['header_hashes'] as Map),
+      };
+    }
+    return fields;
+  }
+
+  static Map<String, dynamic> _namedHeaderHashes(Map hashes) => {
+    for (final entry in hashes.entries) '${entry.key}-sha256': entry.value,
+  };
+
   static void clear() => _bindings.clear();
 }

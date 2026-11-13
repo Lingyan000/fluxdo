@@ -7,7 +7,7 @@ import '../../cf_challenge_service.dart';
 import '../../cf_challenge_logger.dart';
 import '../../cf_clearance_refresh_service.dart';
 import '../../cf_clearance_authority.dart';
-import '../../app_logger.dart';
+import 'network_log_interceptor.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
@@ -143,7 +143,7 @@ class CfChallengeInterceptor extends Interceptor {
           '(status=$statusCode, silent=${err.requestOptions.spec.isSilent}, '
           'tag=${requestTag ?? '-'}, skipCsrf=${err.requestOptions.spec.skipCsrf})';
       debugPrint('[Dio] $logMessage');
-      AppLogger.warning(logMessage, tag: 'CfChallengeInterceptor');
+      NetworkLogInterceptor.logCfChallenge(err);
       // 撞盾是排查网络问题的关键时刻:把此刻的通道健康全貌拍进日志,
       // 免得事后只有"某请求 403"这一条结果、没有引擎/降级/凭证状态。
       NetworkHealthController.instance.dumpToLog('cf_challenge_detected');

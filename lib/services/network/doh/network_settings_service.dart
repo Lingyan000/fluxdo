@@ -645,6 +645,10 @@ class NetworkSettingsService {
 
   bool _webViewProxySet = false;
 
+  /// 已向 WebView 登记本地代理覆盖。Windows 的已存在环境可能需重启生效。
+  /// 供日志区分核心提供 MITM 与平台实际接受代理设置这两个阶段。
+  bool get webViewProxyOverrideRegistered => _webViewProxySet;
+
   Future<void> _applyWebViewProxy() async {
     final port = _coreService.port;
     if (port == null) return;
