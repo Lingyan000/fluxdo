@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -124,6 +125,33 @@ void _expectInside(WidgetTester tester, Size size) {
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = true);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('长按卡片昵称和用户名复制实际用户名', (tester) async {
+    final copied = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await _openCard(tester, size: const Size(800, 700));
+    for (final name in ['alice', '@alice']) {
+      await tester.longPress(
+        find.descendant(of: _card, matching: find.text(name)),
+      );
+      await tester.pump();
+      expect(copied.last, 'alice');
+      expect(_card, findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    }
+    expect(copied, ['alice', 'alice']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   for (final linked in [true, false]) {
     for (final (size, anchor) in [

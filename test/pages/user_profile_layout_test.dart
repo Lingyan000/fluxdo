@@ -500,6 +500,31 @@ void main() {
       final avatar = find.byKey(const ValueKey('profile-avatar'));
       final displayName = find.byKey(const ValueKey('profile-display-name'));
       expect(tester.widget<Text>(displayName).data, user.name);
+      if (checkNavigation || width == 1440) {
+        final copied = <String>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        expect(find.byType(SelectableText), findsNothing);
+        for (final name in [
+          displayName,
+          find.text('@${user.username}').hitTestable(),
+        ]) {
+          await tester.longPress(name);
+          await tester.pump();
+          expect(copied.last, user.username);
+          await tester.pump(const Duration(seconds: 3));
+          await tester.pumpAndSettle();
+        }
+        expect(copied, [user.username, user.username]);
+      }
       expect(find.byIcon(Symbols.fullscreen_rounded), findsNothing);
       expect(find.byType(DropdownButtonFormField<String>), findsNothing);
       if (!hidden) {

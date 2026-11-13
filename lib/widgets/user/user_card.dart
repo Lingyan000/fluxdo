@@ -828,6 +828,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
         children: [
           GestureDetector(
             onTap: _openProfile,
+            onLongPress: () => copyUsernameToClipboard(widget.username),
             child: Text(
               displayName,
               style: theme.textTheme.titleLarge?.copyWith(
@@ -846,6 +847,7 @@ class _UserCardContentState extends ConsumerState<_UserCardContent> {
                   behavior: HitTestBehavior.opaque,
                   // 点击 @username 复制用户名
                   onTap: () => copyUsernameToClipboard(widget.username),
+                  onLongPress: () => copyUsernameToClipboard(widget.username),
                   child: Text(
                     '@${widget.username}',
                     style: theme.textTheme.bodyMedium?.copyWith(
