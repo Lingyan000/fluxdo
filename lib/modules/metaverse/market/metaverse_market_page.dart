@@ -467,6 +467,7 @@ class MetaverseMarketSourcesPage extends ConsumerStatefulWidget {
 class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
   final _input = TextEditingController();
   bool _busy = false;
+  String? _inputError;
   @override
   void dispose() {
     _input.dispose();
@@ -485,6 +486,21 @@ class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
     }
   }
 
+  Future<void> _addSource() async {
+    if (_busy || _input.text.trim().isEmpty) return;
+    try {
+      MetaverseMarketSource.fromInput(_input.text);
+    } on FormatException {
+      setState(() => _inputError = context.l10n.metaverse_marketSourceInvalid);
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    await _run(() async {
+      await ref.read(metaverseMarketProvider.notifier).addSource(_input.text);
+      if (mounted) _input.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final market = ref.watch(metaverseMarketProvider);
@@ -495,22 +511,43 @@ class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text(
+            l.metaverse_marketSourceHint,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 12),
           InputFieldShell(
             child: TextField(
               controller: _input,
+              enabled: !_busy,
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.done,
+              autocorrect: false,
+              textAlignVertical: TextAlignVertical.center,
+              style: Theme.of(context).textTheme.bodyMedium,
               decoration: InputDecoration(
-                hintText: l.metaverse_marketSourceHint,
+                isDense: true,
+                contentPadding: const EdgeInsets.all(16),
+                hintText: 'https://github.com/owner/repo',
+                prefixIcon: const Icon(Symbols.link_rounded),
               ),
+              onChanged: (_) => setState(() => _inputError = null),
+              onSubmitted: (_) => _addSource(),
             ),
           ),
-          const SizedBox(height: 8),
+          if (_inputError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _inputError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 12),
           FilledButton.tonalIcon(
-            onPressed: _busy
+            onPressed: _busy || _input.text.trim().isEmpty
                 ? null
-                : () => _run(() async {
-                    await controller.addSource(_input.text);
-                    _input.clear();
-                  }),
+                : _addSource,
             icon: const Icon(Symbols.add_rounded),
             label: Text(l.metaverse_marketAddSource),
           ),
@@ -526,8 +563,16 @@ class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
                 Column(
                   children: [
                     M3eSwitchListTile(
-                      title: Text(Uri.parse(source.url).host),
-                      subtitle: Text(source.url),
+                      title: Text(
+                        source.displayName,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      subtitle: Text(
+                        source.url,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       value: source.enabled,
                       onChanged: _busy
                           ? null

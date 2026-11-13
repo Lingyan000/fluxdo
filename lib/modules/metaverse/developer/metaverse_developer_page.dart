@@ -1,21 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:rfw/formats.dart';
 import 'package:rfw/rfw.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/toast_service.dart';
+import '../../../services/ldc_payment_service.dart';
+import '../../../utils/dialog_utils.dart';
 import '../../../utils/link_launcher.dart';
+import '../../ldc_payment/ldc_payment_sheet.dart';
+import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/runtime/flutter_js_script_engine.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
 import 'metaverse_api_examples.dart';
 import 'metaverse_component_examples.dart';
+
+part 'metaverse_api_playground.dart';
 
 class MetaverseDeveloperPage extends StatelessWidget {
   const MetaverseDeveloperPage({super.key});
@@ -96,6 +106,31 @@ class _ComponentGalleryState extends State<_ComponentGallery> {
               ),
               onChanged: (value) => setState(() => _query = value),
             ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: SegmentedCardGroup(
+            children: [
+              ListTile(
+                leading: Icon(
+                  Symbols.public_rounded,
+                  color: context.emphasis.accent,
+                ),
+                title: Text(context.l10n.metaverse_apiBrowserGuide),
+                subtitle: Text(context.l10n.metaverse_apiBrowserOpen),
+                trailing: const Icon(Symbols.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  InteractionPageRoute(
+                    builder: (_) => MetaverseApiPreviewPage(
+                      example: metaverseApiExamples.firstWhere(
+                        (e) => e.name == 'browser.open',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -309,131 +344,17 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: TextFormField(
-        key: ValueKey('$key-$_revision'),
-        initialValue: value.toString(),
-        decoration: InputDecoration(labelText: key),
-        onChanged: (next) => _change(key, next),
-      ),
-    );
-  }
-}
-
-class _ApiGallery extends StatefulWidget {
-  const _ApiGallery();
-  @override
-  State<_ApiGallery> createState() => _ApiGalleryState();
-}
-
-class _ApiGalleryState extends State<_ApiGallery> {
-  MetaverseApiExample _example = metaverseApiExamples.first;
-  MetaversePluginRuntime? _runtime;
-  bool _failure = false;
-  bool _running = false;
-  int _generation = 0;
-  final _events = <String>[];
-
-  @override
-  void dispose() {
-    _generation++;
-    _runtime?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _run() async {
-    if (_running) return;
-    final generation = ++_generation;
-    _runtime?.dispose();
-    setState(() {
-      _events.clear();
-      _running = true;
-    });
-    try {
-      final runtime = await MetaversePluginRuntime.start(
-        engineFactory: createMetaverseScriptEngine,
-        script: _example.script,
-        bridge: MetaverseDocumentationBridge(
-          example: _example,
-          failure: _failure,
-          onLog: (level, message) {
-            if (!mounted || generation != _generation) return;
-            setState(() {
-              _events.add('[$level] $message');
-              if (_events.length > 50) _events.removeAt(0);
-            });
-          },
-        ),
-      );
-      if (!mounted || generation != _generation) {
-        runtime.dispose();
-        return;
-      }
-      _runtime = runtime;
-      final surface = runtime.openSurface(kind: 'card');
-      if (_example.userAction) runtime.dispatch(surface, 'action', const {});
-    } catch (error) {
-      if (mounted && generation == _generation) {
-        setState(() => _events.add('$error'));
-      }
-    } finally {
-      if (mounted && generation == _generation) {
-        setState(() => _running = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l10n;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(l.metaverse_developerSimulated),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<MetaverseApiExample>(
-          initialValue: _example,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'API'),
-          items: [
-            for (final example in metaverseApiExamples)
-              DropdownMenuItem(value: example, child: Text(example.name)),
-          ],
-          onChanged: _running
-              ? null
-              : (value) {
-                  if (value != null) setState(() => _example = value);
-                },
-        ),
-        ListTile(
-          title: Text(l.metaverse_marketCompatibility),
-          subtitle: Text('API ${_example.apiVersion}'),
-        ),
-        if (_example.permission case final permission?)
-          ListTile(
-            title: Text(l.metaverse_marketPermissions),
-            subtitle: Text(permission),
+      child: InputFieldShell(
+        child: TextFormField(
+          key: ValueKey('$key-$_revision'),
+          initialValue: value.toString(),
+          decoration: InputDecoration(
+            labelText: key,
+            contentPadding: const EdgeInsets.all(16),
           ),
-        M3eSwitchListTile(
-          title: Text(l.metaverse_developerSimulateFailure),
-          value: _failure,
-          onChanged: (value) => setState(() => _failure = value),
+          onChanged: (next) => _change(key, next),
         ),
-        FilledButton.icon(
-          onPressed: _running ? null : _run,
-          icon: _running
-              ? const LoadingSpinner(size: 18)
-              : const Icon(Symbols.play_arrow_rounded),
-          label: Text(l.metaverse_developerRun),
-        ),
-        const SizedBox(height: 16),
-        _CodeBlock(title: l.metaverse_developerCode, code: _example.script),
-        const SizedBox(height: 16),
-        Text(
-          l.metaverse_developerEvents,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        for (final event in _events) SelectableText(event),
-      ],
+      ),
     );
   }
 }

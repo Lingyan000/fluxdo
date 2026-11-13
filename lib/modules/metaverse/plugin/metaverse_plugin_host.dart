@@ -59,7 +59,7 @@ abstract class MetaversePluginHostDelegate {
   /// 打开外部链接；是否需要离站确认由应用的链接安全策略决定。
   Future<void> openUrl(BuildContext context, Uri url);
 
-  /// 打开第一方网页会话，不将授权材料或页面内容返回给插件。
+  /// 打开内置浏览器页面，浏览器会话由宿主管理。
   Future<void> openWebSession(BuildContext context, Uri url);
 
   void toast(String message, String type);
@@ -614,6 +614,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return null;
 
       case 'openUrl':
+      case 'browser.open':
         final rawUrl = params['url'];
         final url = rawUrl is String ? Uri.tryParse(rawUrl) : null;
         if (url == null ||
@@ -621,7 +622,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
             (url.scheme != 'https' && url.scheme != 'http')) {
           throw const MetaversePluginCallException('只能打开 http(s) 链接');
         }
-        await _userInitiatedUi((context) => _delegate.openUrl(context, url));
+        await _userInitiatedUi(
+          (context) => method == 'browser.open'
+              ? _delegate.openWebSession(context, url)
+              : _delegate.openUrl(context, url),
+        );
         return null;
 
       case 'toast':
