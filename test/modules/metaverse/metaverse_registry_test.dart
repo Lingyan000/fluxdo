@@ -192,14 +192,14 @@ void main() {
     );
     host.shutdown();
     final next = MetaversePluginManifest.parse(
-      jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+      jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
     await controller.install(MetaversePluginPackage(
       manifest: next,
       source: source,
       code: (
-        ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
-        script: File('plugins/ld-store/main.js').readAsStringSync(),
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync(),
       ),
     ));
     expect(controller.byId(old.id)?.manifest.runtimeSupported, isTrue);
@@ -209,12 +209,11 @@ void main() {
     );
   });
 
-  test('应用升级发现本地旧士多清单，确认更新后才获得新回调权限', () async {
-    final bundled = await container.read(
-      metaverseBundledPluginsProvider.future,
-    );
-    final latest = bundled.singleWhere(
-      (p) => p.manifest.id == 'community.fluxdo.ldstore',
+  test('插件显式更新后才获得新回调权限', () async {
+    final latest = MetaversePluginPackage(
+      manifest: MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync())),
+      source: 'https://example.org/ld-store.fluxplugin',
+      code: (ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(), script: File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync()),
     );
     final oldJson =
         jsonDecode(jsonEncode(latest.manifest.raw)) as Map<String, dynamic>;
@@ -231,8 +230,6 @@ void main() {
     );
     await controller.setEnabled(latest.manifest.id, enabled: true);
 
-    final updates = container.read(metaversePluginUpdatesProvider);
-    expect(updates[latest.manifest.id], latest);
     final store = container.read(metaversePluginStoreProvider);
     expect(store.loadIndex().single.manifest.version, '1.6.0');
     expect(store.loadIndex().single.enabled, isTrue);
@@ -247,7 +244,6 @@ void main() {
     expect(updated.manifest.networkHosts, contains('api.ldspro.qzz.io'));
     expect(updated.enabled, isFalse);
     expect(await store.readCode(updated.id), latest.code);
-    expect(container.read(metaversePluginUpdatesProvider), isEmpty);
     await controller.setEnabled(updated.id, enabled: true);
     expect(controller.byId(updated.id)!.enabled, isTrue);
   });
@@ -263,23 +259,8 @@ void main() {
     ('1.6.1-beta', '1.6.1-beta.1', true),
     ('1.6.1+1', '1.6.1+2', false),
   ]) {
-    test('内置插件更新版本判断 ${versions.$1} → ${versions.$2}', () async {
-      final current = await package({'version': versions.$1});
-      final candidate = await package({'version': versions.$2});
-      final installed = InstalledMetaversePlugin(
-        manifest: current.manifest,
-        source: current.source,
-      );
-      expect(candidate.isUpdateFor(installed), versions.$3);
-      expect(
-        candidate.isUpdateFor(
-          InstalledMetaversePlugin(
-            manifest: current.manifest,
-            source: 'https://different.example.org/plugin.json',
-          ),
-        ),
-        isFalse,
-      );
+    test('插件版本判断 ${versions.$1} → ${versions.$2}', () {
+      expect(PluginVersion.parse(versions.$2).compareTo(PluginVersion.parse(versions.$1)) > 0, versions.$3);
     });
   }
 

@@ -20,7 +20,7 @@ flowchart TD
 
 目录包含 `plugin.json`、`main.js`、`ui.rfwtxt`。用 `dart run tool/pack_metaverse_plugin.dart <目录> <输出文件>` 生成 `.fluxplugin`。三个远端资源须同源，导入时检查大小、清单、脚本路径和组件引用。
 
-新插件声明 `schema: 9` 与 `apiVersion: 2`。完整示例见 [示例积分](examples/metaverse-plugin/plugin.json)，多页面业务示例见 [LD士多](../plugins/ld-store/README.md)。
+新插件声明 `schema: 9` 与 `apiVersion: 2`。完整示例见 [示例积分](examples/metaverse-plugin/plugin.json)，多页面业务示例见 [LD士多](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)。
 
 | 字段 | 作用 |
 | --- | --- |

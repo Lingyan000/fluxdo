@@ -9,12 +9,10 @@ import '../../../../utils/dialog_utils.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
-import '../metaverse_plugin_installer.dart';
 import 'metaverse_widget_library.dart';
-import 'metaverse_plugin_tile.dart';
 
 /// 输入清单地址。
-typedef PluginInstallChoice = ({String? url, MetaversePluginPackage? bundled});
+typedef PluginInstallChoice = ({String? url});
 
 Future<void> showMetaversePluginDetails(
   BuildContext context,
@@ -32,47 +30,14 @@ Future<void> showMetaversePluginDetails(
 
 Future<PluginInstallChoice?> showMetaversePluginPicker(
   BuildContext context,
-  List<MetaversePluginPackage> bundled, {
-  Set<String> installedIds = const {},
-}) => AppBottomSheet.showDraggable<PluginInstallChoice>(
+) => AppBottomSheet.show<PluginInstallChoice>(
   context: context,
   title: context.l10n.metaverse_addService,
   showCloseButton: true,
-  initialSize: .65,
-  minSize: .4,
-  maxSize: .95,
-  bodyBuilder: (ctx, controller) => ListView(
-    controller: controller,
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+  showDragHandle: true,
+  builder: (ctx) => Column(
+    mainAxisSize: MainAxisSize.min,
     children: [
-      if (bundled.isNotEmpty) ...[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
-          child: Text(
-            ctx.l10n.metaverse_bundledPlugins,
-            style: Theme.of(ctx).textTheme.titleSmall,
-          ),
-        ),
-        SegmentedCardGroup(
-          children: [
-            for (final package in bundled)
-              MetaversePluginTile(
-                name: package.manifest.name,
-                icon: package.manifest.icon,
-                description: package.manifest.description,
-                metadata: '${package.manifest.author} · ${package.manifest.version}',
-                trailing: Icon(
-                  installedIds.contains(package.manifest.id)
-                      ? Symbols.update_rounded
-                      : Symbols.add_rounded,
-                ),
-                onTap: () => Navigator.of(ctx)
-                    .pop<PluginInstallChoice>((url: null, bundled: package)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
-      ],
       SegmentedCardGroup(
         children: [
           ListTile(
@@ -86,7 +51,7 @@ Future<PluginInstallChoice?> showMetaversePluginPicker(
               );
               if (address != null && ctx.mounted) {
                 Navigator.of(ctx)
-                    .pop<PluginInstallChoice>((url: address, bundled: null));
+                    .pop<PluginInstallChoice>((url: address));
               }
             },
           ),
@@ -99,7 +64,7 @@ Future<PluginInstallChoice?> showMetaversePluginPicker(
             trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
             onTap: () =>
                 Navigator.of(ctx)
-                    .pop<PluginInstallChoice>((url: null, bundled: null)),
+                    .pop<PluginInstallChoice>((url: null)),
           ),
         ],
       ),

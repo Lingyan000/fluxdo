@@ -164,17 +164,6 @@ class MetaversePluginCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _header(context, ref, plugin, manifest),
-            if (host.onUpdate != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: FilledButton.tonalIcon(
-                  onPressed: host.onUpdate,
-                  icon: const Icon(Symbols.update_rounded),
-                  label: Text(
-                    context.l10n.metaverse_pluginUpdateTo(host.updateVersion!),
-                  ),
-                ),
-              ),
             if (!plugin.manifest.runtimeSupported)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),

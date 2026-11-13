@@ -153,7 +153,7 @@ class _ShopApi extends _Api {
       );
     }
     if (uri.host == 'packages.example.org') {
-      final file = File('plugins/ld-store/${uri.pathSegments.last}');
+      final file = File('test/fixtures/metaverse/ld-store/${uri.pathSegments.last}');
       return ResponseBody.fromString(file.readAsStringSync(), 200);
     }
     if (uri.path.endsWith('/external-link')) {
@@ -569,12 +569,12 @@ Future<void> main() async {
     }) async {
       delegate.accountId = 42;
       final shop = MetaversePluginManifest.parse(
-        jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+        jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
         reservedHosts: const ['linux.do'],
       );
       await store.writeCode(shop.id, (
-        ui: File('plugins/ld-store/ui.rfwtxt').readAsStringSync(),
-        script: File('plugins/ld-store/main.js').readAsStringSync(),
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync(),
       ));
       host = MetaversePluginHost(
         manifest: shop,

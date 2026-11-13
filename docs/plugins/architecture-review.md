@@ -90,7 +90,7 @@ flowchart TD
 
 建议先抽 `packages/fluxdo_plugin_runtime`，放置运行生命周期、RPC、调用上下文、能力接口、数据协议及 JS 引擎适配。通用协议层避免依赖论坛模型、LDC 服务、应用 provider 和业务订单类型。插件渲染适配与主题集成先保留在 `lib/modules/metaverse`，后续按实际复用需求抽独立 UI 包。
 
-`lib/modules/metaverse` 适合保留应用入口、插件管理页面、路由和能力注入。`plugins/ld-store` 保存士多服务协议、商品、评论、订单与交付逻辑。插件可在独立仓库开发，仓库内目录用于随应用分发的版本。
+`lib/modules/metaverse` 适合保留应用入口、插件管理页面、路由和能力注入。士多服务协议、商品、评论、订单与交付逻辑在 `Lingyan000/fluxdo-plugins` 独立仓库维护，通过 GitHub 市场分发。应用仓库的 `test/fixtures/metaverse/ld-store` 仅保留回归样本。
 
 包拆分建立可检查的依赖边界。运行时还需单独处理执行中断和内存限额。当前每插件有 isolate 和 5 秒看门狗，但正在执行的原生 JS 死循环可能持续占用线程，`Isolate.kill` 缺少可靠的原生执行中断保障。引擎适配中已有相关限制说明，应分别验证 QuickJS 与 JavaScriptCore 的终止和限额能力。[当前引擎适配](../../lib/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart)
 

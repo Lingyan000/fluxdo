@@ -244,9 +244,6 @@ flutter:
   shaders:
     - shaders/progressive_top_blur.frag
   assets:
-    - plugins/ld-store/plugin.json
-    - plugins/ld-store/ui.rfwtxt
-    - plugins/ld-store/main.js
     - assets/logo.svg
     - assets/logo_modern.svg
     - assets/logo_modern_light.svg

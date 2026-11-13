@@ -40,10 +40,10 @@ Future<void> main() async {
     unavailable = '脚本引擎原生库不可用 $error';
   }
   final manifest = MetaversePluginManifest.parse(
-    jsonDecode(File('plugins/ld-store/plugin.json').readAsStringSync()),
+    jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
   );
-  final script = File('plugins/ld-store/main.js').readAsStringSync();
-  final ui = File('plugins/ld-store/ui.rfwtxt').readAsStringSync();
+  final script = File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync();
+  final ui = File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync();
 
   void loginTest(
     String name,

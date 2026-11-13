@@ -3,7 +3,6 @@ import 'dart:typed_data' show BytesBuilder;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show AssetBundle, AssetManifest;
 import 'package:rfw/formats.dart';
 
 import 'metaverse_plugin_manifest.dart';
@@ -23,14 +22,6 @@ class MetaversePluginPackage {
   final MetaversePluginManifest manifest;
   final String source;
   final MetaversePluginCode code;
-
-  /// 只提示同一来源的较新版本，防止随应用回退时降级已安装插件。
-  bool isUpdateFor(InstalledMetaversePlugin installed) {
-    if (manifest.id != installed.id || source != installed.source) return false;
-    return PluginVersion.parse(manifest.version).compareTo(
-      PluginVersion.parse(installed.manifest.version),
-    ) > 0;
-  }
 }
 
 class MetaversePluginInstallException implements Exception {
@@ -57,42 +48,6 @@ class MetaversePluginInstaller {
 
   final MetaversePluginNetwork _network;
   final List<String> reservedHosts;
-
-  /// 随客户端分发的插件也经过同一套安装校验，只有用户确认后才会写入。
-  Future<List<MetaversePluginPackage>> bundledPackages(
-    AssetBundle assets,
-  ) async {
-    final index = await AssetManifest.loadFromAssetBundle(assets);
-    final paths =
-        index
-            .listAssets()
-            .where(
-              (key) =>
-                  key.startsWith('plugins/') && key.endsWith('/plugin.json'),
-            )
-            .toList()
-          ..sort();
-    final packages = <MetaversePluginPackage>[];
-    for (final path in paths) {
-      final manifestText = await assets.loadString(path);
-      if (utf8.encode(manifestText).length > maxManifestBytes) {
-        throw const MetaversePluginInstallException('清单过大');
-      }
-      final json = jsonDecode(manifestText);
-      final spec = MetaversePluginManifest.parse(
-        json,
-        reservedHosts: reservedHosts,
-      );
-      final dir = path.substring(0, path.lastIndexOf('/') + 1);
-      final files = <String, String>{
-        for (final name in [spec.uiPath, spec.scriptPath])
-          name: await assets.loadString('$dir$name'),
-      };
-      // 安装包签名覆盖这些资源。同一资源路径升级不应清掉尚待核对的订单。
-      packages.add(_checkedFiles(spec, files, 'asset:$path'));
-    }
-    return packages;
-  }
 
   /// 文件包含清单和两个文本资源，不解压、不读取插件指定的本地路径。
   static const maxBundleBytes = 2 * 1024 * 1024;
