@@ -776,6 +776,47 @@ void main() {
       await h.dispose(tester);
     });
 
+    testWidgets('没有 cover 的网页也检查 env，普通页面留边后的预期为零', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      final plain = report(cover: false);
+      var reads = 0;
+      h.platform.controller.evaluate = (source) {
+        if (source != BrowserSafeAreaProbe.measureSource) return null;
+        reads++;
+        return plain;
+      };
+      send(h, plain);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(reads, 1); // 留边已经承担刘海，不能拿外框的 47px 判定网页失败。
+      expect(page(tester, h).left, 47);
+      await h.dispose(tester);
+    });
+
+    testWidgets('没有 cover 但使用上下 env 的网页也能检出重复安全区', (tester) async {
+      final h = _Harness();
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await h.mount(tester);
+      final plain = report(cover: false, env: [0, 44, 0, 24]);
+      var reads = 0;
+      h.platform.controller.evaluate = (source) {
+        if (source != BrowserSafeAreaProbe.measureSource) return null;
+        reads++;
+        return plain;
+      };
+      send(h, plain);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(reads, 2);
+      expect(viewport(tester).unsafe, EdgeInsets.zero);
+      await h.dispose(tester);
+    });
+
     testWidgets('全零样本之后网页上报非零 env 会重新检查', (tester) async {
       final h = _Harness();
       await h.mount(tester);

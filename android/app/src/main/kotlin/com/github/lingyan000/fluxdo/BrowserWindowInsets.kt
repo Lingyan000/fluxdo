@@ -2,9 +2,29 @@ package com.github.lingyan000.fluxdo
 
 import android.graphics.Rect
 import android.os.Build
+import android.view.View
 import androidx.core.graphics.Insets
 import androidx.core.view.DisplayCutoutCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+
+/** 修正 Insets 后继续执行 WebView 的原生入口，确保内核收到新的 env() 值。 */
+internal fun installBrowserWindowInsetsListener(
+    target: View,
+    adjust: (WindowInsetsCompat) -> WindowInsetsCompat,
+) {
+    ViewCompat.setOnApplyWindowInsetsListener(target) { view, insets ->
+        val adjusted = adjust(insets)
+        // Android 12+ 的监听器会替代 WebView.onApplyWindowInsets。只返回 adjusted
+        // 不会通知内核，必须显式调用默认入口；该方法不再进入监听器，不会递归。
+        // 旧系统的 target 是父容器，继续由子 WebView 内部监听器接收分发。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ViewCompat.onApplyWindowInsets(view, adjusted)
+        } else {
+            adjusted
+        }
+    }
+}
 
 /** 把窗口安全区换算为网页坐标，处理工具栏动画中的部分重叠。 */
 internal fun browserViewportInsets(value: Insets, viewport: Rect, window: Rect): Insets {

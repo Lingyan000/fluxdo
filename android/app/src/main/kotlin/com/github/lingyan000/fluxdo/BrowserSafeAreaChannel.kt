@@ -32,8 +32,8 @@ class BrowserSafeAreaChannel(private val engine: FlutterEngine) {
                 result.error("WEBVIEW_NOT_FOUND", "浏览器原生实例不存在", null)
                 return@setMethodCallHandler
             }
-            // Android 12+ 在 WebView 上提供调整后的 Insets，覆盖引擎的默认边界判断，
-            // 避免部分遮挡被重复扣减；旧系统保留 WebView 内部监听器，改在父容器处理。
+            // Android 12+ 调整后显式交给 WebView 默认入口更新内核；
+            // 旧系统保留 WebView 内部监听器，改在父容器处理。
             val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) webView else container
             val binding = bindings.getOrPut(target) { BrowserInsetsBinding(target, webView) }
             binding.refresh()
@@ -58,7 +58,7 @@ private class BrowserInsetsBinding(target: View, webView: InAppWebView) :
     private var last: BrowserNativeGeometry? = null
 
     init {
-        ViewCompat.setOnApplyWindowInsetsListener(target) { _, insets ->
+        installBrowserWindowInsetsListener(target) { insets ->
             val geometry = geometry()
             if (geometry == null) insets else
                 browserWindowInsets(insets, geometry.viewport, geometry.window, geometry.fullscreen)

@@ -498,7 +498,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       ),
     );
     final edgeToEdge = _safeAreaPolicy.edgeToEdge(_pageSafeArea);
-    if (edgeToEdge) _scheduleSafeAreaCheck();
+    if (_pageSafeArea != null) _scheduleSafeAreaCheck();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncSurfaceSampling();
     });
@@ -1126,16 +1126,21 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     }
   }
 
-  /// 等布局稳定后再比较；失败只影响当前页面的当前布局。
+  // 普通网页也可能使用 env()；应用留边后，它实际收到的安全区应为零。
+  EdgeInsets get _expectedPageInsets => _safeAreaPolicy.edgeToEdge(_pageSafeArea)
+      ? _viewportUnsafe
+      : EdgeInsets.zero;
+
+  /// 等布局稳定后再比较，不以 viewport-fit=cover 作为使用 env() 的前提。
   void _scheduleSafeAreaCheck() {
     if (_fullscreen || _minimizing || _closing || _addressEditing ||
         _routeAnimation?.status != AnimationStatus.completed ||
         _viewportGeometry == null ||
         _safeAreaPolicy.nativeEnvReliable == false ||
-        _viewportUnsafe == _checkedUnsafe) {
+        _expectedPageInsets == _checkedUnsafe) {
       return;
     }
-    _checkedUnsafe = _viewportUnsafe;
+    _checkedUnsafe = _expectedPageInsets;
     _safeAreaMismatches = 0;
     _safeAreaCheck?.cancel();
     // 原生视图改尺寸、网页收到 resize 都晚于 Flutter 布局，留出余量再读。
@@ -1147,7 +1152,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
   Future<void> _checkNativeSafeArea() async {
     final controller = _controller;
-    final expected = _viewportUnsafe;
+    final expected = _expectedPageInsets;
     final revision = _safeAreaRevision;
     if (!mounted ||
         controller == null ||
@@ -1155,7 +1160,8 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         _closing ||
         _addressEditing ||
         _fullscreen ||
-        !_safeAreaPolicy.edgeToEdge(_pageSafeArea)) {
+        _pageSafeArea == null ||
+        _safeAreaPolicy.nativeEnvReliable == false) {
       return;
     }
     Object? raw;
@@ -1171,7 +1177,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         page == null ||
         revision != _safeAreaRevision || _fullscreen || _minimizing ||
         _closing || _addressEditing ||
-        expected != _viewportUnsafe ||
+        expected != _expectedPageInsets ||
         _safeAreaPolicy.nativeEnvReliable == false) {
       return;
     }
