@@ -179,27 +179,56 @@ class _AppLogsPageState extends State<AppLogsPage> {
     } on PlatformException {
       // 日志超过 Binder 事务上限(~1MB)无法复制,回退到保存文件
       // (保存五端都可用,分享在 Linux 上不支持文件)
-      await _saveLog();
+      await _saveLog(fullHistory: true);
     }
   }
 
+  Future<bool?> _selectExportScope() => showAppDialog<bool>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      title: Text(dialogContext.l10n.appLogs_exportScopeTitle),
+      children: [
+        ListTile(
+          title: Text(dialogContext.l10n.appLogs_exportAll),
+          subtitle: Text(dialogContext.l10n.appLogs_exportAllDescription),
+          onTap: () => Navigator.of(dialogContext).pop(true),
+        ),
+        ListTile(
+          title: Text(dialogContext.l10n.appLogs_exportCurrent),
+          subtitle: Text(dialogContext.l10n.appLogs_exportCurrentDescription),
+          onTap: () => Navigator.of(dialogContext).pop(false),
+        ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: Text(dialogContext.l10n.common_cancel),
+        ),
+      ],
+    ),
+  );
+
   Future<void> _shareLog() async {
-    final path = await LoggerUtils.getShareFilePath();
+    final fullHistory = await _selectExportScope();
+    if (fullHistory == null || !mounted) return;
+    final path = await LoggerUtils.getShareFilePath(fullHistory: fullHistory);
+    if (!mounted) return;
     await ShareUtils.shareFile(
       XFile(path),
       subject: S.current.appLogs_shareSubject,
     );
   }
 
-  Future<void> _saveLog() async {
+  Future<void> _saveLog({bool? fullHistory}) async {
+    fullHistory ??= await _selectExportScope();
+    if (fullHistory == null || !mounted) return;
     final String path;
     try {
-      path = await LoggerUtils.getShareFilePath();
+      path = await LoggerUtils.getShareFilePath(fullHistory: fullHistory);
     } catch (_) {
       // 生成阶段的异常由 LoggerUtils 记录，保存面板尚未打开。
       ToastService.showError(S.current.share_saveFailed);
       return;
     }
+    if (!mounted) return;
     final outcome = await ShareUtils.saveFile(XFile(path));
     if (outcome.shared) {
       final name = outcome.displayName ?? p.basename(path);
@@ -232,13 +261,19 @@ class _AppLogsPageState extends State<AppLogsPage> {
     }
   }
 
-  /// 打开私信界面，预填设备信息、日志摘要和完整日志附件
+  /// 打开私信界面，预填设备信息、所选范围的日志摘要和附件。
   Future<void> _sendFeedback() async {
+    final fullHistory = await _selectExportScope();
+    if (fullHistory == null || !mounted) return;
     try {
-      // 并行：获取设备信息、读取日志内容、上传完整日志文件
+      // 摘要与附件使用同一份导出，避免选择本次启动后仍夹带历史摘要。
+      final logPath = await LoggerUtils.getShareFilePath(
+        fullHistory: fullHistory,
+      );
+      if (!mounted) return;
       final deviceInfoFuture = LoggerUtils.getDeviceInfoText();
-      final logContentFuture = LoggerUtils.readLogContent();
-      final uploadFuture = _uploadLogFile();
+      final logContentFuture = File(logPath).readAsString();
+      final uploadFuture = _uploadLogFile(logPath);
       final deviceInfo = await deviceInfoFuture;
       final logContent = await logContentFuture;
       final attachmentMarkdown = await uploadFuture;
@@ -252,10 +287,13 @@ class _AppLogsPageState extends State<AppLogsPage> {
         ..writeln('```')
         ..writeln();
 
-      // 完整日志附件
+      // 所选范围的日志附件
       if (attachmentMarkdown != null) {
+        final scopeTitle = fullHistory
+            ? S.current.appLogs_exportAll
+            : S.current.appLogs_exportCurrent;
         buf
-          ..writeln('## 完整日志')
+          ..writeln('## $scopeTitle')
           ..writeln(attachmentMarkdown)
           ..writeln();
       }
@@ -285,10 +323,9 @@ class _AppLogsPageState extends State<AppLogsPage> {
     }
   }
 
-  /// 上传完整日志文件（.txt），返回附件 markdown；失败返回 null
-  Future<String?> _uploadLogFile() async {
+  /// 上传已生成的日志文件（.txt），返回附件 markdown；失败返回 null。
+  Future<String?> _uploadLogFile(String jsonlPath) async {
     try {
-      final jsonlPath = await LoggerUtils.getShareFilePath();
       // 复制为 .txt，避免 .jsonl 不在服务器 authorized_extensions 中
       final txtPath = jsonlPath.replaceAll('.jsonl', '.txt');
       await File(jsonlPath).copy(txtPath);

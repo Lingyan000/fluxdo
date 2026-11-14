@@ -95,8 +95,8 @@ class LogPolicy {
     return entry;
   }
 
-  /// 默认导出本次启动；显式 fullHistory 保留跨启动诊断能力。
-  static String export(String content, {bool fullHistory = false}) {
+  /// 默认导出仍在本地保留的历史；需要当前启动时显式传 fullHistory: false。
+  static String export(String content, {bool fullHistory = true}) {
     final rows = <Map<String, dynamic>>[];
     var invalid = 0;
     for (final line in const LineSplitter().convert(content)) {

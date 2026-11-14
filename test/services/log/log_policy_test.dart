@@ -18,14 +18,23 @@ void main() {
     expect(row['statusCode'], 403);
     expect(row['schemaVersion'], 2);
   });
-  test('导出默认当前启动，完整历史可显式选择，非法行计数', () {
+  test('导出默认包含保留历史，也可显式选择当前启动，非法行计数', () {
     final current = LogPolicy.normalize({
       'message': 'current',
       'level': 'warning',
     });
-    final previous = {...current, 'sessionId': 'old', 'message': 'previous'};
+    final previous = {
+      ...current,
+      'sessionId': 'old',
+      'message': 'previous',
+      'cookie': 'historical-secret',
+    };
     final content = '${jsonEncode(previous)}\n${jsonEncode(current)}\nnot-json';
-    final scoped = LogPolicy.export(content);
+    final full = LogPolicy.export(content);
+    expect(full, contains('previous'));
+    expect(full, contains('"scope":"retained_history"'));
+    expect(full, isNot(contains('historical-secret')));
+    final scoped = LogPolicy.export(content, fullHistory: false);
     expect(scoped, contains('current'));
     expect(scoped, isNot(contains('previous')));
     expect(scoped, contains('"invalidLines":1'));

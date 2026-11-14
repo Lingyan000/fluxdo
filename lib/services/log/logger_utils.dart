@@ -24,7 +24,7 @@ class LoggerUtils {
   static Future<File> getLogFile() => LogWriter.getLogFile();
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
-  static Future<String> getShareFilePath({bool fullHistory = false}) async {
+  static Future<String> getShareFilePath({bool fullHistory = true}) async {
     var stage = 'flushLogs';
     String? sharePath;
     try {
@@ -41,7 +41,9 @@ class LoggerUtils {
       stage = 'resolveLogDirectory';
       final logFile = await getLogFile();
       final dir = logFile.parent;
-      final shareFile = File('${dir.path}/app_log_share.jsonl');
+      // 不同范围使用不同文件，避免后一次导出覆盖系统分享面板仍在读取的文件。
+      final scope = fullHistory ? 'all' : 'session';
+      final shareFile = File('${dir.path}/app_log_${scope}_share.jsonl');
       sharePath = shareFile.path;
       stage = 'writeExportFile';
       await shareFile.writeAsString(
