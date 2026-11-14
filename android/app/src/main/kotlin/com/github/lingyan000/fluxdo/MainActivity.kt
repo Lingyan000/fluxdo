@@ -267,6 +267,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ownsProvidedFlutterEngine = false
     private var interactiveKeyboardChannel: InteractiveKeyboardChannel? = null
+    private var browserSafeAreaChannel: BrowserSafeAreaChannel? = null
 
     // Cookie IPC 专用后台线程。CookieManager 的 getCookie / setCookie /
     // getCookieInfo 可从任意线程调用(Chromium cookie store 在自己的 IO
@@ -315,6 +316,8 @@ class MainActivity : FlutterActivity() {
         splashChannel = null
         interactiveKeyboardChannel?.dispose()
         interactiveKeyboardChannel = null
+        browserSafeAreaChannel?.dispose()
+        browserSafeAreaChannel = null
         MiniAppWindows.detach()
         FairMemoryReceiver.detachEngine(flutterEngine)
         super.cleanUpFlutterEngine(flutterEngine)
@@ -357,6 +360,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        browserSafeAreaChannel?.dispose()
+        browserSafeAreaChannel = BrowserSafeAreaChannel(flutterEngine)
         splashChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SPLASH_CHANNEL).also {
             it.setMethodCallHandler { call, result ->
                 when (call.method) {

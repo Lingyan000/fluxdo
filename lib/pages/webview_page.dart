@@ -18,6 +18,7 @@ import '../services/deep_link_service.dart';
 import '../services/browser_tabs.dart';
 import '../services/browser_navigation.dart';
 import '../services/browser_safe_area.dart';
+import '../services/browser_native_safe_area.dart';
 import '../services/browser_surface_theme.dart';
 import '../services/webview_surface_capture.dart';
 import '../widgets/browser/browser_page_route.dart';
@@ -126,6 +127,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   /// 网页上报的安全区声明；null 时按普通网页由应用留边。
   BrowserPageSafeArea? _pageSafeArea;
   EdgeInsets _viewportUnsafe = EdgeInsets.zero;
+  EdgeInsets? _nativeSafeAreaInsets;
   EdgeInsets? _checkedUnsafe;
   Timer? _safeAreaCheck;
   int _safeAreaMismatches = 0;
@@ -498,7 +500,10 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     );
     final edgeToEdge = BrowserSafeAreaPolicy.edgeToEdge(_pageSafeArea);
     if (edgeToEdge) _scheduleSafeAreaCheck();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncSurfaceSampling());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_syncNativeSafeArea());
+      _syncSurfaceSampling();
+    });
     // 网页声明的底色 → 截图取色 → 浏览器画布色 → 主题色。
     final declared = _pageSafeArea?.background;
     final fallback =
@@ -665,6 +670,10 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                     onWebViewCreated: (controller) async {
                                       _controller = controller;
                                       _session.hasWebView = true;
+                                      if (!mounted) return;
+                                      // 首次加载及保活恢复都先同步，避免网页按整屏 Insets 留边。
+                                      _nativeSafeAreaInsets = null;
+                                      await _syncNativeSafeArea();
                                       if (!mounted) return;
                                       controller.addJavaScriptHandler(
                                         handlerName:
@@ -964,9 +973,35 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     );
   }
 
+  Future<void> _syncNativeSafeArea() async {
+    if (defaultTargetPlatform != TargetPlatform.android ||
+        !mounted ||
+        _controller == null ||
+        _closing ||
+        _minimized) {
+      return;
+    }
+    // Android 插件对保活实例返回 keepAliveId；不读取其内部扩展字段。
+    final keepAliveId = _controller!.getViewId();
+    if (keepAliveId is! String) return;
+    final edgeToEdge = BrowserSafeAreaPolicy.edgeToEdge(_pageSafeArea);
+    final remaining = edgeToEdge ? _viewportUnsafe : EdgeInsets.zero;
+    if (_nativeSafeAreaInsets == remaining) return;
+    _nativeSafeAreaInsets = remaining;
+    final applied = await BrowserNativeSafeArea.apply(
+      keepAliveId: keepAliveId,
+      unsafe: _viewportUnsafe,
+      edgeToEdge: edgeToEdge,
+    );
+    if (!applied && _nativeSafeAreaInsets == remaining) {
+      _nativeSafeAreaInsets = null;
+    }
+  }
+
   void _applyPageSafeArea(Object? raw) {
     final page = BrowserPageSafeArea.tryParse(raw);
     if (page == null || !mounted || page == _pageSafeArea) return;
+    if (page.env != _pageSafeArea?.env) _checkedUnsafe = null;
     _session.safeArea = page;
     setState(() => _pageSafeArea = page);
   }
@@ -1052,7 +1087,6 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   /// 铺满模式下，遮挡一变就实测一次网页的 `env()`，对不上则全进程退回留边。
   void _scheduleSafeAreaCheck() {
     if (BrowserSafeAreaPolicy.nativeEnvReliable != null ||
-        _viewportUnsafe == EdgeInsets.zero ||
         _viewportUnsafe == _checkedUnsafe) {
       return;
     }

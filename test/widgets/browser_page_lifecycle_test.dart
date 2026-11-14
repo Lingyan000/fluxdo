@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,17 @@ import '../support/browser_test_platform.dart';
 
 void main() {
   testWidgets('真实浏览器路由收起与恢复共用 token、不重载，并在显式关闭后释放', (tester) async {
+    const safeAreaChannel = MethodChannel('com.fluxdo/browser_safe_area');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      safeAreaChannel,
+      (_) async => true,
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        safeAreaChannel,
+        null,
+      );
+    });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.resetPhysicalSize);

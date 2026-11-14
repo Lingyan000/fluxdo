@@ -227,6 +227,15 @@ class _Harness {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const safeAreaChannel = MethodChannel('com.fluxdo/browser_safe_area');
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(safeAreaChannel, (_) async => true);
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(safeAreaChannel, null);
+  });
   setUpAll(() async {
     final directory = await Directory(
       '.artifacts/browser-experience/test-cookies',
@@ -714,6 +723,84 @@ void main() {
         tester.getRect(find.byKey(h.nativeBoundary));
 
     tearDown(BrowserSafeAreaPolicy.resetForTest);
+
+    testWidgets('原生安全区随旋转更新，恢复时重新同步同一个保活实例', (tester) async {
+      const channel = MethodChannel('com.fluxdo/browser_safe_area');
+      final calls = <Map<dynamic, dynamic>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (call) async {
+          calls.add(call.arguments as Map);
+          return true;
+        },
+      );
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      expect(calls.last['left'], isTrue);
+      send(h, report(cover: true, env: [47, 0, 47, 0]));
+      await tester.pump();
+      expect(calls.last['left'], isFalse);
+      expect(calls.last['right'], isFalse);
+      expect(calls.last['top'], isTrue);
+      expect(calls.last['bottom'], isTrue);
+
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await tester.pumpAndSettle();
+      expect(calls.last['left'], isTrue);
+      expect(calls.last['right'], isTrue);
+      final keepAliveId = calls.last['keepAliveId'];
+      await tester.tap(find.byTooltip('收起到底部'));
+      await tester.pumpAndSettle();
+      final session = (await h.tabs.take(h.tabs.tabs.single))!;
+      final beforeRestore = calls.length;
+      WebViewPage.restore(h.navigator.currentState!, session);
+      await tester.pumpAndSettle();
+      h.callbacks.onWebViewCreated!(h.platform.controller.wrapped);
+      await tester.pumpAndSettle();
+      expect(calls.length, greaterThan(beforeRestore));
+      expect(calls.last['keepAliveId'], keepAliveId);
+      expect(keepAliveId, h.platform.controller.getViewId());
+      await h.dispose(tester);
+    });
+
+    testWidgets('工具栏已避让时仍检查网页错误的上下 env', (tester) async {
+      final h = _Harness();
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await h.mount(tester);
+      expect(viewport(tester).unsafe, EdgeInsets.zero);
+      final broken = report(cover: true, env: [0, 44, 0, 24]);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? broken : null;
+      send(h, broken);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isFalse);
+      await h.dispose(tester);
+    });
+
+    testWidgets('全零样本之后网页上报非零 env 会重新检查', (tester) async {
+      final h = _Harness();
+      await h.mount(tester);
+      var measured = report(cover: true);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? measured : null;
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isNull);
+      measured = report(cover: true, env: [0, 44, 0, 24]);
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isFalse);
+      await h.dispose(tester);
+    });
 
     testWidgets('普通网页让出刘海，cover 网页铺满，实测 env 一致后保持', (tester) async {
       final h = _Harness();

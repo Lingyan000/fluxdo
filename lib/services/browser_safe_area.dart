@@ -97,9 +97,9 @@ abstract final class BrowserSafeAreaPolicy {
   static bool edgeToEdge(BrowserPageSafeArea? page) =>
       page?.cover == true && _nativeEnvReliable != false;
 
-  /// 比较应用算出的遮挡与网页实测的 `env()`；没有被遮挡的边时无法判断，返回 null。
+  /// 两边均为零时无法证明引擎支持安全区；预期为零却实测非零仍是重复避让。
   static bool? matches(EdgeInsets expected, EdgeInsets observed) {
-    if (expected == EdgeInsets.zero) return null;
+    if (expected == EdgeInsets.zero && observed == EdgeInsets.zero) return null;
     bool near(double a, double b) => (a - b).abs() <= 1.5;
     return near(expected.left, observed.left) &&
         near(expected.top, observed.top) &&

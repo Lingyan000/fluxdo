@@ -56,10 +56,17 @@ void main() {
     );
   });
 
-  test('只有存在遮挡时才能判断原生 env 是否可靠', () {
+  test('全零样本不证明可靠，但没有遮挡时的非零 env 必须识别', () {
     expect(
       BrowserSafeAreaPolicy.matches(EdgeInsets.zero, EdgeInsets.zero),
       isNull,
+    );
+    expect(
+      BrowserSafeAreaPolicy.matches(
+        EdgeInsets.zero,
+        const EdgeInsets.only(top: 44, bottom: 24),
+      ),
+      isFalse,
     );
     const expected = EdgeInsets.fromLTRB(47, 0, 47, 0);
     expect(
