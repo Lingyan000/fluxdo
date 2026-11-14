@@ -1,6 +1,7 @@
 import '../theme/app_colors.dart';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,9 @@ import '../providers/core_providers.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/trust_level_skeleton.dart';
 import '../services/network/discourse_dio.dart';
+import '../services/network/webview/webview_adapter_settings_service.dart';
+import '../services/log/log_writer.dart';
+import '../widgets/browser/browser_document_loader.dart';
 import '../l10n/s.dart';
 
 class TrustLevelRequirementsPage extends ConsumerStatefulWidget {
@@ -29,6 +33,10 @@ class _TrustLevelRequirementsPageState
   Object? _error;
   StackTrace? _errorStack;
   TrustLevelData? _data;
+  bool _useBrowser = false;
+  int _requestId = 0;
+  CancelToken? _cancelToken;
+  static const _documentUrl = 'https://connect.linux.do/';
 
   @override
   void initState() {
@@ -37,18 +45,36 @@ class _TrustLevelRequirementsPageState
   }
 
   Future<void> _fetchData() async {
+    final requestId = ++_requestId;
+    _cancelToken?.cancel();
     setState(() {
       _isLoading = true;
       _error = null;
       _errorStack = null;
+      _useBrowser = WebViewAdapterSettingsService.instance.effectiveEnabled;
     });
+    LogWriter.instance.write({
+      'type': 'network',
+      'event': 'trust_level_transport_selected',
+      'transport': _useBrowser ? 'browser_navigation' : 'dio',
+      'persistentWebViewEnabled':
+          WebViewAdapterSettingsService.instance.persistentEnabled,
+      'sessionFallbackEnabled':
+          WebViewAdapterSettingsService.instance.sessionFallbackEnabled,
+    });
+    if (_useBrowser) return;
 
+    final dio = DiscourseDio.create();
+    final cancelToken = _cancelToken = CancelToken();
     try {
-      final dio = DiscourseDio.create();
-      final response = await dio.get('https://connect.linux.do/');
+      final response = await dio.get<String>(
+        _documentUrl,
+        cancelToken: cancelToken,
+      );
+      if (!mounted || requestId != _requestId) return;
 
       if (response.statusCode == 200) {
-        await _parseHtml(response.data);
+        await _parseHtml(response.data ?? '', requestId);
       } else {
         if (!mounted) return;
         setState(() {
@@ -59,15 +85,25 @@ class _TrustLevelRequirementsPageState
         });
       }
     } catch (e, s) {
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _error = e;
         _errorStack = s;
         _isLoading = false;
       });
+    } finally {
+      dio.close(force: true);
     }
   }
 
-  Future<void> _parseHtml(String htmlContent) async {
+  @override
+  void dispose() {
+    _requestId++;
+    _cancelToken?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _parseHtml(String htmlContent, int requestId) async {
     try {
       final document = html_parser.parse(htmlContent);
 
@@ -78,7 +114,7 @@ class _TrustLevelRequirementsPageState
 
       final emptyState = await _parseEmptyState(cardDiv);
       if (emptyState != null) {
-        if (!mounted) return;
+        if (!mounted || requestId != _requestId) return;
         setState(() {
           _data = emptyState;
           _isLoading = false;
@@ -193,7 +229,7 @@ class _TrustLevelRequirementsPageState
       final statusText = statusEl?.text.trim() ?? '';
       final isStatusMet = statusEl?.classes.contains('status-met') ?? false;
 
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _data = TrustLevelData(
           title: title,
@@ -211,7 +247,7 @@ class _TrustLevelRequirementsPageState
         _isLoading = false;
       });
     } catch (e, s) {
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _error = e;
         _errorStack = s;
@@ -262,7 +298,7 @@ class _TrustLevelRequirementsPageState
     try {
       return await ref.read(userSummaryProvider.future);
     } catch (_) {
-      return ref.read(userSummaryProvider).value;
+      return mounted ? ref.read(userSummaryProvider).value : null;
     }
   }
 
@@ -424,6 +460,27 @@ class _TrustLevelRequirementsPageState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    if (_isLoading && _useBrowser) {
+      final requestId = _requestId;
+      return Scaffold(
+        appBar: AppBar(title: Text(context.l10n.trustLevel_appBarTitle)),
+        body: SafeArea(
+          child: BrowserDocumentLoader(
+            key: ValueKey(requestId),
+            url: _documentUrl,
+            onDocument: (html) => _parseHtml(html, requestId),
+            onError: (error, stack) {
+              if (!mounted || requestId != _requestId) return;
+              setState(() {
+                _error = error;
+                _errorStack = stack;
+                _isLoading = false;
+              });
+            },
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       body: _isLoading

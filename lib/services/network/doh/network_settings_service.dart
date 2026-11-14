@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../constants.dart';
 import '../../network_logger.dart';
+import '../../log/log_writer.dart';
 import '../core/net_core_service.dart';
 import '../doh_proxy/cert_preference_service.dart';
 import '../doh_proxy/per_device_cert_service.dart';
@@ -252,8 +253,17 @@ class NetworkSettingsService {
     if (!await prefs.setString(fingerprintPresetKey, selected)) {
       throw StateError('保存网络模板失败');
     }
+    final previous = current.fingerprintPreset;
     FingerprintTemplateService.instance.reset();
     notifier.value = current.copyWith(fingerprintPreset: selected);
+    LogWriter.instance.write({
+      'type': 'settings',
+      'event': 'network_setting_changed',
+      'setting': fingerprintPresetKey,
+      'previousValue': previous,
+      'value': selected,
+      'persistent': true,
+    });
     await _applyProxyState();
     _touch();
   }

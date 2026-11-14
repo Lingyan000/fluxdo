@@ -1169,6 +1169,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
       controller: _controller,
       cookieNames: const {'cf_clearance'},
       trusted: true,
+      throwOnError: true,
       acceptValues: freshClearance != null && freshClearance.isNotEmpty
           ? {'cf_clearance': freshClearance}
           : null,
@@ -1917,12 +1918,38 @@ class _CfChallengePageState extends State<CfChallengePage> {
     String? clearance;
     String? jarClearance;
     Object? failure;
+    var candidateCount = 0;
+    var freshCount = 0;
     try {
-      clearance = await _readCookieValue('cf_clearance');
-      await _syncLiveCookiesToCookieJar(
-        freshClearance: _isFreshClearance(clearance) ? clearance : null,
-      );
+      final values = await BoundarySyncService.instance
+          .readCookieValuesFromWebView(
+            name: 'cf_clearance',
+            currentUrl: widget.verifyUrl,
+            controller: _controller,
+          );
+      candidateCount = values.length;
+      final freshValues = values.where(_isFreshClearance).toSet();
+      freshCount = freshValues.length;
+      // getCookie 可能只返回残留分区值。唯一新值直接选中；存在多个新值时
+      // 保留浏览器单值接口的选择，但必须确认它属于本轮，不能选回旧副本。
+      String? confirmed;
+      if (freshValues.length == 1) {
+        confirmed = freshValues.single;
+      } else if (freshValues.length > 1) {
+        final live = await _readCookieValue('cf_clearance');
+        final normalized = CookieValueCodec.decode(live ?? '');
+        if (!freshValues.contains(normalized)) {
+          throw StateError('本轮出现多个新的 cf_clearance，浏览器未返回其中的值');
+        }
+        confirmed = normalized;
+      }
+      clearance = confirmed ?? values.singleOrNull;
+      await _syncLiveCookiesToCookieJar(freshClearance: confirmed);
       jarClearance = await CookieJarService().getCfClearance();
+      if (confirmed != null &&
+          CookieValueCodec.decode(jarClearance ?? '') != confirmed) {
+        throw StateError('本轮 cf_clearance 未同步到 CookieJar');
+      }
     } catch (e) {
       failure = e;
       debugPrint('[CfChallenge] 源站已放行，Cookie 同步未完成: $e');
@@ -1941,6 +1968,8 @@ class _CfChallengePageState extends State<CfChallengePage> {
         'cfNetworkContext': networkContext,
         'cookieSyncDurationMs': timer.elapsedMilliseconds,
         'cookieSyncCompleted': failure == null,
+        'clearanceCandidateCount': candidateCount,
+        'freshClearanceCount': freshCount,
         'webViewCfClearanceHash': CookieLogger.valueHash(clearance),
         'jarCfClearanceHash': CookieLogger.valueHash(jarClearance),
         if (failure != null) 'errorType': failure.runtimeType.toString(),

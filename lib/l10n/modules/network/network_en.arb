@@ -3,7 +3,7 @@
   "engineStatus_reasonCore": "Sending with the browser fingerprint",
   "engineStatus_reasonCoreWarmingUp": "Sampling the browser fingerprint",
   "engineStatus_reasonFallback": "Network core unavailable, using the emergency path",
-  "engineStatus_webviewSplit": "Main-site API requests use WebView, others use {engine}",
+  "engineStatus_webviewSplit": "Main-site APIs, images and trust-level queries use WebView; other requests use {engine}",
   "@engineStatus_webviewSplit": {
     "placeholders": {
       "engine": {
@@ -81,9 +81,9 @@
   "network_serverUnavailableRetry": "Server temporarily unavailable, please retry",
   "network_unauthorized": "Not logged in or session expired",
   "network_unprocessable": "Request cannot be processed",
-  "webviewAdapter_disabledDesc": "Use browser engine for requests, may improve login stability",
-  "webviewAdapter_enabledDesc": "Main site API requests sent via browser engine",
-  "webviewAdapter_hint": "Only main site API requests go through WebView; images and push notifications are not affected",
+  "webviewAdapter_disabledDesc": "Use the device browser engine for main-site requests and trust-level queries",
+  "webviewAdapter_enabledDesc": "Main-site APIs, images and trust-level queries use the browser",
+  "webviewAdapter_hint": "Trust-level sign-in redirects stay in the browser. MessageBus, other domains and unsupported requests still use the network core or fallback transport.",
   "webviewAdapter_title": "WebView Network Engine",
   "networkSettings_upload": "File uploads",
   "networkSettings_forceDisableMultipart": "Force disable multipart uploads",

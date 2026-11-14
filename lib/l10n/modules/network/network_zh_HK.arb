@@ -3,7 +3,7 @@
   "engineStatus_reasonCore": "按瀏覽器指紋發送",
   "engineStatus_reasonCoreWarmingUp": "正在採集瀏覽器指紋",
   "engineStatus_reasonFallback": "網絡核心不可用，已切換應急路徑",
-  "engineStatus_webviewSplit": "主站 API 請求走 WebView，其餘請求走{engine}",
+  "engineStatus_webviewSplit": "主站 API、圖片及信任等級查詢使用 WebView，其餘請求使用{engine}",
   "@engineStatus_webviewSplit": {
     "placeholders": {
       "engine": {
@@ -105,6 +105,10 @@
   "networkSettings_upload": "檔案上傳",
   "networkSettings_forceDisableMultipart": "強制關閉分片上傳",
   "networkSettings_forceDisableMultipartDescription": "開啟後，所有檔案均使用一般上傳，忽略站點分片設定。伺服器分片異常時可開啟，對下一次上傳生效。",
+  "webviewAdapter_disabledDesc": "使用裝置瀏覽器核心處理主站請求和信任等級查詢",
+  "webviewAdapter_enabledDesc": "主站 API、主站圖片及信任等級查詢透過瀏覽器傳送",
+  "webviewAdapter_hint": "信任等級查詢的登入跳轉全程使用瀏覽器。訊息推送、其他網域及不支援的請求仍使用網絡核心或備援通道。",
+  "webviewAdapter_title": "WebView 網絡引擎",
   "fingerprintPreset_title": "指紋範本",
   "fingerprintPreset_auto": "自動",
   "fingerprintPreset_autoDescription": "優先使用目前裝置的瀏覽器取樣，取樣完成前使用匹配的預設範本。",

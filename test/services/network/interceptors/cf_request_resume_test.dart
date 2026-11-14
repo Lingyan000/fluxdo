@@ -32,6 +32,7 @@ import '../../../support/cf_test_platform.dart';
 
 class _RecordingAdapter implements HttpClientAdapter {
   final requests = <({String path, String? cookie})>[];
+  final firstResponseReady = Completer<void>();
 
   @override
   Future<ResponseBody> fetch(
@@ -48,6 +49,7 @@ class _RecordingAdapter implements HttpClientAdapter {
     setRequestAdapterLogName(options, 'core');
     options.extra['coreRequestId'] = requests.length;
     final challenge = requests.length == 1;
+    if (challenge) await firstResponseReady.future;
     final response = ResponseBody.fromString(
       challenge ? '<html>challenge</html>' : '{}',
       challenge ? 403 : 200,
@@ -122,7 +124,9 @@ void main() {
     addTearDown(() => vpn.vpnActiveNotifier.value = previousVpnState);
     final adapter = _RecordingAdapter();
     final oldMax = RequestSchedulerConfig.maxPerWindow;
-    RequestSchedulerConfig.maxPerWindow = 100;
+    final oldSeconds = RequestSchedulerConfig.windowSeconds;
+    RequestSchedulerConfig.maxPerWindow = 1;
+    RequestSchedulerConfig.windowSeconds = 1;
     final dio = Dio(BaseOptions(baseUrl: 'https://linux.do'))
       ..httpClientAdapter = adapter;
     dio.interceptors.addAll([
@@ -134,6 +138,7 @@ void main() {
     addTearDown(() {
       dio.close(force: true);
       RequestSchedulerConfig.maxPerWindow = oldMax;
+      RequestSchedulerConfig.windowSeconds = oldSeconds;
     });
 
     final first = dio.get<dynamic>(
@@ -141,6 +146,12 @@ void main() {
       queryParameters: {'token': 'query-secret'},
       options: Options(extra: {'isSilent': true}),
     );
+    await tester.pump(const Duration(milliseconds: 10));
+    final queuedBeforeChallenge = dio.get<dynamic>('/queued-before-challenge');
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(adapter.requests.length, 1);
+    expect(cf.isVerifying, isFalse);
+    adapter.firstResponseReady.complete();
     for (var i = 0; i < 30 && platform.webView == null; i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
@@ -152,8 +163,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     expect(adapter.requests.length, 1);
 
-    final pendingCookie = Completer<Cookie?>();
-    platform.cookies.readValue = (_) => pendingCookie.future;
+    final pendingCookie = Completer<List<Cookie>>();
+    platform.cookies.readSnapshot = () => pendingCookie.future;
     platform.cookies.values = [cfTestCookie('fresh-clearance')];
     platform.webView!.params.onReceivedHttpError!(
       platform.controller.wrapped,
@@ -193,9 +204,14 @@ void main() {
     final beforeCookieSync = [...adapter.requests];
 
     var requestsCompleted = false;
-    final requests = Future.wait([first, duringVerification, afterClose])
-        .then((_) => requestsCompleted = true);
-    pendingCookie.complete(cfTestCookie('fresh-clearance'));
+    RequestSchedulerConfig.maxPerWindow = 100;
+    final requests = Future.wait([
+      first,
+      queuedBeforeChallenge,
+      duringVerification,
+      afterClose,
+    ]).then((_) => requestsCompleted = true);
+    pendingCookie.complete([cfTestCookie('fresh-clearance')]);
     for (var i = 0; i < 30 && !requestsCompleted; i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
@@ -293,6 +309,7 @@ void main() {
       unorderedEquals([
         '/first',
         '/first',
+        '/queued-before-challenge',
         '/during-verification',
         '/after-close',
       ]),

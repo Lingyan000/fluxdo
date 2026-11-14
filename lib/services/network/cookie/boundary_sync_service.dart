@@ -40,16 +40,33 @@ class BoundarySyncService {
   Future<Set<String>> readCookieValuesFromWebView({
     required String name,
     String? currentUrl,
+    InAppWebViewController? controller,
   }) async {
-    final cookies = await _strategy.readCookiesFromWebView(
-      _jar.webViewCookieManager,
-      currentUrl ?? AppConstants.baseUrl,
-    );
-    return {
-      for (final cookie in cookies)
-        if (cookie.name == name && cookie.value.isNotEmpty)
-          CookieValueCodec.decode(cookie.value),
-    };
+    try {
+      final cookies = await _strategy.readCookiesFromWebView(
+        _jar.webViewCookieManager,
+        currentUrl ?? AppConstants.baseUrl,
+      );
+      final values = {
+        for (final cookie in cookies)
+          if (cookie.name == name && cookie.value.isNotEmpty)
+            CookieValueCodec.decode(cookie.value),
+      };
+      // 优先读取共享存储，避免验证页关闭后继续依赖已销毁的控制器。
+      if (values.isNotEmpty || !io.Platform.isWindows || controller == null) {
+        return values;
+      }
+    } catch (_) {
+      if (!io.Platform.isWindows || controller == null) rethrow;
+    }
+    if (io.Platform.isWindows && controller != null) {
+      return _jar.readCookieValuesFromController(
+        controller,
+        name,
+        currentUrl: currentUrl,
+      );
+    }
+    return {};
   }
 
   /// 从 WebView 读取一个 cookie 值，但不写入 CookieJar。
@@ -106,6 +123,7 @@ class BoundarySyncService {
   /// [acceptValues] cookie 名 → 只接受的值；用于 challenge 场景按确认的 fresh 值
   ///   过滤，排除 WebView 中可能残留的旧变体。与 trusted 同用时，确认的
   ///   cf_clearance 可替换验证期间被普通同步抢先写回的副本。
+  /// [throwOnError] 关键同步保留失败信息，避免完成日志把异常误报为成功。
   Future<void> syncFromWebView({
     String? currentUrl,
     InAppWebViewController? controller,
@@ -115,6 +133,7 @@ class BoundarySyncService {
     int? requestGeneration,
     bool trusted = false,
     Map<String, String>? acceptValues,
+    bool throwOnError = false,
   }) => _syncLock.synchronized(
     () => _syncFromWebView(
       currentUrl: currentUrl,
@@ -125,6 +144,7 @@ class BoundarySyncService {
       requestGeneration: requestGeneration,
       trusted: trusted,
       acceptValues: acceptValues,
+      throwOnError: throwOnError,
     ),
   );
 
@@ -137,6 +157,7 @@ class BoundarySyncService {
     int? requestGeneration,
     bool trusted = false,
     Map<String, String>? acceptValues,
+    bool throwOnError = false,
   }) async {
     final url = currentUrl ?? AppConstants.baseUrl;
     final uri = Uri.parse(url);
@@ -160,6 +181,7 @@ class BoundarySyncService {
           excludeCookieNames: excludeCookieNames,
           trusted: trusted,
           acceptValues: acceptValues,
+          throwOnError: throwOnError,
           shouldSyncCookie: (name, value) => _shouldSyncCookie(
             name,
             value,
@@ -203,7 +225,11 @@ class BoundarySyncService {
         }
         // challenge 场景：只接受确认的 fresh 值，排除 WebView 残留的旧变体。
         final onlyValue = acceptValues?[wc.name];
-        if (onlyValue != null && value != onlyValue) continue;
+        if (onlyValue != null &&
+            CookieValueCodec.decode(value) !=
+                CookieValueCodec.decode(onlyValue)) {
+          continue;
+        }
 
         cookieGroups.putIfAbsent(wc.name, () => <Cookie>[]).add(wc);
       }
@@ -406,6 +432,7 @@ class BoundarySyncService {
       );
     } catch (e) {
       CookieLogger.error(operation: 'boundary_sync', error: e.toString());
+      if (throwOnError) rethrow;
     }
   }
 

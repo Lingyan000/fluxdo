@@ -16,6 +16,7 @@ import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/uploads/upload_settings.dart';
 import '../services/cf_challenge_service.dart';
+import '../services/log/log_writer.dart';
 import '../services/crash_context_reporter.dart';
 import '../services/emoji_handler.dart';
 import '../services/render_backend_service.dart';
@@ -946,9 +947,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   }
 
   Future<void> setAutoCfChallenge(bool enabled) async {
+    if (state.autoCfChallenge == enabled) return;
+    if (!await _prefs.setBool(_autoCfChallengeKey, enabled)) {
+      throw StateError('保存自动过盾设置失败');
+    }
+    final previous = state.autoCfChallenge;
     state = state.copyWith(autoCfChallenge: enabled);
-    await _prefs.setBool(_autoCfChallengeKey, enabled);
     CfChallengeService().autoVerifyEnabled = enabled;
+    LogWriter.instance.write({
+      'type': 'settings',
+      'event': 'network_setting_changed',
+      'setting': _autoCfChallengeKey,
+      'previousValue': previous,
+      'value': enabled,
+      'persistent': true,
+    });
   }
 
   Future<void> setExpandRelatedLinks(bool enabled) async {

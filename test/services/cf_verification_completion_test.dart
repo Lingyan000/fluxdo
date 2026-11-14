@@ -139,6 +139,49 @@ void main() {
     await unmount(tester);
   });
 
+  testWidgets('单值读取命中旧副本时，完整快照仍选本轮新值而非更晚过期的旧值', (tester) async {
+    final results = <bool>[];
+    await mount(tester, results, oldWebViewValues: {'old'});
+    platform.cookies.singleValue = 'old';
+    platform.cookies.values = [
+      Cookie(
+        name: 'cf_clearance',
+        value: 'old',
+        domain: '.linux.do',
+        path: '/',
+        isSecure: true,
+        isHttpOnly: true,
+        expiresDate: DateTime.now()
+            .add(const Duration(days: 30))
+            .millisecondsSinceEpoch,
+      ),
+      cfTestCookie('fresh'),
+    ];
+
+    source404();
+    await tester.pump();
+    await CfChallengeService().waitForCompletionCookieSync();
+
+    expect(results, [true]);
+    expect(await jar.getCfClearance(), 'fresh');
+    await unmount(tester);
+  });
+
+  testWidgets('多个本轮新值不按过期时间猜测，仍允许源站无盾页面结束', (tester) async {
+    final results = <bool>[];
+    await mount(tester, results);
+    platform.cookies.values = [cfTestCookie('fresh-a'), cfTestCookie('fresh-b')];
+    platform.cookies.singleValue = 'old';
+
+    source404();
+    await tester.pump();
+    await CfChallengeService().waitForCompletionCookieSync();
+
+    expect(results, [true]);
+    expect(await jar.getCfClearance(), isNull);
+    await unmount(tester);
+  });
+
   testWidgets('Cookie 同步没有更新 jar，也不改变源站已放行的结果', (tester) async {
     await jar.cookieJar.saveFromResponse(Uri.parse(verifyUrl), [
       io.Cookie('cf_clearance', 'other')
