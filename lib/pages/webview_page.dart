@@ -126,11 +126,14 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
   /// 网页上报的安全区声明；null 时按普通网页由应用留边。
   BrowserPageSafeArea? _pageSafeArea;
+  final _safeAreaPolicy = BrowserSafeAreaPolicy();
+  BrowserViewportGeometry? _viewportGeometry;
   EdgeInsets _viewportUnsafe = EdgeInsets.zero;
-  EdgeInsets? _nativeSafeAreaInsets;
   EdgeInsets? _checkedUnsafe;
   Timer? _safeAreaCheck;
   int _safeAreaMismatches = 0;
+  int _safeAreaRevision = 0;
+  bool _fullscreen = false;
 
   /// 网页没有声明底色时，从截图边缘取色填充留白，与小程序共用调度。
   final _surfaceTheme = BrowserSurfaceTheme();
@@ -208,6 +211,8 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
   void _routeStatusChanged(AnimationStatus status) {
     if (status == AnimationStatus.completed) {
+      _resetSafeAreaCheck();
+      if (mounted) setState(() {});
       _revealRestoredSnapshot();
       _schedulePreview();
     }
@@ -492,16 +497,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         (list) => list.any((e) => e.url == _currentUrl),
       ),
     );
-    // 顶栏常驻；底栏在编辑地址时收起。以后栏可隐藏时只需改这里的可见状态。
-    _viewportUnsafe = browserViewportUnsafeInsets(
-      MediaQuery.paddingOf(context),
-      topChrome: true,
-      bottomChrome: !_addressEditing,
-    );
-    final edgeToEdge = BrowserSafeAreaPolicy.edgeToEdge(_pageSafeArea);
+    final edgeToEdge = _safeAreaPolicy.edgeToEdge(_pageSafeArea);
     if (edgeToEdge) _scheduleSafeAreaCheck();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_syncNativeSafeArea());
       _syncSurfaceSampling();
     });
     // 网页声明的底色 → 截图取色 → 浏览器画布色 → 主题色。
@@ -621,6 +619,12 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                     fit: StackFit.expand,
                     children: [
                       BrowserWebViewport(
+                        window: Offset.zero & MediaQuery.sizeOf(context),
+                        systemPadding: MediaQuery.paddingOf(context),
+                        observeGeometry: !_fullscreen && !_minimizing &&
+                            !_addressEditing && !_closing &&
+                            _routeAnimation?.status == AnimationStatus.completed,
+                        onGeometryChanged: _viewportGeometryChanged,
                         unsafe: _viewportUnsafe,
                         edgeToEdge: edgeToEdge,
                         top: letterboxTop,
@@ -672,7 +676,6 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                       _session.hasWebView = true;
                                       if (!mounted) return;
                                       // 首次加载及保活恢复都先同步，避免网页按整屏 Insets 留边。
-                                      _nativeSafeAreaInsets = null;
                                       await _syncNativeSafeArea();
                                       if (!mounted) return;
                                       controller.addJavaScriptHandler(
@@ -737,8 +740,13 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                             });
                                       }
                                     },
+                                    onEnterFullscreen: (_) => _setFullscreen(true),
+                                    onExitFullscreen: (_) => _setFullscreen(false),
                                     onLoadStart: (controller, url) {
                                       if (!mounted) return;
+                                      _resetSafeAreaCheck();
+                                      _pageSafeArea = null;
+                                      _session.safeArea = null;
                                       _invalidatePreview();
                                       _watchSearch(url?.toString() ?? '');
                                       setState(() {
@@ -984,24 +992,58 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     // Android 插件对保活实例返回 keepAliveId；不读取其内部扩展字段。
     final keepAliveId = _controller!.getViewId();
     if (keepAliveId is! String) return;
-    final edgeToEdge = BrowserSafeAreaPolicy.edgeToEdge(_pageSafeArea);
-    final remaining = edgeToEdge ? _viewportUnsafe : EdgeInsets.zero;
-    if (_nativeSafeAreaInsets == remaining) return;
-    _nativeSafeAreaInsets = remaining;
-    final applied = await BrowserNativeSafeArea.apply(
+    await BrowserNativeSafeArea.attach(
       keepAliveId: keepAliveId,
-      unsafe: _viewportUnsafe,
-      edgeToEdge: edgeToEdge,
     );
-    if (!applied && _nativeSafeAreaInsets == remaining) {
-      _nativeSafeAreaInsets = null;
+  }
+
+  void _resetSafeAreaCheck() {
+    _safeAreaRevision++;
+    _safeAreaCheck?.cancel();
+    _checkedUnsafe = null;
+    _safeAreaMismatches = 0;
+    _safeAreaPolicy.reset();
+  }
+
+  void _viewportGeometryChanged(BrowserViewportGeometry geometry) {
+    if (!mounted || _fullscreen || _minimizing || _closing ||
+        geometry == _viewportGeometry) {
+      return;
+    }
+    setState(() {
+      _viewportGeometry = geometry;
+      _viewportUnsafe = geometry.unsafe;
+      _resetSafeAreaCheck();
+    });
+  }
+
+  void _setFullscreen(bool fullscreen) {
+    if (!mounted || _fullscreen == fullscreen) return;
+    setState(() {
+      _fullscreen = fullscreen;
+      _resetSafeAreaCheck();
+    });
+    // 插件的全屏视图直接挂在窗口下；原生观察器此时停止套用普通 WebView 边界。
+    unawaited(_syncNativeSafeArea());
+    if (!fullscreen) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _fullscreen) return;
+        unawaited(_controller?.evaluateJavascript(
+          source: BrowserSafeAreaProbe.reportSource,
+        ).catchError((_) => null));
+      });
     }
   }
 
   void _applyPageSafeArea(Object? raw) {
     final page = BrowserPageSafeArea.tryParse(raw);
     if (page == null || !mounted || page == _pageSafeArea) return;
-    if (page.env != _pageSafeArea?.env) _checkedUnsafe = null;
+    if (page.cover != _pageSafeArea?.cover) _resetSafeAreaCheck();
+    if (page.env != _pageSafeArea?.env) {
+      _safeAreaRevision++;
+      _safeAreaCheck?.cancel();
+      _checkedUnsafe = null;
+    }
     _session.safeArea = page;
     setState(() => _pageSafeArea = page);
   }
@@ -1020,7 +1062,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
           page != null &&
           page.background == null &&
           _viewportUnsafe != EdgeInsets.zero &&
-          !BrowserSafeAreaPolicy.edgeToEdge(page) &&
+          !_safeAreaPolicy.edgeToEdge(page) &&
           _canCaptureSurface,
       document: (_session, _navigationRevision),
       bounds: render is RenderBox && render.hasSize
@@ -1084,9 +1126,12 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     }
   }
 
-  /// 铺满模式下，遮挡一变就实测一次网页的 `env()`，对不上则全进程退回留边。
+  /// 等布局稳定后再比较；失败只影响当前页面的当前布局。
   void _scheduleSafeAreaCheck() {
-    if (BrowserSafeAreaPolicy.nativeEnvReliable != null ||
+    if (_fullscreen || _minimizing || _closing || _addressEditing ||
+        _routeAnimation?.status != AnimationStatus.completed ||
+        _viewportGeometry == null ||
+        _safeAreaPolicy.nativeEnvReliable == false ||
         _viewportUnsafe == _checkedUnsafe) {
       return;
     }
@@ -1103,11 +1148,14 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
   Future<void> _checkNativeSafeArea() async {
     final controller = _controller;
     final expected = _viewportUnsafe;
+    final revision = _safeAreaRevision;
     if (!mounted ||
         controller == null ||
         _minimizing ||
         _closing ||
-        !BrowserSafeAreaPolicy.edgeToEdge(_pageSafeArea)) {
+        _addressEditing ||
+        _fullscreen ||
+        !_safeAreaPolicy.edgeToEdge(_pageSafeArea)) {
       return;
     }
     Object? raw;
@@ -1121,14 +1169,16 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
     final page = BrowserPageSafeArea.tryParse(raw);
     if (!mounted ||
         page == null ||
+        revision != _safeAreaRevision || _fullscreen || _minimizing ||
+        _closing || _addressEditing ||
         expected != _viewportUnsafe ||
-        BrowserSafeAreaPolicy.nativeEnvReliable != null) {
+        _safeAreaPolicy.nativeEnvReliable == false) {
       return;
     }
     final matches = BrowserSafeAreaPolicy.matches(expected, page.env);
     if (matches == null) return;
     if (matches) {
-      BrowserSafeAreaPolicy.record(reliable: true);
+      _safeAreaPolicy.record(reliable: true);
       return;
     }
     // 连续两次对不上才下结论，排除原生视图尚未改完尺寸的窗口。
@@ -1143,13 +1193,14 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       'WEBVIEW',
       'safe-area env mismatch expected=$expected observed=${page.env}',
     );
-    BrowserSafeAreaPolicy.record(reliable: false);
+    _safeAreaPolicy.record(reliable: false);
     setState(() {});
   }
 
   /// 就地展开地址栏，选中完整网址并显示本地建议。
   void _beginAddressEditing() {
     if (_closing || _minimizing || _addressEditing) return;
+    _resetSafeAreaCheck();
     if (_finding) _endFind();
     _addressController.value = TextEditingValue(
       text: _currentUrl,

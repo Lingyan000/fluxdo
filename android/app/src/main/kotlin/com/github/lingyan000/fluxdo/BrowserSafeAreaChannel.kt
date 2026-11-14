@@ -1,101 +1,120 @@
 package com.github.lingyan000.fluxdo
 
+import android.graphics.Rect
 import android.os.Build
 import android.view.View
-import androidx.core.graphics.Insets
+import android.view.ViewTreeObserver
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.pichillilorenzo.flutter_inappwebview_android.InAppWebViewFlutterPlugin
+import com.pichillilorenzo.flutter_inappwebview_android.webview.in_app_webview.InAppWebView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
-/** 浏览器原生容器只向网页下发尚未由 Flutter 承担的安全区，保留 IME。 */
+/** 原生视图自身观察几何变化，不依赖工具栏显隐开关或逐帧 Dart 通道消息。 */
 class BrowserSafeAreaChannel(private val engine: FlutterEngine) {
     private val channel = MethodChannel(engine.dartExecutor.binaryMessenger, "com.fluxdo/browser_safe_area")
-    // 不持有保活实例；标签页关闭后，插件仍可正常回收整个视图树。
-    private val containers = WeakHashMap<View, Unit>()
+    private val bindings = WeakHashMap<View, BrowserInsetsBinding>()
 
     init {
         channel.setMethodCallHandler { call, result ->
-            if (call.method != "setHandledEdges") {
+            if (call.method != "attach") {
                 result.notImplemented()
                 return@setMethodCallHandler
             }
-            val keepAliveId = call.argument<String>("keepAliveId")
-            val left = call.argument<Boolean>("left")
-            val top = call.argument<Boolean>("top")
-            val right = call.argument<Boolean>("right")
-            val bottom = call.argument<Boolean>("bottom")
-            if (keepAliveId == null || left == null || top == null || right == null || bottom == null) {
-                result.error("INVALID_EDGES", "浏览器安全区参数不完整", null)
-                return@setMethodCallHandler
-            }
+            val id = call.argument<String>("keepAliveId")
             val plugin = engine.plugins.get(InAppWebViewFlutterPlugin::class.java) as? InAppWebViewFlutterPlugin
-            val container = plugin?.inAppWebViewManager?.keepAliveWebViews?.get(keepAliveId)?.view
-            if (container == null) {
+            val instance = plugin?.inAppWebViewManager?.keepAliveWebViews?.get(id)
+            val webView = instance?.webView
+            val container = instance?.view
+            if (webView == null || container == null) {
                 result.error("WEBVIEW_NOT_FOUND", "浏览器原生实例不存在", null)
                 return@setMethodCallHandler
             }
-
-            // 装在插件的容器上，保留 WebView 自己的 Insets 监听器，兼容旧 Android。
-            // 返回更新后的 Insets，而非 CONSUMED，确保已有 env() 数值也能收到归零通知。
-            ViewCompat.setOnApplyWindowInsetsListener(container) { _, insets ->
-                fun remaining(value: Insets) = Insets.of(
-                    if (left) 0 else value.left,
-                    if (top) 0 else value.top,
-                    if (right) 0 else value.right,
-                    if (bottom) 0 else value.bottom,
-                )
-                // Android 28/29 的 getInsets(displayCutout) 仍读取 DisplayCutout 对象，
-                // 仅 setInsets 无法清掉它。完全由应用承担时单独清除刘海类型；
-                // 其余 Insets 仍继续下发，不会阻断 WebView 的归零或键盘通知。
-                val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-                @Suppress("DEPRECATION")
-                val base = if (remaining(cutout) == Insets.NONE) insets.consumeDisplayCutout() else insets
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                    // Android 10 及以下用同一组 systemWindowInsets 表示导航栏和 IME。
-                    // 不能用 setInsets(navigationBars, 0) 覆盖正在显示的键盘高度；
-                    // 保留原始 stableInsets，供 WebView 继续区分键盘与导航栏。
-                    @Suppress("DEPRECATION")
-                    val system = insets.systemWindowInsets
-                    val safe = remaining(system)
-                    val bottomInset = if (insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0) {
-                        system.bottom
-                    } else {
-                        safe.bottom
-                    }
-                    @Suppress("DEPRECATION")
-                    val legacy = WindowInsetsCompat.Builder(base)
-                        .setSystemWindowInsets(Insets.of(safe.left, safe.top, safe.right, bottomInset))
-                        .build()
-                    return@setOnApplyWindowInsetsListener legacy
-                }
-                val builder = WindowInsetsCompat.Builder(base)
-                for (type in intArrayOf(
-                    WindowInsetsCompat.Type.statusBars(),
-                    WindowInsetsCompat.Type.navigationBars(),
-                    WindowInsetsCompat.Type.captionBar(),
-                    WindowInsetsCompat.Type.displayCutout(),
-                )) {
-                    builder.setInsets(type, remaining(insets.getInsets(type)))
-                    builder.setInsetsIgnoringVisibility(type, remaining(insets.getInsetsIgnoringVisibility(type)))
-                }
-                // 不改 ime、systemGestures 等类型，输入法与系统手势仍由原有流程处理。
-                builder.build()
-            }
-            containers[container] = Unit
-            ViewCompat.requestApplyInsets(container)
+            // Android 12+ 在 WebView 上提供调整后的 Insets，覆盖引擎的默认边界判断，
+            // 避免部分遮挡被重复扣减；旧系统保留 WebView 内部监听器，改在父容器处理。
+            val target = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) webView else container
+            val binding = bindings.getOrPut(target) { BrowserInsetsBinding(target, webView) }
+            binding.refresh()
             result.success(true)
         }
     }
 
     fun dispose() {
         channel.setMethodCallHandler(null)
-        for (container in containers.keys.toList()) {
-            ViewCompat.setOnApplyWindowInsetsListener(container, null)
-            ViewCompat.requestApplyInsets(container)
+        bindings.values.toList().forEach { it.dispose() }
+        bindings.clear()
+    }
+}
+
+private data class BrowserNativeGeometry(val viewport: Rect, val window: Rect, val fullscreen: Boolean)
+
+private class BrowserInsetsBinding(target: View, webView: InAppWebView) :
+    View.OnAttachStateChangeListener, ViewTreeObserver.OnPreDrawListener {
+    private val targetRef = WeakReference(target)
+    private val webViewRef = WeakReference(webView)
+    private var observer: ViewTreeObserver? = null
+    private var last: BrowserNativeGeometry? = null
+
+    init {
+        ViewCompat.setOnApplyWindowInsetsListener(target) { _, insets ->
+            val geometry = geometry()
+            if (geometry == null) insets else
+                browserWindowInsets(insets, geometry.viewport, geometry.window, geometry.fullscreen)
         }
-        containers.clear()
+        target.addOnAttachStateChangeListener(this)
+        if (target.isAttachedToWindow) onViewAttachedToWindow(target)
+    }
+
+    private fun geometry(): BrowserNativeGeometry? {
+        val webView = webViewRef.get() ?: return null
+        if (!webView.isAttachedToWindow || webView.width == 0 || webView.height == 0) return null
+        fun bounds(view: View): Rect {
+            val location = IntArray(2)
+            view.getLocationInWindow(location)
+            return Rect(location[0], location[1], location[0] + view.width, location[1] + view.height)
+        }
+        // rootView 与 WebView 使用同一个窗口坐标系，分屏和浮动窗口无需屏幕尺寸常量。
+        return BrowserNativeGeometry(bounds(webView), bounds(webView.rootView), webView.isInFullscreen)
+    }
+
+    fun refresh() {
+        last = null
+        targetRef.get()?.let { ViewCompat.requestApplyInsets(it) }
+    }
+
+    override fun onPreDraw(): Boolean {
+        val current = geometry()
+        if (current != null && current != last) {
+            last = current
+            targetRef.get()?.let { ViewCompat.requestApplyInsets(it) }
+        }
+        return true
+    }
+
+    override fun onViewAttachedToWindow(view: View) {
+        removeObserver()
+        observer = view.viewTreeObserver.also { it.addOnPreDrawListener(this) }
+        refresh()
+    }
+
+    override fun onViewDetachedFromWindow(view: View) {
+        removeObserver()
+        last = null
+    }
+
+    private fun removeObserver() {
+        observer?.takeIf { it.isAlive }?.removeOnPreDrawListener(this)
+        observer = null
+    }
+
+    fun dispose() {
+        removeObserver()
+        targetRef.get()?.let {
+            it.removeOnAttachStateChangeListener(this)
+            ViewCompat.setOnApplyWindowInsetsListener(it, null)
+            ViewCompat.requestApplyInsets(it)
+        }
     }
 }

@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/browser_native_safe_area.dart';
@@ -24,55 +23,17 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('上下工具栏承担安全区时，指定实例的四边均归零', () async {
-    expect(
-      await BrowserNativeSafeArea.apply(
-        keepAliveId: 'tab-a',
-        unsafe: EdgeInsets.zero,
-        edgeToEdge: true,
-      ),
-      isTrue,
-    );
-    expect(calls.single.method, 'setHandledEdges');
-    expect(calls.single.arguments, {
-      'keepAliveId': 'tab-a',
-      'left': true,
-      'top': true,
-      'right': true,
-      'bottom': true,
-    });
+  test('按保活实例安装观察器，不传工具栏状态或固定 Insets', () async {
+    expect(await BrowserNativeSafeArea.attach(keepAliveId: 'tab-a'), isTrue);
+    expect(calls.single.method, 'attach');
+    expect(calls.single.arguments, {'keepAliveId': 'tab-a'});
   });
 
-  test('横屏 cover 保留网页需承担的侧边安全区，回退留边后全部归零', () async {
-    const unsafe = EdgeInsets.fromLTRB(47, 0, 47, 0);
-    await BrowserNativeSafeArea.apply(
-      keepAliveId: 'tab-b',
-      unsafe: unsafe,
-      edgeToEdge: true,
-    );
-    expect(calls.last.arguments, {
-      'keepAliveId': 'tab-b',
-      'left': false,
-      'top': true,
-      'right': false,
-      'bottom': true,
-    });
-    await BrowserNativeSafeArea.apply(
-      keepAliveId: 'tab-b',
-      unsafe: unsafe,
-      edgeToEdge: false,
-    );
-    expect((calls.last.arguments as Map)['left'], isTrue);
-    expect((calls.last.arguments as Map)['right'], isTrue);
-  });
-
-  test('网页延伸到底部时保留底部安全区', () async {
-    await BrowserNativeSafeArea.apply(
-      keepAliveId: 'tab-c',
-      unsafe: const EdgeInsets.only(bottom: 24),
-      edgeToEdge: true,
-    );
-    expect((calls.single.arguments as Map)['bottom'], isFalse);
+  test('恢复或全屏切换可刷新同一个原生实例', () async {
+    await BrowserNativeSafeArea.attach(keepAliveId: 'tab-b');
+    await BrowserNativeSafeArea.attach(keepAliveId: 'tab-b');
+    expect(calls.length, 2);
+    expect(calls.first.arguments, calls.last.arguments);
   });
 
   test('其他四个平台不调用 Android 通道', () async {
@@ -83,14 +44,7 @@ void main() {
       TargetPlatform.linux,
     ]) {
       debugDefaultTargetPlatformOverride = platform;
-      expect(
-        await BrowserNativeSafeArea.apply(
-          keepAliveId: 'tab',
-          unsafe: EdgeInsets.zero,
-          edgeToEdge: true,
-        ),
-        isTrue,
-      );
+      expect(await BrowserNativeSafeArea.attach(keepAliveId: 'tab'), isTrue);
     }
     expect(calls, isEmpty);
   });
@@ -101,11 +55,7 @@ void main() {
           throw PlatformException(code: 'WEBVIEW_NOT_FOUND');
         });
     expect(
-      await BrowserNativeSafeArea.apply(
-        keepAliveId: 'closed-tab',
-        unsafe: EdgeInsets.zero,
-        edgeToEdge: true,
-      ),
+      await BrowserNativeSafeArea.attach(keepAliveId: 'closed-tab'),
       isFalse,
     );
   });

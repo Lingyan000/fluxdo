@@ -68,33 +68,54 @@ class BrowserPageSafeArea {
   int get hashCode => Object.hash(cover, env, background, canvas);
 }
 
-/// 网页区域与系统不安全区的重叠部分。
-///
-/// 可见的浏览器栏会吃掉自己那一侧的安全区；栏隐藏后，那一侧重新交给网页处理。
-/// 键盘弹出时 [MediaQueryData.padding] 底部已归零，不必单独处理。
-EdgeInsets browserViewportUnsafeInsets(
-  EdgeInsets padding, {
-  required bool topChrome,
-  required bool bottomChrome,
-}) => EdgeInsets.fromLTRB(
-  padding.left,
-  topChrome ? 0 : padding.top,
-  padding.right,
-  bottomChrome ? 0 : padding.bottom,
-);
+/// 浏览器分配给网页的实际区域，尚未扣除应用为普通网页补的安全边距。
+@immutable
+class BrowserViewportGeometry {
+  const BrowserViewportGeometry({
+    required this.viewport,
+    required this.window,
+    required this.padding,
+  });
+
+  final Rect viewport;
+  final Rect window;
+  final EdgeInsets padding;
+
+  EdgeInsets get unsafe {
+    if (viewport.isEmpty || !viewport.overlaps(window)) return EdgeInsets.zero;
+    double overlap(double inset, double gap, double extent) =>
+        (inset - gap).clamp(0.0, inset.clamp(0.0, extent));
+    return EdgeInsets.fromLTRB(
+      overlap(padding.left, viewport.left - window.left, viewport.width),
+      overlap(padding.top, viewport.top - window.top, viewport.height),
+      overlap(padding.right, window.right - viewport.right, viewport.width),
+      overlap(padding.bottom, window.bottom - viewport.bottom, viewport.height),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is BrowserViewportGeometry &&
+      viewport == other.viewport &&
+      window == other.window &&
+      padding == other.padding;
+
+  @override
+  int get hashCode => Object.hash(viewport, window, padding);
+}
 
 /// 决定网页铺满到边缘还是由应用留出安全边距。
 ///
 /// 声明 cover 的网页铺满，由网页用 `env()` 自己避让；其余网页由应用留边。
 /// 老版 Android WebView（Chromium 140 以前）等引擎给出的 `env()` 不可靠，
-/// 实测与应用算出的遮挡对不上时退回留边。WebView 引擎全进程共用，结论按进程记住。
-abstract final class BrowserSafeAreaPolicy {
-  static bool? _nativeEnvReliable;
+/// 实测与应用算出的遮挡对不上时退回留边；结论只属于当前页面的当前布局。
+class BrowserSafeAreaPolicy {
+  bool? _nativeEnvReliable;
 
   /// null 表示还没有可比较的样本。
-  static bool? get nativeEnvReliable => _nativeEnvReliable;
+  bool? get nativeEnvReliable => _nativeEnvReliable;
 
-  static bool edgeToEdge(BrowserPageSafeArea? page) =>
+  bool edgeToEdge(BrowserPageSafeArea? page) =>
       page?.cover == true && _nativeEnvReliable != false;
 
   /// 两边均为零时无法证明引擎支持安全区；预期为零却实测非零仍是重复避让。
@@ -107,10 +128,10 @@ abstract final class BrowserSafeAreaPolicy {
         near(expected.bottom, observed.bottom);
   }
 
-  static void record({required bool reliable}) => _nativeEnvReliable = reliable;
+  void record({required bool reliable}) => _nativeEnvReliable = reliable;
 
-  @visibleForTesting
-  static void resetForTest() => _nativeEnvReliable = null;
+  /// 页面导航、视口几何或全屏状态变化后重新判断，不沿用旧布局的结果。
+  void reset() => _nativeEnvReliable = null;
 }
 
 /// 安全区探针：注入页面，并提供 [measureSource] 供应用主动读取。

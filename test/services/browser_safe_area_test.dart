@@ -40,20 +40,57 @@ void main() {
     );
   });
 
-  test('可见的浏览器栏吃掉自己那一侧，左右始终交给网页区域', () {
-    const padding = EdgeInsets.fromLTRB(47, 44, 47, 21);
-    expect(
-      browserViewportUnsafeInsets(padding, topChrome: true, bottomChrome: true),
-      const EdgeInsets.fromLTRB(47, 0, 47, 0),
-    );
-    expect(
-      browserViewportUnsafeInsets(
-        padding,
-        topChrome: false,
-        bottomChrome: false,
-      ),
-      padding,
-    );
+  group('按实际网页边界计算安全区', () {
+    const window = Rect.fromLTWH(0, 0, 390, 844);
+    const padding = EdgeInsets.only(top: 44, bottom: 24);
+    EdgeInsets measure(Rect viewport) => BrowserViewportGeometry(
+      viewport: viewport,
+      window: window,
+      padding: padding,
+    ).unsafe;
+
+    test('上下栏、仅顶栏、仅底栏和全屏四种布局', () {
+      expect(measure(const Rect.fromLTRB(0, 110, 390, 764)), EdgeInsets.zero);
+      expect(
+        measure(const Rect.fromLTRB(0, 0, 390, 764)),
+        const EdgeInsets.only(top: 44),
+      );
+      expect(
+        measure(const Rect.fromLTRB(0, 110, 390, 844)),
+        const EdgeInsets.only(bottom: 24),
+      );
+      expect(measure(window), padding);
+    });
+    test('工具栏动画只交给网页剩余的遮挡，不按显隐二选一', () {
+      expect(
+        measure(const Rect.fromLTRB(0, 20, 390, 832)),
+        const EdgeInsets.only(top: 24, bottom: 12),
+      );
+    });
+    test('横屏刘海与浮动窗口使用同一坐标系', () {
+      expect(
+        const BrowserViewportGeometry(
+          viewport: Rect.fromLTRB(120, 50, 924, 440),
+          window: Rect.fromLTRB(100, 50, 944, 440),
+          padding: EdgeInsets.only(left: 47, right: 47),
+        ).unsafe,
+        const EdgeInsets.only(left: 27, right: 27),
+      );
+    });
+    test('空区域或窗口外不产生安全边距', () {
+      expect(measure(Rect.zero), EdgeInsets.zero);
+      expect(measure(const Rect.fromLTRB(400, 0, 500, 844)), EdgeInsets.zero);
+    });
+    test('隐藏系统栏后仍保留实际刘海区域', () {
+      expect(
+        const BrowserViewportGeometry(
+          viewport: window,
+          window: window,
+          padding: EdgeInsets.only(top: 28),
+        ).unsafe,
+        const EdgeInsets.only(top: 28),
+      );
+    });
   });
 
   test('全零样本不证明可靠，但没有遮挡时的非零 env 必须识别', () {
@@ -80,13 +117,16 @@ void main() {
   });
 
   test('只有声明 cover 且原生 env 未被证伪时才铺满', () {
-    addTearDown(BrowserSafeAreaPolicy.resetForTest);
+    final policy = BrowserSafeAreaPolicy();
     const cover = BrowserPageSafeArea(cover: true, env: EdgeInsets.zero);
     const plain = BrowserPageSafeArea(cover: false, env: EdgeInsets.zero);
-    expect(BrowserSafeAreaPolicy.edgeToEdge(null), isFalse);
-    expect(BrowserSafeAreaPolicy.edgeToEdge(plain), isFalse);
-    expect(BrowserSafeAreaPolicy.edgeToEdge(cover), isTrue);
-    BrowserSafeAreaPolicy.record(reliable: false);
-    expect(BrowserSafeAreaPolicy.edgeToEdge(cover), isFalse);
+    expect(policy.edgeToEdge(null), isFalse);
+    expect(policy.edgeToEdge(plain), isFalse);
+    expect(policy.edgeToEdge(cover), isTrue);
+    policy.record(reliable: false);
+    expect(policy.edgeToEdge(cover), isFalse);
+    expect(BrowserSafeAreaPolicy().edgeToEdge(cover), isTrue);
+    policy.reset();
+    expect(policy.edgeToEdge(cover), isTrue);
   });
 }
