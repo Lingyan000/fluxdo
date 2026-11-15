@@ -3,6 +3,8 @@ import argparse
 import json
 from pathlib import Path
 
+from audit_fetch_metadata import audit
+
 
 def grease(value):
     return value & 0x0F0F == 0x0A0A and value >> 8 == value & 255
@@ -60,7 +62,7 @@ def initial_frames(template):
 
 
 def compare(folder):
-    load = lambda name: json.loads((folder / name).read_text())
+    load = lambda name: json.loads((folder / name).read_text(encoding='utf-8'))
     reference = load('reference.json')
     hello = reference['hello']
     policy = reference.get('tls_permute_extensions')
@@ -70,7 +72,7 @@ def compare(folder):
     if (folder / 'restored-core.json').exists():
         paths.append(folder / 'restored-core.json')
     for path in paths:
-        actual = json.loads(path.read_text())
+        actual = json.loads(path.read_text(encoding='utf-8'))
         checks = {
             'stable_tls_fields': stable_tls(hello) == stable_tls(actual['hello']),
             'tls_extension_set': sorted(extension_ids(hello)) == sorted(extension_ids(actual['hello'])),
@@ -78,6 +80,8 @@ def compare(folder):
             'h2_pseudo_order': reference['pseudo_order'] == actual['pseudo_order'],
             'accept_encoding': reference['accept_encoding'] == actual['accept_encoding'],
         }
+        if reference.get('fetch_h2_priority') is not None:
+            checks['h2_fetch_priority'] = reference['fetch_h2_priority'] == actual.get('fetch_h2_priority')
         if policy is False:
             checks['fixed_extension_order'] = extension_ids(hello) == extension_ids(actual['hello'])
         if reference.get('low_entropy_client_hints') is not None:
@@ -94,6 +98,8 @@ def compare(folder):
     orders = {tuple(extension_ids(h)) for h in emitted}
     checks = {'three_connections': len(list(folder.glob('core-[0-9]*.json'))) == 3,
               'wire_checks': all(all(c['checks'].values()) for c in connections)}
+    # 单独核对原始三次 API 请求，避免 TLS/H2 通过掩盖旧 WebKit 多发请求头。
+    checks['fetch_metadata_presence'] = audit(folder).get('all_match', False)
     if (folder / 'scenarios.json').exists():
         scenarios = load('scenarios.json')
         checks['transport_scenarios'] = len(scenarios) == 5 and all(s['passed'] for s in scenarios)
@@ -112,9 +118,9 @@ def compare(folder):
               'all_checked_fields_match': all(checks.values()),
               'excluded': ['random/key material', 'GREASE values', 'ECH ciphertext',
                            'padding length', 'PSK/cookie extensions', 'SETTINGS ACK timing'],
-              'not_verified': ['Android/iOS/macOS/Windows native WebView behavior', 'Cloudflare outcome',
-                               'HEADERS priority and exact HPACK bytes', 'QUIC/H3 fingerprint']}
-    (folder / 'comparison.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+              'not_verified': ['platforms/devices outside the supplied capture and full application flow', 'Cloudflare outcome',
+                               'navigation/resource priority and exact HPACK bytes', 'QUIC/H3 fingerprint']}
+    (folder / 'comparison.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return result
 
 

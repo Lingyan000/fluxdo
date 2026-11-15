@@ -5,12 +5,12 @@ from pathlib import Path
 
 
 def audit(folder):
-    reference = json.loads((folder / 'reference.json').read_text())
+    reference = json.loads((folder / 'reference.json').read_text(encoding='utf-8'))
     if reference.get('low_entropy_client_hints') is None:
         return {'verified': False, 'reason': '参考模板尚未确认采到 fetch 请求'}
     expected = sorted(name.lower() for name in reference['fetch_header_order']
                       if name.lower().startswith('sec-fetch-'))
-    requests = json.loads((folder / 'core-headers.json').read_text())
+    requests = json.loads((folder / 'core-headers.json').read_text(encoding='utf-8'))
     checks = []
     for request in requests:
         actual = sorted(name.lower() for name, _ in request['headers']
@@ -20,7 +20,7 @@ def audit(folder):
     result = {'verified': bool(checks), 'reference_user_agent': reference.get('user_agent'),
               'requests': checks, 'all_match': bool(checks) and all(c['matches'] for c in checks),
               'scope': '仅检查原始三次 Core 请求的头存在性；不证明头值、完整应用链或 CF 结果'}
-    (folder / 'fetch-metadata-audit.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+    (folder / 'fetch-metadata-audit.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return result
 
 

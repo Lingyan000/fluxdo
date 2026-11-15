@@ -1,0 +1,466 @@
+{
+  "hello": {
+    "protocol_version": 771,
+    "cipher_suites": [
+      23130,
+      4865,
+      4866,
+      4867,
+      49196,
+      49195,
+      52393,
+      49200,
+      49199,
+      52392,
+      49162,
+      49161,
+      49172,
+      49171,
+      157,
+      156,
+      53,
+      47,
+      49160,
+      49170,
+      10
+    ],
+    "compression_algorithms": [
+      0
+    ],
+    "extensions": [
+      {
+        "Opaque": {
+          "id": 6682,
+          "data": []
+        }
+      },
+      {
+        "ServerName": "localhost"
+      },
+      {
+        "Opaque": {
+          "id": 23,
+          "data": []
+        }
+      },
+      {
+        "Opaque": {
+          "id": 65281,
+          "data": [
+            0
+          ]
+        }
+      },
+      {
+        "SupportedGroups": [
+          51914,
+          29,
+          23,
+          24,
+          25
+        ]
+      },
+      {
+        "ECPointFormats": [
+          0
+        ]
+      },
+      {
+        "ApplicationLayerProtocolNegotiation": [
+          [
+            104,
+            50
+          ],
+          [
+            104,
+            116,
+            116,
+            112,
+            47,
+            49,
+            46,
+            49
+          ]
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 5,
+          "data": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "SignatureAlgorithms": [
+          1027,
+          2052,
+          1025,
+          1283,
+          515,
+          2053,
+          2053,
+          1281,
+          2054,
+          1537,
+          513
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 18,
+          "data": []
+        }
+      },
+      {
+        "Opaque": {
+          "id": 51,
+          "data": [
+            0,
+            41,
+            202,
+            202,
+            0,
+            1,
+            0,
+            0,
+            29,
+            0,
+            32,
+            132,
+            74,
+            236,
+            226,
+            45,
+            145,
+            158,
+            211,
+            178,
+            159,
+            156,
+            55,
+            40,
+            43,
+            162,
+            37,
+            132,
+            14,
+            55,
+            151,
+            181,
+            119,
+            143,
+            32,
+            10,
+            201,
+            253,
+            185,
+            44,
+            77,
+            138,
+            127
+          ]
+        }
+      },
+      {
+        "Opaque": {
+          "id": 45,
+          "data": [
+            1,
+            1
+          ]
+        }
+      },
+      {
+        "SupportedVersions": [
+          27242,
+          772,
+          771,
+          770,
+          769
+        ]
+      },
+      {
+        "CertificateCompression": [
+          1
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 2570,
+          "data": [
+            0
+          ]
+        }
+      },
+      {
+        "Opaque": {
+          "id": 21,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ]
+  },
+  "early_frames": [
+    {
+      "Settings": {
+        "flags": 0,
+        "config": {
+          "header_table_size": null,
+          "enable_push": null,
+          "max_concurrent_streams": 100,
+          "initial_window_size": 2097152,
+          "max_frame_size": null,
+          "max_header_list_size": null,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "WindowUpdate": {
+        "stream_id": 0,
+        "size_increment": 10485760
+      }
+    },
+    {
+      "Settings": {
+        "flags": 1,
+        "config": {
+          "header_table_size": null,
+          "enable_push": null,
+          "max_concurrent_streams": null,
+          "initial_window_size": null,
+          "max_frame_size": null,
+          "max_header_list_size": null,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": null
+        }
+      }
+    }
+  ],
+  "pseudo_order": [
+    ":method",
+    ":scheme",
+    ":path",
+    ":authority"
+  ],
+  "fetch_header_order": [
+    "accept",
+    "accept-encoding",
+    "user-agent",
+    "accept-language",
+    "referer"
+  ],
+  "accept_encoding": "gzip, deflate, br",
+  "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+  "tls_permute_extensions": false,
+  "low_entropy_client_hints": []
+}

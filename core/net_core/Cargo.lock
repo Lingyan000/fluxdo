@@ -860,6 +860,7 @@ dependencies = [
  "rama-crypto",
  "rama-http-backend",
  "rama-http-core",
+ "rama-quic-proto",
  "serde",
  "serde_json",
  "shadowsocks",
@@ -2459,7 +2460,6 @@ dependencies = [
 [[package]]
 name = "rama-http-core"
 version = "0.5.0"
-source = "git+https://github.com/plabayo/rama?rev=23d59722e125fb6f2de66df588f772205318e555#23d59722e125fb6f2de66df588f772205318e555"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -2519,7 +2519,6 @@ dependencies = [
 [[package]]
 name = "rama-http-types"
 version = "0.5.0"
-source = "git+https://github.com/plabayo/rama?rev=23d59722e125fb6f2de66df588f772205318e555#23d59722e125fb6f2de66df588f772205318e555"
 dependencies = [
  "bytes",
  "const_format",

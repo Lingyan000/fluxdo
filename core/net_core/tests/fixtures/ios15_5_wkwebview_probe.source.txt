@@ -1,0 +1,6 @@
+来源：原生 iOS 15.5 (19F70) WKWebView，GitHub macos-15 ARM64 runner，Xcode 26.3。
+https://github.com/Lingyan000/fluxdo/actions/runs/43667371727
+artifact 14142442803，ios15-fingerprint/ios-15.5-native/reference.json。
+原始 artifact SHA256：7111775ec9d8f2702077eb8038aa4dca93c193f6df436043bd760591433c8356。
+此文件是已采集模板，用于回归回放；不能把使用它的单元测试称为实时 iOS 采样。
+模板只有回环握手、公开 UA、头名称和低熵 Client Hints，无用户 Cookie、令牌或私钥。

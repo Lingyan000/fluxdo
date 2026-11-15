@@ -43,7 +43,7 @@ def main():
     def save():
         (root / 'matrix.json').write_text(json.dumps(results, indent=2, ensure_ascii=False) + '\n')
 
-    def case(name, driver, extra_env):
+    def case(name, driver, extra_env, retry_startup=True):
         folder = root / name
         folder.mkdir()
         env = dict(os.environ, SSL_CERT_FILE=str(folder / 'ca.pem'),
@@ -69,9 +69,22 @@ def main():
         except (OSError, ValueError, KeyError, AssertionError, subprocess.TimeoutExpired) as error:
             result['error'] = str(error)
             result['passed'] = False
+        # 仅重试 simctl 尚未启动宿主的冷启动超时；保留第一轮全部证据。
+        # 页面报错、已采样的校准失败或指纹不匹配不重试，不用重试掩盖核心问题。
+        startup = folder / 'browser-driver-0.json'
+        if retry_startup and not result['passed'] and startup.exists() and not (folder / 'browser-sample-0.json').exists():
+            state = json.loads(startup.read_text())
+            stdout = folder / 'browser-0.stdout'
+            if state.get('code') == 124 and (not stdout.exists() or not stdout.read_text().strip()):
+                folder.rename(root / (name + '-startup-failed'))
+                retried = case(name, driver, extra_env, retry_startup=False)
+                retried['startup_failure'] = result
+                save()
+                return retried
         results.append(result)
         save()
         print(name, 'PASS' if result['passed'] else 'FAIL', flush=True)
+        return result
 
     mac = root / 'WKProbe-macos'
     run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source,
