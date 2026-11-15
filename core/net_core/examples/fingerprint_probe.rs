@@ -119,22 +119,35 @@ async fn main() -> Result<(), rama::error::BoxError> {
             )?)
             .kill_on_drop(true)
             .spawn()?;
-        for _ in 0..100 {
-            let status: Value = serde_json::from_str(&reference.status_json())?;
-            if status["tls_observations"].as_u64().unwrap_or(0) > previous_count
-                && reference
-                    .captured_snapshot()
-                    .is_some_and(|t| t.low_entropy_client_hints.is_some())
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(150)).await;
-        }
-        // 外部 WebKit 驱动正常关闭浏览器；Chromium 则由实验进程终止。
+        let driver_started = std::time::Instant::now();
         if std::env::var_os("FLUXDO_LAB_EXTERNAL_DRIVER").is_some() {
-            let _ = tokio::time::timeout(Duration::from_secs(3), browser_child.wait()).await;
+            // 云端模拟器首次启动不属于页面采样耗时，不能在应用尚未启动时就开启下一轮。
+            // 外部驱动自行等待页面完成并关闭应用；这里只扩展实验等待，不改生产 15 秒超时。
+            let status =
+                tokio::time::timeout(Duration::from_secs(95), browser_child.wait()).await??;
+            write_json(
+                out.join(format!("browser-driver-{sample}.json")),
+                &json!({
+                    "elapsed_ms":driver_started.elapsed().as_millis(),"success":status.success(),"code":status.code()
+                }),
+            );
+            if !status.success() {
+                return Err("external browser driver failed; see browser logs".into());
+            }
+        } else {
+            for _ in 0..100 {
+                let status: Value = serde_json::from_str(&reference.status_json())?;
+                if status["tls_observations"].as_u64().unwrap_or(0) > previous_count
+                    && reference
+                        .captured_snapshot()
+                        .is_some_and(|t| t.low_entropy_client_hints.is_some())
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(150)).await;
+            }
+            let _ = browser_child.kill().await;
         }
-        let _ = browser_child.kill().await;
         if let Some(t) = reference.captured_snapshot() {
             write_json(out.join(format!("browser-sample-{sample}.json")), &t);
         }
@@ -150,7 +163,7 @@ async fn main() -> Result<(), rama::error::BoxError> {
     assert_eq!(status["ready"], true, "两轮采样仍未完成校准");
     let cached = FingerprintTemplates::with_profile(
         Some(out.join("template-cache.json")),
-        "linux",
+        std::env::consts::OS,
         template.user_agent.as_deref(),
     );
     let cached_status: Value = serde_json::from_str(&cached.status_json())?;

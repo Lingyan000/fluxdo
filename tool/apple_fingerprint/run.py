@@ -25,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--simulator-limit', type=int, default=2)
+    parser.add_argument('--include-oldest', action='store_true')
     args = parser.parse_args()
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,7 @@ def main():
         try:
             with (folder / 'run.log').open('w') as log:
                 process = subprocess.run([str(binary), str(driver), str(folder)], env=env,
-                                         stdout=log, stderr=subprocess.STDOUT, timeout=100)
+                                         stdout=log, stderr=subprocess.STDOUT, timeout=240)
             result['exit_code'] = process.returncode
             native = []
             for path in sorted(folder.glob('browser-*.stdout')):
@@ -81,7 +82,10 @@ def main():
     (root / 'simulators.json').write_text(json.dumps(simulator_data, indent=2))
     runtimes = [r for r in simulator_data['runtimes'] if r.get('isAvailable') and r.get('name', '').startswith('iOS ')]
     runtimes.sort(key=lambda r: tuple(int(n) for n in r['version'].split('.')), reverse=True)
-    runtimes = runtimes[:args.simulator_limit]
+    if args.include_oldest and len(runtimes) > args.simulator_limit:
+        runtimes = runtimes[:max(0, args.simulator_limit - 1)] + [runtimes[-1]]
+    else:
+        runtimes = runtimes[:args.simulator_limit]
     if not runtimes:
         results.append({'case': 'ios-runtime', 'passed': False, 'error': 'No available iOS simulator runtime'})
         save()
@@ -96,7 +100,7 @@ def main():
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
     sdk = output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'])
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
-    run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', '-sdk', sdk,
+    run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library', '-sdk', sdk,
          '-target', arch + '-apple-ios17.0-simulator', source, '-framework', 'UIKit', '-framework', 'WebKit', '-o', app / 'WKProbe'])
     run(['codesign', '--force', '--sign', '-', app])
     driver = Path(__file__).parent / 'ios_driver.py'
