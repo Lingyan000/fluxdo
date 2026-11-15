@@ -46,18 +46,23 @@ class FingerprintTemplateService {
 
   int? _port;
   Future<void>? _inflight;
+  Future<void>? _tcpValidation;
   Completer<void>? _cancelProbe;
   int _generation = 0;
   String? _h3Attempted;
 
   /// 核心启动后调用：检查模板，必要时采样。并发调用合并为一次。
-  Future<void> ensure(int port) {
-    if (_port == port && _inflight != null) return _inflight!;
+  Future<void> ensure(int port, {bool waitForH3 = true}) {
+    if (_port == port && _inflight != null) {
+      return waitForH3 ? _inflight! : _tcpValidation!;
+    }
     final previous = _inflight;
     _port = port;
     final generation = ++_generation;
     _cancelProbe?.complete();
     final cancel = _cancelProbe = Completer<void>();
+    final tcpValidation = Completer<void>();
+    _tcpValidation = tcpValidation.future;
     late final Future<void> task;
     task =
         (() async {
@@ -65,15 +70,17 @@ class FingerprintTemplateService {
           if (previous != null) await previous;
           if (!_isCurrent(port, generation)) return;
           try {
-            await _ensure(port, generation, cancel.future);
+            await _ensure(port, generation, cancel.future, tcpValidation);
           } catch (error) {
             NetworkLogger.log('[Fingerprint] 模板检查失败: $error', level: 'warning');
           }
         })().whenComplete(() {
+          if (!tcpValidation.isCompleted) tcpValidation.complete();
           if (identical(_inflight, task)) _inflight = null;
           if (identical(_cancelProbe, cancel)) _cancelProbe = null;
         });
-    return _inflight = task;
+    _inflight = task;
+    return waitForH3 ? task : tcpValidation.future;
   }
 
   bool _isCurrent(int port, int generation) =>
@@ -89,7 +96,12 @@ class FingerprintTemplateService {
     _h3Attempted = null;
   }
 
-  Future<void> _ensure(int port, int generation, Future<void> cancelled) async {
+  Future<void> _ensure(
+    int port,
+    int generation,
+    Future<void> cancelled,
+    Completer<void> tcpValidation,
+  ) async {
     var status = await _status(port);
     if (!_isCurrent(port, generation)) return;
     if (status == null) {
@@ -146,6 +158,9 @@ class FingerprintTemplateService {
           !status.needsRevalidation &&
           status.userAgent == userAgent;
     }
+    // 启动阶段只需要等待 TLS/H2 校验；可选 H3 采样继续使用同一个串行任务。
+    // 不能让未启用 QUIC 的 WebView 将首次业务请求额外阻塞两个探针超时。
+    tcpValidation.complete();
     if (!_isCurrent(port, generation) || !templateReady.value || status == null) return;
     final h3Identity = '$port|$userAgent|${status.h3Ports.join(',')}';
     if (!status.h3Ready && status.h3Ports.length == 2 && _h3Attempted != h3Identity) {
@@ -222,7 +237,7 @@ class FingerprintTemplateService {
               cacheState: value['cache_state'] as String?,
               h3Ready: value['h3']?['enabled_for_template'] == true,
               h3Ports: _h3Ports(value['h3']?['probe_ports']),
-              h3Error: value['h3']?['error'] as String?,
+              h3Error: (value['h3']?['error'] ?? value['h3']?['reason']) as String?,
             );
     }
     final client = HttpClient()..findProxy = (_) => 'DIRECT';
@@ -243,7 +258,7 @@ class FingerprintTemplateService {
         cacheState: json['cache_state'] as String?,
         h3Ready: json['h3']?['enabled_for_template'] == true,
         h3Ports: _h3Ports(json['h3']?['probe_ports']),
-        h3Error: json['h3']?['error'] as String?,
+        h3Error: (json['h3']?['error'] ?? json['h3']?['reason']) as String?,
       );
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 读取模板状态失败: $e', level: 'warning');

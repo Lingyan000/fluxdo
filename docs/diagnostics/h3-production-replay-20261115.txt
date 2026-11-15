@@ -13,21 +13,29 @@
 - Chromium 99、110、156 的当前比对字段通过：TLS 稳定字段/扩展、QUIC 参数、首包几何和包号宽度、SETTINGS、关键流编号、三阶段共同字段 QPACK。
 - Chromium 实验显式使用 --origin-to-force-quic-on 和本机证书 SPKI 许可，不能证明真实 WebView 原生 Alt-Svc 采样在该平台可用。
 - 独立 QPACK/优先级测试 2 项通过，QUIC 禁用票据完整握手测试 1 项通过。
-- 网络核心 132 项通过；架构守卫及采样服务测试 18 项通过。
+- 网络核心 132 项通过；架构守卫及采样服务测试 19 项通过，包含 TCP 就绪后不等待可选 H3、后台任务串行与取消。
+- 本次变更的三个 Dart 文件单独 analyze 无问题。
+- 生产配置的回环网络场景四项通过：首次 Initial 丢包、Retry、UDP 阻断回退 H2、reset 后重建 H3。每项服务端仅记录一次 POST；H3 的 12 字节请求体完整。
+- reset 两轮 H3 连接标识不同，旧会话不恢复，QPACK 请求流重新从 0 开始，存在的 GREASE 值重新生成。
 - 全量 flutter analyze：578 项，唯一 error 为未改动 glass_readability_test.dart 的 expanded 参数；本次涉及网络文件未出现分析问题。
 
 验证工具
 - examples/h3_production_client.rs 使用生产 Listener 和 HttpEgressClient，不以独立自制请求客户端代替。
 - tool/compare_h3_production.py 对共同请求字段做逐项比较，保留所有失败字段。不同业务值的动态索引数值不跨连接比较。
+- tool/run_h3_network_scenarios.py 保存故障注入计数、协议回退、连接标识、恢复状态和服务端请求次数；不同于报文字段等价比对。
 - apple-production-h3 工作流先用原生 WKWebView 校准 TCP，再运行生产 H3 探针和 Core 回放；云端结果必须另附运行编号。
 
 不能据此声称的结论
 - Initial 随机分片的算法分布尚未与浏览器实现等价；当前 Chaos 策略按包内分片，浏览器可能跨整轮首包分片。
 - 当前探针没有覆盖条件请求、上传等全部浏览器 QPACK 策略；三阶段 fetch 样本不能代表所有请求类型。
-- 完整真机、蜂窝/Wi-Fi 切换、弱网丢包、Retry/迁移及线上 CF 结果仍需专门证据。
+- 完整真机、蜂窝/Wi-Fi 切换、复杂弱网、连接迁移及线上 CF 结果仍需专门证据。回环故障注入不能替代这些场景。
 - iOS 模拟器不是真机；macOS 宿主上的 Core 回放不等于 iOS 静态库产物验证。
 
 云端扩展
-- macOS/iOS 当前工作流：43701014885，提交 582ebae31dfa135e51655b076085e01ef69b4c74；结果待下载审计。
+- macOS/iOS 工作流 43701014885，提交 582ebae31dfa135e51655b076085e01ef69b4c74：macOS 原生 UA、应用 UA、iOS 26.2 原生 UA 的当前 H3 比对字段通过；iOS 应用 UA 只记录两次请求，判定失败，不能汇总为全通过。
+- 上述缺少末次观测的采集器时序已修正：客户端退出后等待服务端发布 finished 观测，再结束采集。必须重新云端验证。
 - Android 使用原生 WebView 加模拟器 UDP 字节转发，Core 仍在 Linux 宿主；转发有界且逐源端口隔离，不可标注为 Android 原生 Core 或真机。
+- Android 工作流 43701585801，提交 5169d4de：Android 15 / WebView 124.0.6367.219，原生及应用 UA 均通过 TCP/H2 比对，但本地 H3 探测无 QUIC 观测，UDP 转发计数为零。H3 校准未完成。
+- Windows 工作流 43701585272，同提交：TCP/H2 比对通过，本地 H3 探测仅有 TCP 请求，无 QUIC 观测。不能以 Linux Chromium 强制 QUIC 实验代替 WebView2 原生可用性。
+- Windows 首次启动只等待 TLS/H2 校验，H3 在同一串行采样任务中继续；日志在 error 为空时记录 reason，避免失败原因显示为 none。
 - Windows 使用原生 WebView2 和 Windows Core；iOS 15.5 单独工作流运行，不能由现代 iOS 结果替代。

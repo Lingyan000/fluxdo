@@ -192,4 +192,34 @@ void main() {
     expect(ports, [2]);
     expect(service.templateReady.value, false);
   });
+
+  test('首次启动可在 TCP 校验完成后返回，H3 继续串行且可被取消', () async {
+    final started = Completer<void>();
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true,
+        'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3]},
+      },
+      userAgent: () async => 'actual',
+      probe: (_, cancelled) async {
+        probes++;
+        started.complete();
+        await cancelled;
+      },
+    );
+    final tcp = service.ensure(1, waitForH3: false);
+    var allFinished = false;
+    final all = service.ensure(1).then((_) => allFinished = true);
+    await started.future;
+    await tcp;
+    expect(service.templateReady.value, true);
+    expect(allFinished, false);
+    expect(probes, 1);
+    service.reset();
+    await all;
+    expect(probes, 1);
+    expect(service.templateReady.value, false);
+  });
 }

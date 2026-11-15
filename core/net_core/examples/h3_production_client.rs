@@ -32,10 +32,19 @@ async fn main() -> Result<(), BoxError> {
             "user-agent",
             reference.user_agent.as_deref().ok_or("missing UA")?,
         )
-        .header("accept-encoding", reference.accept_encoding.as_deref().ok_or("missing sampled Accept-Encoding")?)
+        .header(
+            "accept-encoding",
+            reference
+                .accept_encoding
+                .as_deref()
+                .ok_or("missing sampled Accept-Encoding")?,
+        )
         .body(())?;
-    for (name,value) in reference.low_entropy_client_hints.iter().flatten() {
-        probe.headers_mut().append(rama::http::HeaderName::from_bytes(name.as_bytes())?,rama::http::HeaderValue::from_str(value)?);
+    for (name, value) in reference.low_entropy_client_hints.iter().flatten() {
+        probe.headers_mut().append(
+            rama::http::HeaderName::from_bytes(name.as_bytes())?,
+            rama::http::HeaderValue::from_str(value)?,
+        );
     }
     probe.extensions().insert(reference.early_frames.clone());
     probe.extensions().insert(reference.pseudo_order.clone());
@@ -156,7 +165,7 @@ async fn main() -> Result<(), BoxError> {
             }
         }
         if std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some() {
-            let _=tokio::time::timeout(Duration::from_secs(2),child.wait()).await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
         }
         let _ = child.kill().await;
         helper_task.abort();
@@ -181,31 +190,70 @@ async fn main() -> Result<(), BoxError> {
     )?;
     let client = HttpEgressClient::new(egress, Some(templates));
     let origin = url.trim_end_matches("/fluxdo-probe");
+    let scenario = std::env::var("FLUXDO_H3_NETWORK_SCENARIO").unwrap_or_default();
+    let expect_tcp = scenario == "blocked";
+    let rounds = if scenario == "reset" { 2 } else { 1 };
     let mut results = Vec::new();
     let mut reached = false;
-    for _ in 0..12 {
-        let response = client
-            .send(
-                Request::builder()
-                    .uri(format!("{origin}/fluxdo-probe/fetch"))
-                    .header("user-agent", reference.user_agent.as_deref().unwrap())
-                    .header("accept", "*/*")
-                    .body(Body::empty())?,
-                Some(Duration::from_secs(5)),
-                Some(Duration::from_secs(5)),
-            )
-            .await?;
-        let version = response.version();
-        let body = response.into_body().collect().await?.to_bytes();
-        results.push(serde_json::json!({"version":format!("{version:?}"),"body":String::from_utf8_lossy(&body)}));
-        if version == Version::HTTP_3 {
-            reached = true;
-            break;
+    for round in 0..rounds {
+        if round > 0 {
+            client.reset_connections().await;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-    for path in ["done", "finished"] {
-        if reached {
+        reached = false;
+        for attempt in 0..12 {
+            let response = client
+                .send(
+                    Request::builder()
+                        .uri(format!("{origin}/fluxdo-probe/fetch"))
+                        .header("user-agent", reference.user_agent.as_deref().unwrap())
+                        .header("accept", "*/*")
+                        .body(Body::empty())?,
+                    Some(Duration::from_secs(5)),
+                    Some(Duration::from_secs(5)),
+                )
+                .await?;
+            let version = response.version();
+            let info = response
+                .extensions()
+                .get_ref::<fluxdo_net::client::ExchangeInfo>()
+                .cloned();
+            let body = response.into_body().collect().await?.to_bytes();
+            results.push(serde_json::json!({"round":round,"attempt":attempt,"version":format!("{version:?}"),
+                "connection_id":info.as_ref().map(|i|i.connection_id),"resumed":info.as_ref().map(|i|i.tls_resumed),
+                "body":String::from_utf8_lossy(&body)}));
+            if version == Version::HTTP_3 {
+                reached = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        if expect_tcp == reached {
+            return Err("production protocol did not match scenario expectation".into());
+        }
+        if !scenario.is_empty() && round + 1 == rounds {
+            let response = client
+                .send(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("{origin}/fluxdo-probe/write"))
+                        .header("user-agent", reference.user_agent.as_deref().unwrap())
+                        .body(Body::from("single-write"))?,
+                    Some(Duration::from_secs(5)),
+                    Some(Duration::from_secs(5)),
+                )
+                .await?;
+            let version = response.version();
+            response.into_body().collect().await?;
+            results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+        }
+        for path in [
+            "done",
+            if round + 1 == rounds {
+                "finished"
+            } else {
+                "warm"
+            },
+        ] {
             let response = client
                 .send(
                     Request::builder()
@@ -216,7 +264,7 @@ async fn main() -> Result<(), BoxError> {
                     Some(Duration::from_secs(5)),
                 )
                 .await?;
-            let _ = response.into_body().collect().await?;
+            response.into_body().collect().await?;
         }
     }
     std::fs::write(
@@ -225,12 +273,12 @@ async fn main() -> Result<(), BoxError> {
     )?;
     listener.stop();
     task.abort();
-    if !reached {
+    if !reached && !expect_tcp {
         return Err("production core did not negotiate H3".into());
     }
     println!(
         "{}",
-        serde_json::json!({"production_h3":true,"requests":results})
+        serde_json::json!({"production_h3":reached,"scenario":scenario,"requests":results})
     );
     Ok(())
 }

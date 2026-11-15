@@ -6,7 +6,7 @@ use rama::http::proto::h3::observation::H3RequestObservation;
 use rama::{
     Layer, Service, ServiceInput,
     extensions::ExtensionsRef,
-    http::{Body, Request, Response, server::HttpServer},
+    http::{Body, Request, Response, body::util::BodyExt, server::HttpServer},
     net::tls::ApplicationProtocol,
     quic::{
         Endpoint,
@@ -44,24 +44,33 @@ fn joint_capture_complete(
 ) -> bool {
     let completeness = serde_json::to_value(
         rama::http::proto::h3::observation::ObservationCompleteness::default(),
-    ).expect("observation completeness serialization");
-    completed && !observations.is_empty() && observations.iter().all(|request| {
-        let Some(id) = request["flow_id"].as_u64() else { return false; };
-        if request["request"]["fields_complete"] != true
-            || !flows.iter().any(|f| f["flow_id"] == id && f["initial"]["complete"] == true)
-        {
-            return false;
-        }
-        let boundary = &request["first_request_boundary"];
-        let connection = &boundary["snapshot"];
-        boundary["status"] == "ready"
-            && connection["settings_received"] == true
-            && connection["connection_error"].is_null()
-            && connection["encoder_bindings"]["complete"] == true
-            && completeness.as_object().unwrap().keys().all(|key| {
-                connection["completeness"][key] == true
-            })
-    })
+    )
+    .expect("observation completeness serialization");
+    completed
+        && !observations.is_empty()
+        && observations.iter().all(|request| {
+            let Some(id) = request["flow_id"].as_u64() else {
+                return false;
+            };
+            if request["request"]["fields_complete"] != true
+                || !flows
+                    .iter()
+                    .any(|f| f["flow_id"] == id && f["initial"]["complete"] == true)
+            {
+                return false;
+            }
+            let boundary = &request["first_request_boundary"];
+            let connection = &boundary["snapshot"];
+            boundary["status"] == "ready"
+                && connection["settings_received"] == true
+                && connection["connection_error"].is_null()
+                && connection["encoder_bindings"]["complete"] == true
+                && completeness
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .all(|key| connection["completeness"][key] == true)
+        })
 }
 
 #[tokio::main(worker_threads = 4)]
@@ -75,12 +84,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             capture["h3"].as_array().ok_or("missing H3 observations")?,
             capture["flows"].as_array().ok_or("missing QUIC flows")?,
         );
-        println!("{}", json!({"capture":path,"previous_complete":capture["h3_sample_complete"],
-            "joint_capture_complete":complete}));
-        return if complete { Ok(()) } else { Err("incomplete joint capture".into()) };
+        println!(
+            "{}",
+            json!({"capture":path,"previous_complete":capture["h3_sample_complete"],
+            "joint_capture_complete":complete})
+        );
+        return if complete {
+            Ok(())
+        } else {
+            Err("incomplete joint capture".into())
+        };
     }
     let browser = args.get(1).ok_or("browser executable required")?;
     let native_probe = args.iter().any(|a| a == "--native-probe");
+    let block_quic = args.iter().any(|a| a == "--block-quic");
+    let drop_initial = args.iter().any(|a| a == "--drop-first-initial");
+    let require_retry = args.iter().any(|a| a == "--require-retry");
+    let dropped = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let dropped_packets = dropped.clone();
+    let retries = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let issued_retries = retries.clone();
     let close_tcp = args.iter().any(|a| a == "--close-tcp");
     let learn_alt_svc = native_probe || args.iter().any(|a| a == "--learn-alt-svc");
     let version = if native_probe {
@@ -97,7 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
         rama::net::address::Domain::from_static("localhost"),
     ))?;
-    std::fs::write(out.join("h3-ca.pem"), X509::from_der(identity.cert_chain.last().ok_or("missing lab CA")?.as_ref())?.to_pem()?)?;
+    std::fs::write(
+        out.join("h3-ca.pem"),
+        X509::from_der(identity.cert_chain.last().ok_or("missing lab CA")?.as_ref())?.to_pem()?,
+    )?;
     let leaf = X509::from_der(identity.cert_chain[0].as_ref())?;
     let spki = base64::engine::general_purpose::STANDARD
         .encode(sha256(&leaf.public_key()?.public_key_to_der()?));
@@ -143,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .unwrap_or_default();
                         requests
                             .lock()
-                            .push(json!({"connection_id":id,"path":path,"version":format!("{:?}",request.version())}));
+                            .push(json!({"connection_id":id,"path":path,"method":request.method().as_str(),"version":format!("{:?}",request.version())}));
                         close_request.notify_one();
                         if path == "/fluxdo-probe/finished" {
                             finished.notify_one();
@@ -179,7 +205,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else {
         None
     };
-    let packets = Arc::new(Mutex::new(std::collections::BTreeMap::<usize, Vec<Vec<u8>>>::new()));
+    let packets = Arc::new(Mutex::new(
+        std::collections::BTreeMap::<usize, Vec<Vec<u8>>>::new(),
+    ));
     let flow_routes = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let server_routes = flow_routes.clone();
     let packet_sink = packets.clone();
@@ -219,10 +247,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if packets.len() < 64 {
                     packets.push(buffer[..size].to_vec());
                     let borrowed: Vec<_> = packets.iter().map(Vec::as_slice).collect();
-                    if capture::first_flight(&borrowed, &BoringTlsProvider).is_ok_and(|f| f.complete) {
+                    if capture::first_flight(&borrowed, &BoringTlsProvider)
+                        .is_ok_and(|f| f.complete)
+                    {
                         completed_flows.insert(*flow_id);
                     }
                 }
+            }
+            if block_quic
+                || (drop_initial && dropped_packets.load(std::sync::atomic::Ordering::Relaxed) == 0)
+            {
+                dropped_packets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                continue;
             }
             upstream.send(&buffer[..size]).await?;
         }
@@ -240,6 +276,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server = tokio::spawn(async move {
         let mut connections = tokio::task::JoinSet::new();
         while let Some(incoming) = server_endpoint.accept().await {
+            if require_retry && !incoming.remote_address_validated() {
+                incoming.retry()?;
+                issued_retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                continue;
+            }
             // 预连接可能一直没有 HTTP 请求，不能阻塞后续连接的握手与请求。
             let observation_sink = observation_sink.clone();
             let finished = finished.clone();
@@ -260,7 +301,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     )?;
                     let driver = tokio::spawn(driver.run());
                     while let Ok(incoming) = requests.accept().await {
-                        let (request, response) = incoming.resolve().await?;
+                        let (mut request, response) = incoming.resolve().await?;
                         let observer = request.extensions().get_ref::<H3Observer>().cloned();
                         let first_request_boundary = if let Some(observer) = &observer {
                             use rama_http_core::h3::observation::FirstRequestObservation;
@@ -286,6 +327,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else if path.starts_with("/fluxdo-probe/") { "h3" } else {
                             "ok"
                         };
+                        let body_size=request.body_mut().collect().await?.to_bytes().len();
                         response
                             .send_response(
                                 Response::builder()
@@ -294,7 +336,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             )
                             .await?;
                         observation_sink.lock().push(
-                            json!({"flow_id":flow_id,"path":path,"version":format!("{:?}",request.version()),
+                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":body_size,"version":format!("{:?}",request.version()),
                             "connection":observer.map(|o| o.snapshot()),"request":fields,
                             "first_request_boundary":first_request_boundary}),
                         );
@@ -365,6 +407,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else {
         false
     };
+    // 客户端收到最后一个响应即可退出，服务端的观测发布可能尚未完成。
+    // 等待已发布的 finished 标记，避免把调度竞态误报成缺少第三次请求。
+    if native_probe && native_probe_finished {
+        let _ = tokio::time::timeout(Duration::from_secs(2), native_finished.notified()).await;
+    }
     let completed = if learn_alt_svc {
         observations
             .lock()
@@ -392,16 +439,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None
     };
     let all_packets = packets.lock().clone();
-    let selected_flow = observations.lock().iter().find_map(|r| r["flow_id"].as_u64()).map(|id| id as usize);
+    let selected_flow = observations
+        .lock()
+        .iter()
+        .find_map(|r| r["flow_id"].as_u64())
+        .map(|id| id as usize);
     let selected_flow = selected_flow.or_else(|| all_packets.keys().next().copied());
-    let datagrams = selected_flow.and_then(|id| all_packets.get(&id)).cloned().unwrap_or_default();
-    let flow_summaries: Vec<_> = all_packets.iter().map(|(id, packets)| {
-        let borrowed: Vec<_> = packets.iter().map(Vec::as_slice).collect();
-        let initial = capture::first_flight(&borrowed, &BoringTlsProvider);
-        json!({"flow_id":id,"datagrams":packets.len(),"initial":initial.as_ref().ok(),
+    let datagrams = selected_flow
+        .and_then(|id| all_packets.get(&id))
+        .cloned()
+        .unwrap_or_default();
+    let flow_summaries: Vec<_> = all_packets
+        .iter()
+        .map(|(id, packets)| {
+            let borrowed: Vec<_> = packets.iter().map(Vec::as_slice).collect();
+            let initial = capture::first_flight(&borrowed, &BoringTlsProvider);
+            json!({"flow_id":id,"datagrams":packets.len(),"initial":initial.as_ref().ok(),
             "initial_error":initial.err().map(|e| e.to_string())})
-    }).collect();
-    let joint_capture_complete = joint_capture_complete(completed, &observations.lock(), &flow_summaries);
+        })
+        .collect();
+    let joint_capture_complete =
+        joint_capture_complete(completed, &observations.lock(), &flow_summaries);
     let borrowed: Vec<_> = datagrams.iter().map(Vec::as_slice).collect();
     let flight = capture::first_flight(&borrowed, &BoringTlsProvider);
     let mut initials = Vec::new();
@@ -432,7 +490,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else if learn_alt_svc {
         native_probe_finished && joint_capture_complete
     } else if allow_spki {
-        completed && joint_capture_complete
+        completed
+            && joint_capture_complete
             && ["/", "/fetch", "/done"].iter().all(|path| {
                 observations
                     .lock()
@@ -445,6 +504,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
         "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
+        "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,
+            "dropped_datagrams":dropped.load(std::sync::atomic::Ordering::Relaxed),"issued_retries":retries.load(std::sync::atomic::Ordering::Relaxed)},
         "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
         "h3_sample_complete":joint_capture_complete,
         "joint_capture_complete":joint_capture_complete,"selected_flow_id":selected_flow,"flows":flow_summaries,
@@ -478,8 +539,11 @@ mod tests {
     fn joint_sample_requires_same_connection_complete_control_and_request_fields() {
         let mut complete = serde_json::to_value(
             rama::http::proto::h3::observation::ObservationCompleteness::default(),
-        ).unwrap();
-        for flag in complete.as_object_mut().unwrap().values_mut() { *flag = json!(true); }
+        )
+        .unwrap();
+        for flag in complete.as_object_mut().unwrap().values_mut() {
+            *flag = json!(true);
+        }
         let last = json!({"flow_id":1,"request":{"fields_complete":true},
             "first_request_boundary":{"status":"ready","snapshot":{
                 "settings_received":true,"connection_error":null,
@@ -488,17 +552,29 @@ mod tests {
         early["connection"]["settings_received"] = json!(false);
         early["connection"]["completeness"]["settings"] = json!(false);
         let flows = vec![json!({"flow_id":1,"initial":{"complete":true}})];
-        assert!(joint_capture_complete(true, &[early.clone(), last.clone()], &flows));
+        assert!(joint_capture_complete(
+            true,
+            &[early.clone(), last.clone()],
+            &flows
+        ));
         assert!(joint_capture_complete(true, &[early.clone()], &flows));
         let mut pending = last.clone();
         pending["first_request_boundary"]["status"] = json!("timed_out");
-        assert!(!joint_capture_complete(true, &[pending, last.clone()], &flows));
+        assert!(!joint_capture_complete(
+            true,
+            &[pending, last.clone()],
+            &flows
+        ));
         let mut other = last.clone();
         other["flow_id"] = json!(2);
         assert!(!joint_capture_complete(true, &[early, other], &flows));
         let mut truncated = last.clone();
         truncated["request"]["fields_complete"] = json!(false);
-        assert!(!joint_capture_complete(true, &[truncated, last.clone()], &flows));
+        assert!(!joint_capture_complete(
+            true,
+            &[truncated, last.clone()],
+            &flows
+        ));
         assert!(!joint_capture_complete(true, &[last.clone()], &[]));
         assert!(!joint_capture_complete(false, &[last], &flows));
         assert!(!joint_capture_complete(true, &[], &flows));
