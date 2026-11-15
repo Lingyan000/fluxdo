@@ -53,6 +53,19 @@ class H3EvidenceTest(unittest.TestCase):
     def test_failed_driver_fails(self):
         self.assertFalse(self.evaluate(lambda d: d['capture'].update(driver_success=False)))
 
+    def test_incomplete_initial_or_qpack_binding_fails(self):
+        self.assertFalse(self.evaluate(lambda d: d['capture']['initial'].update(complete=False)))
+        self.assertFalse(self.evaluate(lambda d: d['profile']['boundary']['encoder_bindings'].update(complete=False)))
+
+    def test_mixed_connections_fail(self):
+        self.assertFalse(self.evaluate(lambda d: d['capture']['h3'][1].update(flow_id=999)))
+
+    def test_warm_control_semantics_fail(self):
+        def corrupt(data):
+            frames=data['capture']['h3'][-1]['connection']['control']
+            next(frame for frame in frames if frame['frame_type']==13)['element_id']+=1
+        self.assertFalse(self.evaluate(corrupt))
+
 
 if __name__ == '__main__':
     unittest.main()

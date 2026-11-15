@@ -43,6 +43,8 @@ struct State {
     ready: Option<Arc<Profile>>,
     ports: Vec<u16>,
     spki: std::collections::BTreeMap<u16, String>,
+    #[cfg(debug_assertions)]
+    probe_ca_pem: std::collections::BTreeMap<u16, String>,
     error: Option<String>,
     revision: u64,
     epoch: u64,
@@ -67,6 +69,10 @@ impl Templates {
     }
     pub fn probe_certificate(&self, port: u16, spki: String) {
         self.0.lock().spki.insert(port, spki);
+    }
+    #[cfg(debug_assertions)]
+    pub fn probe_ca(&self, port: u16, pem: String) {
+        self.0.lock().probe_ca_pem.insert(port, pem);
     }
     pub fn epoch(&self) -> u64 {
         self.0.lock().epoch
@@ -154,9 +160,12 @@ impl Templates {
         } else {
             "native_quic_h3_profile_not_calibrated"
         };
-        serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
+        let status=serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
             "observations":if state.ready.is_some() {2} else if state.first.is_some() {1} else {0},
-            "activity":state.activity,"error":state.error,"reason":reason})
+            "activity":state.activity,"error":state.error,"reason":reason});
+        #[cfg(debug_assertions)]
+        let status={let mut status=status;status["probe_ca_pem"]=serde_json::json!(state.probe_ca_pem);status};
+        status
     }
     pub fn failure(&self, error: impl ToString) {
         let mut state = self.0.lock();

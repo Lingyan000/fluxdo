@@ -130,6 +130,11 @@ async fn main() -> Result<(), BoxError> {
             } else {
                 command.env_remove("FLUXDO_NATIVE_PROBE_SPKI");
             }
+            if std::env::var("FLUXDO_NATIVE_PROBE_TRUST_ROOT").as_deref()==Ok("1") {
+                command.env("FLUXDO_NATIVE_PROBE_CA_PEM",state["h3"]["probe_ca_pem"][port.to_string()].as_str().ok_or("debug probe CA unavailable")?);
+            } else {
+                command.env_remove("FLUXDO_NATIVE_PROBE_CA_PEM");
+            }
             command.arg(format!("https://localhost:{port}/fluxdo-h3"));
         } else {
             if std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some() {
@@ -258,10 +263,18 @@ async fn main() -> Result<(), BoxError> {
                     Some(Duration::from_secs(5)),
                     Some(Duration::from_secs(5)),
                 )
-                .await?;
-            let version = response.version();
-            response.into_body().collect().await?;
-            results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+                .await;
+            if scenario == "post-loss" {
+                match response {
+                    Err(error)=>results.push(serde_json::json!({"method":"POST","error_observed":true,"error":error.to_string()})),
+                    Ok(_)=>return Err("lost POST response unexpectedly succeeded".into()),
+                }
+            } else {
+                let response=response?;
+                let version = response.version();
+                response.into_body().collect().await?;
+                results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+            }
         }
         if scenario == "requests" {
             let response=client.send(Request::builder()

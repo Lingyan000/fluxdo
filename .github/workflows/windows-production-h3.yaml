@@ -1,8 +1,14 @@
-name: Windows production H3 replay
+name: Windows native H3 and certificate controls
 on:
   push:
     branches: ['diagnostics/windows-production-h3-*']
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '默认原生采样；证书许可仅用于一次性 runner 对照'
+        type: choice
+        default: native
+        options: [native, spki-control, root-trust-only]
 permissions:
   contents: read
 concurrency:
@@ -33,7 +39,19 @@ jobs:
       - name: Build Core diagnostic collector
         run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
       - name: Compare native WebView2 and Windows Core
-        run: python tool/native_fingerprint/run.py --platform windows --production-h3 --root-trust-only --output "${{ runner.temp }}/native-fingerprint"
+        env:
+          DIAGNOSTIC_MODE: ${{ inputs.mode }}
+          DIAGNOSTIC_REF: ${{ github.ref_name }}
+        run: |
+          $mode = $env:DIAGNOSTIC_MODE
+          if (-not $mode) {
+            if ($env:DIAGNOSTIC_REF -like '*-root-trust-*') { $mode = 'root-trust-only' }
+            elseif ($env:DIAGNOSTIC_REF -like '*-spki-*') { $mode = 'spki-control' }
+            else { $mode = 'native' }
+          }
+          $arguments = @('--platform', 'windows', '--production-h3', '--output', "$env:RUNNER_TEMP/native-fingerprint")
+          if ($mode -ne 'native') { $arguments += "--$mode" }
+          python tool/native_fingerprint/run.py @arguments
       - uses: actions/upload-artifact@v4
         if: always()
         with:

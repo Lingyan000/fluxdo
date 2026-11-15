@@ -27,6 +27,9 @@
 
 不能据此声称的结论
 - Initial 随机分片的算法分布尚未与浏览器实现等价；当前 Chaos 策略按包内分片，浏览器可能跨整轮首包分片。
+  已有 Chromium 156 原始参考样本中，第一个 Initial 含 offset=1457 的 CRYPTO 片段，第二个含
+  offset=65 的片段；对应 Core 首包只含 offset=0、len=1211 的连续数据。二者包长一致不能证明分片策略一致。
+  Chromium 99/110 参考样本还存在 2 字节片段；当前随机切片最小切点为 32，不能宣称其随机分布已复现。
 - 当前探针没有覆盖条件请求、上传等全部浏览器 QPACK 策略；三阶段 fetch 样本不能代表所有请求类型。
 - 完整真机、蜂窝/Wi-Fi 切换、复杂弱网、连接迁移及线上 CF 结果仍需专门证据。回环故障注入不能替代这些场景。
 - iOS 模拟器不是真机；macOS 宿主上的 Core 回放不等于 iOS 静态库产物验证。
@@ -52,13 +55,16 @@
 - 发现旧版比对器会放过 fields_complete=false、空字段集合和 timed_out 首请求边界。
   已在真实 iOS 15.5 产物副本上分别复现三项误报；修复后严格要求源样本、冻结边界、
   当前连接观测、字段完整标记、命名字段对齐、伪头唯一性和请求流编号，同时检查驱动成功状态。
-- 新增 tool/test_compare_h3_production.py，使用带运行编号和摘要的实际采样 fixture；7 项回归通过。
+  额外核对 Initial 完整性、冻结首请求的插入关联和三个请求是否来自选中的同一连接。
+- 新增 tool/test_compare_h3_production.py，使用带运行编号和摘要的实际采样 fixture；10 项回归通过。
   严格复核 iOS 15.5/macOS 四组、iOS 26.2/macOS 四组和 Chromium 99/110/156 三组，共 11 组仍通过。
 - 上传完整性从仅比较长度改为两端均可核验的 SHA-256，覆盖 H3 与 UDP 阻断后的 H2。
   相同长度但错误摘要的负对照被拒绝。无业务 Cookie、CSRF、Origin、Referer 值参与修改。
-- 最新本机生产 Core 五类传输场景通过：首次 Initial 丢包、Retry、UDP 阻断、连接 reset、
-  扩展请求。扩展请求包含 65539 字节二进制上传、If-None-Match 原值保留，以及三个同连接
+- 最新本机生产 Core 六类传输场景通过：首次 Initial 丢包、Retry、UDP 阻断、连接 reset、
+  扩展请求、服务端已接受 POST 后丢失响应。扩展请求包含 65539 字节二进制上传、If-None-Match 原值保留，以及三个同连接
   并发 H3 GET；上传与每个并发请求均只在服务端收到一次。这是功能验证，不是全部 QPACK 策略等价证明。
+- 丢失写入响应场景在服务端接收完整 POST 后主动关闭 QUIC，客户端返回错误且没有重放；
+  随后的读取成功到达完成标记。不能将此结果等同于所有真实网络中均具有严格一次语义。
 - H3 状态现在区分未观测、仅 TCP、QUIC 已连接但样本待完成、等待第二个样本和校准失败；
   没观测到 QUIC 不等同于浏览器没有 H3 能力。
 
@@ -72,4 +78,17 @@ Chromium 本地采样证书限制
 - 来源：https://chromium.googlesource.com/chromium/src/+/refs/tags/131.0.6778.85/net/http/http_network_transaction.cc
   SHA-256 84d0c0cb1daf7277044b209585de50cfd5940798cb258d793a7feedbad74221c。
 - Windows 对照 run 43711850656（7cd0abe1）记录默认配置和当前临时证书 SPKI 许可配置，均不强制 QUIC。
-  诊断覆盖不进入产品 WebView 环境，不修改系统信任库；结果待云端产物核验。
+  artifact 14160993141，SHA-256 b8d81e53494e7c833f6237d3151b5a2e92dc6d89e178dfeafbb51ba6704ae339。
+  默认组两个端口均只有 22 次 TCP 请求，没有本地 Alt-Svc 事件或 QUIC 会话，证书回调报 CertificateIsInvalid。
+  SPKI 组两个端口各出现 21 个 Alt-Svc 事件及 1 条本地 QUIC 会话，但均以 CERTIFICATE_VERIFY_FAILED 失败。
+  实测 WebView2 为 131.0.2903.86。两组 H3 校准均失败，工作流保留失败状态。
+- tool/native_fingerprint/summarize_h3_netlog.py 按 localhost 与实际探针端口过滤。
+  默认组中 config.edge.skype.com 的后台 QUIC 连接被排除，不能当作本地采样成功。
+  不得把 SPKI 在桌面 Chromium 的效果直接外推到 WebView2；也不能把此次证书失败说成客户端不支持 H3。
+- 追加根证书与 SPKI 组合对照 run 43713106331（dcd54fb6），仅在一次性 GitHub runner 执行。
+  驱动未输出结果，本地探针也没有 HTTP 请求，不能把这次前置步骤失败当作信任组合的验证结论。
+  artifact 14161124713，SHA-256 b8371cf0c3f6fa85753a1fb5429589fb375b3122ee3df06d2eb1ab668126f764。
+- 复验改为由 Core 调试构建直接提供本次探针的公开根证书，避免诊断宿主另做系统 TLS 握手。
+  证书信息不包含私钥；release 状态中不导出该调试字段。仅一次性 GitHub runner 可临时导入
+  当前用户根存储，退出时删除新加入的根证书；另用本次叶证书 SPKI 限定诊断许可。
+  补充宿主初始化阶段日志，初始化失败也输出结构化错误。此条件不进入产品环境；复验结果待核验。

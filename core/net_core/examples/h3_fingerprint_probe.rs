@@ -104,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let block_quic = args.iter().any(|a| a == "--block-quic");
     let drop_initial = args.iter().any(|a| a == "--drop-first-initial");
     let require_retry = args.iter().any(|a| a == "--require-retry");
+    let drop_post_response = args.iter().any(|a| a == "--drop-post-response");
     let dropped = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let dropped_packets = dropped.clone();
     let retries = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -308,6 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             connections.spawn(async move {
                 let result: Result<(), rama::error::BoxError> = async {
                     let connection = incoming.await?;
+                    let close_connection = connection.clone();
                     // 每个转发 socket 对应一条浏览器连接，先关联再接收 HTTP；不能混用预连接的 Initial。
                     let flow_id = server_routes.lock().get(&connection.remote_address()).copied();
                     let (mut requests, driver) = rama_http_core::h3::server::handshake(
@@ -346,6 +348,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             "ok"
                         };
                         let request_body=request.body_mut().collect().await?.to_bytes();
+                        if drop_post_response && request.method()==rama::http::Method::POST {
+                            // 服务端已完整接收写入，但不给响应；客户端不得自动重放该 POST。
+                            observation_sink.lock().push(json!({"flow_id":flow_id,"path":path,
+                                "method":"POST","body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),
+                                "response_intentionally_lost":true,"version":format!("{:?}",request.version())}));
+                            close_connection.close(0u32,b"lab accepted write response loss");
+                            break;
+                        }
                         response
                             .send_response(
                                 Response::builder()
@@ -524,7 +534,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
         "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
-        "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,
+        "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,"drop_post_response":drop_post_response,
             "dropped_datagrams":dropped.load(std::sync::atomic::Ordering::Relaxed),"issued_retries":retries.load(std::sync::atomic::Ordering::Relaxed)},
         "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
         "h3_sample_complete":joint_capture_complete,

@@ -52,10 +52,12 @@ def fields(names, rows):
     return result
 
 
-def complete_boundary(boundary):
+def complete_boundary(boundary, require_bindings=False):
+    # 插入指令关联属于冻结的首请求边界，后续连接快照不保证重复携带它。
     required = ('settings', 'local_settings', 'streams', 'control', 'qpack', 'fields', 'snapshot')
     return (boundary.get('settings_received') is True
             and boundary.get('connection_error') is None
+            and (not require_bindings or (boundary.get('encoder_bindings') or {}).get('complete') is True)
             and all(boundary.get('completeness', {}).get(key) is True for key in required))
 
 
@@ -70,7 +72,11 @@ def compare(folder):
         return result
     checks={'calibrated':True,'three_production_h3_requests':len(requests)>=3,
         'driver_succeeded':actual.get('driver_success') is True,
-        'source_boundary_complete':complete_boundary(source['boundary']),
+        'source_initial_complete':source['flight'].get('complete') is True,
+        'actual_initial_complete':actual['initial'].get('complete') is True,
+        'same_selected_connection':actual.get('selected_flow_id') is not None
+            and all(r.get('flow_id')==actual['selected_flow_id'] for r in requests[:3]),
+        'source_boundary_complete':complete_boundary(source['boundary'], require_bindings=True),
         'source_warm_boundary_complete':complete_boundary(source['warm_boundary']),
         'no_connection_error':not actual['connection_errors'],
         'transport_parameters':parameters(source['parameters'])==parameters(actual['transport_parameters']),
@@ -88,12 +94,13 @@ def compare(folder):
         checks['tls_raw_evidence_present']=False
     checks['initial_streams']=streams(source['boundary'])==streams(requests[0]['first_request_boundary']['snapshot'])
     checks['warm_streams']=streams(source['warm_boundary'])==streams(requests[-1]['connection'])
+    checks['warm_control_frames']=controls(source['warm_boundary'])==controls(requests[-1]['connection'])
     source_names=source['pseudo_order']+source['header_order']
     differences=[]
     for i,request in enumerate(requests[:3]):
         boundary=request.get('first_request_boundary', {})
         checks[f'qpack_phase_{i}_frozen_boundary']=(boundary.get('status')=='ready'
-            and complete_boundary(boundary.get('snapshot', {})))
+            and complete_boundary(boundary.get('snapshot', {}), require_bindings=True))
         checks[f'qpack_phase_{i}_connection_complete']=complete_boundary(request.get('connection', {}))
         evidence=request.get('request') or {}
         names=evidence.get('names')

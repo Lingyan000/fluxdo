@@ -27,7 +27,7 @@ def verify(folder, case, exit_code):
                       no_h3=not h3,
                       h2_fallback=all(r['version'] == 'HTTP/2.0' for r in requests))
     else:
-        checks.update(h3_reached=any(r['version'] == 'HTTP/3.0' for r in requests))
+        checks.update(h3_reached=any(r.get('version') == 'HTTP/3.0' for r in requests))
     if case == 'loss':
         checks['one_initial_dropped'] = network['dropped_datagrams'] == 1
     elif case == 'retry':
@@ -46,6 +46,10 @@ def verify(folder, case, exit_code):
                         if s['grease']) for r in firsts.values()]
         # 无 GREASE 的原生配置无需凭空补发；有 GREASE 时不能复制旧连接值。
         checks['fresh_grease_if_present'] = not any(grease) or len(set(grease)) == 2
+    elif case == 'post-loss':
+        checks.update(response_loss_injected=network.get('drop_post_response') is True
+                      and len(writes)==1 and writes[0].get('response_intentionally_lost') is True,
+                      write_error_returned=any(r.get('method')=='POST' and r.get('error_observed') is True for r in requests))
     elif case == 'requests':
         conditional=[r for r in h3 if r['path']=='/fluxdo-probe/conditional']
         parallel=[r for r in requests if r.get('scenario')=='parallel']
@@ -67,6 +71,7 @@ def main():
     parser.add_argument('--browser', required=True)
     parser.add_argument('--samples', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--case', action='append', choices=['loss','retry','blocked','reset','requests','post-loss'])
     parser.add_argument('--force-quic', action='store_true',
                         help='仅实验浏览器采样强制 QUIC，不能用作原生 WebView 可用性证据')
     args = parser.parse_args()
@@ -75,7 +80,10 @@ def main():
     suffix = '.exe' if os.name == 'nt' else ''
     results = []
     for case, flag in [('loss', '--drop-first-initial'), ('retry', '--require-retry'),
-                       ('blocked', '--block-quic'), ('reset', None), ('requests', None)]:
+                       ('blocked', '--block-quic'), ('reset', None), ('requests', None),
+                       ('post-loss', '--drop-post-response')]:
+        if args.case and case not in args.case:
+            continue
         folder = args.output.resolve() / case
         (folder / 'server').mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
