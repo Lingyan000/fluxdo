@@ -56,11 +56,15 @@ internal static class Program {
                     using var root = X509Certificate2.CreateFromPem(pem);
                     if (root.Subject != root.Issuer || !root.Extensions.OfType<X509BasicConstraintsExtension>().Any(e => e.CertificateAuthority))
                         throw new InvalidOperationException("invalid probe CA");
-                    using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+                    // 一次性管理员 runner 的机器库，避免当前用户根库的交互确认阻塞诊断。
+                    Console.Error.WriteLine("probe-stage: open-machine-root-store");
+                    using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
                     store.Open(OpenFlags.ReadWrite);
                     if (!store.Certificates.Contains(root)) {
+                        Console.Error.WriteLine("probe-stage: add-machine-root");
                         store.Add(root);
                         installedRoot = new X509Certificate2(root.RawData);
+                        Console.Error.WriteLine("probe-stage: root-installed");
                     }
                 }
                 if (!string.IsNullOrEmpty(netlog)) {
@@ -96,9 +100,10 @@ internal static class Program {
         finally {
             view.Dispose();
             if (installedRoot != null) {
-                using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+                using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
                 store.Open(OpenFlags.ReadWrite);
                 store.Remove(installedRoot);
+                Console.Error.WriteLine("probe-stage: root-removed");
                 installedRoot.Dispose();
             }
         }
