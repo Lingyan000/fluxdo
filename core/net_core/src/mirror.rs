@@ -475,7 +475,7 @@ impl FingerprintTemplates {
                 .get("sec-fetch-mode")
                 .is_some_and(|mode| mode.as_bytes() == b"cors");
         if is_fetch {
-            if request.version() == rama::http::Version::HTTP_2 {
+            if known_probe_fetch && request.version() == rama::http::Version::HTTP_2 {
                 let next = H2FetchPriority {
                     dependency: extensions.get_ref::<StreamDependency>().cloned(),
                 };

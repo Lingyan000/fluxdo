@@ -263,8 +263,14 @@ pub fn capability_audit(reference: &ClientHello) -> serde_json::Value {
             ("extension_ids", extensions),
         ])
     }
-    let result = build(reference, Host::from_static("localhost"), None, None)
-        .and_then(|built| emit_client_hello(built.connector_data));
+    // 这份配置只交给 HelloSink（无网络、无服务端响应），不初始化或污染进程全局
+    // 信任库。生产 build() 仍始终启用平台证书校验，此配置不会返回给连接调用方。
+    let mut config = TlsClientConfig::new_from_client_hello(reference)
+        .with_unknown_values(UnknownValues::Drop)
+        .with_server_verify(rama::tls::client::ServerVerifyMode::Disable);
+    config.set_server_name(Host::from_static("localhost"));
+    config.set_permute_extensions(false);
+    let result = TlsConnectorData::try_from(&config).and_then(emit_client_hello);
     match result {
         Ok(actual) => {
             let expected = fields(reference);
