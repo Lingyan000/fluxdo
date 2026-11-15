@@ -57,5 +57,6 @@ jobs:
             ${{ runner.temp }}/apple-fingerprint/**/*.log
             ${{ runner.temp }}/apple-fingerprint/**/*.stdout
             ${{ runner.temp }}/apple-fingerprint/**/*.stderr
+            ${{ runner.temp }}/apple-fingerprint/*.png
           if-no-files-found: warn
           retention-days: 14

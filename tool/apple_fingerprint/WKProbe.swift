@@ -9,7 +9,7 @@ import UIKit
 
 @MainActor
 final class Probe: NSObject, WKNavigationDelegate {
-    let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 480), configuration: WKWebViewConfiguration())
+    lazy var webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 480), configuration: WKWebViewConfiguration())
     var observation: NSKeyValueObservation?
     var finished = false
     var target: URL?
@@ -156,12 +156,15 @@ final class Host: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let controller = UIViewController()
-        controller.view = probe.webView
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         self.window = window
-        probe.start()
+        // 先完成 UIKit 启动，再创建 WebView，避免在应用启动回调前等待 WebKit 服务。
+        DispatchQueue.main.async { [self] in
+            controller.view = probe.webView
+            probe.start()
+        }
         return true
     }
 }

@@ -38,6 +38,18 @@ def warmup_simulator(root, version, udid):
             return
         except (RuntimeError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             Path(f'{stem}.json').write_text(json.dumps({'attempt':attempt+1,'success':False,'error':str(error)})+'\n')
+            # 记录启动服务与屏幕状态，不把没有进入网络阶段的失败归因于指纹。
+            diagnostics = [
+                ('launch-services', ['xcrun','simctl','spawn',udid,'log','show','--last','3m','--style','compact',
+                    '--predicate','process == "runningboardd" OR process == "SpringBoard" OR process == "WKProbe"']),
+                ('screen', ['xcrun','simctl','io',udid,'screenshot',f'{stem}.png']),
+            ]
+            for label, command in diagnostics:
+                with Path(f'{stem}-{label}.log').open('w') as log:
+                    try:
+                        subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=20, check=False)
+                    except subprocess.TimeoutExpired:
+                        log.write('\n诊断命令超时\n')
             if attempt == 1:
                 raise
             subprocess.run(['xcrun','simctl','shutdown',udid],timeout=30,check=False)
@@ -202,6 +214,9 @@ def main():
             device_type = devices[0]['deviceTypeIdentifier'] if devices else compatible[0]['identifier']
             udid = output(['xcrun', 'simctl', 'create', 'FluxDO-Fingerprint', device_type, runtime['identifier']])
             run(['xcrun', 'simctl', 'boot', udid])
+            # 同时建立图形会话，排查无界面启动时的应用启动阻塞。
+            simulator = Path(output(['xcode-select','-p']))/'Applications/Simulator.app'
+            run(['open','-a',simulator,'--args','-CurrentDeviceUDID',udid], timeout=30)
             run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
             run(['xcrun', 'simctl', 'install', udid, app])
             warmup_simulator(root, runtime['version'], udid)
