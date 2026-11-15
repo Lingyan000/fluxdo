@@ -138,9 +138,25 @@ impl Templates {
     }
     pub fn status(&self) -> serde_json::Value {
         let state = self.0.lock();
+        let observed = |event: &str| state.activity.values()
+            .any(|counts| counts.get(event).copied().unwrap_or(0) > 0);
+        // 仅描述实际观测，不把没有 QUIC 握手推断成浏览器不支持 H3。
+        let reason = if state.ready.is_some() {
+            "sampled_quic_h3_profile"
+        } else if state.error.is_some() {
+            "native_quic_h3_calibration_failed"
+        } else if state.first.is_some() {
+            "native_quic_h3_waiting_for_second_sample"
+        } else if observed("quic_connections") {
+            "native_quic_observed_profile_pending"
+        } else if observed("tcp_requests") {
+            "native_probe_only_tcp_observed"
+        } else {
+            "native_quic_h3_profile_not_calibrated"
+        };
         serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
             "observations":if state.ready.is_some() {2} else if state.first.is_some() {1} else {0},
-            "activity":state.activity,"error":state.error,"reason":if state.ready.is_some() {"sampled_quic_h3_profile"} else {"native_quic_h3_profile_not_calibrated"}})
+            "activity":state.activity,"error":state.error,"reason":reason})
     }
     pub fn failure(&self, error: impl ToString) {
         let mut state = self.0.lock();

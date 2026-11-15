@@ -241,13 +241,20 @@ async fn main() -> Result<(), BoxError> {
             return Err("production protocol did not match scenario expectation".into());
         }
         if !scenario.is_empty() && round + 1 == rounds {
+            // 固定合成数据跨越多个 DATA 帧，服务端校验摘要，不能只比较长度。
+            let payload = if scenario == "requests" {
+                (0..65539).map(|i| (i % 251) as u8).collect::<Vec<_>>()
+            } else {
+                b"single-write".to_vec()
+            };
             let response = client
                 .send(
                     Request::builder()
                         .method("POST")
                         .uri(format!("{origin}/fluxdo-probe/write"))
                         .header("user-agent", reference.user_agent.as_deref().unwrap())
-                        .body(Body::from("single-write"))?,
+                        .header("content-type", "application/octet-stream")
+                        .body(Body::from(payload))?,
                     Some(Duration::from_secs(5)),
                     Some(Duration::from_secs(5)),
                 )
@@ -255,6 +262,31 @@ async fn main() -> Result<(), BoxError> {
             let version = response.version();
             response.into_body().collect().await?;
             results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+        }
+        if scenario == "requests" {
+            let response=client.send(Request::builder()
+                .uri(format!("{origin}/fluxdo-probe/conditional"))
+                .header("user-agent",reference.user_agent.as_deref().unwrap())
+                .header("if-none-match","\"fluxdo-lab-etag\"")
+                .body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+            let version=response.version();
+            response.into_body().collect().await?;
+            results.push(serde_json::json!({"scenario":"conditional","version":format!("{version:?}")}));
+            let send_parallel=|index| {
+                let client=&client;
+                let origin=origin.to_owned();
+                let ua=reference.user_agent.clone().unwrap();
+                async move {
+                    let response=client.send(Request::builder().uri(format!("{origin}/fluxdo-probe/parallel-{index}"))
+                        .header("user-agent",ua).body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                    let version=response.version();
+                    let connection=response.extensions().get_ref::<fluxdo_net::client::ExchangeInfo>().map(|i|i.connection_id);
+                    response.into_body().collect().await?;
+                    Ok::<_,BoxError>(serde_json::json!({"scenario":"parallel","index":index,"version":format!("{version:?}"),"connection_id":connection}))
+                }
+            };
+            let (a,b,c)=tokio::try_join!(send_parallel(0),send_parallel(1),send_parallel(2))?;
+            results.extend([a,b,c]);
         }
         for path in [
             "done",

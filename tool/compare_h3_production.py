@@ -52,11 +52,26 @@ def fields(names, rows):
     return result
 
 
+def complete_boundary(boundary):
+    required = ('settings', 'local_settings', 'streams', 'control', 'qpack', 'fields', 'snapshot')
+    return (boundary.get('settings_received') is True
+            and boundary.get('connection_error') is None
+            and all(boundary.get('completeness', {}).get(key) is True for key in required))
+
+
 def compare(folder):
     source=json.loads((folder/'client/profile.json').read_text())
     actual=json.loads((folder/'server/h3-capture.json').read_text())
-    requests=actual['h3']
+    requests=actual.get('h3', [])
+    if not requests:
+        result={'checks':{'three_production_h3_requests':False},'all_checked_fields_match':False,
+                'field_comparison':[], 'error':'missing production H3 requests'}
+        (folder/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+        return result
     checks={'calibrated':True,'three_production_h3_requests':len(requests)>=3,
+        'driver_succeeded':actual.get('driver_success') is True,
+        'source_boundary_complete':complete_boundary(source['boundary']),
+        'source_warm_boundary_complete':complete_boundary(source['warm_boundary']),
         'no_connection_error':not actual['connection_errors'],
         'transport_parameters':parameters(source['parameters'])==parameters(actual['transport_parameters']),
         'settings':settings(source['boundary'])==settings(requests[0]['first_request_boundary']['snapshot']),
@@ -76,9 +91,20 @@ def compare(folder):
     source_names=source['pseudo_order']+source['header_order']
     differences=[]
     for i,request in enumerate(requests[:3]):
-        names=request['request'].get('names')
-        if names is None:
-            checks[f'qpack_phase_{i}_named_evidence']=False
+        boundary=request.get('first_request_boundary', {})
+        checks[f'qpack_phase_{i}_frozen_boundary']=(boundary.get('status')=='ready'
+            and complete_boundary(boundary.get('snapshot', {})))
+        checks[f'qpack_phase_{i}_connection_complete']=complete_boundary(request.get('connection', {}))
+        evidence=request.get('request') or {}
+        names=evidence.get('names')
+        rows=evidence.get('fields')
+        checks[f'qpack_phase_{i}_fields_complete']=evidence.get('fields_complete') is True
+        checks[f'qpack_phase_{i}_stream_id']=evidence.get('stream_id')==i*4
+        valid_names=(isinstance(names,list) and isinstance(rows,list)
+            and all(isinstance(name,str) for name in names) and len(names)==len(rows)
+            and all(names.count(pseudo)==1 for pseudo in source['pseudo_order']))
+        checks[f'qpack_phase_{i}_named_evidence']=valid_names
+        if not valid_names:
             continue
         expected=fields(source_names,source['wire_fields'][i])
         emitted=fields(names,request['request']['fields'])

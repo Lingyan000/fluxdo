@@ -27,6 +27,10 @@ use rama_quic_proto::{Side, capture};
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+fn body_digest(bytes: &[u8]) -> String {
+    sha256(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 // 不强迫协议选择，让 WebView 按 Alt-Svc 和自己的信任策略决定是否启用 H3。
 const NATIVE_PAGE: &str = r#"<!doctype html><title>fluxdo-probe</title><script>
 (async()=>{try{for(let i=0;i<24;i++){try{let r=await fetch('/fluxdo-probe/fetch?i='+i);
@@ -161,19 +165,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let requests = requests.clone();
                 let finished = finished.clone();
                 let http = HttpServer::auto(Executor::new()).service(service_fn(
-                    move |request: Request| {
+                    move |mut request: Request| {
                         let path = request
                             .uri()
                             .path()
                             .map(|p| p.to_string())
                             .unwrap_or_default();
-                        requests
-                            .lock()
-                            .push(json!({"connection_id":id,"path":path,"method":request.method().as_str(),"version":format!("{:?}",request.version())}));
-                        close_request.notify_one();
-                        if path == "/fluxdo-probe/finished" {
-                            finished.notify_one();
-                        }
+                        let mut observation=json!({"connection_id":id,"path":path,"method":request.method().as_str(),"version":format!("{:?}",request.version()),
+                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
+                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok())});
+                        let requests=requests.clone();
+                        let close_request=close_request.clone();
+                        let finished=finished.clone();
                         let response = Response::builder()
                             .header("alt-svc", format!("h3=\":{port}\"; ma=60"))
                             .header("cache-control", "no-store")
@@ -184,7 +187,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 "tcp"
                             }))
                             .unwrap();
-                        async move { Ok::<_, std::convert::Infallible>(response) }
+                        async move {
+                            let bytes=match request.body_mut().collect().await {
+                                Ok(body)=>body.to_bytes(),
+                                Err(error)=>{
+                                    observation["body_error"]=json!(error.to_string());
+                                    requests.lock().push(observation);
+                                    return Ok::<_,std::convert::Infallible>(Response::builder().status(500).body(Body::empty()).unwrap());
+                                }
+                            };
+                            observation["body_bytes"]=json!(bytes.len());
+                            observation["body_sha256"]=json!(body_digest(&bytes));
+                            requests.lock().push(observation);
+                            close_request.notify_one();
+                            if path=="/fluxdo-probe/finished" {finished.notify_one();}
+                            Ok::<_, std::convert::Infallible>(response)
+                        }
                     },
                 ));
                 let service = TlsAcceptorLayer::new(tls.clone()).into_layer(http);
@@ -327,7 +345,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else if path.starts_with("/fluxdo-probe/") { "h3" } else {
                             "ok"
                         };
-                        let body_size=request.body_mut().collect().await?.to_bytes().len();
+                        let request_body=request.body_mut().collect().await?.to_bytes();
                         response
                             .send_response(
                                 Response::builder()
@@ -336,7 +354,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             )
                             .await?;
                         observation_sink.lock().push(
-                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":body_size,"version":format!("{:?}",request.version()),
+                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),"version":format!("{:?}",request.version()),
+                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
+                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok()),
                             "connection":observer.map(|o| o.snapshot()),"request":fields,
                             "first_request_boundary":first_request_boundary}),
                         );
