@@ -64,6 +64,8 @@ public final class ProbeActivity extends Activity {
             data.put("webview", WebView.getCurrentWebViewPackage().versionName);
             data.put("native_user_agent", nativeUa);
             data.put("effective_user_agent", view.getSettings().getUserAgentString());
+            android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
+            data.put("default_network_available", connectivity.getActiveNetwork() != null);
             data.put("udp_relay", udpBridge != null);
             if (udpBridge != null) {
                 data.put("udp_sent", udpBridge.sent.get());
