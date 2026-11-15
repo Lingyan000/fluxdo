@@ -10,7 +10,7 @@
 //!   Chromium 本身就是 BoringSSL，结果与参考握手逐字相同；Safari 等非 Chromium 客户端
 //!   外层会少掉 BoringSSL 不支持的老套件（如 3DES 的 ECDHE 变体），以换取正确的内层。
 //! - 所有客户端都注入 ECH（可用性优先）；Chromium 系额外请求 server padding，与 Chrome 一致。
-//! - Chromium 系每条连接重新打乱扩展顺序、重新生成 GREASE，与浏览器行为一致。
+//! - 镜像保留当次扩展顺序；缓存回放只在实际采样观察到乱序后才重新排列。
 
 use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
@@ -147,6 +147,18 @@ pub fn build(
     ech_config_list: Option<&[u8]>,
     sessions: Option<&ClientSessions>,
 ) -> Result<BrowserEgress, BoxError> {
+    build_with_permutation(hello, server_name, ech_config_list, sessions, false)
+}
+
+/// 乱序是运行时行为，不能仅凭 Chromium 身份或 UA 主版本推断。
+/// 未完成多次采样时保留参考顺序；GREASE 和密钥仍由 TLS 库重新生成。
+pub fn build_with_permutation(
+    hello: &ClientHello,
+    server_name: Host,
+    ech_config_list: Option<&[u8]>,
+    sessions: Option<&ClientSessions>,
+    permute_extensions: bool,
+) -> Result<BrowserEgress, BoxError> {
     let chromium = is_chromium(hello);
     let mut config =
         TlsClientConfig::new_from_client_hello(hello).with_unknown_values(UnknownValues::Drop);
@@ -154,9 +166,7 @@ pub fn build(
     // 交给平台校验器：企业与用户自装的 CA、系统的吊销策略都算数，与系统网络栈同待遇
     // （安卓还会遵循 network_security_config）。没有平台校验器的 Linux 由 rama 退回系统信任库。
     config.set_platform_verifier();
-    if chromium {
-        config.set_permute_extensions(true);
-    }
+    config.set_permute_extensions(permute_extensions);
 
     // 标准套件串为空（参考握手没有 BoringSSL 认识的 TLS 1.2 套件）时无法安全注入 ECH
     let ech = ech_config_list.and_then(|list| {
@@ -660,5 +670,102 @@ mod tests {
     fn standard_cipher_list_keeps_reference_order() {
         let list = standard_cipher_list(&chrome156()).unwrap();
         assert!(list.starts_with("ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"));
+    }
+
+    fn chrome99() -> ClientHello {
+        serde_json::from_str::<crate::mirror::FingerprintTemplate>(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap()
+        .hello
+    }
+
+    fn ordered_ids(hello: &ClientHello) -> Vec<u16> {
+        hello
+            .extensions()
+            .iter()
+            .map(|e| u16::from(e.id()))
+            .filter(|id| !is_grease(*id))
+            .collect()
+    }
+
+    #[test]
+    fn mirror_and_uncalibrated_replay_preserve_reference_extension_order() {
+        for reference in [chrome99(), chrome156(), safari27()] {
+            for _ in 0..8 {
+                let output =
+                    emitted(build(&reference, Host::from_static("localhost"), None, None).unwrap());
+                assert_eq!(ordered_ids(&output), ordered_ids(&reference));
+                assert_eq!(
+                    without_grease(output.cipher_suites()),
+                    without_grease(reference.cipher_suites())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn calibrated_permutation_changes_order_without_changing_capabilities() {
+        let reference = chrome156();
+        let mut orders = std::collections::HashSet::new();
+        for _ in 0..8 {
+            let output = emitted(
+                build_with_permutation(
+                    &reference,
+                    Host::from_static("localhost"),
+                    None,
+                    None,
+                    true,
+                )
+                .unwrap(),
+            );
+            orders.insert(ordered_ids(&output));
+            assert_eq!(extension_ids(&output), extension_ids(&reference));
+            assert_eq!(
+                without_grease(output.cipher_suites()),
+                without_grease(reference.cipher_suites())
+            );
+        }
+        assert!(orders.len() > 1);
+    }
+
+    #[test]
+    fn replay_keeps_sampled_alpn_versions_groups_signatures_and_alps_codepoint() {
+        fn stable(hello: &ClientHello) -> serde_json::Value {
+            let mut value = serde_json::to_value(hello).unwrap();
+            let extensions = value["extensions"].as_array_mut().unwrap();
+            extensions.retain(|entry| {
+                [
+                    "SupportedGroups",
+                    "SupportedVersions",
+                    "SignatureAlgorithms",
+                    "ApplicationLayerProtocolNegotiation",
+                    "ApplicationSettings",
+                    "CertificateCompression",
+                    "ECPointFormats",
+                ]
+                .iter()
+                .any(|name| entry.get(*name).is_some())
+            });
+            for entry in extensions.iter_mut() {
+                for name in [
+                    "SupportedGroups",
+                    "SupportedVersions",
+                    "SignatureAlgorithms",
+                ] {
+                    if let Some(values) = entry.get_mut(name).and_then(|v| v.as_array_mut()) {
+                        values.retain(|v| !is_grease(v.as_u64().unwrap() as u16));
+                    }
+                }
+            }
+            extensions
+                .sort_by_key(|entry| entry.as_object().unwrap().keys().next().unwrap().clone());
+            serde_json::json!(extensions)
+        }
+        for hello in [chrome99(), chrome156(), safari27()] {
+            let output =
+                emitted(build(&hello, Host::from_static("localhost"), None, None).unwrap());
+            assert_eq!(stable(&hello), stable(&output));
+        }
     }
 }

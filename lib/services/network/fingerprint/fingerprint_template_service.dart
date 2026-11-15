@@ -103,13 +103,29 @@ class FingerprintTemplateService {
         '[Fingerprint] ${status.ready ? 'WebView 已升级' : '模板缺失'}，开始探针采样',
       );
       final elapsed = Stopwatch()..start();
-      if (_testProbe != null) {
-        await _testProbe!(port, cancelled);
-      } else {
-        await _probe(port, cancelled);
+      // 同一主版本也可能被实验开关改变 TLS 扩展顺序，因此由两次独立
+      // 握手校准，不使用版本阈值。核心在 done 后关闭采样连接。
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (_testProbe != null) {
+          await _testProbe!(port, cancelled);
+        } else {
+          await _probe(port, cancelled);
+        }
+        if (!_isCurrent(port, generation)) return;
+        status = await _status(port);
+        if (!_isCurrent(port, generation)) return;
+        if (status == null || status.userAgent != userAgent || status.ready) {
+          break;
+        }
+        if (attempt == 0) {
+          await Future.any([
+            Future<void>.delayed(const Duration(milliseconds: 150)),
+            cancelled,
+          ]);
+          if (!_isCurrent(port, generation)) return;
+        }
       }
       if (!_isCurrent(port, generation)) return;
-      status = await _status(port);
       NetworkLogger.log(
         '[Fingerprint] 探针采样结束，耗时 ${elapsed.elapsedMilliseconds}ms，'
         '模板${status?.ready == true ? '已就绪' : '仍未就绪'}',

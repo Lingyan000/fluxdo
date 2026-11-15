@@ -73,17 +73,35 @@ impl ProbeEndpoint {
         }
 
         let templates = self.templates.clone();
+        let finished = Arc::new(tokio::sync::Notify::new());
+        let done = finished.clone();
         let mut http = HttpServer::auto(Executor::new());
         http.h2_mut().set_observe_early_frames(true);
         let http = http.service(service_fn(move |request: Request| {
             let templates = templates.clone();
-            async move { Ok::<_, Infallible>(handle(&templates, request)) }
+            let done = done.clone();
+            async move {
+                let is_done = request
+                    .uri()
+                    .path()
+                    .is_some_and(|p| p.to_string() == PROBE_DONE_PATH);
+                let response = handle(&templates, request);
+                if is_done {
+                    done.notify_one();
+                }
+                Ok::<_, Infallible>(response)
+            }
         }));
-        TlsAcceptorLayer::new(self.tls.clone())
-            .into_layer(http)
-            .serve(input)
-            .await
-            .map_err(|e| NetError::Proxy(format!("Probe connection: {e}")))
+        let service = TlsAcceptorLayer::new(self.tls.clone()).into_layer(http);
+        tokio::select! {
+            result = service.serve(input) => result.map_err(|e| NetError::Proxy(format!("Probe connection: {e}"))),
+            _ = async {
+                finished.notified().await;
+                // 让完成响应发出后关闭此回环连接，下一轮必须重新握手，
+                // 避免 WebView 全局连接池让“两次采样”实际复用同一 TLS。
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            } => Ok(()),
+        }
     }
 }
 
@@ -93,7 +111,9 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
         .path()
         .map(|path| path.to_string())
         .unwrap_or_default();
-    if path.starts_with(PROBE_PATH) {
+    if path == PROBE_FETCH_PATH {
+        templates.observe_probe_fetch(&request);
+    } else if path.starts_with(PROBE_PATH) {
         templates.observe_request(&request);
     }
     match path.as_str() {
@@ -106,7 +126,9 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
             if path == PROBE_DONE_PATH {
                 info!(
                     "Probe finished: template ready = {}",
-                    templates.snapshot().is_some()
+                    templates
+                        .captured_snapshot()
+                        .is_some_and(|t| t.is_calibrated())
                 );
             }
             Response::builder()
@@ -118,5 +140,44 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
             .status(StatusCode::NOT_FOUND)
             .body(Body::empty())
             .unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod scenario_tests {
+    use super::*;
+    use rama::extensions::ExtensionsMut;
+
+    #[test]
+    fn probe_fetch_without_fetch_metadata_still_completes_sampling() {
+        // 模拟不发送 Fetch Metadata / Client Hints 的内核，不能伪装成真机证据。
+        let reference = crate::presets::by_id("ios-safari18").unwrap();
+        let templates = FingerprintTemplates::new(None);
+        templates.record_hello(&reference.hello);
+        templates.record_hello(&reference.hello);
+        for path in [PROBE_PATH, PROBE_FETCH_PATH] {
+            let mut request = Request::builder()
+                .uri(path)
+                .header("user-agent", "Fixture-WebKit/1")
+                .header("accept-encoding", "gzip, br")
+                .body(Body::empty())
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(reference.early_frames.clone());
+            request
+                .extensions_mut()
+                .insert(reference.pseudo_order.clone());
+            handle(&templates, request);
+            let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+            assert_eq!(status["ready"], path == PROBE_FETCH_PATH);
+        }
+        assert_eq!(
+            templates
+                .captured_snapshot()
+                .unwrap()
+                .low_entropy_client_hints,
+            Some(Vec::new())
+        );
     }
 }

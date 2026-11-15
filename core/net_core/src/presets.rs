@@ -5,29 +5,31 @@ struct Preset {
     id: &'static str,
     platform: &'static str,
     major: u16,
+    permute_extensions: bool,
     json: &'static str,
 }
 macro_rules! preset {
-    ($id:literal, $platform:literal, $major:literal) => {
+    ($id:literal, $platform:literal, $major:literal, $permute:literal) => {
         Preset {
             id: $id,
             platform: $platform,
             major: $major,
+            permute_extensions: $permute,
             json: include_str!(concat!("../presets/", $id, ".json")),
         }
     };
 }
 static PRESETS: &[Preset] = &[
-    preset!("android-webview133", "android", 133),
-    preset!("android-chrome149", "android", 149),
-    preset!("ios-safari17", "ios", 17),
-    preset!("ios-safari18", "ios", 18),
-    preset!("ios-safari26", "ios", 26),
-    preset!("macos-safari18", "macos", 18),
-    preset!("macos-safari26", "macos", 26),
-    preset!("windows-edge152", "windows", 152),
-    preset!("windows-edge153", "windows", 153),
-    preset!("windows-edge154", "windows", 154),
+    preset!("android-webview133", "android", 133, true),
+    preset!("android-chrome149", "android", 149, true),
+    preset!("ios-safari17", "ios", 17, false),
+    preset!("ios-safari18", "ios", 18, false),
+    preset!("ios-safari26", "ios", 26, false),
+    preset!("macos-safari18", "macos", 18, false),
+    preset!("macos-safari26", "macos", 26, false),
+    preset!("windows-edge152", "windows", 152, true),
+    preset!("windows-edge153", "windows", 153, true),
+    preset!("windows-edge154", "windows", 154, true),
 ];
 
 /// 用户主动选择时按 ID 精确取档，不受宿主平台与缓存影响。
@@ -35,6 +37,7 @@ pub(crate) fn by_id(id: &str) -> Option<FingerprintTemplate> {
     let selected = PRESETS.iter().find(|preset| preset.id == id)?;
     let mut template: FingerprintTemplate = serde_json::from_str(selected.json).ok()?;
     template.source = TemplateSource::Builtin(selected.id);
+    template.tls_permute_extensions = Some(selected.permute_extensions);
     template.generation = 0;
     Some(template)
 }
@@ -70,6 +73,7 @@ pub(crate) fn select(platform: &str, ua: Option<&str>) -> Option<FingerprintTemp
         })?;
     let mut template: FingerprintTemplate = serde_json::from_str(selected.json).ok()?;
     template.source = TemplateSource::Builtin(selected.id);
+    template.tls_permute_extensions = Some(selected.permute_extensions);
     template.generation = 0;
     tracing::info!(
         "Fingerprint fallback available: preset={}, platform={}, requested_major={:?}, preset_major={}",
