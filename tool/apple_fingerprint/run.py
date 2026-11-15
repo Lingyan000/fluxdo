@@ -25,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
+    parser.add_argument('--close-tcp', action='store_true', help='H3 实验中服务端关闭旧 TCP 连接，排除持续复用的影响')
     parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
@@ -57,7 +58,7 @@ def main():
         result = {'case': name, 'evidence_kind': 'native_wkwebview', 'configuration': extra_env}
         try:
             with (folder / 'run.log').open('w') as log:
-                process = subprocess.run([str(binary), str(driver), str(folder)] + (['--native-probe'] if args.h3 else []), env=env,
+                process = subprocess.run([str(binary), str(driver), str(folder)] + (['--native-probe'] if args.h3 else []) + (['--close-tcp'] if args.h3 and args.close_tcp else []), env=env,
                                          stdout=log, stderr=subprocess.STDOUT, timeout=240)
             result['exit_code'] = process.returncode
             native = []

@@ -29,8 +29,8 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 // 不强迫协议选择，让 WebView 按 Alt-Svc 和自己的信任策略决定是否启用 H3。
 const NATIVE_PAGE: &str = r#"<!doctype html><title>fluxdo-probe</title><script>
-(async()=>{try{for(let i=0;i<24;i++){let r=await fetch('/fluxdo-probe/fetch?i='+i);
-if((await r.text())==='h3'){await fetch('/fluxdo-probe/done');break;}
+(async()=>{try{for(let i=0;i<24;i++){try{let r=await fetch('/fluxdo-probe/fetch?i='+i);
+if((await r.text())==='h3'){await fetch('/fluxdo-probe/done');break;}}catch(e){}
 await new Promise(r=>setTimeout(r,500));}}finally{
 await fetch('/fluxdo-probe/finished');document.title='fluxdo-probe-done';}})();
 </script>"#;
@@ -40,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<_> = std::env::args().collect();
     let browser = args.get(1).ok_or("browser executable required")?;
     let native_probe = args.iter().any(|a| a == "--native-probe");
+    let close_tcp = args.iter().any(|a| a == "--close-tcp");
     let learn_alt_svc = native_probe || args.iter().any(|a| a == "--learn-alt-svc");
     let version = if native_probe {
         String::new()
@@ -83,8 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let finished = native_finished.clone();
         Some(tokio::spawn(async move {
             let mut connections = tokio::task::JoinSet::new();
+            let mut connection_id = 0usize;
             loop {
                 let (stream, _) = listener.accept().await?;
+                let id = connection_id;
+                connection_id += 1;
+                let close = Arc::new(tokio::sync::Notify::new());
+                let close_request = close.clone();
                 let requests = requests.clone();
                 let finished = finished.clone();
                 let http = HttpServer::auto(Executor::new()).service(service_fn(
@@ -96,7 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .unwrap_or_default();
                         requests
                             .lock()
-                            .push(json!({"path":path,"version":format!("{:?}",request.version())}));
+                            .push(json!({"connection_id":id,"path":path,"version":format!("{:?}",request.version())}));
+                        close_request.notify_one();
                         if path == "/fluxdo-probe/finished" {
                             finished.notify_one();
                         }
@@ -114,7 +121,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     },
                 ));
                 let service = TlsAcceptorLayer::new(tls.clone()).into_layer(http);
-                connections.spawn(async move { service.serve(ServiceInput::new(stream)).await });
+                connections.spawn(async move {
+                    tokio::select! {
+                        result = service.serve(ServiceInput::new(stream)) => { let _ = result; }
+                        _ = async {
+                            close.notified().await;
+                            // 公告和响应体先写出，再关闭旧连接；只测试幂等本地 GET。
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }, if close_tcp => {}
+                    }
+                });
             }
             #[allow(unreachable_code)]
             Ok::<(), std::io::Error>(())
@@ -379,7 +395,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
-        "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,
+        "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
         "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
         "h3_sample_complete":joint_capture_complete,
         "joint_capture_complete":joint_capture_complete,"selected_flow_id":selected_flow,"flows":flow_summaries,
