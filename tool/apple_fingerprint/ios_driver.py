@@ -46,7 +46,8 @@ try:
         code = code or 1
     print(json.dumps(report), flush=True)
     report_path.unlink()
-except subprocess.TimeoutExpired:
+except subprocess.TimeoutExpired as error:
+    print('原生宿主命令超时: ' + str(error), file=sys.stderr, flush=True)
     code = 124
 except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
     print('原生宿主结果不完整: ' + str(error), file=sys.stderr, flush=True)
