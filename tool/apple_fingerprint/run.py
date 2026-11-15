@@ -48,6 +48,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--production-h3', action='store_true', help='原生 TCP 校准后运行生产 H3 采样和 Core 回放')
+    parser.add_argument('--qpack-scenarios', action='store_true', help='生产 H3 验证后追加七种请求形态的原生/Core 对照')
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
     parser.add_argument('--close-tcp', action='store_true', help='H3 实验中服务端关闭旧 TCP 连接，排除持续复用的影响')
     parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
@@ -55,6 +56,8 @@ def main():
     parser.add_argument('--include-oldest', action='store_true')
     parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
     args = parser.parse_args()
+    if args.qpack_scenarios and (not args.production_h3 or args.h3 or args.system_trust):
+        parser.error('--qpack-scenarios requires --production-h3 without --h3/--system-trust')
     if args.system_trust and (not args.h3 or os.environ.get('GITHUB_ACTIONS') != 'true'):
         parser.error('--system-trust requires --h3 on an ephemeral GitHub runner')
     root = args.output.resolve()
@@ -119,6 +122,17 @@ def main():
                         from compare_h3_production import compare as compare_h3
                         result['production_h3_comparison']=compare_h3(production)
                         result['passed'] &= result['production_h3_comparison']['all_checked_fields_match']
+                    if args.qpack_scenarios and result['passed']:
+                        qpack = folder / 'qpack-scenarios'
+                        qpack.mkdir()
+                        with (qpack/'run.log').open('w') as log:
+                            process = subprocess.run([sys.executable, str(repo/'tool/run_h3_qpack_scenarios.py'),
+                                '--native-driver', '--browser', str(driver.resolve()), '--samples', str(folder),
+                                '--output', str(qpack)], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=260)
+                        result['qpack_exit_code'] = process.returncode
+                        result['passed'] &= process.returncode == 0
+                        result['qpack_comparison'] = json.loads((qpack/'comparison.json').read_text())
+                        result['passed'] &= result['qpack_comparison']['passed']
         except (OSError, ValueError, KeyError, AssertionError, subprocess.TimeoutExpired) as error:
             result['error'] = str(error)
             result['passed'] = False
