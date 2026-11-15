@@ -1,0 +1,54 @@
+name: BrowserStack connection preflight
+
+on:
+  push:
+    branches: ['diagnostics/browserstack-preflight-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browserstack-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check credentials and read account plan without starting a device
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        shell: python
+        run: |
+          import base64
+          import http.client
+          import json
+          import os
+          import sys
+
+          # 只读取套餐信息，不上传应用或创建会话，因此不消耗设备分钟。
+          names = ('BROWSERSTACK_USERNAME', 'BROWSERSTACK_ACCESS_KEY')
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              print('::error::Missing repository secrets: ' + ', '.join(missing))
+              sys.exit(2)
+          token = base64.b64encode(':'.join(os.environ[n] for n in names).encode()).decode()
+          connection = http.client.HTTPSConnection('api-cloud.browserstack.com', timeout=20)
+          try:
+              connection.request('GET', '/app-automate/plan.json',
+                                 headers={'Authorization': 'Basic ' + token})
+              response = connection.getresponse()
+              if response.status != 200:
+                  print(f'::error::BrowserStack plan API returned HTTP {response.status}')
+                  sys.exit(3)
+              plan = json.loads(response.read())
+          finally:
+              connection.close()
+          print('BrowserStack account authentication succeeded; no device session created.')
+          for field in ('automate_plan', 'parallel_sessions_running',
+                        'parallel_sessions_max_allowed', 'queued_sessions'):
+              print(field + ': ' + json.dumps(plan.get(field)))
+          print('The plan API does not establish remaining free device minutes. No test started.')
