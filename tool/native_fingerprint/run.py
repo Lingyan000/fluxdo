@@ -75,7 +75,7 @@ for mode in ((['forced-native-spki-control', 'forced-app-spki-control'] if args.
                     process = subprocess.run([sys.executable, str(root/'tool/run_h3_qpack_scenarios.py'),
                         '--browser', str(driver.resolve()), '--samples', str(folder.resolve()),
                         '--output', str(extended.resolve()), '--native-driver'],
-                        env=h3env, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+                        env=h3env, stdout=log, stderr=subprocess.STDOUT, timeout=540)
                 result['qpack_comparison'] = json.loads((extended/'comparison.json').read_text())
                 result['passed'] &= process.returncode == 0 and result['qpack_comparison']['passed']
     except Exception as error:

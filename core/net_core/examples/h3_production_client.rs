@@ -173,6 +173,7 @@ async fn main() -> Result<(), BoxError> {
             .kill_on_drop(true)
             .spawn()?;
         for _ in 0..90 {
+            if child.try_wait()?.is_some() { break; }
             tokio::time::sleep(Duration::from_millis(200)).await;
             let state: serde_json::Value = serde_json::from_str(&templates.status_json())?;
             std::fs::write(out.join("status.json"), serde_json::to_vec_pretty(&state)?)?;
@@ -181,7 +182,9 @@ async fn main() -> Result<(), BoxError> {
             }
         }
         if std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some() {
-            let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+            // Android 驱动仍需输出完整结果、停止 Activity 并恢复调试配置。
+            // 成功采样不等于驱动已结束；保留有界退出时间，避免提前强杀丢失证据。
+            let _ = tokio::time::timeout(Duration::from_secs(60), child.wait()).await;
         }
         let _ = child.kill().await;
         helper_task.abort();

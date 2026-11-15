@@ -469,7 +469,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .spawn()?;
     let mut driver_success = None;
     let native_probe_finished = if native_probe {
-        match tokio::time::timeout(Duration::from_secs(95), child.wait()).await {
+        match tokio::time::timeout(Duration::from_secs(210), child.wait()).await {
             Ok(result) => {
                 driver_success = Some(result?.success());
                 driver_success == Some(true)

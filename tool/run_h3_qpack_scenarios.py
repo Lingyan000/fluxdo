@@ -98,7 +98,7 @@ def main():
             # 与生产校准探针一致：公告 Alt-Svc 后关闭旧 TCP 连接，允许原生栈重新选路。
             command += ['--native-probe', '--close-tcp']
         with (folder / 'run.log').open('w') as log:
-            completed = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
+            completed = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=240 if args.native_driver else 120)
         driver_codes[mode]=completed.returncode
         if completed.returncode:
             print(f'{mode} driver failed: {folder / "run.log"}', flush=True)
