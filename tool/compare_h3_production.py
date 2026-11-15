@@ -61,6 +61,38 @@ def complete_boundary(boundary, require_bindings=False):
             and all(boundary.get('completeness', {}).get(key) is True for key in required))
 
 
+def initial_layout(flight):
+    packets = flight.get('frames') or []
+    ranges = []
+    fragments = []
+    pings = []
+    per_packet = []
+    for packet in packets:
+        packet_ranges = []
+        for frame in packet:
+            crypto = frame.get('Crypto') if isinstance(frame, dict) else None
+            if crypto is not None:
+                start, length = crypto['offset'], crypto['len']
+                packet_ranges.append((start, start + length))
+                fragments.append(length)
+        per_packet.append(sorted(packet_ranges))
+        ranges.extend(packet_ranges)
+        pings.append(sum(frame == 'Ping' for frame in packet))
+    ranges.sort()
+    complete = bool(ranges) and ranges[0][0] == 0 and all(
+        a[1] == b[0] for a, b in zip(ranges, ranges[1:]))
+    first = per_packet[0] if per_packet else []
+    cross_packet = bool(first) and first[0][0] == 0 and any(
+        a[1] < b[0] for a, b in zip(first, first[1:]))
+    sizes = [packet[0][1]-packet[0][0] for packet in per_packet if len(packet)==1]
+    ordered_chunk = (sizes[0] if complete and len(sizes)==len(packets) and len(sizes)>1
+        and len(set(sizes[:-1]))==1 and sizes[-1]<=sizes[0] else None)
+    return {'ordered_crypto_chunk_size': ordered_chunk, 'complete_nonoverlapping_crypto': complete,
+            'crypto_bytes': ranges[-1][1] if ranges else 0,
+            'cross_packet': cross_packet, 'crypto_fragment_lengths': fragments,
+            'pings_per_packet': pings}
+
+
 def compare(folder):
     source=json.loads((folder/'client/profile.json').read_text())
     actual=json.loads((folder/'server/h3-capture.json').read_text())
@@ -84,6 +116,11 @@ def compare(folder):
         'initial_control_frames':controls(source['boundary'])==controls(requests[0]['first_request_boundary']['snapshot'])}
     for key in ['version','dcid_len','scid_len','first_packet_number','packet_number_lengths','padding','coalesced','datagram_sizes']:
         checks['initial_'+key]=source['flight'][key]==actual['initial'][key]
+    source_layout, actual_layout = initial_layout(source['flight']), initial_layout(actual['initial'])
+    checks['initial_source_crypto_coverage'] = source_layout['complete_nonoverlapping_crypto']
+    checks['initial_actual_crypto_coverage'] = actual_layout['complete_nonoverlapping_crypto']
+    checks['initial_cross_packet_strategy'] = source_layout['cross_packet'] == actual_layout['cross_packet']
+    checks['initial_ordered_chunk_size'] = source_layout['ordered_crypto_chunk_size'] == actual_layout['ordered_crypto_chunk_size']
     if 'hello' in actual['tls']:
         checks['tls_stable_fields']=stable_tls(source['hello'])==stable_tls(actual['tls']['hello'])
         expected,emitted=extension_ids(source['hello']),extension_ids(actual['tls']['hello'])
@@ -123,6 +160,7 @@ def compare(folder):
         differences.append({'phase':i,'differences':mismatch,'unmatched_fields':sorted(missing),
             'source_fields_not_requested':sorted(set(expected)-set(emitted))})
     result={'checks':checks,'all_checked_fields_match':all(checks.values()),'field_comparison':differences,
+        'initial_layout':{'source':source_layout,'actual':actual_layout},
         'scope':'production HttpEgressClient versus fresh local browser samples',
         'not_verified':['physical device and production network','Cloudflare acceptance','exact QPACK bytes for identical business requests',
             'random Initial layout distribution','migration, loss and Retry under captured profile']}

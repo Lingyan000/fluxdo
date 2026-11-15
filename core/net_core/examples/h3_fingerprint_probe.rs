@@ -356,6 +356,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             close_connection.close(0u32,b"lab accepted write response loss");
                             break;
                         }
+                        let settled_boundary = if let Some(observer) = &observer {
+                            let first=observer.snapshot();
+                            let expected=native_probe && first.control.iter().any(|frame|
+                                frame.frame_type == u64::from(rama::http::proto::h3::FrameType::PRIORITY_UPDATE_REQUEST));
+                            let stream_id=request.extensions().get_ref::<H3RequestObservation>().ok_or("missing request observation")?.stream_id;
+                            Some(fluxdo_net::h3_template::sampled_request_boundary(observer, stream_id, expected).await?)
+                        } else {None};
+                        // 先发布已完整接收的请求，客户端读完响应立即退出也不会丢失观测。
+                        observation_sink.lock().push(
+                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),"version":format!("{:?}",request.version()),
+                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
+                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok()),
+                            "connection":settled_boundary,"request":fields,
+                            "first_request_boundary":first_request_boundary}),
+                        );
                         response
                             .send_response(
                                 Response::builder()
@@ -363,13 +378,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     .body(Body::from(body))?,
                             )
                             .await?;
-                        observation_sink.lock().push(
-                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),"version":format!("{:?}",request.version()),
-                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
-                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok()),
-                            "connection":observer.map(|o| o.snapshot()),"request":fields,
-                            "first_request_boundary":first_request_boundary}),
-                        );
                         if path == "/fluxdo-probe/finished" { native_done.notify_one(); }
                         if path == "/done" || path == "/fluxdo-probe/done" {
                             finished.notify_one();

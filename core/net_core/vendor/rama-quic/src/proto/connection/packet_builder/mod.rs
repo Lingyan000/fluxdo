@@ -3,7 +3,7 @@ use rama_core::{
     telemetry::tracing::{debug, trace, trace_span},
 };
 
-mod chaos;
+pub(super) mod chaos;
 
 use rand::RngExt;
 use std::net::SocketAddr;
@@ -458,7 +458,8 @@ impl PacketBuilder {
         }
         // A client's Initial frames may be rearranged the way the profile asks, before they
         // are protected (the same bytes, differently laid out).
-        if self.space == SpaceId::Initial
+        if recorded.is_none()
+            && self.space == SpaceId::Initial
             && conn.side.is_client()
             && matches!(
                 conn.config.wire.packetization.layout(),
@@ -466,7 +467,7 @@ impl PacketBuilder {
             )
         {
             let payload_start = self.partial_encode.start + self.partial_encode.header_len;
-            chaos::scramble(&mut buffer[payload_start..], &mut conn.rng);
+            chaos::scramble(&mut buffer[payload_start..], &mut conn.rng, conn.config.initial_cross_packet_chaos);
         }
 
         let space = &conn.spaces[self.space];

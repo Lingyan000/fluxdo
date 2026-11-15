@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from compare_h3_production import compare
+from compare_h3_production import compare, initial_layout
 
 
 class H3EvidenceTest(unittest.TestCase):
@@ -65,6 +65,29 @@ class H3EvidenceTest(unittest.TestCase):
             frames=data['capture']['h3'][-1]['connection']['control']
             next(frame for frame in frames if frame['frame_type']==13)['element_id']+=1
         self.assertFalse(self.evaluate(corrupt))
+
+    def test_missing_or_duplicate_crypto_ranges_fail(self):
+        self.assertFalse(self.evaluate(lambda d: d['capture']['initial'].update(frames=[])))
+        def duplicate(data):
+            frames=data['capture']['initial']['frames'][0]
+            frames.append(next(copy.deepcopy(f) for f in frames if isinstance(f,dict) and 'Crypto' in f))
+        self.assertFalse(self.evaluate(duplicate))
+
+    def test_cross_packet_interleave_is_not_intra_packet_shuffle(self):
+        def crypto(offset, length):
+            return {'Crypto': {'offset':offset, 'len':length}}
+        source={'frames':[[crypto(900,100),crypto(0,60)],[crypto(60,840)]]}
+        old_core={'frames':[[crypto(0,700)],[crypto(900,100),crypto(700,200)]]}
+        self.assertTrue(initial_layout(source)['cross_packet'])
+        self.assertFalse(initial_layout(old_core)['cross_packet'])
+        self.assertTrue(initial_layout(source)['complete_nonoverlapping_crypto'])
+        self.assertTrue(initial_layout(old_core)['complete_nonoverlapping_crypto'])
+
+    def test_archived_ios26_packet_sizes_hide_crypto_chunk_mismatch(self):
+        data=json.loads((Path(__file__).parent/'testdata/ios26_initial_layout.json').read_text())
+        self.assertEqual(data['native']['datagram_sizes'],data['previous_core']['datagram_sizes'])
+        self.assertEqual(initial_layout(data['native'])['ordered_crypto_chunk_size'],999)
+        self.assertEqual(initial_layout(data['previous_core'])['ordered_crypto_chunk_size'],1161)
 
 
 if __name__ == '__main__':

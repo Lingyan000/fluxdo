@@ -173,6 +173,9 @@ async fn bind(
                                     let (request,response)=requests.accept().await?.resolve().await?;
                                     if !request.uri().path().is_some_and(|p|p.to_string()=="/fluxdo-h3/fetch") {return Err("unexpected warm H3 path".into());}
                                     sample.observe_warm(&request)?;
+                                    let observer=request.extensions().get_ref::<H3Observer>().ok_or("missing warm H3 observer")?;
+                                    sample.warm_boundary=Some(crate::h3_template::sampled_request_boundary(
+                                        observer, (index+1)*4, sample.priority_update.is_some()).await?);
                                     if index==1 {templates.h3.record(epoch,port,sample.clone())?;}
                                     response.send_response(Response::builder().header("access-control-allow-origin","*").body(Body::from(if index==1 {"h3-ready"} else {"h3"}))?).await?;
                                 }

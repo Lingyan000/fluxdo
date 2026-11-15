@@ -524,7 +524,8 @@ impl Http3Upgrade {
             config.set_transport_config(Arc::new(
                 TransportConfig::from_quic_profile(&quic)?.with_initial_packet_number_lengths(
                     profile.sample.flight.packet_number_lengths.clone(),
-                )?,
+                )?.with_initial_cross_packet_chaos(profile.sample.cross_packet_initial())
+                    .with_initial_crypto_chunk_size(profile.sample.ordered_initial_chunk_size())?,
             ));
             let mut endpoint_config =
                 rama::quic::EndpointConfig::new(rama_crypto::hmac::HmacSha2::try_rand_256()?);
