@@ -55,6 +55,8 @@ internal static class Program {
                         throw new InvalidOperationException("scoped QUIC control requires ephemeral runner and probe SPKI");
                     // 只允许当前独立探针 origin；用于验证 QUIC 已知根限制，不进入业务环境。
                     flags.Add("--origin-to-force-quic-on=localhost:" + uri.Port);
+                    // 诊断采集器只监听 IPv4，避免 localhost 的 IPv6 首选连接落空。
+                    flags.Add("--host-resolver-rules=\"MAP localhost 127.0.0.1\"");
                 }
                 if (trustRoot) {
                     Console.Error.WriteLine("probe-stage: trust-root");

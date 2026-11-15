@@ -19,6 +19,8 @@ try:
     with scoped_quic_control(adb, os.environ, url) as forced:
         try:
             adb('shell', 'am', 'force-stop', package)
+            if forced:
+                adb('shell', 'run-as', package, 'rm', '-f', 'files/probe-netlog.json')
             adb('logcat', '-c')
             adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,
                 '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'),
@@ -37,7 +39,18 @@ try:
         finally:
             try:
                 if forced:
-                    sys.stderr.write(adb('logcat', '-d', '-s', 'WebViewCommandLine:V', '*:S'))
+                    # 此宿主没有业务登录；保留参数读取、解析和 SELinux 错误，避免按错误标签漏采。
+                    logs = adb('logcat', '-d')
+                    sys.stderr.write('\n'.join(line for line in logs.splitlines() if any(
+                        key in line.lower() for key in ('chromium', 'commandline', 'avc:', 'net::'))) + '\n')
+                    netlog = subprocess.run(['adb', 'shell', 'run-as', package, 'cat',
+                        'files/probe-netlog.json'], text=True, capture_output=True, timeout=20)
+                    path = os.environ.get('FLUXDO_NATIVE_NETLOG_PATH')
+                    if path and netlog.returncode == 0:
+                        from pathlib import Path
+                        Path(path).write_text(netlog.stdout)
+                    else:
+                        sys.stderr.write('probe-netlog unavailable: ' + netlog.stderr + netlog.stdout[:300])
             finally:
                 adb('shell', 'am', 'force-stop', package)
 finally:

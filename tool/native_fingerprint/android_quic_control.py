@@ -32,6 +32,7 @@ def scoped_quic_control(adb, env, url):
             adb('shell', 'chmod', '644', remote)
         try:
             write('_ --webview-verbose-logging '
+                  '--log-net-log=/data/data/com.fluxdo.fingerprintprobe/files/probe-netlog.json '
                   '--host-resolver-rules="MAP localhost 127.0.0.1" '
                   f'--origin-to-force-quic-on=localhost:{target.port} '
                   f'--ignore-certificate-errors-spki-list={spki}\n')
