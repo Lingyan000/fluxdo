@@ -21,6 +21,29 @@ def output(command):
     return subprocess.check_output(command, text=True).strip()
 
 
+def warmup_simulator(root, version, udid):
+    # 冷启动可能卡在系统应用启动阶段；最多重启一次，保留两次原始结果。
+    for attempt in range(2):
+        stem = root / f'ios-{version}-warmup-{attempt+1}'
+        try:
+            with Path(f'{stem}.stdout').open('w') as stdout, Path(f'{stem}.stderr').open('w') as stderr:
+                run(['xcrun','simctl','launch','--terminate-running-process','--console',
+                     udid,'org.fluxdo.fingerprint.probe','--warmup'],
+                    stdout=stdout,stderr=stderr,timeout=120)
+            reports = [json.loads(line) for line in Path(f'{stem}.stdout').read_text().splitlines()
+                       if line.startswith('{')]
+            if not any(report.get('warmup') and report.get('success') for report in reports):
+                raise RuntimeError('WebContent initialization did not succeed; see warmup evidence')
+            Path(f'{stem}.json').write_text(json.dumps({'attempt':attempt+1,'success':True})+'\n')
+            return
+        except (RuntimeError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            Path(f'{stem}.json').write_text(json.dumps({'attempt':attempt+1,'success':False,'error':str(error)})+'\n')
+            if attempt == 1:
+                raise
+            subprocess.run(['xcrun','simctl','shutdown',udid],timeout=30,check=False)
+            run(['xcrun','simctl','bootstatus',udid,'-b'],timeout=240)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
@@ -163,19 +186,11 @@ def main():
             run(['xcrun', 'simctl', 'boot', udid])
             run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
             run(['xcrun', 'simctl', 'install', udid, app])
-            with (root / ('ios-' + runtime['version'] + '-warmup.stdout')).open('w') as stdout, \
-                 (root / ('ios-' + runtime['version'] + '-warmup.stderr')).open('w') as stderr:
-                run(['xcrun', 'simctl', 'launch', '--terminate-running-process', '--console',
-                     udid, 'org.fluxdo.fingerprint.probe', '--warmup'],
-                    stdout=stdout, stderr=stderr, timeout=120)
-            warmup = (root / ('ios-' + runtime['version'] + '-warmup.stdout')).read_text()
-            if not any(line.startswith('{') and json.loads(line).get('warmup') and
-                       json.loads(line).get('success') for line in warmup.splitlines()):
-                raise RuntimeError('WebContent initialization did not succeed; see warmup evidence')
+            warmup_simulator(root, runtime['version'], udid)
             for mode in ('native', 'app'):
                 case('ios-' + runtime['version'] + '-' + mode, driver,
                      {'FLUXDO_SIMULATOR_UDID': udid, 'FLUXDO_APPLE_UA_MODE': mode})
-        except (RuntimeError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        except (RuntimeError, KeyError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             results.append({'case': 'ios-' + runtime['version'], 'passed': False, 'error': str(error)})
             save()
         finally:

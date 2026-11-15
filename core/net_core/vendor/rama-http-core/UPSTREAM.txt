@@ -4,3 +4,4 @@
 本地补丁：保留并传递 H2 HEADERS 优先级，编码 PRIORITY 标志及五字节负载。
 入站 StreamDependency 使用单独的 ReceivedStreamDependency 类型；仅根依赖可跨连接传递，非根流 ID 留待显式映射。
 本地补丁：请求流分配后选择冷/热 QPACK 策略；按当前请求流编号发送有界 PRIORITY_UPDATE，不复用样本流编号。
+QPACK 字段 Base 规划保留 Automatic 的自动动态表编码；精确静态命中、敏感字段、容量和阻塞预算仍约束输出。

@@ -245,7 +245,7 @@ async fn main() -> Result<(), BoxError> {
         if expect_tcp == reached {
             return Err("production protocol did not match scenario expectation".into());
         }
-        if !scenario.is_empty() && round + 1 == rounds {
+        if !scenario.is_empty() && scenario != "qpack" && round + 1 == rounds {
             // 固定合成数据跨越多个 DATA 帧，服务端校验摘要，不能只比较长度。
             let payload = if scenario == "requests" {
                 (0..65539).map(|i| (i % 251) as u8).collect::<Vec<_>>()
@@ -274,6 +274,27 @@ async fn main() -> Result<(), BoxError> {
                 let version = response.version();
                 response.into_body().collect().await?;
                 results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+            }
+        }
+        if scenario == "qpack" {
+            let cases = [
+                ("warm-0","GET",None,""), ("warm-1","GET",None,""),
+                ("conditional","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
+                ("form","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=one&value=two"),
+                ("json","POST",Some(("content-type","application/json")),r#"{"sample":1}"#),
+                ("range","GET",Some(("range","bytes=0-15")),""),
+                ("head","HEAD",None,""),
+                ("conditional-changed","GET",Some(("if-none-match","\"fluxdo-lab-etag-changed-20261115\"")),""),
+                ("form-again","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=two&value=one"),
+            ];
+            for (name, method, header, body) in cases {
+                let mut request=Request::builder().method(method)
+                    .uri(format!("{origin}/fluxdo-probe/qpack/{name}"))
+                    .header("user-agent",reference.user_agent.as_deref().unwrap()).header("accept","*/*");
+                if let Some((key,value))=header {request=request.header(key,value);}
+                let response=client.send(request.body(Body::from(body))?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                let version=response.version();response.into_body().collect().await?;
+                results.push(serde_json::json!({"scenario":"qpack","case":name,"version":format!("{version:?}")}));
             }
         }
         if scenario == "requests" {
