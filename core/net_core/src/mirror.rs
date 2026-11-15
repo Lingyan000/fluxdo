@@ -69,7 +69,7 @@ pub fn cache_revision() -> String {
     for byte in include_bytes!("../Cargo.lock") {
         hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
     }
-    format!("3:{hash:016x}")
+    format!("4:{hash:016x}")
 }
 
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
@@ -1132,6 +1132,32 @@ mod profile_tests {
         templates.record_hello(&next);
         assert_eq!(templates.generation.load(Ordering::Relaxed), calibrated);
     }
+    #[test]
+    fn hpack_uses_shorter_literals_and_preserves_sensitive_fields() {
+        use rama::bytes::BytesMut;
+        use rama::http::proto::h2::hpack::{Decoder, Encoder, Header};
+        use std::{io::Cursor, ops::ControlFlow};
+        for (value, huffman) in [("~~~~", false), ("PATCH", false), ("aaaaaaaa", true), ("", false)] {
+            for sensitive in [false, true] {
+                let mut value_header = rama::http::HeaderValue::from_str(value).unwrap();
+                value_header.set_sensitive(sensitive);
+                let name = rama::http::HeaderName::from_static("content-type");
+                let mut wire = BytesMut::new();
+                Encoder::default().encode([Header::Field { name: Some(name.clone()), value: value_header.clone() }], &mut wire);
+                // content-type 的静态表索引为 31；敏感字段的 4-bit 索引需要两个字节。
+                let value_offset = if sensitive { 2 } else { 1 };
+                assert_eq!(wire[value_offset] & 0x80 != 0, huffman, "value={value:?}, sensitive={sensitive}");
+                if !huffman { assert!(wire.ends_with(value.as_bytes())); }
+                let mut decoded = Vec::new();
+                Decoder::default().decode(&mut Cursor::new(&mut wire), |header| {
+                    decoded.push(header); ControlFlow::Continue(())
+                }).unwrap();
+                assert_eq!(decoded, vec![Header::Field { name, value: value_header }]);
+                if let Header::Field { value, .. } = &decoded[0] { assert_eq!(value.is_sensitive(), sensitive); }
+            }
+        }
+    }
+
     #[test]
     fn native_android_padding_presence_does_not_reset_calibration() {
         let samples: Vec<ClientHello> = serde_json::from_str(include_str!(

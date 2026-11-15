@@ -268,7 +268,8 @@ fn encode_header_name(name: &HeaderName, dst: &mut BytesMut) {
 }
 
 fn encode_str(val: &[u8], dst: &mut BytesMut) {
-    if !val.is_empty() {
+    // 与浏览器一致：仅在更短时使用 Huffman，等长也保留字面表示。
+    if huffman::encoded_len(val) < val.len() {
         let idx = position(dst);
 
         // Push a placeholder byte for the length header
@@ -279,8 +280,8 @@ fn encode_str(val: &[u8], dst: &mut BytesMut) {
 
         finish_encoded_str(idx, dst);
     } else {
-        // Write an empty string
-        dst.put_u8(0);
+        encode_int(val.len(), 7, 0, dst);
+        dst.put_slice(val);
     }
 }
 
@@ -293,8 +294,14 @@ fn encode_str_lowercase_ascii(val: &[u8], dst: &mut BytesMut) {
 
         // Encode with huffman while lowercasing ASCII header-name bytes
         huffman::encode_lowercase_ascii(val, dst);
-
-        finish_encoded_str(idx, dst);
+        if position(dst) - idx - 1 < val.len() {
+            finish_encoded_str(idx, dst);
+        } else {
+            // 头名仍按协议转为小写；只改变编码表示，不改变索引/敏感字段策略。
+            dst.truncate(idx);
+            encode_int(val.len(), 7, 0, dst);
+            for byte in val { dst.put_u8(byte.to_ascii_lowercase()); }
+        }
     } else {
         // Write an empty string
         dst.put_u8(0);
@@ -398,9 +405,9 @@ mod test {
         let res = encode(&mut encoder, vec![method("PATCH")]);
 
         assert_eq!(res[0], 0b01000000 | 2); // Incremental indexing w/ name pulled from table
-        assert_eq!(res[1], 0x80 | 5); // header value w/ huffman coding
+        assert_eq!(res[1], 5); // 等长时保留字面表示
 
-        assert_eq!("PATCH", huff_decode(&res[2..7]));
+        assert_eq!(b"PATCH", &res[2..7]);
         assert_eq!(encoder.table.len(), 1);
 
         let res = encode(&mut encoder, vec![method("PATCH")]);
@@ -422,8 +429,8 @@ mod test {
         // Same name, new value should still use incremental
         let res = encode(&mut encoder, vec![header("content-language", "bar")]);
         assert_eq!(res[0], 0b01000000 | 27); // Indexed name
-        assert_eq!(res[1], 0x80 | 3); // header value w/ huffman coding
-        assert_eq!("bar", huff_decode(&res[2..5]));
+        assert_eq!(res[1], 3); // 等长时保留字面表示
+        assert_eq!(b"bar", &res[2..5]);
     }
 
     #[test]
@@ -654,8 +661,8 @@ mod test {
 
         // Encode second one
         let res = encode(&mut encoder, vec![header(name, "two")]);
-        assert_eq!(&[0x40 | 62, 0x80 | 3], &res[0..2]);
-        assert_eq!("two", huff_decode(&res[2..]));
+        assert_eq!(&[0x40 | 62, 3], &res[0..2]);
+        assert_eq!(b"two", &res[2..]);
         assert_eq!(5, res.len());
 
         // Encode the first one again
@@ -681,7 +688,8 @@ mod test {
         // This will evict the first header, while still referencing the header
         // name
         let res = encode(&mut encoder, vec![header("foo", "baz")]);
-        assert_eq!(&[0x40 | 63, 0, 0x80 | 3], &res[..3]);
+        assert_eq!(&[0x40 | 63, 0, 3], &res[..3]);
+        assert_eq!(b"baz", &res[3..]);
         assert_eq!(2, encoder.table.len());
 
         // Try adding the same header again
@@ -701,8 +709,8 @@ mod test {
         let res = encode(&mut encoder, vec![header("foo", "bar")]);
         assert_eq!(&[0, 0x80 | 2], &res[..2]);
         assert_eq!("foo", huff_decode(&res[2..4]));
-        assert_eq!(0x80 | 3, res[4]);
-        assert_eq!("bar", huff_decode(&res[5..8]));
+        assert_eq!(3, res[4]);
+        assert_eq!(b"bar", &res[5..8]);
         assert_eq!(0, encoder.table.len());
 
         // Encode a custom value
