@@ -99,7 +99,7 @@ def main():
         return result
 
     mac = root / 'WKProbe-macos'
-    run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source,
+    run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source, repo / 'ios/Runner/BrowserIdentity.swift',
          '-framework', 'AppKit', '-framework', 'WebKit', '-o', mac])
     for mode in ('native', 'app'):
         case('macos-' + mode, Path(__file__).parent / 'mac_driver.py' if args.system_trust else mac,
@@ -130,7 +130,7 @@ def main():
     sdk = output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'])
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
     run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library', '-sdk', sdk,
-         '-target', arch + '-apple-ios15.0-simulator', source, '-framework', 'UIKit', '-framework', 'WebKit', '-o', app / 'WKProbe'])
+         '-target', arch + '-apple-ios15.0-simulator', source, repo / 'ios/Runner/BrowserIdentity.swift', '-framework', 'UIKit', '-framework', 'WebKit', '-o', app / 'WKProbe'])
     run(['codesign', '--force', '--sign', '-', app])
     driver = Path(__file__).parent / 'ios_driver.py'
     for runtime in runtimes:
@@ -145,6 +145,15 @@ def main():
             run(['xcrun', 'simctl', 'boot', udid])
             run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
             run(['xcrun', 'simctl', 'install', udid, app])
+            with (root / ('ios-' + runtime['version'] + '-warmup.stdout')).open('w') as stdout, \
+                 (root / ('ios-' + runtime['version'] + '-warmup.stderr')).open('w') as stderr:
+                run(['xcrun', 'simctl', 'launch', '--terminate-running-process', '--console',
+                     udid, 'org.fluxdo.fingerprint.probe', '--warmup'],
+                    stdout=stdout, stderr=stderr, timeout=120)
+            warmup = (root / ('ios-' + runtime['version'] + '-warmup.stdout')).read_text()
+            if not any(line.startswith('{') and json.loads(line).get('warmup') and
+                       json.loads(line).get('success') for line in warmup.splitlines()):
+                raise RuntimeError('WebContent initialization did not succeed; see warmup evidence')
             for mode in ('native', 'app'):
                 case('ios-' + runtime['version'] + '-' + mode, driver,
                      {'FLUXDO_SIMULATOR_UDID': udid, 'FLUXDO_APPLE_UA_MODE': mode})

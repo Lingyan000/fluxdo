@@ -16,6 +16,21 @@ final class Probe: NSObject, WKNavigationDelegate {
     var nativeUA = ""
 
     func start() {
+        if CommandLine.arguments.contains("--warmup") {
+            // 单独记录 WebContent 冷启动，避免把模拟器首次启动耗时算作网络探针结果。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+                self?.complete(error: "WKWebView 初始化超时")
+            }
+            webView.evaluateJavaScript("navigator.userAgent") { [weak self] value, error in
+                guard let self = self, let ua = value as? String else {
+                    self?.complete(error: "WebContent 初始化失败: \(String(describing: error))")
+                    return
+                }
+                self.nativeUA = ua
+                self.complete(error: nil)
+            }
+            return
+        }
         guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://localhost:") }),
               let url = URL(string: raw), url.host == "localhost", url.path == "/fluxdo-probe" else {
             complete(error: "只允许本地指纹探针地址")
@@ -59,6 +74,10 @@ final class Probe: NSObject, WKNavigationDelegate {
         if let match = regex.firstMatch(in: ua, range: NSRange(location: 0, length: text.length)) {
             version = text.substring(with: match.range(at: 1)) + "." + text.substring(with: match.range(at: 2))
         }
+        if let actual = BrowserIdentity.safariVersion(),
+           actual.range(of: "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)*$", options: .regularExpression) != nil {
+            version = actual.split(separator: ".").prefix(2).joined(separator: ".")
+        }
         return ua.replacingOccurrences(of: "Mobile/", with: "Version/\(version) Mobile/") + " Safari/604.1"
         #endif
     }
@@ -93,11 +112,12 @@ final class Probe: NSObject, WKNavigationDelegate {
         let platform = "ios-simulator-wkwebview"
         #endif
         let result: [String: Any] = ["engine": "native WKWebView", "platform": platform,
+            "warmup": CommandLine.arguments.contains("--warmup"),
             "requires_system_trust": ProcessInfo.processInfo.environment["FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST"] == "1",
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "native_user_agent": nativeUA, "custom_user_agent": webView.customUserAgent ?? "",
             // 只核验公开 Bundle 元数据是否可读，不使用私有 WebKit API。
-            "safari_bundle_version": Bundle(path: "/Applications/MobileSafari.app")?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "safari_bundle_version": BrowserIdentity.safariVersion() ?? "",
             "webkit_bundle_version": Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
             "success": error == nil, "error": error ?? ""]
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
