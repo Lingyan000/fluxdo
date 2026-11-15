@@ -122,6 +122,13 @@ final class Probe: NSObject, WKNavigationDelegate {
             "success": error == nil, "error": error ?? ""]
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
+            // simctl 的控制台转发可能在应用退出时丢失最后一行；每次启动使用独立结果文件。
+            if let name = ProcessInfo.processInfo.environment["FLUXDO_APPLE_REPORT_FILE"],
+               name.hasPrefix("fluxdo-report-"), !name.contains("/") {
+                let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+                do { try data.write(to: url, options: .atomic) }
+                catch { fputs("无法保存原生诊断结果: \(error)\n", stderr); exit(1) }
+            }
             print(text)
             fflush(stdout)
         }

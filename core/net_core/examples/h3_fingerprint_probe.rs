@@ -42,8 +42,8 @@ await fetch('/fluxdo-probe/finished');document.title='fluxdo-probe-done';}})();
 // 只发送合成请求，覆盖变化的请求字段；不读取登录态或 CSRF。
 const QPACK_PAGE: &str = r#"<!doctype html><link rel="icon" href="data:,"><title>fluxdo-probe</title><script>
 (async()=>{await new Promise(r=>setTimeout(r,400));try{
-let ready=false;for(let i=0;i<24;i++){let r=await fetch('/fluxdo-probe/fetch');
-if((await r.text())==='h3'){ready=true;break;}await new Promise(r=>setTimeout(r,300));}
+let ready=false;for(let i=0;i<24;i++){try{let r=await fetch('/fluxdo-probe/fetch');
+if((await r.text())==='h3'){ready=true;break;}}catch(e){}await new Promise(r=>setTimeout(r,300));}
 if(!ready)throw Error('no h3');
 for(let i=0;i<2;i++)await (await fetch('/fluxdo-probe/qpack/warm-'+i)).text();
 const cases=[
