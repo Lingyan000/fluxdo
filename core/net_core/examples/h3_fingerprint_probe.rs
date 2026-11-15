@@ -561,7 +561,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .lock()
         .iter()
         .any(|error| error.contains("CERTIFICATE_VERIFY_FAILED"));
-    let expected_result_observed = if native_probe {
+    let expected_result_observed = if native_force_quic {
+        // 直接限定 QUIC 的对照不要求先出现 TCP，但必须收齐实际 H3 证据。
+        native_probe_finished && joint_capture_complete
+    } else if native_probe {
         native_probe_finished && !tcp_requests.lock().is_empty()
     } else if learn_alt_svc {
         native_probe_finished && joint_capture_complete
