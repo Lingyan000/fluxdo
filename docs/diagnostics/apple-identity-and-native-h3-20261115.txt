@@ -1,0 +1,75 @@
+Apple 浏览器身份、原生 H3 与冷启动隔离补查（2026-11-15）
+
+真实版本来源与修复
+先前在模拟器进程内直接读 /Applications/MobileSafari.app 得到空值，
+这不能证明系统没有可用产品版本：模拟器应加 SIMULATOR_ROOT，真机才使用根路径。
+云端只读元数据实验 43689779845、源码 53c0c0f04ee91076828e9ba1de443b29d0ab6f08：
+  iOS 18.5 / 18.6 / 26.0.1 / 26.1 / 26.2 自带 Safari 的 CFBundleShortVersionString
+  分别为 18.5 / 18.6 / 26.0.1 / 26.1 / 26.2。
+  WebKit CFBundleVersion 是内部构建号，不参与版本推导。
+artifact 14151563778，SHA256 62f9c363da778af3b9769d552c65741a1fdf1a3b7639300fc837ac9f24558694。
+
+新增 ios/Runner/BrowserIdentity.swift，使用 Foundation Bundle 公共 API，
+核对 bundleIdentifier == com.apple.mobilesafari，只读取产品版本字段。
+通过既有命名的 system_info channel 交给 Dart；平台条件限定 iOS/macOS，其他平台不读取。
+iOS UA 优先补完整的真实产品版本，保留冻结的 OS 段和原有 Mobile/Safari 格式。
+已有完整 Safari UA 原样保留；元数据不可读或格式无效时保留既有兼容回退并记录原因。
+不能把回退路径描述为“已取得真实版本”；Safari 被卸载或真机文件沙盒限制仍待验证。
+没有修改 OAuth 流程或 CSRF。登录成功率仍需真实账号流程证据。
+本地相关测试/架构守卫 20 项通过，3 文件 analyze 通过。
+源码 b9a8cd65569c102559d6670504275d2c82e6b3eb 的现代 Apple 云端原生结果已核验：
+run 43690228816，artifact 14152970117，SHA256
+9066d019405e2b639034593956e640839b271cc06cacb960ee58adb4adbe3fa0。
+macOS native/app、iOS 26.2 native/app 四个配置共 20 场景通过。
+iOS 进程实际读取到 safari_bundle_version=26.2，应用 UA 确实发出 Version/26.2。
+这里使用与正式应用相同的 BrowserIdentity.swift，但仍是原生诊断宿主，非完整 Flutter 应用。
+同一源码的 iOS 15.5 云端 run 43690229157 亦全部通过：macOS 控制与 iOS 15.5
+各 native/app 两种配置共 20 场景；iOS 进程读到产品版本 15.5，应用 UA 发出 Version/15.5。
+artifact 14152327964，SHA256 0b40628f4ba36c9d42ae4d6d9effbece611ef3a25b97ed3bebf3a82905b9a519。
+两轮现代/旧版任务均 success。之后完整保留产品补丁段的修复为 4cd6a268171e39ee600a283583af662475dfcd45，
+其三段版本依据系统 Safari 原始 UA，并通过本地回归；上述两段版本的行为不变。
+
+系统 Safari UA 对照
+追加启动系统 Safari 访问本地 HTTP 端点，读取实际 User-Agent，验证产品补丁号的处理。
+首轮 43690290624 在 shutdown 清理超时后丢失内存中的采样结果，不能计为 UA 对照通过。
+已改为先写证据再清理，并分别记录清理错误；再次执行 43690750306。
+第二轮实际取得 iOS 26.0.1 Safari UA，Version 字段为 26.0.1，不是 26.0。
+据此纠正“产品版本只保留前两段”的实现与回归，保留实际产品字段的完整数字版本。
+artifact 14152990114，SHA256 c564229201baad444b3b06f6a8d8a169610e19d22b5bb8452f723c35d60b8ea3；
+该次 capture 的 cleanup_errors=[]，原始 UA 保存在 safari-user-agent.json。
+
+原生 H3 系统信任实验
+实验 CA 只安装到一次性 GitHub runner / 新建模拟器，不修改用户设备或正式应用信任库。
+WKWebView 必须使用 performDefaultHandling，禁用实验中的证书回调直接放行。
+采集器记录 TCP 请求、每条 UDP flow 的 Initial 与对应 H3 请求。
+
+macOS 15.8.2 / iOS 26.2：run 43689314169，源码 b55a7c52175a8c5c45f0d51cdb966db7afd939ad。
+artifact 14152296072，SHA256 a1676e2e07e9a9b99e0409429106e830c71b37fc7a14dc83e36655d87f689752。
+iOS 15.5：run 43689577786，源码 334db718482c03689e69a35a3e5460461cc8624c。
+artifact 14152351335，SHA256 c96542dd207906f1198d60bb4eaab724c899d3f682d769dd0bf641cf50cda284。
+两版 iOS 的 native/app UA 四个配置：HTTPS 与 26 次 TCP 请求成功，均为 UDP=0、H3=false。
+macOS native UA 也完成 26 次 TCP 请求且 UDP=0，但删除信任设置超时使该 case 失败；
+macOS app UA 的证书安装超时，未启动浏览器，不能给它作 H3 结论。
+两个任务整体失败，分别保留 setup/cleanup 与浏览器证据，不隐藏基础设施故障。
+后续清理逻辑已确保 remove-trusted-cert 失败也会尝试按唯一证书摘要删除证书。
+这些结果仅说明当前回环 Alt-Svc 实验未取得原生 H3 样本，不证明 Apple 不支持公网 H3，
+也不能据此单独认定是证书、回环地址、端口或连接复用中的哪一个因素。
+生产 H3 仍缺完整的各平台联合模板、回放及恢复/Retry/迁移验收。
+
+修复实际 H3 冷启动漏口
+此前只检查 target.template.is_some()，配置了浏览器指纹但尚未采到模板时会放行默认 H3。
+扩展已有回归到 Some(template) 与 None 两种采样状态，修复前在 None 分支失败，证据：
+/workspace/scratch/h3-missing-template-before.log。
+现在目标独立携带 uses_browser_fingerprint；冷建连竞速与后台 Alt-Svc 升级均检查此属性。
+真正不使用指纹的普通/DoH 客户端保留 H3。修复后核心 129 项全部通过，
+包含 UDP 不通、连接竞速取消、代理隔离、超时与原有 H3 正对照。
+源码 e7b32306e9d6a278009d9d786d5602a33521f52a；不把此隔离修复当成 H3 模板完成。
+
+旧 iOS 云端宿主边界
+iOS 15.0 原始运行时拒绝 macOS >14.99；本轮又实际尝试 macos-14：
+run 43689666411 在调度前 cancelled，annotation 为
+  The configuration 'macos-14-arm64-us-default' is not supported
+官方仓库确认所有 GitHub macOS 14 镜像于 2026-11-02 退休：
+https://github.com/actions/runner-images/issues/13518
+已删除这份不可执行工作流，失败任务和提交 f7f071ec8fa5dc9f3382fa8fad656a77c71d5dcb 仍可追溯。
+没有修改 Apple 运行时版本限制。iOS 15.5 的真实原生结果不能外推成已验证 15.0。
