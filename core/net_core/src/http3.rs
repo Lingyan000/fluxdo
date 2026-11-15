@@ -254,7 +254,7 @@ impl Http3Upgrade {
     where
         F: Future<Output = Result<Sender, BoxError>>,
     {
-        if target.template.is_some() || egress.has_fixed_proxy() {
+        if target.uses_browser_fingerprint || target.template.is_some() || egress.has_fixed_proxy() {
             return tcp.await;
         }
         // 竞速的第二条连接也要占全局容量；已饱和时直接使用原 TCP 路径。
@@ -290,8 +290,9 @@ impl Http3Upgrade {
     ) {
         // TLS/TCP 与 H2 模板不包含 QUIC 传输参数、H3 SETTINGS 或 QPACK。
         // 在实现相应采样前，浏览器模板请求不能升级为默认 QUIC 指纹。
+        // 首次采样/缓存缺失也属于浏览器客户端，不能趁模板为空升级。
         // 固定代理同样不支持直接 UDP；两者都不启动后台探测。
-        if target.template.is_some() || egress.has_fixed_proxy() {
+        if target.uses_browser_fingerprint || target.template.is_some() || egress.has_fixed_proxy() {
             return;
         }
         if !self.observe_at(target.key, target.host, headers, generation) {
@@ -940,6 +941,7 @@ mod tests {
             host: "127.0.0.1",
             port: 443,
             template: None,
+            uses_browser_fingerprint: false,
             secure: true,
         };
         state.observe(target.key, target.host, &headers);
@@ -1021,6 +1023,7 @@ mod tests {
         let target = Target {
             key: "proxy",
             template: None,
+            uses_browser_fingerprint: false,
             host: "not-resolved.invalid",
             port: 443,
             secure: true,
@@ -1097,6 +1100,7 @@ mod tests {
         let target = Target {
             key: "key",
             template: None,
+            uses_browser_fingerprint: false,
             host: "127.0.0.1",
             port,
             secure: true,
@@ -1302,50 +1306,54 @@ mod tests {
 
     #[tokio::test]
     async fn browser_template_neither_starts_h3_probe_nor_uses_cached_alternative() {
-        let state = Arc::new(Http3Upgrade::default());
         let template = crate::presets::by_id("android-webview133").unwrap();
-        let target = Target {
-            key: "https://localhost:443#1",
-            template: Some(&template),
-            host: "localhost",
-            port: 443,
-            secure: true,
-        };
-        let egress = Arc::new(EgressConnector::new(
-            None,
-            None,
-            None,
-            None,
-            Duration::from_secs(1),
-        ));
-        let pool = Arc::new(PoolState::default());
-        let mut headers = HeaderMap::new();
-        headers.insert("alt-svc", "h3=\":443\"; ma=600".parse().unwrap());
-        state.observe_and_upgrade(
-            &target,
-            &headers,
-            egress.clone(),
-            pool.clone(),
-            Executor::new(),
-            state.generation(),
-        );
-        assert!(state.alternatives.lock().is_empty());
-        // 模拟升级前已经保存的 Alt-Svc；不能绕过浏览器模板限制。
-        state.observe(target.key, target.host, &headers);
-        let result = state
-            .connect_or_tcp(&target, &egress, &pool, Executor::new(), async {
-                Err::<Sender, BoxError>("tcp-only-marker".into())
-            })
-            .await;
-        assert_eq!(result.err().unwrap().to_string(), "tcp-only-marker");
-        assert_eq!(state.probes.available_permits(), 2);
-        assert!(
-            !state
-                .alternatives
-                .lock()
-                .get(origin(target.key))
-                .unwrap()
-                .probing
-        );
+        // 缓存缺失/清空后的采样窗口也必须保持相同限制。
+        for sample in [Some(&template), None] {
+            let state = Arc::new(Http3Upgrade::default());
+            let target = Target {
+                key: "https://localhost:443#1",
+                template: sample,
+                uses_browser_fingerprint: true,
+                host: "localhost",
+                port: 443,
+                secure: true,
+            };
+            let egress = Arc::new(EgressConnector::new(
+                None,
+                None,
+                None,
+                None,
+                Duration::from_secs(1),
+            ));
+            let pool = Arc::new(PoolState::default());
+            let mut headers = HeaderMap::new();
+            headers.insert("alt-svc", "h3=\":443\"; ma=600".parse().unwrap());
+            state.observe_and_upgrade(
+                &target,
+                &headers,
+                egress.clone(),
+                pool.clone(),
+                Executor::new(),
+                state.generation(),
+            );
+            assert!(state.alternatives.lock().is_empty());
+            // 模拟升级前已经保存的 Alt-Svc；不能绕过浏览器模板限制。
+            state.observe(target.key, target.host, &headers);
+            let result = state
+                .connect_or_tcp(&target, &egress, &pool, Executor::new(), async {
+                    Err::<Sender, BoxError>("tcp-only-marker".into())
+                })
+                .await;
+            assert_eq!(result.err().unwrap().to_string(), "tcp-only-marker");
+            assert_eq!(state.probes.available_permits(), 2);
+            assert!(
+                !state
+                    .alternatives
+                    .lock()
+                    .get(origin(target.key))
+                    .unwrap()
+                    .probing
+            );
+        }
     }
 }

@@ -476,6 +476,7 @@ impl HttpEgressClient {
         let target = Target {
             key: &key,
             template: template.as_ref(),
+            uses_browser_fingerprint: self.templates.is_some(),
             host: &host,
             port,
             secure,
@@ -985,6 +986,8 @@ impl HttpEgressClient {
 struct Target<'a> {
     key: &'a str,
     template: Option<&'a FingerprintTemplate>,
+    /// 区分尚无样本的浏览器客户端与不使用指纹的普通/DoH 客户端。
+    uses_browser_fingerprint: bool,
     host: &'a str,
     port: u16,
     secure: bool,
