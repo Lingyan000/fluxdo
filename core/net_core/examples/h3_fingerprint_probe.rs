@@ -401,8 +401,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     .body(if request.method()==rama::http::Method::HEAD {Body::empty()} else {Body::from(body)})?,
                             )
                             .await?;
-                        if qpack_cases && !native_probe && path == "/fluxdo-probe" {
-                            // 页面导航不占用被比较的 fetch 连接；本实验明确强制 QUIC。
+                        if qpack_cases && path == "/fluxdo-probe" {
+                            // 页面导航不占用被比较的 fetch 连接，确保两边请求流序号可比。
                             tokio::time::sleep(Duration::from_millis(150)).await;
                             close_connection.close(0u32,b"fresh qpack fetch connection");
                             break;

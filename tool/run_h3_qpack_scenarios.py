@@ -51,11 +51,13 @@ def compare_cases(native, core):
         return bool(cases) and len({r['flow_id'] for r in cases})==1
     checks = {'same_connection_each_side':same_connection(native) and same_connection(core),
               'native_complete': native.get('joint_capture_complete') is True,
+              'core_complete': core.get('joint_capture_complete') is True,
+              'native_driver_succeeded': not native.get('native_probe') or native.get('driver_success') is True,
               'core_driver_succeeded': core.get('driver_success') is True,
               'no_connection_errors': not native['connection_errors'] and not core['connection_errors'],
               'all_cases_match': all(r['passed'] for r in results)}
     return {'checks': checks, 'passed': all(checks.values()), 'cases': results,
-            'scope': 'local forced QUIC browser fetch and production Core; synthetic values; common transmitted fields only',
+            'scope': ('local native WKWebView Alt-Svc' if native.get('native_probe') else 'local forced QUIC browser fetch') + ' and production Core; synthetic values; common transmitted fields only',
             'not_verified': ['physical devices', 'arbitrary request purposes', 'Cloudflare acceptance']}
 
 
@@ -64,6 +66,7 @@ def main():
     parser.add_argument('--browser', required=True)
     parser.add_argument('--samples', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--native-driver', action='store_true', help='使用原生 WKWebView 宿主，通过 Alt-Svc 选择 H3')
     args = parser.parse_args()
     binaries = Path(__file__).resolve().parents[1] / 'core/net_core/target/debug/examples'
     args.output = args.output.resolve()
@@ -73,11 +76,19 @@ def main():
         folder.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, FLUXDO_H3_OUTPUT=str(folder / 'client'),
                    FLUXDO_TCP_SAMPLES=str(args.samples.resolve()), FLUXDO_H3_BROWSER=args.browser,
-                   FLUXDO_H3_FORCE_QUIC='1', FLUXDO_H3_NETWORK_SCENARIO='qpack',
-                   SSL_CERT_FILE=str(folder / 'h3-ca.pem'))
+                   FLUXDO_H3_NETWORK_SCENARIO='qpack',
+                   SSL_CERT_FILE=str(folder / 'h3-ca.pem'), SSL_CERT_EXTRA_FILE=str(folder / 'h3-ca.pem'))
+        if args.native_driver:
+            env['FLUXDO_H3_NATIVE_DRIVER'] = '1'
+            env.pop('FLUXDO_H3_FORCE_QUIC', None)
+        else:
+            env['FLUXDO_H3_FORCE_QUIC'] = '1'
+            env.pop('FLUXDO_H3_NATIVE_DRIVER', None)
         command = [str(binaries / 'h3_fingerprint_probe'), args.browser if mode == 'native' else
                    str(binaries / 'h3_production_client'), str(folder)]
         command += ['--learn-alt-svc', '--qpack-scenarios'] if mode == 'native' else ['--native-probe']
+        if mode == 'native' and args.native_driver:
+            command += ['--native-probe']
         with (folder / 'run.log').open('w') as log:
             completed = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
         driver_codes[mode]=completed.returncode
