@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlparse
+from android_quic_control import scoped_quic_control
 
 def adb(*args):
     return subprocess.check_output(['adb', *args], text=True, timeout=20)
@@ -15,21 +16,29 @@ port = urlparse(url).port
 package = 'com.fluxdo.fingerprintprobe'
 adb('reverse', f'tcp:{port}', f'tcp:{port}')
 try:
-    adb('shell', 'am', 'force-stop', package)
-    adb('logcat', '-c')
-    adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,
-        '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'),
-        '--ez', 'udpBridge', 'true' if os.environ.get('FLUXDO_ANDROID_H3_RELAY')=='1' else 'false')
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
-        logs = adb('logcat', '-d', '-s', 'FluxdoProbeResult:I', '*:S')
-        for line in logs.splitlines():
-            if '{' in line:
-                result = json.loads(line[line.index('{'):])
-                print(json.dumps(result), flush=True)
-                raise SystemExit(0 if result.get('success') else 1)
-        time.sleep(.25)
-    raise RuntimeError('Android WebView probe timed out')
+    with scoped_quic_control(adb, os.environ, url) as forced:
+        try:
+            adb('shell', 'am', 'force-stop', package)
+            adb('logcat', '-c')
+            adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,
+                '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'),
+                '--ez', 'udpBridge', 'true' if os.environ.get('FLUXDO_ANDROID_H3_RELAY')=='1' else 'false')
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline:
+                logs = adb('logcat', '-d', '-s', 'FluxdoProbeResult:I', '*:S')
+                for line in logs.splitlines():
+                    if '{' in line:
+                        result = json.loads(line[line.index('{'):])
+                        result['diagnostic_force_quic'] = forced
+                        print(json.dumps(result), flush=True)
+                        raise SystemExit(0 if result.get('success') else 1)
+                time.sleep(.25)
+            raise RuntimeError('Android WebView probe timed out')
+        finally:
+            try:
+                if forced:
+                    sys.stderr.write(adb('logcat', '-d', '-s', 'WebViewCommandLine:V', '*:S'))
+            finally:
+                adb('shell', 'am', 'force-stop', package)
 finally:
-    adb('shell', 'am', 'force-stop', package)
     adb('reverse', '--remove', f'tcp:{port}')

@@ -3,6 +3,11 @@ on:
   push:
     branches: ['diagnostics/android-production-h3-*']
   workflow_dispatch:
+    inputs:
+      force_control:
+        description: '仅临时模拟器：限定探针 origin 与 SPKI 的 QUIC 对照'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -20,6 +25,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,7 +54,8 @@ jobs:
           script: |
             adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
             chmod +x tool/native_fingerprint/android_driver.py
-            python tool/native_fingerprint/run.py --platform android --production-h3 --output "${{ runner.temp }}/native-fingerprint"
+            control=""; if [[ "${{ inputs.force_control }}" == "true" || "$GITHUB_REF_NAME" == *-force-* ]]; then control="--force-quic-control"; fi
+            python tool/native_fingerprint/run.py --platform android --production-h3 $control --output "${{ runner.temp }}/native-fingerprint"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
