@@ -24,14 +24,31 @@ try:
             raise RuntimeError('system-trust experiment requires an ephemeral GitHub runner')
         subprocess.run(['xcrun', 'simctl', 'keychain', env['FLUXDO_SIMULATOR_UDID'],
                         'add-root-cert', env['FLUXDO_APPLE_LAB_CA']], check=True, timeout=30)
-    result = subprocess.run([
+    launch_command = [
         'xcrun', 'simctl', 'launch', '--terminate-running-process',
         env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', target,
-    ], env=env, timeout=25, capture_output=True, text=True)
+    ]
+    with subprocess.Popen(launch_command, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True) as launch:
+        try:
+            launch_stdout, launch_stderr = launch.communicate(timeout=25)
+        except subprocess.TimeoutExpired:
+            # 在终止前保存宿主启动命令调用栈，区分模拟器服务阻塞和应用执行失败。
+            try:
+                sample = subprocess.run(['sample', str(launch.pid), '1'],
+                    capture_output=True, text=True, timeout=8)
+                sys.stderr.write(sample.stdout + sample.stderr)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                sys.stderr.write('启动调用栈采集失败: ' + str(error) + '\n')
+            finally:
+                launch.kill()
+                launch_stdout, launch_stderr = launch.communicate(timeout=5)
+                sys.stderr.write(launch_stdout + launch_stderr)
+            raise
     # 不附着可能阻塞的 simctl 控制台；退出结果由本次启动的独立文件核验。
-    sys.stderr.write(result.stdout)
-    sys.stderr.write(result.stderr)
-    code = result.returncode
+    sys.stderr.write(launch_stdout)
+    sys.stderr.write(launch_stderr)
+    code = launch.returncode
     if code:
         raise RuntimeError('simctl launch failed: ' + str(code))
     container = subprocess.check_output(['xcrun', 'simctl', 'get_app_container',
