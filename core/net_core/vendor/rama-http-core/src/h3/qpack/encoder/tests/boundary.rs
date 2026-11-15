@@ -716,3 +716,51 @@ fn automatic_fields_with_explicit_base_use_dynamic_table_for_current_values() {
         encoder.feed_decoder_stream(&decoder.take_decoder_stream()).unwrap();
     }
 }
+
+#[test]
+fn reused_values_enter_after_base_then_use_current_table_without_changing_values() {
+    let mut encoder = Encoder::new(EncoderConfig { insert_on_reuse: true, ..Default::default() });
+    let mut decoder = Decoder::new(DecoderConfig::default());
+    for (round, (value, expected, inserts)) in [
+        ("etag-one", FieldRepresentation::LiteralStaticName, 0),
+        ("etag-one", FieldRepresentation::DynamicPostBaseIndex, 1),
+        ("etag-one", FieldRepresentation::DynamicIndex, 1),
+        ("etag-two", FieldRepresentation::LiteralStaticName, 1),
+        ("etag-two", FieldRepresentation::DynamicPostBaseIndex, 2),
+        ("etag-one", FieldRepresentation::DynamicIndex, 2),
+    ].into_iter().enumerate() {
+        let stream = round as u64 * 4;
+        let input = [("if-none-match", value, FieldPreferences::default()),
+            ("x-private", "private", FieldPreferences { never_index: true, ..Default::default() })];
+        let section = encoder.encode_with_base(stream, fields(&input), FieldSectionBase::FromFieldPreferences).unwrap();
+        decoder.feed_encoder_stream(&encoder.take_encoder_stream()).unwrap();
+        let mut cursor = section.as_ref();
+        HeaderPrefix::decode(&mut cursor, 128, encoder.insert_count()).unwrap();
+        let field = ObservedFieldRepresentation::from(&FieldLine::decode(&mut cursor, 4096).unwrap());
+        assert_eq!(field.representation, expected);
+        let decoded = decoder.decode_field_section(stream, section).unwrap().unwrap();
+        assert_eq!(decoded[0].value.as_ref(), value.as_bytes());
+        assert!(decoded[1].never_index);
+        assert!(!encoder.has_seen_field(b"x-private", b"private"));
+        assert_eq!(encoder.insert_count(), inserts);
+        encoder.feed_decoder_stream(&decoder.take_decoder_stream()).unwrap();
+    }
+}
+
+#[test]
+fn value_reuse_history_is_bounded_and_resets_with_the_connection() {
+    let config = EncoderConfig { insert_on_reuse: true, target_capacity: 128, max_table_capacity: 128, ..Default::default() };
+    let mut encoder = Encoder::new(config);
+    for n in 0..100 {
+        let value = format!("value-{n}");
+        let input = [("x-value", value.as_str(), FieldPreferences::default())];
+        encoder.encode_with_base(n * 4, fields(&input), FieldSectionBase::FromFieldPreferences).unwrap();
+        assert!(encoder.seen_field_bytes <= 128);
+        assert!(encoder.seen_fields.len() <= 3);
+    }
+    assert!(!encoder.has_seen_field(b"x-value", b"value-0"));
+    assert_eq!(encoder.insert_count(), 0);
+    let fresh = Encoder::new(config);
+    assert_eq!(fresh.seen_field_bytes, 0);
+    assert!(!fresh.has_seen_field(b"x-value", b"value-99"));
+}

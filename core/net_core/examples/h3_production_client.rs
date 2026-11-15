@@ -82,7 +82,7 @@ async fn main() -> Result<(), BoxError> {
         let helper = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let helper_port = helper.local_addr()?.port();
         let html = format!(
-            "<!doctype html><script>(async()=>{{for(let i=0;i<8;i++){{let r=await fetch('https://localhost:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-ready')break;await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
+            "<!doctype html><script>(async()=>{{for(let i=0;i<10;i++){{let r=await fetch('https://localhost:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-policy'){{for(let j=0;j<2;j++)await(await fetch('https://localhost:{port}/fluxdo-h3/reuse')).text();break;}}await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
         );
         let helper_task = tokio::spawn(async move {
             use rama::{
@@ -200,7 +200,7 @@ async fn main() -> Result<(), BoxError> {
         out.join("profile.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
         "hello":profile.sample.hello,"flight":profile.sample.flight,"parameters":profile.sample.parameters,
-        "boundary":profile.sample.boundary,"warm_boundary":profile.sample.warm_boundary,"wire_fields":profile.sample.wire_fields,"quic":profile.quic,"permute_tls":profile.permute_tls,
+        "boundary":profile.sample.boundary,"warm_boundary":profile.sample.warm_boundary,"wire_fields":profile.sample.wire_fields,"insert_on_reuse":profile.sample.insert_on_reuse,"quic":profile.quic,"permute_tls":profile.permute_tls,
         "header_order":profile.sample.header_order,"pseudo_order":profile.sample.pseudo_order}))?,
     )?;
     let client = HttpEgressClient::new(egress, Some(templates));
