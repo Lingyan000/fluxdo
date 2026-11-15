@@ -50,7 +50,7 @@ jobs:
             elseif ($env:DIAGNOSTIC_REF -like '*-spki-*') { $mode = 'spki-control' }
             else { $mode = 'native' }
           }
-          $arguments = @('--platform', 'windows', '--production-h3', '--output', "$env:RUNNER_TEMP/native-fingerprint")
+          $arguments = @('--platform', 'windows', '--production-h3', '--qpack-scenarios', '--output', "$env:RUNNER_TEMP/native-fingerprint")
           if ($mode -ne 'native') { $arguments += "--$mode" }
           python tool/native_fingerprint/run.py @arguments
       - uses: actions/upload-artifact@v4

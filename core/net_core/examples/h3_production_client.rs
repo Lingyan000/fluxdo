@@ -66,6 +66,7 @@ async fn main() -> Result<(), BoxError> {
         serde_json::to_vec_pretty(&serde_json::json!({
         "native_driver":std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some(),
         "force_quic":std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some(),
+        "native_probe_force_quic":std::env::var("FLUXDO_NATIVE_PROBE_FORCE_QUIC").as_deref()==Ok("1"),
         "tcp_calibration_source":samples,"probe":"production Listener / HttpEgressClient",
         "physical_device":false}))?,
     )?;

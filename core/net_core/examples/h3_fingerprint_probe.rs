@@ -444,6 +444,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
     let allow_spki = !native_probe && !args.iter().any(|a| a == "--without-spki");
+    let native_force_quic = native_probe
+        && std::env::var("FLUXDO_NATIVE_PROBE_FORCE_QUIC").as_deref() == Ok("1");
+    if native_force_quic {
+        // 原生驱动自行核验临时 CI 与来源限制；传递的是当前采集器的公开证书指纹。
+        command.env("FLUXDO_NATIVE_PROBE_SPKI", &spki);
+        command.env("FLUXDO_NATIVE_NETLOG_PATH", out.join("browser-netlog.json"));
+    }
     if allow_spki {
         command.arg(format!("--ignore-certificate-errors-spki-list={spki}"));
     }
@@ -570,9 +577,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else {
         !completed && observations.lock().is_empty() && certificate_rejected
     };
-    let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
+    let report = json!({"evidence_kind":if native_force_quic { "native_webview_scoped_quic_control" } else if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki || native_force_quic,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
-        "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
+        "native_probe":native_probe,"native_probe_force_quic":native_force_quic,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
         "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,"drop_post_response":drop_post_response,
             "dropped_datagrams":dropped.load(std::sync::atomic::Ordering::Relaxed),"issued_retries":retries.load(std::sync::atomic::Ordering::Relaxed)},
         "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
@@ -590,7 +597,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     endpoint.close(0u32, b"probe complete");
     println!(
         "{}",
-        json!({"completed":completed,"spki_override":allow_spki,"requests":observations.lock().len()})
+        json!({"completed":completed,"spki_override":allow_spki || native_force_quic,"requests":observations.lock().len()})
     );
     if !expected_result_observed {
         return Err(

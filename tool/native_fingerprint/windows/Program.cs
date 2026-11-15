@@ -45,13 +45,13 @@ internal static class Program {
                 var profile = Path.Combine(Path.GetTempPath(), "fluxdo-webview2-probe-" + Guid.NewGuid());
                 var flags = new List<string>();
                 if (!string.IsNullOrEmpty(spki)) {
-                    if (uri.AbsolutePath != "/fluxdo-h3" || Convert.FromBase64String(spki).Length != 32)
+                    if (Convert.FromBase64String(spki).Length != 32)
                         throw new ArgumentException("invalid diagnostic probe SPKI");
                     flags.Add("--ignore-certificate-errors-spki-list=" + spki);
                 }
                 if (forceQuic) {
                     if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
-                        uri.AbsolutePath != "/fluxdo-h3" || string.IsNullOrEmpty(spki))
+                        string.IsNullOrEmpty(spki))
                         throw new InvalidOperationException("scoped QUIC control requires ephemeral runner and probe SPKI");
                     // 只允许当前独立探针 origin；用于验证 QUIC 已知根限制，不进入业务环境。
                     flags.Add("--origin-to-force-quic-on=localhost:" + uri.Port);

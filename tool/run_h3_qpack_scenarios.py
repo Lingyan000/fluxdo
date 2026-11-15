@@ -62,7 +62,8 @@ def compare_cases(native, core):
               'no_connection_errors': not native['connection_errors'] and not core['connection_errors'],
               'all_cases_match': all(r['passed'] for r in results)}
     return {'checks': checks, 'passed': all(checks.values()), 'cases': results,
-            'scope': ('local native WKWebView Alt-Svc' if native.get('native_probe') else 'local forced QUIC browser fetch') + ' and production Core; synthetic values; common transmitted fields only',
+            'scope': ('local native WebView with scoped QUIC/SPKI control' if native.get('native_probe_force_quic') else
+                      'local native WebView Alt-Svc' if native.get('native_probe') else 'local forced QUIC browser fetch') + ' and production Core; synthetic values; common transmitted fields only',
             'not_verified': ['physical devices', 'arbitrary request purposes', 'Cloudflare acceptance']}
 
 
@@ -74,6 +75,7 @@ def main():
     parser.add_argument('--native-driver', action='store_true', help='使用原生 WKWebView 宿主，通过 Alt-Svc 选择 H3')
     args = parser.parse_args()
     binaries = Path(__file__).resolve().parents[1] / 'core/net_core/target/debug/examples'
+    suffix = '.exe' if os.name == 'nt' else ''
     args.output = args.output.resolve()
     driver_codes={}
     for mode in ('native', 'core'):
@@ -89,8 +91,8 @@ def main():
         else:
             env['FLUXDO_H3_FORCE_QUIC'] = '1'
             env.pop('FLUXDO_H3_NATIVE_DRIVER', None)
-        command = [str(binaries / 'h3_fingerprint_probe'), args.browser if mode == 'native' else
-                   str(binaries / 'h3_production_client'), str(folder)]
+        command = [str(binaries / ('h3_fingerprint_probe' + suffix)), args.browser if mode == 'native' else
+                   str(binaries / ('h3_production_client' + suffix)), str(folder)]
         command += ['--learn-alt-svc', '--qpack-scenarios'] if mode == 'native' else ['--native-probe']
         if mode == 'native' and args.native_driver:
             # 与生产校准探针一致：公告 Alt-Svc 后关闭旧 TCP 连接，允许原生栈重新选路。

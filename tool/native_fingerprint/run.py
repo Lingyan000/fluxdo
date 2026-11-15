@@ -13,6 +13,7 @@ from compare_fingerprint_capture import compare
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--production-h3', action='store_true')
+parser.add_argument('--qpack-scenarios', action='store_true', help='基线通过后比较九种原生/Core 扩展请求')
 parser.add_argument('--spki-control', action='store_true', help='额外运行 Windows 临时证书许可对照，不代表默认配置')
 parser.add_argument('--root-trust-only', action='store_true', help='只运行一次性 CI 的根证书与 SPKI 组合对照')
 parser.add_argument('--force-quic-control', action='store_true', help='仅一次性 runner，按探针 origin 与 SPKI 限定 QUIC 对照')
@@ -23,6 +24,8 @@ if (args.spki_control or args.root_trust_only) and (args.platform != 'windows' o
     parser.error('certificate controls require --platform windows --production-h3')
 if args.force_quic_control and not args.production_h3:
     parser.error('--force-quic-control requires --production-h3')
+if args.qpack_scenarios and not args.production_h3:
+    parser.error('--qpack-scenarios requires --production-h3')
 root = Path(__file__).resolve().parents[2]
 binary = root / 'core/net_core/target/debug/examples' / ('fingerprint_probe.exe' if os.name == 'nt' else 'fingerprint_probe')
 driver = root / ('tool/native_fingerprint/windows/bin/Release/net8.0-windows/Probe.exe' if args.platform == 'windows' else 'tool/native_fingerprint/android_driver.py')
@@ -66,6 +69,15 @@ for mode in ((['forced-native-spki-control', 'forced-app-spki-control'] if args.
                 from compare_h3_production import compare as compare_h3
                 result['production_h3_comparison']=compare_h3(production)
                 result['passed'] &= result['production_h3_comparison']['all_checked_fields_match']
+            if args.qpack_scenarios and result['passed']:
+                extended = folder / 'qpack-scenarios'
+                with (folder / 'qpack-scenarios.log').open('w') as log:
+                    process = subprocess.run([sys.executable, str(root/'tool/run_h3_qpack_scenarios.py'),
+                        '--browser', str(driver.resolve()), '--samples', str(folder.resolve()),
+                        '--output', str(extended.resolve()), '--native-driver'],
+                        env=h3env, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+                result['qpack_comparison'] = json.loads((extended/'comparison.json').read_text())
+                result['passed'] &= process.returncode == 0 and result['qpack_comparison']['passed']
     except Exception as error:
         result.update(passed=False, error=str(error))
     matrix.append(result)

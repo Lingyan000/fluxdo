@@ -14,7 +14,7 @@ def scoped_quic_control(adb, env, url):
     target = urlparse(url)
     spki = env.get('FLUXDO_NATIVE_PROBE_SPKI', '')
     if (env.get('GITHUB_ACTIONS') != 'true' or target.scheme != 'https' or
-            target.hostname != 'localhost' or target.path != '/fluxdo-h3' or
+            target.hostname != 'localhost' or target.path not in ('/fluxdo-h3', '/fluxdo-probe') or
             target.username or target.password or not target.port or
             len(base64.b64decode(spki, validate=True)) != 32):
         raise ValueError('QUIC control requires an ephemeral runner and exact probe origin/SPKI')
