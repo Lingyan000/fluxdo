@@ -54,8 +54,7 @@ jobs:
           script: |
             adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
             chmod +x tool/native_fingerprint/android_driver.py
-            control=""; if [[ "${{ inputs.force_control }}" == "true" || "$GITHUB_REF_NAME" == *-force-* ]]; then control="--force-quic-control"; fi
-            python tool/native_fingerprint/run.py --platform android --production-h3 --qpack-scenarios $control --output "${{ runner.temp }}/native-fingerprint"
+            python tool/native_fingerprint/run.py --platform android --production-h3 --qpack-scenarios ${{ (inputs.force_control || contains(github.ref_name, '-force-')) && '--force-quic-control' || '' }} --output "${{ runner.temp }}/native-fingerprint"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
