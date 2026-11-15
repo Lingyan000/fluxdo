@@ -327,7 +327,7 @@ impl Recv {
                 let ext = Extensions::new();
                 ext.insert(Ingress(stream.extensions.clone()));
                 if let Some(priority) = headers_priority {
-                    ext.insert(priority);
+                    ext.insert(frame::ReceivedStreamDependency(priority));
                 }
                 ext
             } else {

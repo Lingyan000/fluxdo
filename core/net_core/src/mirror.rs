@@ -69,7 +69,7 @@ pub fn cache_revision() -> String {
     for byte in include_bytes!("../Cargo.lock") {
         hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
     }
-    format!("2:{hash:016x}")
+    format!("3:{hash:016x}")
 }
 
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
@@ -170,7 +170,8 @@ fn profile_hash(hello: &ClientHello) -> u64 {
         .extensions()
         .iter()
         .filter_map(|ext| {
-            if ext.id().is_grease() || matches!(u16::from(ext.id()), 41 | 44) {
+            // padding 是否出现取决于本次 ClientHello 长度，同一内核也会变化。
+            if ext.id().is_grease() || matches!(u16::from(ext.id()), 21 | 41 | 44) {
                 return None;
             }
             let mut ext = ext.clone();
@@ -477,7 +478,7 @@ impl FingerprintTemplates {
         if is_fetch {
             if known_probe_fetch && request.version() == rama::http::Version::HTTP_2 {
                 let next = H2FetchPriority {
-                    dependency: extensions.get_ref::<StreamDependency>().cloned(),
+                    dependency: extensions.get_ref::<rama::http::proto::h2::frame::ReceivedStreamDependency>().map(|p| p.0.clone()),
                 };
                 let mut current = self.fetch_h2_priority.write();
                 if current.as_ref().is_some_and(|old| old != &next) {
@@ -1131,6 +1132,21 @@ mod profile_tests {
         templates.record_hello(&next);
         assert_eq!(templates.generation.load(Ordering::Relaxed), calibrated);
     }
+    #[test]
+    fn native_android_padding_presence_does_not_reset_calibration() {
+        let samples: Vec<ClientHello> = serde_json::from_str(include_str!(
+            "../tests/fixtures/android124_padding_presence.json"
+        )).unwrap();
+        let padding = |hello: &ClientHello| hello.extensions().iter().any(|e| u16::from(e.id()) == 21);
+        assert!(padding(&samples[0]));
+        assert!(!padding(&samples[1]));
+        assert_eq!(profile_hash(&samples[0]), profile_hash(&samples[1]));
+        let templates = FingerprintTemplates::new(None);
+        templates.record_hello(&samples[0]);
+        templates.record_hello(&samples[1]);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(true));
+    }
+
     #[test]
     fn protocol_capability_change_rotates_profile() {
         let original: ClientHello = serde_json::from_value(chrome()).unwrap();

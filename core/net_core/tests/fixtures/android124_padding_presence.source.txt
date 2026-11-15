@@ -1,0 +1,6 @@
+原生 Android 15 模拟器 / Android WebView 124.0.6367.219，原生 UA，两个独立进程访问回环探针。
+运行：https://github.com/Lingyan000/fluxdo/actions/runs/43678574522
+提交：2d121d1e9a982dcfa53fe7566ca13160b01ec84e
+artifact 14147048811；SHA256 0e5be063e0e2244f308d15c660ac0d213bca83b35e65b654bb854d1ad28d076a
+取自 android-native/browser-sample-0.json 与 browser-sample-1.json 的 hello 字段。
+第一份包含 padding 扩展 21，第二份没有；不含业务 Cookie、私钥或认证数据。
