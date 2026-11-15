@@ -90,6 +90,9 @@ final class Probe: NSObject, WKNavigationDelegate {
         let result: [String: Any] = ["engine": "native WKWebView", "platform": platform,
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "native_user_agent": nativeUA, "custom_user_agent": webView.customUserAgent ?? "",
+            // 只核验公开 Bundle 元数据是否可读，不使用私有 WebKit API。
+            "safari_bundle_version": Bundle(path: "/Applications/MobileSafari.app")?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "webkit_bundle_version": Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
             "success": error == nil, "error": error ?? ""]
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {

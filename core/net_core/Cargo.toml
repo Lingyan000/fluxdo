@@ -64,3 +64,5 @@ strip = false
 
 [patch."https://github.com/plabayo/rama"]
 rama-quic = { path = "vendor/rama-quic" }
+rama-http-types = { path = "vendor/rama-http-types" }
+rama-http-core = { path = "vendor/rama-http-core" }

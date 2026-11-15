@@ -1136,6 +1136,20 @@ fn build_request(
     port: u16,
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
+    // 仅默认 fetch 用途复用采样优先级；显式请求优先级优先，导航和依赖其他
+    // 入站流 ID 的优先级不能直接跨连接复制。
+    if version == Version::HTTP_2
+        && let Some(template) = template.filter(|t| t.is_calibrated())
+        && request.uri().scheme_str() == Some("https")
+        && template.user_agent.as_deref() == request.headers().get("user-agent").and_then(|v| v.to_str().ok())
+        && request.headers().get("sec-fetch-mode").is_some_and(|v| v == "cors")
+        && !request.headers().contains_key("priority")
+        && !request.extensions().contains::<rama::http::proto::h2::frame::StreamDependency>()
+        && let Some(priority) = template.fetch_h2_priority.as_ref().and_then(|p| p.dependency.as_ref())
+        && priority.dependency_id == rama::http::proto::h2::frame::StreamId::zero()
+    {
+        request.extensions().insert(priority.clone());
+    }
     let uri = request.uri();
     // 保留 wire 原样拼写转发，不做重新编码
     let path = uri
@@ -1186,6 +1200,25 @@ fn build_request(
             })
             && let Some(hints) = &template.low_entropy_client_hints
         {
+            // 旧 WebKit 的真实 fetch 不发送 Fetch Metadata。仅对同 UA 的 HTTPS
+            // cors 请求移除调用方额外添加的这一组头；不从回环探针复制站点关系，
+            // 不改 Origin、Referer、Cookie 或 CSRF，也不改导航请求和未校准模板。
+            if template.is_calibrated()
+                && headers.get("sec-fetch-mode").is_some_and(|v| v == "cors")
+                && !template
+                    .fetch_header_order
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case("sec-fetch-mode"))
+            {
+                let unsupported: Vec<_> = headers
+                    .keys()
+                    .filter(|name| name.as_str().starts_with("sec-fetch-"))
+                    .cloned()
+                    .collect();
+                for name in unsupported {
+                    headers.remove(name);
+                }
+            }
             let supplied: Vec<_> = headers
                 .keys()
                 .filter(|name| crate::mirror::is_low_entropy_client_hint(name.as_str()))
@@ -1840,6 +1873,63 @@ mod tests {
         }
     }
 
+    #[test]
+    fn legacy_webkit_fetch_metadata_matches_sample_without_changing_security_headers() {
+        // 原生 iOS 15.5 云端采样：不发送 Fetch Metadata；不使用 UA 版本阈值。
+        let reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        ))
+        .unwrap();
+        for (same_ua, calibrated, supports_metadata, scheme, mode, should_remove) in [
+            (true, true, false, "https", "cors", true),
+            (false, true, false, "https", "cors", false),
+            (true, false, false, "https", "cors", false),
+            (true, true, true, "https", "cors", false),
+            (true, true, false, "http", "cors", false),
+            (true, true, false, "https", "navigate", false),
+        ] {
+            let mut template = reference.clone();
+            if !calibrated {
+                template.tls_permute_extensions = None;
+            }
+            if supports_metadata {
+                template.fetch_header_order.push("sec-fetch-mode".into());
+            }
+            let request = Request::builder()
+                .uri(format!("{scheme}://localhost/test"))
+                .header(
+                    "user-agent",
+                    if same_ua {
+                        reference.user_agent.as_deref().unwrap()
+                    } else {
+                        "another-client"
+                    },
+                )
+                .header("sec-fetch-mode", mode)
+                .header("sec-fetch-site", "same-origin")
+                .header("sec-fetch-dest", "empty")
+                .header("origin", "https://localhost")
+                .header("referer", "https://localhost/topics/1")
+                .header("x-csrf-token", "unchanged-token")
+                .header("cookie", "session=unchanged")
+                .body(Body::empty())
+                .unwrap();
+            let built =
+                build_request(Some(&template), request, "localhost", 443, Version::HTTP_2).unwrap();
+            for name in ["sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest"] {
+                assert_eq!(
+                    built.headers().contains_key(name),
+                    !should_remove,
+                    "{same_ua}/{calibrated}/{supports_metadata}/{scheme}/{mode}: {name}"
+                );
+            }
+            assert_eq!(built.headers()["origin"], "https://localhost");
+            assert_eq!(built.headers()["referer"], "https://localhost/topics/1");
+            assert_eq!(built.headers()["x-csrf-token"], "unchanged-token");
+            assert_eq!(built.headers()["cookie"], "session=unchanged");
+        }
+    }
+
     #[tokio::test]
     async fn sampled_h2_settings_and_pseudo_order_reach_the_wire() {
         use rama::{
@@ -1856,13 +1946,17 @@ mod tests {
             "../tests/fixtures/chromium99_linux_probe.json"
         ))
         .unwrap();
-        let templates = Arc::new(FingerprintTemplates::new(Some(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/tests/fixtures/chromium99_linux_probe.json"
-            )
-            .into(),
-        )));
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        let priority = rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), 219, true);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(priority.clone());
+        templates.observe_probe_fetch(&sample);
         let (chain, key) = rama_crypto::cert::generate_server_auth(
             rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
                 rama::net::address::Domain::from_static("localhost"),
@@ -1897,6 +1991,7 @@ mod tests {
                         .get_ref::<PseudoHeaderOrder>()
                         .unwrap()
                         .clone(),
+                    request.extensions().get_ref::<rama::http::proto::h2::frame::StreamDependency>().cloned(),
                 ));
                 async { Ok::<_, Infallible>(Response::new(Body::from("ok"))) }
             }));
@@ -1920,6 +2015,8 @@ mod tests {
             .send(
                 Request::builder()
                     .uri(format!("https://localhost:{port}/"))
+                    .header("user-agent", "priority-lab")
+                    .header("sec-fetch-mode", "cors")
                     .body(Body::empty())
                     .unwrap(),
                 Some(Duration::from_secs(5)),
@@ -1928,7 +2025,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.version(), Version::HTTP_2);
-        let (frames, order) = captured.lock().clone().unwrap();
+        let (frames, order, actual_priority) = captured.lock().clone().unwrap();
+        assert_eq!(actual_priority, Some(priority));
         let initial = |frames: &EarlyFrameCapture| {
             serde_json::to_value(frames)
                 .unwrap()

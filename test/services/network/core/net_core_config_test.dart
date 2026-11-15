@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,10 @@ void main() {
     );
     expect(copied.toJson()['fingerprint_user_agent'], 'actual WebView UA');
     expect(copied.toJson()['fingerprint_platform'], Platform.operatingSystem);
+    expect(
+      jsonDecode(copied.toJson()['fingerprint_runtime_identity'] as String),
+      [Platform.operatingSystem, Platform.operatingSystemVersion],
+    );
     expect(copied.toJson()['fingerprint_preset'], 'android-chrome149');
     expect(
       copied.toJson()['http3_cache_path'],

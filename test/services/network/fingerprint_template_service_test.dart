@@ -26,6 +26,27 @@ void main() {
     expect(probes, 0);
     expect(service.templateReady.value, true);
   });
+  test('同 UA 的磁盘缓存也执行当前进程两轮校准', () async {
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true,
+        'user_agent': 'frozen',
+        'needs_revalidation': probes < 2,
+        'cache_state': 'loaded_pending_revalidation',
+      },
+      userAgent: () async => 'frozen',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    await service.ensure(1);
+    expect(probes, 2);
+    expect(service.templateReady.value, true);
+    await service.ensure(1);
+    expect(probes, 2);
+  });
+
   test('切换核心取消旧探针，销毁后才启动新探针且旧结果不覆盖新状态', () async {
     var active = 0;
     var peak = 0;

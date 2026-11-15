@@ -69,6 +69,7 @@ async fn main() -> Result<(), rama::error::BoxError> {
         template.tls_permute_extensions = Some(browser_tls::is_chromium(&template.hello));
         template.low_entropy_client_hints = Some(Vec::new());
         template.user_agent = Some("FluxDO-Fixture-Lab/1".into());
+        template.cache_revision = Some(fluxdo_net::mirror::cache_revision());
         write_json(out.join("template-cache.json"), &template);
     }
     let reference = Arc::new(FingerprintTemplates::new(Some(
@@ -234,7 +235,9 @@ async fn main() -> Result<(), rama::error::BoxError> {
                 let mut server = HttpServer::auto(Executor::new());
                 server.h2_mut().set_observe_early_frames(true);
                 let service = server.service(service_fn(move |request: Request| {
-                    collector.observe_request(&request);
+                    // 该回环服务只接收本实验主动发起的 API 请求，不能依赖
+                    // Sec-Fetch-Mode 识别它们，否则修复旧 WebKit 后反而漏采。
+                    collector.observe_probe_fetch(&request);
                     let headers: Vec<_> = request
                         .headers()
                         .iter()

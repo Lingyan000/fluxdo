@@ -2,9 +2,9 @@
 //! 核心借此采集 WebView 的 TLS 握手、HTTP/2 早期帧与 fetch 请求头，写入回放模板。
 //!
 //! 直连模式下 WebView 不经过核心，这是获取模板的唯一途径。端点与代理共用端口：
-//! 代理按连接首字节分流，TLS 握手（0x16）进入这里。WebView 对 localhost 的握手与
-//! 访问真实站点时一致（实测 Chrome / WKWebView / 安卓 WebView 的 JA4 相同），仅 SNI 不同，
-//! 回放时 SNI 由目标站点重填。
+//! 代理按连接首字节分流，TLS 握手（0x16）进入这里。回放时 SNI 由目标站点重填；
+//! 回环采样提供 TLS/TCP 与 H2 的参考字段，不代表任意公网目标的完整指纹，
+//! 真 ECH、QUIC/H3、会话恢复和目标相关行为必须另做对照。
 
 use std::{convert::Infallible, sync::Arc, time::Duration};
 

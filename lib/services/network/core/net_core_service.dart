@@ -325,6 +325,12 @@ class NetCoreConfig {
     if (serverIp != null && serverIp!.isNotEmpty) 'server_ip': serverIp,
     'webview_mitm': webViewMitm,
     'fingerprint_platform': Platform.operatingSystem,
+    // iOS 等平台的 UA 系统版本可能冻结；使用真实宿主版本校验缓存，
+    // 不将系统版本拼成浏览器版本，也不读取设备唯一标识。
+    'fingerprint_runtime_identity': jsonEncode([
+      Platform.operatingSystem,
+      Platform.operatingSystemVersion,
+    ]),
     if (fingerprintPreset != null) 'fingerprint_preset': fingerprintPreset,
     if (fingerprintUserAgent != null)
       'fingerprint_user_agent': fingerprintUserAgent,

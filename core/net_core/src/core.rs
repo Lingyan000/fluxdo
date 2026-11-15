@@ -42,7 +42,7 @@ impl Core {
     }
 
     pub async fn start(config: NetConfig) -> Result<Arc<Self>> {
-        let templates = Arc::new(FingerprintTemplates::with_selection(
+        let templates = Arc::new(FingerprintTemplates::with_runtime_selection(
             config
                 .fingerprint_cache_path
                 .as_ref()
@@ -53,6 +53,7 @@ impl Core {
                 .unwrap_or(std::env::consts::OS),
             config.fingerprint_user_agent.as_deref(),
             config.fingerprint_preset.as_deref(),
+            config.fingerprint_runtime_identity.as_deref(),
         )?);
 
         // DoH 开启时才建解析器；关闭时出站走系统 DNS
@@ -86,6 +87,8 @@ impl Core {
             &config.server_ip,
             config.upstream_proxy.as_ref().map(|p| p.cache_key()),
             config.system_proxy.as_ref().map(|p| p.cache_key()),
+            &config.fingerprint_runtime_identity,
+            crate::mirror::cache_revision(),
         ))
         .unwrap_or_default();
         let mut sessions = crate::browser_tls::ClientSessions::default();

@@ -1,4 +1,5 @@
-//! WebView 流量镜像：按 WebView 自己的握手连接上游，HTTP 层（含 HTTP/2 帧）原样复刻。
+//! WebView 流量镜像：按已采集的握手与 HTTP/2 初始帧、伪头顺序配置上游。
+//! 这不代表完整 HPACK、HEADERS 优先级或 QUIC/H3 已获逐字复现。
 //!
 //! 流程：窥探 WebView 的 ClientHello → [`browser_tls::build`] 生成上游配置 →
 //! rama `TlsMitmRelay::handshake` 用传入的上游配置建立两侧 TLS（入站证书由应用 CA 签发）→
@@ -24,7 +25,7 @@ use rama::{
     extensions::ExtensionsRef,
     http::{
         Request,
-        proto::h2::{PseudoHeaderOrder, frame::EarlyFrameCapture},
+        proto::h2::{PseudoHeaderOrder, frame::{EarlyFrameCapture, StreamDependency}},
         proxy::mitm::{DefaultErrorResponse, HttpMitmRelay},
     },
     io::BridgeIo,
@@ -62,6 +63,15 @@ const PEEK_TIMEOUT: Duration = Duration::from_secs(10);
 /// 模板写盘的最小间隔（首次齐全时立即写）。
 const PERSIST_INTERVAL: Duration = Duration::from_secs(60);
 
+/// 模板格式、回放策略或依赖变化时淘汰旧缓存；不把应用版本当网络后端版本。
+pub fn cache_revision() -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in include_bytes!("../Cargo.lock") {
+        hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
+    }
+    format!("2:{hash:016x}")
+}
+
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TemplateSource {
@@ -87,6 +97,12 @@ impl TemplateSource {
 }
 
 /// 一份可回放的 WebView 指纹模板。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct H2FetchPriority {
+    /// None 是实际观察到未设置 PRIORITY；外层 None 则表示尚未采集。
+    pub dependency: Option<StreamDependency>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FingerprintTemplate {
     #[serde(skip)]
@@ -97,7 +113,7 @@ pub struct FingerprintTemplate {
     pub early_frames: EarlyFrameCapture,
     /// HTTP/2 伪头顺序
     pub pseudo_order: PseudoHeaderOrder,
-    /// fetch 类请求（sec-fetch-mode: cors）的请求头名顺序，小写
+    /// 已确认用途的 fetch 请求头名顺序，小写；旧 WebKit 可以没有 Fetch Metadata。
     pub fetch_header_order: Vec<String>,
     /// fetch 类请求的 Accept-Encoding
     pub accept_encoding: Option<String>,
@@ -110,6 +126,13 @@ pub struct FingerprintTemplate {
     /// fetch 实际发送的低熵 Client Hints；Some([]) 表示浏览器没有发送。
     #[serde(default)]
     pub low_entropy_client_hints: Option<Vec<(String, String)>>,
+    /// 宿主实际系统版本身份，不从 UA 推导；旧缓存缺失时由宿主身份校验淘汰。
+    #[serde(default)]
+    pub runtime_identity: Option<String>,
+    #[serde(default)]
+    pub cache_revision: Option<String>,
+    #[serde(default)]
+    pub fetch_h2_priority: Option<H2FetchPriority>,
     /// 模板版本：握手变化时递增，回放连接池据此淘汰旧指纹的连接
     #[serde(skip)]
     pub generation: u64,
@@ -134,6 +157,9 @@ pub struct FingerprintTemplates {
     hello_observations: AtomicU64,
     cache_path: Option<PathBuf>,
     last_persist: Mutex<Option<Instant>>,
+    runtime_identity: Option<String>,
+    cache_state: RwLock<&'static str>,
+    fetch_h2_priority: RwLock<Option<H2FetchPriority>>,
 }
 
 /// 连接身份只比较稳定的浏览器能力，原始模板仍完整保留供新连接回放。
@@ -216,6 +242,16 @@ impl FingerprintTemplates {
         user_agent: Option<&str>,
         preset_id: Option<&str>,
     ) -> Result<Self> {
+        Self::with_runtime_selection(cache_path, platform, user_agent, preset_id, None)
+    }
+
+    pub fn with_runtime_selection(
+        cache_path: Option<PathBuf>,
+        platform: &str,
+        user_agent: Option<&str>,
+        preset_id: Option<&str>,
+        runtime_identity: Option<&str>,
+    ) -> Result<Self> {
         if let Some(id) = preset_id {
             let preset = crate::presets::by_id(id)
                 .ok_or_else(|| NetError::Parse(format!("Unknown fingerprint preset: {id}")))?;
@@ -226,7 +262,12 @@ impl FingerprintTemplates {
                 ..Self::default()
             });
         }
-        Ok(Self::with_profile(cache_path, platform, user_agent))
+        Ok(Self::with_runtime_profile(
+            cache_path,
+            platform,
+            user_agent,
+            runtime_identity,
+        ))
     }
 
     pub fn with_profile(
@@ -234,28 +275,52 @@ impl FingerprintTemplates {
         platform: &str,
         user_agent: Option<&str>,
     ) -> Self {
+        Self::with_runtime_profile(cache_path, platform, user_agent, None)
+    }
+
+    fn with_runtime_profile(
+        cache_path: Option<PathBuf>,
+        platform: &str,
+        user_agent: Option<&str>,
+        runtime_identity: Option<&str>,
+    ) -> Self {
         let templates = Self {
             preset: crate::presets::select(platform, user_agent),
             cache_path,
+            runtime_identity: runtime_identity.map(str::to_owned),
+            cache_state: RwLock::new("missing"),
             ..Self::default()
         };
         let cached = templates.cache_path.as_ref().and_then(|path| {
             if std::fs::metadata(path).ok()?.len() > 256 * 1024 {
+                *templates.cache_state.write() = "oversized";
                 warn!("Ignore oversized fingerprint template cache");
                 return None;
             }
             let text = std::fs::read_to_string(path).ok()?;
             match serde_json::from_str::<FingerprintTemplate>(&text) {
-                Ok(template)
-                    if user_agent.is_none() || template.user_agent.as_deref() == user_agent =>
-                {
-                    Some(template)
-                }
-                Ok(_) => {
-                    info!("Fingerprint cache UA changed; using fallback until probe completes");
-                    None
+                Ok(template) => {
+                    let reason = if template.cache_revision.as_deref() != Some(&cache_revision()) {
+                        "schema_or_backend_changed"
+                    } else if user_agent.is_some() && template.user_agent.as_deref() != user_agent {
+                        "user_agent_changed"
+                    } else if runtime_identity.is_some() && template.runtime_identity.as_deref() != runtime_identity {
+                        "runtime_changed"
+                    } else if !template.is_calibrated() {
+                        "incomplete"
+                    } else {
+                        "loaded_pending_revalidation"
+                    };
+                    *templates.cache_state.write() = reason;
+                    if reason == "loaded_pending_revalidation" {
+                        Some(template)
+                    } else {
+                        info!("Fingerprint cache invalidated: {reason}");
+                        None
+                    }
                 }
                 Err(e) => {
+                    *templates.cache_state.write() = "invalid_json";
                     warn!(
                         "Ignore unreadable fingerprint template cache {}: {e}",
                         path.display()
@@ -276,6 +341,7 @@ impl FingerprintTemplates {
             *templates.user_agent.write() = template.user_agent;
             *templates.tls_permute_extensions.write() = template.tls_permute_extensions;
             *templates.low_entropy_client_hints.write() = template.low_entropy_client_hints;
+            *templates.fetch_h2_priority.write() = template.fetch_h2_priority;
         }
         templates
     }
@@ -284,7 +350,14 @@ impl FingerprintTemplates {
         if self.pinned {
             return;
         }
-        self.hello_observations.fetch_add(1, Ordering::Relaxed);
+        let first_in_process = self.hello_observations.fetch_add(1, Ordering::Relaxed) == 0;
+        // 同 UA 的引擎更新/实验变化也要重新比较本次进程内的两次握手。
+        // 不把旧缓存的一次握手算作本次校准，也允许过去的乱序策略恢复为固定顺序。
+        if first_in_process && *self.source.read() == TemplateSource::Cached {
+            *self.tls_permute_extensions.write() = None;
+            *self.last_persist.lock() = None;
+            self.generation.fetch_add(1, Ordering::Relaxed);
+        }
         let hash = profile_hash(hello);
         let mut previous = self.hello_hash.lock();
         let old_hash = previous.replace(hash);
@@ -298,9 +371,10 @@ impl FingerprintTemplates {
                 *self.user_agent.write() = None;
                 *self.tls_permute_extensions.write() = None;
                 *self.low_entropy_client_hints.write() = None;
+                *self.fetch_h2_priority.write() = None;
                 *self.last_persist.lock() = None;
             }
-        } else if let Some(old_hello) = old_hello {
+        } else if !first_in_process && let Some(old_hello) = old_hello {
             let changed = extension_order(&old_hello) != extension_order(hello);
             let policy_changed = {
                 let mut policy = self.tls_permute_extensions.write();
@@ -355,8 +429,9 @@ impl FingerprintTemplates {
         self.observe_request_kind(request, false);
     }
 
-    /// 仅本地探针的固定 fetch 路径可以直接确认请求用途，不依赖内核提供 Fetch Metadata。
-    pub(crate) fn observe_probe_fetch<B>(&self, request: &Request<B>) {
+    /// 仅可信本地探针/诊断采集器可显式确认 fetch 用途；普通代理入口须用 observe_request。
+    /// 不依赖内核提供 Fetch Metadata，也不向被观察的请求补造任何头。
+    pub fn observe_probe_fetch<B>(&self, request: &Request<B>) {
         self.observe_request_kind(request, true);
     }
 
@@ -395,6 +470,16 @@ impl FingerprintTemplates {
                 .get("sec-fetch-mode")
                 .is_some_and(|mode| mode.as_bytes() == b"cors");
         if is_fetch {
+            if request.version() == rama::http::Version::HTTP_2 {
+                let next = H2FetchPriority {
+                    dependency: extensions.get_ref::<StreamDependency>().cloned(),
+                };
+                let mut current = self.fetch_h2_priority.write();
+                if current.as_ref().is_some_and(|old| old != &next) {
+                    self.generation.fetch_add(1, Ordering::Relaxed);
+                }
+                *current = Some(next);
+            }
             let order = headers
                 .keys()
                 .map(|name| name.as_str().to_owned())
@@ -422,7 +507,7 @@ impl FingerprintTemplates {
         self.maybe_persist();
     }
 
-    /// TLS 与 HTTP/2 特征都已采到时返回完整模板；fetch 请求头可缺省。
+    /// 返回可回放的 TLS/H2 模板；是否完成头部和顺序校准另查 is_calibrated。
     pub fn snapshot(&self) -> Option<FingerprintTemplate> {
         if self.pinned {
             return self.preset.clone();
@@ -444,6 +529,9 @@ impl FingerprintTemplates {
             user_agent: self.user_agent.read().clone(),
             tls_permute_extensions: *self.tls_permute_extensions.read(),
             low_entropy_client_hints: self.low_entropy_client_hints.read().clone(),
+            runtime_identity: self.runtime_identity.clone(),
+            cache_revision: Some(cache_revision()),
+            fetch_h2_priority: self.fetch_h2_priority.read().clone(),
             generation: self.generation.load(Ordering::Relaxed),
         })
     }
@@ -460,6 +548,13 @@ impl FingerprintTemplates {
             "tls_permute_extensions": *self.tls_permute_extensions.read(),
             "fetch_headers_sampled": self.low_entropy_client_hints.read().is_some(),
             "tls_observations": self.hello_observations.load(Ordering::Relaxed),
+            "needs_revalidation": !self.pinned && self.hello_observations.load(Ordering::Relaxed) < 2,
+            "cache_state": *self.cache_state.read(),
+            "cache_revision": cache_revision(),
+            "runtime_identity": self.runtime_identity,
+            "h3": {"enabled_for_template": false, "reason": "native_quic_h3_profile_not_calibrated"},
+            "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
+            "not_verified": ["hpack_encoding", "h2_headers_priority", "quic_h3", "cf_acceptance"],
             "system_proxy": crate::system_proxy::configured(),
         })
         .to_string()
@@ -864,7 +959,11 @@ mod profile_tests {
     #[test]
     fn explicit_preset_ignores_cache_and_capture_without_overwriting_auto_cache() {
         let path = std::env::temp_dir().join(format!("fluxdo-pinned-{}.json", uuid_for_test()));
-        let cached = crate::presets::by_id("android-webview133").unwrap();
+        let mut cached = crate::presets::by_id("android-webview133").unwrap();
+        cached.cache_revision = Some(cache_revision());
+        cached.tls_permute_extensions = Some(true);
+        cached.low_entropy_client_hints = Some(Vec::new());
+        cached.user_agent = Some("cached-lab".into());
         let original = serde_json::to_vec(&cached).unwrap();
         std::fs::write(&path, &original).unwrap();
         let pinned = FingerprintTemplates::with_selection(
@@ -1034,7 +1133,7 @@ mod profile_tests {
     }
 
     #[test]
-    fn legacy_cache_is_usable_but_requires_calibration_and_fetch_capture() {
+    fn legacy_cache_requires_new_backend_calibration() {
         let path = std::env::temp_dir().join(format!("fluxdo-legacy-{}.json", uuid_for_test()));
         std::fs::write(
             &path,
@@ -1042,9 +1141,119 @@ mod profile_tests {
         )
         .unwrap();
         let templates = FingerprintTemplates::new(Some(path.clone()));
-        assert!(templates.snapshot().is_some());
+        assert!(templates.captured_snapshot().is_none());
         let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
         assert_eq!(status["ready"], false);
+        assert_eq!(status["cache_state"], "schema_or_backend_changed");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cached_random_order_is_recalibrated_with_two_current_handshakes() {
+        let path = std::env::temp_dir().join(format!("fluxdo-revalidate-{}.json", uuid_for_test()));
+        let mut reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        )).unwrap();
+        reference.cache_revision = Some(cache_revision());
+        reference.tls_permute_extensions = Some(true);
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        let templates = FingerprintTemplates::new(Some(path.clone()));
+        assert_eq!(*templates.source.read(), TemplateSource::Cached);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), None);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(false));
+        let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(status["needs_revalidation"], false);
+        reference.cache_revision = Some("future-or-other-backend".into());
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        assert!(FingerprintTemplates::new(Some(path.clone())).captured_snapshot().is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn headers_priority_is_encoded_before_hpack_without_polluting_continuation() {
+        use rama::bytes::{BufMut, BytesMut};
+        use rama::http::{HeaderMap, Method};
+        use rama::http::proto::h2::{frame::{Headers, Pseudo, StreamId}, hpack};
+        for priority in [None, Some(StreamDependency::new(StreamId::zero(), 219, true))] {
+            let pseudo = Pseudo::request(Method::GET, &"https://localhost/test".parse().unwrap(), None);
+            let mut fields = HeaderMap::new();
+            fields.insert("x-test", "a".repeat(40_000).parse().unwrap());
+            let frame = Headers::new(StreamId::from(1), pseudo, fields, priority.clone());
+            let mut encoder = hpack::Encoder::default();
+            let mut buf = BytesMut::new();
+            let continuation = frame.encode(&mut encoder, &mut (&mut buf).limit(16_384 + 9)).unwrap();
+            assert_eq!(buf[3], 1);
+            assert_eq!(buf[4] & 0x20 != 0, priority.is_some());
+            if priority.is_some() { assert_eq!(&buf[9..14], &[0x80, 0, 0, 0, 219]); }
+            let mut tail = BytesMut::new();
+            continuation.encode(&mut (&mut tail).limit(16_384 + 9));
+            assert_eq!(tail[3], 9);
+            assert_eq!(tail[4] & 0x20, 0);
+        }
+    }
+
+    #[test]
+    fn frozen_ua_does_not_reuse_cache_across_runtime_changes() {
+        let path = std::env::temp_dir().join(format!("fluxdo-runtime-{}.json", uuid_for_test()));
+        let mut reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        ))
+        .unwrap();
+        // 模拟两个实际系统版本返回同一 UA；不把 UA 中的系统字段当真实版本。
+        reference.user_agent = Some("frozen-apple-ua".into());
+        reference.runtime_identity = Some("ios-runtime-A".into());
+        reference.cache_revision = Some(cache_revision());
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        for (runtime, reuse) in [("ios-runtime-A", true), ("ios-runtime-B", false)] {
+            let templates = FingerprintTemplates::with_runtime_selection(
+                Some(path.clone()),
+                "ios",
+                Some("frozen-apple-ua"),
+                None,
+                Some(runtime),
+            )
+            .unwrap();
+            assert_eq!(templates.captured_snapshot().is_some(), reuse);
+            let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+            assert_eq!(status["ready"], reuse);
+        }
+        reference.runtime_identity = None;
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        let templates = FingerprintTemplates::with_runtime_selection(
+            Some(path.clone()),
+            "ios",
+            Some("frozen-apple-ua"),
+            None,
+            Some("ios-runtime-B"),
+        )
+        .unwrap();
+        assert!(
+            templates.captured_snapshot().is_none(),
+            "旧缓存没有宿主版本时必须重采"
+        );
+        templates.record_hello(&reference.hello);
+        templates.record_hello(&reference.hello);
+        let mut request = Request::builder()
+            .header("user-agent", "frozen-apple-ua")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(reference.early_frames);
+        request.extensions_mut().insert(reference.pseudo_order);
+        templates.observe_probe_fetch(&request);
+        let saved: FingerprintTemplate =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved.runtime_identity.as_deref(), Some("ios-runtime-B"));
+        let restored = FingerprintTemplates::with_runtime_selection(
+            Some(path.clone()),
+            "ios",
+            Some("frozen-apple-ua"),
+            None,
+            Some("ios-runtime-B"),
+        )
+        .unwrap();
+        assert!(restored.captured_snapshot().is_some());
         std::fs::remove_file(path).unwrap();
     }
 
