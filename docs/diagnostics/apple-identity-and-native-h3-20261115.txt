@@ -104,3 +104,19 @@ macOS native/app、iOS 26.2 native/app 四组全部通过，均 h3_sample_comple
 本地真实 Chromium 99/110/156 新采样全部满足新标准，未信任证书的负对照仍拒绝 H3；
 缺 Initial、错连接、截断字段、超时边界及空记录的回归通过。
 证据：/workspace/scratch/h3-complete-boundary-20261115/matrix.json。
+
+Apple 首请求边界新标准复验已完成：run 43693783451，源码 32300e54674b6542e4df878f47ced030336b6619。
+artifact 14154021466，SHA256 f3c8b2208fc78307ae24bb1d65ee05fa8936b799ba1844d7612bf3a91645f1fd。
+macOS native/app、iOS 26.2 native/app 四组均通过；下载后使用同版 --audit-capture 再次核验通过。
+证据包含实际冻结的 first_request_boundary，不使用后续实时 QPACK 快照替代。
+
+iOS 15.5 仅回调 + 重连对照已完成
+run 43693269739，源码 76be2a88f3b6f818d262965fab9c2b245aa4a411。
+artifact 14154131495，SHA256 0bab0e7c4a2855a7d7b4f80ec1c8f412900a73e97974d165909a76bad69dca9e。
+macOS 控制和 iOS 15.5 的 native/app 四组均成功；每组 TCP 2 次/1 连接，随后 H3 1 条 UDP 流。
+无系统 CA 安装、无强制 QUIC，connection_errors=[]。
+该任务启动于首请求边界补强之前，证明 H3 采样可行，不追溯声明保存了新的冻结边界。
+实测 15.5 的 initial_max_data=1 MiB，三种 stream_data 限额=128 KiB；
+26.2 对应为 16 MiB / 2 MiB。15.5 还保留签名算法 515，现代样本中不存在；
+15.5 无 4588 密钥交换组，26.2 有。以上仅描述本次样本，不作为版本硬编码分支。
+两版 H3 QPACK 容量均为 16383、blocked streams=100，但这不代表其他 QUIC/H3 参数相同。
