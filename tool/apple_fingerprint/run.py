@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
+    parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
     args = parser.parse_args()
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -81,6 +82,8 @@ def main():
     simulator_data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
     (root / 'simulators.json').write_text(json.dumps(simulator_data, indent=2))
     runtimes = [r for r in simulator_data['runtimes'] if r.get('isAvailable') and r.get('name', '').startswith('iOS ')]
+    if args.ios_version:
+        runtimes = [r for r in runtimes if r['version'] == args.ios_version]
     runtimes.sort(key=lambda r: tuple(int(n) for n in r['version'].split('.')), reverse=True)
     if args.include_oldest and len(runtimes) > args.simulator_limit:
         runtimes = runtimes[:max(0, args.simulator_limit - 1)] + [runtimes[-1]]

@@ -23,6 +23,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select Xcode matching the iOS 26 simulator
+        run: |
+          # runner 镜像预装 26.3，但默认仍为 16.4；显式固定已核对的稳定版。
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.96.0'
@@ -39,7 +44,8 @@ jobs:
       - name: Build production core diagnostic
         run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
       - name: Run macOS and iOS native WKWebView scenarios
-        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/apple-fingerprint" --simulator-limit 3 --include-oldest
+        # 本轮针对应用启动失败的 26.2 重跑；省略 --ios-version 即恢复完整版本矩阵。
+        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/apple-fingerprint" --ios-version 26.2
       - name: Upload raw diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
