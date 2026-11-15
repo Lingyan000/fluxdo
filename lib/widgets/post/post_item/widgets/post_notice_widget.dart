@@ -99,6 +99,9 @@ class PostNoticeWidget extends StatelessWidget {
                         height: 1.5,
                       ),
                       selectionEnabled: false,
+                      // 提示框已提供留白，去掉首尾段落外边距以对齐图标。
+                      trimTopMargin: true,
+                      trimBottomMargin: true,
                     ),
               ),
             ],

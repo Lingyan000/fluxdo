@@ -6,6 +6,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../utils/responsive.dart';
 import '../common/skeleton.dart';
+import 'activity_card_layout.dart';
 
 /// 加载占位沿用资料页的宽窄排版和内容流结构。
 class UserProfileSkeleton extends StatelessWidget {
@@ -154,7 +155,15 @@ class UserProfileSkeleton extends StatelessWidget {
   );
 }
 
-enum UserActivitySkeletonType { post, quoted, reaction, boost, topic }
+enum UserActivitySkeletonType {
+  post,
+  reply,
+  quoted,
+  receivedLike,
+  reaction,
+  boost,
+  topic,
+}
 
 class UserActionItemSkeleton extends StatelessWidget {
   const UserActionItemSkeleton({
@@ -172,73 +181,108 @@ class UserActionItemSkeleton extends StatelessWidget {
     final authorHeight =
         scaler.scale(authorStyle.fontSize!) * (authorStyle.height ?? 1);
     final metadataHeight =
-        scaler.scale(theme.textTheme.bodySmall!.fontSize!) * 1.4;
+        (scaler.scale(theme.textTheme.bodySmall!.fontSize!) * 1.4)
+            .ceilToDouble();
     final titleHeight =
         scaler.scale(theme.textTheme.titleSmall!.fontSize!) * 1.4;
-    final bodyHeight =
-        scaler.scale(theme.textTheme.bodyMedium!.fontSize!) * 1.5;
     final quoted =
         type == UserActivitySkeletonType.quoted ||
+        type == UserActivitySkeletonType.receivedLike ||
         type == UserActivitySkeletonType.reaction;
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: math.max(44, authorHeight + 8),
-            child: Row(
+    final bodyStyle = quoted
+        ? theme.textTheme.bodyMedium!
+        : theme.textTheme.bodyLarge!;
+    final bodyHeight = scaler.scale(bodyStyle.fontSize!) * 1.5;
+    final bodyFirst = type == UserActivitySkeletonType.reply;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (type == UserActivitySkeletonType.receivedLike) ...[
+          ActivityCardHeader(
+            metadata: Row(
               children: [
-                const SkeletonCircle(size: 32),
-                const SizedBox(width: 10),
-                Flexible(child: SkeletonBox(width: 120, height: authorHeight)),
+                Flexible(
+                  child: SkeletonBox(width: 180, height: metadataHeight),
+                ),
               ],
             ),
+            timestamp: SkeletonBox(width: 40, height: metadataHeight),
           ),
-          const SizedBox(height: 4),
-          SkeletonBox(width: 150, height: metadataHeight),
-          const SizedBox(height: 10),
-          SkeletonBox(width: double.infinity, height: titleHeight),
-          if (type == UserActivitySkeletonType.reaction) ...[
-            const SizedBox(height: 10),
-            const SkeletonBox(width: 28, height: 28),
-          ],
-          if (type != UserActivitySkeletonType.topic) ...[
-            const SizedBox(height: 10),
-            if (quoted)
-              SkeletonBox(
-                width: double.infinity,
-                height: bodyHeight * 2 + 20,
-                borderRadius: 10,
-              )
-            else
-              SkeletonBox(width: double.infinity, height: bodyHeight * 2),
-          ],
-          if (type == UserActivitySkeletonType.boost) ...[
-            const SizedBox(height: 10),
-            const SkeletonBox(width: 200, height: 44, borderRadius: 22),
-          ],
-          const SizedBox(height: 4),
-          SizedBox(
-            height: math.max(44, metadataHeight + 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SkeletonBox(width: 120, height: metadataHeight),
-            ),
-          ),
-          if (type == UserActivitySkeletonType.topic) ...[
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              children: [
-                for (var index = 0; index < 3; index++)
-                  SkeletonBox(width: 44, height: metadataHeight),
-              ],
-            ),
-          ],
+          const SizedBox(height: 12),
         ],
-      ),
+        ActivityCardHeader(
+          avatar: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: SkeletonCircle(size: 36),
+            ),
+          ),
+          identity: SkeletonBox(width: 120, height: authorHeight),
+          metadata: SkeletonBox(
+            key: const ValueKey('activity-skeleton-metadata'),
+            width: 100,
+            height: metadataHeight,
+          ),
+          timestamp: type == UserActivitySkeletonType.receivedLike
+              ? null
+              : SkeletonBox(width: 40, height: metadataHeight),
+        ),
+        if (bodyFirst) ...[
+          const SizedBox(height: 12),
+          SkeletonBox(width: double.infinity, height: bodyHeight * 2),
+        ],
+        const SizedBox(height: 12),
+        Padding(
+          padding: EdgeInsets.only(left: bodyFirst ? 21 : 0),
+          child: SkeletonBox(
+            key: const ValueKey('activity-skeleton-title'),
+            width: double.infinity,
+            height: bodyFirst
+                ? scaler.scale(theme.textTheme.bodySmall!.fontSize!) * 1.5
+                : titleHeight,
+          ),
+        ),
+        if (type == UserActivitySkeletonType.reaction) ...[
+          const SizedBox(height: 10),
+          const SkeletonBox(width: 28, height: 28),
+        ],
+        if (!bodyFirst && type != UserActivitySkeletonType.topic) ...[
+          const SizedBox(height: 10),
+          if (quoted)
+            SkeletonBox(
+              width: double.infinity,
+              height: bodyHeight * 2 + 20,
+              borderRadius: 10,
+            )
+          else
+            SkeletonBox(width: double.infinity, height: bodyHeight * 2),
+        ],
+        if (type == UserActivitySkeletonType.boost) ...[
+          const SizedBox(height: 10),
+          const SkeletonBox(width: 200, height: 44, borderRadius: 22),
+        ],
+        const SizedBox(height: 4),
+        SizedBox(
+          height: math.max(44, metadataHeight + 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: SkeletonBox(width: 120, height: metadataHeight),
+          ),
+        ),
+        if (type == UserActivitySkeletonType.topic) ...[
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              for (var index = 0; index < 3; index++)
+                SkeletonBox(width: 44, height: metadataHeight),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
@@ -259,17 +303,10 @@ class UserActionListSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Skeleton(
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: itemCount,
-        itemBuilder: (context, index) => SegmentedCardItem(
-          index: index,
-          count: itemCount,
-          gap: 4,
-          color: PageBackgroundScope.contentColor(
-            context,
-            Theme.of(context).cardTheme.color ??
-                Theme.of(context).colorScheme.surfaceContainerLow,
-          ),
+        itemBuilder: (context, index) => ActivityCardFrame(
+          position: (index: index, count: itemCount),
           child: UserActionItemSkeleton(type: type),
         ),
       ),

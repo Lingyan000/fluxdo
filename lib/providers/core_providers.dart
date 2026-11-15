@@ -2,8 +2,10 @@
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/user.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/preloaded_data_service.dart';
@@ -30,9 +32,64 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   static const String _cacheUserKey = 'current_user_cache_username';
   static const Duration _refreshCooldown = Duration(minutes: 2);
   DateTime? _lastRefreshTime;
+  int _identityRevision = 0;
+  Timer? _statusExpiryTimer;
+
+  /// 保存成功后同步当前会话，旧的在途刷新不能覆盖刚提交的身份信息。
+  Future<void> updateIdentity(
+    String username, {
+    User? identity,
+    String? avatarTemplate,
+    UserStatus? status,
+    bool clearStatus = false,
+  }) async {
+    final current = state.value;
+    if (current == null ||
+        current.username.toLowerCase() != username.toLowerCase()) {
+      return;
+    }
+    _identityRevision++;
+    final updated = current.copyWith(
+      identity: identity?.id == current.id ? identity : null,
+      avatarTemplate: avatarTemplate,
+      status: status,
+      clearStatus: clearStatus,
+    );
+    state = AsyncValue.data(updated);
+    ref.read(discourseServiceProvider).currentUserNotifier.value = updated;
+    final preloaded = PreloadedDataService().currentUserSync;
+    if (preloaded?['id'] == updated.id) {
+      if (identity?.id == updated.id) {
+        preloaded!.addAll(updated.toCacheJson());
+      }
+      if (avatarTemplate != null) {
+        preloaded!['avatar_template'] = updated.avatarTemplate;
+        preloaded['animated_avatar'] = null;
+      }
+      if (status != null || clearStatus) {
+        preloaded!['status'] = updated.toCacheJson()['status'];
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (state.value?.id == updated.id) _saveCache(prefs, state.value!);
+  }
 
   @override
   FutureOr<User?> build() {
+    listenSelf((previous, next) {
+      _statusExpiryTimer?.cancel();
+      final user = next.value;
+      final status = user?.status;
+      final endsAt = status?.endsAt;
+      if (user == null || endsAt == null) return;
+      _statusExpiryTimer = Timer(endsAt.difference(DateTime.now()), () {
+        if (state.value?.id == user.id &&
+            identical(state.value?.status, status)) {
+          unawaited(updateIdentity(user.username, clearStatus: true));
+        }
+      });
+    });
+    ref.onDispose(() => _statusExpiryTimer?.cancel());
     final service = ref.read(discourseServiceProvider);
     final preloaded = PreloadedDataService().currentUserSync;
     if (preloaded != null) {
@@ -45,6 +102,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   }
 
   Future<User?> _loadUserWithCache(DiscourseService service) async {
+    final revision = _identityRevision;
     // 先把上次会话的缓存亮出来(毫秒级,登出时缓存会被清,存在即上次已
     // 登录):本 provider 可能在预加载完成前就被 watch(如根部印记层第一
     // 帧即 watch,早于 PreheatGate 放行),此时 build 的同步快路径拿不到
@@ -65,6 +123,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     }
 
     final hasToken = await service.isLoggedIn();
+    if (revision != _identityRevision) return state.value;
     if (!hasToken) {
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheUserKey);
@@ -73,14 +132,20 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
 
     try {
       final preloadedUser = await service.getPreloadedCurrentUser();
+      if (revision != _identityRevision) return state.value;
       if (preloadedUser != null) {
         state = AsyncValue.data(preloadedUser);
       }
       final user = await service.getCurrentUser();
+      if (revision != _identityRevision) {
+        service.currentUserNotifier.value = state.value;
+        return state.value;
+      }
       final resolved = user == null
           ? preloadedUser
           : (preloadedUser == null ? user : _mergeUser(user, preloadedUser));
       if (resolved != null) {
+        service.currentUserNotifier.value = resolved;
         _saveCache(prefs, resolved);
         return resolved;
       }
@@ -90,6 +155,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
       if (cachedUser != null) return cachedUser;
       return null;
     } catch (e) {
+      if (revision != _identityRevision) return state.value;
       // 网络失败，返回缓存
       if (cachedUser != null) return cachedUser;
       rethrow;
@@ -106,7 +172,10 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
 
   /// 静默刷新，带冷却时间（默认 2 分钟内不重复请求）
   /// 不提前 emit 中间状态，只在拿到结果后更新一次，避免多余 rebuild
-  Future<void> refreshSilently({bool force = false}) async {
+  Future<void> refreshSilently({
+    bool force = false,
+    bool preserveStatus = false,
+  }) async {
     if (!force &&
         _lastRefreshTime != null &&
         DateTime.now().difference(_lastRefreshTime!) < _refreshCooldown) {
@@ -114,17 +183,31 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     }
     final service = ref.read(discourseServiceProvider);
     final previous = state.value;
+    final revision = _identityRevision;
     try {
-      final user = await _loadUser(service);
+      var user = await _loadUser(service);
+      if (revision != _identityRevision) {
+        service.currentUserNotifier.value = state.value;
+        return;
+      }
+      // 偏好设置保存后的资料回读沿用会话状态，主动刷新仍接收服务端状态。
+      if (preserveStatus && previous != null && user?.id == previous.id) {
+        user = user!.copyWith(
+          status: previous.status,
+          clearStatus: previous.status == null,
+        );
+      }
       _lastRefreshTime = DateTime.now();
       if (user != null) {
         final prefs = await SharedPreferences.getInstance();
+        if (revision != _identityRevision) return;
         _saveCache(prefs, user);
       }
       state = AsyncValue.data(user ?? previous);
+      service.currentUserNotifier.value = state.value;
     } catch (e, st) {
       // 刷新失败，保留旧数据并标记错误状态（用于离线提示）
-      if (previous != null) {
+      if (previous != null && revision == _identityRevision) {
         state = AsyncValue<User?>.error(
           e,
           st,
@@ -134,14 +217,21 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   }
 
   void _refreshUser(DiscourseService service, User preloadedUser) {
+    final revision = _identityRevision;
     Future(() async {
       try {
         final user = await service.getCurrentUser();
+        if (revision != _identityRevision) {
+          service.currentUserNotifier.value = state.value;
+          return;
+        }
         if (user == null) return;
         final merged = _mergeUser(user, preloadedUser);
         final prefs = await SharedPreferences.getInstance();
+        if (revision != _identityRevision) return;
         _saveCache(prefs, merged);
         state = AsyncValue.data(merged);
+        service.currentUserNotifier.value = merged;
       } catch (_) {
         // 后台刷新失败时静默忽略，refreshSilently 会负责设置错误状态
       }

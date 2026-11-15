@@ -61,7 +61,7 @@ void main() {
     expect(layer.currentState!.offset, 0);
     expect(layer.currentState!.isOpen, isFalse);
     expect(list.currentContext, same(original));
-    expect(find.byType(MiniAppRefreshLogo), findsNothing);
+    expect(find.byKey(const ValueKey('mini-app-refresh-feedback')), findsNothing);
     expect(
       ModalRoute.of(list.currentContext!)!.willHandlePopInternally,
       isFalse,
@@ -184,10 +184,12 @@ void main() {
       expect(galleryScale(), inExclusiveRange(.94, 1));
       expect(galleryTint(), greaterThan(0));
       expect(
-        find.byType(MiniAppRefreshLogo),
+        find.byKey(const ValueKey('mini-app-refresh-feedback')),
         findsOneWidget,
         reason: '后页显露时，刷新提示仍叠在前景上方',
       );
+      expect(find.byType(MiniAppRefreshLogo), findsOneWidget);
+      expect(find.byType(M3eRefreshProgress), findsNothing);
       final firstLabelY = tester
           .getTopLeft(find.byKey(const ValueKey('mini-app-pull-label')))
           .dy;
@@ -266,7 +268,7 @@ void main() {
       expect(offset(), 756);
       expect(galleryScale(), 1);
       expect(galleryTint(), 0);
-      expect(find.byType(MiniAppRefreshLogo), findsNothing);
+      expect(find.byKey(const ValueKey('mini-app-refresh-feedback')), findsNothing);
       expect(refreshes, 0);
       await tester.tap(find.text('广场操作'));
       expect(taps, 3, reason: '停止后广场仍可直接点击');
@@ -404,7 +406,7 @@ void main() {
         for (var frame = 0; frame < 90; frame++) {
           await tester.pump(const Duration(milliseconds: 16));
           expect(
-            find.byType(MiniAppRefreshLogo),
+            find.byKey(const ValueKey('mini-app-refresh-feedback')),
             findsNothing,
             reason: '关闭广场不重播刷新提示',
           );
@@ -535,8 +537,13 @@ void main() {
         final gesture = await tester.startGesture(const Offset(200, 100));
         await gesture.moveBy(const Offset(0, 25));
         await tester.pump();
+        final dedicatedLogo = find.byType(MiniAppRefreshLogo);
+        expect(dedicatedLogo, findsOneWidget);
+        expect(find.byType(M3eRefreshProgress), findsNothing);
+        final logoState = tester.state(dedicatedLogo);
         await gesture.moveBy(Offset(0, (52 + 80 + 36 * textScale) / .9 - 20));
         await tester.pump();
+        expect(tester.state(dedicatedLogo), same(logoState));
         final label = find.byKey(const ValueKey('mini-app-pull-label'));
         expect(
           find.text('app preview'),
@@ -548,7 +555,7 @@ void main() {
           findsNothing,
         );
         expect(tester.getTopLeft(label).dy, greaterThanOrEqualTo(52));
-        final logo = find.byType(MiniAppRefreshLogo);
+        final logo = find.byKey(const ValueKey('mini-app-refresh-feedback'));
         expect(tester.getTopLeft(logo).dy, greaterThanOrEqualTo(52));
         expect(
           tester.getBottomLeft(logo).dy,
@@ -557,11 +564,10 @@ void main() {
         await gesture.up();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
-        expect(tester.widget<MiniAppRefreshLogo>(logo).refreshing, isTrue);
+        expect(tester.state(dedicatedLogo), same(logoState));
+        expect(tester.widget<MiniAppRefreshLogo>(dedicatedLogo).refreshing, isTrue);
         expect(find.text('app preview'), findsNothing);
-        final painting = find.byKey(
-          const ValueKey('mini-app-refresh-logo-paint'),
-        );
+        final painting = find.byKey(const ValueKey('mini-app-refresh-logo-paint'));
         final first = tester.widget<CustomPaint>(painting).painter!;
         await tester.pump(const Duration(milliseconds: 200));
         expect(

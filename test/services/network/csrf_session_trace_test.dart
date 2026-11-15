@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/log/log_policy.dart';
 import 'package:fluxdo/services/network/adapters/adapter_log_metadata.dart';
 import 'package:fluxdo/services/network/cookie/csrf_session_trace.dart';
 
@@ -58,6 +59,46 @@ void main() {
     final hashes = trace['csrfInputHeaderHashes'] as Map;
     expect(hashes['x-csrf-token'], hasLength(2));
     expect(hashes['x-csrf-token'][0], '930bbdc51b6aed5c');
+  });
+  test('头部摘要经过落盘与导出仍可关联，原始凭据继续脱敏', () {
+    final options = RequestOptions(
+      path: '/topics/timings',
+      method: 'POST',
+      headers: {
+        'Cookie': '_forum_session=raw-session; cf_clearance=raw-clearance',
+        'X-CSRF-Token': 'raw-csrf-token',
+      },
+    );
+    final trace = CsrfSessionTrace.captureDispatch(options)!;
+    final hashes = trace['csrfInputHeaderHashes'] as Map;
+    trace['corePreparedRequest'] = {
+      'stage': 'core-prepared-headers',
+      'header_hashes': Map<String, dynamic>.from(hashes),
+    };
+    final row = LogPolicy.normalize({
+      'type': 'request',
+      ...CsrfSessionTrace.forLog(trace),
+      'rawHeaders': options.headers,
+    });
+    final exported = LogPolicy.export(jsonEncode(row));
+    final result = jsonDecode(
+      const LineSplitter().convert(exported).last,
+    ) as Map<String, dynamic>;
+    final input = result['csrfInputHeaderHashes'] as Map;
+    final prepared = result['corePreparedRequest']['header_hashes'] as Map;
+    for (final name in hashes.keys) {
+      expect(input['$name-sha256'], hashes[name]);
+      expect(prepared['$name-sha256'], hashes[name]);
+    }
+    expect(result['csrfTraceVersion'], 3);
+    expect(result['rawHeaders']['Cookie'], '[redacted]');
+    expect(result['rawHeaders']['X-CSRF-Token'], '[redacted]');
+    for (final secret in ['raw-session', 'raw-clearance', 'raw-csrf-token']) {
+      expect(exported, isNot(contains(secret)));
+    }
+    expect(trace['csrfTraceVersion'], 2);
+    expect(hashes.containsKey('cookie'), isTrue);
+    expect(trace['corePreparedRequest']['header_hashes'], hashes);
   });
   test('Rails 同一真实令牌的不同随机掩码关联到同一上下文', () {
     expect(

@@ -80,7 +80,7 @@ description: 编写或修改 FluxDO 页面、弹窗、列表和设置项时，�
 - 话题卡片和正文等阅读内容用 `PageBackgroundScope.contentColor(context, 原有底色)`，背景启用时透出整页背景。选中与高亮色在该底色上叠加，骨架屏与加载后的内容使用一致的背景策略。
 - 可收起标题栏、吸顶条和窗格底等区域需要遮住滚动内容时，用 `PageBackdrop(child: ...)` 绘制对齐整页的背景副本。无 child 的用法需要父级提供有限宽高，例如 `Positioned.fill`。实现见 [page_background.dart](../../../packages/common_ui/lib/src/page_background.dart)。
 - `UiDecor` 由应用宿主注入装饰 builder，组件消费插槽。builder 保持稳定引用，减少无关重建。接口见 [ui_decor.dart](../../../packages/common_ui/lib/src/ui_decor.dart)。
-- 玻璃材质按场景选 `GlassRecipe`，导航类外壳用 `GlassSurfaceFrame` 统一裁切、阴影和边缘光。
+- 玻璃材质按场景选 `GlassRecipe`，导航类外壳用 `GlassSurfaceFrame` 统一裁切、阴影和边缘光。色罩默认取主题的浮层中性色，需要同色的保护底时用 `GlassRecipe.tintFor`，不要自己写灰阶。
 
 ## 内容展示
 

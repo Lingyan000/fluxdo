@@ -52,6 +52,50 @@ void main() {
     expect(await jar.getCfClearance(), 'verified');
   });
 
+  test('关键同步向调用方报告读取异常，普通同步仍允许 best-effort', () async {
+    platform.cookies.readSnapshot = () async => throw StateError('read failed');
+    await expectLater(
+      sync.syncFromWebView(cookieNames: {'cf_clearance'}, throwOnError: true),
+      throwsStateError,
+    );
+    await sync.syncFromWebView(cookieNames: {'cf_clearance'});
+    expect(await jar.getCfClearance(), isNull);
+  });
+
+  test('确认值与在位值相同时也移除其他分区副本', () async {
+    final enhanced = jar.cookieJar as EnhancedPersistCookieJar;
+    await enhanced.saveCanonicalCookies(Uri.parse('https://linux.do'), [
+      CanonicalCookie(
+        name: 'cf_clearance',
+        value: 'fresh',
+        domain: '.linux.do',
+        hostOnly: false,
+        expiresAt: DateTime.now().add(const Duration(days: 30)),
+      ),
+      CanonicalCookie(
+        name: 'cf_clearance',
+        value: 'residue',
+        domain: '.linux.do',
+        hostOnly: false,
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        partitionKey: 'old-partition',
+        partitioned: true,
+      ),
+    ]);
+    expect(await jar.getCfClearance(), 'fresh');
+    platform.cookies.values = [cfTestCookie('fresh')];
+    await sync.syncFromWebView(
+      cookieNames: {'cf_clearance'},
+      trusted: true,
+      acceptValues: {'cf_clearance': 'fresh'},
+      throwOnError: true,
+    );
+    final remaining = (await enhanced.readAllCookies()).where(
+      (cookie) => cookie.name == 'cf_clearance',
+    );
+    expect(remaining.map((cookie) => cookie.value), ['fresh']);
+  });
+
   test('验证确认值可替换抢先写入的副本，后续普通同步不能覆盖', () async {
     await seed('bootstrap-residue');
     platform.cookies.values = [cfTestCookie('residue'), cfTestCookie('fresh')];

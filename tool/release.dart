@@ -123,9 +123,7 @@ Future<void> main(List<String> args) async {
     arguments: [
       'commit',
       '-m',
-      'chore: bump version to $releaseVersion',
-      '-m',
-      'Co-Authored-By: Release Script <noreply@github.com>',
+      'chore(release): 发布 $releaseVersion',
     ],
   );
   await runOrExit(

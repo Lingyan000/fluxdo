@@ -121,9 +121,6 @@ class BrowserToolbar extends StatelessWidget implements PreferredSizeWidget {
                                         style: theme.textTheme.bodyLarge,
                                         decoration: InputDecoration(
                                           hintText: l10n.webview_addressHint,
-                                          border: InputBorder.none,
-                                          enabledBorder: InputBorder.none,
-                                          focusedBorder: InputBorder.none,
                                           contentPadding: const EdgeInsets.only(
                                             left: 16,
                                           ),
@@ -135,7 +132,7 @@ class BrowserToolbar extends StatelessWidget implements PreferredSizeWidget {
                                             ),
                                             onPressed: addressController.clear,
                                           ),
-                                        ),
+                                        ).withoutBorder(),
                                         onSubmitted: onSubmit,
                                       )
                                     : Semantics(

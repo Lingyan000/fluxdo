@@ -83,6 +83,16 @@ enum DataColorStyle {
   mono,
 }
 
+/// 玻璃材质在「自动」档位下的质感。用户在外观设置里明确选择的
+/// 基础磨砂 / 完整玻璃档位优先，关闭玻璃时一律实色。
+enum GlassStyle {
+  /// 完整玻璃：模糊、色罩之外还有光学折射与边缘光（后端支持时）
+  optical,
+
+  /// 基础磨砂：只有模糊与色罩，适合平直、印刷感的主题
+  frosted,
+}
+
 /// 主题的「界面风格」：配色之外，组件长什么样。
 ///
 /// 与配色同样由主题数据（JSON 的 `style` 字段）声明，所有主题共用同一套
@@ -100,6 +110,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
     this.quote = QuoteStyle.card,
     this.texture = TextureStyle.none,
     this.dataColors = DataColorStyle.vivid,
+    this.glass = GlassStyle.optical,
   });
 
   static const ThemeStyle material = ThemeStyle();
@@ -122,12 +133,18 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
   final QuoteStyle quote;
   final TextureStyle texture;
   final DataColorStyle dataColors;
+  final GlassStyle glass;
 
   bool get isMaterial => this == material;
 
-  /// 组件外观是否与 Material 一致（数据色只影响取色，不改组件主题）。
+  /// 组件外观是否与 Material 一致（数据色只影响取色，玻璃质感由玻璃
+  /// 策略处理，都不改组件主题）。
   bool get hasMaterialComponents =>
-      copyWith(dataColors: DataColorStyle.vivid) == material;
+      copyWith(
+        dataColors: DataColorStyle.vivid,
+        glass: GlassStyle.optical,
+      ) ==
+      material;
 
   factory ThemeStyle.fromJson(Map<String, dynamic> json) {
     T pick<T extends Enum>(List<T> values, String key, T fallback) {
@@ -157,6 +174,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
         'dataColors',
         DataColorStyle.vivid,
       ),
+      glass: pick(GlassStyle.values, 'glass', GlassStyle.optical),
     );
   }
 
@@ -172,6 +190,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
     if (quote != QuoteStyle.card) 'quote': quote.name,
     if (texture != TextureStyle.none) 'texture': texture.name,
     if (dataColors != DataColorStyle.vivid) 'dataColors': dataColors.name,
+    if (glass != GlassStyle.optical) 'glass': glass.name,
   };
 
   @override
@@ -186,6 +205,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
     QuoteStyle? quote,
     TextureStyle? texture,
     DataColorStyle? dataColors,
+    GlassStyle? glass,
   }) => ThemeStyle(
     surfaces: surfaces ?? this.surfaces,
     controls: controls ?? this.controls,
@@ -197,6 +217,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
     quote: quote ?? this.quote,
     texture: texture ?? this.texture,
     dataColors: dataColors ?? this.dataColors,
+    glass: glass ?? this.glass,
   );
 
   /// 风格是离散选择，主题切换时整体换档。
@@ -216,7 +237,8 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
       other.bodyLineHeight == bodyLineHeight &&
       other.quote == quote &&
       other.texture == texture &&
-      other.dataColors == dataColors;
+      other.dataColors == dataColors &&
+      other.glass == glass;
 
   @override
   int get hashCode => Object.hash(
@@ -230,6 +252,7 @@ class ThemeStyle extends ThemeExtension<ThemeStyle> {
     quote,
     texture,
     dataColors,
+    glass,
   );
 }
 

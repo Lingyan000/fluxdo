@@ -78,6 +78,8 @@ class BrowserTestController extends PlatformInAppWebViewController {
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
   @override
+  dynamic getViewId() => 'browser-test';
+  @override
   void addJavaScriptHandler({
     required String handlerName,
     required Function callback,

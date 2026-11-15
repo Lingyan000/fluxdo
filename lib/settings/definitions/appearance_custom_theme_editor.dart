@@ -561,6 +561,16 @@ class _CustomThemeEditorPageState
             style.dataColors,
             (v) => style.copyWith(dataColors: v),
           ),
+          styleChoice(
+            l10n.appearance_styleGlass,
+            GlassStyle.values,
+            (v) => switch (v) {
+              GlassStyle.optical => l10n.appearance_glassFull,
+              GlassStyle.frosted => l10n.appearance_glassBasic,
+            },
+            style.glass,
+            (v) => style.copyWith(glass: v),
+          ),
           SwitchListTile(
             title: Text(l10n.appearance_styleShadows),
             value: style.shadows,

@@ -209,6 +209,14 @@ class RequestSchedulerInterceptor extends Interceptor {
     final trustWait = Stopwatch()..start();
     await _waitForBrowserTrustIfNeeded(options);
     options.extra['_browserTrustWaitMs'] = trustWait.elapsedMilliseconds;
+    // 等待其他浏览器任务期间也可能开始新一轮验证。
+    if (!options.spec.skipCfBlock &&
+        cfService.isVerifying &&
+        !(options.cancelToken?.isCancelled ?? false)) {
+      onRequest(options, handler);
+      return;
+    }
+    final admittedRound = cfService.verifyRound;
 
     final state = _stateFor(options);
     final priority = _inferPriority(options);
@@ -268,6 +276,20 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
+    // 入队后可能才触发验证。出队时重新过闸，且先归还槽位，避免阻塞
+    // 验证所需的内部请求；轮次变化也涵盖页面已关闭但 Cookie 尚在同步。
+    if (!options.spec.skipCfBlock &&
+        (cfService.isVerifying || cfService.verifyRound != admittedRound)) {
+      if (options.extra.remove('_schedulerCounted') == true) {
+        _release(options);
+      }
+      onRequest(options, handler);
+      return;
+    }
+    if (options.cancelToken?.isCancelled ?? false) {
+      handler.reject(options.cancelToken!.cancelError!, true);
+      return;
+    }
     handler.next(options);
   }
 
@@ -353,11 +375,13 @@ class RequestSchedulerInterceptor extends Interceptor {
       return;
     }
 
+    // 验证页面结束与 Cookie 快照落库是两个时刻。排队恢复及此时新到达的
+    // 请求都要等本轮同步完成，再由后续 CookieManager 读取凭证。
     final ready = BrowserTrustCoordinator.instance
         .waitForActiveBrowserTrust(
           reason: '${options.method.toUpperCase()} ${options.uri}',
         )
-        .then<void>((_) {});
+        .then<void>((_) => CfChallengeService().waitForCompletionCookieSync());
     final token = options.cancelToken;
     if (token == null) return ready;
     await Future.any<void>([ready, token.whenCancel.then((_) {})]);

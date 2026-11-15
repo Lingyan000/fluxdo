@@ -9,7 +9,7 @@
   "kind": "fixed",
   "group": "code",
   "order": 160,
-  "style": {"surfaces": "outlined", "navIndicator": "bar", "inputs": "outlined", "shadows": false, "titleFont": "mono", "quote": "bar", "dataColors": "mono"},
+  "style": {"surfaces": "outlined", "navIndicator": "bar", "inputs": "outlined", "shadows": false, "titleFont": "mono", "quote": "bar", "dataColors": "mono", "glass": "frosted"},
   "shape": "sharp",
   "font": {"mono": "firacode"},
   "supportsPureBlack": true,

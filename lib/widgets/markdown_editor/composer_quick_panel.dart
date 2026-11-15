@@ -239,10 +239,7 @@ class _ComposerQuickPanelState extends State<_ComposerQuickPanel> {
                       minWidth: 40,
                       minHeight: 48,
                     ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                  ),
+                  ).withoutBorder(),
                   onChanged: (_) {
                     setState(
                       () => _selected = _matches.indexWhere((a) => a.enabled),

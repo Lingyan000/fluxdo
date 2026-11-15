@@ -13,6 +13,7 @@ import '../common/emoji_text.dart';
 import '../common/relative_time_text.dart';
 import '../content/collapsed_html_content.dart';
 import 'user_profile_cover.dart';
+import 'avatar_action_menu.dart';
 
 /// 资料内容沿同一滚动轴上移，封面连续收起并成为模糊顶栏。
 class UserProfileHeader extends StatelessWidget {
@@ -81,13 +82,18 @@ class UserProfileHeader extends StatelessWidget {
       toolbarHeight,
       layout.height + pullExtent - shrinkOffset,
     );
-    final coverHeight = math.max(
-      toolbarHeight,
-      layout.coverHeight + pullExtent - shrinkOffset,
-    );
+    final collapsedOffset = math.max(0.0, shrinkOffset - pullExtent);
+    final remainingPull = math.max(0.0, pullExtent - shrinkOffset);
+    final collapseProgress = (collapsedOffset / (layout.height - toolbarHeight))
+        .clamp(0.0, 1.0);
+    final coverHeight =
+        toolbarHeight +
+        remainingPull +
+        (layout.coverHeight - toolbarHeight) * (1 - collapseProgress);
+    final avatarProgress = (1 - collapsedOffset / 64).clamp(0.0, 1.0);
     final blurProgress = ((shrinkOffset + pullExtent) / 80).clamp(0.0, 1.0);
     final titleOpacity =
-        ((toolbarHeight - layout.titleTop + shrinkOffset - pullExtent) /
+        ((coverHeight - layout.titleTop + shrinkOffset - pullExtent) /
                 layout.titleHeight)
             .clamp(0.0, 1.0);
 
@@ -103,6 +109,7 @@ class UserProfileHeader extends StatelessWidget {
               right: 0,
               height: coverHeight,
               child: ClipRect(
+                key: const ValueKey('profile-header-cover'),
                 child: IgnorePointer(
                   ignoring: shrinkOffset > 0 || pullExtent > 0,
                   child: Stack(
@@ -132,26 +139,33 @@ class UserProfileHeader extends StatelessWidget {
                 ),
               ),
             ),
+            // 头像跨越封面下缘独立淡出，其他资料在封面下方裁切。
+            Positioned(
+              left: wide ? 24 : 16,
+              top: layout.coverHeight + pullExtent - 16 - shrinkOffset,
+              width: 80,
+              height: 80,
+              child: KeyedSubtree(
+                key: const ValueKey('profile-avatar'),
+                child: IgnorePointer(
+                  ignoring: avatarProgress == 0,
+                  child: Opacity(
+                    key: const ValueKey('profile-avatar-opacity'),
+                    opacity: avatarProgress * avatarProgress,
+                    child: Transform.scale(
+                      scale: 0.5 + 0.5 * avatarProgress,
+                      child: avatar,
+                    ),
+                  ),
+                ),
+              ),
+            ),
             Positioned.fill(
-              top: toolbarHeight,
+              top: coverHeight,
               child: ClipRect(
+                key: const ValueKey('profile-header-content-clip'),
                 child: Stack(
                   children: [
-                    Positioned(
-                      left: wide ? 24 : 16,
-                      top:
-                          layout.coverHeight +
-                          pullExtent -
-                          16 -
-                          shrinkOffset -
-                          toolbarHeight,
-                      width: 80,
-                      height: 80,
-                      child: KeyedSubtree(
-                        key: const ValueKey('profile-avatar'),
-                        child: avatar,
-                      ),
-                    ),
                     Positioned(
                       right: 16,
                       top:
@@ -159,7 +173,7 @@ class UserProfileHeader extends StatelessWidget {
                           pullExtent +
                           8 -
                           shrinkOffset -
-                          toolbarHeight,
+                          coverHeight,
                       child: trailing,
                     ),
                     Positioned(
@@ -169,15 +183,18 @@ class UserProfileHeader extends StatelessWidget {
                           layout.titleTop +
                           pullExtent -
                           shrinkOffset -
-                          toolbarHeight,
-                      child: Text(
-                        user.name?.trim().isNotEmpty == true
-                            ? user.name!
-                            : user.username,
-                        key: const ValueKey('profile-display-name'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: layout.titleStyle,
+                          coverHeight,
+                      child: _CopyableUsername(
+                        username: user.username,
+                        child: Text(
+                          user.name?.trim().isNotEmpty == true
+                              ? user.name!
+                              : user.username,
+                          key: const ValueKey('profile-display-name'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: layout.titleStyle,
+                        ),
                       ),
                     ),
                     if (wide)
@@ -190,13 +207,16 @@ class UserProfileHeader extends StatelessWidget {
                             4 +
                             pullExtent -
                             shrinkOffset -
-                            toolbarHeight,
-                        child: Text(
-                          '@${user.username}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: scheme.onSurfaceVariant),
+                            coverHeight,
+                        child: _CopyableUsername(
+                          username: user.username,
+                          child: Text(
+                            '@${user.username}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
                         ),
                       ),
                   ],
@@ -205,7 +225,7 @@ class UserProfileHeader extends StatelessWidget {
             ),
             if (toolbarBuilder != null)
               Positioned(
-                top: 0,
+                top: remainingPull,
                 left: 0,
                 right: 0,
                 height: toolbarHeight,
@@ -215,6 +235,12 @@ class UserProfileHeader extends StatelessWidget {
                         (Theme.of(context).iconButtonTheme.style ??
                                 const ButtonStyle())
                             .copyWith(
+                              fixedSize: const WidgetStatePropertyAll(
+                                Size.square(40),
+                              ),
+                              shape: WidgetStatePropertyAll(
+                                context.shapes.circle() as OutlinedBorder,
+                              ),
                               foregroundColor: WidgetStatePropertyAll(
                                 scheme.onSurface,
                               ),
@@ -226,7 +252,7 @@ class UserProfileHeader extends StatelessWidget {
                   child: toolbarBuilder(
                     titleOpacity,
                     layout.coverHeight + 8 + pullExtent - shrinkOffset <=
-                        toolbarHeight,
+                        coverHeight,
                   ),
                 ),
               ),
@@ -295,6 +321,28 @@ class _ProfileHeaderLayout {
       : titleTop + titleHeight + 2;
 }
 
+/// 复制交互只覆盖文字本身，保留原有排版和长按的辅助功能提示。
+class _CopyableUsername extends StatelessWidget {
+  const _CopyableUsername({required this.username, required this.child});
+
+  final String username;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: AlignmentDirectional.centerStart,
+    widthFactor: 1,
+    child: Semantics(
+      onLongPressHint: context.l10n.avatarMenu_copyUsername,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => copyUsernameToClipboard(username),
+        child: child,
+      ),
+    ),
+  );
+}
+
 /// 身份、关注数据和简介按阅读顺序排列，长内容保持自然高度。
 class UserProfileDetails extends StatelessWidget {
   const UserProfileDetails({
@@ -332,7 +380,10 @@ class UserProfileDetails extends StatelessWidget {
           if (showUsername)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: SelectableText('@${user.username}', style: muted),
+              child: _CopyableUsername(
+                username: user.username,
+                child: Text('@${user.username}', style: muted),
+              ),
             ),
           if (!user.profileHidden)
             EmojiText(

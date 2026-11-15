@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/providers/message_bus/session_channel_providers.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/models/category.dart';
@@ -104,6 +105,7 @@ class _ProfileService implements DiscourseService {
   }
 
   final requestedFilters = <String?>[];
+  Completer<void>? pendingActions;
   int followCalls = 0;
   Completer<void>? pendingFollow;
   @override
@@ -120,6 +122,7 @@ class _ProfileService implements DiscourseService {
     bool isSilent = false,
   }) async {
     requestedFilters.add(filter);
+    await pendingActions?.future;
     return UserActionResponse(
       actions: [
         for (var index = 0; index < 8; index++)
@@ -260,6 +263,11 @@ class _ProfileRouteObserver extends NavigatorObserver {
       latest = route;
 }
 
+class _UserStatuses extends UserStatusNotifier {
+  @override
+  Map<int, UserStatus?> build() => {};
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(ThemeRegistry.loadBuiltins);
@@ -278,13 +286,17 @@ void main() {
     _ProfileCase(width: 1100, failSummary: true, cover: true),
     _ProfileCase(width: 1100, dark: true, visitor: true),
     _ProfileCase(width: 1440),
+    _ProfileCase(width: 1440, platform: TargetPlatform.macOS),
     _ProfileCase(width: 390, hidden: true),
     _ProfileCase(width: 390),
     _ProfileCase(width: 390, platform: TargetPlatform.iOS),
     _ProfileCase(width: 390, dark: true),
     _ProfileCase(width: 390, visitor: true),
+    _ProfileCase(width: 390, visitor: true, admin: true),
+    _ProfileCase(width: 390, visitor: true, moderator: true),
     _ProfileCase(width: 390, cover: true),
     _ProfileCase(width: 390, cover: true, dark: true),
+    _ProfileCase(width: 390, cover: true, dark: true, topInset: 48),
     _ProfileCase(width: 320, cover: true, textScale: 2, visitor: true),
     _ProfileCase(width: 390, seedColor: Colors.green, visitor: true),
     _ProfileCase(width: 390, themeId: 'minimal', visitor: true),
@@ -299,7 +311,7 @@ void main() {
     testWidgets('资料页 ${variant.name}', (tester) async {
       tester.view.physicalSize = Size(width, 850);
       if (width < 760) {
-        tester.view.padding = const FakeViewPadding(top: 24);
+        tester.view.padding = FakeViewPadding(top: variant.topInset);
         addTearDown(tester.view.resetPadding);
       }
       if (captureDir.isNotEmpty) {
@@ -432,12 +444,19 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            userStatusProvider.overrideWith(_UserStatuses.new),
             sharedPreferencesProvider.overrideWithValue(preferences),
             discourseServiceProvider.overrideWithValue(service),
             currentUserProvider.overrideWith(
               () => _SignedInUser(
                 variant.visitor
-                    ? User(id: 2, username: 'visitor', trustLevel: 2)
+                    ? User(
+                        id: 2,
+                        username: 'visitor',
+                        trustLevel: 2,
+                        admin: variant.admin,
+                        moderator: variant.moderator,
+                      )
                     : user,
               ),
             ),
@@ -481,11 +500,37 @@ void main() {
       final avatar = find.byKey(const ValueKey('profile-avatar'));
       final displayName = find.byKey(const ValueKey('profile-display-name'));
       expect(tester.widget<Text>(displayName).data, user.name);
+      if (checkNavigation || width == 1440) {
+        final copied = <String>[];
+        final messenger = tester.binding.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+        expect(find.byType(SelectableText), findsNothing);
+        for (final name in [
+          displayName,
+          find.text('@${user.username}').hitTestable(),
+        ]) {
+          await tester.longPress(name);
+          await tester.pump();
+          expect(copied.last, user.username);
+          await tester.pump(const Duration(seconds: 3));
+          await tester.pumpAndSettle();
+        }
+        expect(copied, [user.username, user.username]);
+      }
       expect(find.byIcon(Symbols.fullscreen_rounded), findsNothing);
       expect(find.byType(DropdownButtonFormField<String>), findsNothing);
       if (!hidden) {
         expect(service.requestedFilters, isEmpty);
       }
+      final canSeeReceivedLikes = !variant.visitor || variant.admin;
       await _capture(tester, captureDir, '${variant.name}-expanded');
       if (variant.visitor && textScale == 1) {
         _expectFollowColors(tester, theme);
@@ -500,7 +545,7 @@ void main() {
         } else {
           await tester.ensureVisible(contact);
           await tester.pumpAndSettle();
-          final follow = find.widgetWithText(FilledButton, '关注');
+          final follow = find.widgetWithText(FilledButton, '关注').hitTestable();
           final contactSurface = find.descendant(
             of: contact,
             matching: find.byType(Material),
@@ -603,6 +648,7 @@ void main() {
       );
       final avatarElement = tester.element(avatar);
       final expandedPosition = tester.getTopLeft(avatar);
+      _expectProfileToolbarGeometry(tester);
       final nested = tester.widget<ExtendedNestedScrollView>(
         find.byType(ExtendedNestedScrollView),
       );
@@ -614,6 +660,36 @@ void main() {
           .whereType<UserProfileHeaderDelegate>()
           .single;
       final travel = delegate.maxExtent - delegate.minExtent;
+      final expandedCoverHeight = tester
+          .getSize(find.byKey(const ValueKey('profile-header-cover')))
+          .height;
+      for (final offset in [8.0, 16.0, 32.0, 48.0, 60.0]) {
+        nested.controller!.jumpTo(offset);
+        await tester.pumpAndSettle();
+        final cover = tester.getRect(
+          find.byKey(const ValueKey('profile-header-cover')),
+        );
+        final contentClip = tester.getRect(
+          find.byKey(const ValueKey('profile-header-content-clip')),
+        );
+        expect(cover.height, lessThan(expandedCoverHeight));
+        expect(expandedCoverHeight - cover.height, lessThan(offset));
+        expect(contentClip.top, closeTo(cover.bottom, 0.01));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('profile-header-content-clip')),
+            matching: avatar,
+          ),
+          findsNothing,
+        );
+        _expectAvatarPaintBounds(tester, avatar);
+        _expectProfileToolbarGeometry(tester);
+        if (variant.topInset == 48) {
+          await _capture(tester, captureDir, '${variant.name}-scroll-$offset');
+        }
+      }
+      nested.controller!.jumpTo(0);
+      await tester.pumpAndSettle();
       if (width == 390 &&
           !variant.cover &&
           !hidden &&
@@ -676,15 +752,51 @@ void main() {
             .whereType<UserProfileHeaderDelegate>()
             .single;
         expect(pulled.maxExtent, greaterThan(delegate.maxExtent + 10));
+        final pulledMore = tester.getCenter(
+          find.byKey(const ValueKey('profile-more-menu')),
+        );
+        expect(
+          pulledMore.dy - morePosition.dy,
+          closeTo(pulled.pullExtent, 0.01),
+        );
+        expect(
+          tester.getTopLeft(avatar).dy - expandedPosition.dy,
+          closeTo(pulled.pullExtent, 0.01),
+        );
+        await drag.moveBy(const Offset(0, 100));
+        await tester.pump();
+        expect(
+          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))).dy,
+          greaterThan(pulledMore.dy),
+        );
         await _capture(tester, captureDir, '${variant.name}-pull');
         await drag.up();
         await tester.pumpAndSettle();
         expect(service.summaryCalls, calls + 1);
         expect(tester.getTopLeft(avatar), expandedPosition);
       }
+      nested.controller!.jumpTo(32);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('profile-avatar-opacity')),
+            )
+            .opacity,
+        closeTo(0.25, 0.001),
+      );
+      await _capture(tester, captureDir, '${variant.name}-avatar-collapse');
       nested.controller!.jumpTo(travel / 2);
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('profile-avatar-opacity')),
+            )
+            .opacity,
+        lessThan(1),
+      );
       expect(
         tester.getTopLeft(avatar).dy,
         closeTo(expandedPosition.dy - travel / 2, 0.01),
@@ -704,16 +816,100 @@ void main() {
       for (var frame = 0; frame < 5; frame++) {
         await tester.pump(const Duration(milliseconds: 45));
         expect(
-          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-          morePosition,
+          tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))).dy,
+          morePosition.dy,
         );
       }
       await tester.pumpAndSettle();
       expect(tester.element(avatar), same(avatarElement));
-      expect(
-        tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-        morePosition,
+      final collapsedMorePosition = tester.getCenter(
+        find.byKey(const ValueKey('profile-more-menu')),
       );
+      expect(collapsedMorePosition.dy, morePosition.dy);
+      expect(collapsedMorePosition.dx, lessThanOrEqualTo(morePosition.dx));
+      _expectProfileToolbarGeometry(tester);
+      if (variant.topInset == 48 ||
+          (checkNavigation && variant.platform == null) ||
+          (variant.visitor && width == 390)) {
+        final moreElement = tester.element(
+          find.byKey(const ValueKey('profile-more-menu')),
+        );
+        final endOffset = nested.controller!.position.maxScrollExtent;
+        final startOffset = (endOffset - 64).clamp(0.0, endOffset);
+        final more = find.byKey(const ValueKey('profile-more-menu'));
+        nested.controller!.jumpTo(startOffset);
+        await tester.pumpAndSettle();
+        final expandedX = tester.getCenter(more).dx;
+        nested.controller!.jumpTo(endOffset);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.getCenter(more).dx, expandedX);
+        var previousFastX = expandedX;
+        for (var frame = 1; frame <= 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final currentX = tester.getCenter(more).dx;
+          expect(currentX, lessThan(previousFastX));
+          expect(tester.element(more), same(moreElement));
+          _expectProfileToolbarGeometry(tester);
+          previousFastX = currentX;
+          if (variant.topInset == 48 || variant.visitor) {
+            await _capture(tester, captureDir, '${variant.name}-fast-$frame');
+          }
+        }
+        final intermediateX = tester.getCenter(more).dx;
+        expect(intermediateX, lessThan(expandedX));
+        expect(intermediateX, greaterThan(collapsedMorePosition.dx));
+        _expectProfileToolbarGeometry(tester);
+        // 过渡途中反向滚动，保留当前画面并向原位置回退。
+        nested.controller!.jumpTo(startOffset);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.getCenter(more).dx, intermediateX);
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.getCenter(more).dx, greaterThan(intermediateX));
+        await tester.pumpAndSettle();
+        expect(tester.getCenter(more).dx, expandedX);
+        for (final direction in [1, -1]) {
+          nested.controller!.jumpTo(direction == 1 ? startOffset : endOffset);
+          await tester.pumpAndSettle();
+          var previousX = direction == 1
+              ? morePosition.dx
+              : collapsedMorePosition.dx;
+          for (var frame = 0; frame <= 32; frame++) {
+            final progress = direction == 1 ? frame / 32 : 1 - frame / 32;
+            nested.controller!.jumpTo(
+              startOffset + (endOffset - startOffset) * progress,
+            );
+            await tester.pump();
+            await tester.pump(const Duration(milliseconds: 16));
+            _expectProfileToolbarGeometry(tester);
+            final position = tester.getCenter(more);
+            expect(
+              (position.dx - previousX) * direction,
+              lessThanOrEqualTo(0.01),
+            );
+            expect(tester.element(more), same(moreElement));
+            expect(
+              tester
+                  .widgetList<Opacity>(
+                    find.ancestor(of: more, matching: find.byType(Opacity)),
+                  )
+                  .every((opacity) => opacity.opacity == 1),
+              isTrue,
+            );
+            previousX = position.dx;
+            if (variant.topInset == 48 && direction == 1 && frame % 4 == 0) {
+              await _capture(
+                tester,
+                captureDir,
+                '${variant.name}-toolbar-$frame',
+              );
+            }
+          }
+        }
+        nested.controller!.jumpTo(endOffset);
+        await tester.pumpAndSettle();
+      }
       final toolbarName = find.byKey(const ValueKey('profile-toolbar-name'));
       expect(tester.getTopLeft(toolbarName).dy, lessThan(delegate.minExtent));
       if (!variant.visitor) expect(find.byTooltip('编辑资料'), findsOneWidget);
@@ -723,6 +919,16 @@ void main() {
       }
       _expectToolbarColor(tester, theme);
       if (!hidden && !failSummary) {
+        final stat = find.ancestor(
+          of: find.text('获赞'),
+          matching: find.byType(InkWell),
+        ).first;
+        expect(tester.widget<InkWell>(stat).onTap != null, canSeeReceivedLikes);
+        expect(find.descendant(of: stat, matching: find.text('100')), findsOneWidget);
+        expect(
+          find.descendant(of: stat, matching: find.byIcon(Symbols.chevron_right_rounded)),
+          canSeeReceivedLikes ? findsOneWidget : findsNothing,
+        );
         final summaryScrollable = find.descendant(
           of: find.byKey(const PageStorageKey('user_tester_summary')),
           matching: find.byType(Scrollable),
@@ -808,7 +1014,38 @@ void main() {
       } else {
         expect(tester.widget<TabBar>(find.byType(TabBar)).tabs.length, 4);
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
-        await tester.tap(find.byTooltip('动态'));
+        service.pendingActions = Completer<void>();
+        final tabViewRect = tester.getRect(find.byType(TabBarView));
+        final swipe = await tester.startGesture(
+          Offset(
+            tabViewRect.right - tabViewRect.width * 0.1,
+            tabViewRect.center.dy,
+          ),
+        );
+        for (var frame = 0; frame < 8; frame++) {
+          await swipe.moveBy(Offset(-tabViewRect.width * 0.1, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+          if (variant.topInset == 48 && frame.isOdd) {
+            await _capture(tester, captureDir, '${variant.name}-tab-$frame');
+          }
+        }
+        await swipe.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(
+          find.descendant(of: find.byType(TabBar), matching: find.text('动态')),
+          findsOneWidget,
+        );
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump();
+        expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
+        expect(find.byType(UserActionListSkeleton), findsOneWidget);
+        expect(
+          find.descendant(of: find.byType(TabBar), matching: find.text('动态')),
+          findsOneWidget,
+        );
+        service.pendingActions!.complete();
+        service.pendingActions = null;
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4,5'));
         expect(service.requestedFilters, isNot(contains(null)));
@@ -817,13 +1054,23 @@ void main() {
         await tester.pumpAndSettle();
         await _capture(tester, captureDir, '${variant.name}-menu');
         expect(find.byType(CheckedPopupMenuItem<String>), findsWidgets);
+        expect(
+          find.widgetWithText(CheckedPopupMenuItem<String>, '获赞'),
+          canSeeReceivedLikes ? findsOneWidget : findsNothing,
+        );
         await tester.tapAt(tester.getCenter(find.text('话题').last));
         await tester.pumpAndSettle();
         expect(service.requestedFilters, contains('4'));
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 1);
         var selectedLabel = '话题';
         if (checkNavigation) {
-          for (final label in ['赞', '获赞', '回应', 'Boost', '已解决']) {
+          for (final label in [
+            '赞',
+            if (canSeeReceivedLikes) '获赞',
+            '回应',
+            'Boost',
+            '已解决',
+          ]) {
             await tester.tap(find.byTooltip(selectedLabel));
             await tester.pumpAndSettle();
             if (label == '已解决') service.pendingSolved = Completer<void>();
@@ -839,7 +1086,7 @@ void main() {
                       find.byType(UserActionListSkeleton),
                     )
                     .type,
-                UserActivitySkeletonType.post,
+                UserActivitySkeletonType.reply,
               );
               await _capture(
                 tester,
@@ -860,7 +1107,7 @@ void main() {
             expect(card.quoteExcerpt, label != '已解决' && label != 'Boost');
             if (label == '获赞') {
               expect(card.actionActor?.username, user.username);
-              expect(card.actionLabel, '点赞');
+              expect(card.actionLabel, '发布了话题');
               expect(card.boostNote, isNull);
             }
             if (label == 'Boost') {
@@ -932,8 +1179,8 @@ void main() {
             matching: find.byType(ActivityPostCard),
           ),
         );
-        expect(cardRect.left, listRect.left + 16);
-        expect(cardRect.right, listRect.right - 16);
+        expect(cardRect.left, listRect.left);
+        expect(cardRect.right, listRect.right);
         expect(cardRect.left, skeletonRect.left);
         expect(cardRect.right, skeletonRect.right);
         final voteSegment = tester.widget<SegmentedCardItem>(
@@ -996,8 +1243,23 @@ void main() {
           await tester.pump();
           expect(nested.controller!.offset, lessThan(collapsedOffset));
           expect(service.votesCalls, initialCalls);
-          await drag.moveBy(Offset(0, nested.controller!.offset + 320));
+          await drag.moveBy(Offset(0, nested.controller!.offset + 40));
           await tester.pump(const Duration(milliseconds: 80));
+          final pullProgress = find.byKey(
+            const ValueKey('refresh-pull-progress'),
+          );
+          expect(
+            tester.widget<M3eCircularProgress>(pullProgress).value,
+            inExclusiveRange(0, 1),
+          );
+          expect(service.votesCalls, initialCalls);
+          await _capture(tester, captureDir, '${variant.name}-refresh-pulling');
+          await drag.moveBy(const Offset(0, 65));
+          await tester.pump(const Duration(milliseconds: 80));
+          expect(tester.widget<M3eCircularProgress>(pullProgress).value, 1);
+          expect(service.votesCalls, initialCalls);
+          await tester.pump(const Duration(milliseconds: 200));
+          await _capture(tester, captureDir, '${variant.name}-refresh-armed');
           expect(nested.controller!.offset, 0);
           expect(
             tester
@@ -1014,6 +1276,15 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
           expect(service.votesCalls, initialCalls + 1);
+          expect(pullProgress, findsNothing);
+          expect(
+            find.descendant(
+              of: find.byKey(const ValueKey('profile-refresh-indicator')),
+              matching: find.byType(Text),
+            ),
+            findsNothing,
+          );
+          await _capture(tester, captureDir, '${variant.name}-refresh-loading');
 
           // 请求等待期间仍能收起资料头和滚动，且只刷新当前投票列表一次。
           await tester.dragFrom(const Offset(180, 650), const Offset(0, -200));
@@ -1022,13 +1293,15 @@ void main() {
           expect(find.byType(ActivityTopicCard), findsWidgets);
           await tester.dragFrom(const Offset(180, 650), const Offset(0, -700));
           await tester.pump(const Duration(milliseconds: 200));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 240));
           expect(
             find.byKey(const ValueKey('profile-more-menu')).hitTestable(),
             findsOneWidget,
           );
           expect(
             tester.getCenter(find.byKey(const ValueKey('profile-more-menu'))),
-            morePosition,
+            collapsedMorePosition,
           );
           final toolbarName = find.byKey(
             const ValueKey('profile-toolbar-name'),
@@ -1040,8 +1313,12 @@ void main() {
           );
           expect(toolbarOpacity.opacity, 1);
           expect(
-            tester.getTopLeft(find.byType(LoadingSpinner).first).dy,
-            greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TabBar)).dy),
+            tester
+                .getSize(
+                  find.byKey(const ValueKey('profile-refresh-indicator')),
+                )
+                .height,
+            0,
           );
           await _capture(
             tester,
@@ -1074,11 +1351,34 @@ void main() {
           }
           expect(service.votesCalls, votesCalls + 1);
           expect(service.solvedCalls, solvedCalls + 1);
+          // 切换筛选项的请求尚未结束时刷新，指示器必须等待同一请求。
+          nested.controller!.jumpTo(0);
+          await tester.pump();
+          var refreshCompleted = false;
+          final refresh = tester
+              .state<M3eRefreshIndicatorState>(find.byType(M3eRefreshIndicator))
+              .show()
+              .then((_) => refreshCompleted = true);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(refreshCompleted, isFalse);
+          expect(service.votesCalls, votesCalls + 1);
+          expect(
+            tester
+                .getSize(
+                  find.byKey(const ValueKey('profile-refresh-indicator')),
+                )
+                .height,
+            greaterThan(0),
+          );
           service.pendingSolved!.complete();
           service.pendingVotes!.complete();
           service.pendingSolved = null;
           service.pendingVotes = null;
           await tester.pumpAndSettle();
+          await refresh;
+          expect(refreshCompleted, isTrue);
 
           // 从外层页签回到活动也重新加载，动画完成回调不能重复请求。
           await tester.tap(find.byTooltip('关于'));
@@ -1086,6 +1386,42 @@ void main() {
           await tester.tap(find.byTooltip('投票'));
           await tester.pumpAndSettle();
           expect(service.votesCalls, votesCalls + 2);
+          expect(tester.takeException(), isNull);
+        }
+        if (variant.platform == TargetPlatform.macOS) {
+          Scrollable.of(tester.element(voteCard)).position.jumpTo(0);
+          await tester.pumpAndSettle();
+          nested.controller!.jumpTo(0);
+          await tester.pumpAndSettle();
+          expect(nested.controller!.offset, 0);
+          final initialCalls = service.votesCalls;
+          service.pendingVotes = Completer<void>();
+          final drag = await tester.startGesture(
+            tester.getRect(voteCard).topLeft + const Offset(40, 40),
+            kind: ui.PointerDeviceKind.trackpad,
+          );
+          await drag.moveBy(const Offset(0, 20));
+          await tester.pump();
+          await drag.moveBy(const Offset(0, 40));
+          await tester.pump();
+          final pullProgress = find.byKey(
+            const ValueKey('refresh-pull-progress'),
+          );
+          expect(
+            tester.widget<M3eCircularProgress>(pullProgress).value,
+            inExclusiveRange(0, 1),
+          );
+          await drag.moveBy(const Offset(0, 65));
+          await tester.pump();
+          expect(tester.widget<M3eCircularProgress>(pullProgress).value, 1);
+          await drag.up();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 250));
+          expect(service.votesCalls, initialCalls + 1);
+          expect(pullProgress, findsNothing);
+          service.pendingVotes!.complete();
+          service.pendingVotes = null;
+          await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
         }
         if (width == 1440) {
@@ -1110,6 +1446,8 @@ void main() {
           );
         }
         expect(find.byTooltip('关于'), findsOneWidget);
+        await tester.ensureVisible(find.byTooltip('关于'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('关于'));
         await tester.pumpAndSettle();
         expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 3);
@@ -1224,9 +1562,12 @@ class _ProfileCase {
     this.cover = false,
     this.dark = false,
     this.visitor = false,
+    this.admin = false,
+    this.moderator = false,
     this.themeId = 'material',
     this.seedColor = Colors.blue,
     this.platform,
+    this.topInset = 24,
   });
   final double width;
   final double textScale;
@@ -1235,11 +1576,67 @@ class _ProfileCase {
   final bool cover;
   final bool dark;
   final bool visitor;
+  final bool admin;
+  final bool moderator;
   final String themeId;
   final Color seedColor;
   final TargetPlatform? platform;
+  final double topInset;
   String get name =>
-      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}';
+      '$width-$textScale-${dark ? "dark" : "light"}${cover ? "-cover" : ""}${hidden ? "-hidden" : ""}${visitor ? "-visitor" : ""}${admin ? "-admin" : ""}${moderator ? "-moderator" : ""}-$themeId-${seedColor.toARGB32()}${platform == null ? "" : "-${platform!.name}"}${topInset == 24 ? "" : "-inset$topInset"}';
+}
+
+void _expectAvatarPaintBounds(WidgetTester tester, Finder avatar) {
+  final transform = tester.renderObject<RenderTransform>(
+    find.descendant(of: avatar, matching: find.byType(Transform)).first,
+  );
+  final child = transform.child!;
+  final bounds = MatrixUtils.transformRect(
+    child.getTransformTo(null),
+    child.paintBounds,
+  );
+  RenderObject? ancestor = transform.parent;
+  while (ancestor != null) {
+    if (ancestor is RenderClipRect && ancestor.clipBehavior != Clip.none) {
+      final clip = MatrixUtils.transformRect(
+        ancestor.getTransformTo(null),
+        Offset.zero & ancestor.size,
+      ).inflate(0.01);
+      expect(clip.contains(bounds.topLeft), isTrue);
+      expect(clip.contains(bounds.bottomRight), isTrue);
+    }
+    ancestor = ancestor.parent;
+  }
+}
+
+void _expectProfileToolbarGeometry(WidgetTester tester) {
+  final buttons = find.descendant(
+    of: find.byType(AppBar),
+    matching: find.byType(IconButton),
+  );
+  final paintedBounds = <Rect>[];
+  for (final element in buttons.evaluate()) {
+    final button = find.byWidget(element.widget);
+    final surface = find
+        .descendant(of: button, matching: find.byType(Material))
+        .first;
+    expect(tester.getSize(surface), const Size.square(40));
+    final material = tester.widget<Material>(surface);
+    expect(material.shape, element.shapes.circle());
+    final visible = tester
+        .widgetList<Opacity>(
+          find.ancestor(of: button, matching: find.byType(Opacity)),
+        )
+        .every((opacity) => opacity.opacity == 1);
+    if (visible) paintedBounds.add(tester.getRect(surface));
+  }
+  paintedBounds.sort((first, second) => first.left.compareTo(second.left));
+  for (var index = 1; index < paintedBounds.length; index++) {
+    expect(
+      paintedBounds[index].left - paintedBounds[index - 1].right,
+      greaterThanOrEqualTo(7.99),
+    );
+  }
 }
 
 void _expectFollowColors(WidgetTester tester, ThemeData theme) {

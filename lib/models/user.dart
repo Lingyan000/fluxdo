@@ -173,7 +173,12 @@ class User {
     this.chatDrafts = const [],
   });
 
+  /// identity 用于同步会话中的名字、头像和群组标识。
   User copyWith({
+    User? identity,
+    String? avatarTemplate,
+    UserStatus? status,
+    bool clearStatus = false,
     int? unreadNotifications,
     int? unreadHighPriorityNotifications,
     int? allUnreadNotificationsCount,
@@ -186,9 +191,12 @@ class User {
     return User(
       id: id,
       username: username,
-      name: name,
-      avatarTemplate: avatarTemplate,
-      animatedAvatar: animatedAvatar,
+      name: identity != null ? identity.name : name,
+      avatarTemplate: avatarTemplate ??
+          (identity != null ? identity.avatarTemplate : this.avatarTemplate),
+      animatedAvatar: avatarTemplate != null
+          ? null
+          : (identity != null ? identity.animatedAvatar : animatedAvatar),
       trustLevel: trustLevel,
       bio: bio,
       bioCooked: bioCooked,
@@ -212,7 +220,7 @@ class User {
       notificationChannelPosition:
           notificationChannelPosition ?? this.notificationChannelPosition,
       pendingPostsCount: pendingPostsCount,
-      status: status,
+      status: clearStatus ? null : status ?? this.status,
       lastPostedAt: lastPostedAt,
       lastSeenAt: lastSeenAt,
       createdAt: createdAt,
@@ -221,11 +229,11 @@ class User {
       location: location,
       website: website,
       websiteName: websiteName,
-      flairUrl: flairUrl,
-      flairName: flairName,
-      flairBgColor: flairBgColor,
-      flairColor: flairColor,
-      flairGroupId: flairGroupId,
+      flairUrl: identity != null ? identity.flairUrl : flairUrl,
+      flairName: identity != null ? identity.flairName : flairName,
+      flairBgColor: identity != null ? identity.flairBgColor : flairBgColor,
+      flairColor: identity != null ? identity.flairColor : flairColor,
+      flairGroupId: identity != null ? identity.flairGroupId : flairGroupId,
       canFollow: canFollow,
       isFollowed: isFollowed,
       totalFollowers: totalFollowers,
@@ -363,9 +371,17 @@ class User {
     'avatar_template': avatarTemplate,
     'animated_avatar': animatedAvatar,
     'trust_level': trustLevel,
-    'status': status != null ? {'description': status!.description, 'emoji': status!.emoji} : null,
+    'status': status == null
+        ? null
+        : {
+            'description': status!.description,
+            'emoji': status!.emoji,
+            'ends_at': status!.endsAt?.toUtc().toIso8601String(),
+            'message_bus_last_id': status!.messageBusLastId,
+          },
     'flair_url': flairUrl,
     'flair_name': flairName,
+    'flair_group_id': flairGroupId,
     'flair_bg_color': flairBgColor,
     'flair_color': flairColor,
     'gamification_score': gamificationScore,
@@ -386,6 +402,7 @@ class User {
       status: json['status'] != null ? UserStatus.fromJson(json['status'] as Map<String, dynamic>) : null,
       flairUrl: json['flair_url'] as String?,
       flairName: json['flair_name'] as String?,
+      flairGroupId: json['flair_group_id'] as int?,
       flairBgColor: json['flair_bg_color'] as String?,
       flairColor: json['flair_color'] as String?,
       gamificationScore: json['gamification_score'] as int?,
@@ -450,12 +467,18 @@ class UserStatus {
   final String? description;
   final String? emoji;
   
-  UserStatus({this.description, this.emoji});
+  final DateTime? endsAt;
+
+  final int? messageBusLastId;
+
+  UserStatus({this.description, this.emoji, this.endsAt, this.messageBusLastId});
   
   factory UserStatus.fromJson(Map<String, dynamic> json) {
     return UserStatus(
       description: json['description'] as String?,
       emoji: json['emoji'] as String?,
+      endsAt: TimeUtils.parseUtcTime(json['ends_at'] as String?),
+      messageBusLastId: json['message_bus_last_id'] as int?,
     );
   }
 }

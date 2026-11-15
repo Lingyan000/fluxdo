@@ -24,7 +24,10 @@ class LoggerUtils {
   static Future<File> getLogFile() => LogWriter.getLogFile();
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
-  static Future<String> getShareFilePath({bool fullHistory = false, String? pluginId}) async {
+  static Future<String> getShareFilePath({
+    bool fullHistory = true,
+    String? pluginId,
+  }) async {
     var stage = 'flushLogs';
     String? sharePath;
     try {
@@ -41,8 +44,12 @@ class LoggerUtils {
       stage = 'resolveLogDirectory';
       final logFile = await getLogFile();
       final dir = logFile.parent;
-      final name = pluginId == null ? 'app_log_share' : 'plugin_log_${Uri.encodeComponent(pluginId)}';
-      final shareFile = File('${dir.path}/$name.jsonl');
+      // 插件和导出范围分别命名，保留系统分享面板正在读取的文件。
+      final scope = fullHistory ? 'all' : 'session';
+      final name = pluginId == null
+          ? 'app_log'
+          : 'plugin_log_${Uri.encodeComponent(pluginId)}';
+      final shareFile = File('${dir.path}/${name}_${scope}_share.jsonl');
       sharePath = shareFile.path;
       stage = 'writeExportFile';
       await shareFile.writeAsString(

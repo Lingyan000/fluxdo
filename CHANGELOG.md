@@ -2,6 +2,356 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.30] - 2026-11-13
+
+
+### 🌟 新功能
+
+- 补全话题定时状态、统计与待审核信息展示 by @Lingyan000
+
+- 支持长按昵称和用户名复制账号 by @Lingyan000
+
+- 展示话题慢速模式与回复自动删除提示 by @Lingyan000
+
+- 玻璃材质跟随主题：色罩取主题中性色，主题决定自动档质感 by @Lingyan000
+
+- 完善原生用户组列表、详情与内容链接导航 by @Lingyan000
+
+- 自定义主题可调界面风格，导入主题代码时补全省略字段 by @Lingyan000
+
+- 新增浮起容器风格与轻云、燕麦主题，画廊按用途分组 by @Lingyan000
+
+- 内置浏览器按网页声明适配安全区 by @Lingyan000
+
+- 补齐用户资料数据与原生论坛偏好设置 by @Lingyan000
+
+- 添加节日图案装饰与调试预览 by @Lingyan000
+
+- 节日主题默认开启 by @Lingyan000
+
+- Integrate Sparkle and prepare package distribution CI by @Lingyan000
+
+- 主题新增界面风格层，重做简约并加入纸张纹理 by @Lingyan000
+
+- 实现 Windows 安装版应用内自更新 by @Lingyan000
+
+- 自定义主题：主题编辑器与主题代码导入导出 by @Lingyan000
+
+- 节日主题：传统节日期间自动换上节日配色 by @Lingyan000
+
+- 字体按需下载：MiSans 移出安装包，新增正文与等宽字体选择 by @Lingyan000
+
+- 首页置顶话题分组折叠与已读操作 by @Lingyan000
+
+- 圆角风格：主题形状 token 与标准 / 适中 / 方正三档 by @Lingyan000
+
+- 主题页重做：实时预览与主题画廊 by @Lingyan000
+
+- 内置固定配色主题 by @Lingyan000
+
+- 主题语义色：具名色相、代码高亮与代码块底色随主题变化 by @Lingyan000
+
+- 主题系统基建：主题描述模型与固定配色推导 by @Lingyan000
+
+- 接入深层主题弹层定位列表并保留阅读锚点 by @Lingyan000
+
+- 接入回复详情弹层定位列表 by @Lingyan000
+
+- 接入聊天定位列表并稳定双向分页和引用跳转 by @Lingyan000
+
+- 接入 AI 对话定位列表并稳定流式阅读位置 by @Lingyan000
+
+- 添加系统默认链接设置快捷入口 by @Lingyan000
+
+- 支持 Android 免确认自更新与安装确认回退 by @Lingyan000
+
+- 启动动画单一规格同源生成，原生启动屏播放描线并无缝交接 by @Lingyan000
+
+- 支持外链临时选择浏览器并修复弹层溢出 (#427) ([#427](https://github.com/lingyan000/fluxdo/pull/427)) by @wxk66
+
+- Boost 作者弹层支持引用并 @ 作者回复 (#425) by @wxk66
+
+- 完善公共开关、关联设置与空态面板动效 by @Lingyan000
+
+- 完善微应用原生体验与跨平台运行 by @Lingyan000
+
+- 完善内置浏览器搜索、多页收起与跟手转场 by @Lingyan000
+
+- 增强公共按钮组与菜单交互 by @Lingyan000
+
+- 回应动态表情在面板打开与选中落地时播放，支持切换表情风格 by @Lingyan000
+
+- 回应面板支持动态表情，全站 emoji 统一为 Noto 画风 by @Lingyan000
+
+- 启动页与原生启动屏无缝衔接，等待时展示阶段状态 by @Lingyan000
+
+- CF 过盾按打扰等级分级展示，自动触发的验证先后台静默 by @Lingyan000
+
+- 全局统一超椭圆连续圆角与玻璃轮廓 by @Lingyan000
+
+- Android 系统通知改为会话样式，头像显示在左侧 by @Lingyan000
+
+- 系统通知显示发送者头像 by @Lingyan000
+
+
+### 🐛 修复
+
+- 修复关闭大图时底下页面安全区闪烁 by @Lingyan000
+
+- 修复偏好设置标签解析异常与弹框重复嵌套 by @Lingyan000
+
+- 修复入口比菜单大时开合动画出现第二道边框 by @Lingyan000
+
+- 修复资料页刷新反馈并统一 M3E 进度样式 by @Lingyan000
+
+- 修复桌面小窗口用户卡片移出屏幕 by @Lingyan000
+
+- 修复帖子提示条图标与文字未对齐 by @Lingyan000
+
+- 修复无边框输入框在描边、下划线主题下被套上边框 by @Lingyan000
+
+- 修复聊天与私信放入底栏后 FAB 被底栏遮挡 by @Lingyan000
+
+- 修复资料页获赞明细的访问权限与入口展示 by @Lingyan000
+
+- 完善头像与状态编辑并修复会话同步和缓存回退 by @Lingyan000
+
+- 修复非桌面入口启动丢失描线并加固原生启动屏交接 by @Lingyan000
+
+- 修复资料页 Tab、顶栏和下拉刷新的动画衔接 by @Lingyan000
+
+- MacOS CI 使用 netrc 认证 SwiftPM 依赖 by @Lingyan000
+
+- 完善资料页活动加载并修复刷新滚动衔接 by @Lingyan000
+
+- 修复切换搜索后分页冷却状态串扰 by @Lingyan000
+
+- 合并搜索空态与页面退出修复 (#430) ([#430](https://github.com/lingyan000/fluxdo/pull/430)) by @Lingyan000
+
+- 修复搜索零结果时一直显示骨架屏，以及退出搜索页时 dispose 使用 ref 抛 StateError by @1molchuan
+
+- 修复话题列表不显示 SVG 头像 by @Lingyan000
+
+- 恢复小程序单列卡片的图标渐隐背景 by @Lingyan000
+
+- 修复小程序窄卡片内容拥挤与统计换行 by @Lingyan000
+
+- 修复小程序启动图标底座的圆形裁切 by @Lingyan000
+
+- 补齐小程序重开测试的原生 Cookie 通道模拟 by @Lingyan000
+
+- 输入框聚焦高亮画在容器轮廓上，修复与搜索框错位 by @Lingyan000
+
+- 隔离 macOS CI 钥匙串，修复 SwiftPM 依赖解析卡死 by @Lingyan000
+
+- 话题卡片与详情正文透出页面背景 by @Lingyan000
+
+- Validate with pinned official WinGet binary by @Lingyan000
+
+- Support runner Homebrew and update WinGet before validation by @Lingyan000
+
+- 字体下载避开 jsDelivr 单文件 50 MB 上限 by @Lingyan000
+
+- 修复独立窗口关闭后重现并减少启动等待 by @Lingyan000
+
+- 恢复应用广场和 Notion 按钮组选中震动 by @Lingyan000
+
+- 修复透明模式页面转场叠透 by @Lingyan000
+
+- Fix(linux): 修复构建兼容性与小程序运行 by @Lingyan000
+
+- 过滤 Apple 滚动速度计算中的倒序采样 by @Lingyan000
+
+- 为 Cookie 读取增加超时并恢复清理锁 by @Lingyan000
+
+- 修复小应用状态读取堆积与启动失败误报 by @Lingyan000
+
+- 修复快捷键作用域销毁时更新 Provider 异常 by @Lingyan000
+
+- 固定 macOS 网络核心实例避免热重启清理错位 by @Lingyan000
+
+- 更新渲染器修复红包图片缺失 by @Lingyan000
+
+- 修复连续向上加载时 loading 仅显示一次 by @Lingyan000
+
+- 修复 Cookie 同步竞态并优化桌面启动 by @Lingyan000
+
+- 修复启动页退场开头被首页首帧卡顿吞掉 by @Lingyan000
+
+- 修复 macOS 热重启时网络核心回调导致崩溃 by @Lingyan000
+
+- 补齐官方微应用运行器内部沙箱错误详情 by @Lingyan000
+
+- 修复话题向上分页保位并减少重复可见性计算 by @Lingyan000
+
+- 修复底栏高度丢失导致 FAB 未避让 by @Lingyan000
+
+- 接入楼中楼定位列表并稳定子回复阅读位置 by @Lingyan000
+
+- 保留微应用启动失败原因并补充分阶段诊断 by @Lingyan000
+
+- Preserve topic positions and navigate by index by @Lingyan000
+
+- Stabilize topic scrolling with positioned lists by @Lingyan000
+
+- 修复原生启动页与 Flutter 交接时的一帧闪烁 by @Lingyan000
+
+- 修复全屏悬浮菜单展开时玻璃迟到与闪烁 by @Lingyan000
+
+- 修复侧栏被浏览器底栏顶起 by @Lingyan000
+
+- 修复小程序弹窗下滑收起并优化跟手转场 by @Lingyan000
+
+- 修复 iOS 场景配置方法缺少 override 导致的编译失败 by @Lingyan000
+
+- 修复相同配置下手动重启网络核心不生效 by @Lingyan000
+
+- 按认证结果收紧 ECH 重试与证书失败处理 by @Lingyan000
+
+- 完善网络调用时限与取消资源回收 by @Lingyan000
+
+- 修复 CI 构建脚本启动前未安装依赖 by @Lingyan000
+
+- 修复首页启动时同值标签触发重复加载 by @Lingyan000
+
+- 修复微应用 Android 停滚与菜单截图闪帧 by @Lingyan000
+
+- 统一全局手势打断与跨方向滑动交接 by @Lingyan000
+
+- 修复按钮组逐项形变并复用公共弹性反馈 by @Lingyan000
+
+- 修复下拉菜单闪烁与多级面板联动收回 by @Lingyan000
+
+- 修复 Android 网络核心按需构建并补齐预检 by @Lingyan000
+
+- 修复选择回应后按钮回闪（选中→空→选中） by @Lingyan000
+
+- 修复回应面板动态表情松手重播、播完闪一下 by @Lingyan000
+
+- 修复回复弹框预览无法调整图片尺寸 by @Lingyan000
+
+- 修复采纳解决方案误报失败：不再按对象解析接口响应 by @Lingyan000
+
+- 按站点规格统一头像尺寸以减少重定向 by @Lingyan000
+
+- MessageBus 订阅与话题列表状态对齐官方 by @Lingyan000
+
+- 修复预测返回中途重发起手后全局点击失效 by @Lingyan000
+
+- 修复聊天中的附件无法下载 by @Lingyan000
+
+- 修复链接内图片无法点击 by @Lingyan000
+
+- 修复预测返回中页面退出后点击失效 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 优化应用广场滚动时的配色缓存与局部重绘 by @Lingyan000
+
+- ️ 优化小程序共享加载流程并支持重新进入 by @Lingyan000
+
+- 完善网络请求时限、H3 竞速与故障恢复 by @Lingyan000
+
+- 补齐 H3 冷连接竞速与服务能力缓存 by @Lingyan000
+
+- ️ 优化公共组件的键盘隔离、转场与加载体验 by @Lingyan000
+
+
+### ♻️ 重构
+
+- Simplify WinGet package extraction by @Lingyan000
+
+- 共享后台实例并统一任务生命周期 by @Lingyan000
+
+
+### 📝 文档
+
+- 发版提交使用中文并移除脚本署名 by @Lingyan000
+
+- 添加 v0.2.30 版本亮点 by @Lingyan000
+
+- 主题 skill 补充设计约束、分组命名与界面风格扩展清单 by @Lingyan000
+
+- 补充公共组件与主题背景接入指南 by @Lingyan000
+
+- 统一 agent 规则与 skill，规则源收敛到 AGENTS.md by @Lingyan000
+
+
+### 🎨 样式
+
+- 统一用户活动卡片与摘要展示 by @Lingyan000
+
+- 置顶分组按分段卡片规则绘制，随主题切换样式 by @Lingyan000
+
+- 自定义背景按页面与遮挡区域分层显示 by @Lingyan000
+
+- 图标、分类色与圆形控件统一跟随主题 by @Lingyan000
+
+- 对齐 AI 模块的主题配色与圆角 by @Lingyan000
+
+- 统一全局主题配色与圆角覆盖 by @Lingyan000
+
+- 优化外观设置布局与主题选择交互 by @Lingyan000
+
+
+### 🔧 其他
+
+- 发布 0.2.30 by @Lingyan000
+
+- 💄 调整我的页面身份信息与状态入口布局 by @Lingyan000
+
+- 💄 优化资料页活动卡片布局与骨架屏 by @Lingyan000
+
+- 💄 重做弹出菜单开合与二级菜单动效 by @Lingyan000
+
+- 💄 完善头像标识群组预览选择与清除同步 by @Lingyan000
+
+- 💄 打磨偏好设置背景图片与原生资料编辑入口 by @Lingyan000
+
+- 🔀 同步 dev 的搜索空态与页面退出修复 by @Lingyan000
+
+- 💄 完善小程序卡片信息与整体详情弹框 by @Lingyan000
+
+- 💄 统一小程序图标为圆形 by @Lingyan000
+
+- 💄 打磨论坛偏好设置布局与原生交互 by @Lingyan000
+
+- 💄 统一论坛偏好设置组件与双栏操作 by @Lingyan000
+
+- 💄 精修用户资料交互与宽屏布局 by @Lingyan000
+
+- 💄 重做用户资料布局与连续滚动交互 by @Lingyan000
+
+- 💄 外观页强调色改为色点面板，新增一键重置 by @Lingyan000
+
+- 🌐 fix: 统一登录页国际化文案 by @Lingyan000
+
+- 💄 启动页退场改为 logo 蓄力冲出、首页缓缓落位 by @Lingyan000
+
+- 🧹 清理旧滚动锚定哨兵并补充入口回归 by @Lingyan000
+
+- 💄 启动页退场改为撤下 logo 后底色快速淡出 by @Lingyan000
+
+- 💄 简化启动页状态角标为淡入淡出 by @Lingyan000
+
+- 💄 优化启动动画交接与桌面退场节奏 by @Lingyan000
+
+- 🧪 补齐代理故障与网络性能对照验收 by @Lingyan000
+
+- 🔎 汇总核心请求故障并展示最近连接结果 by @Lingyan000
+
+- 💄 CF 验证胶囊显示 Cloudflare 标志并接入 M3E 进度环 by @Lingyan000
+
+- ⬆️ 升级 Flutter 到 3.47.9 by @Lingyan000
+
+- 🚀 统一网络核心并完善图片加载与网络设置 (#429) ([#429](https://github.com/lingyan000/fluxdo/pull/429)) by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.29...v0.2.30
+
 ## [0.2.29] - 2026-10-20
 
 

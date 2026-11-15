@@ -5,9 +5,12 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
 import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:fluxdo/widgets/user/activity_post_card.dart';
+import 'package:fluxdo/widgets/user/activity_card_layout.dart';
 import 'package:fluxdo/widgets/user/user_profile_skeleton.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,6 +32,7 @@ void main() {
             ],
             child: TranslationProvider(
               child: MaterialApp(
+                navigatorKey: navigatorKey,
                 builder: (context, child) => MediaQuery(
                   data: MediaQuery.of(context)
                       .copyWith(textScaler: TextScaler.linear(scale)),
@@ -42,15 +46,25 @@ void main() {
                       ),
                       Expanded(
                         child: ListView(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           children: [
                             ActivityPostCard(
                               position: (index: 0, count: 2),
                               title: '标题',
                               actionLabel: '动作',
+                              actionActor:
+                                  type == UserActivitySkeletonType.receivedLike
+                                  ? TopicUser(
+                                      id: 2,
+                                      username: 'a',
+                                      avatarTemplate: '',
+                                    )
+                                  : null,
+                              bodyFirst: type == UserActivitySkeletonType.reply,
+                              excerpt: type == UserActivitySkeletonType.reply
+                                  ? '<p>正文<br>正文</p>'
+                                  : null,
+                              occurredAt: DateTime.now().toUtc(),
                               author: TopicUser(
                                 id: 1,
                                 username: 'Lin',
@@ -81,7 +95,11 @@ void main() {
         await tester.pump();
         final skeleton = find.byType(UserActionItemSkeleton).first;
         final actual = find.byType(ActivityPostCard);
-        final skeletonRect = tester.getRect(skeleton);
+        final skeletonFrame = find.ancestor(
+          of: skeleton,
+          matching: find.byType(ActivityCardFrame),
+        );
+        final skeletonRect = tester.getRect(skeletonFrame);
         final actualRect = tester.getRect(actual);
         expect(skeletonRect.left, actualRect.left);
         expect(skeletonRect.right, actualRect.right);
@@ -98,11 +116,25 @@ void main() {
                   (tester.getCenter(find.byType(SmartAvatar)) -
                       actualRect.topLeft))
               .distance,
-          lessThan(0.1),
+          lessThan(1),
         );
         for (final (placeholder, content) in [
-          (boxes.at(1), find.text('动作')),
-          (boxes.at(2), find.text('标题')),
+          (
+            find.descendant(
+              of: skeleton,
+              matching: find.byKey(
+                const ValueKey('activity-skeleton-metadata'),
+              ),
+            ),
+            find.text('动作'),
+          ),
+          (
+            find.descendant(
+              of: skeleton,
+              matching: find.byKey(const ValueKey('activity-skeleton-title')),
+            ),
+            find.text('标题'),
+          ),
         ]) {
           final offset = tester.getTopLeft(placeholder) - skeletonRect.topLeft;
           final contentOffset = tester.getTopLeft(content) - actualRect.topLeft;

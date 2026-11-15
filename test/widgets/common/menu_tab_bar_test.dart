@@ -3,6 +3,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('横滑时图标让位、文字靠右展开，栏目位置固定且取消后恢复', (tester) async {
+    final controller = TabController(length: 3, vsync: tester);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_host(controller, (_) {}));
+    await tester.pumpAndSettle();
+    final initialWidth = tester.getSize(find.byTooltip('概览')).width;
+    double? labelWidth;
+    Offset? labelPosition;
+    var iconX = tester.getCenter(find.byIcon(Icons.bar_chart)).dx;
+    final otherTabPosition = tester.getCenter(find.byTooltip('关于'));
+
+    for (final progress in [0.25, 0.5, 0.75]) {
+      controller.offset = progress;
+      await tester.pump();
+      expect(controller.index, 0);
+      expect(find.text('动态'), findsOneWidget);
+      expect(find.text('概览'), findsOneWidget);
+      final opacity = tester.widget<Opacity>(
+        find.ancestor(of: find.text('概览'), matching: find.byType(Opacity)),
+      );
+      expect(opacity.opacity, progress);
+      final textWidth = tester.getSize(find.text('概览')).width;
+      labelWidth ??= textWidth;
+      expect(textWidth, labelWidth);
+      labelPosition ??= tester.getTopLeft(find.text('概览'));
+      expect(tester.getTopLeft(find.text('概览')), labelPosition);
+      final currentIconX = tester.getCenter(find.byIcon(Icons.bar_chart)).dx;
+      expect(currentIconX, lessThan(iconX));
+      iconX = currentIconX;
+      expect(tester.getCenter(find.byTooltip('关于')), otherTabPosition);
+      expect(
+        find.ancestor(of: find.text('概览'), matching: find.byType(ShaderMask)),
+        findsOneWidget,
+      );
+      final tab = find.ancestor(
+        of: find.text('概览'),
+        matching: find.byType(Tab),
+      );
+      expect(
+        find.descendant(of: tab, matching: find.byType(ClipRect)),
+        findsNothing,
+      );
+      expect(tester.getSize(find.byTooltip('概览')).width, initialWidth);
+      expect(tester.takeException(), isNull);
+    }
+
+    controller.offset = 0;
+    await tester.pumpAndSettle();
+    expect(find.text('概览'), findsNothing);
+    expect(tester.getSize(find.byTooltip('概览')).width, initialWidth);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('宽屏显示全部标签，切换时保持栏目位置', (tester) async {
     final controller = TabController(length: 3, vsync: tester);
     addTearDown(controller.dispose);

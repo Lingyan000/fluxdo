@@ -1,8 +1,14 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
+import '../../models/user.dart';
+import '../../providers/core_providers.dart';
+import '../../services/toast_service.dart';
+import '../../widgets/common/smart_avatar.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
 import '../../utils/time_utils.dart';
@@ -10,6 +16,36 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../widgets/markdown_editor/emoji_picker.dart';
 import 'preference_controls.dart';
+
+Future<bool?> editUserStatus(BuildContext context, WidgetRef ref, User user) {
+  final current = ref.read(currentUserProvider).value;
+  final status = current?.id == user.id ? current?.status : user.status;
+  final notifier = ref.read(currentUserProvider.notifier);
+  final service = ref.read(discourseServiceProvider);
+  return showAppDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => StatusDialog(
+      user: user,
+      status: status == null
+          ? {}
+          : {
+              'description': status.description,
+              'emoji': status.emoji,
+              'ends_at': status.endsAt?.toUtc().toIso8601String(),
+            },
+      submit: (value) async {
+        await service.saveUserStatus(value);
+        await notifier.updateIdentity(
+          user.username,
+          status: value == null ? null : UserStatus.fromJson(value),
+          clearStatus: value == null,
+        );
+        ToastService.showSuccess(S.current.forumPrefs_saved);
+      },
+    ),
+  );
+}
 
 class PreferenceStatusEmoji extends StatelessWidget {
   const PreferenceStatusEmoji(this.name, {super.key, this.size = 24});
@@ -29,8 +65,14 @@ class PreferenceStatusEmoji extends StatelessWidget {
 }
 
 class StatusDialog extends StatefulWidget {
-  const StatusDialog({super.key, required this.status, required this.submit});
+  const StatusDialog({
+    super.key,
+    required this.status,
+    required this.submit,
+    this.user,
+  });
 
+  final User? user;
   final Map<String, dynamic> status;
   final Future<void> Function(Map<String, dynamic>?) submit;
 
@@ -203,6 +245,46 @@ class _StatusDialogState extends State<StatusDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (widget.user != null) ...[
+                    Row(
+                      children: [
+                        SmartAvatar(
+                          imageUrl: widget.user!.getAvatarUrl(size: 96),
+                          radius: 28,
+                          fallbackText: widget.user!.username,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.user!.name ?? widget.user!.username,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  PreferenceStatusEmoji(_emoji, size: 20),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _description.text.trim().isEmpty
+                                          ? l.forumPrefs_statusPrompt
+                                          : _description.text,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   TextField(
                     controller: _description,
                     maxLength: 100,

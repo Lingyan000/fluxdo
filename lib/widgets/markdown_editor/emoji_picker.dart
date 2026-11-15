@@ -742,7 +742,6 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                       hintStyle: TextStyle(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
-                      border: InputBorder.none,
                       isDense: true,
                       contentPadding: const EdgeInsets.only(right: 12),
                       prefixIcon: Icon(
@@ -760,7 +759,7 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
                               onPressed: () => _searchController.clear(),
                             )
                           : null,
-                    ),
+                    ).withoutBorder(),
                   ),
                 ),
               ),
@@ -910,7 +909,6 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                         hintStyle: TextStyle(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        border: InputBorder.none,
                         isDense: true,
                         contentPadding: const EdgeInsets.only(
                           left: 0,
@@ -931,7 +929,7 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
                                 onPressed: () => _searchController.clear(),
                               )
                             : null,
-                      ),
+                      ).withoutBorder(),
                     ),
                   ),
                 ),

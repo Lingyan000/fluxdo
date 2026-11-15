@@ -667,11 +667,22 @@ extension PostUpdateMethods on TopicDetailNotifier {
       if (!ref.mounted) return;
       // 只更新元数据，保留当前帖子列表
       state = AsyncValue.data(
-        currentDetail.copyWith(
+        (state.value ?? currentDetail).copyWith(
           title: newDetail.title,
           slug: newDetail.slug,
           closed: newDetail.closed,
           archived: newDetail.archived,
+          slowModeSeconds: newDetail.slowModeSeconds,
+          topicTimer: newDetail.topicTimer,
+          clearTopicTimer: newDetail.topicTimer == null,
+          visible: newDetail.visible,
+          visibilityReasonId: newDetail.visibilityReasonId,
+          isWarning: newDetail.isWarning,
+          queuedPostsCount: newDetail.queuedPostsCount,
+          wordCount: newDetail.wordCount,
+          participantCount: newDetail.participantCount,
+          participants: newDetail.participants,
+          links: newDetail.links,
           tags: newDetail.tags,
           categoryId: newDetail.categoryId,
           notificationLevel: newDetail.notificationLevel,

@@ -67,15 +67,15 @@ class CfClearanceAuthority {
     // 1. jar 空：恢复路径全开（验证取消/删除后的写回与 0.2.26 一致）。
     if (currentValue.isEmpty) return CfClearanceReplaceDecision.allow;
 
-    // 2. 同值：幂等，无需写入。
-    if (candidate == currentValue) {
-      return CfClearanceReplaceDecision.skipSameValue;
-    }
-
     // 验证完成时确认的精确值优先于普通同步抢先写回的副本。
     // trusted 本身不代表已过盾（Turnstile/会话 bootstrap 也会使用它）；
     // 调用方必须同时用 acceptValues 限定本轮验证观察到的新值。
     if (verified) return CfClearanceReplaceDecision.allow;
+
+    // 确认值即使与当前值相同，也需清除 jar 中其他分区副本。
+    if (candidate == currentValue) {
+      return CfClearanceReplaceDecision.skipSameValue;
+    }
 
     // 3. 在位值过期/临期：自然换届窗口，放行（新铸值无缝继位）。
     final expires = current?.expiresAt?.toLocal();

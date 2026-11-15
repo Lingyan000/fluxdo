@@ -23,6 +23,9 @@ import '../../category_topics_page.dart';
 import '../../tag_topics_page.dart';
 import '../../../widgets/topic/assign_sheet.dart';
 import '../../../theme/app_colors.dart';
+import '../../../services/preloaded_data_service.dart';
+import 'topic_state_summary.dart';
+import 'topic_statistics.dart';
 
 /// 话题详情页头部组件
 class TopicDetailHeader extends ConsumerWidget {
@@ -147,6 +150,7 @@ class TopicDetailHeader extends ConsumerWidget {
             SizedBox(key: headerKey),
 
           SizedBox(height: showTitle ? 16 : 8),
+          TopicStateSummary(detail: detail),
 
           // 分类与标签（私信话题不显示）
           if (!detail.isPrivateMessage &&
@@ -305,6 +309,12 @@ class TopicDetailHeader extends ConsumerWidget {
               // 投票按钮
               TopicVoteButton(topic: detail, onVoteChanged: onVoteChanged),
             ],
+          ),
+
+          TopicStatistics(
+            detail: detail,
+            wordsPerMinute: PreloadedDataService()
+                .siteSettingsSync?['read_time_word_count'] as num?,
           ),
 
           // AI 摘要 & 订阅按钮

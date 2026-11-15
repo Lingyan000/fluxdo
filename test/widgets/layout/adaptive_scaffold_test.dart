@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/pages/topics_page.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
+import 'package:fluxdo/theme/theme_style.dart';
 import 'package:fluxdo/widgets/layout/adaptive_navigation.dart';
 import 'package:fluxdo/widgets/layout/adaptive_scaffold.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
@@ -98,6 +99,72 @@ void main() {
         tester.getSize(find.byKey(const ValueKey('master-pane'))).height,
         bodyHeight,
       );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for (final floating in [false, true]) {
+    testWidgets('描边主题的贴底底栏顶边画细线，悬浮胶囊不画 floating=$floating', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(375, 815));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues({
+        'pref_bottom_nav_floating': floating,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: ThemeData(
+                extensions: const [ThemeStyle(surfaces: SurfaceStyle.outlined)],
+              ),
+              home: MediaQuery(
+                data: const MediaQueryData(size: Size(375, 815)),
+                child: AdaptiveScaffold(
+                  selectedIndex: 0,
+                  onDestinationSelected: (_) {},
+                  destinations: const [
+                    AdaptiveDestination(
+                      id: 'home',
+                      icon: Icon(Icons.home),
+                      selectedIcon: Icon(Icons.home),
+                      label: '首页',
+                    ),
+                    AdaptiveDestination(
+                      id: 'chat',
+                      icon: Icon(Icons.chat),
+                      selectedIcon: Icon(Icons.chat),
+                      label: '聊天',
+                    ),
+                  ],
+                  body: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final edges = tester
+          .widgetList<DecoratedBox>(
+            find.ancestor(
+              of: find.byType(AdaptiveBottomNavigation),
+              matching: find.byType(DecoratedBox),
+            ),
+          )
+          .where(
+            (box) =>
+                box.decoration is BoxDecoration &&
+                (box.decoration as BoxDecoration).border is Border &&
+                ((box.decoration as BoxDecoration).border! as Border).top !=
+                    BorderSide.none,
+          );
+      expect(edges, floating ? isEmpty : hasLength(1));
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }

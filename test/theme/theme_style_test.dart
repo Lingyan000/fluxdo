@@ -41,6 +41,7 @@ void main() {
         quote: QuoteStyle.bar,
         texture: TextureStyle.paper,
         dataColors: DataColorStyle.muted,
+        glass: GlassStyle.frosted,
       );
       expect(ThemeStyle.fromJson(style.toJson()), style);
     });
@@ -52,10 +53,14 @@ void main() {
       );
     });
 
-    test('只改数据色时组件仍按 Material', () {
-      const style = ThemeStyle(dataColors: DataColorStyle.harmonized);
-      expect(style.isMaterial, isFalse);
-      expect(style.hasMaterialComponents, isTrue);
+    test('只改数据色或玻璃质感时组件仍按 Material', () {
+      for (final style in const [
+        ThemeStyle(dataColors: DataColorStyle.harmonized),
+        ThemeStyle(glass: GlassStyle.frosted),
+      ]) {
+        expect(style.isMaterial, isFalse);
+        expect(style.hasMaterialComponents, isTrue);
+      }
     });
   });
 
@@ -242,6 +247,30 @@ void main() {
       );
       expect(decorator.decoration.focusedBorder, InputBorder.none);
       expect(decorator.decoration.enabledBorder, InputBorder.none);
+    });
+
+    testWidgets('无边框输入框在描边、下划线主题下聚焦也不画框', (tester) async {
+      for (final inputs in [InputStyle.outlined, InputStyle.underline]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: _build(ThemeStyle(inputs: inputs)),
+            home: Scaffold(
+              body: TextField(
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '标题',
+                ).withoutBorder(),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        final decoration = tester
+            .widget<InputDecorator>(find.byType(InputDecorator))
+            .decoration;
+        expect(decoration.focusedBorder, InputBorder.none, reason: '$inputs');
+        expect(decoration.enabledBorder, InputBorder.none, reason: '$inputs');
+      }
     });
 
     testWidgets('Material 主题没有输入框边框，外壳不画线', (tester) async {

@@ -2,10 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../constants.dart';
+import '../../log/log_writer.dart';
 
 /// WebView 适配器设置服务
 ///
-/// 开启后，主站 API 请求通过 WebView 内核发送（真正的 Chrome TLS 指纹），
+/// 开启后，主站 API 请求通过设备的 WebView 内核发送，
 /// 可改善因 TLS 指纹被 Cloudflare 识别为非浏览器客户端导致的登录失效问题。
 ///
 /// 仅对主域名的 API 请求生效，排除：
@@ -55,10 +56,14 @@ class WebViewAdapterSettingsService {
 
   Future<void> setEnabled(bool value) async {
     final prefs = _prefs;
-    if (prefs == null) return;
+    if (prefs == null || enabled == value) return;
+    if (!await prefs.setBool(_enabledKey, value)) {
+      throw StateError('保存 WebView 网络设置失败');
+    }
+    final previous = enabled;
     notifier.value = value;
     _syncEffectiveEnabled();
-    await prefs.setBool(_enabledKey, value);
+    _logChange('webview_adapter_enabled', previous, value, persistent: true);
   }
 
   /// 仅在当前应用会话启用临时兼容模式。
@@ -96,8 +101,27 @@ class WebViewAdapterSettingsService {
 
   void _setSessionFallbackEnabled(bool value) {
     if (sessionFallbackNotifier.value == value) return;
+    final previous = sessionFallbackNotifier.value;
     sessionFallbackNotifier.value = value;
     _syncEffectiveEnabled();
+    _logChange('webview_session_fallback', previous, value, persistent: false);
+  }
+
+  void _logChange(
+    String setting,
+    bool previous,
+    bool value, {
+    required bool persistent,
+  }) {
+    LogWriter.instance.write({
+      'type': 'settings',
+      'event': 'network_setting_changed',
+      'setting': setting,
+      'previousValue': previous,
+      'value': value,
+      'persistent': persistent,
+      'effectiveWebViewEnabled': effectiveEnabled,
+    });
   }
 
   void _syncEffectiveEnabled() {

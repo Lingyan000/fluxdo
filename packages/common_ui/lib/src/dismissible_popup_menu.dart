@@ -23,10 +23,31 @@ part 'popup_menu_interaction.dart';
 // 因为内部类 (_PopupMenuRoute 等) 不可访问，必须复制才能自定义 barrier 行为。
 // ============================================================
 
-// 菜单开合:统一"从触发点缩放生长/收回 + 淡入淡出"。开/关时长分开,
-// 且外层与子面板用同一套关闭时长,保证整链一起关时同步、像一个整体收起。
-const Duration _kMenuDuration = Duration(milliseconds: 280);
-const Duration _kMenuCloseDuration = Duration(milliseconds: 240);
+// 菜单开合:从入口形变成菜单再收回。时长只是线性驱动,形态由下方的弹簧曲线决定;
+// 弹簧参数按真机录屏逐帧实测(均为临界阻尼,无回弹)。
+const Duration _kMenuDuration = Duration(milliseconds: 320);
+const Duration _kMenuCloseDuration = Duration(milliseconds: 180);
+
+// 展开:位置先到、尺寸后到,前段快速淡入;收回:尺寸先收、位置后追,全程淡出。
+const Curve _kMenuOpenMove = _SpringCurve(.18, .32);
+const Curve _kMenuOpenGrow = _SpringCurve(.30, .32);
+const Curve _kMenuFadeIn = Interval(0, .15, curve: Curves.easeOut);
+const Curve _kMenuCloseMove = FlippedCurve(_SpringCurve(.28, .18));
+const Curve _kMenuCloseGrow = FlippedCurve(_SpringCurve(.17, .18));
+const Curve _kMenuFadeOut = FlippedCurve(
+  Interval(.1, .9, curve: Curves.easeOut),
+);
+
+// 子菜单:被点的行原地升起,高度向下揭开;箭头旋转略慢于揭开。
+// 揭开一松手就满速起步、随即减速;头部比入口行上移一截。
+const Duration _kSubmenuDuration = Duration(milliseconds: 300);
+const Duration _kSubmenuCloseDuration = Duration(milliseconds: 160);
+const Curve _kSubmenuOpen = _SpringCurve(.23, .30, velocity: .9);
+const Curve _kSubmenuChevronOpen = _SpringCurve(.28, .30);
+const Curve _kSubmenuClose = FlippedCurve(_SpringCurve(.15, .16, velocity: .9));
+const double _kSubmenuLift = 16;
+const Curve _kSubmenuFadeIn = Interval(0, .1);
+const Curve _kSubmenuFadeOut = FlippedCurve(Interval(.7, 1));
 const double _kMenuMaxWidth = 5.0 * _kMenuWidthStep;
 const double _kMenuMinWidth = 2.0 * _kMenuWidthStep;
 const double _kMenuWidthStep = 56.0;
@@ -262,38 +283,6 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
   /// "点在父菜单区域(只关子面板)"还是"点在真正的空白(整链关闭)"。
   final GlobalKey menuContentKey = GlobalKey();
 
-  /// 本菜单"生长/收回"的原点(相对自身的对齐点),由 build 时写入。
-  Alignment menuPivotAlignment = Alignment.center;
-
-  /// 整链一起关闭时,本菜单要缩向的对齐点(相对自身)。它指向**链底(一级菜单)
-  /// 的 pivot 屏幕点**,因此各层会朝同一个点收回 —— 二级菜单被"带着"一起缩进去,
-  /// 整组就是一级菜单的那一下动画。为 null 时(单独开/关本层)用 [menuPivotAlignment]。
-  Alignment? chainCloseAlignment;
-
-  _MenuChainClose? chainClose;
-  VoidCallback? freezeForChainClose;
-  Rect? Function()? get sourceAnchorRectOf =>
-      belowChainRoute?.sourceAnchorRectOf;
-
-  Duration get remainingCloseDuration => Duration(
-    microseconds:
-        (reverseTransitionDuration.inMicroseconds * (controller?.value ?? 1))
-            .round(),
-  );
-
-  void joinChainClose(_MenuChainClose close, Duration remaining) {
-    if (chainClose != null) return;
-    freezeForChainClose?.call();
-    chainClose = close;
-    // 子菜单尚在展开时也留到整组动画结束，不能按自身较短的剩余距离提前卸载。
-    final motion = controller;
-    if (motion != null && motion.value > 0) {
-      motion.reverseDuration = Duration(
-        microseconds: (remaining.inMicroseconds / motion.value).round(),
-      );
-    }
-  }
-
   /// 本菜单当前的全局矩形(尚未布局时返回 null)。
   Rect? currentMenuRect() {
     final RenderObject? ro = menuContentKey.currentContext?.findRenderObject();
@@ -306,16 +295,6 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
     return null;
   }
 
-  /// 本菜单 pivot 的全局坐标点(由矩形 + [menuPivotAlignment] 推出)。
-  Offset? ownPivotScreenPoint() {
-    final Rect? r = currentMenuRect();
-    if (r == null) return null;
-    return Offset(
-      r.left + (menuPivotAlignment.x + 1) / 2 * r.width,
-      r.top + (menuPivotAlignment.y + 1) / 2 * r.height,
-    );
-  }
-
   @override
   void dispose() {
     _ownPressSession?.dispose();
@@ -323,108 +302,35 @@ mixin _MenuChainRoute<T> on PopupRoute<T> {
   }
 }
 
-/// 整组只有一条退出进度；每层保留关闭瞬间的形态，再一起移向入口。
-class _MenuChainClose {
-  _MenuChainClose({
-    required this.animation,
-    required this.pivot,
-    this.anchorRectOf,
-  }) : startValue = animation.value;
-
-  final Animation<double> animation;
-  final double startValue;
-  final Offset pivot;
-  final Rect? Function()? anchorRectOf;
-
-  double get progress => startValue <= 0
-      ? 0
-      : Curves.easeInOutCubic.transform(
-          (animation.value / startValue).clamp(0.0, 1.0),
-        );
-  double get opacity => (progress / .3).clamp(0.0, 1.0);
-
-  Matrix4 transformAt(Offset localPivot) {
-    final scale = progress;
-    return Matrix4.identity()
-      ..translateByDouble(
-        localPivot.dx * (1 - scale),
-        localPivot.dy * (1 - scale),
-        0,
-        1,
-      )
-      ..scaleByDouble(scale, scale, 1, 1);
-  }
-}
-
-/// 把全局点 [p] 换算成相对矩形 [r] 的 [Alignment](可超出 [-1,1],用于表示框外的点)。
-Alignment _pointToAlignment(Offset p, Rect r) {
-  final double hw = r.width / 2;
-  final double hh = r.height / 2;
-  return Alignment(
-    hw == 0 ? 0 : (p.dx - r.center.dx) / hw,
-    hh == 0 ? 0 : (p.dy - r.center.dy) / hh,
-  );
-}
-
-/// 为整条菜单链设置统一的收起原点:让每一层都缩向**链底(一级菜单)的同一个
-/// pivot 屏幕点**(不执行 pop)。点空白关闭、选中子项关闭都先调它,保证整组同步收回。
-void _prepareChainClose(BuildContext context) {
-  final ModalRoute<dynamic>? top = ModalRoute.of(context);
-  if (top is! _MenuChainRoute) return;
-  // 找到链底(一级菜单),用它的 pivot 作为整组收起的目标点。
-  _MenuChainRoute<dynamic> bottom = top;
-  while (bottom.belowChainRoute != null) {
-    bottom = bottom.belowChainRoute!;
-  }
-  final Offset? pivot = bottom.ownPivotScreenPoint();
-  final group = top != bottom && pivot != null && bottom.animation != null
-      ? _MenuChainClose(
-          animation: bottom.animation!,
-          pivot: pivot,
-          anchorRectOf: bottom.sourceAnchorRectOf,
-        )
-      : null;
-  final remaining = bottom.remainingCloseDuration;
-  for (
-    _MenuChainRoute<dynamic>? cur = top;
-    cur != null;
-    cur = cur.belowChainRoute
-  ) {
-    final Rect? rect = cur.currentMenuRect();
-    cur.chainCloseAlignment = (pivot != null && rect != null)
-        ? _pointToAlignment(pivot, rect)
-        : null;
-    if (group != null) cur.joinChainClose(group, remaining);
-  }
-}
-
-/// 关闭整条菜单链:每层缩向链底统一的 pivot,各层同步收回、二级被"带着"一起缩进去 ——
-/// 整组就是一级菜单的那一下关闭动画,而不是各缩各的。
+/// 关闭整条菜单链:上层子面板立即移除,只由链底菜单播放收回动画;
+/// 单独打开的子面板没有父菜单,按自身动画收回。
 void _dismissMenuChain(BuildContext context) {
-  _prepareChainClose(context);
-  Navigator.of(context).popUntil((route) => route is! _MenuChainRoute);
+  final NavigatorState navigator = Navigator.of(context);
+  final ModalRoute<dynamic>? top = ModalRoute.of(context);
+  if (top is! _MenuChainRoute<dynamic>) return;
+  _MenuChainRoute<dynamic> bottom = top;
+  for (
+    _MenuChainRoute<dynamic>? below = bottom.belowChainRoute;
+    below != null;
+    below = bottom.belowChainRoute
+  ) {
+    if (bottom.isActive) navigator.removeRoute(bottom);
+    bottom = below;
+  }
+  if (bottom.isCurrent) navigator.pop();
 }
 
-/// 菜单的开合动画:从触发它的位置 [alignment] 处缩放生长/收回(配合淡入淡出)。
-/// [alignment] 是触发点相对菜单自身的对齐点(pivot),由各 route 按位置动态算出,
-/// 所以菜单看起来是"从按钮长出来 / 缩回按钮里去",方向随位置变化。
+/// 无入口矩形时的开合动画:从触发位置 [alignment] 缩放生长/收回(配合淡入淡出)。
 class _MenuPopTransition extends StatefulWidget {
   const _MenuPopTransition({
     super.key,
     required this.animation,
     required this.alignment,
     required this.child,
-    this.chainRoute,
   });
 
   final Animation<double> animation;
-
-  /// 本层自身的生长/收回原点(打开、以及单独关闭本层时用)。
   final Alignment alignment;
-
-  /// 所属菜单 route;整链关闭时从中读取统一的 [_MenuChainRoute.chainCloseAlignment]。
-  final _MenuChainRoute<dynamic>? chainRoute;
-
   final Widget child;
 
   @override
@@ -432,39 +338,19 @@ class _MenuPopTransition extends StatefulWidget {
 }
 
 class _MenuPopTransitionState extends State<_MenuPopTransition> {
-  late final CurvedAnimation _scale;
-  late final CurvedAnimation _fade;
-  double? _closingScale;
-  double? _closingOpacity;
-
-  void _freezeForChainClose() {
-    _closingScale = _scale.value;
-    _closingOpacity = _fade.value;
-    setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // 开:减速到位(easeOutCubic);关:用 easeInOutCubic 让整段收回都清晰可见
-    // —— 之前用 easeInCubic 会在前 30% 时间就把 scale 缩到 ~0.1,看着像没有动画。
-    _scale = CurvedAnimation(
-      parent: widget.animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInOutCubic,
-    );
-    // 淡入在前半程完成;淡出全程渐隐,跟着缩放一起可见。
-    _fade = CurvedAnimation(
-      parent: widget.animation,
-      curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-      reverseCurve: Curves.easeOut,
-    );
-    widget.chainRoute?.freezeForChainClose = _freezeForChainClose;
-  }
+  late final CurvedAnimation _scale = CurvedAnimation(
+    parent: widget.animation,
+    curve: _kMenuOpenGrow,
+    reverseCurve: _kMenuCloseGrow,
+  );
+  late final CurvedAnimation _fade = CurvedAnimation(
+    parent: widget.animation,
+    curve: _kMenuFadeIn,
+    reverseCurve: _kMenuFadeOut,
+  );
 
   @override
   void dispose() {
-    widget.chainRoute?.freezeForChainClose = null;
     _scale.dispose();
     _fade.dispose();
     super.dispose();
@@ -473,60 +359,18 @@ class _MenuPopTransitionState extends State<_MenuPopTransition> {
   @override
   Widget build(BuildContext context) {
     if (MediaQuery.disableAnimationsOf(context)) return widget.child;
-    final group = widget.chainRoute?.chainClose;
-    if (group != null) {
-      return IgnorePointer(
-        child: _MenuAnchorGuard(
-          anchorRectOf: group.anchorRectOf,
-          animation: group.animation,
-          child: AnimatedBuilder(
-            animation: group.animation,
-            builder: (context, child) {
-              final box = context.findRenderObject();
-              final pivot = box is RenderBox && box.hasSize
-                  ? box.globalToLocal(group.pivot)
-                  : Offset.zero;
-              return Opacity(
-                opacity: (_closingOpacity ?? 1) * group.opacity,
-                child: Transform(
-                  transform: group.transformAt(pivot),
-                  child: child,
-                ),
-              );
-            },
-            child: Transform.scale(
-              scale: _closingScale ?? 1,
-              alignment: widget.alignment,
-              child: widget.child,
-            ),
-          ),
-        ),
-      );
-    }
     return FadeTransition(
       opacity: _fade,
-      child: AnimatedBuilder(
-        animation: _scale,
-        builder: (context, child) {
-          // 整链关闭(reverse 且设了 chainCloseAlignment)时,缩向链底统一的 pivot,
-          // 让二级菜单被"带着"和一级一起收回;否则用本层自己的原点。
-          final Alignment? chainAlign = widget.chainRoute?.chainCloseAlignment;
-          final bool chainClosing =
-              widget.animation.status == AnimationStatus.reverse &&
-              chainAlign != null;
-          return Transform.scale(
-            scale: _scale.value,
-            alignment: chainClosing ? chainAlign : widget.alignment,
-            child: child,
-          );
-        },
+      child: ScaleTransition(
+        scale: _scale,
+        alignment: widget.alignment,
         child: widget.child,
       ),
     );
   }
 }
 
-/// 可展开的菜单项。点击后推送一个子面板，hero 动画把 header 飞过去；
+/// 可展开的菜单项。点击后该行原地升起成子面板，向下揭开子项；
 /// 子项被点击时关闭整链并把外层菜单的结果设为该子项 value。
 class ExpandablePopupMenuEntry<T> extends PopupMenuEntry<T> {
   const ExpandablePopupMenuEntry({
@@ -576,7 +420,8 @@ class _ExpandablePopupMenuEntryState<T>
   Future<void> _openSubmenu(BuildContext context) async {
     final NavigatorState navigator = Navigator.of(context);
     T? selectedValue;
-    await showAnchoredSubmenu(
+    await _showAnchoredSubmenu(
+      fromMenuRow: true,
       context: context,
       icon: widget.icon,
       label: widget.label,
@@ -592,8 +437,7 @@ class _ExpandablePopupMenuEntryState<T>
             onTap: () => selectedValue = child.value,
           ),
       ],
-      // 选中时同步收起:先 cb() 取到值,再立刻 pop 外层(带回结果),
-      // 与子面板的 pop 同帧发生,两层一起缩向一级 pivot 收回。
+      // 子面板已被立即移除,这里取到值后由外层菜单带着结果正常收回。
       onSelected: (cb) {
         cb();
         if (selectedValue != null && navigator.mounted) {
@@ -607,7 +451,7 @@ class _ExpandablePopupMenuEntryState<T>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    // 不再隐藏 entry,让用户看到 panel 从 entry 位置长大盖住它。
+    // 不隐藏 entry:子面板从这一行原地升起并盖住它,箭头在面板里接着旋转。
     return Material(
       type: MaterialType.transparency,
       child: InkWell(
@@ -617,6 +461,7 @@ class _ExpandablePopupMenuEntryState<T>
           label: widget.label,
           iconColor: widget.iconColor ?? cs.onSurface,
           labelColor: widget.labelColor ?? cs.onSurface,
+          trailing: const _SubmenuChevron(),
         ),
       ),
     );
@@ -659,6 +504,31 @@ class _ExpandableHeader extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 子菜单入口的箭头:收起时指向行尾,展开时随 [turns] 转向上方。
+class _SubmenuChevron extends StatelessWidget {
+  const _SubmenuChevron({this.turns});
+
+  final Animation<double>? turns;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    final Widget icon = Icon(
+      rtl
+          ? Symbols.keyboard_arrow_left_rounded
+          : Symbols.keyboard_arrow_right_rounded,
+      size: 20,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final Animation<double>? progress = turns;
+    if (progress == null) return icon;
+    return RotationTransition(
+      turns: Tween<double>(begin: 0, end: rtl ? .25 : -.25).animate(progress),
+      child: icon,
     );
   }
 }
@@ -735,7 +605,7 @@ class _SubmenuRowTile extends StatelessWidget {
 }
 
 // ============================================================
-// Submenu route：以 PopupRoute 形式打开,带 hero 接收。
+// Submenu route：以 PopupRoute 形式打开,从入口行原地揭开。
 // ============================================================
 
 class _SubmenuRoute extends PopupRoute<void>
@@ -747,8 +617,8 @@ class _SubmenuRoute extends PopupRoute<void>
     required this.labelColor,
     required this.tiles,
     required this.capturedThemes,
-    required this.subtitleCount,
     this.anchor,
+    this.fromMenuRow = false,
     this.reducedMotion = false,
   });
 
@@ -758,10 +628,10 @@ class _SubmenuRoute extends PopupRoute<void>
   final Color? labelColor;
   final List<Widget> tiles;
   final CapturedThemes capturedThemes;
-
-  /// tiles 中带 subtitle 的行数（高度估算用：带副标题的行更高）
-  final int subtitleCount;
   final Rect? anchor;
+
+  /// 由一级菜单里的可展开行打开:面板与该行同宽并原地升起。
+  final bool fromMenuRow;
   final bool reducedMotion;
 
   @override
@@ -773,10 +643,24 @@ class _SubmenuRoute extends PopupRoute<void>
   String get barrierLabel => 'submenu';
   @override
   Duration get transitionDuration =>
-      reducedMotion ? Duration.zero : _kMenuDuration;
+      reducedMotion ? Duration.zero : _kSubmenuDuration;
   @override
   Duration get reverseTransitionDuration =>
-      reducedMotion ? Duration.zero : _kMenuCloseDuration;
+      reducedMotion ? Duration.zero : _kSubmenuCloseDuration;
+
+  late final _MenuMorphMotion _motion = _MenuMorphMotion.submenu(animation!);
+  late final CurvedAnimation _chevronTurns = CurvedAnimation(
+    parent: animation!,
+    curve: _kSubmenuChevronOpen,
+    reverseCurve: _kSubmenuClose,
+  );
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    _chevronTurns.dispose();
+    super.dispose();
+  }
 
   @override
   Widget buildPage(
@@ -792,6 +676,17 @@ class _SubmenuRoute extends PopupRoute<void>
         RoundedSuperellipseBorder(
           borderRadius: context.shapes.borderRadius(20),
         );
+    final Color panelColor = popupMenuTheme.color ?? cs.surfaceContainerLow;
+    final double panelElevation = popupMenuTheme.elevation ?? 3;
+    // 菜单行外层有 4px 横向留白,补齐后面板与整行同宽,头部图文与入口逐像素重合。
+    final Rect? row = anchor == null || !fromMenuRow
+        ? anchor
+        : Rect.fromLTRB(
+            anchor!.left - 4,
+            anchor!.top,
+            anchor!.right + 4,
+            anchor!.bottom,
+          );
 
     final Widget panelContent = Column(
       mainAxisSize: MainAxisSize.min,
@@ -809,11 +704,7 @@ class _SubmenuRoute extends PopupRoute<void>
                 label: label,
                 iconColor: iconColor ?? cs.onSurface,
                 labelColor: labelColor ?? cs.onSurface,
-                trailing: Icon(
-                  Symbols.keyboard_arrow_up_rounded,
-                  size: 20,
-                  color: cs.onSurfaceVariant,
-                ),
+                trailing: _SubmenuChevron(turns: _chevronTurns),
               ),
             ),
           ),
@@ -824,115 +715,127 @@ class _SubmenuRoute extends PopupRoute<void>
       ],
     );
 
+    final Widget panel = Material(
+      shape: shape,
+      color: panelColor,
+      surfaceTintColor: Colors.transparent,
+      elevation: panelElevation,
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(child: panelContent),
+    );
+    final overlay = navigator?.overlay?.context.findRenderObject();
+    final EdgeInsets safeInsets = MediaQuery.paddingOf(context);
+
     return capturedThemes.wrap(
-      // 注意:anchor 用的是相对 overlay(含状态栏)的全局坐标,下面的 Positioned
-      // 必须用同一套坐标系。这里不能套 SafeArea —— 它会把原点下移一个状态栏
-      // 高度,导致移动端子面板整体下移、盖不住 header 那一行(PC 无状态栏故正常)。
-      // 改为手动用安全区 insets 做上下边界保护。
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final Size screen = constraints.biggest;
-          final EdgeInsets safeInsets = MediaQuery.paddingOf(context);
-          const double maxPanelWidth = 340;
-          const double minPanelWidth = 240;
-          const double screenPadding = 12;
-
-          double targetWidth = anchor?.width ?? minPanelWidth;
-          targetWidth = targetWidth.clamp(minPanelWidth, maxPanelWidth);
-          targetWidth = math.min(
-            targetWidth,
-            math.max(0, screen.width - screenPadding * 2),
-          );
-
-          // 估算最终高度：header(48) + 分隔线(1) + 尾部 padding(4)。
-          // 行高按实际构成算：单行 tile = 10+20+10 ≈ 40（bodyMedium 文字
-          // ~20 + 上下 padding 10）,带 subtitle 的 tile ≈ 58。此前统一按
-          // 60/行过估,长列表(如 7 项排序)虚高 ~140px,底界避让把面板
-          // 从 anchor 大幅上抬,子菜单看起来"飘"到离入口很远的位置。
-          final double estimatedHeight =
-              kMinInteractiveDimension +
-              1 +
-              (tiles.length - subtitleCount) * 40.0 +
-              subtitleCount * 58.0 +
-              4;
-
-          double targetLeft = anchor?.left ?? (screen.width - targetWidth) / 2;
-          // panel 顶部比 entry 顶部稍微高一点（向上凸出 8px）,其余部分往下铺。
-          double targetTop = anchor != null
-              ? anchor!.top - 8
-              : screen.height * 0.2;
-          final double topLimit = safeInsets.top + screenPadding;
-          final double bottomLimit =
-              screen.height -
-              math.max(
-                safeInsets.bottom,
-                MediaQuery.viewInsetsOf(context).bottom,
-              ) -
-              screenPadding;
-          if (targetLeft + targetWidth > screen.width - screenPadding) {
-            targetLeft = screen.width - screenPadding - targetWidth;
-          }
-          if (targetLeft < screenPadding) targetLeft = screenPadding;
-          if (targetTop + estimatedHeight > bottomLimit) {
-            targetTop = bottomLimit - estimatedHeight;
-          }
-          if (targetTop < topLimit) targetTop = topLimit;
-          // 子面板缩放原点:贴近触发它的 anchor 顶部,营造"从按钮长出来"的感觉。
-          final double scaleAlignX = anchor != null && targetWidth > 0
-              ? (((anchor!.center.dx - targetLeft) / targetWidth) * 2 - 1)
-                    .clamp(-1.0, 1.0)
-              : 0.0;
-          final Alignment scaleAlign = Alignment(scaleAlignX, -1.0);
-          menuPivotAlignment = scaleAlign;
-
-          return Stack(
-            children: [
-              // 底层 barrier:点在父(一级)菜单区域 → 只关本子面板,回到上一层;
-              // 点在真正的空白 / 垂直滑动 → 整条链一起同步关闭。
-              _SwipeBarrier(
-                onTapAt: (pos) {
-                  final Rect? belowRect = belowChainRoute?.currentMenuRect();
-                  if (belowRect != null && belowRect.contains(pos)) {
-                    Navigator.of(context).maybePop();
-                  } else {
-                    _dismissMenuChain(context);
-                  }
-                },
-                onSwipe: () => _dismissMenuChain(context),
+      // 注意:anchor 用的是相对 overlay(含状态栏)的全局坐标,面板布局必须用同一套
+      // 坐标系。这里不能套 SafeArea —— 它会把原点下移一个状态栏高度,导致移动端
+      // 子面板整体下移、盖不住 header 那一行。改为手动用安全区 insets 做边界保护。
+      Stack(
+        children: [
+          // 底层 barrier:点在父(一级)菜单区域 → 只关本子面板,回到上一层;
+          // 点在真正的空白 / 垂直滑动 → 整条链一起同步关闭。
+          _SwipeBarrier(
+            onTapAt: (pos) {
+              final Rect? belowRect = belowChainRoute?.currentMenuRect();
+              if (belowRect != null && belowRect.contains(pos)) {
+                Navigator.of(context).maybePop();
+              } else {
+                _dismissMenuChain(context);
+              }
+            },
+            onSwipe: () => _dismissMenuChain(context),
+          ),
+          CustomSingleChildLayout(
+            delegate: _SubmenuLayout(
+              anchor: row,
+              minWidth: fromMenuRow && row != null ? row.width : 240,
+              margin: EdgeInsets.fromLTRB(
+                _kMenuScreenPadding,
+                safeInsets.top + 12,
+                _kMenuScreenPadding,
+                math.max(
+                      safeInsets.bottom,
+                      MediaQuery.viewInsetsOf(context).bottom,
+                    ) +
+                    12,
               ),
-              Positioned(
-                left: targetLeft,
-                top: targetTop,
-                width: targetWidth,
-                child: _MenuDragRegion(
-                  route: this,
-                  child: _MenuPopTransition(
-                    key: menuContentKey,
-                    animation: animation,
-                    alignment: scaleAlign,
-                    chainRoute: this,
-                    child: Material(
-                      shape: shape,
-                      color: popupMenuTheme.color ?? cs.surfaceContainerLow,
-                      surfaceTintColor: Colors.transparent,
-                      elevation: popupMenuTheme.elevation ?? 3,
-                      clipBehavior: Clip.antiAlias,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: math.max(0, bottomLimit - targetTop),
-                        ),
-                        child: SingleChildScrollView(child: panelContent),
+            ),
+            child: _MenuDragRegion(
+              route: this,
+              child: row != null && overlay is RenderBox && !reducedMotion
+                  ? _MenuMorphTransition(
+                      key: menuContentKey,
+                      motion: _motion,
+                      anchor: Rect.fromPoints(
+                        overlay.localToGlobal(row.topLeft),
+                        overlay.localToGlobal(row.bottomRight),
                       ),
+                      scaleContent: false,
+                      shape: shape,
+                      shapes: context.shapes,
+                      color: panelColor,
+                      shadowColor: theme.shadowColor,
+                      elevation: panelElevation,
+                      textDirection: Directionality.of(context),
+                      child: IntrinsicWidth(child: panel),
+                    )
+                  : _MenuPopTransition(
+                      key: menuContentKey,
+                      animation: animation,
+                      alignment: Alignment.topCenter,
+                      child: IntrinsicWidth(child: panel),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// 子面板默认与入口行同宽,内容放不下时才加宽;按实测尺寸贴入口行并避让屏幕边缘。
+class _SubmenuLayout extends SingleChildLayoutDelegate {
+  _SubmenuLayout({
+    required this.anchor,
+    required this.minWidth,
+    required this.margin,
+  });
+
+  final Rect? anchor;
+  final double minWidth;
+  final EdgeInsets margin;
+
+  static const double _maxWidth = 340;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final Size area = margin.deflateSize(constraints.biggest);
+    final double maxWidth = math.max(0, math.min(_maxWidth, area.width));
+    return BoxConstraints(
+      minWidth: math.min(minWidth, maxWidth),
+      maxWidth: maxWidth,
+      maxHeight: math.max(0, area.height),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final Rect area = margin.deflateRect(Offset.zero & size);
+    final Rect? row = anchor;
+    // 头部比入口行略高一截,其余部分往下铺。
+    final double left = row?.left ?? (size.width - childSize.width) / 2;
+    final double top = row == null ? size.height * .2 : row.top - _kSubmenuLift;
+    return Offset(
+      left.clamp(area.left, math.max(area.left, area.right - childSize.width)),
+      top.clamp(area.top, math.max(area.top, area.bottom - childSize.height)),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_SubmenuLayout oldDelegate) =>
+      anchor != oldDelegate.anchor ||
+      minWidth != oldDelegate.minWidth ||
+      margin != oldDelegate.margin;
 }
 
 // ------ _MenuItem / _RenderMenuItem ------
@@ -1027,16 +930,15 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
 
   void _onRouteStatus(AnimationStatus status) {
     if (status == AnimationStatus.reverse) {
-      _depth.stop();
+      // 子菜单开着时关闭:子面板已被立即移除,一级菜单先归位再按正常动画收回。
+      _depth.value = 0;
     } else if (status == AnimationStatus.forward) {
       _updateDepth();
     }
   }
 
-  late final CurvedAnimation _morphAnimation = CurvedAnimation(
-    parent: widget.route.animation!,
-    curve: Curves.easeOutCubic,
-    reverseCurve: Curves.easeInOutCubic,
+  late final _MenuMorphMotion _motion = _MenuMorphMotion.menu(
+    widget.route.animation!,
   );
 
   @override
@@ -1044,7 +946,7 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
     widget.route.animation!.removeStatusListener(_onRouteStatus);
     _expansion.removeListener(_updateDepth);
     _depth.dispose();
-    _morphAnimation.dispose();
+    _motion.dispose();
     _expansion.dispose();
     super.dispose();
   }
@@ -1170,7 +1072,6 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
       }
     }
     final Alignment originAlign = Alignment(originX, originY);
-    widget.route.menuPivotAlignment = originAlign;
 
     final surface = Stack(
       children: [
@@ -1195,7 +1096,7 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
               opacity: _depth,
               child: DecoratedBox(
                 decoration: ShapeDecoration(
-                  color: Colors.black.withValues(alpha: 0.32),
+                  color: Colors.black.withValues(alpha: 0.1),
                   shape: RoundedSuperellipseBorder(
                     borderRadius:
                         (widget.route.shape ?? popupMenuTheme.shape)
@@ -1214,12 +1115,12 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
       ],
     );
 
-    // 后退层级作用于整个外壳和内容，退出时保持当前比例，不再先恢复到 100%。
+    // 后退层级作用于整个外壳和内容；退出时先归位，再由形变收回入口。
     Widget withDepth(Widget menu) => _MenuAnchorGuard(
       anchorRectOf: widget.route.anchorRectOf,
-      animation: _morphAnimation,
+      animation: _motion.grow,
       child: ScaleTransition(
-        scale: Tween<double>(begin: 1, end: .94).animate(_depth),
+        scale: Tween<double>(begin: 1, end: .95).animate(_depth),
         alignment: originAlign,
         child: menu,
       ),
@@ -1235,7 +1136,7 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
         child: withDepth(
           _MenuMorphTransition(
             key: widget.route.menuContentKey,
-            animation: _morphAnimation,
+            motion: _motion,
             anchor: Rect.fromPoints(
               overlay.localToGlobal(anchor.topLeft),
               overlay.localToGlobal(anchor.bottomRight),
@@ -1249,7 +1150,6 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
                 theme.shadowColor,
             elevation: widget.route.elevation ?? popupMenuTheme.elevation ?? 8,
             textDirection: Directionality.of(context),
-            chainRoute: widget.route,
             anchorRectOf: widget.route.anchorRectOf,
             child: surface,
           ),
@@ -1263,7 +1163,6 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
           key: widget.route.menuContentKey,
           animation: widget.route.animation!,
           alignment: originAlign,
-          chainRoute: widget.route,
           child: surface,
         ),
       ),
@@ -1420,9 +1319,6 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
   final PopupMenuSurfaceBuilder? surfaceBuilder;
   final Rect? Function()? anchorRectOf;
 
-  @override
-  Rect? Function()? get sourceAnchorRectOf => anchorRectOf;
-
   CurvedAnimation? _animation;
 
   @override
@@ -1430,8 +1326,7 @@ class _SwipeDismissiblePopupRoute<T> extends PopupRoute<T>
     if (popUpAnimationStyle != AnimationStyle.noAnimation) {
       return _animation ??= CurvedAnimation(
         parent: super.createAnimation(),
-        // 缓动统一交给 _MenuPopTransition,这里保持线性,使外层与子面板的
-        // 关闭节奏完全一致(整链一起关时同步收起)。
+        // 缓动统一交给形变与过渡组件的弹簧曲线,这里保持线性驱动。
         curve: popUpAnimationStyle?.curve ?? Curves.linear,
         reverseCurve: popUpAnimationStyle?.reverseCurve ?? Curves.linear,
       );
@@ -2045,6 +1940,25 @@ Future<void> showAnchoredSubmenu({
   Color? iconColor,
   Color? labelColor,
   void Function(VoidCallback selectedCallback)? onSelected,
+}) => _showAnchoredSubmenu(
+  context: context,
+  icon: icon,
+  label: label,
+  children: children,
+  iconColor: iconColor,
+  labelColor: labelColor,
+  onSelected: onSelected,
+);
+
+Future<void> _showAnchoredSubmenu({
+  required BuildContext context,
+  required IconData icon,
+  required String label,
+  required List<MenuQuickActionSubmenuChild> children,
+  Color? iconColor,
+  Color? labelColor,
+  void Function(VoidCallback selectedCallback)? onSelected,
+  bool fromMenuRow = false,
 }) async {
   final NavigatorState navigator = Navigator.of(context);
   final RenderBox? box = context.findRenderObject() as RenderBox?;
@@ -2071,7 +1985,6 @@ Future<void> showAnchoredSubmenu({
         label: label,
         iconColor: iconColor,
         labelColor: labelColor,
-        subtitleCount: children.where((c) => c.subtitle != null).length,
         tiles: [
           for (final c in children)
             Builder(
@@ -2081,11 +1994,15 @@ Future<void> showAnchoredSubmenu({
                 subtitle: c.subtitle,
                 selected: c.selected,
                 onTap: () {
-                  // 选中也走整组收起:先统一各层缩放原点,再同步 pop 二级、并立刻
-                  // 让调用方 pop 一级,两层在同一帧一起缩向一级 pivot 收回 ——
-                  // 而不是"先关二级、等动画完再关一级"那种顺序关。
-                  _prepareChainClose(ctx);
-                  Navigator.of(ctx).pop();
+                  // 有父菜单时子面板立即移除,由父菜单带着结果正常收回;
+                  // 单独打开的子面板按自身动画收起。
+                  final ModalRoute<dynamic>? route = ModalRoute.of(ctx);
+                  if (route is _MenuChainRoute<dynamic> &&
+                      route.belowChainRoute != null) {
+                    Navigator.of(ctx).removeRoute(route);
+                  } else {
+                    Navigator.of(ctx).pop();
+                  }
                   if (onSelected != null) {
                     onSelected(c.onTap);
                   } else {
@@ -2096,6 +2013,7 @@ Future<void> showAnchoredSubmenu({
             ),
         ],
         anchor: anchor,
+        fromMenuRow: fromMenuRow,
         reducedMotion: MediaQuery.disableAnimationsOf(context),
         capturedThemes: InheritedTheme.capture(
           from: context,

@@ -436,9 +436,8 @@ class _ComposerBlockPickerState extends State<ComposerBlockPicker> {
                           decoration: const InputDecoration(
                             hintText: '搜索块类型…',
                             isDense: true,
-                            border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(vertical: 12),
-                          ),
+                          ).withoutBorder(),
                         ),
                       ),
                       IconButton(

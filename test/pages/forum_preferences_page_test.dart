@@ -1,3 +1,5 @@
+import 'package:common_ui/common_ui.dart';
+
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -13,6 +15,7 @@ import '../helpers/preview_fonts.dart';
 import 'package:fluxdo/widgets/settings/settings_group_page.dart';
 import 'package:fluxdo/widgets/markdown_editor/emoji_picker.dart';
 import 'package:fluxdo/models/emoji.dart';
+import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/providers/emoji_provider.dart';
 import 'package:fluxdo/pages/forum_preferences/status_dialog.dart';
 import 'package:fluxdo/utils/time_utils.dart';
@@ -25,6 +28,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/pages/forum_preferences/preference_controls.dart';
 import 'package:fluxdo/widgets/common/cached_image.dart';
+import 'package:fluxdo/widgets/common/tag_selection_sheet.dart';
+import 'package:fluxdo/widgets/common/topic_badges.dart';
+import 'package:fluxdo/widgets/common/flair_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +38,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/forum_preferences/forum_preferences_page.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -49,7 +56,10 @@ void main() {
           ) as List;
           for (final entry in manifest) {
             final family = entry['family'] as String;
-            if (!family.contains('Material')) continue;
+            if (!family.contains('Material') &&
+                !family.contains('FontAwesome')) {
+              continue;
+            }
             final loader = FontLoader(family);
             for (final font in entry['fonts'] as List) {
               loader.addFont(rootBundle.load(font['asset'] as String));
@@ -117,6 +127,19 @@ void main() {
       final user = <String, dynamic>{
         'id': 1,
         'username': 'tester',
+        'system_avatar_template': backgroundUrl,
+        'flair_group_id': 11,
+        'groups': [
+          {'id': 11, 'name': 'g-s-acgn', 'flair_url': backgroundUrl},
+          {
+            'id': 12,
+            'name': 'g-star',
+            'flair_url': 'star',
+            'flair_bg_color': '336699',
+            'flair_color': 'ffffff',
+          },
+          {'id': 13, 'name': 'empty-flair', 'flair_url': ''},
+        ],
         'can_edit': true,
         'can_change_bio': true,
         'can_change_location': true,
@@ -129,30 +152,41 @@ void main() {
         'location': '原位置',
         'website': '',
         'date_of_birth': '2000-02-28',
+        'can_change_tracking_preferences': true,
+        'muted_tags': [
+          {'id': 1, 'name': '静音标签', 'slug': 'muted'},
+        ],
         'can_mute_users': true,
         'muted_usernames': ['existing'],
         'status': {
           'emoji': 'coffee',
           'description': '原状态',
-          'ends_at': '2027-01-01T09:00:00Z',
+          'ends_at': '2027-01-01T09:00:00.000Z',
         },
         'user_option': {'hide_profile': false, 'future_option': 8},
       };
       await tester.runAsync(
         () => PreloadedDataService().hydrateFromHtml(
           '<meta id="data-discourse-setup"><script id="data-preloaded" type="application/json">${jsonEncode({
-            'currentUser': {'id': 1, 'username': 'tester'},
-            'siteSettings': {'enable_user_status': true},
+            'currentUser': {'id': 1, 'username': 'tester', 'status': user['status']},
+            'siteSettings': {'enable_user_status': true, 'tagging_enabled': true},
             'site': {'categories': []},
           })}</script>',
         ),
       );
       var failSave = true;
+      var profileReads = 0;
       final payloads = <Map<String, dynamic>>[];
       final service = DiscourseService();
       final mock = InterceptorsWrapper(
         onRequest: (options, handler) {
+          if (options.method == 'GET' && options.path == '/u/tester.json') {
+            profileReads++;
+          }
           Object data = {'user': user};
+          if (options.path == '/tags/filter/search') {
+            data = {'results': []};
+          }
           if (options.path == '/u/search/users') {
             data = {
               'users': [
@@ -162,6 +196,25 @@ void main() {
           }
           if (options.path.endsWith('/emails.json')) {
             data = {'email': 'tester@example.com'};
+          }
+          if (options.path == '/user-status.json') {
+            expect(options.method, anyOf('PUT', 'DELETE'));
+            expect(options.extra['noRecovery'], true);
+            final status = options.method == 'DELETE' ? null : options.data;
+            payloads.add({'status': status});
+            // 模拟状态已保存，但资料读取仍返回旧快照。
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                data: failSave
+                    ? {'success': false, 'error': '测试保存失败'}
+                    : {'success': true},
+              ),
+            );
+            return;
+          }
+          if (options.path.endsWith('/preferences/avatar/pick') && !failSave) {
+            user['avatar_template'] = backgroundUrl;
           }
           if (options.method == 'PUT') {
             payloads.add(Map<String, dynamic>.from(options.data as Map));
@@ -445,10 +498,81 @@ void main() {
         );
         await tester.pumpAndSettle();
       }
+      picker.error = null;
+      picker.path = File('assets/images/icon_modern_preview.png').absolute.path;
+      final avatarChange = find.widgetWithText(OutlinedButton, '更换图片');
+      await tester.ensureVisible(avatarChange);
+      await tester.runAsync(
+        () => precacheImage(
+          FileImage(File(picker.path!)),
+          tester.element(avatarChange),
+        ),
+      );
+      final beforeAvatar = payloads.length;
+      await tester.tap(avatarChange);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+      expect(payloads.length, beforeAvatar);
+      expect(find.byType(LoadingSpinner), findsNothing);
+      picker.path = null;
+      failSave = false;
+      await tester.tap(find.widgetWithText(TextButton, '重置'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'upload_id': 0, 'type': 'system'});
+      final session = ProviderScope.containerOf(
+        tester.element(find.byType(ForumPreferencesPage)),
+      );
+      final current = session.read(currentUserProvider).value!;
+      expect(current.avatarTemplate, backgroundUrl);
+      expect(
+        PreloadedDataService().currentUserSync!['avatar_template'],
+        backgroundUrl,
+      );
+      final flairRow = find.widgetWithText(ListTile, '头像标识群组');
+      await tester.ensureVisible(flairRow);
+      await tester.pumpAndSettle();
+      await _capture(tester, captureDir, 'preferences-flair-$width');
+      await tester.tap(flairRow);
+      await tester.pumpAndSettle();
+      expect(find.text('empty-flair'), findsNothing);
+      final iconChoice = find.widgetWithText(ListTile, 'g-star');
+      final badge = tester.widget<FlairBadge>(
+        find.descendant(of: iconChoice, matching: find.byType(FlairBadge)),
+      );
+      expect(badge.flairUrl, 'star');
+      expect(badge.flairBgColor, '336699');
+      expect(badge.flairColor, 'ffffff');
+      await _capture(tester, captureDir, 'preferences-flair-options-$width');
+      await tester.tap(iconChoice);
+      await tester.pumpAndSettle();
+      final preview = tester.widget<AvatarWithFlair>(
+        find.descendant(of: flairRow, matching: find.byType(AvatarWithFlair)),
+      );
+      expect(preview.flairUrl, 'star');
+      failSave = true;
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'flair_group_id': 12});
+      expect(find.text('g-star'), findsOneWidget);
+      failSave = false;
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(session.read(currentUserProvider).value!.flairUrl, 'star');
+      await tester.tap(flairRow);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, '无'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'flair_group_id': ''});
+      expect(session.read(currentUserProvider).value!.flairUrl, isNull);
       final statusRow = find.widgetWithText(ListTile, '用户状态');
       await tester.ensureVisible(statusRow);
       await tester.pumpAndSettle();
       await _capture(tester, captureDir, 'preferences-account-$width');
+      final readsBeforeStatus = profileReads;
       await tester.tap(statusRow);
       await tester.pumpAndSettle();
       expect(find.byType(StatusDialog), findsOneWidget);
@@ -482,12 +606,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('已选择表情'), findsOneWidget);
+      expect(find.text('已选择表情'), findsNWidgets(2));
       expect(payloads.last, {
         'status': {
           'emoji': 'smile',
           'description': '已选择表情',
-          'ends_at': '2027-01-01T09:00:00Z',
+          'ends_at': '2027-01-01T09:00:00.000Z',
         },
       });
       failSave = false;
@@ -506,9 +630,32 @@ void main() {
         'status': {'emoji': 'smile', 'description': '已选择表情', 'ends_at': null},
       });
       expect(find.byType(StatusDialog), findsNothing);
+      expect(profileReads, readsBeforeStatus);
+      expect(
+        find.descendant(of: statusRow, matching: find.text('已选择表情')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
+      await session.read(currentUserProvider.notifier).updateIdentity(
+        'tester',
+        status: UserStatus(description: '外部修改', emoji: 'coffee'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: statusRow, matching: find.text('外部修改')),
+        findsOneWidget,
+      );
       await tester.tap(statusRow);
       await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(
+          find.descendant(
+            of: find.byType(StatusDialog),
+            matching: find.byType(TextField),
+          ),
+        ).controller!.text,
+        '外部修改',
+      );
       await tester.tap(find.widgetWithText(TextButton, '移除'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'status': null});
@@ -562,6 +709,44 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '保存'));
       await tester.pumpAndSettle();
       expect(payloads.last, {'muted_usernames': 'existing,alice'});
+      if (width < 860) {
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+      }
+      final tracking = find.byKey(
+        const ValueKey(ForumPreferenceSection.tracking),
+      );
+      await tester.ensureVisible(tracking);
+      await tester.tap(tracking);
+      await tester.pumpAndSettle();
+      final mutedTags = find.widgetWithText(ListTile, '静音的标签');
+      await tester.scrollUntilVisible(
+        mutedTags,
+        300,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await Scrollable.ensureVisible(tester.element(mutedTags), alignment: 0.5);
+      await tester.pumpAndSettle();
+      expect(find.text('静音标签'), findsOneWidget);
+      await tester.tap(mutedTags);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AppSheetScaffold), findsOneWidget);
+      expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+      expect(
+        tester
+            .widget<TagSelectionSheet>(find.byType(TagSelectionSheet))
+            .selectedTags,
+        ['静音标签'],
+      );
+      await tester.tap(find.widgetWithText(RemovableTagBadge, '静音标签'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '确定'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(payloads.last, {'muted_tags': ''});
+
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -586,6 +771,7 @@ Future<void> _capture(WidgetTester tester, String dir, String name) async {
 class _ImagePicker extends FilePicker {
   int calls = 0;
   Object? error;
+  String? path;
 
   @override
   Future<FilePickerResult?> pickFiles({
@@ -605,6 +791,10 @@ class _ImagePicker extends FilePicker {
     calls++;
     expect(type, FileType.image);
     if (error != null) throw error!;
-    return null;
+    return path == null
+        ? null
+        : FilePickerResult([
+            PlatformFile(name: 'avatar.png', size: 0, path: path),
+          ]);
   }
 }

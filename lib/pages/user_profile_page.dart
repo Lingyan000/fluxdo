@@ -26,6 +26,7 @@ import '../utils/category_navigation.dart';
 import '../services/app_error_handler.dart';
 import '../utils/share_utils.dart';
 import '../providers/preferences_provider.dart';
+import '../providers/message_bus/session_channel_providers.dart';
 import '../providers/selected_topic_provider.dart';
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
@@ -106,14 +107,16 @@ class UserProfilePage extends ConsumerStatefulWidget {
 }
 
 class _UserProfilePageState extends ConsumerState<UserProfilePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
   final ScrollController _scrollController = ScrollController();
-  final ValueNotifier<bool> _showPinnedAction = ValueNotifier(false);
+  late final AnimationController _pinnedActionProgress;
+  bool _actionsPinned = false;
+  double? _pendingPinnedActionProgress;
   final ValueNotifier<double> _pullExtent = ValueNotifier(0);
+  final Map<String, ({Future<void> future, bool refresh})> _profileRequests = {};
   User? _user;
   UserSummary? _summary;
-  bool _summaryLoading = false;
   Object? _summaryError;
   StackTrace? _summaryErrorStack;
   List<badge_model.UserBadge>? _badges;
@@ -308,6 +311,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   @override
   void initState() {
     super.initState();
+    _pinnedActionProgress = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
     _shortcutScopeBinding = ShortcutScopeBinding(
       ref: ref,
       scope: widget.embeddedMode ? ShortcutScope.detail : ShortcutScope.context,
@@ -327,7 +334,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     _standaloneEsc?.dispose();
     _tabController.dispose();
     _scrollController.dispose();
-    _showPinnedAction.dispose();
+    _pinnedActionProgress.dispose();
     _pullExtent.dispose();
     super.dispose();
   }
@@ -347,8 +354,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  bool _canSeeActivity(String filter) {
+    if (_summary?.canSeeUserActions == false) return false;
+    if (filter != '${UserActionType.wasLiked}') return true;
+    final viewer = ref.read(currentUserProvider).value;
+    return viewer != null && (viewer.id == _user?.id || viewer.admin);
+  }
+
   void _loadActivity({bool refresh = false}) {
-    if (_summary?.canSeeUserActions == false) return;
+    if (!_canSeeActivity(_activityFilter)) return;
     switch (_activityFilter) {
       case 'reactions':
         if (!_reactionsLoading &&
@@ -388,6 +402,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   void _showActivity(String filter) {
+    if (!_canSeeActivity(filter)) return;
     setState(() => _activityFilter = filter);
     _activeTabIndex = _tabFilters.indexOf('activity');
     _tabController.animateTo(_activeTabIndex);
@@ -432,11 +447,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadSummary({bool forceRefresh = false}) async {
-    if (_summaryLoading || _user?.profileHidden == true) return;
+  Future<void> _loadSummary({bool forceRefresh = false}) => _runProfileRequest(
+    'summary',
+    refresh: forceRefresh,
+    load: () => _fetchSummary(forceRefresh: forceRefresh),
+  );
+
+  Future<void> _fetchSummary({bool forceRefresh = false}) async {
+    if (_user?.profileHidden == true) return;
     final username = _username;
     setState(() {
-      _summaryLoading = true;
       _summaryError = null;
       _summaryErrorStack = null;
     });
@@ -458,15 +478,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           _summaryErrorStack = stack;
         });
       }
-    } finally {
-      if (mounted && _username == username) {
-        setState(() => _summaryLoading = false);
-      }
     }
   }
 
-  Future<void> _loadBadges() async {
-    if (_badgesLoading || _user?.profileHidden == true) return;
+  Future<void> _loadBadges() =>
+      _runProfileRequest('badges', refresh: true, load: () => _fetchBadges());
+
+  Future<void> _fetchBadges() async {
+    if (_user?.profileHidden == true) return;
     final username = _username;
     setState(() {
       _badgesLoading = true;
@@ -518,14 +537,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       InteractionPageRoute(
         builder: (_) => ForumPreferencesPage(
           username: _username,
-          initialSection: editProfile ? ForumPreferenceSection.profile : null,
+          initialSection: editProfile ? ForumPreferenceSection.account : null,
         ),
       ),
     );
     if (changed != null && mounted) {
       _renamedUsername = changed;
-      ref.invalidate(currentUserProvider);
-      await _loadUser();
+      await ref
+          .read(currentUserProvider.notifier)
+          .refreshSilently(force: true, preserveStatus: true);
+      if (mounted) await _loadUser();
     }
   }
 
@@ -892,11 +913,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  Future<void> _loadActions(String filter, {bool loadMore = false}) async {
-    // 如果已有数据且正在加载，跳过（防止重复加载更多）
-    if (_loadingCache[filter] == true && _actionsCache.containsKey(filter)) {
-      return;
-    }
+  Future<void> _loadActions(String filter, {bool loadMore = false}) =>
+      _runProfileRequest(
+        'actions/$filter',
+        refresh: !loadMore,
+        load: () => _fetchActions(filter, loadMore: loadMore),
+      );
+
+  Future<void> _fetchActions(String filter, {bool loadMore = false}) async {
+    if (!_canSeeActivity(filter)) return;
 
     if (!loadMore) {
       _actionLoadMoreCoordinator(filter).resetCooldown();
@@ -957,9 +982,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadReactions({bool loadMore = false}) async {
-    if (_reactionsLoading) return;
+  Future<void> _loadReactions({bool loadMore = false}) => _runProfileRequest(
+    'reactions',
+    refresh: !loadMore,
+    load: () => _fetchReactions(loadMore: loadMore),
+  );
 
+  Future<void> _fetchReactions({bool loadMore = false}) async {
     if (!loadMore) {
       _reactionsLoadMoreCoordinator.resetCooldown();
     }
@@ -1018,9 +1047,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadBoosts({bool loadMore = false}) async {
-    if (_boostsLoading) return;
+  Future<void> _loadBoosts({bool loadMore = false}) => _runProfileRequest(
+    'boosts',
+    refresh: !loadMore,
+    load: () => _fetchBoosts(loadMore: loadMore),
+  );
 
+  Future<void> _fetchBoosts({bool loadMore = false}) async {
     if (!loadMore) {
       _boostsLoadMoreCoordinator.resetCooldown();
     }
@@ -1079,9 +1112,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadVotes({bool loadMore = false}) async {
-    if (_votesLoading) return;
+  Future<void> _loadVotes({bool loadMore = false}) => _runProfileRequest(
+    'votes',
+    refresh: !loadMore,
+    load: () => _fetchVotes(loadMore: loadMore),
+  );
 
+  Future<void> _fetchVotes({bool loadMore = false}) async {
     if (!loadMore) {
       _votesLoadMoreCoordinator.resetCooldown();
     }
@@ -1129,9 +1166,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
-  Future<void> _loadSolved({bool loadMore = false}) async {
-    if (_solvedLoading) return;
+  Future<void> _loadSolved({bool loadMore = false}) => _runProfileRequest(
+    'solved',
+    refresh: !loadMore,
+    load: () => _fetchSolved(loadMore: loadMore),
+  );
 
+  Future<void> _fetchSolved({bool loadMore = false}) async {
     if (!loadMore) {
       _solvedLoadMoreCoordinator.resetCooldown();
     }
@@ -1205,6 +1246,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final currentUser = ref.watch(currentUserProvider).value;
+    if (_user != null && _user!.id == currentUser?.id) {
+      _user = _user!.copyWith(identity: currentUser);
+    }
 
     if (_isLoading) {
       return UserProfileSkeleton(
@@ -1288,6 +1332,30 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }).toList();
   }
 
+  void _updatePinnedActionProgress(double progress) {
+    if (_pendingPinnedActionProgress != null) {
+      _pendingPinnedActionProgress = progress;
+      return;
+    }
+    _pendingPinnedActionProgress = progress;
+    // 嵌套滚动一帧可多次布局，只发布最后一次布局的结果。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final latestProgress = _pendingPinnedActionProgress!;
+      _pendingPinnedActionProgress = null;
+      if (!mounted) return;
+      // 阈值两侧保留少量回差，慢拖停在边界时不会反复切换。
+      final pinned = latestProgress >= (_actionsPinned ? 0.4 : 0.6);
+      if (pinned == _actionsPinned) return;
+      _actionsPinned = pinned;
+      // 快速越过边界也播放完整过渡，反向时从当前画面接续。
+      _pinnedActionProgress.animateTo(
+        pinned ? 1 : 0,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
   Widget _buildProfileToolbar(
     User? currentUser,
     double titleOpacity,
@@ -1320,14 +1388,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
     final iconOnly = actionWidth > width - 112;
     if (iconOnly) actionWidth = 48;
-    return ValueListenableBuilder<bool>(
-      valueListenable: _showPinnedAction,
-      builder: (context, showAction, _) {
+    return ValueListenableBuilder<double>(
+      valueListenable: _pinnedActionProgress,
+      builder: (context, progress, _) {
         final canPin = own ? _user!.canEdit : _user!.canFollow == true;
+        final actionProgress = canPin ? progress : 0.0;
+        final searchOpacity = 1 - actionProgress;
+        final pinnedOpacity = actionProgress;
         final actions = _buildHeaderActions(
           own,
           shareCollapsed: shareCollapsed,
-          actionsCollapsed: showAction,
+          actionsCollapsed: _actionsPinned,
         );
         return AppBar(
           titleSpacing: 4,
@@ -1369,34 +1440,65 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               : null,
           actions: [
             SizedBox(
-              width: actionWidth,
-              child: AnimatedSwitcher(
-                duration: MediaQuery.disableAnimationsOf(context)
-                    ? Duration.zero
-                    : const Duration(milliseconds: 180),
-                child: showAction && canPin
-                    ? own
-                          ? IconButton(
-                              key: const ValueKey('profile-pinned-edit'),
-                              tooltip: context.l10n.profile_editProfile,
-                              onPressed: () =>
-                                  _openPreferences(editProfile: true),
-                              icon: const Icon(Symbols.edit_rounded),
-                            )
-                          : Padding(
-                              key: const ValueKey('profile-pinned-follow'),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: _buildFollowButton(
-                                compact: true,
-                                iconOnly: iconOnly,
-                              ),
-                            )
-                    : actions.first,
+              width: actionWidth + 48,
+              height: kToolbarHeight,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PositionedDirectional(
+                    start: (actionWidth - 48) * (1 - actionProgress),
+                    width: 48,
+                    child: IgnorePointer(
+                      ignoring: canPin && _actionsPinned,
+                      child: Opacity(
+                        key: const ValueKey('profile-toolbar-search-opacity'),
+                        opacity: searchOpacity,
+                        child: Center(child: actions.first),
+                      ),
+                    ),
+                  ),
+                  if (canPin)
+                    PositionedDirectional(
+                      start: 48,
+                      width: actionWidth,
+                      child: IgnorePointer(
+                        ignoring: !_actionsPinned,
+                        child: Opacity(
+                          key: const ValueKey('profile-toolbar-action-opacity'),
+                          opacity: pinnedOpacity,
+                          child: Center(
+                            child: own
+                                ? IconButton(
+                                    key: const ValueKey('profile-pinned-edit'),
+                                    tooltip: context.l10n.profile_editProfile,
+                                    onPressed: () =>
+                                        _openPreferences(editProfile: true),
+                                    icon: const Icon(Symbols.edit_rounded),
+                                  )
+                                : Padding(
+                                    key: const ValueKey(
+                                      'profile-pinned-follow',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: _buildFollowButton(
+                                      compact: true,
+                                      iconOnly: iconOnly,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  PositionedDirectional(
+                    start: actionWidth * (1 - actionProgress),
+                    width: 48,
+                    child: Center(child: actions.last),
+                  ),
+                ],
               ),
             ),
-            actions.last,
             const SizedBox(width: 4),
           ],
         );
@@ -1404,17 +1506,51 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
+  /// 重复进入同一列表时共享请求，刷新遇到分页请求则排队重载首页。
+  Future<void> _runProfileRequest(
+    String section, {
+    required bool refresh,
+    required Future<void> Function() load,
+  }) {
+    final username = _username;
+    final key = '$username/$section';
+    final active = _profileRequests[key];
+    if (active != null) {
+      if (refresh && !active.refresh) {
+        return active.future.then((_) async {
+          if (!mounted || _username != username) return;
+          await _runProfileRequest(section, refresh: true, load: load);
+        });
+      }
+      return active.future;
+    }
+    late final Future<void> request;
+    request = Future<void>.sync(load).whenComplete(() {
+      if (identical(_profileRequests[key]?.future, request)) {
+        _profileRequests.remove(key);
+      }
+    });
+    _profileRequests[key] = (future: request, refresh: refresh);
+    return request;
+  }
+
   Future<void> _refreshProfile() async {
+    final username = _username;
+    final section = _tabFilters[_tabController.index];
+    final filter = _activityFilter;
     await _loadUser(refresh: true);
-    if (!mounted || _user?.profileHidden == true) return;
-    switch (_tabFilters[_tabController.index]) {
+    if (!mounted || username != _username || _user?.profileHidden == true) {
+      return;
+    }
+    switch (section) {
       case 'activity':
-        await switch (_activityFilter) {
+        if (!_canSeeActivity(filter)) return;
+        await switch (filter) {
           'reactions' => _loadReactions(),
           'boosts' => _loadBoosts(),
           'votes' => _loadVotes(),
           'solved' => _loadSolved(),
-          _ => _loadActions(_activityFilter),
+          _ => _loadActions(filter),
         };
       case 'badges':
         await _loadBadges();
@@ -1438,13 +1574,51 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         top: false,
         bottom: false,
         child: ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context)
-              .copyWith(scrollbars: false, overscroll: false),
+          behavior: ScrollConfiguration.of(context).copyWith(
+            scrollbars: false,
+            overscroll: false,
+            // 内外列表使用相同物理，避免内层弹性滚动重复衰减下拉进度。
+            physics: const ClampingScrollPhysics(),
+          ),
           child: M3eRefreshIndicator(
-            edgeOffset: pinnedHeaderHeight,
             displacement: 32,
+            triggerDistance: 96,
             triggerMode: RefreshIndicatorTriggerMode.anywhere,
             onPullExtentChanged: (extent) => _pullExtent.value = extent * 2,
+            indicatorBuilder: (context, indicator) => Positioned(
+              top: topInset,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_pullExtent, _scrollController]),
+                  child: indicator,
+                  builder: (context, child) {
+                    final scroll = _scrollController.hasClients
+                        ? _scrollController.offset
+                        : 0.0;
+                    return ClipRect(
+                      child: SizedBox(
+                        key: const ValueKey('profile-refresh-indicator'),
+                        height: math.max(0, _pullExtent.value - scroll),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Positioned(
+                              top: -scroll,
+                              left: 0,
+                              right: 0,
+                              height: _pullExtent.value,
+                              child: Center(child: child),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
             notificationPredicate: (notification) =>
                 notification.metrics.axis == Axis.vertical,
             edgePredicate: (notification) =>
@@ -1491,15 +1665,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 ),
                 SliverLayoutBuilder(
                   builder: (context, constraints) {
-                    final show =
-                        buttons.isNotEmpty &&
-                        constraints.scrollOffset + constraints.overlap >=
-                            actionHeight + 4;
-                    if (_showPinnedAction.value != show) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _showPinnedAction.value = show;
-                      });
-                    }
+                    final progress = buttons.isEmpty
+                        ? 0.0
+                        : ((constraints.scrollOffset +
+                                      constraints.overlap -
+                                      actionHeight +
+                                      12) /
+                                  24)
+                              .clamp(0.0, 1.0);
+                    _updatePinnedActionProgress(progress);
                     final actions = buttons.isEmpty
                         ? const SizedBox.shrink()
                         : SizedBox(
@@ -1732,7 +1906,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildProfileDetails(ThemeData theme, {bool wide = false}) {
-    final user = _user!;
+    final status = ref.watch(userStatusForProvider((userId: _user!.id, initial: _user!.status)));
+    final user = _user!.copyWith(status: status, clearStatus: status == null);
     return UserProfileDetails(
       user: user,
       showUsername: !wide,
@@ -1991,7 +2166,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     '4': context.l10n.userProfile_tabTopics,
     '5': context.l10n.userProfile_tabReplies,
     '1': context.l10n.userProfile_tabLikes,
-    '2': context.l10n.userProfile_statsLikes,
+    if (_canSeeActivity('${UserActionType.wasLiked}'))
+      '${UserActionType.wasLiked}': context.l10n.userProfile_statsLikes,
     'reactions': context.l10n.userProfile_tabReactions,
     'boosts': context.l10n.userProfile_tabBoosts,
     'votes': context.l10n.userProfile_tabVotes,
@@ -2008,7 +2184,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               'activity' => MenuTabItem(
                 label: _activityFilter == 'all'
                     ? context.l10n.userProfile_tabActivity
-                    : _activityFilters[_activityFilter]!,
+                    : _activityFilters[_activityFilter] ??
+                          context.l10n.userProfile_tabActivity,
                 icon: Symbols.article_rounded,
                 selectedValue: _activityFilter,
                 onSelected: _showActivity,
@@ -2279,7 +2456,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildActivityTab() {
-    if (_summary?.canSeeUserActions == false) {
+    if (!_canSeeActivity(_activityFilter)) {
       return AppEmptyState(
         icon: const Icon(Symbols.lock_rounded),
         title: context.l10n.userProfile_activityPrivate,
@@ -2587,7 +2764,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           actionType == UserActionType.newTopic ||
           actionType == UserActionType.reply;
       return UserActionListSkeleton(
-        type: ownPost
+        type: actionType == UserActionType.wasLiked
+            ? UserActivitySkeletonType.receivedLike
+            : filter == 'all' || actionType == UserActionType.reply
+            ? UserActivitySkeletonType.reply
+            : ownPost
             ? UserActivitySkeletonType.post
             : UserActivitySkeletonType.quoted,
       );
@@ -2615,7 +2796,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       },
       child: ListView.builder(
         key: PageStorageKey('user_${_username}_$filter'),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: actions.length + 1,
         itemBuilder: (context, index) {
           if (index == actions.length) {
@@ -2983,7 +3164,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         ),
                       Expanded(
                         child: InkWell(
-                          onTap: summary.canSeeUserActions
+                          onTap: _canSeeActivity(metrics[index].$3)
                               ? () => _showActivity(metrics[index].$3)
                               : null,
                           child: Padding(
@@ -2999,7 +3180,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                                       color: context.emphasis.accent,
                                     ),
                                     const Spacer(),
-                                    if (summary.canSeeUserActions)
+                                    if (_canSeeActivity(metrics[index].$3))
                                       Icon(
                                         Symbols.chevron_right_rounded,
                                         size: 16,
@@ -3496,7 +3677,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: reactions.length + 1,
         itemBuilder: (context, index) {
           if (index == reactions.length) {
@@ -3562,7 +3743,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: boosts.length + 1,
         itemBuilder: (context, index) {
           if (index == boosts.length) {
@@ -3587,7 +3768,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
-    const padding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+    const padding = EdgeInsets.symmetric(vertical: 12);
 
     // 优先检查 loading 状态
     if (isLoading && topics == null) {
@@ -3683,7 +3864,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // 优先检查 loading 状态
     if (isLoading && posts == null) {
-      return const UserActionListSkeleton();
+      return const UserActionListSkeleton(type: UserActivitySkeletonType.reply);
     }
 
     // 空状态
@@ -3720,7 +3901,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return false;
       },
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         itemCount: posts.length + 1,
         itemBuilder: (context, index) {
           if (index == posts.length) {
@@ -3778,6 +3959,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         actionLabel: context.l10n.post_solutionAccepted,
         actionIcon: Symbols.check_circle_rounded,
         accepted: true,
+        bodyFirst: true,
         occurredAt: post.createdAt,
         postNumber: post.postNumber,
         excerpt: post.excerpt,
@@ -3807,7 +3989,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       author: author,
       title: action.title,
       actionLabel: action.actionType == UserActionType.wasLiked
-          ? context.l10n.userProfile_actionLike
+          ? action.postNumber == 1
+                ? context.l10n.userProfile_actionCreatedTopic
+                : context.l10n.common_reply
           : _getActionLabel(action.actionType),
       actionIcon: _getActionIcon(action.actionType),
       actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
@@ -3815,6 +3999,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       postNumber: action.postNumber,
       excerpt: action.excerpt,
       quoteExcerpt: !ownPost,
+      bodyFirst: action.actionType == UserActionType.reply,
       categoryId: action.categoryId,
       categories: ref.watch(categoryMapProvider).value ?? const {},
       onTap: () => _openTopic(

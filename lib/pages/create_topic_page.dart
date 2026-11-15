@@ -1098,10 +1098,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                     ),
                     fontWeight: FontWeight.normal,
                   ),
-                  border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                   isDense: true,
-                ),
+                ).withoutBorder(),
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0,

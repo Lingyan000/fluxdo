@@ -145,8 +145,9 @@ class SiteReadOnlyNotifier extends Notifier<bool> {
   }
 }
 
-final siteReadOnlyProvider =
-    NotifierProvider<SiteReadOnlyNotifier, bool>(SiteReadOnlyNotifier.new);
+final siteReadOnlyProvider = NotifierProvider<SiteReadOnlyNotifier, bool>(
+  SiteReadOnlyNotifier.new,
+);
 
 /// 当前用户的草稿数量（`/user-drafts/:user_id`）
 ///
@@ -198,8 +199,9 @@ class UserDraftCountNotifier extends Notifier<int?> {
   }
 }
 
-final userDraftCountProvider =
-    NotifierProvider<UserDraftCountNotifier, int?>(UserDraftCountNotifier.new);
+final userDraftCountProvider = NotifierProvider<UserDraftCountNotifier, int?>(
+  UserDraftCountNotifier.new,
+);
 
 /// 勿扰模式结束时间（`/do-not-disturb/:user_id`）
 ///
@@ -256,8 +258,9 @@ class DoNotDisturbNotifier extends Notifier<DateTime?> {
   }
 }
 
-final doNotDisturbProvider =
-    NotifierProvider<DoNotDisturbNotifier, DateTime?>(DoNotDisturbNotifier.new);
+final doNotDisturbProvider = NotifierProvider<DoNotDisturbNotifier, DateTime?>(
+  DoNotDisturbNotifier.new,
+);
 
 /// 待审队列计数（`/reviewable_counts/:user_id`）
 class ReviewableCountsState {
@@ -301,8 +304,9 @@ class ReviewableCountsNotifier extends Notifier<ReviewableCountsState> {
       final unseen = data['unseen_reviewable_count'];
       state = ReviewableCountsState(
         reviewableCount: total is int ? total : state.reviewableCount,
-        unseenReviewableCount:
-            unseen is int ? unseen : state.unseenReviewableCount,
+        unseenReviewableCount: unseen is int
+            ? unseen
+            : state.unseenReviewableCount,
       );
       debugPrint(
         '[ReviewableCounts] 待审: ${state.reviewableCount}, '
@@ -326,10 +330,10 @@ class ReviewableCountsNotifier extends Notifier<ReviewableCountsState> {
 
 final reviewableCountsProvider =
     NotifierProvider<ReviewableCountsNotifier, ReviewableCountsState>(
-  ReviewableCountsNotifier.new,
-);
+      ReviewableCountsNotifier.new,
+    );
 
-/// 其他用户的自定义状态（`/user-status`）
+/// 用户自定义状态（`/user-status`），同时更新当前会话和可见用户。
 ///
 /// 这是一个**全站广播**频道（不带 user_id），payload 形如
 /// `{<userId>: {description, emoji, ends_at} | null}`，null 表示该用户清除了状态。
@@ -368,10 +372,27 @@ class UserStatusNotifier extends Notifier<Map<int, UserStatus?>> {
         final userId = int.tryParse(entry.key);
         if (userId == null) continue;
         final value = entry.value;
-        // null 是合法语义：用户清除了状态
-        next[userId] = value is Map<String, dynamic>
-            ? UserStatus.fromJson(value)
-            : null;
+        if (value != null && value is! Map<String, dynamic>) continue;
+        // null 是合法语义：用户清除了状态。
+        final status = value == null
+            ? null
+            : UserStatus.fromJson({
+                ...value as Map<String, dynamic>,
+                'message_bus_last_id': message.messageId,
+              });
+        next[userId] = status;
+        final current = ref.read(currentUserProvider).value;
+        if (current?.id == userId) {
+          unawaited(
+            ref
+                .read(currentUserProvider.notifier)
+                .updateIdentity(
+                  current!.username,
+                  status: status,
+                  clearStatus: status == null,
+                ),
+          );
+        }
       }
 
       state = next.length > _maxTracked
@@ -380,7 +401,12 @@ class UserStatusNotifier extends Notifier<Map<int, UserStatus?>> {
     }
 
     _callback = onUserStatus;
-    messageBus.subscribe(_channel, onUserStatus);
+    messageBus.subscribe(
+      _channel,
+      onUserStatus,
+      lastMessageId:
+          ref.read(currentUserProvider).value?.status?.messageBusLastId ?? -1,
+    );
 
     ref.onDispose(() {
       if (_callback != null) {
@@ -394,8 +420,38 @@ class UserStatusNotifier extends Notifier<Map<int, UserStatus?>> {
 
 final userStatusProvider =
     NotifierProvider<UserStatusNotifier, Map<int, UserStatus?>>(
-  UserStatusNotifier.new,
-);
+      UserStatusNotifier.new,
+    );
+
+/// 对齐网页 UserStatusTracker：显式清除覆盖旧快照，到期后只清除本地显示。
+final userStatusForProvider = Provider.autoDispose
+    .family<UserStatus?, ({int? userId, UserStatus? initial})>((ref, user) {
+      final current = ref.watch(
+        currentUserProvider.select((value) {
+          final current = value.value;
+          return current?.id == user.userId ? current : null;
+        }),
+      );
+      final update = ref.watch(
+        userStatusProvider.select(
+          (statuses) =>
+              (statuses.containsKey(user.userId), statuses[user.userId]),
+        ),
+      );
+      final status = current != null
+          ? current.status
+          : update.$1
+          ? update.$2
+          : user.initial;
+      final endsAt = status?.endsAt;
+      if (endsAt != null) {
+        final remaining = endsAt.difference(DateTime.now());
+        if (remaining <= Duration.zero) return null;
+        final timer = Timer(remaining, ref.invalidateSelf);
+        ref.onDispose(timer.cancel);
+      }
+      return status;
+    });
 
 /// 站点级变更频道：`/categories`、`/client_settings`、`/refresh_client`
 ///
@@ -472,5 +528,6 @@ class SiteChangesNotifier extends Notifier<void> {
   }
 }
 
-final siteChangesProvider =
-    NotifierProvider<SiteChangesNotifier, void>(SiteChangesNotifier.new);
+final siteChangesProvider = NotifierProvider<SiteChangesNotifier, void>(
+  SiteChangesNotifier.new,
+);

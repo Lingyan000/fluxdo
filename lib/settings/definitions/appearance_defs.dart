@@ -1715,9 +1715,8 @@ Future<Color?> _showSeedColorPicker(
                                         ),
                                     decoration: const InputDecoration(
                                       isDense: true,
-                                      border: InputBorder.none,
                                       contentPadding: EdgeInsets.zero,
-                                    ),
+                                    ).withoutBorder(),
                                     onSubmitted: (hex) {
                                       final parsed = int.tryParse(
                                         'FF$hex',

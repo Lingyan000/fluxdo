@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +10,12 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/nested_topic.dart';
 import 'package:fluxdo/models/nested_reading_position.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/models/pending_post.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/pending_posts_section.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/nested_post_list.dart';
 import 'package:fluxdo/providers/nested_reading_provider.dart';
 import 'package:fluxdo/providers/nested_topic_provider.dart';
+import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/widgets/nested/nested_post_card.dart';
@@ -19,6 +24,8 @@ import 'package:fluxdo/widgets/nested/nested_thread_sheet.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/services/preloaded_data_service.dart';
+import 'package:fluxdo/services/discourse_cook_service.dart';
 
 Post _post(int number, {bool long = false}) => Post(
   id: number,
@@ -41,6 +48,11 @@ final _detail = TopicDetail.fromJson({
   'post_stream': {'posts': [], 'stream': []},
 });
 
+class _MessageBusInit extends MessageBusInitNotifier {
+  @override
+  void build() {}
+}
+
 class _Nested extends NestedTopicNotifier {
   _Nested(this.preset) : super(const NestedTopicParams(topicId: 1));
   final NestedTopicState preset;
@@ -56,6 +68,9 @@ class _Nested extends NestedTopicNotifier {
 Future<void> _pump(
   WidgetTester tester, {
   required NestedTopicState state,
+  TopicDetail? detail,
+  void Function(PendingPost)? onWithdraw,
+  void Function(PendingPost)? onWithdrawAndEdit,
   Size size = const Size(375, 812),
   double scale = 1,
   bool dark = false,
@@ -75,6 +90,7 @@ Future<void> _pump(
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
+      messageBusInitProvider.overrideWith(_MessageBusInit.new),
       categoryMapProvider.overrideWith(
         (_) => const AsyncData(<int, Category>{}),
       ),
@@ -124,7 +140,9 @@ Future<void> _pump(
                           .value ??
                       state,
                   params: const NestedTopicParams(topicId: 1),
-                  detail: _detail,
+                  detail: detail ?? _detail,
+                  onWithdrawPendingPost: onWithdraw,
+                  onWithdrawAndEditPendingPost: onWithdrawAndEdit,
                   blockedUsernames: const {},
                   topicId: 1,
                   scrollController: scroll,
@@ -156,6 +174,53 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('嵌套列表末尾展示个人待审回复并透传撤回操作', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.runAsync(() async {
+      await PreloadedDataService().hydrateFromHtml(
+        '<meta id="data-discourse-setup">'
+        '<script id="data-preloaded" type="application/json">${jsonEncode({
+          'currentUser': {'id': 1, 'username': 'tester'},
+          'siteSettings': {'min_post_length': 1, 'max_post_length': 10000},
+          'site': {'categories': [], 'top_tags': []},
+        })}</script>',
+      );
+      await DiscourseCookService().ensureInitialized();
+    });
+    int? withdrawn;
+    int? edited;
+    await _pump(
+      tester,
+      state: const NestedTopicState(roots: [], hasMoreRoots: false),
+      detail: _detail.copyWith(
+        pendingPosts: [const PendingPost(id: 9, raw: '待审核内容', topicId: 1)],
+      ),
+      onWithdraw: (pending) => withdrawn = pending.id,
+      onWithdrawAndEdit: (pending) => edited = pending.id,
+    );
+    expect(find.byType(PendingPostsSection), findsOneWidget);
+    await tester.ensureVisible(find.text('撤回'));
+    await tester.tap(find.text('撤回'));
+    await tester.tap(find.text('撤回并重新编辑'));
+    expect(withdrawn, 9);
+    expect(edited, 9);
+  });
+
+  for (final hasMore in [true, false]) {
+    testWidgets('嵌套列表只在加载到末尾后展示话题提示 hasMore=$hasMore', (tester) async {
+      await _pump(
+        tester,
+        state: NestedTopicState(roots: const [], hasMoreRoots: hasMore),
+        detail: _detail.copyWith(slowModeSeconds: 3600),
+      );
+      expect(
+        find.text('请在此话题的两次发帖之间等待 1 小时'),
+        hasMore ? findsNothing : findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('继续主题弹层按需构建子回复并保持拖拽与阅读上报', (tester) async {
     final node = NestedNode(
       post: _post(2),

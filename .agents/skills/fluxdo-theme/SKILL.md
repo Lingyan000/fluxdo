@@ -20,10 +20,11 @@ description: 新增或调整 FluxDO 主题，处理主题下的颜色、圆角�
 | 分类、标签色 | `ColorUtils.category(hex, theme)`、`ColorUtils.themed(color, theme)` | 自己写 `int.parse` 解析 |
 | 链接 | `colorScheme.primary` | — |
 | 判断组件风格 | `context.themeStyle`（例如 `surfaces == SurfaceStyle.flat`） | 按主题 id 判断 |
+| 无边框输入框（标题、正文、自带容器的搜索栏） | `InputDecoration(...).withoutBorder()`；带底色圆角的容器用 `InputFieldShell` | 只写 `border: InputBorder.none`（主题的 enabledBorder / focusedBorder 会盖过它） |
 
 头像、状态圆点、色点、徽标这类本来就是圆的元素，继续用 `BoxShape.circle`。
-守卫测试 `test/architecture/radius_literal_ratchet_test.dart`、`theme_emphasis_ratchet_test.dart`
-会拦截新增的写死用法。基线用于豁免合理的存量用法，按 AGENTS.md 的约定只降不升。
+守卫测试 `test/architecture/radius_literal_ratchet_test.dart`、`theme_emphasis_ratchet_test.dart`、
+`borderless_input_test.dart` 会拦截新增的写死用法。基线用于豁免合理的存量用法，按 AGENTS.md 的约定只降不升。
 
 ## 页面背景与表面
 
@@ -70,6 +71,8 @@ AppBar、底部导航与侧栏的背景由 `buildAppTheme` 统一处理。AppBar
    - `quote`：`card` / `bar`
    - `texture`：`none` / `paper`
    - `dataColors`：分类色处理，`vivid` / `harmonized` / `muted` / `mono`
+   - `glass`：玻璃在「自动」档位下的质感，`optical`（完整玻璃）/ `frosted`（基础磨砂，
+     平直或印刷感的主题用）。`shadows: false` 同时去掉玻璃外壳的投影
 3. 跑测试：
    ```sh
    fvm flutter test test/theme test/architecture
@@ -92,6 +95,9 @@ AppBar、底部导航与侧栏的背景由 `buildAppTheme` 统一处理。AppBar
   说不清就是重复，不加。
 - 页内容器不用模糊阴影分层，用填充明度差加细线。阴影只留给浮层和悬浮按钮。
 - 不做持续动效、伪立体高光、彩色光斑、整页渐变底。有疑问时做减法。
+- 玻璃的色罩取主题自己的浮层中性色（`GlassRecipe.tintFor`：浅色最亮一级容器，深色
+  `surfaceContainer`），不要给玻璃传强调色或彩色容器。新主题要看效果图第四屏的玻璃
+  胶囊和提示条是否和页面同一色系；测试环境只出基础磨砂，折射效果在应用里看。
 - 实心按钮、开关上的文字色由对比度自动取深或浅：中等明度的强调色会配深色文字。
   定强调色时在效果图里看一眼按钮文字，不合适就调强调色的明度，不要绕过对比度逻辑。
 - 调整已有主题的配色或 `style` 属于用户能察觉的变化，先经维护者确认。
@@ -106,6 +112,9 @@ AppBar、底部导航与侧栏的背景由 `buildAppTheme` 统一处理。AppBar
    `SegmentedCardStyle` 映射（分段卡片）。
 3. 不走组件主题的地方：自绘的 `PaintedTopicCard`、底栏边线 `_StyledBarEdge`
    （[adaptive_scaffold.dart](../../../lib/widgets/layout/adaptive_scaffold.dart)）。
+   影响玻璃的风格由 `AppGlassSettings` 合成进 `GlassSettings`，common_ui 不读 `ThemeStyle`。
+   优先级固定为：关闭玻璃 > 用户明确选择的档位 > 主题，主题只决定「自动」档的取值，
+   不要让主题覆盖用户的明确选择。
 4. 画廊缩略图 `_MiniHomePainter`
    （[appearance_theme_section.dart](../../../lib/settings/definitions/appearance_theme_section.dart)）。
 5. 自定义主题编辑器的「界面风格」分区和四种语言的文案

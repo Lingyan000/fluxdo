@@ -5,6 +5,7 @@ import '../widgets/markdown_editor/composer_chrome.dart';
 import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
 
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -708,10 +709,9 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 ),
                 fontWeight: FontWeight.normal,
               ),
-              border: InputBorder.none,
               contentPadding: EdgeInsets.zero,
               isDense: true,
-            ),
+            ).withoutBorder(),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w600,
               letterSpacing: 0,

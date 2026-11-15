@@ -394,14 +394,19 @@ class _AnimatedBottomNav extends StatelessWidget {
 }
 
 /// 底栏的底与分界：有页面背景时垫背景副本；色块风格靠底栏底色区分，
-/// 描边 / 平铺风格底栏与页面同色，在顶边补一道细线。
-class _StyledBarEdge extends StatelessWidget {
+/// 描边 / 平铺风格底栏与页面同色，在顶边补一道细线。悬浮胶囊浮在内容
+/// 之上，自带玻璃材质与轮廓，整条槽位既不垫底也不画线。
+class _StyledBarEdge extends ConsumerWidget {
   const _StyledBarEdge({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final floating = ref.watch(
+      preferencesProvider.select((p) => p.bottomNavFloating),
+    );
+    if (floating) return child;
     // 有页面背景时底栏透明（见主题），垫一层对齐的背景副本挡住下方内容
     final bar = PageBackgroundScope.isActive(context)
         ? PageBackdrop(child: child)

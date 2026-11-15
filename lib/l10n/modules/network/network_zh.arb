@@ -3,7 +3,7 @@
   "engineStatus_reasonCore": "按浏览器指纹发送",
   "engineStatus_reasonCoreWarmingUp": "正在采集浏览器指纹",
   "engineStatus_reasonFallback": "网络核心不可用，已切换应急路径",
-  "engineStatus_webviewSplit": "主站 API 请求走 WebView，其余请求走{engine}",
+  "engineStatus_webviewSplit": "主站 API、图片及信任等级查询使用 WebView，其余请求使用{engine}",
   "@engineStatus_webviewSplit": {
     "placeholders": {
       "engine": {
@@ -102,9 +102,9 @@
   "network_serverUnavailableRetry": "服务器暂时不可用，请稍后再试",
   "network_unauthorized": "未登录或登录已过期",
   "network_unprocessable": "请求无法处理",
-  "webviewAdapter_disabledDesc": "使用浏览器内核发送请求，可改善登录稳定性",
-  "webviewAdapter_enabledDesc": "主站 API 请求通过浏览器内核发送",
-  "webviewAdapter_hint": "仅主站 API 请求通过 WebView 发送，图片加载和消息推送不受影响",
+  "webviewAdapter_disabledDesc": "使用设备浏览器内核处理主站请求和信任等级查询",
+  "webviewAdapter_enabledDesc": "主站 API、主站图片及信任等级查询通过浏览器发送",
+  "webviewAdapter_hint": "信任等级查询的登录跳转全程使用浏览器。消息推送、其他域名及不支持的请求仍使用网络核心或应急通道。",
   "webviewAdapter_title": "WebView 网络引擎",
   "networkSettings_upload": "文件上传",
   "networkSettings_forceDisableMultipart": "强制关闭分片上传",

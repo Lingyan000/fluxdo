@@ -227,6 +227,15 @@ class _Harness {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  const safeAreaChannel = MethodChannel('com.fluxdo/browser_safe_area');
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(safeAreaChannel, (_) async => true);
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(safeAreaChannel, null);
+  });
   setUpAll(() async {
     final directory = await Directory(
       '.artifacts/browser-experience/test-cookies',
@@ -713,7 +722,120 @@ void main() {
     Rect page(WidgetTester tester, _Harness h) =>
         tester.getRect(find.byKey(h.nativeBoundary));
 
-    tearDown(BrowserSafeAreaPolicy.resetForTest);
+    testWidgets('原生安全区随旋转更新，恢复时重新同步同一个保活实例', (tester) async {
+      const channel = MethodChannel('com.fluxdo/browser_safe_area');
+      final calls = <Map<dynamic, dynamic>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        (call) async {
+          calls.add(call.arguments as Map);
+          return true;
+        },
+      );
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      expect(calls.last, {'keepAliveId': 'browser-test'});
+      send(h, report(cover: true, env: [47, 0, 47, 0]));
+      await tester.pump();
+      final afterAttach = calls.length;
+
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await tester.pumpAndSettle();
+      expect(calls.length, afterAttach); // 几何变化由原生观察器处理，不逐帧跨通道。
+      final keepAliveId = calls.last['keepAliveId'];
+      await tester.tap(find.byTooltip('收起到底部'));
+      await tester.pumpAndSettle();
+      final session = (await h.tabs.take(h.tabs.tabs.single))!;
+      final beforeRestore = calls.length;
+      WebViewPage.restore(h.navigator.currentState!, session);
+      await tester.pumpAndSettle();
+      h.callbacks.onWebViewCreated!(h.platform.controller.wrapped);
+      await tester.pumpAndSettle();
+      expect(calls.length, greaterThan(beforeRestore));
+      expect(calls.last['keepAliveId'], keepAliveId);
+      expect(keepAliveId, h.platform.controller.getViewId());
+      await h.dispose(tester);
+    });
+
+    testWidgets('工具栏已避让时仍检查网页错误的上下 env', (tester) async {
+      final h = _Harness();
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await h.mount(tester);
+      expect(viewport(tester).unsafe, EdgeInsets.zero);
+      final broken = report(cover: true, env: [0, 44, 0, 24]);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? broken : null;
+      send(h, broken);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+      await h.dispose(tester);
+    });
+
+    testWidgets('没有 cover 的网页也检查 env，普通页面留边后的预期为零', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      final plain = report(cover: false);
+      var reads = 0;
+      h.platform.controller.evaluate = (source) {
+        if (source != BrowserSafeAreaProbe.measureSource) return null;
+        reads++;
+        return plain;
+      };
+      send(h, plain);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(reads, 1); // 留边已经承担刘海，不能拿外框的 47px 判定网页失败。
+      expect(page(tester, h).left, 47);
+      await h.dispose(tester);
+    });
+
+    testWidgets('没有 cover 但使用上下 env 的网页也能检出重复安全区', (tester) async {
+      final h = _Harness();
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await h.mount(tester);
+      final plain = report(cover: false, env: [0, 44, 0, 24]);
+      var reads = 0;
+      h.platform.controller.evaluate = (source) {
+        if (source != BrowserSafeAreaProbe.measureSource) return null;
+        reads++;
+        return plain;
+      };
+      send(h, plain);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(reads, 2);
+      expect(viewport(tester).unsafe, EdgeInsets.zero);
+      await h.dispose(tester);
+    });
+
+    testWidgets('全零样本之后网页上报非零 env 会重新检查', (tester) async {
+      final h = _Harness();
+      await h.mount(tester);
+      var measured = report(cover: true);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? measured : null;
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(viewport(tester).edgeToEdge, isTrue);
+      measured = report(cover: true, env: [0, 44, 0, 24]);
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+      await h.dispose(tester);
+    });
 
     testWidgets('普通网页让出刘海，cover 网页铺满，实测 env 一致后保持', (tester) async {
       final h = _Harness();
@@ -736,12 +858,12 @@ void main() {
       expect(page(tester, h).right, landscape.width);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
-      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isTrue);
+      expect(viewport(tester).edgeToEdge, isTrue);
       expect(page(tester, h).left, 0);
       await h.dispose(tester);
     });
 
-    testWidgets('原生 env 连续两次对不上时退回留边，并对后续网页生效', (tester) async {
+    testWidgets('原生 env 连续两次对不上时仅在当前布局退回留边', (tester) async {
       final h = _Harness();
       tester.view.padding = notch;
       await h.mount(tester, size: landscape);
@@ -753,11 +875,11 @@ void main() {
       expect(page(tester, h).left, 0);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
-      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isNull);
+      expect(viewport(tester).edgeToEdge, isTrue);
       expect(page(tester, h).left, 0);
       await tester.pump(const Duration(milliseconds: 800));
       await tester.pump();
-      expect(BrowserSafeAreaPolicy.nativeEnvReliable, isFalse);
+      expect(viewport(tester).edgeToEdge, isFalse);
       expect(page(tester, h).left, 47);
       send(h, report(cover: true, env: [1, 0, 1, 0]));
       await tester.pump();
@@ -780,6 +902,102 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 13));
       expect(edgeSamples(h), sampled);
+      await h.dispose(tester);
+    });
+
+    testWidgets('全屏暂停普通网页探测，退出后刷新原生绑定并重新校验', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      final broken = report(cover: true);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? broken : null;
+      send(h, broken);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      h.callbacks.onEnterFullscreen!(h.platform.controller.wrapped);
+      await tester.pump();
+      final before = h.platform.controller.evaluated
+          .where((source) => source == BrowserSafeAreaProbe.measureSource).length;
+      await tester.pump(const Duration(seconds: 2));
+      expect(viewport(tester).edgeToEdge, isTrue);
+      expect(h.platform.controller.evaluated
+          .where((source) => source == BrowserSafeAreaProbe.measureSource).length, before);
+      h.callbacks.onExitFullscreen!(h.platform.controller.wrapped);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+      expect(h.platform.controller.evaluated, contains(BrowserSafeAreaProbe.reportSource));
+      await h.dispose(tester);
+    });
+
+    testWidgets('全屏切换前尚未完成的探测结果不会污染退出后的布局', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      final pending = Completer<Object?>();
+      var reads = 0;
+      final broken = report(cover: true);
+      h.platform.controller.evaluate = (source) {
+        if (source != BrowserSafeAreaProbe.measureSource) return null;
+        return ++reads == 1 ? pending.future : broken;
+      };
+      send(h, broken);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(reads, 1);
+      h.callbacks.onEnterFullscreen!(h.platform.controller.wrapped);
+      await tester.pump();
+      h.callbacks.onExitFullscreen!(h.platform.controller.wrapped);
+      await tester.pump();
+      pending.complete(broken);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      // 新布局第一次不匹配仍然允许铺满，不能累计旧布局迟到的失败。
+      expect(viewport(tester).edgeToEdge, isTrue);
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+      await h.dispose(tester);
+    });
+
+    testWidgets('布局和文档变化后不沿用之前的失败结论', (tester) async {
+      final h = _Harness();
+      tester.view.padding = notch;
+      await h.mount(tester, size: landscape);
+      var measured = report(cover: true);
+      h.platform.controller.evaluate = (source) =>
+          source == BrowserSafeAreaProbe.measureSource ? measured : null;
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.padding = const FakeViewPadding(top: 44, bottom: 24);
+      await tester.pumpAndSettle();
+      expect(viewport(tester).unsafe, EdgeInsets.zero);
+      expect(viewport(tester).edgeToEdge, isTrue);
+      measured = report(cover: true, env: [0, 44, 0, 24]);
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 800));
+      await tester.pump();
+      expect(viewport(tester).edgeToEdge, isFalse);
+
+      h.start('https://example.com/next');
+      await tester.pump();
+      measured = report(cover: true);
+      send(h, measured);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(viewport(tester).edgeToEdge, isTrue);
       await h.dispose(tester);
     });
 

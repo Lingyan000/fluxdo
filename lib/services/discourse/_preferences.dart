@@ -66,6 +66,15 @@ mixin _ForumPreferencesMixin on _DiscourseServiceBase {
     );
   }
 
+  Future<void> saveUserStatus(Map<String, dynamic>? status) async {
+    await _preferenceRequest(
+      '/user-status.json',
+      method: status == null ? 'DELETE' : 'PUT',
+      data: status,
+    );
+    _activeUserRequests.clear();
+  }
+
   Future<Map<String, dynamic>> getPreferenceEmails(String username) =>
       _preferenceRequest('/u/${Uri.encodeComponent(username)}/emails.json');
 
@@ -115,6 +124,7 @@ mixin _ForumPreferencesMixin on _DiscourseServiceBase {
       method: 'PUT',
       data: {'upload_id': uploadId, 'type': type},
     );
+    _activeUserRequests.remove(username);
   }
 
   Future<void> featureProfileTopic(String username, int? topicId) async {

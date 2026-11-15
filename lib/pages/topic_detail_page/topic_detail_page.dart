@@ -1257,9 +1257,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           autofocus: true,
           decoration: InputDecoration(
             hintText: context.l10n.topicDetail_searchHint,
-            border: InputBorder.none,
             hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-          ),
+          ).withoutBorder(),
           style: theme.textTheme.bodyLarge,
           textInputAction: TextInputAction.search,
           onSubmitted: (query) {
@@ -3130,6 +3129,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         data: (nestedState) => NestedPostList(
           key: ValueKey('nested-$_instanceId-${_nestedReadingStore.sortKey}'),
           nestedState: nestedState,
+          onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
+          onWithdrawAndEditPendingPost:
+              isLoggedIn ? _handleWithdrawAndEditPending : null,
           params: nestedParams,
           session: _nestedReadingSession,
           resumePosition: (_nestedResumePosition?.postNumber ?? 0) > 1

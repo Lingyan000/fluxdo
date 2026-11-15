@@ -2,6 +2,22 @@ import 'package:flutter/material.dart';
 
 import 'ui_shapes.dart';
 
+/// 无边框输入框（标题、正文、自带容器的搜索栏等）。
+///
+/// 只写 `border: InputBorder.none` 挡不住主题：主题配置的
+/// enabledBorder / focusedBorder 优先于输入框自己的 border，描边、下划线
+/// 风格的主题下仍会画出框。这里把各状态的边框一并清掉。
+extension InputDecorationWithoutBorder on InputDecoration {
+  InputDecoration withoutBorder() => copyWith(
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    errorBorder: InputBorder.none,
+    focusedErrorBorder: InputBorder.none,
+    disabledBorder: InputBorder.none,
+  );
+}
+
 /// 自带底色与圆角的输入框外壳（搜索胶囊、面板里的搜索栏等）。
 ///
 /// 主题给输入框配置的边框（含聚焦高亮、出错色）画在外壳的轮廓上，与
