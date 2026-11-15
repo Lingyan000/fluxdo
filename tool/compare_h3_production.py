@@ -102,12 +102,15 @@ def compare(folder):
                 'field_comparison':[], 'error':'missing production H3 requests'}
         (folder/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
         return result
-    checks={'calibrated':True,'three_production_h3_requests':len(requests)>=3,
+    phase_count=len(source['wire_fields'])
+    compared=requests[:phase_count]
+    checks={'calibrated':phase_count>=3,'three_production_h3_requests':len(requests)>=3,
+        'all_sampled_phases_received':phase_count>=3 and len(compared)==phase_count,
         'driver_succeeded':actual.get('driver_success') is True,
         'source_initial_complete':source['flight'].get('complete') is True,
         'actual_initial_complete':actual['initial'].get('complete') is True,
         'same_selected_connection':actual.get('selected_flow_id') is not None
-            and all(r.get('flow_id')==actual['selected_flow_id'] for r in requests[:3]),
+            and all(r.get('flow_id')==actual['selected_flow_id'] for r in compared),
         'source_boundary_complete':complete_boundary(source['boundary'], require_bindings=True),
         'source_warm_boundary_complete':complete_boundary(source['warm_boundary']),
         'no_connection_error':not actual['connection_errors'],
@@ -130,11 +133,12 @@ def compare(folder):
     else:
         checks['tls_raw_evidence_present']=False
     checks['initial_streams']=streams(source['boundary'])==streams(requests[0]['first_request_boundary']['snapshot'])
-    checks['warm_streams']=streams(source['warm_boundary'])==streams(requests[-1]['connection'])
-    checks['warm_control_frames']=controls(source['warm_boundary'])==controls(requests[-1]['connection'])
+    warm=compared[-1] if compared else requests[0]
+    checks['warm_streams']=streams(source['warm_boundary'])==streams(warm['connection'])
+    checks['warm_control_frames']=controls(source['warm_boundary'])==controls(warm['connection'])
     source_names=source['pseudo_order']+source['header_order']
     differences=[]
-    for i,request in enumerate(requests[:3]):
+    for i,request in enumerate(compared):
         boundary=request.get('first_request_boundary', {})
         checks[f'qpack_phase_{i}_frozen_boundary']=(boundary.get('status')=='ready'
             and complete_boundary(boundary.get('snapshot', {}), require_bindings=True))

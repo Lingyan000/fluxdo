@@ -276,6 +276,16 @@ async fn main() -> Result<(), BoxError> {
                 results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
             }
         }
+        if scenario.is_empty() {
+            // 与校准样本一样重复同一路径；结束标记不冒充重复 fetch 的编码阶段。
+            for phase in 1..profile.sample.phases.len() {
+                let response=client.send(Request::builder().uri(format!("{origin}/fluxdo-probe/fetch"))
+                    .header("user-agent",reference.user_agent.as_deref().unwrap()).header("accept","*/*")
+                    .body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                let version=response.version();response.into_body().collect().await?;
+                results.push(serde_json::json!({"scenario":"calibrated_phase","phase":phase,"version":format!("{version:?}")}));
+            }
+        }
         if scenario == "qpack" {
             let cases = [
                 ("warm-0","GET",None,""), ("warm-1","GET",None,""),
