@@ -21,6 +21,9 @@ try:
     result = subprocess.run([os.environ['FLUXDO_MAC_DRIVER_BINARY'], *sys.argv[1:]], timeout=80)
     code = result.returncode
 finally:
-    subprocess.run(['sudo', 'security', 'remove-trusted-cert', '-d', str(ca)], timeout=30, check=True)
-    subprocess.run(['sudo', 'security', 'delete-certificate', '-Z', fingerprint, keychain], timeout=30, check=True)
+    try:
+        subprocess.run(['sudo', 'security', 'remove-trusted-cert', '-d', str(ca)], timeout=30, check=True)
+    finally:
+        # 信任设置删除失败也必须尝试删除本轮证书；失败保留为实验失败，不隐藏。
+        subprocess.run(['sudo', 'security', 'delete-certificate', '-Z', fingerprint, keychain], timeout=30, check=True)
 raise SystemExit(code)
