@@ -35,9 +35,50 @@ await new Promise(r=>setTimeout(r,500));}}finally{
 await fetch('/fluxdo-probe/finished');document.title='fluxdo-probe-done';}})();
 </script>"#;
 
+// 请求流可以早于控制流到达。等待同连接发布首请求边界，避免混入后续
+// 请求产生的 QPACK 指令；Initial 完整也不能替代控制流和字段的完整性。
+fn joint_capture_complete(
+    completed: bool,
+    observations: &[serde_json::Value],
+    flows: &[serde_json::Value],
+) -> bool {
+    let completeness = serde_json::to_value(
+        rama::http::proto::h3::observation::ObservationCompleteness::default(),
+    ).expect("observation completeness serialization");
+    completed && !observations.is_empty() && observations.iter().all(|request| {
+        let Some(id) = request["flow_id"].as_u64() else { return false; };
+        if request["request"]["fields_complete"] != true
+            || !flows.iter().any(|f| f["flow_id"] == id && f["initial"]["complete"] == true)
+        {
+            return false;
+        }
+        let boundary = &request["first_request_boundary"];
+        let connection = &boundary["snapshot"];
+        boundary["status"] == "ready"
+            && connection["settings_received"] == true
+            && connection["connection_error"].is_null()
+            && connection["encoder_bindings"]["complete"] == true
+            && completeness.as_object().unwrap().keys().all(|key| {
+                connection["completeness"][key] == true
+            })
+    })
+}
+
 #[tokio::main(worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--audit-capture") {
+        let path = args.get(2).ok_or("capture path required")?;
+        let capture: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
+        let complete = joint_capture_complete(
+            capture["completed"] == true,
+            capture["h3"].as_array().ok_or("missing H3 observations")?,
+            capture["flows"].as_array().ok_or("missing QUIC flows")?,
+        );
+        println!("{}", json!({"capture":path,"previous_complete":capture["h3_sample_complete"],
+            "joint_capture_complete":complete}));
+        return if complete { Ok(()) } else { Err("incomplete joint capture".into()) };
+    }
     let browser = args.get(1).ok_or("browser executable required")?;
     let native_probe = args.iter().any(|a| a == "--native-probe");
     let close_tcp = args.iter().any(|a| a == "--close-tcp");
@@ -221,6 +262,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     while let Ok(incoming) = requests.accept().await {
                         let (request, response) = incoming.resolve().await?;
                         let observer = request.extensions().get_ref::<H3Observer>().cloned();
+                        let first_request_boundary = if let Some(observer) = &observer {
+                            use rama_http_core::h3::observation::FirstRequestObservation;
+                            match observer.first_request(tokio::time::Instant::now() + Duration::from_secs(2)).await {
+                                FirstRequestObservation::Ready(snapshot) => json!({"status":"ready","snapshot":snapshot}),
+                                FirstRequestObservation::TimedOut(snapshot) => json!({"status":"timed_out","snapshot":snapshot}),
+                                FirstRequestObservation::Closed { snapshot, .. } => json!({"status":"closed","snapshot":snapshot}),
+                            }
+                        } else { serde_json::Value::Null };
                         let fields = request.extensions().get_ref::<H3RequestObservation>()
                             .map(|r| json!({"stream_id":r.stream_id,"fields":r.fields,"fields_complete":r.fields_complete,
                                 "priority":r.priority.as_ref().map(|v| String::from_utf8_lossy(v).into_owned())}));
@@ -243,7 +292,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .await?;
                         observation_sink.lock().push(
                             json!({"flow_id":flow_id,"path":path,"version":format!("{:?}",request.version()),
-                            "connection":observer.map(|o| o.snapshot()),"request":fields}),
+                            "connection":observer.map(|o| o.snapshot()),"request":fields,
+                            "first_request_boundary":first_request_boundary}),
                         );
                         if path == "/fluxdo-probe/finished" { native_done.notify_one(); }
                         if path == "/done" || path == "/fluxdo-probe/done" {
@@ -348,11 +398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         json!({"flow_id":id,"datagrams":packets.len(),"initial":initial.as_ref().ok(),
             "initial_error":initial.err().map(|e| e.to_string())})
     }).collect();
-    let joint_capture_complete = completed && observations.lock().iter().all(|r| {
-        r["flow_id"].as_u64().is_some_and(|id| flow_summaries.iter().any(|f| {
-            f["flow_id"] == id && f["initial"]["complete"] == true
-        }))
-    });
+    let joint_capture_complete = joint_capture_complete(completed, &observations.lock(), &flow_summaries);
     let borrowed: Vec<_> = datagrams.iter().map(Vec::as_slice).collect();
     let flight = capture::first_flight(&borrowed, &BoringTlsProvider);
     let mut initials = Vec::new();
@@ -419,4 +465,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn joint_sample_requires_same_connection_complete_control_and_request_fields() {
+        let mut complete = serde_json::to_value(
+            rama::http::proto::h3::observation::ObservationCompleteness::default(),
+        ).unwrap();
+        for flag in complete.as_object_mut().unwrap().values_mut() { *flag = json!(true); }
+        let last = json!({"flow_id":1,"request":{"fields_complete":true},
+            "first_request_boundary":{"status":"ready","snapshot":{
+                "settings_received":true,"connection_error":null,
+                "encoder_bindings":{"complete":true},"completeness":complete}}});
+        let mut early = last.clone();
+        early["connection"]["settings_received"] = json!(false);
+        early["connection"]["completeness"]["settings"] = json!(false);
+        let flows = vec![json!({"flow_id":1,"initial":{"complete":true}})];
+        assert!(joint_capture_complete(true, &[early.clone(), last.clone()], &flows));
+        assert!(joint_capture_complete(true, &[early.clone()], &flows));
+        let mut pending = last.clone();
+        pending["first_request_boundary"]["status"] = json!("timed_out");
+        assert!(!joint_capture_complete(true, &[pending, last.clone()], &flows));
+        let mut other = last.clone();
+        other["flow_id"] = json!(2);
+        assert!(!joint_capture_complete(true, &[early, other], &flows));
+        let mut truncated = last.clone();
+        truncated["request"]["fields_complete"] = json!(false);
+        assert!(!joint_capture_complete(true, &[truncated, last.clone()], &flows));
+        assert!(!joint_capture_complete(true, &[last.clone()], &[]));
+        assert!(!joint_capture_complete(false, &[last], &flows));
+        assert!(!joint_capture_complete(true, &[], &flows));
+    }
 }

@@ -93,3 +93,14 @@ macOS native/app、iOS 26.2 native/app 四组全部通过，均 h3_sample_comple
 本次没有安装系统 CA，没有强制 QUIC，也没有公网端点。现有回调在这些运行时足以进行回环采样。
 旧实验一直复用 H2，不能据此把无 H3 归咎于系统证书信任。iOS 15.5 单独执行同条件补验。
 生产 H3 模板回放仍未完成，不能因抓到样本就取消浏览器客户端的 H3 隔离。
+
+采样完整性补强
+旧版 h3_sample_complete 仅证明请求的 Initial 关联完整，未强制检查所有 H3 观测完整性。
+实际 iOS 26.2 首请求可早于 SETTINGS；后续实时 QPACK 快照又可能包含首请求之后的指令。
+采集器改为等待同连接原生 first_request 边界（2 秒上限），显式保存 ready/timed_out/closed；
+逐项检查类型定义中的完整性标志、首请求绑定、所有请求字段和 Initial 对应关系。
+不能把最后实时快照当作首请求 QPACK 边界；超时和缺字段均拒绝“完整样本”结论。
+旧证据证明实际 H3 请求可行，但没有保存该冻结边界，不追溯声称满足新模板准入标准。
+本地真实 Chromium 99/110/156 新采样全部满足新标准，未信任证书的负对照仍拒绝 H3；
+缺 Initial、错连接、截断字段、超时边界及空记录的回归通过。
+证据：/workspace/scratch/h3-complete-boundary-20261115/matrix.json。
