@@ -97,23 +97,24 @@ def main():
     app.mkdir()
     info = {'CFBundleExecutable': 'WKProbe', 'CFBundleIdentifier': 'org.fluxdo.fingerprint.probe',
             'CFBundleName': 'WKProbe', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
-            'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '17.0', 'LSRequiresIPhoneOS': True,
+            'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '15.0', 'LSRequiresIPhoneOS': True,
             'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'UIDeviceFamily': [1, 2],
             'UILaunchScreen': {}, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True, 'NSAllowsArbitraryLoadsInWebContent': True}}
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
     sdk = output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'])
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
     run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library', '-sdk', sdk,
-         '-target', arch + '-apple-ios17.0-simulator', source, '-framework', 'UIKit', '-framework', 'WebKit', '-o', app / 'WKProbe'])
+         '-target', arch + '-apple-ios15.0-simulator', source, '-framework', 'UIKit', '-framework', 'WebKit', '-o', app / 'WKProbe'])
     run(['codesign', '--force', '--sign', '-', app])
     driver = Path(__file__).parent / 'ios_driver.py'
     for runtime in runtimes:
         devices = [d for d in simulator_data['devices'].get(runtime['identifier'], []) if d.get('isAvailable') and 'iPhone' in d['name']]
         udid = None
         try:
-            if not devices:
+            compatible = [d for d in runtime.get('supportedDeviceTypes', []) if d.get('productFamily') == 'iPhone']
+            if not devices and not compatible:
                 raise RuntimeError('No compatible iPhone device type')
-            device_type = devices[0]['deviceTypeIdentifier']
+            device_type = devices[0]['deviceTypeIdentifier'] if devices else compatible[0]['identifier']
             udid = output(['xcrun', 'simctl', 'create', 'FluxDO-Fingerprint', device_type, runtime['identifier']])
             run(['xcrun', 'simctl', 'boot', udid])
             run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
