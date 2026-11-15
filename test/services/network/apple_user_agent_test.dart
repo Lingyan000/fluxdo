@@ -10,8 +10,11 @@ void main() {
       'Mobile/', 'Version/26.2 Mobile/'));
     expect(ua, contains('OS 18_7'));
   });
-  test('产品补丁号不进入 iOS Safari UA，拒绝无效版本', () {
-    expect(iosSafariUserAgentVersion('26.0.1'), '26.0');
+  test('真实 Safari 的产品补丁号不能丢弃，拒绝无效版本', () {
+    // 系统 Safari 原始 UA：云端 run 43690750306，iOS 26.0.1。
+    expect(iosSafariUserAgentVersion('26.0.1'), '26.0.1');
+    expect(completeIosUserAgent(frozen, safariProductVersion: '26.0.1'),
+        '$frozen Safari/604.1'.replaceFirst('Mobile/', 'Version/26.0.1 Mobile/'));
     expect(iosSafariUserAgentVersion('100.1'), '100.1');
     expect(iosSafariUserAgentVersion(''), isNull);
     expect(iosSafariUserAgentVersion('26.2 extra'), isNull);

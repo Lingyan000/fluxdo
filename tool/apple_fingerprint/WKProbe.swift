@@ -76,7 +76,7 @@ final class Probe: NSObject, WKNavigationDelegate {
         }
         if let actual = BrowserIdentity.safariVersion(),
            actual.range(of: "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)*$", options: .regularExpression) != nil {
-            version = actual.split(separator: ".").prefix(2).joined(separator: ".")
+            version = actual
         }
         return ua.replacingOccurrences(of: "Mobile/", with: "Version/\(version) Mobile/") + " Safari/604.1"
         #endif
