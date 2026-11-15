@@ -69,7 +69,7 @@ pub fn cache_revision() -> String {
     for byte in include_bytes!("../Cargo.lock") {
         hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
     }
-    format!("4:{hash:016x}")
+    format!("5:{hash:016x}")
 }
 
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
@@ -165,7 +165,7 @@ pub struct FingerprintTemplates {
 
 /// 连接身份只比较稳定的浏览器能力，原始模板仍完整保留供新连接回放。
 /// SNI、ECH 密文、会话票据、key share 公钥和 GREASE 值不代表浏览器升级。
-fn profile_hash(hello: &ClientHello) -> u64 {
+pub(crate) fn profile_hash(hello: &ClientHello) -> u64 {
     let mut extensions: Vec<_> = hello
         .extensions()
         .iter()
@@ -559,7 +559,8 @@ impl FingerprintTemplates {
         let capabilities = template.as_ref().map(|template| {
             let mut cached = self.capability_audit.write();
             if cached.as_ref().is_none_or(|(generation, _)| *generation != template.generation) {
-                *cached = Some((template.generation, browser_tls::capability_audit(&template.hello)));
+                *cached = Some((template.generation, browser_tls::selected_capability_audit(
+                    &template.hello, template.tls_permute_extensions == Some(true))));
             }
             cached.as_ref().unwrap().1.clone()
         });
@@ -603,7 +604,7 @@ pub(crate) fn is_low_entropy_client_hint(name: &str) -> bool {
     )
 }
 
-fn extension_order(hello: &ClientHello) -> Vec<u16> {
+pub(crate) fn extension_order(hello: &ClientHello) -> Vec<u16> {
     hello
         .extensions()
         .iter()
@@ -665,6 +666,12 @@ pub struct MirrorRelay {
     /// 非浏览器连接（如 DoH 模式下经代理的 Dart IO）：只转发，不污染模板
     http_plain: HttpMitmRelay,
     templates: Arc<FingerprintTemplates>,
+}
+
+enum MirrorOutbound<T> {
+    Relayed(T, bool),
+    #[cfg(target_os = "linux")]
+    Native(BoxStream),
 }
 
 impl MirrorRelay {
@@ -736,6 +743,12 @@ impl MirrorRelay {
             debug!("Mirror {host}: non-browser client, not used as template");
         }
 
+        #[cfg(target_os = "linux")]
+        let preserve_native = self.templates.snapshot().is_some_and(|template| {
+            template.is_calibrated()
+                && crate::linux_tls::matches(&template.hello, template.tls_permute_extensions == Some(true))
+        });
+
         // 出站逐个地址重试时，每次把入站句柄交给 relay；出站失败不会动到入站
         let ingress = SharedIngress::new(ingress);
         // 闭包只持有自有数据：借用局部变量会让闭包类型带上生命周期，外层 future 无法证明 Send
@@ -749,6 +762,14 @@ impl MirrorRelay {
                 let hello = hello.clone();
                 let server_host = server_host.clone();
                 async move {
+                    // 已匹配原生后端、无需注入 ECH 时保留浏览器端到端 TLS。
+                    // 恢复握手可以合法省略字段，不应因此切回另一套 TLS。
+                    // 仍经过同一个 DNS/代理出口；证书由浏览器校验，未经认证的
+                    // 窥探握手不写入模板，完整采样仍来自受控探针。
+                    #[cfg(target_os = "linux")]
+                    if preserve_native && ech.is_none() {
+                        return Ok(MirrorOutbound::Native(egress));
+                    }
                     let built =
                         browser_tls::build(&hello, server_host.clone(), ech.as_deref(), None)
                             .map_err(|e| {
@@ -792,7 +813,7 @@ impl MirrorRelay {
                             if browser {
                                 templates.record_hello(&hello);
                             }
-                            Ok((tls_bridge, ech_applied))
+                            Ok(MirrorOutbound::Relayed(tls_bridge, ech_applied))
                         },
                         Ok(Err(error)) => match error.kind() {
                             TlsMitmRelayErrorKind::Handshake {
@@ -825,7 +846,7 @@ impl MirrorRelay {
                 }
             }
         };
-        let (tls_bridge, ech_applied) =
+        let outbound =
             match connector.connect_with_handshake(&host, port, attempt).await {
                 Ok(established) => established,
                 Err(NetError::Io(e)) if e.kind() == io::ErrorKind::ConnectionAborted => {
@@ -834,6 +855,16 @@ impl MirrorRelay {
                 }
                 Err(e) => return Err(NetError::Proxy(format!("Mirror TLS for {host}: {e}"))),
             };
+        let (tls_bridge, ech_applied) = match outbound {
+            MirrorOutbound::Relayed(bridge, ech) => (bridge, ech),
+            #[cfg(target_os = "linux")]
+            MirrorOutbound::Native(mut egress) => {
+                info!("WebView native TLS tunnel for {host}:{port} (ECH injection: false)");
+                let mut ingress = ingress;
+                tokio::io::copy_bidirectional(&mut ingress, &mut egress).await?;
+                return Ok(());
+            }
+        };
         info!("Mirror TLS established for {host}:{port} (ECH: {ech_applied})");
 
         // TLS 建立后 HTTP 层的结束多为客户端主动关闭（预连接、页面离开），只记调试日志。

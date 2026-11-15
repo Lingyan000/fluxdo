@@ -485,6 +485,7 @@ impl Http3Upgrade {
         )
         .await?;
         Ok(Arc::new(Conn {
+            tls_backend: "QUIC",
             id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
             service: established.conn,
             version: Version::HTTP_3,

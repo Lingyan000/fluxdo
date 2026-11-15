@@ -87,6 +87,7 @@ struct Conn {
     resumed: bool,
     ech_applied: bool,
     ech_accepted: bool,
+    tls_backend: &'static str,
     _capacity: Option<OwnedSemaphorePermit>,
 }
 
@@ -796,6 +797,7 @@ impl HttpEgressClient {
             resumed: false,
             ech_applied: false,
             ech_accepted: false,
+            tls_backend: "plaintext",
             _capacity: None,
         }))
     }
@@ -817,8 +819,13 @@ impl HttpEgressClient {
         });
         let exec = self.exec.clone();
         let sessions = self.sessions.clone();
+        #[cfg(target_os = "linux")]
+        let use_native = template.is_some_and(|template| template.is_calibrated())
+            && hello.as_ref().is_some_and(|hello| crate::linux_tls::matches(hello, permute_extensions));
         #[cfg(test)]
         let test_tls = self.test_tls.lock().clone();
+        #[cfg(all(test, target_os = "linux"))]
+        let use_native = use_native && test_tls.is_none();
 
         let attempt = move |stream: BoxStream, ech: Option<Vec<u8>>| {
             let server_host = server_host.clone();
@@ -831,6 +838,39 @@ impl HttpEgressClient {
             // 装箱成 `dyn Future + Send`：rama 的握手 future 内部跨 await 持有借用，
             // 留给自动推断时编译器无法证明它对所有生命周期 Send
             Box::pin(async move {
+                #[cfg(target_os = "linux")]
+                if use_native && ech.is_none() {
+                    let tls = tokio::time::timeout(EGRESS_TLS_TIMEOUT,
+                        crate::linux_tls::NativeTlsStream::connect(stream, &server_host.to_string(),
+                            port, hello.as_ref().expect("native profile checked"), sessions.native.clone()))
+                        .await.map_err(|_| HandshakeFailure::retry(NetError::Timeout))?
+                        .map_err(|e| match e {
+                            NetError::Certificate(_) => HandshakeFailure::abort(e),
+                            _ => HandshakeFailure::retry(e),
+                        })?;
+                    let resumed = tls.resumed();
+                    let version = match tls.alpn().as_deref() {
+                        Some(b"h2") => Version::HTTP_2,
+                        Some(b"http/1.0") => Version::HTTP_10,
+                        Some(b"http/1.1") | None => Version::HTTP_11,
+                        _ => return Err(HandshakeFailure::abort(NetError::Proxy("unsupported negotiated ALPN".into()))),
+                    };
+                    let stream = PlainHttpStream(Box::new(tls), Extensions::new());
+                    stream.extensions().insert(TargetHttpVersion(version));
+                    let input = ConnectRequest::new(HostWithPort::new(server_host, port));
+                    if version == Version::HTTP_2 && let Some(params) = h2_params {
+                        input.extensions().insert(params);
+                    }
+                    let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+                        http_connect(stream, input, exec)))
+                        .await.map_err(|e| HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}"))))?
+                        .map_err(|e| HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}"))))?;
+                    return Ok((Arc::new(Conn {
+                        id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
+                        service: established.conn, version, resumed, ech_applied: false,
+                        ech_accepted: false, tls_backend: "GnuTLS", _capacity: None,
+                    }), version, false, resumed));
+                }
                 let sessions = sessions.for_peer(
                     &server_host.to_string(),
                     port,
@@ -907,6 +947,7 @@ impl HttpEgressClient {
                     resumed,
                     ech_applied,
                     ech_accepted,
+                    tls_backend: "BoringSSL",
                     _capacity: None,
                 };
                 Ok((Arc::new(conn), version, ech_applied, resumed))
@@ -925,7 +966,7 @@ impl HttpEgressClient {
                 e.with_context(&format!("Connect {host}:{port}"))
             })?;
         info!(
-            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}, h2_template: {}, tls_permute_extensions: {:?}) in {}ms",
+            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}, h2_template: {}, tls_permute_extensions: {:?}, tls_backend: {}) in {}ms",
             sender.ech_accepted,
             template.map_or("standard", |template| template
                 .source
@@ -933,6 +974,7 @@ impl HttpEgressClient {
                 .unwrap_or(template.source.name())),
             template.is_some(),
             template.and_then(|t| t.tls_permute_extensions),
+            sender.tls_backend,
             started.elapsed().as_millis()
         );
         Ok(sender)

@@ -61,6 +61,8 @@ pub struct BrowserEgress {
 #[derive(Clone)]
 pub struct ClientSessions {
     domain: TlsClientSessionDomain,
+    #[cfg(target_os = "linux")]
+    pub(crate) native: Arc<crate::linux_tls::Sessions>,
     store: Arc<dyn TlsClientSessionStore>,
     persistent: Option<Arc<crate::session_cache::TicketStore>>,
     namespace: Arc<str>,
@@ -71,6 +73,8 @@ impl Default for ClientSessions {
     fn default() -> Self {
         Self {
             domain: TlsClientSessionDomain::new(),
+            #[cfg(target_os = "linux")]
+            native: Arc::new(crate::linux_tls::Sessions::default()),
             persistent: None,
             namespace: "".into(),
             scope: None,
@@ -89,6 +93,8 @@ impl ClientSessions {
         store: Arc<crate::session_cache::TicketStore>,
         namespace: String,
     ) -> Self {
+        #[cfg(target_os = "linux")]
+        { self.native = Arc::new(crate::linux_tls::Sessions::persistent(store.clone(), namespace.clone())); }
         self.persistent = Some(store);
         self.namespace = namespace.into();
         self
@@ -283,6 +289,27 @@ pub fn capability_audit(reference: &ClientHello) -> serde_json::Value {
         }
         Err(_) => serde_json::json!({"scope": "tcp_full_handshake_without_ech", "status": "backend_build_failed"}),
     }
+}
+
+/// 报告直连完整握手实际可选的后端；ECH 分支仍保留单独的能力差异。
+pub fn selected_capability_audit(reference: &ClientHello, permutes: bool) -> serde_json::Value {
+    let mut audit = capability_audit(reference);
+    audit["backend"] = serde_json::json!("BoringSSL");
+    #[cfg(target_os = "linux")]
+    if crate::linux_tls::matches(reference, permutes) {
+        return serde_json::json!({
+            "scope": "tcp_full_handshake_without_ech",
+            "status": "checked_fields_match",
+            "backend": "GnuTLS",
+            "checked_fields": audit["checked_fields"],
+            "differences": {},
+            "ech_fallback": audit,
+            "mirror_backend": "native_tunnel_without_ech",
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = permutes;
+    audit
 }
 
 /// 不联网取出连接配置将要发出的 ClientHello：对着只收不发的对端开始握手。

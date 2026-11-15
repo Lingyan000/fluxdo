@@ -47,6 +47,10 @@ rama-quic-proto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 core-foundation = "0.10"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# 按运行时探测系统 GnuTLS；不把新的系统链接要求带到其他平台或无 GnuTLS 的发行版。
+libloading = "0.9"
+
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-android = "0.2"
 # 平台证书校验器经它拿 JavaVM 与 Context，调用 Java 侧的 TrustManager

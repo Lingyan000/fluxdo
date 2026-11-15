@@ -182,6 +182,10 @@ async fn main() -> Result<(), rama::error::BoxError> {
         X509::from_der(chain.last().unwrap().as_ref())?.to_pem()?,
     )?;
     let mut emitted = Vec::new();
+    #[cfg(target_os = "linux")]
+    if let Ok(hello) = fluxdo_net::linux_tls::emit_for(Some(&template.hello)) {
+        write_json(out.join("native-capability-hello.json"), &hello);
+    }
     for _ in 0..8 {
         let hello = browser_tls::emit_client_hello(
             browser_tls::build_with_permutation(
@@ -193,6 +197,10 @@ async fn main() -> Result<(), rama::error::BoxError> {
             )?
             .connector_data,
         )?;
+        #[cfg(target_os = "linux")]
+        let hello = if fluxdo_net::linux_tls::matches(&template.hello, template.tls_permute_extensions == Some(true)) {
+            fluxdo_net::linux_tls::emit_for(Some(&template.hello))?
+        } else { hello };
         emitted.push(hello);
     }
     write_json(out.join("emitted-hellos.json"), &emitted);
