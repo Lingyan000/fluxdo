@@ -1,7 +1,7 @@
-//! Chromium-style "chaos protection" for a client's Initial packets: the CRYPTO data is split
-//! into fragments of random size written in random order, with PING and PADDING frames between
-//! them. The payload keeps its length and carries exactly the same CRYPTO bytes, so nothing
-//! about loss recovery or reassembly changes; only the arrangement an observer sees does.
+// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// 算法改编自 QUICHE；BSD 许可条款见本 crate 的 QUICHE-LICENSE。
+//! Initial 包内分片：随机细分 CRYPTO，分配 PING 与填充，再重排帧。
+//! 算法依据及验证范围见 docs/diagnostics/h3-initial-layout-20261115.txt。
 
 use rama_core::bytes::Bytes;
 use rama_quic_proto::{
@@ -9,7 +9,7 @@ use rama_quic_proto::{
     coding::BufMutExt,
     frame::{self, Frame, FrameType},
 };
-use rand::{Rng, RngExt, seq::SliceRandom as _};
+use rand::{Rng, RngExt};
 
 /// A CRYPTO fragment as it will be written.
 struct Fragment {
@@ -33,7 +33,11 @@ enum Item {
 
 /// Rearrange `payload` in place when it holds only CRYPTO, PING and PADDING frames; anything
 /// else leaves it untouched. Returns whether it was rearranged.
-pub(super) fn scramble(payload: &mut [u8], rng: &mut impl Rng) -> bool {
+pub(in crate::proto::connection) fn scramble(
+    payload: &mut [u8],
+    rng: &mut impl Rng,
+    interleaved: bool,
+) -> bool {
     let Ok(frames) = frame::Iter::new(Bytes::copy_from_slice(payload)) else {
         return false;
     };
@@ -50,84 +54,85 @@ pub(super) fn scramble(payload: &mut [u8], rng: &mut impl Rng) -> bool {
             _ => return false,
         }
     }
-    if fragments.is_empty() {
+    if fragments.is_empty() || (!interleaved && (fragments.len() != 1 || pings != 0)) {
         return false;
     }
     let total = payload.len();
 
-    // Contiguous CRYPTO data first, so fragments can be cut anywhere along it.
-    fragments.sort_by_key(|fragment| fragment.offset);
-    let mut runs: Vec<Fragment> = Vec::new();
-    for fragment in fragments {
-        match runs.last_mut() {
-            Some(last) if last.offset + last.data.len() as u64 == fragment.offset => {
-                let mut joined = Vec::with_capacity(last.data.len() + fragment.data.len());
-                joined.extend_from_slice(&last.data);
-                joined.extend_from_slice(&fragment.data);
-                last.data = Bytes::from(joined);
-            }
-            _ => runs.push(fragment),
-        }
-    }
-
-    // Cut each run into pieces while the padding budget pays for the extra frame headers.
-    let mut pieces: Vec<Fragment> = Vec::new();
-    for run in runs {
-        let mut rest = run;
-        while rest.data.len() > 64 && rng.random_ratio(3, 4) {
-            let cut = rng.random_range(32..rest.data.len() - 32);
-            let head = Fragment {
-                offset: rest.offset,
-                data: rest.data.slice(..cut),
-            };
-            rest = Fragment {
-                offset: rest.offset + cut as u64,
-                data: rest.data.slice(cut..),
-            };
-            pieces.push(head);
-        }
-        pieces.push(rest);
-    }
-    // Merge back while it does not fit; the runs, and so the original frames, fit by construction.
-    // Only adjacent contiguous pieces may merge: joining across a gap would place the later bytes
-    // at the wrong CRYPTO offset and corrupt the stream.
-    let mut used = pieces.iter().map(Fragment::size).sum::<usize>() + pings;
-    while used > total && pieces.len() > 1 {
-        pieces.sort_by_key(|piece| piece.offset);
-        let Some(i) = (0..pieces.len() - 1)
-            .find(|&i| pieces[i].offset + pieces[i].data.len() as u64 == pieces[i + 1].offset)
-        else {
-            // Every remaining piece is its own run; nothing contiguous is left to rejoin.
-            return false;
-        };
-        let tail = pieces.remove(i + 1);
-        let head = &mut pieces[i];
-        let mut joined = Vec::with_capacity(head.data.len() + tail.data.len());
-        joined.extend_from_slice(&head.data);
-        joined.extend_from_slice(&tail.data);
-        head.data = Bytes::from(joined);
-        used = pieces.iter().map(Fragment::size).sum::<usize>() + pings;
-    }
+    // 保留输入 CRYPTO 的边界和空洞；每次随机选择一个已有片段，可切到 1 字节。
+    let used = fragments.iter().map(Fragment::size).sum::<usize>() + pings;
     if used > total {
         return false;
     }
     let mut budget = total - used;
-
-    // A few PINGs when the padding allows, then the rest of the padding in random runs.
-    let extra_pings = rng.random_range(0..=budget.min(3));
-    budget -= extra_pings;
-    let mut items: Vec<Item> = pieces.into_iter().map(Item::Crypto).collect();
-    items.extend((0..pings + extra_pings).map(|_| Item::Ping));
-    while budget > 0 {
-        let run = if items.len() > 8 || rng.random_ratio(1, 3) {
-            budget
-        } else {
-            rng.random_range(1..=budget)
+    let end = fragments
+        .iter()
+        .map(|f| f.offset + f.data.len() as u64)
+        .max()
+        .unwrap();
+    let start = fragments.iter().map(|f| f.offset).min().unwrap();
+    let max_overhead =
+        1 + VarInt::from_u64(end).unwrap().size() + VarInt::from_u64(end - start).unwrap().size();
+    // 有跨包交错证据时使用该布局对应的新版范围；旧单包布局允许零次细分。
+    let attempts = if interleaved {
+        2 + rng.random::<u64>() % 9
+    } else {
+        rng.random::<u64>() % 11
+    };
+    for _ in 0..attempts {
+        if budget < max_overhead {
+            break;
+        }
+        // 原有 PING 同样占据候选位置；选到它时跳过本次细分。
+        let index = (rng.random::<u64>() % (fragments.len() + pings) as u64) as usize;
+        if index >= fragments.len() || fragments[index].data.len() <= 1 {
+            continue;
+        }
+        let old = &fragments[index];
+        let cut = 1 + (rng.random::<u64>() % (old.data.len() - 1) as u64) as usize;
+        let head = Fragment {
+            offset: old.offset,
+            data: old.data.slice(..cut),
         };
-        items.push(Item::Padding(run));
-        budget -= run;
+        let tail = Fragment {
+            offset: old.offset + cut as u64,
+            data: old.data.slice(cut..),
+        };
+        let extra = head.size() + tail.size() - old.size();
+        debug_assert!(extra <= budget);
+        budget -= extra;
+        fragments[index] = head;
+        fragments.push(tail);
     }
-    items.shuffle(rng);
+    let extra_pings = if budget == 0 {
+        0
+    } else {
+        if interleaved {
+            (2 + (rng.random::<u64>() % 9) as usize).min(budget)
+        } else {
+            (rng.random::<u64>() % budget.min(10) as u64) as usize
+        }
+    };
+    budget -= extra_pings;
+    let mut items: Vec<Item> = fragments.into_iter().map(Item::Crypto).collect();
+    items.extend((0..pings + extra_pings).map(|_| Item::Ping));
+    let mut padded = Vec::with_capacity(items.len() * 2 + 1);
+    for item in items {
+        let run = (rng.random::<u64>() % (budget + 1) as u64) as usize;
+        if run > 0 {
+            padded.push(Item::Padding(run));
+            budget -= run;
+        }
+        padded.push(item);
+    }
+    if budget > 0 {
+        padded.push(Item::Padding(budget));
+    }
+    let mut items = padded;
+    for index in (1..items.len()).rev() {
+        let earlier = (rng.random::<u64>() % (index + 1) as u64) as usize;
+        items.swap(index, earlier);
+    }
 
     let mut out = Vec::with_capacity(total);
     for item in items {
@@ -188,7 +193,7 @@ mod tests {
 
         for _ in 0..200 {
             let mut scrambled = original.clone();
-            assert!(scramble(&mut scrambled, &mut rng));
+            assert!(scramble(&mut scrambled, &mut rng, true));
             assert_eq!(scrambled.len(), original.len());
             // Reassemble the CRYPTO stream from the scrambled frames.
             let mut stream = vec![0u8; data.len()];
@@ -198,6 +203,7 @@ mod tests {
                     let start = crypto.offset as usize;
                     stream[start..start + crypto.data.len()].copy_from_slice(&crypto.data);
                     for byte in &mut covered[start..start + crypto.data.len()] {
+                        assert!(!*byte, "CRYPTO 字节不能重复覆盖");
                         *byte = true;
                     }
                 }
@@ -233,7 +239,7 @@ mod tests {
             let mut scrambled = original.clone();
             // The two runs on their own fit, so merge-back can always rejoin enough to succeed;
             // a version that instead merges across the gap, or bails, would fail here.
-            assert!(scramble(&mut scrambled, &mut rng));
+            assert!(scramble(&mut scrambled, &mut rng, true));
             assert_eq!(scrambled.len(), original.len());
             for frame in frame::Iter::new(Bytes::copy_from_slice(&scrambled)).unwrap() {
                 if let Frame::Crypto(crypto) = frame.unwrap() {
@@ -252,9 +258,67 @@ mod tests {
     }
 
     #[test]
+    fn scramble_reaches_tiny_fragments_and_more_than_three_pings() {
+        let mut rng = Pcg32::new(91, 7);
+        let mut tiny = false;
+        let mut many_pings = false;
+        for _ in 0..256 {
+            let mut payload = Vec::new();
+            frame::Crypto {
+                offset: 0,
+                data: Bytes::from(vec![1; 900]),
+            }
+            .encode(&mut payload);
+            payload.resize(1216, 0);
+            assert!(scramble(&mut payload, &mut rng, true));
+            let mut pings = 0;
+            for frame in frame::Iter::new(Bytes::from(payload)).unwrap() {
+                match frame.unwrap() {
+                    Frame::Crypto(c) => tiny |= c.data.len() < 4,
+                    Frame::Ping => pings += 1,
+                    _ => {}
+                }
+            }
+            assert!((2..=10).contains(&pings));
+            many_pings |= pings > 3;
+        }
+        assert!(tiny && many_pings);
+    }
+
+    #[test]
+    fn single_packet_range_includes_zero_pings_and_zero_splits() {
+        let mut rng = Pcg32::new(97, 19);
+        let mut zero_pings = false;
+        let mut zero_splits = false;
+        for _ in 0..256 {
+            let mut payload = Vec::new();
+            frame::Crypto {
+                offset: 0,
+                data: Bytes::from(vec![1; 300]),
+            }
+            .encode(&mut payload);
+            payload.resize(1216, 0);
+            assert!(scramble(&mut payload, &mut rng, false));
+            let mut pings = 0;
+            let mut crypto = 0;
+            for frame in frame::Iter::new(Bytes::from(payload)).unwrap() {
+                match frame.unwrap() {
+                    Frame::Crypto(_) => crypto += 1,
+                    Frame::Ping => pings += 1,
+                    _ => {}
+                }
+            }
+            assert!(pings < 10 && (1..=11).contains(&crypto));
+            zero_pings |= pings == 0;
+            zero_splits |= crypto == 1;
+        }
+        assert!(zero_pings && zero_splits);
+    }
+
+    #[test]
     fn scramble_declines_non_initial_payloads() {
         let mut rng = Pcg32::new(1, 2);
         let mut ack_like = vec![0x02, 0x00, 0x00, 0x00];
-        assert!(!scramble(&mut ack_like, &mut rng));
+        assert!(!scramble(&mut ack_like, &mut rng, true));
     }
 }

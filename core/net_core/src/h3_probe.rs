@@ -58,6 +58,8 @@ async fn bind(
     use base64::Engine;
     use rama::tls::boring::core::{sha::sha256, x509::X509};
     let leaf = X509::from_der(identity.cert_chain[0].as_ref())?;
+    #[cfg(debug_assertions)]
+    let probe_ca=String::from_utf8(X509::from_der(identity.cert_chain.last().ok_or("missing probe CA")?.as_ref())?.to_pem()?)?;
     let spki = base64::engine::general_purpose::STANDARD
         .encode(sha256(&leaf.public_key()?.public_key_to_der()?));
     let quic_tls = TlsServerConfig::new()
@@ -77,6 +79,8 @@ async fn bind(
     .await?;
     let port = endpoint.local_addr()?.port();
     templates.h3.probe_certificate(port, spki);
+    #[cfg(debug_assertions)]
+    templates.h3.probe_ca(port, probe_ca);
     let tcp = TcpListener::bind(("127.0.0.1", port)).await?;
     // localhost 可能优先解析到 ::1；两个地址使用同一证书和同一 origin。
     let endpoint6 = Endpoint::bind_server(
@@ -169,6 +173,9 @@ async fn bind(
                                     let (request,response)=requests.accept().await?.resolve().await?;
                                     if !request.uri().path().is_some_and(|p|p.to_string()=="/fluxdo-h3/fetch") {return Err("unexpected warm H3 path".into());}
                                     sample.observe_warm(&request)?;
+                                    let observer=request.extensions().get_ref::<H3Observer>().ok_or("missing warm H3 observer")?;
+                                    sample.warm_boundary=Some(crate::h3_template::sampled_request_boundary(
+                                        observer, (index+1)*4, sample.priority_update.is_some()).await?);
                                     if index==1 {templates.h3.record(epoch,port,sample.clone())?;}
                                     response.send_response(Response::builder().header("access-control-allow-origin","*").body(Body::from(if index==1 {"h3-ready"} else {"h3"}))?).await?;
                                 }

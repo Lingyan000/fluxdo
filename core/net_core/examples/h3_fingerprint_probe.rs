@@ -27,6 +27,10 @@ use rama_quic_proto::{Side, capture};
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+fn body_digest(bytes: &[u8]) -> String {
+    sha256(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 // 不强迫协议选择，让 WebView 按 Alt-Svc 和自己的信任策略决定是否启用 H3。
 const NATIVE_PAGE: &str = r#"<!doctype html><title>fluxdo-probe</title><script>
 (async()=>{try{for(let i=0;i<24;i++){try{let r=await fetch('/fluxdo-probe/fetch?i='+i);
@@ -100,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let block_quic = args.iter().any(|a| a == "--block-quic");
     let drop_initial = args.iter().any(|a| a == "--drop-first-initial");
     let require_retry = args.iter().any(|a| a == "--require-retry");
+    let drop_post_response = args.iter().any(|a| a == "--drop-post-response");
     let dropped = Arc::new(std::sync::atomic::AtomicU64::new(0));
     let dropped_packets = dropped.clone();
     let retries = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -161,19 +166,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let requests = requests.clone();
                 let finished = finished.clone();
                 let http = HttpServer::auto(Executor::new()).service(service_fn(
-                    move |request: Request| {
+                    move |mut request: Request| {
                         let path = request
                             .uri()
                             .path()
                             .map(|p| p.to_string())
                             .unwrap_or_default();
-                        requests
-                            .lock()
-                            .push(json!({"connection_id":id,"path":path,"method":request.method().as_str(),"version":format!("{:?}",request.version())}));
-                        close_request.notify_one();
-                        if path == "/fluxdo-probe/finished" {
-                            finished.notify_one();
-                        }
+                        let mut observation=json!({"connection_id":id,"path":path,"method":request.method().as_str(),"version":format!("{:?}",request.version()),
+                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
+                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok())});
+                        let requests=requests.clone();
+                        let close_request=close_request.clone();
+                        let finished=finished.clone();
                         let response = Response::builder()
                             .header("alt-svc", format!("h3=\":{port}\"; ma=60"))
                             .header("cache-control", "no-store")
@@ -184,7 +188,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 "tcp"
                             }))
                             .unwrap();
-                        async move { Ok::<_, std::convert::Infallible>(response) }
+                        async move {
+                            let bytes=match request.body_mut().collect().await {
+                                Ok(body)=>body.to_bytes(),
+                                Err(error)=>{
+                                    observation["body_error"]=json!(error.to_string());
+                                    requests.lock().push(observation);
+                                    return Ok::<_,std::convert::Infallible>(Response::builder().status(500).body(Body::empty()).unwrap());
+                                }
+                            };
+                            observation["body_bytes"]=json!(bytes.len());
+                            observation["body_sha256"]=json!(body_digest(&bytes));
+                            requests.lock().push(observation);
+                            close_request.notify_one();
+                            if path=="/fluxdo-probe/finished" {finished.notify_one();}
+                            Ok::<_, std::convert::Infallible>(response)
+                        }
                     },
                 ));
                 let service = TlsAcceptorLayer::new(tls.clone()).into_layer(http);
@@ -290,6 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             connections.spawn(async move {
                 let result: Result<(), rama::error::BoxError> = async {
                     let connection = incoming.await?;
+                    let close_connection = connection.clone();
                     // 每个转发 socket 对应一条浏览器连接，先关联再接收 HTTP；不能混用预连接的 Initial。
                     let flow_id = server_routes.lock().get(&connection.remote_address()).copied();
                     let (mut requests, driver) = rama_http_core::h3::server::handshake(
@@ -327,7 +347,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else if path.starts_with("/fluxdo-probe/") { "h3" } else {
                             "ok"
                         };
-                        let body_size=request.body_mut().collect().await?.to_bytes().len();
+                        let request_body=request.body_mut().collect().await?.to_bytes();
+                        if drop_post_response && request.method()==rama::http::Method::POST {
+                            // 服务端已完整接收写入，但不给响应；客户端不得自动重放该 POST。
+                            observation_sink.lock().push(json!({"flow_id":flow_id,"path":path,
+                                "method":"POST","body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),
+                                "response_intentionally_lost":true,"version":format!("{:?}",request.version())}));
+                            close_connection.close(0u32,b"lab accepted write response loss");
+                            break;
+                        }
+                        let settled_boundary = if let Some(observer) = &observer {
+                            let first=observer.snapshot();
+                            let expected=native_probe && first.control.iter().any(|frame|
+                                frame.frame_type == u64::from(rama::http::proto::h3::FrameType::PRIORITY_UPDATE_REQUEST));
+                            let stream_id=request.extensions().get_ref::<H3RequestObservation>().ok_or("missing request observation")?.stream_id;
+                            Some(fluxdo_net::h3_template::sampled_request_boundary(observer, stream_id, expected).await?)
+                        } else {None};
+                        // 先发布已完整接收的请求，客户端读完响应立即退出也不会丢失观测。
+                        observation_sink.lock().push(
+                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),"version":format!("{:?}",request.version()),
+                            "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
+                            "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok()),
+                            "connection":settled_boundary,"request":fields,
+                            "first_request_boundary":first_request_boundary}),
+                        );
                         response
                             .send_response(
                                 Response::builder()
@@ -335,11 +378,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     .body(Body::from(body))?,
                             )
                             .await?;
-                        observation_sink.lock().push(
-                            json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":body_size,"version":format!("{:?}",request.version()),
-                            "connection":observer.map(|o| o.snapshot()),"request":fields,
-                            "first_request_boundary":first_request_boundary}),
-                        );
                         if path == "/fluxdo-probe/finished" { native_done.notify_one(); }
                         if path == "/done" || path == "/fluxdo-probe/done" {
                             finished.notify_one();
@@ -504,7 +542,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
         "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
-        "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,
+        "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,"drop_post_response":drop_post_response,
             "dropped_datagrams":dropped.load(std::sync::atomic::Ordering::Relaxed),"issued_retries":retries.load(std::sync::atomic::Ordering::Relaxed)},
         "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
         "h3_sample_complete":joint_capture_complete,

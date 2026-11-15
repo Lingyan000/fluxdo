@@ -1,0 +1,136 @@
+{
+  "provenance": {
+    "run_id": 43702919972,
+    "artifact_id": 14157540394,
+    "scope": "iOS 26.2 simulator WKWebView; replay Core on macOS"
+  },
+  "native": {
+    "available_versions": [],
+    "chosen_version": null,
+    "coalesced": false,
+    "complete": true,
+    "datagram_sizes": [
+      1200,
+      1200
+    ],
+    "dcid_len": 8,
+    "first_packet_number": 0,
+    "frames": [
+      [
+        {
+          "Crypto": {
+            "len": 999,
+            "offset": 0
+          }
+        },
+        {
+          "Padding": {
+            "len": 162
+          }
+        }
+      ],
+      [
+        {
+          "Crypto": {
+            "len": 483,
+            "offset": 999
+          }
+        },
+        {
+          "Padding": {
+            "len": 677
+          }
+        }
+      ]
+    ],
+    "packet_number_len": 1,
+    "packet_number_lengths": [
+      1,
+      1
+    ],
+    "packet_numbers": [
+      0,
+      1
+    ],
+    "padding": "Frames",
+    "parameters": [
+      7,
+      9,
+      14,
+      15,
+      4,
+      5,
+      6,
+      4278716424
+    ],
+    "scid_len": 0,
+    "token_len": 0,
+    "trailing_bytes": [
+      0,
+      0
+    ],
+    "version": 1
+  },
+  "previous_core": {
+    "available_versions": [],
+    "chosen_version": null,
+    "coalesced": false,
+    "complete": true,
+    "datagram_sizes": [
+      1200,
+      1200
+    ],
+    "dcid_len": 8,
+    "first_packet_number": 0,
+    "frames": [
+      [
+        {
+          "Crypto": {
+            "len": 1161,
+            "offset": 0
+          }
+        }
+      ],
+      [
+        {
+          "Crypto": {
+            "len": 321,
+            "offset": 1161
+          }
+        },
+        {
+          "Padding": {
+            "len": 839
+          }
+        }
+      ]
+    ],
+    "packet_number_len": 1,
+    "packet_number_lengths": [
+      1,
+      1
+    ],
+    "packet_numbers": [
+      0,
+      1
+    ],
+    "padding": "Frames",
+    "parameters": [
+      4,
+      9,
+      14,
+      6,
+      7,
+      4278716424,
+      5,
+      15
+    ],
+    "scid_len": 0,
+    "token_len": 0,
+    "trailing_bytes": [
+      0,
+      0
+    ],
+    "version": 1
+  }
+}

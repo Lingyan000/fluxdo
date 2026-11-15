@@ -35,6 +35,7 @@ jobs:
         with:
           workspaces: core/net_core
           key: apple-fingerprint-macos-15
+          cache-on-failure: true
       - name: Build production core diagnostic
         run: |
           command -v cmake || brew install cmake
