@@ -1,0 +1,89 @@
+name: Native Android and Windows fingerprint probe
+on:
+  push:
+    branches: ['diagnostics/native-fingerprint-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-fingerprint-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: ilammy/setup-nasm@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native WebView2 host
+        run: dotnet build tool/native_fingerprint/windows/Probe.csproj -c Release
+      - name: Build Core diagnostic collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
+      - name: Compare native WebView2 and Windows Core
+        run: python tool/native_fingerprint/run.py --platform windows --output "${{ runner.temp }}/native-fingerprint"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-native-fingerprint-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/*.json
+            ${{ runner.temp }}/native-fingerprint/*/*.json
+            ${{ runner.temp }}/native-fingerprint/*/*.log
+            ${{ runner.temp }}/native-fingerprint/*/*.stdout
+            ${{ runner.temp }}/native-fingerprint/*/*.stderr
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Build native WebView host
+        run: gradle -p tool/native_fingerprint/android :app:assembleDebug
+      - name: Build Core diagnostic collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
+            chmod +x tool/native_fingerprint/android_driver.py
+            python tool/native_fingerprint/run.py --platform android --output "${{ runner.temp }}/native-fingerprint"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-native-fingerprint-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/*.json
+            ${{ runner.temp }}/native-fingerprint/*/*.json
+            ${{ runner.temp }}/native-fingerprint/*/*.log
+            ${{ runner.temp }}/native-fingerprint/*/*.stdout
+            ${{ runner.temp }}/native-fingerprint/*/*.stderr

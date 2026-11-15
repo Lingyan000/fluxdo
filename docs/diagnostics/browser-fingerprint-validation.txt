@@ -1,0 +1,136 @@
+历史阶段记录：下文保留当时结果。当前修复状态与最终原生复核以
+fingerprint-remediation.txt、native-fingerprint-governance.txt 为准。
+尤其旧文中的“HEADERS 优先级未实现”和“额外 Fetch Metadata 未修复”已有后续修复。
+
+FluxDO 浏览器指纹：版本调研、修复范围与验证
+日期：2026-11-14
+基线：ea34f93d；修复前 core/net_core 与 v0.2.30 相同。
+
+结论
+现有采样能取得真实浏览器 TLS/H2 数据，但“标记 sampled”或“JA4 一致”不能证明实际复现完整。
+本轮确认并修复 H2 参数传递位置错误、强制 Chromium TLS 乱序、过早保存不完整模板、
+低熵 Client Hints 仅由 UA 猜测，以及浏览器模板被默认 QUIC/H3 升级绕过。
+不把上述缺陷直接等同于用户历史 CF 循环的全部原因。
+
+一、版本结论：必须区分源码默认、发布实验和设备实际行为
+
+TLS 扩展顺序：
+- Chromium 99.0.4844.84：SSL 初始化未调用 SSL_set_permute_extensions。
+- 109.0.5414.74 / 110.0.5481.77：存在 PermuteTLSExtensions，源码默认关闭。
+- 111.0.5563.64、112、113、114、115、117 的已查稳定标签：源码默认开启。
+- 后续 131 / 133 的 SSL 初始化直接开启乱序。
+- 因此“Chrome >= 110 必定乱序”不成立；110 的发布实验可覆盖源码默认。
+  实测同一 Chromium 110.0.5481.38：默认固定，--enable-features=PermuteTLSExtensions 后乱序。
+  修复不设置 UA 主版本阈值：最多两轮本地探针校准，缓存实际观察到的策略。
+  镜像出站直接保留当次浏览器顺序；缓存回放只在已观察到乱序时重新排列。
+
+其他相关特征：
+- ALPS：旧码点 17613 / 0x44cd，新码点 17513 / 0x4469。
+  Chromium 131、133 源码均存在 UseNewAlpsCodepointHttp2 开关，所查标签默认关闭；
+  不能凭“133”认定所有分发版一定使用新码点。按采样中的 ApplicationSettings 保留。
+- 后量子组：131 的 PostQuantumKyber 在 Android/iOS 默认关闭、桌面默认开启；
+  同版本 UseMLKEM 默认开启，决定被启用后选择 ML-KEM 还是 Kyber 草案组。
+  133 所查源码已默认开启 PostQuantumKyber。平台、实验配置均会影响结果。
+  不按 UA 追加组；回放采样中的 groups、key_share 组别/长度。
+- ECH：99 / 109 / 110 / 115 / 117 的所查源码存在默认关闭的功能开关；
+  产品发布实验、DNS HTTPS 记录和站点能力共同决定实际行为。
+  FluxDO 开启 DoH 后主动注入 ECH 是已有可用性策略，本轮没有更改该策略。
+  ECH 内外层原有真实 TLS 回环测试继续通过；不宣称注入 ECH 后仍与原生无 ECH 完全相同。
+- HTTP/2：99 和 156 的 SETTINGS 项、字段省略和顺序不同。
+  必须回放完整初始帧及伪头顺序，不能用一组现代默认值覆盖旧浏览器。
+- Client Hints：99 源码同时存在旧/新 GREASE 算法分支，受 feature 参数和 policy 影响；
+  是否包含浏览器品牌还取决于构建品牌。自定义 UA、headless 和 WebView 行为也不同。
+  本轮记录实际 fetch 的三个低熵头，包括“确实没有发送”的空集合。
+  只覆盖 UA 匹配的 HTTPS 请求，不添加高熵头，不覆盖调用者的高熵提示。
+- QUIC/H3：TLS-over-TCP/H2 模板不能描述 QUIC 传输参数、H3 SETTINGS、QPACK。
+  当前 H3 连接使用默认配置，不能据 Chrome 版本推断出等价指纹。
+  带浏览器模板的请求暂不进行 H3 后台升级或使用旧 Alt-Svc 竞速；无模板的普通客户端保留原行为。
+
+官方来源（标签固定，便于复核；证据包另含原文及 SHA-256）
+https://chromium.googlesource.com/chromium/src/+/refs/tags/99.0.4844.84/net/socket/ssl_client_socket_impl.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/109.0.5414.74/net/base/features.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/110.0.5481.77/net/base/features.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/111.0.5563.64/net/base/features.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/131.0.6778.69/net/base/features.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/133.0.6943.53/net/base/features.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/133.0.6943.53/net/socket/ssl_client_socket_impl.cc
+https://chromium.googlesource.com/chromium/src/+/refs/tags/99.0.4844.84/components/embedder_support/user_agent_utils.cc
+https://github.com/microsoft/playwright/blob/v1.18.0/packages/playwright-core/browsers.json
+https://github.com/microsoft/playwright/blob/v1.30.0/packages/playwright-core/browsers.json
+
+二、修复范围与根因
+
+1. H2 参数：Core 原来把 H2ClientContextParams 写到 TLS stream.extensions；
+   锁定版本 Rama 的普通 http_connect 从 ConnectRequest.extensions 读取。
+   补齐传递后，初始 SETTINGS、WINDOW_UPDATE、伪头顺序实际生效。
+   依赖：plabayo/rama 23d59722e125fb6f2de66df588f772205318e555，
+   rama-http-backend/src/client/conn.rs 的 http_stream_connect。
+2. TLS 乱序：原来只要识别为 Chromium 就开启 permutation。
+   改为实际握手校准。GREASE 值、padding、PSK/cookie 不当成乱序证据。
+   能力变化重置校准；策略变化换代连接池。预置策略由预置元数据指定。
+3. 缓存：导航先取得 TLS/H2 时不能写成已就绪；等待 fetch 信息和顺序校准。
+   旧缓存可作为临时模板读取，但不能阻止重新采样。
+   状态和连接日志增加校准结果、TLS 观察次数、fetch 采集状态、H2 模板是否使用。
+4. Client Hints：使用实际低熵采样替代猜测；UA 不匹配时不套用。
+5. H3：阻止浏览器模板请求切换到尚无浏览器采样支持的默认 QUIC 配置。
+
+
+改动不涉及 CSRF、bootstrap 错误分类与重试、DoH 开关语义、WebView/Core 出口统一、界面、依赖版本或发布配置。
+可能的行为代价：旧缓存需补采，首次最多多一次后台 WebView；有浏览器模板时不再利用 H3 提速。
+
+三、真实回环实验
+
+平台：Linux 桌面浏览器；不是用户荣耀 Android WebView 的同版真机。
+浏览器：Chromium 99.0.4812.0、110.0.5481.38（默认/强制乱序）、156.0.8078.79。
+DoH 与 WebView MITM 关闭。浏览器访问生产 ProbeEndpoint；生产 HttpEgressClient 请求本地采集服务。
+只为实验进程通过 SSL_CERT_FILE 配置临时根；没有修改系统信任或生产校验策略。
+
+四组结果：
+99              顺序校准=false  3/3 请求成功；检查字段一致；完整缓存恢复通过
+110 默认        顺序校准=false  3/3 请求成功；检查字段一致；完整缓存恢复通过
+110 实验开启    顺序校准=true   3/3 请求成功；检查字段一致；完整缓存恢复通过
+156             顺序校准=true   3/3 请求成功；检查字段一致；完整缓存恢复通过
+
+检查字段：套件顺序、TLS 版本、压缩方法、扩展集合、固定策略的扩展顺序、
+supported_versions/groups、签名算法、ALPN、ALPS 码点、证书压缩、EC 格式、
+key_share 组别/长度、H2 初始 SETTINGS/WINDOW_UPDATE、伪头顺序、Accept-Encoding、实际低熵 Client Hints。
+每组另外生成 8 个真实 ClientHello，验证固定策略或乱序策略。
+明确排除随机密钥、GREASE 值、ECH 密文、padding 长度及 SETTINGS ACK 的响应时序。
+不是“TLS/H2 所有字节完全相同”的测试。
+
+修复前 Chrome 99 / 156 的 H2 均与模板不一致：
+浏览器流窗口 6291456，Core 2097152；窗口增量 15663105 对 5177345；
+伪头 method,authority,scheme,path 对 method,scheme,authority,path。
+Chrome 99 的固定扩展顺序被 Core 变成 8 种顺序，但 JA4 仍相同。
+保留了修复前采集和只调整 H2 传参位置的单变量实验数据。
+
+四、自动验证
+
+Rust：browser_tls 14 + mirror::profile_tests 8 + presets 2 + client（含 H3）32 = 56 项通过。
+Dart：采样生命周期/校准/取消与既有 Client Hints 共 14 项通过。
+Dart 改动文件静态检查通过；Rust 构建与格式检查通过。
+
+复现命令：
+  cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
+  SSL_CERT_FILE=/tmp/fluxdo-fp/ca.pem core/net_core/target/debug/examples/fingerprint_probe /path/to/chromium /tmp/fluxdo-fp
+  # 可追加 --enable-features=PermuteTLSExtensions 验证 Chromium 110 的实验分支
+  python tool/compare_fingerprint_capture.py --expect-match /tmp/fluxdo-fp
+  flutter test --no-pub test/services/network/fingerprint_template_service_test.dart test/services/network/client_hints_test.dart
+  cargo test --locked --manifest-path core/net_core/Cargo.toml --lib browser_tls::tests
+  cargo test --locked --manifest-path core/net_core/Cargo.toml --lib mirror::profile_tests
+  cargo test --locked --manifest-path core/net_core/Cargo.toml --lib presets::tests
+  cargo test --locked --manifest-path core/net_core/Cargo.toml --lib client::
+
+若对照两个相同包名的源码副本，使用独立 CARGO_TARGET_DIR；或者切换前 cargo clean -p fluxdo_net。
+此前单变量实验曾共享产物目录，最终修复前基线已清理重编译复核，不能混用中间产物。
+
+五、未声称解决的范围
+
+- 没有用户原始 Android WebView 99.0.4844.88 的握手缓存或未开 DoH 时的历史日志；
+  未在 HONOR 真机、iOS、macOS 或 Windows 实机上复现 CF 循环。
+- H2 HEADERS 内嵌优先级、完整优先级树、精确 HPACK 编码和请求时序不在已验证字段之列。
+  代码审查可见锁定 Rama 的普通发送路径 convert_send_message(..., None) 未携带 HEADERS priority；
+  需要另行抓帧和依赖层实现，不能把本轮 H2 初始帧修复说成旧浏览器 H2 的逐字复现。
+- 未实现 QUIC/H3 采样复现，因此采用限制升级的明确取舍。
+- DoH/ECH 既有主动策略仍可能与原生浏览器不同；本轮直连实验未覆盖真实公网 ECH/DNS 路径。
+- 不保证修复后不会再出现 CF。结果证明的是已列实现缺陷及对应字段修复，不是 Cloudflare 风控因果证明。

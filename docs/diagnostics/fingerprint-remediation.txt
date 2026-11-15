@@ -1,0 +1,122 @@
+指纹一致性统一治理清单
+日期：2026-11-15
+范围：Android、iOS、macOS、Windows、Linux；TCP/TLS、H2、H3、请求头与缓存。
+约束：CSRF、Cookie、Origin、Referer 的业务策略不改；本轮不统一两条链路的出口。
+状态：修复已在工作区和独立诊断分支验证；本轮未发布到 dev 或创建 beta 标签。
+阅读提示：本文件区分已修复、已确认但未修复、验证缺口；不能把测试通过理解为完整指纹一致。
+
+已修正并有对应证据
+F01 TLS 扩展排列：不再用 Chromium 身份或 UA 阈值一律开启乱序。
+    镜像保留原顺序，缓存回放按多次真实采样校准。随机密钥/GREASE 不触发版本轮换。
+F02 H2 参数传递：采到的初始 SETTINGS、窗口、伪头顺序现在送达真实连接配置。
+    HEADERS 内嵌优先级见 F12；完整 HPACK 和所有时序仍未覆盖。
+F03 不完整缓存：导航阶段不能把缺 fetch 头或缺顺序校准的模板写成已就绪。
+F04 Client Hints：同 UA 的 HTTPS 请求使用真实低熵采样，包括明确“不发送”的空集合。
+F05 旧 WebKit：固定探针 fetch 路径不依赖 Sec-Fetch-Mode；iOS 15.5 原生采样证实。
+F06 H3 隔离：有浏览器模板时，禁止默认 QUIC 后台升级和旧 Alt-Svc 竞速绕过模板。
+    无模板的普通客户端与 DoH 客户端保留原有 H3 行为。这是临时限制，不是 H3 模板完成。
+
+本轮新增修复
+F07 旧 WebKit 业务请求多发 Fetch Metadata。
+    在 Core 请求构造处，仅当 HTTPS、UA 相同、已校准且采样不含 Sec-Fetch-Mode，
+    对原本标为 cors 的请求移除额外 Sec-Fetch-*。不复制探针的 same-origin 等上下文值。
+    不处理导航、不同 UA、HTTP 或未校准模板；CSRF/Origin/Referer/Cookie 均保留。
+    使用原生 iOS 15.5 样本建立回归，修复前失败、修复后通过。
+F08 UA 冻结导致系统升级后旧缓存仍命中。
+    Dart 配置独立传递 Platform.operatingSystem 与 operatingSystemVersion，
+    Rust 将此身份写入模板并在读取时匹配；同 UA 不同系统版本、旧缓存缺身份都重新采样。
+    TLS 会话/Alt-Svc 的持久化策略命名空间也包括该身份。
+    不把系统版本填成 Safari 版本；WebView 独立更新仍依赖现有实际 UA 校验。
+F09 验证遗漏。
+    将 Sec-Fetch-* 存在性纳入 compare_fingerprint_capture.py 的总通过条件。
+    修正实验采集器对 Sec-Fetch-Mode 的依赖，只按受控实验请求的已知用途采集原始头。
+    保留首轮失败输出，未伪造头部让比较通过。补齐代码注释，区分采样就绪与完整指纹一致。
+
+F10 缓存格式与后端身份。
+    缓存增加策略版本及 Cargo.lock 摘要；格式/依赖、UA、真实运行时变更都使旧缓存失效。
+    每次进程启动用两次当前握手重新校准；旧缓存可用于启动，不算本次握手样本。
+    旧“乱序”结果可以被当前两次固定顺序覆盖，避免同 UA 更新或实验变化永久沿用旧策略。
+    TLS 票据和 Alt-Svc 持久化命名空间同步包含缓存版本。
+F11 采样准入与 Android padding。
+    失败的证书握手、没有 HTTP 请求的预连接、非探针路径不再计为有效探针样本。
+    Android 15 / WebView 124.0.6367.219 的两次原生握手中，一次有 padding、另一次没有。
+    旧逻辑仅清空 padding 内容，仍把“有/无”判为浏览器能力变化，导致重新清空校准状态。
+    现在能力哈希排除 padding 的存在与内容；原始模板完整保留，扩展排列单独比较。
+    原生样本回归修复前失败、修复后通过，来源和 SHA 见测试 fixture 的 source.txt。
+F12 H2 HEADERS 优先级真正发到网络。
+    固定 Rama 版本的发送路径缺参数，序列化还缺 PRIORITY 标志与五字节 dependency。
+    在同一上游提交上本地修补 rama-http-core/types，保留许可证与来源，不升级依赖。
+    只从可信探针采集默认 fetch；按 HTTPS、相同 UA、cors、无显式 Priority 等条件应用。
+    区分 ReceivedStreamDependency 和出站 StreamDependency，跨连接只转发根依赖；
+    不复制别的连接的非根流 ID，不假装实现导航/资源优先级。
+    真实 H2 收包验证 SETTINGS、伪头、权重/独占位；另检查跨连接非根依赖不会误发。
+    大头块测试核对 HEADERS 五字节负载及 CONTINUATION 不携带 PRIORITY 标志。
+F13 后端能力审计与分享日志。
+    在无网络的 HelloSink 中构造当前后端的 ClientHello，对比公开算法/扩展编号。
+    摘要包含采样来源、缓存失效原因、当前运行时、重新校准状态、TLS 能力差异、H3 限制。
+    只报告公开编号，不输出 Cookie、令牌、PSK/ticket 或私钥。生产证书校验保持平台校验。
+    采样 ready 与 capabilities 检查结果分开，Linux 差异明确为 backend_mismatch。
+    诊断构造配置独立于全局信任库，已修正首次审计过早初始化实验信任库的问题。
+F14 跨平台验证宿主。
+    新增原生 Android WebView、Windows WebView2 的最小宿主和云端工作流；
+    Apple 使用原生 WKWebView，覆盖 macOS、iOS 26.2 和 iOS 15.5。
+    Windows 报告统一 UTF-8；iOS 仅无任何浏览器采样的 simctl 冷启动超时允许重试一次，
+    保留首轮失败；指纹差异、页面错误和校准失败均不靠重试掩盖。
+
+仍需治理：已确认但未修复的问题
+R01 完整 QUIC/H3 生产模板缺失。
+    依赖已有 QUIC Initial 捕获/编译，以及 H3 SETTINGS、QPACK 限额与启动配置能力；
+    不能说依赖完全不支持 H3。尚未将实际 WebView 的这些字段形成生产采样、校准与回放闭环。
+    本轮新增真实 Chromium 99/110/156 的回环 QUIC/H3 采集器，保留版本差异和失败记录。
+    命令行精确 SPKI 放行仅属于实验；无放行的负对照不能完成 H3，不更改系统信任库。
+    浏览器模板请求继续保持 H2；只有完整模板经过各平台验证后才能解除 F06 限制。
+R02 完整 HPACK、导航和资源优先级仍未实现。
+    默认 fetch 的 HEADERS 优先级已修复（F12），但不代表动态表策略、字节编码或全部时序一致。
+R03 Linux WPE WebKit 与 BoringSSL 能力差异。
+    更正早期记录：本仓库 packages/flutter_inappwebview_linux/linux/CMakeLists.txt 使用 WPE，
+    不是 WebKitGTK。Playwright headless WPE 26.5 属于同一后端家族，不等于每位用户的发行版本。
+    本轮真实采样复现 Core 缺 X448、FFDHE、部分 RSA-PSS-PSS/Ed448，并多 extended_master_secret。
+    当前已可检测和报告，但未引入另一套 TLS 后端，也未宣称这些算法已经得到支持。
+R04 iOS UA 补齐策略仍待修正。
+    iOS 26.1/26.2 的 WKWebView OS 段冻结为 18_7，现有代码据此补出 Version/18.7。
+    本轮原生查询 MobileSafari bundle 无结果，WebKit bundle 给的是内部 build，不能当 Safari 版本。
+    缓存已独立使用真实运行时并逐进程重校准；UA/OAuth 策略未改，不能把 OS 版本直接当 Safari 版本。
+
+仍需治理：策略差异与验证缺口，尚不应直接判为实现 bug
+R05 DoH/ECH 主动策略可能与直连原生 WebView 不同。要记录何时注入/接受/拒绝 ECH，
+    对同目标、同 DNS/ECH 条件做真实对照。此次未改隐私与可用性策略。
+R06 请求 Priority 头、HEADERS 优先级、完整压缩编码和时序需要按请求用途采集；
+    不能把回环探针的值原样复制到跨源、导航或业务请求。
+R07 缓存版本和每次启动重新校准已完成（F10）；进程内未观察到的新引擎变化仍不能凭空推断。
+R08 真实网络、代理/PAC、IPv4/IPv6、UDP 不通、前后台与切网要形成统一场景矩阵。
+    已有连接池重置只模拟核心连接行为，不等于实际物理网络或出口切换。
+R09 iOS 15.0 受当前云端宿主限制，尚无原生采样；iOS 15.5 已实际跑通。
+    Apple 当前云端实验用原生 WKWebView 宿主及 macOS Core，不是完整 Flutter 应用或 iPhone Core。
+    Windows WebView2 原生宿主已跑通；Android 模拟器 WebView 已采样，Core 运行于 Linux。
+    完整 Flutter 应用、Android/iPhone 真机及实际网络切换矩阵仍未覆盖。
+R10 CF 因果仍未证实；上述差异和修复不等于保证不再触发挑战。
+
+剩余项的验收边界
+- H3：从各平台实际 WebView 采集 QUIC/TLS/ALPN、传输参数、Initial/CRYPTO、SETTINGS、
+  关键流/QPACK、优先级，并分别验证恢复、0-RTT、Retry、迁移、UDP 失败回退和请求不重复提交。
+  不能把 TCP 模板字段复制进默认 QUIC 配置后称为已完成。
+- Linux：需能真实协商缺失算法的后端，不能仅声明算法编号让服务器选择后握手失败。
+- Apple UA：需可靠身份来源及 OAuth 回归；不得用硬编码系统版本表补造浏览器身份。
+- 物理切网、代理/PAC、前后台以及 CF 结果需要真实应用证据。当前受控传输实验只覆盖核心行为。
+
+当前验证
+- Rust 核心 118 项通过；Dart 配置/采样与架构守卫合计 18 项通过；相关 5 文件 analyze 无问题。
+- 当前 Linux Core：5 组真实 Chromium 配置 + 五平台 10 组预置回放，共 15 组/75 个场景通过。
+- 原生 Android、Windows、Apple 最新云端证据与版本见 native-fingerprint-governance.txt。
+- Linux WPE 26.5 复测明确不匹配，纳入证据但不计作通过。
+- H3 抓取、负对照及实验故障见 h3-native-capture.txt，不属于生产 H3 回放验收。
+- 保留 Android padding 修复前失败、全局实验信任库首轮失败、Windows 报告编码失败等证据。
+- CSRF 生产文件无修改；相关回归断言 Cookie/Origin/Referer 原值保留。
+
+主要证据目录
+/workspace/scratch/fingerprint-governance-20261115/final-matrix
+/workspace/scratch/fingerprint-governance-20261115/wpe-final-v2
+/workspace/scratch/native-fingerprint-cloud
+/workspace/scratch/apple-fingerprint-cloud
+/workspace/scratch/h3-governance-final-20261115
+此前原生云端来源及排除项见 ios15-fingerprint-validation.txt 和 apple-wkwebview-cloud-validation.txt。

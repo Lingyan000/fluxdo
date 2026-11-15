@@ -1,0 +1,7 @@
+// 诊断宿主复用主工程已锁定的 AGP；不改变应用 SDK 或依赖约束。
+buildscript {
+    repositories { google(); mavenCentral() }
+    def settings = file('../../../android/settings.gradle.kts').text
+    def version = (settings =~ /id\("com.android.application"\) version "([^"]+)"/)[0][1]
+    dependencies { classpath "com.android.tools.build:gradle:${version}" }
+}

@@ -1,0 +1,60 @@
+name: Apple WKWebView fingerprint probe
+
+on:
+  push:
+    branches: ['diagnostics/apple-fingerprint-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-fingerprint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-probe:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode matching the iOS 26 simulator
+        run: |
+          # runner 镜像预装 26.3，但默认仍为 16.4；显式固定已核对的稳定版。
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.96.0'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: apple-fingerprint-macos-15
+          cache-on-failure: true
+      - name: Prepare diagnostic build tools
+        run: |
+          command -v cmake || brew install cmake
+          echo "LIBCLANG_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+          chmod +x tool/apple_fingerprint/ios_driver.py
+      - name: Build production core diagnostic
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
+      - name: Run macOS and iOS native WKWebView scenarios
+        # 本轮针对应用启动失败的 26.2 重跑；省略 --ios-version 即恢复完整版本矩阵。
+        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/apple-fingerprint" --ios-version 26.2
+      - name: Upload raw diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-wkwebview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/apple-fingerprint/**/*.json
+            ${{ runner.temp }}/apple-fingerprint/**/*.log
+            ${{ runner.temp }}/apple-fingerprint/**/*.stdout
+            ${{ runner.temp }}/apple-fingerprint/**/*.stderr
+          if-no-files-found: warn
+          retention-days: 14
