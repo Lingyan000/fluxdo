@@ -9,9 +9,10 @@
 core/net_core/examples/h3_fingerprint_probe.rs 启动临时 QUIC/H3 服务与 UDP 观测中继，
 生成临时证书，使用独立 Chromium profile。只对该证书的 SPKI 使用命令行实验放行，
 不修改系统信任库，不把证书忽略带进生产网络代码。
-采集首个 UDP 流的 Initial 形态、TLS 公开字段、传输参数顺序和 H3 SETTINGS、
+采集每条 UDP 流的 Initial 形态，通过 flow_id 关联 H3 SETTINGS、
 关键流观察、QPACK 字段表示、请求 Priority。随机密钥和连接 ID 不作为固定模板值。
-H3 请求记录可能来自浏览器另一条连接；首个 UDP 流和各 H3 请求不宣称一一对应。
+后续已修复连接关联：各 H3 请求对应同一 flow 的 Initial；见 linux-native-tls-20261115.txt。
+旧报告仍保留首个 UDP 流的限制，不能把新采集能力追溯到历史数据。
 观察器回调顺序不等于原始包到达顺序。完整 HPACK/QPACK 行为或字节等价不在验收内。
 实验报告不输出私钥；浏览器 profile 和完整 netlog 不纳入分享证据包。
 

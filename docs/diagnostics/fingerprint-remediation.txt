@@ -3,7 +3,7 @@
 范围：Android、iOS、macOS、Windows、Linux；TCP/TLS、H2、H3、请求头与缓存。
 约束：CSRF、Cookie、Origin、Referer 的业务策略不改；本轮不统一两条链路的出口。
 状态：修复已在工作区和独立诊断分支验证；本轮未发布到 dev 或创建 beta 标签。
-继续治理结果见 fingerprint-continuation-20261115.txt。
+继续治理结果见 fingerprint-continuation-20261115.txt；最新 Linux 接入与 H3 关联结果见 linux-native-tls-20261115.txt。
 阅读提示：本文件区分已修复、已确认但未修复、验证缺口；不能把测试通过理解为完整指纹一致。
 
 已修正并有对应证据
@@ -81,7 +81,8 @@ R03 Linux WPE WebKit 与 BoringSSL 能力差异。
     更正早期记录：本仓库 packages/flutter_inappwebview_linux/linux/CMakeLists.txt 使用 WPE，
     不是 WebKitGTK。Playwright headless WPE 26.5 属于同一后端家族，不等于每位用户的发行版本。
     本轮真实采样复现 Core 缺 X448、FFDHE、部分 RSA-PSS-PSS/Ed448，并多 extended_master_secret。
-    当前已可检测和报告，但未引入另一套 TLS 后端，也未宣称这些算法已经得到支持。
+    后续已接入经实际能力匹配的 GnuTLS：无 ECH 的 Core 路径通过真实 WPE 对照，
+    对应 WebView 代理路径保留端到端 TLS；ECH 注入保留 BoringSSL，不能宣称全路径一致。
 R04 iOS UA 补齐策略仍待修正。
     iOS 26.1/26.2 的 WKWebView OS 段冻结为 18_7，现有代码据此补出 Version/18.7。
     本轮原生查询 MobileSafari bundle 无结果，WebKit bundle 给的是内部 build，不能当 Safari 版本。
