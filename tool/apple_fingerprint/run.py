@@ -24,6 +24,7 @@ def output(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
     parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
@@ -32,7 +33,7 @@ def main():
     root.mkdir(parents=True, exist_ok=True)
     repo = Path(__file__).resolve().parents[2]
     source = Path(__file__).parent / 'WKProbe.swift'
-    binary = repo / 'core/net_core/target/debug/examples/fingerprint_probe'
+    binary = repo / 'core/net_core/target/debug/examples' / ('h3_fingerprint_probe' if args.h3 else 'fingerprint_probe')
     metadata = {'uname': platform.uname()._asdict(), 'sw_vers': output(['sw_vers']),
                 'xcode': output(['xcodebuild', '-version']), 'git': output(['git', 'rev-parse', 'HEAD']),
                 'host': 'minimal native WKWebView, not the full Flutter application',
@@ -51,11 +52,11 @@ def main():
         result = {'case': name, 'evidence_kind': 'native_wkwebview', 'configuration': extra_env}
         try:
             with (folder / 'run.log').open('w') as log:
-                process = subprocess.run([str(binary), str(driver), str(folder)], env=env,
+                process = subprocess.run([str(binary), str(driver), str(folder)] + (['--native-probe'] if args.h3 else []), env=env,
                                          stdout=log, stderr=subprocess.STDOUT, timeout=240)
             result['exit_code'] = process.returncode
             native = []
-            for path in sorted(folder.glob('browser-*.stdout')):
+            for path in sorted(folder.glob('browser*.stdout')):
                 for line in path.read_text().splitlines():
                     try:
                         value = json.loads(line)
@@ -64,8 +65,14 @@ def main():
                     if isinstance(value, dict) and value.get('engine') == 'native WKWebView':
                         native.append(value)
             result['native_runs'] = native
-            result['comparison'] = compare(folder)
-            result['passed'] = process.returncode == 0 and len(native) == 2 and all(r['success'] for r in native) and result['comparison']['all_checked_fields_match']
+            if args.h3:
+                result['h3_capture'] = json.loads((folder / 'h3-capture.json').read_text())
+                # 实验完成不等于 H3 支持，更不等于指纹回放通过。
+                result['h3_sample_complete'] = result['h3_capture']['h3_sample_complete']
+                result['passed'] = process.returncode == 0 and len(native) == 1 and all(r['success'] for r in native)
+            else:
+                result['comparison'] = compare(folder)
+                result['passed'] = process.returncode == 0 and len(native) == 2 and all(r['success'] for r in native) and result['comparison']['all_checked_fields_match']
         except (OSError, ValueError, KeyError, AssertionError, subprocess.TimeoutExpired) as error:
             result['error'] = str(error)
             result['passed'] = False
