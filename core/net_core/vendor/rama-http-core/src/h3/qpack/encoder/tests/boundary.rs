@@ -684,3 +684,35 @@ fn ordered_initial_insertions_support_post_base_references_without_reordering() 
         assert!(cursor.is_empty());
     }
 }
+
+#[test]
+fn automatic_fields_with_explicit_base_use_dynamic_table_for_current_values() {
+    let mut encoder = Encoder::new(EncoderConfig::default());
+    let mut decoder = Decoder::new(DecoderConfig::default());
+    for (stream, value) in [(0, "etag-one"), (4, "etag-one"), (8, "etag-two")] {
+        let input = [
+            (":method", "GET", FieldPreferences::default()),
+            ("if-none-match", value, FieldPreferences::default()),
+            ("range", "bytes=0-15", FieldPreferences::default()),
+            ("x-private", "private-value", FieldPreferences { never_index: true, ..Default::default() }),
+        ];
+        let before = encoder.insert_count();
+        let section = encoder.encode_with_base(stream, fields(&input), FieldSectionBase::FromFieldPreferences).unwrap();
+        decoder.feed_encoder_stream(&encoder.take_encoder_stream()).unwrap();
+        let mut cursor = section.as_ref();
+        let _ = HeaderPrefix::decode(&mut cursor, 128, encoder.insert_count()).unwrap();
+        let observed: Vec<_> = (0..4).map(|_| ObservedFieldRepresentation::from(
+            &FieldLine::decode(&mut cursor, 4096).unwrap())).collect();
+        assert_eq!(observed[0].representation, FieldRepresentation::StaticIndex);
+        assert_eq!(observed[1].representation, FieldRepresentation::DynamicIndex);
+        assert_eq!(observed[2].representation, FieldRepresentation::DynamicIndex);
+        assert!(observed[3].never_index);
+        assert!(cursor.is_empty());
+        let decoded = decoder.decode_field_section(stream, section).unwrap().unwrap();
+        assert_eq!(decoded[1].value.as_ref(), value.as_bytes());
+        assert_eq!(decoded[3].value.as_ref(), b"private-value");
+        assert!(decoded[3].never_index);
+        assert_eq!(encoder.insert_count()-before, if stream==0 {2} else if stream==4 {0} else {1});
+        encoder.feed_decoder_stream(&decoder.take_decoder_stream()).unwrap();
+    }
+}

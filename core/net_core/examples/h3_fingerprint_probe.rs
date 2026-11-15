@@ -39,6 +39,26 @@ await new Promise(r=>setTimeout(r,500));}}finally{
 await fetch('/fluxdo-probe/finished');document.title='fluxdo-probe-done';}})();
 </script>"#;
 
+// 只发送合成请求，覆盖变化的请求字段；不读取登录态或 CSRF。
+const QPACK_PAGE: &str = r#"<!doctype html><link rel="icon" href="data:,"><title>fluxdo-probe</title><script>
+(async()=>{await new Promise(r=>setTimeout(r,400));try{
+let ready=false;for(let i=0;i<24;i++){let r=await fetch('/fluxdo-probe/fetch');
+if((await r.text())==='h3'){ready=true;break;}await new Promise(r=>setTimeout(r,300));}
+if(!ready)throw Error('no h3');
+for(let i=0;i<2;i++)await (await fetch('/fluxdo-probe/qpack/warm-'+i)).text();
+const cases=[
+['conditional','GET',{'if-none-match':'"fluxdo-lab-etag"'},null],
+['form','POST',{'content-type':'application/x-www-form-urlencoded'},'sample=one&value=two'],
+['json','POST',{'content-type':'application/json'},'{"sample":1}'],
+['range','GET',{'range':'bytes=0-15'},null],
+['head','HEAD',{},null],
+['conditional-changed','GET',{'if-none-match':'"fluxdo-lab-etag-changed-20261115"'},null],
+['form-again','POST',{'content-type':'application/x-www-form-urlencoded'},'sample=two&value=one']];
+for(const [name,method,headers,body] of cases){await (await fetch('/fluxdo-probe/qpack/'+name,{method,headers,body})).text();}
+await (await fetch('/fluxdo-probe/done')).text();
+}finally{await (await fetch('/fluxdo-probe/finished')).text();document.title='fluxdo-probe-done';}})();
+</script>"#;
+
 // 请求流可以早于控制流到达。等待同连接发布首请求边界，避免混入后续
 // 请求产生的 QPACK 指令；Initial 完整也不能替代控制流和字段的完整性。
 fn joint_capture_complete(
@@ -101,6 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let browser = args.get(1).ok_or("browser executable required")?;
     let native_probe = args.iter().any(|a| a == "--native-probe");
+    let qpack_cases = args.iter().any(|a| a == "--qpack-scenarios");
     let block_quic = args.iter().any(|a| a == "--block-quic");
     let drop_initial = args.iter().any(|a| a == "--drop-first-initial");
     let require_retry = args.iter().any(|a| a == "--require-retry");
@@ -183,7 +204,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .header("cache-control", "no-store")
                             .header("content-type", "text/html")
                             .body(Body::from(if path == "/fluxdo-probe" {
-                                NATIVE_PAGE
+                                if qpack_cases { QPACK_PAGE } else { NATIVE_PAGE }
                             } else {
                                 "tcp"
                             }))
@@ -342,7 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .path()
                             .map(|p| p.to_string())
                             .unwrap_or_default();
-                        let body = if path == "/fluxdo-probe" { NATIVE_PAGE } else if path == "/" {
+                        let body = if path == "/fluxdo-probe" { if qpack_cases { QPACK_PAGE } else { NATIVE_PAGE } } else if path == "/" {
                             "<!doctype html><script>fetch('/fetch').then(()=>fetch('/done')).then(()=>document.title='done')</script>"
                         } else if path.starts_with("/fluxdo-probe/") { "h3" } else {
                             "ok"
@@ -368,6 +389,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             json!({"flow_id":flow_id,"path":path,"method":request.method().as_str(),"body_bytes":request_body.len(),"body_sha256":body_digest(&request_body),"version":format!("{:?}",request.version()),
                             "if_none_match":request.headers().get("if-none-match").and_then(|v|v.to_str().ok()),
                             "content_type":request.headers().get("content-type").and_then(|v|v.to_str().ok()),
+                            "range":request.headers().get("range").and_then(|v|v.to_str().ok()),
+                            "accept_encoding":request.headers().get("accept-encoding").and_then(|v|v.to_str().ok()),
                             "connection":settled_boundary,"request":fields,
                             "first_request_boundary":first_request_boundary}),
                         );
@@ -375,9 +398,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .send_response(
                                 Response::builder()
                                     .header("content-type", "text/html")
-                                    .body(Body::from(body))?,
+                                    .body(if request.method()==rama::http::Method::HEAD {Body::empty()} else {Body::from(body)})?,
                             )
                             .await?;
+                        if qpack_cases && !native_probe && path == "/fluxdo-probe" {
+                            // 页面导航不占用被比较的 fetch 连接；本实验明确强制 QUIC。
+                            tokio::time::sleep(Duration::from_millis(150)).await;
+                            close_connection.close(0u32,b"fresh qpack fetch connection");
+                            break;
+                        }
                         if path == "/fluxdo-probe/finished" { native_done.notify_one(); }
                         if path == "/done" || path == "/fluxdo-probe/done" {
                             finished.notify_one();
@@ -408,7 +437,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 "--user-data-dir={}",
                 out.join("browser-profile").display()
             ));
-        if !learn_alt_svc {
+        if !learn_alt_svc || qpack_cases {
             command.arg(format!("--origin-to-force-quic-on=localhost:{port}"));
         }
     }

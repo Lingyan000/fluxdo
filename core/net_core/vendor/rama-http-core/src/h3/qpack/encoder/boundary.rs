@@ -103,10 +103,12 @@ impl<'a> Plan<'a> {
                             encodings[ordinal] = FieldEncoding::LiteralStaticName(index);
                             continue;
                         }
-                        Representation::Automatic => {
+                        Representation::Automatic if matches!(native, FieldEncoding::StaticIndex(_)) => {
                             encodings[ordinal] = native;
                             continue;
                         }
+                        // 自动策略保留精确静态命中，其余字段继续按当前动态表规划。
+                        // 指定 Base 只约束索引位置，不能把未单独采样的字段一律降为字面量。
                         _ => (),
                     }
                 }
