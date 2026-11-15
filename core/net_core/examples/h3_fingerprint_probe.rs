@@ -381,8 +381,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         let settled_boundary = if let Some(observer) = &observer {
                             let first=observer.snapshot();
-                            let expected=native_probe && first.control.iter().any(|frame|
+                            // 生产回放的策略已写入 profile；首帧尚未到达也必须按该策略等待。
+                            // 原生独立采集没有此文件，继续使用已观察到的控制流策略。
+                            let mut expected=native_probe && first.control.iter().any(|frame|
                                 frame.frame_type == u64::from(rama::http::proto::h3::FrameType::PRIORITY_UPDATE_REQUEST));
+                            if let Some(folder) = std::env::var_os("FLUXDO_H3_OUTPUT") {
+                                let profile = PathBuf::from(folder).join("profile.json");
+                                if profile.exists() {
+                                    let profile: serde_json::Value = serde_json::from_slice(&std::fs::read(profile)?)?;
+                                    expected |= profile["boundary"]["control"].as_array().is_some_and(|frames|
+                                        frames.iter().any(|frame| frame["frame_type"].as_u64() == Some(0xf0700)));
+                                }
+                            }
                             let stream_id=request.extensions().get_ref::<H3RequestObservation>().ok_or("missing request observation")?.stream_id;
                             Some(fluxdo_net::h3_template::sampled_request_boundary(observer, stream_id, expected).await?)
                         } else {None};

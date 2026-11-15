@@ -82,6 +82,35 @@ class H3EvidenceTest(unittest.TestCase):
             next(frame for frame in frames if frame['frame_type']==13)['element_id']+=1
         self.assertFalse(self.evaluate(corrupt))
 
+    def with_request_priorities(self, data):
+        for phase in range(len(data['profile']['wire_fields'])):
+            frame={'frame_type':0xf0700, 'element_id':phase*4, 'value':list(b'u=1, i'), 'length':7}
+            data['profile']['warm_boundary']['control'].append(copy.deepcopy(frame))
+            if phase == 0:
+                data['profile']['boundary']['control'].append(copy.deepcopy(frame))
+            for request in data['capture']['h3'][phase:]:
+                request['connection']['control'].append(copy.deepcopy(frame))
+
+    def test_priority_after_frozen_headers_but_before_response_passes(self):
+        self.assertTrue(self.evaluate(self.with_request_priorities))
+
+    def test_missing_early_priority_is_not_rescued_by_later_snapshot(self):
+        def corrupt(data):
+            self.with_request_priorities(data)
+            data['capture']['h3'][0]['connection']['control'].pop()
+        self.assertFalse(self.evaluate(corrupt))
+
+    def test_wrong_or_duplicate_request_priority_fails(self):
+        for mode in ('value', 'stream', 'duplicate'):
+            def corrupt(data):
+                self.with_request_priorities(data)
+                frames=data['capture']['h3'][1]['connection']['control']
+                if mode == 'value': frames[-1]['value']=list(b'u=7')
+                elif mode == 'stream': frames[-1]['element_id']=12
+                else: frames.append(copy.deepcopy(frames[-1]))
+            with self.subTest(mode=mode):
+                self.assertFalse(self.evaluate(corrupt))
+
     def test_missing_or_duplicate_crypto_ranges_fail(self):
         self.assertFalse(self.evaluate(lambda d: d['capture']['initial'].update(frames=[])))
         def duplicate(data):

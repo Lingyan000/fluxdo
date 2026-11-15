@@ -35,11 +35,17 @@ def streams(boundary):
     return sorted((row['stream_id'], row['stream_type']) for row in boundary['streams'])
 
 
-def controls(boundary):
+def controls(boundary, *, include_request_priority=True):
     # 随机保留类型/负载只核对形状；MAX_PUSH_ID 等已知帧必须比较实际语义值。
     return [('reserved', row['length']) if reserved(row['frame_type']) else
             (row['frame_type'], row['element_id'], row['value'])
-            for row in boundary['control'] if row['frame_type'] != 4]
+            for row in boundary['control'] if row['frame_type'] != 4
+            and (include_request_priority or row['frame_type'] != 0xf0700)]
+
+
+def request_priorities(boundary, stream_id):
+    return [(row['element_id'], row['value']) for row in boundary['control']
+            if row['frame_type'] == 0xf0700 and row['element_id'] == stream_id]
 
 
 def fields(names, rows):
@@ -123,7 +129,9 @@ def compare(folder):
         'no_connection_error':not actual['connection_errors'],
         'transport_parameters':parameters(source['parameters'])==parameters(actual['transport_parameters']),
         'settings':settings(source['boundary'])==settings(requests[0]['first_request_boundary']['snapshot']),
-        'initial_control_frames':controls(source['boundary'])==controls(requests[0]['first_request_boundary']['snapshot'])}
+        # 控制流与请求流没有跨流到达顺序保证；逐请求优先级在响应前快照中另行严格核验。
+        'initial_control_frames':controls(source['boundary'], include_request_priority=False)==
+            controls(requests[0]['first_request_boundary']['snapshot'], include_request_priority=False)}
     for key in ['version','dcid_len','scid_len','first_packet_number','packet_number_lengths','padding','coalesced','datagram_sizes']:
         checks['initial_'+key]=source['flight'][key]==actual['initial'][key]
     source_layout, actual_layout = initial_layout(source['flight']), initial_layout(actual['initial'])
@@ -150,6 +158,8 @@ def compare(folder):
         checks[f'qpack_phase_{i}_frozen_boundary']=(boundary.get('status')=='ready'
             and complete_boundary(boundary.get('snapshot', {}), require_bindings=True))
         checks[f'qpack_phase_{i}_connection_complete']=complete_boundary(request.get('connection', {}))
+        checks[f'request_phase_{i}_priority']=request_priorities(source['warm_boundary'], i*4)==\
+            request_priorities(request.get('connection', {}), i*4)
         evidence=request.get('request') or {}
         names=evidence.get('names')
         rows=evidence.get('fields')
@@ -174,7 +184,8 @@ def compare(folder):
         'initial_layout':{'source':source_layout,'actual':actual_layout},
         'scope':'production HttpEgressClient versus fresh local browser samples',
         'not_verified':['physical device and production network','Cloudflare acceptance','exact QPACK bytes for identical business requests',
-            'random Initial layout distribution','migration, loss and Retry under captured profile']}
+            'random Initial layout distribution','cross-stream arrival order',
+            'migration, loss and Retry under captured profile']}
     (folder/'comparison.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     return result
 
