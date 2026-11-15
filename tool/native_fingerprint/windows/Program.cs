@@ -14,6 +14,9 @@ internal static class Program {
         form.Controls.Add(view);
         var result = 1;
         var completed = false;
+        var certificateErrors = new List<string>();
+        var spki = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_PROBE_SPKI");
+        var netlog = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_NETLOG_PATH");
         string? nativeUa = null;
         using var timer = new System.Windows.Forms.Timer { Interval = 45000 };
         void Finish(string? error) {
@@ -22,6 +25,8 @@ internal static class Program {
             Console.WriteLine(JsonSerializer.Serialize(new {
                 engine = "native WebView2", os = Environment.OSVersion.ToString(),
                 native_user_agent = nativeUa, version = view.CoreWebView2?.Environment.BrowserVersionString,
+                diagnostic_spki_override = !string.IsNullOrEmpty(spki),
+                certificate_errors = certificateErrors,
                 success = error == null, error
             }));
             result = error == null ? 0 : 1;
@@ -31,11 +36,23 @@ internal static class Program {
         form.Shown += async (_, _) => {
             try {
                 var profile = Path.Combine(Path.GetTempPath(), "fluxdo-webview2-probe-" + Guid.NewGuid());
-                var environment = await CoreWebView2Environment.CreateAsync(null, profile);
+                var flags = new List<string>();
+                if (!string.IsNullOrEmpty(spki)) {
+                    if (uri.AbsolutePath != "/fluxdo-h3" || Convert.FromBase64String(spki).Length != 32)
+                        throw new ArgumentException("invalid diagnostic probe SPKI");
+                    flags.Add("--ignore-certificate-errors-spki-list=" + spki);
+                }
+                if (!string.IsNullOrEmpty(netlog)) {
+                    if (netlog.Contains('"')) throw new ArgumentException("invalid netlog path");
+                    flags.Add("--log-net-log=\"" + Path.GetFullPath(netlog) + "\"");
+                }
+                var options = new CoreWebView2EnvironmentOptions(string.Join(" ", flags));
+                var environment = await CoreWebView2Environment.CreateAsync(null, profile, options);
                 await view.EnsureCoreWebView2Async(environment);
                 nativeUa = view.CoreWebView2.Settings.UserAgent;
                 view.CoreWebView2.ServerCertificateErrorDetected += (_, e) => {
                     var request = new Uri(e.RequestUri);
+                    certificateErrors.Add(e.ErrorStatus.ToString());
                     e.Action = request.Host == uri.Host && request.Port == uri.Port && request.Scheme == "https"
                         ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow
                         : CoreWebView2ServerCertificateErrorAction.Cancel;

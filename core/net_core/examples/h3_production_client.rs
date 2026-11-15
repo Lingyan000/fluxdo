@@ -120,6 +120,16 @@ async fn main() -> Result<(), BoxError> {
         });
         let mut command = tokio::process::Command::new(&browser);
         if std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some() {
+            // 仅诊断宿主使用：每个独立探针只信任当前临时证书，并保存网络决策证据。
+            command.env(
+                "FLUXDO_NATIVE_NETLOG_PATH",
+                out.join(format!("browser-netlog-{index}.json")),
+            );
+            if std::env::var("FLUXDO_H3_DIAGNOSTIC_SPKI").as_deref() == Ok("1") {
+                command.env("FLUXDO_NATIVE_PROBE_SPKI", spki);
+            } else {
+                command.env_remove("FLUXDO_NATIVE_PROBE_SPKI");
+            }
             command.arg(format!("https://localhost:{port}/fluxdo-h3"));
         } else {
             if std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some() {
