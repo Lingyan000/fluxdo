@@ -55,13 +55,16 @@ def main():
         command(['df', '-h', root])
         command(['curl', '--fail', '--location', '--retry', '2', '--max-time', '900',
                  '--output', dmg, runtime['source']], timeout=1000)
-        if dmg.stat().st_size != runtime['fileSize']:
-            raise RuntimeError('下载文件大小与 Apple 目录不符')
+        # Apple 旧目录的 fileSize 与当前 CDN 文件可能不一致；保留差异，
+        # 完整性由磁盘镜像校验和及安装包签名共同确认，不能仅凭目录大小中止。
+        evidence['download_size'] = dmg.stat().st_size
+        evidence['size_matches_catalog'] = dmg.stat().st_size == runtime['fileSize']
         digest = hashlib.sha256()
         with dmg.open('rb') as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b''):
                 digest.update(chunk)
         evidence['download_sha256'] = digest.hexdigest()
+        command(['hdiutil', 'verify', dmg], timeout=300)
         mount.mkdir()
         command(['hdiutil', 'attach', '-nobrowse', '-readonly', '-mountpoint', mount, dmg])
         mounted = True
