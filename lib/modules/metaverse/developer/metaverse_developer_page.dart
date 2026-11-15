@@ -108,31 +108,6 @@ class _ComponentGalleryState extends State<_ComponentGallery> {
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: SegmentedCardGroup(
-            children: [
-              ListTile(
-                leading: Icon(
-                  Symbols.public_rounded,
-                  color: context.emphasis.accent,
-                ),
-                title: Text(context.l10n.metaverse_apiBrowserGuide),
-                subtitle: Text(context.l10n.metaverse_apiBrowserOpen),
-                trailing: const Icon(Symbols.chevron_right_rounded),
-                onTap: () => Navigator.of(context).push(
-                  InteractionPageRoute(
-                    builder: (_) => MetaverseApiPreviewPage(
-                      example: metaverseApiExamples.firstWhere(
-                        (e) => e.name == 'browser.open',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -267,6 +242,12 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text(widget.example.description),
+          if (widget.example.name == 'Image') ...[
+            const SizedBox(height: 8),
+            Text(l.metaverse_developerImagePreview),
+          ],
+          const SizedBox(height: 16),
           Text(
             l.metaverse_developerPreview,
             style: theme.textTheme.titleMedium,
@@ -321,6 +302,31 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
   }
 
   Widget _parameter(String key, Object value) {
+    final options = widget.example.options[key];
+    if (options != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(key),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final option in options)
+                  ChoiceChip(
+                    label: Text(option),
+                    selected: value == option,
+                    onSelected: (_) => _change(key, option),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     if (value is bool) {
       return M3eSwitchListTile(
         title: Text(key),
@@ -332,12 +338,14 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$key · ${value.toStringAsFixed(2)}'),
+          Text('$key · ${value is int ? value : value.toStringAsFixed(2)}'),
           Slider(
             value: value.toDouble(),
-            min: 0,
-            max: key == 'value' ? 1 : 160,
-            onChanged: (next) => _change(key, next),
+            min: key == 'maxLines' ? 1 : 0,
+            max: key == 'maxLines' ? 8 : key == 'columns' ? 6 : key == 'value' ? 1 : 160,
+            divisions: key == 'maxLines' ? 7 : key == 'columns' ? 6 : null,
+            onChanged: (next) =>
+                _change(key, value is int ? next.round() : next),
           ),
         ],
       );

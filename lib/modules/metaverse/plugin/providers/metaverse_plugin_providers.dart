@@ -504,6 +504,10 @@ class _HostDelegate extends MetaversePluginHostDelegate {
       launchExternalLink(context, url.toString(), preferSessionBrowser: true);
 
   @override
+  Future<void> openBrowser(BuildContext context, Uri url, LinkOpenMode mode) =>
+      launchExternalLink(context, url.toString(), mode: mode);
+
+  @override
   void toast(String message, String type) =>
       showMetaversePluginToast(_manifest.name, message, type);
 

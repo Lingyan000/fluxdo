@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_api_examples.dart';
+import 'package:fluxdo/modules/metaverse/developer/metaverse_component_examples.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_catalog.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_page.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_provider.dart';
@@ -450,4 +451,50 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 2));
   });
+  for (final scale in [1.0, 1.4]) {
+    testWidgets('浏览器 API 模式在文档中可切换 $scale', (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(app(scale: scale, page: MetaverseApiPreviewPage(
+        example: metaverseApiExamples.firstWhere((e) => e.name == 'browser.open'),
+      )));
+      expect(find.byType(ChoiceChip), findsNWidgets(4));
+      await tester.tap(find.widgetWithText(ChoiceChip, S.current.externalLink_openInAppBrowser));
+      await tester.pumpAndSettle();
+      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, S.current.externalLink_openInAppBrowser)).selected, isTrue);
+      await screenshot(tester, 'browser-api-$scale');
+      final codeTitle = find.text(S.current.metaverse_developerCode);
+      await tester.ensureVisible(codeTitle);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('mode: "inApp"'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final mode in ['natural', 'equalHeight', 'masonry']) {
+    testWidgets('网格布局在组件文档中切换 $mode', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(app(
+        page: Builder(builder: (context) => MetaverseComponentPreviewPage(
+          example: metaverseComponentExamples(context.l10n)
+              .firstWhere((example) => example.name == 'TileGrid'),
+        )),
+      ));
+      final choice = find.widgetWithText(ChoiceChip, mode);
+      await tester.ensureVisible(choice);
+      await tester.tap(choice);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ChoiceChip>(choice).selected, isTrue);
+      await tester.drag(find.byType(ListView).first, const Offset(0, 1200));
+      await tester.pumpAndSettle();
+      await screenshot(tester, 'tile-grid-$mode');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
 }

@@ -166,7 +166,9 @@ const metaversePluginPrelude = r'''
     }),
     openUrl: function (url) { return call('openUrl', { url: String(url) }); },
     browser: Object.freeze({
-      open: function (url) { return call('browser.open', { url: String(url) }); }
+      open: function (url, options) {
+        return call('browser.open', { url: String(url), mode: options && options.mode || 'ask' });
+      }
     }),
     toast: function (message, type) { return call('toast', { message: String(message), type: type || 'info' }); }
     });

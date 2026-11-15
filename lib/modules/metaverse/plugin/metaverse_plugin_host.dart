@@ -10,6 +10,7 @@ import 'package:rfw/rfw.dart';
 
 import '../../../services/log/log_policy.dart';
 import '../../../services/log/log_writer.dart';
+import '../../../utils/link_launcher.dart' show LinkOpenMode;
 
 import 'metaverse_plugin_installer.dart';
 import 'metaverse_plugin_manifest.dart';
@@ -61,6 +62,11 @@ abstract class MetaversePluginHostDelegate {
 
   /// 打开内置浏览器页面，浏览器会话由宿主管理。
   Future<void> openWebSession(BuildContext context, Uri url);
+
+  Future<void> openBrowser(BuildContext context, Uri url, LinkOpenMode mode) =>
+      mode == LinkOpenMode.inApp
+          ? openWebSession(context, url)
+          : openUrl(context, url);
 
   void toast(String message, String type);
 
@@ -622,9 +628,15 @@ class MetaversePluginHost implements MetaversePluginBridge {
             (url.scheme != 'https' && url.scheme != 'http')) {
           throw const MetaversePluginCallException('只能打开 http(s) 链接');
         }
+        final mode = LinkOpenMode.values
+            .where((value) => value.name == (params['mode'] ?? 'ask'))
+            .firstOrNull;
+        if (method == 'browser.open' && mode == null) {
+          throw const MetaversePluginCallException('browser_invalid_mode');
+        }
         await _userInitiatedUi(
           (context) => method == 'browser.open'
-              ? _delegate.openWebSession(context, url)
+              ? _delegate.openBrowser(context, url, mode!)
               : _delegate.openUrl(context, url),
         );
         return null;

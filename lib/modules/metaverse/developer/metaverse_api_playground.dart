@@ -104,6 +104,8 @@ class MetaverseApiPreviewPage extends StatefulWidget {
 class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   late final _arguments = TextEditingController(text: widget.example.arguments);
   final _message = TextEditingController(text: 'Hello, FluxDO!');
+  final _url = TextEditingController(text: 'https://example.org');
+  LinkOpenMode _browserMode = LinkOpenMode.ask;
   final _storage = <String, Object?>{
     'example': {'value': 1},
   };
@@ -114,8 +116,11 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   int _generation = 0;
   String? _result;
   bool get _isToast => widget.example.name == 'toast';
+  bool get _isBrowser => widget.example.name == 'browser.open';
   String get _input => _isToast
       ? '${jsonEncode(_message.text)}, ${jsonEncode(_toastType.name)}'
+      : _isBrowser
+      ? '${jsonEncode(_url.text)}, {mode: ${jsonEncode(_browserMode.name)}}'
       : _arguments.text;
 
   @override
@@ -124,6 +129,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
     _runtime?.dispose();
     _arguments.dispose();
     _message.dispose();
+    _url.dispose();
     super.dispose();
   }
 
@@ -209,7 +215,9 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
         await launchExternalLink(
           context,
           uri.toString(),
-          preferSessionBrowser: method == 'browser.open',
+          mode: method == 'browser.open'
+              ? LinkOpenMode.values.byName('${params['mode'] ?? 'ask'}')
+              : LinkOpenMode.preference,
         );
         return null;
       case 'navigate':
@@ -331,10 +339,14 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
           const SizedBox(height: 8),
           InputFieldShell(
             child: TextField(
-              controller: _isToast ? _message : _arguments,
+              controller: _isToast
+                  ? _message
+                  : _isBrowser
+                  ? _url
+                  : _arguments,
               enabled: !_running,
-              minLines: _isToast ? 1 : 2,
-              maxLines: _isToast ? 3 : 8,
+              minLines: _isToast || _isBrowser ? 1 : 2,
+              maxLines: _isToast || _isBrowser ? 3 : 8,
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.all(16),
                 hintText: _isToast
@@ -357,6 +369,31 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
                       onSelected: _running
                           ? null
                           : (_) => setState(() => _toastType = type),
+                    ),
+                ],
+              ),
+            ),
+          if (_isBrowser)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final mode in LinkOpenMode.values)
+                    ChoiceChip(
+                      label: Text(switch (mode) {
+                        LinkOpenMode.preference =>
+                          l.metaverse_apiBrowserPreference,
+                        LinkOpenMode.inApp => l.externalLink_openInAppBrowser,
+                        LinkOpenMode.ask => l.metaverse_apiBrowserAsk,
+                        LinkOpenMode.external =>
+                          l.externalLink_openInSystemBrowser,
+                      }),
+                      selected: _browserMode == mode,
+                      onSelected: _running
+                          ? null
+                          : (_) => setState(() => _browserMode = mode),
                     ),
                 ],
               ),

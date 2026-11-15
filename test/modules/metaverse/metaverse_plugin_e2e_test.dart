@@ -1620,7 +1620,7 @@ Future<void> main() async {
           ctx.setData('balance', tried.join(','));
         });
         fluxdo.on('refresh', async (ctx) => {
-          await fluxdo.browser.open('https://example.com/a');
+          await fluxdo.browser.open('https://example.com/a', {mode:'inApp'});
           try { await fluxdo.openUrl('https://example.com/b'); }
           catch (e) { ctx.setData('balance', 'second-denied'); }
         });
