@@ -24,6 +24,10 @@ pub struct StreamDependency {
     pub is_exclusive: bool,
 }
 
+/// 入站流的依赖关系；非根流 ID 只在原连接内有效，不能直接用于另一条连接。
+#[derive(Debug, Clone, Extension)]
+pub struct ReceivedStreamDependency(pub StreamDependency);
+
 impl Priority {
     /// Create a new priority frame.
     ///

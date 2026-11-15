@@ -1145,6 +1145,7 @@ fn build_request(
         && request.headers().get("sec-fetch-mode").is_some_and(|v| v == "cors")
         && !request.headers().contains_key("priority")
         && !request.extensions().contains::<rama::http::proto::h2::frame::StreamDependency>()
+        && !request.extensions().contains::<rama::http::proto::h2::frame::ReceivedStreamDependency>()
         && let Some(priority) = template.fetch_h2_priority.as_ref().and_then(|p| p.dependency.as_ref())
         && priority.dependency_id == rama::http::proto::h2::frame::StreamId::zero()
     {
@@ -1955,7 +1956,7 @@ mod tests {
             .header("user-agent", "priority-lab").body(()).unwrap();
         sample.extensions().insert(template.early_frames.clone());
         sample.extensions().insert(template.pseudo_order.clone());
-        sample.extensions().insert(priority.clone());
+        sample.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(priority.clone()));
         templates.observe_probe_fetch(&sample);
         let (chain, key) = rama_crypto::cert::generate_server_auth(
             rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
@@ -1991,7 +1992,7 @@ mod tests {
                         .get_ref::<PseudoHeaderOrder>()
                         .unwrap()
                         .clone(),
-                    request.extensions().get_ref::<rama::http::proto::h2::frame::StreamDependency>().cloned(),
+                    request.extensions().get_ref::<rama::http::proto::h2::frame::ReceivedStreamDependency>().map(|p| p.0.clone()),
                 ));
                 async { Ok::<_, Infallible>(Response::new(Body::from("ok"))) }
             }));
@@ -2042,6 +2043,18 @@ mod tests {
             serde_json::to_value(order).unwrap(),
             serde_json::to_value(template.pseudo_order).unwrap()
         );
+        // 镜像只能跨连接保留根依赖，不能把入站流 3 复制成当前流 3 的自依赖。
+        for (dependency_id, expected) in [(0u32, Some(31u8)), (3, None)] {
+            let request = Request::builder().uri(format!("https://localhost:{port}/"))
+                .header("user-agent", "priority-lab").header("sec-fetch-mode", "cors")
+                .body(Body::empty()).unwrap();
+            request.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(
+                rama::http::proto::h2::frame::StreamDependency::new(
+                    rama::http::proto::h2::frame::StreamId::from(dependency_id), 31, false)));
+            let response = client.send(request, Some(Duration::from_secs(5)), Some(Duration::from_secs(5))).await.unwrap();
+            assert_eq!(response.status().as_u16(), 200);
+            assert_eq!(captured.lock().as_ref().unwrap().2.as_ref().map(|p| p.weight), expected);
+        }
         client.reset_connections().await;
         server.abort();
     }

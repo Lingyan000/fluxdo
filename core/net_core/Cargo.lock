@@ -860,6 +860,7 @@ dependencies = [
  "rama-crypto",
  "rama-http-backend",
  "rama-http-core",
+ "rama-quic-proto",
  "serde",
  "serde_json",
  "shadowsocks",

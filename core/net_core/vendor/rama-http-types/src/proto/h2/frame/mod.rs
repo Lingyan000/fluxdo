@@ -27,7 +27,7 @@ pub use self::headers::{
     Continuation, Headers, Pseudo, PushPromise, PushPromiseHeaderError, parse_u64,
 };
 pub use self::ping::Ping;
-pub use self::priority::{Priority, StreamDependency};
+pub use self::priority::{Priority, StreamDependency, ReceivedStreamDependency};
 pub use self::reason::Reason;
 pub use self::reset::Reset;
 pub use self::setting::{Setting, SettingId, SettingOrder, SettingsConfig};
