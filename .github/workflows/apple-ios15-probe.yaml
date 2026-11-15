@@ -15,7 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ios: ['15.0', '15.5']
+        # 15.0 已实测被当前宿主拒绝；本轮继续验证已注册可用的 15.5。
+        ios: ['15.5']
     env:
       CARGO_BUILD_JOBS: '3'
       CARGO_PROFILE_DEV_DEBUG: '0'

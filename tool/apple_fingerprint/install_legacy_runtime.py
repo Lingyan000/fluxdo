@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 
@@ -29,12 +30,16 @@ def main():
     def command(argv, timeout=300, check=True):
         print('+', ' '.join(map(str, argv)), flush=True)
         number = len(evidence['commands'])
-        with (root / f'command-{number}.log').open('w') as log:
-            result = subprocess.run(list(map(str, argv)), stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
+        stdout_path = root / f'command-{number}.stdout'
+        stderr_path = root / f'command-{number}.stderr'
+        with stdout_path.open('w') as stdout, stderr_path.open('w') as stderr:
+            result = subprocess.run(list(map(str, argv)), stdout=stdout, stderr=stderr, timeout=timeout)
+        # simctl 初次发现旧运行时会在 stderr 打印告警，不能混入 JSON 或设备 UUID。
+        (root / f'command-{number}.log').write_text(stdout_path.read_text() + '\n--- stderr ---\n' + stderr_path.read_text())
         evidence['commands'].append({'argv': list(map(str, argv)), 'exit_code': result.returncode})
         if check and result.returncode:
             raise RuntimeError(f'命令失败，见 command-{number}.log')
-        return (root / f'command-{number}.log').read_text()
+        return stdout_path.read_text()
 
     try:
         raw = urllib.request.urlopen(INDEX, timeout=60).read()
@@ -88,10 +93,14 @@ def main():
             raise RuntimeError('目标已存在，停止以避免覆盖')
         command(['sudo', 'mkdir', '-p', destination.parent])
         command(['sudo', 'mv', bundles[0], destination], timeout=600)
+        command(['plutil', '-lint', destination / 'Contents/Info.plist'])
         command(['hdiutil', 'detach', mount])
         mounted = False
         shutil.rmtree(expanded)
         dmg.unlink()
+        # 目录监视器可能先看见移动过程；等待完成后重新查询一次，不缓存半安装状态。
+        command(['xcrun', 'simctl', 'list', '--json'])
+        time.sleep(5)
         data = json.loads(command(['xcrun', 'simctl', 'list', '--json']))
         (root / 'simulators.json').write_text(json.dumps(data, indent=2))
         found = [r for r in data['runtimes'] if r.get('version') == args.version and r.get('name', '').startswith('iOS ')]
