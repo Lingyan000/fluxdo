@@ -160,6 +160,7 @@ pub struct FingerprintTemplates {
     runtime_identity: Option<String>,
     cache_state: RwLock<&'static str>,
     fetch_h2_priority: RwLock<Option<H2FetchPriority>>,
+    capability_audit: RwLock<Option<(u64, serde_json::Value)>>,
 }
 
 /// 连接身份只比较稳定的浏览器能力，原始模板仍完整保留供新连接回放。
@@ -355,6 +356,10 @@ impl FingerprintTemplates {
         // 不把旧缓存的一次握手算作本次校准，也允许过去的乱序策略恢复为固定顺序。
         if first_in_process && *self.source.read() == TemplateSource::Cached {
             *self.tls_permute_extensions.write() = None;
+            *self.h2.write() = None;
+            *self.fetch.write() = None;
+            *self.low_entropy_client_hints.write() = None;
+            *self.fetch_h2_priority.write() = None;
             *self.last_persist.lock() = None;
             self.generation.fetch_add(1, Ordering::Relaxed);
         }
@@ -488,7 +493,14 @@ impl FingerprintTemplates {
                 .get("accept-encoding")
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned);
-            *self.fetch.write() = Some((order, accept_encoding));
+            let next_fetch = Some((order, accept_encoding));
+            {
+                let mut current = self.fetch.write();
+                if current.is_some() && *current != next_fetch {
+                    self.generation.fetch_add(1, Ordering::Relaxed);
+                }
+                *current = next_fetch;
+            }
             let hints = headers
                 .iter()
                 .filter_map(|(name, value)| {
@@ -502,7 +514,11 @@ impl FingerprintTemplates {
                         .flatten()
                 })
                 .collect();
-            *self.low_entropy_client_hints.write() = Some(hints);
+            let mut current = self.low_entropy_client_hints.write();
+            if current.as_ref().is_some_and(|old| old != &hints) {
+                self.generation.fetch_add(1, Ordering::Relaxed);
+            }
+            *current = Some(hints);
         }
         self.maybe_persist();
     }
@@ -539,6 +555,13 @@ impl FingerprintTemplates {
     /// 供宿主查询的模板状态：是否可回放、采样时的 UA。
     pub fn status_json(&self) -> String {
         let template = self.snapshot();
+        let capabilities = template.as_ref().map(|template| {
+            let mut cached = self.capability_audit.write();
+            if cached.as_ref().is_none_or(|(generation, _)| *generation != template.generation) {
+                *cached = Some((template.generation, browser_tls::capability_audit(&template.hello)));
+            }
+            cached.as_ref().unwrap().1.clone()
+        });
         serde_json::json!({
             // ready 仅表示真实采样就绪，不能因有预置而跳过后台探针。
             "ready": template.as_ref().is_some_and(|template| template.source.id().is_none() && template.is_calibrated()),
@@ -552,9 +575,11 @@ impl FingerprintTemplates {
             "cache_state": *self.cache_state.read(),
             "cache_revision": cache_revision(),
             "runtime_identity": self.runtime_identity,
+            "tls_capabilities": capabilities,
             "h3": {"enabled_for_template": false, "reason": "native_quic_h3_profile_not_calibrated"},
             "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
-            "not_verified": ["hpack_encoding", "h2_headers_priority", "quic_h3", "cf_acceptance"],
+            "fetch_h2_priority_sampled": self.fetch_h2_priority.read().is_some(),
+            "not_verified": ["hpack_encoding", "navigation_priority", "quic_h3", "cf_acceptance"],
             "system_proxy": crate::system_proxy::configured(),
         })
         .to_string()
@@ -706,9 +731,7 @@ impl MirrorRelay {
             NetError::Proxy(format!("No TLS ClientHello from WebView for {host}"))
         })?;
         let browser = browser_tls::is_browser_like(&hello);
-        if browser {
-            self.templates.record_hello(&hello);
-        } else {
+        if !browser {
             debug!("Mirror {host}: non-browser client, not used as template");
         }
 
@@ -741,13 +764,14 @@ impl MirrorRelay {
                     let ingress_input = ServiceInput::new(ingress.clone());
                     ingress_input
                         .extensions()
-                        .insert(SecureTransport::with_client_hello(hello));
+                        .insert(SecureTransport::with_client_hello(hello.clone()));
                     let egress = ServiceInput::new(egress);
                     egress
                         .extensions()
                         .insert(ConnectorTarget(HostWithPort::new(server_host, port)));
                     // 握手放进独立任务：rama 握手 future 内部跨 await 持有借用，
                     // 直接嵌进泛型的重试循环会让编译器无法证明外层 future 对所有生命周期 Send
+                    let templates = this.templates.clone();
                     let handshake =
                         tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
                             let handshake = this.tls.handshake(
@@ -762,7 +786,13 @@ impl MirrorRelay {
                         )))
                     })?;
                     match outcome {
-                        Ok(Ok(tls_bridge)) => Ok((tls_bridge, ech_applied)),
+                        Ok(Ok(tls_bridge)) => {
+                            // 证书拒绝或中途失败的握手不能污染可回放模板。
+                            if browser {
+                                templates.record_hello(&hello);
+                            }
+                            Ok((tls_bridge, ech_applied))
+                        },
                         Ok(Err(error)) => match error.kind() {
                             TlsMitmRelayErrorKind::Handshake {
                                 direction: TlsMitmRelayErrorDirection::Egress,

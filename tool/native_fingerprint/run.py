@@ -28,7 +28,7 @@ for mode in (['native', 'app'] if args.platform == 'android' else ['native']):
     result = {'case': folder.name, 'browser_platform': args.platform, 'core_host': platform.platform(),
               'evidence_kind': 'native_minimal_host', 'full_flutter_app': False}
     try:
-        with (folder / 'run.log').open('w') as log:
+        with (folder / 'run.log').open('w', encoding='utf-8') as log:
             process = subprocess.run([str(binary), str(driver), str(folder)], env=env,
                                      stdout=log, stderr=subprocess.STDOUT, timeout=240)
         result['exit_code'] = process.returncode
@@ -37,6 +37,6 @@ for mode in (['native', 'app'] if args.platform == 'android' else ['native']):
     except Exception as error:
         result.update(passed=False, error=str(error))
     matrix.append(result)
-    (args.output / 'matrix.json').write_text(json.dumps(matrix, indent=2) + '\n')
+    (args.output / 'matrix.json').write_text(json.dumps(matrix, indent=2) + '\n', encoding='utf-8')
     print(folder.name, 'PASS' if result['passed'] else 'FAIL', flush=True)
 raise SystemExit(0 if all(r['passed'] for r in matrix) else 1)
