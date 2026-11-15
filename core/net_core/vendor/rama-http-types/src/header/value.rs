@@ -26,6 +26,8 @@ use rama_utils::collections::smallvec::SmallVec;
 pub struct HeaderValue {
     inner: Bytes,
     is_sensitive: bool,
+    // 仅供 HPACK 的索引偏好；不属于字段值，不参与比较、哈希或序列化。
+    hpack_indexing: Option<bool>,
 }
 
 /// A possible error when converting a `HeaderValue` from a string or byte
@@ -76,6 +78,7 @@ impl HeaderValue {
         HeaderValue {
             inner: Bytes::from_static(bytes),
             is_sensitive: false,
+            hpack_indexing: None,
         }
     }
 
@@ -214,6 +217,7 @@ impl HeaderValue {
                 return HeaderValue {
                     inner: src,
                     is_sensitive: false,
+                    hpack_indexing: None,
                 };
             });
 
@@ -221,6 +225,7 @@ impl HeaderValue {
             HeaderValue {
                 inner: src,
                 is_sensitive: false,
+                hpack_indexing: None,
             }
         }
     }
@@ -262,6 +267,7 @@ impl HeaderValue {
         Some(HeaderValue {
             inner: Bytes::from(joined),
             is_sensitive: values.iter().any(|value| value.is_sensitive()),
+            hpack_indexing: None,
         })
     }
 
@@ -285,6 +291,7 @@ impl HeaderValue {
         Ok(HeaderValue {
             inner: into(src),
             is_sensitive: false,
+            hpack_indexing: None,
         })
     }
 
@@ -426,6 +433,17 @@ impl HeaderValue {
     pub fn is_sensitive(&self) -> bool {
         self.is_sensitive
     }
+
+    /// 指定 HPACK 索引偏好；敏感字段标记与敏感头名始终优先。
+    pub fn set_hpack_indexing(&mut self, value: Option<bool>) {
+        self.hpack_indexing = value;
+    }
+
+    /// 返回捕获或显式配置的 HPACK 索引偏好，不代表内容发生变化。
+    pub fn hpack_indexing(&self) -> Option<bool> {
+        self.hpack_indexing
+    }
+
 }
 
 impl AsRef<[u8]> for HeaderValue {
@@ -479,6 +497,7 @@ impl From<HeaderName> for HeaderValue {
         HeaderValue {
             inner: h.into_bytes(),
             is_sensitive: false,
+            hpack_indexing: None,
         }
     }
 }
@@ -491,6 +510,7 @@ macro_rules! from_integers {
                 HeaderValue {
                     inner: Bytes::copy_from_slice(::itoa::Buffer::new().format(num).as_bytes()),
                     is_sensitive: false,
+                    hpack_indexing: None,
                 }
             }
         }

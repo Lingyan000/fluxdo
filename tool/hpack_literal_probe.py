@@ -4,7 +4,8 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes,serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-p=argparse.ArgumentParser();p.add_argument('browser');p.add_argument('output',type=pathlib.Path);p.add_argument('--external',action='store_true');a=p.parse_args();a.output.mkdir(parents=True)
+p=argparse.ArgumentParser();p.add_argument('browser');p.add_argument('output',type=pathlib.Path);p.add_argument('--external',action='store_true');p.add_argument('--sequence',action='store_true');p.add_argument('--field-size',type=int,default=600);a=p.parse_args();a.output.mkdir(parents=True)
+if not 0<=a.field_size<=8192:p.error('field-size must be between 0 and 8192')
 key=ec.generate_private_key(ec.SECP256R1());name=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'localhost')]);now=datetime.datetime.now(datetime.timezone.utc)
 cert=x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now-datetime.timedelta(days=1)).not_valid_after(now+datetime.timedelta(days=1)).add_extension(x509.SubjectAlternativeName([x509.DNSName('localhost')]),False).sign(key,hashes.SHA256())
 (a.output/'cert.pem').write_bytes(cert.public_bytes(serialization.Encoding.PEM));(a.output/'key.pem').write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()));(a.output/'key.pem').chmod(0o600)
@@ -19,7 +20,17 @@ def readn(c,n):
   b+=more
  return b
 page=b"<!doctype html><script>fetch('/literal',{headers:{'x-probe':'~~~~','x-tie':'PATCH','x-compress':'aaaaaaaa'}}).then(()=>document.title='fluxdo-probe-done')</script>"
-def serve(raw):
+if a.sequence:
+ page=b"""<!doctype html><script>(async()=>{
+ for(let i=0;i<14;i++){
+  let h={'x-repeat':'unchanged','x-probe':'~~~~','x-tie':'PATCH','x-change':String(i%2),'if-none-match':'lab-etag'};
+  if(i>=3&&i<11)h['x-fill']='a'.repeat(FIELD_SIZE)+i;
+  await fetch('/hpack/'+i,{headers:h,cache:'no-store'});
+ }
+ await fetch('/hpack/done',{headers:{'x-end-marker':'~~~~END~~~~'}});
+ document.title='fluxdo-probe-done';
+})()</script>""".replace(b'FIELD_SIZE',str(a.field_size).encode())
+def serve(raw,connection):
  try:
   with context.wrap_socket(raw,server_side=True) as c:
    c.settimeout(15)
@@ -34,18 +45,19 @@ def serve(raw):
       padding=body[0] if flags&8 else 0;start=(1 if flags&8 else 0)+(5 if flags&32 else 0);body=body[start:len(body)-padding if padding else None];blocks[stream]=b''
      blocks[stream]+=body
      if flags&4:
-      block=blocks.pop(stream);seen+=1;records.append({'stream':stream,'header_block_hex':block.hex(),'literal_tilde':b'\x04~~~~' in block,'literal_tie':b'\x05PATCH' in block})
+      block=blocks.pop(stream);seen+=1;records.append({'connection':connection,'stream':stream,'header_block_hex':block.hex(),'literal_tilde':b'\x04~~~~' in block,'literal_tie':b'\x05PATCH' in block})
       response=page if seen==1 else b'ok'
       # :status=200 与字面 content-type=text/html；明确结束响应体。
       c.sendall(frame(1,4,stream,b'\x88\x0f\x10\x09text/html')+frame(0,1,stream,response))
-      if seen>1:done.set()
+      if (a.sequence and b'~~~~END~~~~' in block) or (not a.sequence and seen>1):done.set()
  except (OSError,EOFError) as e:errors.append(type(e).__name__+':'+str(e))
 def accept():
+ connection=0
  while not done.is_set():
   try:c,_=listener.accept()
   except socket.timeout:continue
   except OSError:break
-  threading.Thread(target=serve,args=(c,),daemon=True).start()
+  threading.Thread(target=serve,args=(c,connection),daemon=True).start();connection+=1
 threading.Thread(target=accept,daemon=True).start()
 args=[a.browser]
 if not a.external:args+=['--headless','--no-sandbox','--disable-dev-shm-usage','--ignore-certificate-errors','--disable-background-networking','--remote-debugging-port=0','--user-data-dir='+str(a.output/'profile')]

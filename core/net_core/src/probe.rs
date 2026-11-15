@@ -28,13 +28,19 @@ use crate::mirror::FingerprintTemplates;
 /// 探针页路径。
 pub const PROBE_PATH: &str = "/fluxdo-probe";
 const PROBE_FETCH_PATH: &str = "/fluxdo-probe/fetch";
+const PROBE_HPACK_PATH: &str = "/fluxdo-probe/hpack";
 const PROBE_DONE_PATH: &str = "/fluxdo-probe/done";
 const PEEK_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 探针页：同源 fetch 一次（采 fetch 类请求头），完成后改标题供宿主判断。
-const PROBE_PAGE: &str = "<!doctype html><meta charset=\"utf-8\"><title>fluxdo-probe</title>\
-<script>fetch('/fluxdo-probe/fetch').then(()=>fetch('/fluxdo-probe/done'))\
-.finally(()=>{document.title='fluxdo-probe-done'})</script>";
+/// 默认 fetch 与编码探针分开，浏览器拒绝设置的字段只按实际收到的结果处理。
+fn probe_page() -> String {
+    let headers: std::collections::BTreeMap<_, _> = crate::mirror::hpack_probe_header_names().into_iter()
+        .map(|name| (name.as_str().to_owned(), "\"fluxdo-probe\"")) .collect();
+    format!(r#"<!doctype html><meta charset="utf-8"><title>fluxdo-probe</title><script>
+fetch('/fluxdo-probe/hpack',{{headers:{}}}).then(()=>fetch('/fluxdo-probe/fetch'))
+.then(()=>fetch('/fluxdo-probe/done')).finally(()=>{{document.title='fluxdo-probe-done'}})</script>"#,
+        serde_json::to_string(&headers).expect("static probe header values"))
+}
 
 /// TLS 首字节：握手记录类型。
 pub const TLS_HANDSHAKE_RECORD: u8 = 0x16;
@@ -116,6 +122,8 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
         .unwrap_or_default();
     if path == PROBE_FETCH_PATH {
         templates.observe_probe_fetch(&request);
+    } else if path == PROBE_HPACK_PATH {
+        templates.observe_probe_hpack(&request);
     } else if path.starts_with(PROBE_PATH) {
         templates.observe_request(&request);
     }
@@ -123,9 +131,9 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
         PROBE_PATH => Response::builder()
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .header(header::CACHE_CONTROL, "no-store")
-            .body(Body::from(PROBE_PAGE))
+            .body(Body::from(probe_page()))
             .unwrap(),
-        PROBE_FETCH_PATH | PROBE_DONE_PATH => {
+        PROBE_FETCH_PATH | PROBE_HPACK_PATH | PROBE_DONE_PATH => {
             if path == PROBE_DONE_PATH {
                 info!(
                     "Probe finished: template ready = {}",

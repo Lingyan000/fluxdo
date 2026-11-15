@@ -100,6 +100,13 @@ def compare(folder):
               'wire_checks': all(all(c['checks'].values()) for c in connections)}
     # 单独核对原始三次 API 请求，避免 TLS/H2 通过掩盖旧 WebKit 多发请求头。
     checks['fetch_metadata_presence'] = audit(folder).get('all_match', False)
+    if reference.get('hpack_indexing') is not None:
+        hpack_policy = reference['hpack_indexing']
+        if 'if-none-match' in hpack_policy:
+            rows = load('core-headers.json')
+            checks['hpack_conditional_indexing'] = len(rows) == 3 and all(
+                row.get('hpack_indexing', {}).get('if-none-match') == hpack_policy['if-none-match']
+                for row in rows)
     if (folder / 'scenarios.json').exists():
         scenarios = load('scenarios.json')
         checks['transport_scenarios'] = len(scenarios) == 5 and all(s['passed'] for s in scenarios)
@@ -112,7 +119,7 @@ def compare(folder):
             initial_frames(reference) == initial_frames(cached)
             and all(reference.get(k) == cached.get(k) for k in (
                 'pseudo_order', 'fetch_header_order', 'accept_encoding', 'low_entropy_client_hints',
-                'tls_permute_extensions', 'user_agent')))
+                'tls_permute_extensions', 'user_agent', 'hpack_indexing')))
     result = {'browser': reference['user_agent'], 'permutation_policy': policy,
               'distinct_emitted_orders': len(orders), 'checks': checks, 'connections': connections,
               'all_checked_fields_match': all(checks.values()),

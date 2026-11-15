@@ -69,7 +69,7 @@ pub fn cache_revision() -> String {
     for byte in include_bytes!("../Cargo.lock") {
         hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
     }
-    format!("5:{hash:016x}")
+    format!("6:{hash:016x}")
 }
 
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
@@ -133,6 +133,8 @@ pub struct FingerprintTemplate {
     pub cache_revision: Option<String>,
     #[serde(default)]
     pub fetch_h2_priority: Option<H2FetchPriority>,
+    #[serde(default)]
+    pub hpack_indexing: Option<std::collections::BTreeMap<String, bool>>,
     /// 模板版本：握手变化时递增，回放连接池据此淘汰旧指纹的连接
     #[serde(skip)]
     pub generation: u64,
@@ -160,6 +162,7 @@ pub struct FingerprintTemplates {
     runtime_identity: Option<String>,
     cache_state: RwLock<&'static str>,
     fetch_h2_priority: RwLock<Option<H2FetchPriority>>,
+    hpack_indexing: RwLock<Option<std::collections::BTreeMap<String, bool>>>,
     capability_audit: RwLock<Option<(u64, serde_json::Value)>>,
 }
 
@@ -344,6 +347,7 @@ impl FingerprintTemplates {
             *templates.tls_permute_extensions.write() = template.tls_permute_extensions;
             *templates.low_entropy_client_hints.write() = template.low_entropy_client_hints;
             *templates.fetch_h2_priority.write() = template.fetch_h2_priority;
+            *templates.hpack_indexing.write() = template.hpack_indexing;
         }
         templates
     }
@@ -361,6 +365,7 @@ impl FingerprintTemplates {
             *self.fetch.write() = None;
             *self.low_entropy_client_hints.write() = None;
             *self.fetch_h2_priority.write() = None;
+                *self.hpack_indexing.write() = None;
             *self.last_persist.lock() = None;
             self.generation.fetch_add(1, Ordering::Relaxed);
         }
@@ -378,6 +383,7 @@ impl FingerprintTemplates {
                 *self.tls_permute_extensions.write() = None;
                 *self.low_entropy_client_hints.write() = None;
                 *self.fetch_h2_priority.write() = None;
+                *self.hpack_indexing.write() = None;
                 *self.last_persist.lock() = None;
             }
         } else if !first_in_process && let Some(old_hello) = old_hello {
@@ -439,6 +445,25 @@ impl FingerprintTemplates {
     /// 不依赖内核提供 Fetch Metadata，也不向被观察的请求补造任何头。
     pub fn observe_probe_fetch<B>(&self, request: &Request<B>) {
         self.observe_request_kind(request, true);
+    }
+
+    /// 编码探针单独采样，不能用带实验字段的请求覆盖普通 fetch 头顺序。
+    pub fn observe_probe_hpack<B>(&self, request: &Request<B>) {
+        if self.pinned || request.version() != rama::http::Version::HTTP_2 { return; }
+        let ua = self.user_agent.read();
+        if ua.as_deref() != request.headers().get("user-agent").and_then(|v| v.to_str().ok()) { return; }
+        let candidates = hpack_probe_header_names();
+        let policy = request.headers().iter().filter(|(name, _)| candidates.contains(name))
+            .filter_map(|(name, value)| value.hpack_indexing().map(|index| (name.as_str().to_owned(), index)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        drop(ua);
+        let mut current = self.hpack_indexing.write();
+        if current.as_ref() == Some(&policy) { return; }
+        *current = Some(policy);
+        drop(current);
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        *self.last_persist.lock() = None;
+        self.maybe_persist();
     }
 
     fn observe_request_kind<B>(&self, request: &Request<B>, known_probe_fetch: bool) {
@@ -549,6 +574,7 @@ impl FingerprintTemplates {
             runtime_identity: self.runtime_identity.clone(),
             cache_revision: Some(cache_revision()),
             fetch_h2_priority: self.fetch_h2_priority.read().clone(),
+            hpack_indexing: self.hpack_indexing.read().clone(),
             generation: self.generation.load(Ordering::Relaxed),
         })
     }
@@ -581,6 +607,7 @@ impl FingerprintTemplates {
             "h3": {"enabled_for_template": false, "reason": "native_quic_h3_profile_not_calibrated"},
             "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
             "fetch_h2_priority_sampled": self.fetch_h2_priority.read().is_some(),
+            "hpack_indexing": self.hpack_indexing.read().clone(),
             "not_verified": ["hpack_encoding", "navigation_priority", "quic_h3", "cf_acceptance"],
             "system_proxy": crate::system_proxy::configured(),
         })
@@ -594,6 +621,17 @@ impl FingerprintTemplate {
             && self.low_entropy_client_hints.is_some()
             && self.user_agent.is_some()
     }
+}
+
+/// 从编码器的默认特殊策略推导探针字段，不维护浏览器/字段白名单。
+pub(crate) fn hpack_probe_header_names() -> Vec<rama::http::HeaderName> {
+    use rama::http::{header::StandardHeader, HeaderName};
+    StandardHeader::all().map(HeaderName::from).filter(hpack_probe_candidate).collect()
+}
+
+pub(crate) fn hpack_probe_candidate(name: &rama::http::HeaderName) -> bool {
+    use rama::http::{HeaderValue, proto::h2::hpack::Header};
+    !name.is_sensitive() && Header::Field { name: name.clone(), value: HeaderValue::from_static("probe") }.skip_value_index()
 }
 
 /// 标准定义的三个低熵字段；高熵字段必须由目标站点的 Accept-CH 决定。
@@ -1185,6 +1223,26 @@ mod profile_tests {
                 }).unwrap();
                 assert_eq!(decoded, vec![Header::Field { name, value: value_header }]);
                 if let Header::Field { value, .. } = &decoded[0] { assert_eq!(value.is_sensitive(), sensitive); }
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_hpack_indexing_respects_capacity_and_sensitive_markers() {
+        use rama::http::{HeaderName, HeaderValue, proto::h2::hpack::{Encoder, Header}};
+        for length in [3100, 5000] {
+            for sensitive in [false, true] {
+                let mut value = HeaderValue::from_str(&"e".repeat(length)).unwrap();
+                value.set_hpack_indexing(Some(true));
+                value.set_sensitive(sensitive);
+                let mut encoder = Encoder::default();
+                for repeated in [false, true] {
+                    let mut bytes = rama::bytes::BytesMut::new();
+                    encoder.encode([Header::Field { name: Some(HeaderName::from_static("if-none-match")), value: value.clone() }], &mut bytes);
+                    if sensitive { assert_eq!(bytes[0] & 240, 16); }
+                    else if length > 4096 { assert_eq!(bytes[0] & 240, 0); }
+                    else { assert_eq!(bytes[0] & 128 != 0, repeated); }
+                }
             }
         }
     }

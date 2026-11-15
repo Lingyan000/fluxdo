@@ -36,6 +36,7 @@ async fn exchange(
         .uri(format!("https://localhost:{port}/{path}"))
         .header("user-agent", template.user_agent.as_deref().unwrap_or(""))
         .header("accept", "*/*")
+        .header("if-none-match", "\"fluxdo-validation\"")
         .header("sec-fetch-mode", "cors")
         .header("sec-ch-ua", "guessed-brand")
         .body(Body::empty())?;
@@ -251,9 +252,12 @@ async fn main() -> Result<(), rama::error::BoxError> {
                         .iter()
                         .map(|(k, v)| json!([k.as_str(), v.to_str().unwrap_or("?")]))
                         .collect();
+                    let hpack_indexing: std::collections::BTreeMap<_, _> = request.headers().iter()
+                        .filter_map(|(name, value)| value.hpack_indexing().map(|index| (name.as_str(), index)))
+                        .collect();
                     headers_sink
                         .lock()
-                        .push(json!({"uri":request.uri().to_string(),"headers":headers}));
+                        .push(json!({"uri":request.uri().to_string(),"headers":headers,"hpack_indexing":hpack_indexing}));
                     let delayed = request.uri().to_string().contains("slow-response");
                     async move {
                         if delayed {
@@ -290,6 +294,7 @@ async fn main() -> Result<(), rama::error::BoxError> {
         request = request
             .header("user-agent", template.user_agent.as_deref().unwrap_or(""))
             .header("accept", "*/*")
+            .header("if-none-match", "\"fluxdo-validation\"")
             .header("sec-fetch-mode", "cors")
             .header("sec-fetch-site", "same-origin")
             .header("sec-fetch-dest", "empty")

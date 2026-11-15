@@ -60,3 +60,10 @@ https://www.gnutls.org/reference/gnutls-gnutls.html
 尚未完成的范围
 生产 H3 采样/回放闭环、完整 HPACK/QPACK 动态策略及导航/资源优先级，
 iOS 冻结 UA 的登录兼容策略，以及 iOS 15.0 原生验证仍未完成；不把本轮通过当成全部解决。
+
+后续补充：上述 Linux 修复源码 7467971f2752a67851b2446bdbacf1eccca7f7a2 的云端结果全部通过。
+Android/Windows：https://github.com/Lingyan000/fluxdo/actions/runs/43686477548
+macOS/iOS 26.2：https://github.com/Lingyan000/fluxdo/actions/runs/43686477647
+iOS 15.5：https://github.com/Lingyan000/fluxdo/actions/runs/43686478020
+已下载并逐项核对 matrix.json：11 个实例/55 个场景（macOS 控制重复；9 个唯一配置）。
+这批结果早于下一步 HPACK 索引探针，后者单独重跑验证，详见 hpack-policy-20261115.txt。

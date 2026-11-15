@@ -1243,6 +1243,17 @@ fn build_request(
             })
             && let Some(hints) = &template.low_entropy_client_hints
         {
+            if version == Version::HTTP_2 && template.is_calibrated()
+                && let Some(policy) = &template.hpack_indexing
+            {
+                for (name, value) in headers.iter_mut() {
+                    if crate::mirror::hpack_probe_candidate(name) && !value.is_sensitive()
+                        && let Some(index) = policy.get(name.as_str())
+                    {
+                        value.set_hpack_indexing(Some(*index));
+                    }
+                }
+            }
             // 旧 WebKit 的真实 fetch 不发送 Fetch Metadata。仅对同 UA 的 HTTPS
             // cors 请求移除调用方额外添加的这一组头；不从回环探针复制站点关系，
             // 不改 Origin、Referer、Cookie 或 CSRF，也不改导航请求和未校准模板。
@@ -1553,6 +1564,43 @@ mod tests {
         server.abort();
         assert!(response.is_err(), "响应丢失不能把已执行的POST重放成成功");
         assert_eq!(seen.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn sampled_hpack_policy_changes_only_conditional_header_encoding() {
+        use rama::http::proto::h2::hpack::{Encoder, Header};
+        for index in [false, true] {
+            let mut template = crate::presets::by_id("ios-safari18").unwrap();
+            template.user_agent = Some("Probe-UA".into());
+            template.tls_permute_extensions = Some(false);
+            template.low_entropy_client_hints = Some(Vec::new());
+            template.hpack_indexing = Some(std::collections::BTreeMap::from([
+                ("if-none-match".into(), index), ("x-csrf-token".into(), true),
+            ]));
+            let make = |scheme: &str, ua: &str, sensitive: bool| {
+                let mut request = Request::builder().uri(format!("{scheme}://example.test/topic"))
+                    .header("user-agent", ua).header("if-none-match", "\"etag\"")
+                    .header("x-csrf-token", "unchanged").body(Body::empty()).unwrap();
+                request.headers_mut().get_mut("if-none-match").unwrap().set_sensitive(sensitive);
+                build_request(Some(&template), request, "example.test", 443, Version::HTTP_2).unwrap()
+            };
+            let request = make("https", "Probe-UA", false);
+            assert_eq!(request.headers()["if-none-match"], "\"etag\"");
+            assert_eq!(request.headers()["if-none-match"].hpack_indexing(), Some(index));
+            assert_eq!(request.headers()["x-csrf-token"], "unchanged");
+            assert_eq!(request.headers()["x-csrf-token"].hpack_indexing(), None);
+            let mut encoder = Encoder::default();
+            for repeated in [false, true] {
+                let mut bytes = rama::bytes::BytesMut::new();
+                encoder.encode([Header::Field { name: Some(HeaderName::from_static("if-none-match")),
+                    value: request.headers()["if-none-match"].clone() }], &mut bytes);
+                if index { assert_eq!(bytes[0] & 128 != 0, repeated); }
+                else { assert_eq!(bytes[0] & 240, 0); }
+            }
+            for request in [make("http", "Probe-UA", false), make("https", "Other-UA", false), make("https", "Probe-UA", true)] {
+                assert_eq!(request.headers()["if-none-match"].hpack_indexing(), None);
+            }
+        }
     }
 
     #[test]

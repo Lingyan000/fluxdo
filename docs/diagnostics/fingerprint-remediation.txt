@@ -3,7 +3,7 @@
 范围：Android、iOS、macOS、Windows、Linux；TCP/TLS、H2、H3、请求头与缓存。
 约束：CSRF、Cookie、Origin、Referer 的业务策略不改；本轮不统一两条链路的出口。
 状态：修复已在工作区和独立诊断分支验证；本轮未发布到 dev 或创建 beta 标签。
-继续治理结果见 fingerprint-continuation-20261115.txt；最新 Linux 接入与 H3 关联结果见 linux-native-tls-20261115.txt。
+继续治理结果见 fingerprint-continuation-20261115.txt；最新 Linux 接入与 H3 关联结果见 linux-native-tls-20261115.txt，HPACK 策略见 hpack-policy-20261115.txt。
 阅读提示：本文件区分已修复、已确认但未修复、验证缺口；不能把测试通过理解为完整指纹一致。
 
 已修正并有对应证据
@@ -68,6 +68,12 @@ F15 HPACK 仅在 Huffman 严格更短时编码；等长/更长采用字面表示
     四组真实浏览器字节证据、修复前后回归与 429 项上游 HPACK 测试通过。
     不改变敏感字段索引语义，完整动态表/上下文策略仍另行验证。
 
+F16 Linux 原生 TLS：已接入能力匹配的 GnuTLS、异步 IO、严格证书校验和隔离的加密票据。
+    无 ECH 的 WebView 代理路径保留端到端 TLS；ECH 注入仍保留既有策略。见专项记录。
+F17 HPACK 索引策略：独立探针采样默认特殊字段的选择，Core 按同 UA/HTTPS/H2 回放。
+    四种真实浏览器共 130 个头块的编码器回放逐字节一致；实际 Core 条件头与缓存也已验证。
+    敏感字段和表容量仍优先，CSRF 不改；完整上下文范围见 hpack-policy-20261115.txt。
+
 仍需治理：已确认但未修复的问题
 R01 完整 QUIC/H3 生产模板缺失。
     依赖已有 QUIC Initial 捕获/编译，以及 H3 SETTINGS、QPACK 限额与启动配置能力；
@@ -75,8 +81,9 @@ R01 完整 QUIC/H3 生产模板缺失。
     本轮新增真实 Chromium 99/110/156 的回环 QUIC/H3 采集器，保留版本差异和失败记录。
     命令行精确 SPKI 放行仅属于实验；无放行的负对照不能完成 H3，不更改系统信任库。
     浏览器模板请求继续保持 H2；只有完整模板经过各平台验证后才能解除 F06 限制。
-R02 完整 HPACK、导航和资源优先级仍未实现。
-    默认 fetch 的 HEADERS 优先级已修复（F12），但不代表动态表策略、字节编码或全部时序一致。
+R02 完整 HPACK、导航和资源优先级尚未全部闭环。
+    默认 fetch 优先级（F12）、字符串编码（F15）、已采样字段的索引选择（F17）已修复。
+    自定义大字段、Cookie 分段及其他请求用途仍有验证/策略缺口，不能泛化为全部字节和时序一致。
 R03 Linux WPE WebKit 与 BoringSSL 能力差异。
     更正早期记录：本仓库 packages/flutter_inappwebview_linux/linux/CMakeLists.txt 使用 WPE，
     不是 WebKitGTK。Playwright headless WPE 26.5 属于同一后端家族，不等于每位用户的发行版本。

@@ -142,12 +142,16 @@ impl Table {
             return Index::Name(index, header);
         }
 
-        // Don't index certain headers. This logic is borrowed from nghttp2.
-        if header.skip_value_index() {
+        // 保留敏感头规则；非敏感字段可以按当前浏览器的实际采样选择索引策略。
+        let skip_value = match &header {
+            Header::Field { name, value } if !name.is_sensitive() => value.hpack_indexing().map(|index| !index),
+            _ => None,
+        }.unwrap_or_else(|| header.skip_value_index());
+        if skip_value {
             // Right now, if this is true, the header name is always in the
             // static table. At some point in the future, this might not be true
             // and this logic will need to be updated.
-            debug_assert!(statik.is_some(), "skip_value_index requires a static name",);
+            // 采样也可能要求自定义字段不索引，未出现在静态表时按字面名称编码。
             return Index::new(statik, header);
         }
 
@@ -156,8 +160,9 @@ impl Table {
             return Index::Indexed(n, header);
         }
 
-        // Don't index large headers
-        if header.len() * 4 > self.max_size * 3 {
+        // 显式的采样索引选择可以使用剩余容量，但不能超出对端动态表上限。
+        let explicit_index = matches!(&header, Header::Field { value, .. } if value.hpack_indexing() == Some(true));
+        if header.len() > self.max_size || (!explicit_index && header.len() * 4 > self.max_size * 3) {
             return Index::new(statik, header);
         }
 

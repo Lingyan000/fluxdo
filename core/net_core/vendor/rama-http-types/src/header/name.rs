@@ -145,6 +145,11 @@ macro_rules! standard_headers {
         )+
 
         impl StandardHeader {
+            /// 遍历类型中声明的标准头，避免调用方维护另一份名称列表。
+            pub fn all() -> impl Iterator<Item = Self> {
+                [$(Self::$konst,)+].into_iter()
+            }
+
             const fn is_allowed_in_trailers(self) -> bool {
                 match self {
                     $(

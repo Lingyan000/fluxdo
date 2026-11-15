@@ -251,7 +251,8 @@ impl Decoder {
                 Representation::Indexed => {
                     tracing::trace!("indexed: rem = {}", src.remaining());
                     can_resize = false;
-                    let entry = self.decode_indexed(src)?;
+                    let mut entry = self.decode_indexed(src)?;
+                    if let Header::Field { value, .. } = &mut entry { value.set_hpack_indexing(Some(true)); }
                     consume(src);
                     if f(entry).is_break() {
                         break;
@@ -260,7 +261,8 @@ impl Decoder {
                 Representation::LiteralWithIndexing => {
                     tracing::trace!("literal with indexing: rem = {}", src.remaining());
                     can_resize = false;
-                    let entry = self.decode_literal(src, true)?;
+                    let mut entry = self.decode_literal(src, true)?;
+                    if let Header::Field { value, .. } = &mut entry { value.set_hpack_indexing(Some(true)); }
 
                     // The table keeps its own copy: the entry outlives the header block it
                     // arrived in, and the table size counts only names and values.
@@ -274,7 +276,8 @@ impl Decoder {
                 Representation::LiteralWithoutIndexing => {
                     tracing::trace!("LiteralWithoutIndexing: rem = {}", src.remaining());
                     can_resize = false;
-                    let entry = self.decode_literal(src, false)?;
+                    let mut entry = self.decode_literal(src, false)?;
+                    if let Header::Field { value, .. } = &mut entry { value.set_hpack_indexing(Some(false)); }
                     consume(src);
                     if f(entry).is_break() {
                         break;
