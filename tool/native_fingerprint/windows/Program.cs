@@ -19,6 +19,7 @@ internal static class Program {
         var spki = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_PROBE_SPKI");
         var netlog = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_NETLOG_PATH");
         var trustRoot = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_PROBE_TRUST_ROOT") == "1";
+        var forceQuic = Environment.GetEnvironmentVariable("FLUXDO_NATIVE_PROBE_FORCE_QUIC") == "1";
         X509Certificate2? installedRoot = null;
         string? nativeUa = null;
         string? browserVersion = null;
@@ -31,6 +32,7 @@ internal static class Program {
                 native_user_agent = nativeUa, version = browserVersion,
                 diagnostic_spki_override = !string.IsNullOrEmpty(spki),
                 diagnostic_root_trust = trustRoot,
+                diagnostic_force_quic = forceQuic,
                 certificate_errors = certificateErrors,
                 success = error == null, error
             }));
@@ -46,6 +48,13 @@ internal static class Program {
                     if (uri.AbsolutePath != "/fluxdo-h3" || Convert.FromBase64String(spki).Length != 32)
                         throw new ArgumentException("invalid diagnostic probe SPKI");
                     flags.Add("--ignore-certificate-errors-spki-list=" + spki);
+                }
+                if (forceQuic) {
+                    if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" ||
+                        uri.AbsolutePath != "/fluxdo-h3" || string.IsNullOrEmpty(spki))
+                        throw new InvalidOperationException("scoped QUIC control requires ephemeral runner and probe SPKI");
+                    // 只允许当前独立探针 origin；用于验证 QUIC 已知根限制，不进入业务环境。
+                    flags.Add("--origin-to-force-quic-on=localhost:" + uri.Port);
                 }
                 if (trustRoot) {
                     Console.Error.WriteLine("probe-stage: trust-root");

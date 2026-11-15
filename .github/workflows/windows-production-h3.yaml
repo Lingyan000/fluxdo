@@ -8,7 +8,7 @@ on:
         description: '默认原生采样；证书许可仅用于一次性 runner 对照'
         type: choice
         default: native
-        options: [native, spki-control, root-trust-only]
+        options: [native, spki-control, root-trust-only, force-quic-control]
 permissions:
   contents: read
 concurrency:
@@ -45,7 +45,8 @@ jobs:
         run: |
           $mode = $env:DIAGNOSTIC_MODE
           if (-not $mode) {
-            if ($env:DIAGNOSTIC_REF -like '*-root-trust-*') { $mode = 'root-trust-only' }
+            if ($env:DIAGNOSTIC_REF -like '*-force-*') { $mode = 'force-quic-control' }
+            elseif ($env:DIAGNOSTIC_REF -like '*-root-trust-*') { $mode = 'root-trust-only' }
             elseif ($env:DIAGNOSTIC_REF -like '*-spki-*') { $mode = 'spki-control' }
             else { $mode = 'native' }
           }
