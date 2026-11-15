@@ -110,7 +110,8 @@ impl Templates {
         #[cfg(debug_assertions)]
         {
             state.comparison = Some(
-                serde_json::json!({"first":first.identity().ok(),"second":sample.identity().ok()}),
+                serde_json::json!({"first":first.identity().ok(),"second":sample.identity().ok(),
+                    "first_control":first.boundary.control,"second_control":sample.boundary.control}),
             );
         }
         match result {
@@ -460,6 +461,9 @@ impl Sample {
                 .filter(|e| e.id() != rama::tls::ExtensionId::QUIC_TRANSPORT_PARAMETERS).cloned().collect())),"parameters":parameters,
             "version":self.flight.version,"dcid":self.flight.dcid_len,"scid":self.flight.scid_len,
             "settings":settings,"ua":self.user_agent,"headers":self.header_order,"pseudo":self.pseudo_order,
+            "push_credits":self.boundary.control.iter()
+                .filter(|frame|h3::FrameType::from(frame.frame_type)==h3::FrameType::MAX_PUSH_ID)
+                .map(|frame|frame.element_id).collect::<Vec<_>>(),
             "qpack_phases":self.phases.iter().map(|p|format!("{p:?}")).collect::<Vec<_>>(),
             "packet_number_lengths":self.flight.packet_number_lengths,"first_packet":self.flight.first_packet_number,"padding":self.flight.padding,
             "coalesced":self.flight.coalesced,
@@ -842,6 +846,10 @@ fn http_config(sample: &Sample) -> Result<Config, BoxError> {
         if ty == h3::FrameType::SETTINGS {
             continue;
         }
+        if ty == h3::FrameType::MAX_PUSH_ID {
+            apply_push_credit(&mut config, frame.element_id)?;
+            continue;
+        }
         if ty == h3::FrameType::PRIORITY_UPDATE_REQUEST
             && frame.element_id
                 == sample
@@ -853,7 +861,9 @@ fn http_config(sample: &Sample) -> Result<Config, BoxError> {
             continue;
         }
         if ty.name().is_some() {
-            return Err("unsupported captured H3 control frame".into());
+            return Err(
+                format!("unsupported captured H3 control frame {}", frame.frame_type).into(),
+            );
         }
         if frame.value.len() as u64 != frame.length {
             return Err("uncaptured H3 control payload".into());
@@ -925,6 +935,21 @@ fn http_config(sample: &Sample) -> Result<Config, BoxError> {
     config.encoder.field_section_base = FieldSectionBase::FromFieldPreferences;
     config.early_requests = false;
     Ok(config)
+}
+
+/// 由底层原生状态机发送 MAX_PUSH_ID 并执行额度限制，不能只补发原始字节。
+/// 保留既有请求/流/帧内存上限，采样额度超过预算时拒绝模板而非扩大资源占用。
+fn apply_push_credit(config: &mut Config, maximum: Option<u64>) -> Result<(), BoxError> {
+    let count = maximum
+        .and_then(|id| id.checked_add(1))
+        .and_then(|count| usize::try_from(count).ok())
+        .filter(|count| *count <= config.max_requests)
+        .ok_or("captured MAX_PUSH_ID exceeds native resource budget")?;
+    if config.max_pushes != 0 {
+        return Err("multiple captured MAX_PUSH_ID frames require ordered replay".into());
+    }
+    config.max_pushes = count;
+    Ok(())
 }
 
 fn fresh_integer(previous: u64) -> Result<u64, BoxError> {
@@ -999,6 +1024,22 @@ fn sample_values<B>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sampled_push_credit_uses_native_quota_and_rejects_excess_or_repeated_frames() {
+        let mut config = Config::default();
+        apply_push_credit(&mut config, Some(99)).unwrap();
+        assert_eq!(config.max_pushes, 100);
+        assert!(apply_push_credit(&mut config, Some(99)).is_err());
+        for value in [
+            None,
+            Some(u64::MAX),
+            Some(Config::default().max_requests as u64),
+        ] {
+            let mut config = Config::default();
+            assert!(apply_push_credit(&mut config, value).is_err());
+            assert_eq!(config.max_pushes, 0);
+        }
+    }
     #[test]
     fn regenerated_reserved_values_keep_wire_width_and_reserved_pattern() {
         for previous in [

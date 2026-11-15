@@ -35,6 +35,13 @@ def streams(boundary):
     return sorted((row['stream_id'], row['stream_type']) for row in boundary['streams'])
 
 
+def controls(boundary):
+    # 随机保留类型/负载只核对形状；MAX_PUSH_ID 等已知帧必须比较实际语义值。
+    return [('reserved', row['length']) if reserved(row['frame_type']) else
+            (row['frame_type'], row['element_id'], row['value'])
+            for row in boundary['control'] if row['frame_type'] != 4]
+
+
 def fields(names, rows):
     result = {}
     for name, row in zip(names, rows, strict=True):
@@ -52,7 +59,8 @@ def compare(folder):
     checks={'calibrated':True,'three_production_h3_requests':len(requests)>=3,
         'no_connection_error':not actual['connection_errors'],
         'transport_parameters':parameters(source['parameters'])==parameters(actual['transport_parameters']),
-        'settings':settings(source['boundary'])==settings(requests[0]['first_request_boundary']['snapshot'])}
+        'settings':settings(source['boundary'])==settings(requests[0]['first_request_boundary']['snapshot']),
+        'initial_control_frames':controls(source['boundary'])==controls(requests[0]['first_request_boundary']['snapshot'])}
     for key in ['version','dcid_len','scid_len','first_packet_number','packet_number_lengths','padding','coalesced','datagram_sizes']:
         checks['initial_'+key]=source['flight'][key]==actual['initial'][key]
     if 'hello' in actual['tls']:

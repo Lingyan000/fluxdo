@@ -39,3 +39,6 @@
 - Windows 工作流 43701585272，同提交：TCP/H2 比对通过，本地 H3 探测仅有 TCP 请求，无 QUIC 观测。不能以 Linux Chromium 强制 QUIC 实验代替 WebView2 原生可用性。
 - Windows 首次启动只等待 TLS/H2 校验，H3 在同一串行采样任务中继续；日志在 error 为空时记录 reason，避免失败原因显示为 none。
 - Windows 使用原生 WebView2 和 Windows Core；iOS 15.5 单独工作流运行，不能由现代 iOS 结果替代。
+- iOS 15.5 工作流 43701584440（5169d4de）两种 UA 的 H3 校准失败：采样带 MAX_PUSH_ID，被模板构造当作不支持的已知控制帧拒绝。历史原生观测显示额度 ID 99。
+- 已按采样额度接入底层原生 max_pushes 状态机，并受既有 max_requests 预算约束；缺失、溢出、超限或多次 MAX_PUSH_ID 均拒绝，不静默丢弃。两份样本也须有相同额度；不按平台/版本硬编码。
+- 增补控制帧语义比对，已有 Chromium 99/110/156 和现代 Apple 通过样本复核通过；新增额度边界测试通过。修复后的 iOS 15.5 仍需新的云端运行确认。
