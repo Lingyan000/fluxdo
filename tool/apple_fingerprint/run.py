@@ -25,10 +25,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
+    parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
     parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
     args = parser.parse_args()
+    if args.system_trust and (not args.h3 or os.environ.get('GITHUB_ACTIONS') != 'true'):
+        parser.error('--system-trust requires --h3 on an ephemeral GitHub runner')
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
     repo = Path(__file__).resolve().parents[2]
@@ -49,6 +52,8 @@ def main():
         folder.mkdir()
         env = dict(os.environ, SSL_CERT_FILE=str(folder / 'ca.pem'),
                    SSL_CERT_EXTRA_FILE=str(folder / 'ca.pem'), FLUXDO_LAB_EXTERNAL_DRIVER='1', **extra_env)
+        if args.system_trust:
+            env.update(FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST='1', FLUXDO_APPLE_LAB_CA=str(folder / 'h3-ca.pem'))
         result = {'case': name, 'evidence_kind': 'native_wkwebview', 'configuration': extra_env}
         try:
             with (folder / 'run.log').open('w') as log:
@@ -97,7 +102,8 @@ def main():
     run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source,
          '-framework', 'AppKit', '-framework', 'WebKit', '-o', mac])
     for mode in ('native', 'app'):
-        case('macos-' + mode, mac, {'FLUXDO_APPLE_UA_MODE': mode})
+        case('macos-' + mode, Path(__file__).parent / 'mac_driver.py' if args.system_trust else mac,
+             {'FLUXDO_APPLE_UA_MODE': mode, 'FLUXDO_MAC_DRIVER_BINARY': str(mac)})
 
     simulator_data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
     (root / 'simulators.json').write_text(json.dumps(simulator_data, indent=2))

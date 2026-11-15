@@ -52,7 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     let out = PathBuf::from(args.get(2).ok_or("output directory required")?);
     std::fs::create_dir_all(&out)?;
-    let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::default())?;
+    let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
+        rama::net::address::Domain::from_static("localhost"),
+    ))?;
+    std::fs::write(out.join("h3-ca.pem"), X509::from_der(identity.cert_chain.last().ok_or("missing lab CA")?.as_ref())?.to_pem()?)?;
     let leaf = X509::from_der(identity.cert_chain[0].as_ref())?;
     let spki = base64::engine::general_purpose::STANDARD
         .encode(sha256(&leaf.public_key()?.public_key_to_der()?));

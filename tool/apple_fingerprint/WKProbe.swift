@@ -64,6 +64,11 @@ final class Probe: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // 系统信任实验不使用证书回调放行，确保 OS 真正验证实验 CA 与主机名。
+        if ProcessInfo.processInfo.environment["FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST"] == "1" {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
         let space = challenge.protectionSpace
         // 与应用探针一样，只接受指定回环端口的服务端证书挑战。
         if space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
@@ -88,6 +93,7 @@ final class Probe: NSObject, WKNavigationDelegate {
         let platform = "ios-simulator-wkwebview"
         #endif
         let result: [String: Any] = ["engine": "native WKWebView", "platform": platform,
+            "requires_system_trust": ProcessInfo.processInfo.environment["FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST"] == "1",
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "native_user_agent": nativeUA, "custom_user_agent": webView.customUserAgent ?? "",
             // 只核验公开 Bundle 元数据是否可读，不使用私有 WebKit API。
