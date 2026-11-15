@@ -20,6 +20,7 @@ try:
         try:
             adb('shell', 'am', 'force-stop', package)
             if forced:
+                adb('shell', 'run-as', package, 'mkdir', '-p', 'files')
                 adb('shell', 'run-as', package, 'rm', '-f', 'files/probe-netlog.json')
             adb('logcat', '-c')
             adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,

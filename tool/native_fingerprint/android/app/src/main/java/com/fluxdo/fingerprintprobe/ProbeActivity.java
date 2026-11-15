@@ -28,6 +28,10 @@ public final class ProbeActivity extends Activity {
             view.getSettings().setUserAgentString(nativeUa.replaceAll("[;\\s]*\\bwv\\b[;\\s]*(?=\\))", "").replaceAll("Version/[^ ]+ *", ""));
         }
         view.setWebViewClient(new WebViewClient() {
+            @Override public void onReceivedError(WebView v, WebResourceRequest request, WebResourceError error) {
+                // 主文档失败时直接保留原生错误，避免只剩等待超时。
+                if (request.isForMainFrame()) complete("navigation " + error.getErrorCode() + ": " + error.getDescription());
+            }
             @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) {
                 Uri url = Uri.parse(error.getUrl());
                 if (url.getHost().equals(target.getHost()) && url.getPort() == target.getPort() && "https".equals(url.getScheme())) handler.proceed();
