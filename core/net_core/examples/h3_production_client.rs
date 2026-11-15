@@ -286,6 +286,8 @@ async fn main() -> Result<(), BoxError> {
                 ("head","HEAD",None,""),
                 ("conditional-changed","GET",Some(("if-none-match","\"fluxdo-lab-etag-changed-20261115\"")),""),
                 ("form-again","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=two&value=one"),
+                ("conditional-again","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
+                ("conditional-third","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
             ];
             for (name, method, header, body) in cases {
                 let mut request=Request::builder().method(method)
