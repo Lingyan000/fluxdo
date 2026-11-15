@@ -7,7 +7,7 @@ internal static class Program {
     [STAThread]
     static int Main(string[] args) {
         var target = args.FirstOrDefault(a => a.StartsWith("https://localhost:"));
-        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri) || uri.Host != "localhost" || uri.AbsolutePath != "/fluxdo-probe") return 2;
+        if (!Uri.TryCreate(target, UriKind.Absolute, out var uri) || uri.Host != "localhost" || (uri.AbsolutePath != "/fluxdo-probe" && uri.AbsolutePath != "/fluxdo-h3")) return 2;
         Application.EnableVisualStyles();
         using var form = new Form { Width = 640, Height = 480 };
         using var view = new WebView2 { Dock = DockStyle.Fill };

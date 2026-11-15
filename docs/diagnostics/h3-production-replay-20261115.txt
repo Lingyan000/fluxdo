@@ -10,7 +10,7 @@
 
 已执行验证
 - 生产 HttpEgressClient 完成 H2 -> H3 和三个连续 H3 请求；使用独立服务端观察真实报文。
-- Chromium 156 的当前比对字段通过：TLS 稳定字段/扩展、QUIC 参数、首包几何和包号宽度、SETTINGS、关键流编号、三阶段共同字段 QPACK。
+- Chromium 99、110、156 的当前比对字段通过：TLS 稳定字段/扩展、QUIC 参数、首包几何和包号宽度、SETTINGS、关键流编号、三阶段共同字段 QPACK。
 - Chromium 实验显式使用 --origin-to-force-quic-on 和本机证书 SPKI 许可，不能证明真实 WebView 原生 Alt-Svc 采样在该平台可用。
 - 独立 QPACK/优先级测试 2 项通过，QUIC 禁用票据完整握手测试 1 项通过。
 - 网络核心 132 项通过；架构守卫及采样服务测试 18 项通过。
@@ -26,3 +26,8 @@
 - 当前探针没有覆盖条件请求、上传等全部浏览器 QPACK 策略；三阶段 fetch 样本不能代表所有请求类型。
 - 完整真机、蜂窝/Wi-Fi 切换、弱网丢包、Retry/迁移及线上 CF 结果仍需专门证据。
 - iOS 模拟器不是真机；macOS 宿主上的 Core 回放不等于 iOS 静态库产物验证。
+
+云端扩展
+- macOS/iOS 当前工作流：43701014885，提交 582ebae31dfa135e51655b076085e01ef69b4c74；结果待下载审计。
+- Android 使用原生 WebView 加模拟器 UDP 字节转发，Core 仍在 Linux 宿主；转发有界且逐源端口隔离，不可标注为 Android 原生 Core 或真机。
+- Windows 使用原生 WebView2 和 Windows Core；iOS 15.5 单独工作流运行，不能由现代 iOS 结果替代。

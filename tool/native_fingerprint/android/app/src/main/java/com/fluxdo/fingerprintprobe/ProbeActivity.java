@@ -14,10 +14,11 @@ public final class ProbeActivity extends Activity {
     private Uri target;
     private boolean finished;
     private String nativeUa;
+    private UdpBridge udpBridge;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         target = Uri.parse(getIntent().getStringExtra("url"));
-        if (!"https".equals(target.getScheme()) || !"localhost".equals(target.getHost()) || !"/fluxdo-probe".equals(target.getPath())) { finish(); return; }
+        if (!"https".equals(target.getScheme()) || !"localhost".equals(target.getHost()) || (!"/fluxdo-probe".equals(target.getPath()) && !"/fluxdo-h3".equals(target.getPath()))) { finish(); return; }
         view = new WebView(this);
         setContentView(view);
         view.getSettings().setJavaScriptEnabled(true);
@@ -42,6 +43,10 @@ public final class ProbeActivity extends Activity {
                 if ("fluxdo-probe-done".equals(title)) complete(null);
             }
         });
+        if (getIntent().getBooleanExtra("udpBridge", false)) {
+            try { udpBridge = new UdpBridge(target.getPort()); }
+            catch (Exception e) { complete("UDP bridge: " + e); return; }
+        }
         view.loadUrl(target.toString());
         view.postDelayed(() -> complete("timeout"), 25000);
     }
@@ -55,6 +60,12 @@ public final class ProbeActivity extends Activity {
             data.put("webview", WebView.getCurrentWebViewPackage().versionName);
             data.put("native_user_agent", nativeUa);
             data.put("effective_user_agent", view.getSettings().getUserAgentString());
+            data.put("udp_relay", udpBridge != null);
+            if (udpBridge != null) {
+                data.put("udp_sent", udpBridge.sent.get());
+                data.put("udp_received", udpBridge.received.get());
+                data.put("udp_error", udpBridge.error);
+            }
             data.put("success", error == null);
             data.put("error", error);
             Log.i("FluxdoProbeResult", data.toString());
@@ -62,6 +73,7 @@ public final class ProbeActivity extends Activity {
         finish();
     }
     @Override protected void onDestroy() {
+        if (udpBridge != null) udpBridge.close();
         if (view != null) view.destroy();
         super.onDestroy();
     }

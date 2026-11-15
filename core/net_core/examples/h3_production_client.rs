@@ -155,6 +155,9 @@ async fn main() -> Result<(), BoxError> {
                 break;
             }
         }
+        if std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some() {
+            let _=tokio::time::timeout(Duration::from_secs(2),child.wait()).await;
+        }
         let _ = child.kill().await;
         helper_task.abort();
     }

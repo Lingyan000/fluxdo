@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from compare_fingerprint_capture import compare
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--production-h3', action='store_true')
 parser.add_argument('--platform', choices=['android', 'windows'], required=True)
 parser.add_argument('--output', type=Path, required=True)
 args = parser.parse_args()
@@ -34,6 +35,23 @@ for mode in (['native', 'app'] if args.platform == 'android' else ['native']):
         result['exit_code'] = process.returncode
         result['comparison'] = compare(folder)
         result['passed'] = process.returncode == 0 and result['comparison']['all_checked_fields_match']
+        if args.production_h3 and result['passed']:
+            production=folder/'production-h3'
+            production.mkdir()
+            suffix='.exe' if os.name=='nt' else ''
+            examples=root/'core/net_core/target/debug/examples'
+            h3env=dict(env, FLUXDO_ANDROID_H3_RELAY='1' if args.platform=='android' else '0', FLUXDO_H3_NATIVE_DRIVER='1', FLUXDO_H3_BROWSER=str(driver.resolve()),
+                FLUXDO_TCP_SAMPLES=str(folder), FLUXDO_H3_OUTPUT=str(production/'client'),
+                SSL_CERT_FILE=str(production/'server/h3-ca.pem'), SSL_CERT_EXTRA_FILE=str(production/'server/h3-ca.pem'))
+            with (production/'run.log').open('w') as log:
+                h3process=subprocess.run([str(examples/('h3_fingerprint_probe'+suffix)),str(examples/('h3_production_client'+suffix)),str(production/'server'),'--native-probe'],
+                    env=h3env,stdout=log,stderr=subprocess.STDOUT,timeout=240)
+            result['production_h3_exit_code']=h3process.returncode
+            result['passed'] &= h3process.returncode==0
+            if (production/'client/profile.json').exists() and (production/'server/h3-capture.json').exists():
+                from compare_h3_production import compare as compare_h3
+                result['production_h3_comparison']=compare_h3(production)
+                result['passed'] &= result['production_h3_comparison']['all_checked_fields_match']
     except Exception as error:
         result.update(passed=False, error=str(error))
     matrix.append(result)

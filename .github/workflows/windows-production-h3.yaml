@@ -1,0 +1,41 @@
+name: Windows production H3 replay
+on:
+  push:
+    branches: ['diagnostics/windows-production-h3-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-production-h3-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: ilammy/setup-nasm@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native WebView2 host
+        run: dotnet build tool/native_fingerprint/windows/Probe.csproj -c Release
+      - name: Build Core diagnostic collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Compare native WebView2 and Windows Core
+        run: python tool/native_fingerprint/run.py --platform windows --production-h3 --output "${{ runner.temp }}/native-fingerprint"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-production-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/**/*.json
+            ${{ runner.temp }}/native-fingerprint/**/*.log
+            ${{ runner.temp }}/native-fingerprint/**/*.stdout
+            ${{ runner.temp }}/native-fingerprint/**/*.stderr

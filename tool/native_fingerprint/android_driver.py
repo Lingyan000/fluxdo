@@ -18,7 +18,8 @@ try:
     adb('shell', 'am', 'force-stop', package)
     adb('logcat', '-c')
     adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,
-        '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'))
+        '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'),
+        '--ez', 'udpBridge', 'true' if os.environ.get('FLUXDO_ANDROID_H3_RELAY')=='1' else 'false')
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         logs = adb('logcat', '-d', '-s', 'FluxdoProbeResult:I', '*:S')
