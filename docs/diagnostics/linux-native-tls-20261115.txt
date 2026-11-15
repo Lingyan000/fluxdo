@@ -67,3 +67,13 @@ macOS/iOS 26.2：https://github.com/Lingyan000/fluxdo/actions/runs/43686477647
 iOS 15.5：https://github.com/Lingyan000/fluxdo/actions/runs/43686478020
 已下载并逐项核对 matrix.json：11 个实例/55 个场景（macOS 控制重复；9 个唯一配置）。
 这批结果早于下一步 HPACK 索引探针，后者单独重跑验证，详见 hpack-policy-20261115.txt。
+
+独立算法互操作补验
+使用 Python/OpenSSL 3.5.8 的独立 TLS 1.3 服务端，分别只允许 X448、ffdhe2048，
+以及 RSA-PSS 限制密钥证书（rsa-pss）/Ed448 证书 + X25519。四组生产 HttpEgressClient 请求均返回 200/ok，
+不是仅比对 ClientHello 算法编号。服务端固定单组、TLS 1.3；完整源码见
+examples/linux_tls_negotiation.rs 与 tool/native_fingerprint/linux/verify_negotiation.py。
+使用现有真实 WPE 两次样本，不把同一个 Hello 复制两次冒充采样；首轮诊断错误地固定排列，
+被后端匹配拒绝、尚未联网，失败记录保留。改为实际两次样本策略后全部通过。
+证据：/workspace/scratch/linux-native-algorithms-v3-20261115/matrix.json；v2 保留原三组结果。
+实验私钥仅留在本地临时目录，不进入源码、Actions artifact 或交付证据包。

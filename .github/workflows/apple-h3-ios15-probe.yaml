@@ -1,4 +1,4 @@
-name: iOS 15 WKWebView H3 system trust probe
+name: iOS 15 WKWebView H3 callback reconnect probe
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
           chmod +x tool/apple_fingerprint/ios_driver.py tool/apple_fingerprint/mac_driver.py
           cargo build --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe
       - name: Run native WKWebView scenarios
-        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/ios15-fingerprint" --ios-version '${{ matrix.ios }}' --h3 --system-trust
+        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/ios15-fingerprint" --ios-version '${{ matrix.ios }}' --h3 --close-tcp
       - name: Upload capability and fingerprint evidence
         if: always()
         uses: actions/upload-artifact@v4

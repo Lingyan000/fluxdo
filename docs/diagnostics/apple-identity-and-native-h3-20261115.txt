@@ -73,3 +73,23 @@ run 43689666411 在调度前 cancelled，annotation 为
 https://github.com/actions/runner-images/issues/13518
 已删除这份不可执行工作流，失败任务和提交 f7f071ec8fa5dc9f3382fa8fad656a77c71d5dcb 仍可追溯。
 没有修改 Apple 运行时版本限制。iOS 15.5 的真实原生结果不能外推成已验证 15.0。
+
+关键追加：关闭旧 H2 连接后取得真实 Apple H3 样本
+原生 H3 实验不能只重复 fetch 并一直复用现有 H2。采集器新增 --close-tcp，
+发送 Alt-Svc 与响应体后关闭旧连接，浏览器自行选择重连协议；未强制浏览器使用 QUIC。
+本地 WPE 控制完成 26 次请求/25 条 TCP 连接，证明重连条件确实生效。
+系统信任 + 重连的 Apple run 43691731910，源码 36ff4f4c159f2cfca5a61d5921c97855195b41b4：
+artifact 14153036783，SHA256 995f2d120df737220d6472da69187ecf4ff935c6c4b82bda4590346d9f483c07。
+macOS native、iOS 26.2 native/app 三种配置均 h3_sample_complete=true，
+Initial、QUIC TLS/传输参数、H3 SETTINGS/关键流/QPACK 与请求按连接关联。
+iOS native 完整 case 通过；macOS native 因证书清理失败为 case 失败，
+iOS app 虽有完整协议样本但驱动完成结果未齐，不能将协议样本存在等同于整个 case 通过。
+macOS app 仍在证书安装阶段失败，无浏览器样本。
+因此纠正此前假设：无 UDP 不足以证明必须使用公网采样服务；H2 复用是实验中的关键遗漏。
+仅证书回调 + 重连的对照已完成：run 43692449245，源码 c08d3fb3c7bc5db158689f54db1074a3a6bee7a3。
+artifact 14153740113，SHA256 f9cd17350c270b0ba01905eeacfd800a8779a19a64f29775b5322124a9a548bf。
+macOS native/app、iOS 26.2 native/app 四组全部通过，均 h3_sample_complete=true、connection_errors=[]；
+各组 TCP 请求只有 2 次，随后切换 H3；UDP 流数分别为 1/1/2/1。
+本次没有安装系统 CA，没有强制 QUIC，也没有公网端点。现有回调在这些运行时足以进行回环采样。
+旧实验一直复用 H2，不能据此把无 H3 归咎于系统证书信任。iOS 15.5 单独执行同条件补验。
+生产 H3 模板回放仍未完成，不能因抓到样本就取消浏览器客户端的 H3 隔离。
