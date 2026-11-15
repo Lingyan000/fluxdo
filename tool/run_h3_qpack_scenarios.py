@@ -17,6 +17,8 @@ CASES = {
     'head': ('HEAD', '', None, None),
     'conditional-changed': ('GET', '', 'if_none_match', '"fluxdo-lab-etag-changed-20261115"'),
     'form-again': ('POST', 'sample=two&value=one', 'content_type', 'application/x-www-form-urlencoded'),
+    'conditional-again': ('GET', '', 'if_none_match', '"fluxdo-lab-etag"'),
+    'conditional-third': ('GET', '', 'if_none_match', '"fluxdo-lab-etag"'),
 }
 
 

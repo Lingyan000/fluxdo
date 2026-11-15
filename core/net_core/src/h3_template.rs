@@ -213,6 +213,7 @@ pub struct Sample {
     pub phases: Vec<HeaderPreferences>,
     pub wire_fields: Vec<Vec<h3::observation::ObservedFieldRepresentation>>,
     pub warm_boundary: Option<Arc<H3ObservationSnapshot>>,
+    pub insert_on_reuse: Option<bool>,
 }
 
 impl Sample {
@@ -450,7 +451,19 @@ impl Sample {
             phases,
             wire_fields: vec![observed.fields.clone()],
             warm_boundary: None,
+            insert_on_reuse: None,
         })
+    }
+
+    /// 至少三阶段且连续两次字段策略一致，才认为已经离开动态表启动阶段。
+    pub fn warm_fields_stable(&self) -> bool {
+        warm_fields_stable(&self.wire_fields)
+    }
+
+    /// 用同连接内首次出现、随后重复的新路径测量动态表准入，不按 UA 猜测。
+    pub fn observe_value_reuse(&mut self, fields: &[h3::observation::ObservedFieldRepresentation]) -> Result<(), BoxError> {
+        self.insert_on_reuse = Some(infer_value_reuse(fields)?);
+        Ok(())
     }
 
     /// 同一连接继续采样，分离首次字段块与动态表建立后的字段策略。
@@ -548,6 +561,7 @@ impl Sample {
                 .filter(|frame|h3::FrameType::from(frame.frame_type)==h3::FrameType::MAX_PUSH_ID)
                 .map(|frame|frame.element_id).collect::<Vec<_>>(),
             "qpack_phases":self.phases.iter().map(|p|format!("{p:?}")).collect::<Vec<_>>(),
+            "insert_on_reuse":self.insert_on_reuse,
             "packet_number_lengths":self.flight.packet_number_lengths,"first_packet":self.flight.first_packet_number,"padding":self.flight.padding,
             "coalesced":self.flight.coalesced,"cross_packet_initial":self.cross_packet_initial(),"ordered_initial_chunk_size":self.ordered_initial_chunk_size(),
             "versions":versions.iter().filter(|v|!v.is_reserved()).map(|v|v.as_u32()).collect::<Vec<_>>(),
@@ -567,8 +581,11 @@ pub struct Profile {
 
 impl Profile {
     pub fn calibrate(first: &Sample, second: &Sample) -> Result<Self, BoxError> {
-        if first.phases.len() < 3 || second.phases.len() < 3 {
-            return Err("warm H3 calibration missing".into());
+        if !first.warm_fields_stable() || !second.warm_fields_stable() {
+            return Err("warm H3 field strategy has not stabilized".into());
+        }
+        if first.insert_on_reuse.is_none() || second.insert_on_reuse.is_none() {
+            return Err("QPACK value reuse calibration missing".into());
         }
         if first.identity()? != second.identity()? {
             return Err("QUIC samples have different stable capabilities".into());
@@ -1021,6 +1038,7 @@ fn http_config(sample: &Sample) -> Result<Config, BoxError> {
     });
     config.encoder.target_capacity = capacity.unwrap_or(0);
     config.encoder.defer_dynamic_first_section = true;
+    config.encoder.insert_on_reuse = sample.insert_on_reuse.ok_or("QPACK reuse policy missing")?;
     config.encoder.field_section_base = FieldSectionBase::FromFieldPreferences;
     config.early_requests = false;
     Ok(config)
@@ -1081,6 +1099,28 @@ fn infer_huffman(preference: &mut FieldPreferences, name: &[u8], value: &[u8]) {
         infer(&mut insertion.value_huffman, value, 7);
     }
 }
+
+fn infer_value_reuse(fields: &[h3::observation::ObservedFieldRepresentation]) -> Result<bool, BoxError> {
+    use h3::observation::FieldRepresentation as R;
+    let [first, second] = fields else { return Err("value reuse observations missing".into()); };
+    if fields.iter().any(|f| f.never_index || FieldPreferences::from_observed(f).is_none()) {
+        return Err("invalid value reuse probe fields".into());
+    }
+    match (first.representation, second.representation) {
+        (R::LiteralStaticName, R::DynamicPostBaseIndex) => Ok(true),
+        (R::DynamicIndex | R::DynamicPostBaseIndex, R::DynamicIndex | R::DynamicPostBaseIndex) => Ok(false),
+        _ => Err("unsupported measured QPACK value reuse strategy".into()),
+    }
+}
+
+fn warm_fields_stable(phases: &[Vec<h3::observation::ObservedFieldRepresentation>]) -> bool {
+    if phases.len() < 3 { return false; }
+    let last = &phases[phases.len() - 1];
+    let previous = &phases[phases.len() - 2];
+    last.len() == previous.len() && !last.is_empty() && last.iter().zip(previous).all(|(a, b)| {
+        FieldPreferences::from_observed(a).is_some_and(|a| FieldPreferences::from_observed(b) == Some(a))
+    })
+}
 fn sample_values<B>(
     request: &Request<B>,
     order: &PseudoHeaderOrder,
@@ -1113,6 +1153,38 @@ fn sample_values<B>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn value_reuse_policy_requires_complete_supported_observations() {
+        use h3::observation::{FieldRepresentation as R, ObservedFieldRepresentation as F};
+        let literal = F { representation: R::LiteralStaticName, index: Some(1),
+            name_huffman: false, value_huffman: true, never_index: false };
+        let post = F { representation: R::DynamicPostBaseIndex, index: Some(0),
+            value_huffman: false, ..literal };
+        let before = F { representation: R::DynamicIndex, ..post };
+        assert!(infer_value_reuse(&[literal, post]).unwrap());
+        assert!(!infer_value_reuse(&[before, before]).unwrap());
+        assert!(infer_value_reuse(&[]).is_err());
+        assert!(infer_value_reuse(&[literal, literal]).is_err());
+        assert!(infer_value_reuse(&[literal, F { never_index: true, ..post }]).is_err());
+        assert!(infer_value_reuse(&[literal, F { index: None, ..post }]).is_err());
+    }
+    #[test]
+    fn warm_strategy_must_leave_post_base_startup_before_reuse() {
+        use h3::observation::{FieldRepresentation as R, ObservedFieldRepresentation as F};
+        let field = |representation, index| F { representation, index: Some(index),
+            name_huffman: false, value_huffman: false, never_index: false };
+        let mut phases = vec![vec![field(R::LiteralStaticName, 0)], vec![field(R::LiteralStaticName, 0)],
+            vec![field(R::DynamicPostBaseIndex, 0)]];
+        assert!(!warm_fields_stable(&phases));
+        phases.push(vec![field(R::DynamicIndex, 2)]);
+        assert!(!warm_fields_stable(&phases));
+        // 新连接的动态索引数字不是规则；稳定比较只看编码策略。
+        phases.push(vec![field(R::DynamicIndex, 3)]);
+        assert!(warm_fields_stable(&phases));
+        phases.last_mut().unwrap()[0].never_index = true;
+        assert!(!warm_fields_stable(&phases));
+        assert!(!warm_fields_stable(&[vec![], vec![], vec![]]));
+    }
     #[test]
     fn sampled_push_credit_uses_native_quota_and_rejects_excess_or_repeated_frames() {
         let mut config = Config::default();

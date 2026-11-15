@@ -1,5 +1,6 @@
 //! 与 TCP 探针隔离的本机 H3 采样。两个独立 origin 校准，避免连接池复用冒充两次握手。
 use crate::{h3_template::Sample, mirror::FingerprintTemplates};
+use rama::http::proto::h3::observation::H3RequestObservation;
 use rama::{
     Layer, Service, ServiceInput,
     error::BoxError,
@@ -27,7 +28,8 @@ use tokio_util::sync::CancellationToken;
 
 const PAGE: &str = r#"<!doctype html><title>fluxdo-probe</title><script>
 (async()=>{await new Promise(r=>setTimeout(r,400));try{for(let i=0;i<20;i++){try{let r=await fetch('/fluxdo-h3/fetch');
-if((await r.text())==='h3-ready')break;}catch(e){}await new Promise(r=>setTimeout(r,250));}}
+if((await r.text())==='h3-policy'){for(let j=0;j<2;j++)await (await fetch('/fluxdo-h3/reuse')).text();break;}}
+catch(e){}await new Promise(r=>setTimeout(r,250));}}
 finally{document.title='fluxdo-probe-done';}})();</script>"#;
 
 pub async fn start(templates: Arc<FingerprintTemplates>, shutdown: CancellationToken) {
@@ -169,14 +171,30 @@ async fn bind(
                                     return Err("H3 probe UA does not match calibrated TCP sample".into());
                                 }
                                 response.send_response(Response::builder().header("access-control-allow-origin","*").body(Body::from("h3"))?).await?;
-                                for index in 0..2 {
+                                // 有些实现第三次请求仍使用启动期的 post-Base；采到稳定阶段再发布。
+                                // 上限限制校准流量，始终不稳定时保留 TCP/H2，不猜测后续策略。
+                                for index in 0..6 {
                                     let (request,response)=requests.accept().await?.resolve().await?;
                                     if !request.uri().path().is_some_and(|p|p.to_string()=="/fluxdo-h3/fetch") {return Err("unexpected warm H3 path".into());}
                                     sample.observe_warm(&request)?;
                                     let observer=request.extensions().get_ref::<H3Observer>().ok_or("missing warm H3 observer")?;
                                     sample.warm_boundary=Some(crate::h3_template::sampled_request_boundary(
                                         observer, (index+1)*4, sample.priority_update.is_some()).await?);
-                                    if index==1 {templates.h3.record(epoch,port,sample.clone())?;}
+                                    let stable=sample.warm_fields_stable();
+                                    response.send_response(Response::builder().header("access-control-allow-origin","*").body(Body::from(if stable {"h3-policy"} else {"h3"}))?).await?;
+                                    if stable {break;}
+                                }
+                                if !sample.warm_fields_stable() {return Err("H3 warm field strategy did not stabilize within budget".into());}
+                                let mut reuse_fields=Vec::new();
+                                for index in 0..2 {
+                                    let (request,response)=requests.accept().await?.resolve().await?;
+                                    if !request.uri().path().is_some_and(|p|p.to_string()=="/fluxdo-h3/reuse") {return Err("unexpected value reuse probe path".into());}
+                                    let observed=request.extensions().get_ref::<H3RequestObservation>().ok_or("missing value reuse observation")?;
+                                    let order=request.extensions().get_ref::<rama::http::proto::h3::PseudoHeaderOrder>().ok_or("missing value reuse pseudo order")?;
+                                    let path=order.iter().position(|p|p==rama::http::proto::h3::PseudoHeader::Path).ok_or("missing value reuse path field")?;
+                                    if !observed.fields_complete {return Err("incomplete value reuse fields".into());}
+                                    reuse_fields.push(*observed.fields.get(path).ok_or("missing value reuse path encoding")?);
+                                    if index==1 {sample.observe_value_reuse(&reuse_fields)?;templates.h3.record(epoch,port,sample.clone())?;}
                                     response.send_response(Response::builder().header("access-control-allow-origin","*").body(Body::from(if index==1 {"h3-ready"} else {"h3"}))?).await?;
                                 }
                                 // 响应发出后关闭此独立探针连接；不影响业务连接池。

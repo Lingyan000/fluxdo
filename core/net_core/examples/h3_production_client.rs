@@ -82,7 +82,7 @@ async fn main() -> Result<(), BoxError> {
         let helper = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let helper_port = helper.local_addr()?.port();
         let html = format!(
-            "<!doctype html><script>(async()=>{{for(let i=0;i<8;i++){{let r=await fetch('https://localhost:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-ready')break;await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
+            "<!doctype html><script>(async()=>{{for(let i=0;i<10;i++){{let r=await fetch('https://localhost:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-policy'){{for(let j=0;j<2;j++)await(await fetch('https://localhost:{port}/fluxdo-h3/reuse')).text();break;}}await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
         );
         let helper_task = tokio::spawn(async move {
             use rama::{
@@ -200,7 +200,7 @@ async fn main() -> Result<(), BoxError> {
         out.join("profile.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
         "hello":profile.sample.hello,"flight":profile.sample.flight,"parameters":profile.sample.parameters,
-        "boundary":profile.sample.boundary,"warm_boundary":profile.sample.warm_boundary,"wire_fields":profile.sample.wire_fields,"quic":profile.quic,"permute_tls":profile.permute_tls,
+        "boundary":profile.sample.boundary,"warm_boundary":profile.sample.warm_boundary,"wire_fields":profile.sample.wire_fields,"insert_on_reuse":profile.sample.insert_on_reuse,"quic":profile.quic,"permute_tls":profile.permute_tls,
         "header_order":profile.sample.header_order,"pseudo_order":profile.sample.pseudo_order}))?,
     )?;
     let client = HttpEgressClient::new(egress, Some(templates));
@@ -276,6 +276,16 @@ async fn main() -> Result<(), BoxError> {
                 results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
             }
         }
+        if scenario.is_empty() {
+            // 与校准样本一样重复同一路径；结束标记不冒充重复 fetch 的编码阶段。
+            for phase in 1..profile.sample.phases.len() {
+                let response=client.send(Request::builder().uri(format!("{origin}/fluxdo-probe/fetch"))
+                    .header("user-agent",reference.user_agent.as_deref().unwrap()).header("accept","*/*")
+                    .body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                let version=response.version();response.into_body().collect().await?;
+                results.push(serde_json::json!({"scenario":"calibrated_phase","phase":phase,"version":format!("{version:?}")}));
+            }
+        }
         if scenario == "qpack" {
             let cases = [
                 ("warm-0","GET",None,""), ("warm-1","GET",None,""),
@@ -286,6 +296,8 @@ async fn main() -> Result<(), BoxError> {
                 ("head","HEAD",None,""),
                 ("conditional-changed","GET",Some(("if-none-match","\"fluxdo-lab-etag-changed-20261115\"")),""),
                 ("form-again","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=two&value=one"),
+                ("conditional-again","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
+                ("conditional-third","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
             ];
             for (name, method, header, body) in cases {
                 let mut request=Request::builder().method(method)

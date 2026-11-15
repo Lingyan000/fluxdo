@@ -48,13 +48,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--production-h3', action='store_true', help='原生 TCP 校准后运行生产 H3 采样和 Core 回放')
-    parser.add_argument('--qpack-scenarios', action='store_true', help='生产 H3 验证后追加七种请求形态的原生/Core 对照')
+    parser.add_argument('--qpack-scenarios', action='store_true', help='生产 H3 验证后追加扩展请求和字段值复用的原生/Core 对照')
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
     parser.add_argument('--close-tcp', action='store_true', help='H3 实验中服务端关闭旧 TCP 连接，排除持续复用的影响')
     parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
     parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
+    parser.add_argument('--mac-only', action='store_true', help='仅执行 macOS，用于快速定位共享核心差异')
     args = parser.parse_args()
     if args.qpack_scenarios and (not args.production_h3 or args.h3 or args.system_trust):
         parser.error('--qpack-scenarios requires --production-h3 without --h3/--system-trust')
@@ -159,6 +160,9 @@ def main():
     for mode in ('native', 'app'):
         case('macos-' + mode, Path(__file__).parent / 'mac_driver.py' if args.system_trust else mac,
              {'FLUXDO_APPLE_UA_MODE': mode, 'FLUXDO_MAC_DRIVER_BINARY': str(mac)})
+
+    if args.mac_only:
+        return 0 if all(r['passed'] for r in results) else 1
 
     simulator_data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
     (root / 'simulators.json').write_text(json.dumps(simulator_data, indent=2))

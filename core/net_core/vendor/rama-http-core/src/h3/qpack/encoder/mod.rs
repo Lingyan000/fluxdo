@@ -104,6 +104,8 @@ pub struct EncoderConfig {
     pub huffman: bool,
     /// Start with a static/literal section, then permit ordinary dynamic compression.
     pub defer_dynamic_first_section: bool,
+    /// 根据实测复用规则，首次出现的字段值保持字面量；仅在字段 Base 模式启用。
+    pub insert_on_reuse: bool,
     /// Coordinate system for dynamic references; table contents remain independent.
     pub field_section_base: FieldSectionBase,
     /// Maximum uncompressed section size, including 32 bytes per field.
@@ -143,6 +145,7 @@ impl Default for EncoderConfig {
             target_capacity: kib_u64(4),
             huffman: true,
             defer_dynamic_first_section: false,
+            insert_on_reuse: false,
             field_section_base: FieldSectionBase::default(),
             max_field_section_size: kib(64),
             max_encoder_stream_bytes: kib(64),
@@ -258,6 +261,9 @@ pub struct Encoder {
     decoder_partial: [u8; 11],
     decoder_partial_len: usize,
     pending_target_capacity: Option<u64>,
+    // 只保留本连接的非敏感字段值，容量受动态表与字段块预算共同约束。
+    seen_fields: VecDeque<(Bytes, Bytes)>,
+    seen_field_bytes: usize,
 }
 
 impl Encoder {
@@ -306,6 +312,8 @@ impl Encoder {
             decoder_partial: [0; 11],
             decoder_partial_len: 0,
             pending_target_capacity: None,
+            seen_fields: VecDeque::new(),
+            seen_field_bytes: 0,
         }
     }
 
@@ -710,6 +718,9 @@ impl Encoder {
             encoding,
         } in input
         {
+            if field_base && self.config.insert_on_reuse && !field.never_index {
+                self.remember_field(field.name.as_ref(), field.value.as_ref());
+            }
             match encoding {
                 FieldEncoding::StaticIndex(index) => {
                     encode_int(&mut out, index, 6, 0xc0);
@@ -786,6 +797,26 @@ impl Encoder {
             None,
         );
         Ok(out.freeze().slice(PREFIX_HEADROOM - prefix_len..))
+    }
+
+    fn has_seen_field(&self, name: &[u8], value: &[u8]) -> bool {
+        self.seen_fields.iter().any(|(n, v)| n.as_ref() == name && v.as_ref() == value)
+    }
+
+    fn remember_field(&mut self, name: &[u8], value: &[u8]) {
+        if static_table::find(name, value).is_some() || self.has_seen_field(name, value) {
+            return;
+        }
+        let budget = self.config.target_capacity.min(self.config.max_table_capacity)
+            .min(self.config.max_field_section_size as u64) as usize;
+        let size = name.len().saturating_add(value.len()).saturating_add(ENTRY_OVERHEAD as usize);
+        if size > budget { return; }
+        while self.seen_field_bytes + size > budget {
+            let Some((name, value)) = self.seen_fields.pop_front() else { break; };
+            self.seen_field_bytes -= name.len() + value.len() + ENTRY_OVERHEAD as usize;
+        }
+        self.seen_fields.push_back((Bytes::copy_from_slice(name), Bytes::copy_from_slice(value)));
+        self.seen_field_bytes += size;
     }
 
     fn reference(&mut self, abs: u64, refs: &mut Vec<u64>, ric: &mut u64) {
