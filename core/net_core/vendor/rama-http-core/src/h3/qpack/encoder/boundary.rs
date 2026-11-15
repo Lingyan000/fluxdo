@@ -51,7 +51,7 @@ impl<'a> Plan<'a> {
     ) -> Result<Self, QpackError> {
         let mut insertions = Vec::new();
         let mut encodings = vec![FieldEncoding::LiteralName; input.len()];
-        let mut base = 0;
+        let mut base = if encoder.config.insert_on_reuse { encoder.table.insert_count() } else { 0 };
         let was_blocking = encoder.is_stream_blocking(stream_id);
         let may_block =
             was_blocking || encoder.blocking_streams < encoder.config.max_blocked_streams;
@@ -89,13 +89,28 @@ impl<'a> Plan<'a> {
                 let Input {
                     field, preferences, ..
                 } = input;
-                let representation = preferences.representation;
-                if after_base(representation) != post {
-                    continue;
-                }
+                let mut representation = preferences.representation;
                 let name = field.name.as_ref();
                 let value = field.value.as_ref();
                 let native = FieldEncoding::native(name, value, field.never_index);
+                if encoder.config.insert_on_reuse && matches!(representation,
+                    Representation::Automatic | Representation::DynamicIndex |
+                    Representation::DynamicIndexBeforeBase | Representation::DynamicIndexAfterBase)
+                    && !matches!(native, FieldEncoding::StaticIndex(_))
+                {
+                    if encoder.table.find(name, value).is_some() {
+                        representation = Representation::DynamicIndexBeforeBase;
+                    } else if encoder.has_seen_field(name, value) {
+                        // 新插入项位于本字段块开始时的 Base 之后；以后按当前表引用。
+                        representation = Representation::DynamicIndexAfterBase;
+                    } else {
+                        encodings[ordinal] = native;
+                        continue;
+                    }
+                }
+                if after_base(representation) != post {
+                    continue;
+                }
                 if !post {
                     match representation {
                         Representation::LiteralName => continue,
