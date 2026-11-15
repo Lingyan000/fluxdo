@@ -52,17 +52,75 @@ def fields(names, rows):
     return result
 
 
+def complete_boundary(boundary, require_bindings=False):
+    # 插入指令关联属于冻结的首请求边界，后续连接快照不保证重复携带它。
+    required = ('settings', 'local_settings', 'streams', 'control', 'qpack', 'fields', 'snapshot')
+    return (boundary.get('settings_received') is True
+            and boundary.get('connection_error') is None
+            and (not require_bindings or (boundary.get('encoder_bindings') or {}).get('complete') is True)
+            and all(boundary.get('completeness', {}).get(key) is True for key in required))
+
+
+def initial_layout(flight):
+    packets = flight.get('frames') or []
+    ranges = []
+    fragments = []
+    pings = []
+    per_packet = []
+    for packet in packets:
+        packet_ranges = []
+        for frame in packet:
+            crypto = frame.get('Crypto') if isinstance(frame, dict) else None
+            if crypto is not None:
+                start, length = crypto['offset'], crypto['len']
+                packet_ranges.append((start, start + length))
+                fragments.append(length)
+        per_packet.append(sorted(packet_ranges))
+        ranges.extend(packet_ranges)
+        pings.append(sum(frame == 'Ping' for frame in packet))
+    ranges.sort()
+    complete = bool(ranges) and ranges[0][0] == 0 and all(
+        a[1] == b[0] for a, b in zip(ranges, ranges[1:]))
+    first = per_packet[0] if per_packet else []
+    cross_packet = bool(first) and first[0][0] == 0 and any(
+        a[1] < b[0] for a, b in zip(first, first[1:]))
+    sizes = [packet[0][1]-packet[0][0] for packet in per_packet if len(packet)==1]
+    ordered_chunk = (sizes[0] if complete and len(sizes)==len(packets) and len(sizes)>1
+        and len(set(sizes[:-1]))==1 and sizes[-1]<=sizes[0] else None)
+    return {'ordered_crypto_chunk_size': ordered_chunk, 'complete_nonoverlapping_crypto': complete,
+            'crypto_bytes': ranges[-1][1] if ranges else 0,
+            'cross_packet': cross_packet, 'crypto_fragment_lengths': fragments,
+            'pings_per_packet': pings}
+
+
 def compare(folder):
     source=json.loads((folder/'client/profile.json').read_text())
     actual=json.loads((folder/'server/h3-capture.json').read_text())
-    requests=actual['h3']
+    requests=actual.get('h3', [])
+    if not requests:
+        result={'checks':{'three_production_h3_requests':False},'all_checked_fields_match':False,
+                'field_comparison':[], 'error':'missing production H3 requests'}
+        (folder/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+        return result
     checks={'calibrated':True,'three_production_h3_requests':len(requests)>=3,
+        'driver_succeeded':actual.get('driver_success') is True,
+        'source_initial_complete':source['flight'].get('complete') is True,
+        'actual_initial_complete':actual['initial'].get('complete') is True,
+        'same_selected_connection':actual.get('selected_flow_id') is not None
+            and all(r.get('flow_id')==actual['selected_flow_id'] for r in requests[:3]),
+        'source_boundary_complete':complete_boundary(source['boundary'], require_bindings=True),
+        'source_warm_boundary_complete':complete_boundary(source['warm_boundary']),
         'no_connection_error':not actual['connection_errors'],
         'transport_parameters':parameters(source['parameters'])==parameters(actual['transport_parameters']),
         'settings':settings(source['boundary'])==settings(requests[0]['first_request_boundary']['snapshot']),
         'initial_control_frames':controls(source['boundary'])==controls(requests[0]['first_request_boundary']['snapshot'])}
     for key in ['version','dcid_len','scid_len','first_packet_number','packet_number_lengths','padding','coalesced','datagram_sizes']:
         checks['initial_'+key]=source['flight'][key]==actual['initial'][key]
+    source_layout, actual_layout = initial_layout(source['flight']), initial_layout(actual['initial'])
+    checks['initial_source_crypto_coverage'] = source_layout['complete_nonoverlapping_crypto']
+    checks['initial_actual_crypto_coverage'] = actual_layout['complete_nonoverlapping_crypto']
+    checks['initial_cross_packet_strategy'] = source_layout['cross_packet'] == actual_layout['cross_packet']
+    checks['initial_ordered_chunk_size'] = source_layout['ordered_crypto_chunk_size'] == actual_layout['ordered_crypto_chunk_size']
     if 'hello' in actual['tls']:
         checks['tls_stable_fields']=stable_tls(source['hello'])==stable_tls(actual['tls']['hello'])
         expected,emitted=extension_ids(source['hello']),extension_ids(actual['tls']['hello'])
@@ -73,12 +131,24 @@ def compare(folder):
         checks['tls_raw_evidence_present']=False
     checks['initial_streams']=streams(source['boundary'])==streams(requests[0]['first_request_boundary']['snapshot'])
     checks['warm_streams']=streams(source['warm_boundary'])==streams(requests[-1]['connection'])
+    checks['warm_control_frames']=controls(source['warm_boundary'])==controls(requests[-1]['connection'])
     source_names=source['pseudo_order']+source['header_order']
     differences=[]
     for i,request in enumerate(requests[:3]):
-        names=request['request'].get('names')
-        if names is None:
-            checks[f'qpack_phase_{i}_named_evidence']=False
+        boundary=request.get('first_request_boundary', {})
+        checks[f'qpack_phase_{i}_frozen_boundary']=(boundary.get('status')=='ready'
+            and complete_boundary(boundary.get('snapshot', {}), require_bindings=True))
+        checks[f'qpack_phase_{i}_connection_complete']=complete_boundary(request.get('connection', {}))
+        evidence=request.get('request') or {}
+        names=evidence.get('names')
+        rows=evidence.get('fields')
+        checks[f'qpack_phase_{i}_fields_complete']=evidence.get('fields_complete') is True
+        checks[f'qpack_phase_{i}_stream_id']=evidence.get('stream_id')==i*4
+        valid_names=(isinstance(names,list) and isinstance(rows,list)
+            and all(isinstance(name,str) for name in names) and len(names)==len(rows)
+            and all(names.count(pseudo)==1 for pseudo in source['pseudo_order']))
+        checks[f'qpack_phase_{i}_named_evidence']=valid_names
+        if not valid_names:
             continue
         expected=fields(source_names,source['wire_fields'][i])
         emitted=fields(names,request['request']['fields'])
@@ -90,6 +160,7 @@ def compare(folder):
         differences.append({'phase':i,'differences':mismatch,'unmatched_fields':sorted(missing),
             'source_fields_not_requested':sorted(set(expected)-set(emitted))})
     result={'checks':checks,'all_checked_fields_match':all(checks.values()),'field_comparison':differences,
+        'initial_layout':{'source':source_layout,'actual':actual_layout},
         'scope':'production HttpEgressClient versus fresh local browser samples',
         'not_verified':['physical device and production network','Cloudflare acceptance','exact QPACK bytes for identical business requests',
             'random Initial layout distribution','migration, loss and Retry under captured profile']}

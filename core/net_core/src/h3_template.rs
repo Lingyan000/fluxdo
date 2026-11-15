@@ -35,6 +35,28 @@ use rama_quic_proto::{
 };
 use std::sync::Arc;
 
+/// 仅采样端等待已知的逐请求 PRIORITY 控制帧，不把到达先后误当成策略差异。
+/// 普通业务请求不经过此等待；缺失必需证据时明确失败。
+pub async fn sampled_request_boundary(
+    observer: &rama_http_core::h3::observation::H3Observer,
+    stream_id: u64,
+    expects_priority: bool,
+) -> Result<Arc<H3ObservationSnapshot>, BoxError> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        let snapshot = observer.snapshot();
+        if !expects_priority || snapshot.control.iter().any(|frame|
+            frame.frame_type == u64::from(h3::FrameType::PRIORITY_UPDATE_REQUEST)
+                && frame.element_id == Some(stream_id)) {
+            return Ok(snapshot);
+        }
+        if snapshot.connection_error.is_some() || tokio::time::Instant::now() >= deadline {
+            return Err("sampled H3 request priority boundary unavailable".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
 #[derive(Default)]
 pub struct Templates(parking_lot::Mutex<State>);
 #[derive(Default)]
@@ -43,6 +65,8 @@ struct State {
     ready: Option<Arc<Profile>>,
     ports: Vec<u16>,
     spki: std::collections::BTreeMap<u16, String>,
+    #[cfg(debug_assertions)]
+    probe_ca_pem: std::collections::BTreeMap<u16, String>,
     error: Option<String>,
     revision: u64,
     epoch: u64,
@@ -67,6 +91,10 @@ impl Templates {
     }
     pub fn probe_certificate(&self, port: u16, spki: String) {
         self.0.lock().spki.insert(port, spki);
+    }
+    #[cfg(debug_assertions)]
+    pub fn probe_ca(&self, port: u16, pem: String) {
+        self.0.lock().probe_ca_pem.insert(port, pem);
     }
     pub fn epoch(&self) -> u64 {
         self.0.lock().epoch
@@ -138,9 +166,28 @@ impl Templates {
     }
     pub fn status(&self) -> serde_json::Value {
         let state = self.0.lock();
-        serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
+        let observed = |event: &str| state.activity.values()
+            .any(|counts| counts.get(event).copied().unwrap_or(0) > 0);
+        // 仅描述实际观测，不把没有 QUIC 握手推断成浏览器不支持 H3。
+        let reason = if state.ready.is_some() {
+            "sampled_quic_h3_profile"
+        } else if state.error.is_some() {
+            "native_quic_h3_calibration_failed"
+        } else if state.first.is_some() {
+            "native_quic_h3_waiting_for_second_sample"
+        } else if observed("quic_connections") {
+            "native_quic_observed_profile_pending"
+        } else if observed("tcp_requests") {
+            "native_probe_only_tcp_observed"
+        } else {
+            "native_quic_h3_profile_not_calibrated"
+        };
+        let status=serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
             "observations":if state.ready.is_some() {2} else if state.first.is_some() {1} else {0},
-            "activity":state.activity,"error":state.error,"reason":if state.ready.is_some() {"sampled_quic_h3_profile"} else {"native_quic_h3_profile_not_calibrated"}})
+            "activity":state.activity,"error":state.error,"reason":reason});
+        #[cfg(debug_assertions)]
+        let status={let mut status=status;status["probe_ca_pem"]=serde_json::json!(state.probe_ca_pem);status};
+        status
     }
     pub fn failure(&self, error: impl ToString) {
         let mut state = self.0.lock();
@@ -169,6 +216,42 @@ pub struct Sample {
 }
 
 impl Sample {
+    /// 首包包含握手开头及尾部，而中间空洞由后续包填补。
+    /// 不根据平台或版本号推断未观察到的分片策略。
+    pub fn cross_packet_initial(&self) -> bool {
+        let Some(first) = self.flight.frames.first() else { return false; };
+        let mut ranges: Vec<_> = first.iter().filter_map(|frame| match frame {
+            capture::ObservedFrame::Crypto { offset, len } => Some((*offset, *offset + *len as u64)),
+            _ => None,
+        }).collect();
+        ranges.sort_unstable();
+        ranges.first().is_some_and(|range|range.0 == 0)
+            && ranges.windows(2).any(|pair|pair[0].1 < pair[1].0)
+    }
+
+    /// 多包有序样本只接受前面各包等长、最后一包不超过该长度的完整覆盖。
+    pub fn ordered_initial_chunk_size(&self) -> Option<u16> {
+        if self.flight.frames.len() < 2 { return None; }
+        let mut offset = 0;
+        let mut sizes = Vec::new();
+        for frames in &self.flight.frames {
+            let mut size = None;
+            for frame in frames {
+                match frame {
+                    capture::ObservedFrame::Crypto { offset: start, len } if size.is_none() && *start == offset => {
+                        size = Some(*len); offset += *len as u64;
+                    }
+                    capture::ObservedFrame::Padding { .. } => {}
+                    _ => return None,
+                }
+            }
+            sizes.push(size?);
+        }
+        let limit = sizes[0];
+        (limit > 0 && sizes[..sizes.len()-1].iter().all(|size| *size == limit)
+            && *sizes.last()? <= limit).then(|| u16::try_from(limit).ok()).flatten()
+    }
+
     pub fn capture<B>(
         datagrams: &[Vec<u8>],
         request: &Request<B>,
@@ -466,7 +549,7 @@ impl Sample {
                 .map(|frame|frame.element_id).collect::<Vec<_>>(),
             "qpack_phases":self.phases.iter().map(|p|format!("{p:?}")).collect::<Vec<_>>(),
             "packet_number_lengths":self.flight.packet_number_lengths,"first_packet":self.flight.first_packet_number,"padding":self.flight.padding,
-            "coalesced":self.flight.coalesced,
+            "coalesced":self.flight.coalesced,"cross_packet_initial":self.cross_packet_initial(),"ordered_initial_chunk_size":self.ordered_initial_chunk_size(),
             "versions":versions.iter().filter(|v|!v.is_reserved()).map(|v|v.as_u32()).collect::<Vec<_>>(),
             "version_grease_count":versions.iter().filter(|v|v.is_reserved()).count()}),
         )
@@ -785,6 +868,12 @@ fn transport(
     }
     let mut offset = 0;
     let mut scrambled = false;
+    for frames in &sample.flight.frames {
+        // 零次随机细分也可能保持 CRYPTO 顺序；PING 和前置填充仍能提供布局证据。
+        scrambled |= frames.iter().any(|frame| matches!(frame, capture::ObservedFrame::Ping))
+            || matches!(frames.first(), Some(capture::ObservedFrame::Padding { .. }))
+            || frames.iter().filter(|frame| matches!(frame, capture::ObservedFrame::Crypto { .. })).count() > 1;
+    }
     for frame in sample.flight.frames.iter().flatten() {
         if let capture::ObservedFrame::Crypto { offset: start, len } = frame {
             scrambled |= *start != offset;

@@ -1308,7 +1308,11 @@ fn build_request(
                 }
             }
         }
-        if let Some(value) = template
+        if headers.contains_key("range") {
+            // 区间请求不能套用普通 fetch 的压缩列表；保留调用方的显式编码协商。
+            // 未指定时请求未压缩表示，避免解压后字节偏移与 Range 的表示不一致。
+            headers.entry("accept-encoding").or_insert(HeaderValue::from_static("identity"));
+        } else if let Some(value) = template
             .accept_encoding
             .as_deref()
             .and_then(|value| HeaderValue::from_str(value).ok())
@@ -1580,6 +1584,23 @@ mod tests {
         server.abort();
         assert!(response.is_err(), "响应丢失不能把已执行的POST重放成成功");
         assert_eq!(seen.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn range_encoding_is_not_replaced_by_normal_fetch_template() {
+        let mut template = crate::presets::by_id("ios-safari18").unwrap();
+        template.accept_encoding=Some("gzip, deflate, br".into());
+        for version in [Version::HTTP_11,Version::HTTP_2,Version::HTTP_3] {
+            for encoding in [None,Some("identity"),Some("gzip")] {
+                let mut request=Request::builder().uri("https://example.test/file")
+                    .header("range","bytes=0-15").header("if-none-match","\"unchanged\"");
+                if let Some(value)=encoding {request=request.header("accept-encoding",value);}
+                let built=build_request(Some(&template),request.body(Body::empty()).unwrap(),"example.test",443,version).unwrap();
+                assert_eq!(built.headers()["accept-encoding"],encoding.unwrap_or("identity"));
+                assert_eq!(built.headers()["range"],"bytes=0-15");
+                assert_eq!(built.headers()["if-none-match"],"\"unchanged\"");
+            }
+        }
     }
 
     #[test]

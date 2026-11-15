@@ -1,5 +1,6 @@
 """以真实采样配置验证生产 Core 的故障恢复；仅面向回环实验服务器。"""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ def verify(folder, case, exit_code):
         'driver_succeeded': exit_code == 0 and capture['driver_success'] is True,
         'no_connection_error': not capture['connection_errors'],
         'single_post': len(writes) == 1 and writes[0]['path'] == '/fluxdo-probe/write',
+        'post_body_intact': len(writes)==1 and writes[0].get('body_sha256')==hashlib.sha256(
+            bytes(i % 251 for i in range(65539)) if case=='requests' else b'single-write').hexdigest(),
         'last_request_recorded': any(r['path'] == '/fluxdo-probe/finished'
                                      for r in h3 + capture['tcp_requests']),
     }
@@ -24,8 +27,7 @@ def verify(folder, case, exit_code):
                       no_h3=not h3,
                       h2_fallback=all(r['version'] == 'HTTP/2.0' for r in requests))
     else:
-        checks.update(h3_reached=any(r['version'] == 'HTTP/3.0' for r in requests),
-                      post_body_intact=len(writes) == 1 and writes[0]['body_bytes'] == 12)
+        checks.update(h3_reached=any(r.get('version') == 'HTTP/3.0' for r in requests))
     if case == 'loss':
         checks['one_initial_dropped'] = network['dropped_datagrams'] == 1
     elif case == 'retry':
@@ -44,6 +46,20 @@ def verify(folder, case, exit_code):
                         if s['grease']) for r in firsts.values()]
         # 无 GREASE 的原生配置无需凭空补发；有 GREASE 时不能复制旧连接值。
         checks['fresh_grease_if_present'] = not any(grease) or len(set(grease)) == 2
+    elif case == 'post-loss':
+        checks.update(response_loss_injected=network.get('drop_post_response') is True
+                      and len(writes)==1 and writes[0].get('response_intentionally_lost') is True,
+                      write_error_returned=any(r.get('method')=='POST' and r.get('error_observed') is True for r in requests))
+    elif case == 'requests':
+        conditional=[r for r in h3 if r['path']=='/fluxdo-probe/conditional']
+        parallel=[r for r in requests if r.get('scenario')=='parallel']
+        checks.update(
+            upload_multiframe=len(writes)==1 and writes[0]['body_bytes']==65539,
+            upload_type_preserved=len(writes)==1 and writes[0].get('content_type')=='application/octet-stream',
+            conditional_header_preserved=len(conditional)==1 and conditional[0].get('if_none_match')=='"fluxdo-lab-etag"',
+            parallel_h3=len(parallel)==3 and all(r['version']=='HTTP/3.0' for r in parallel),
+            parallel_connection_reused=len(parallel)==3 and len({r['connection_id'] for r in parallel})==1,
+            parallel_received_once=all(sum(r['path']==f'/fluxdo-probe/parallel-{i}' for r in h3)==1 for i in range(3)))
     return {'case': case, 'checks': checks, 'passed': all(checks.values()),
             'scope': 'local production Core, sampled profile, synthetic network faults',
             'not_verified': ['physical device', 'cellular/WiFi migration', 'Cloudflare outcome',
@@ -55,6 +71,7 @@ def main():
     parser.add_argument('--browser', required=True)
     parser.add_argument('--samples', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--case', action='append', choices=['loss','retry','blocked','reset','requests','post-loss'])
     parser.add_argument('--force-quic', action='store_true',
                         help='仅实验浏览器采样强制 QUIC，不能用作原生 WebView 可用性证据')
     args = parser.parse_args()
@@ -63,7 +80,10 @@ def main():
     suffix = '.exe' if os.name == 'nt' else ''
     results = []
     for case, flag in [('loss', '--drop-first-initial'), ('retry', '--require-retry'),
-                       ('blocked', '--block-quic'), ('reset', None)]:
+                       ('blocked', '--block-quic'), ('reset', None), ('requests', None),
+                       ('post-loss', '--drop-post-response')]:
+        if args.case and case not in args.case:
+            continue
         folder = args.output.resolve() / case
         (folder / 'server').mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()

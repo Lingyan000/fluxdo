@@ -120,6 +120,21 @@ async fn main() -> Result<(), BoxError> {
         });
         let mut command = tokio::process::Command::new(&browser);
         if std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some() {
+            // 仅诊断宿主使用：每个独立探针只信任当前临时证书，并保存网络决策证据。
+            command.env(
+                "FLUXDO_NATIVE_NETLOG_PATH",
+                out.join(format!("browser-netlog-{index}.json")),
+            );
+            if std::env::var("FLUXDO_H3_DIAGNOSTIC_SPKI").as_deref() == Ok("1") {
+                command.env("FLUXDO_NATIVE_PROBE_SPKI", spki);
+            } else {
+                command.env_remove("FLUXDO_NATIVE_PROBE_SPKI");
+            }
+            if std::env::var("FLUXDO_NATIVE_PROBE_TRUST_ROOT").as_deref()==Ok("1") {
+                command.env("FLUXDO_NATIVE_PROBE_CA_PEM",state["h3"]["probe_ca_pem"][port.to_string()].as_str().ok_or("debug probe CA unavailable")?);
+            } else {
+                command.env_remove("FLUXDO_NATIVE_PROBE_CA_PEM");
+            }
             command.arg(format!("https://localhost:{port}/fluxdo-h3"));
         } else {
             if std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some() {
@@ -230,21 +245,82 @@ async fn main() -> Result<(), BoxError> {
         if expect_tcp == reached {
             return Err("production protocol did not match scenario expectation".into());
         }
-        if !scenario.is_empty() && round + 1 == rounds {
+        if !scenario.is_empty() && scenario != "qpack" && round + 1 == rounds {
+            // 固定合成数据跨越多个 DATA 帧，服务端校验摘要，不能只比较长度。
+            let payload = if scenario == "requests" {
+                (0..65539).map(|i| (i % 251) as u8).collect::<Vec<_>>()
+            } else {
+                b"single-write".to_vec()
+            };
             let response = client
                 .send(
                     Request::builder()
                         .method("POST")
                         .uri(format!("{origin}/fluxdo-probe/write"))
                         .header("user-agent", reference.user_agent.as_deref().unwrap())
-                        .body(Body::from("single-write"))?,
+                        .header("content-type", "application/octet-stream")
+                        .body(Body::from(payload))?,
                     Some(Duration::from_secs(5)),
                     Some(Duration::from_secs(5)),
                 )
-                .await?;
-            let version = response.version();
+                .await;
+            if scenario == "post-loss" {
+                match response {
+                    Err(error)=>results.push(serde_json::json!({"method":"POST","error_observed":true,"error":error.to_string()})),
+                    Ok(_)=>return Err("lost POST response unexpectedly succeeded".into()),
+                }
+            } else {
+                let response=response?;
+                let version = response.version();
+                response.into_body().collect().await?;
+                results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+            }
+        }
+        if scenario == "qpack" {
+            let cases = [
+                ("warm-0","GET",None,""), ("warm-1","GET",None,""),
+                ("conditional","GET",Some(("if-none-match","\"fluxdo-lab-etag\"")),""),
+                ("form","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=one&value=two"),
+                ("json","POST",Some(("content-type","application/json")),r#"{"sample":1}"#),
+                ("range","GET",Some(("range","bytes=0-15")),""),
+                ("head","HEAD",None,""),
+                ("conditional-changed","GET",Some(("if-none-match","\"fluxdo-lab-etag-changed-20261115\"")),""),
+                ("form-again","POST",Some(("content-type","application/x-www-form-urlencoded")),"sample=two&value=one"),
+            ];
+            for (name, method, header, body) in cases {
+                let mut request=Request::builder().method(method)
+                    .uri(format!("{origin}/fluxdo-probe/qpack/{name}"))
+                    .header("user-agent",reference.user_agent.as_deref().unwrap()).header("accept","*/*");
+                if let Some((key,value))=header {request=request.header(key,value);}
+                let response=client.send(request.body(Body::from(body))?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                let version=response.version();response.into_body().collect().await?;
+                results.push(serde_json::json!({"scenario":"qpack","case":name,"version":format!("{version:?}")}));
+            }
+        }
+        if scenario == "requests" {
+            let response=client.send(Request::builder()
+                .uri(format!("{origin}/fluxdo-probe/conditional"))
+                .header("user-agent",reference.user_agent.as_deref().unwrap())
+                .header("if-none-match","\"fluxdo-lab-etag\"")
+                .body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+            let version=response.version();
             response.into_body().collect().await?;
-            results.push(serde_json::json!({"method":"POST","version":format!("{version:?}")}));
+            results.push(serde_json::json!({"scenario":"conditional","version":format!("{version:?}")}));
+            let send_parallel=|index| {
+                let client=&client;
+                let origin=origin.to_owned();
+                let ua=reference.user_agent.clone().unwrap();
+                async move {
+                    let response=client.send(Request::builder().uri(format!("{origin}/fluxdo-probe/parallel-{index}"))
+                        .header("user-agent",ua).body(Body::empty())?,Some(Duration::from_secs(5)),Some(Duration::from_secs(5))).await?;
+                    let version=response.version();
+                    let connection=response.extensions().get_ref::<fluxdo_net::client::ExchangeInfo>().map(|i|i.connection_id);
+                    response.into_body().collect().await?;
+                    Ok::<_,BoxError>(serde_json::json!({"scenario":"parallel","index":index,"version":format!("{version:?}"),"connection_id":connection}))
+                }
+            };
+            let (a,b,c)=tokio::try_join!(send_parallel(0),send_parallel(1),send_parallel(2))?;
+            results.extend([a,b,c]);
         }
         for path in [
             "done",
