@@ -27,7 +27,9 @@ for runtime in runtimes:
         row['bundles'].append(info)
     results.append(row)
 args.output.write_text(json.dumps(results, indent=2, default=str))
-print(json.dumps(results, indent=2, default=str))
+print(json.dumps([{'runtime': r['runtime']['version'],
+                   'versions': [b.get('CFBundleShortVersionString') for b in r['bundles']]}
+                  for r in results]), flush=True)
 
 if args.ios_version:
     runtime = next(r for r in runtimes if r.get('version') == args.ios_version and r.get('isAvailable'))
@@ -54,8 +56,19 @@ if args.ios_version:
                         f'http://localhost:{server.server_port}/identity'], check=True, timeout=60)
         if not received.wait(90):
             raise RuntimeError('Safari did not reach local identity endpoint')
+    except Exception as error:
+        record['error'] = str(error)
+        raise
     finally:
         server.shutdown()
-        subprocess.run(['xcrun', 'simctl', 'shutdown', udid], timeout=30)
-        subprocess.run(['xcrun', 'simctl', 'delete', udid], timeout=30)
+        # 先落盘，清理故障不能让已收到的 UA 证据丢失。
         args.output.with_name('safari-user-agent.json').write_text(json.dumps(record, indent=2))
+        record['cleanup_errors'] = []
+        for action in ('shutdown', 'delete'):
+            try:
+                subprocess.run(['xcrun', 'simctl', action, udid], timeout=60, check=True)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+                record['cleanup_errors'].append(str(error))
+        args.output.with_name('safari-user-agent.json').write_text(json.dumps(record, indent=2))
+        if record['cleanup_errors'] and 'error' not in record:
+            raise RuntimeError('Simulator cleanup failed; captured evidence was retained')
