@@ -88,7 +88,8 @@ def main():
                    str(binaries / 'h3_production_client'), str(folder)]
         command += ['--learn-alt-svc', '--qpack-scenarios'] if mode == 'native' else ['--native-probe']
         if mode == 'native' and args.native_driver:
-            command += ['--native-probe']
+            # 与生产校准探针一致：公告 Alt-Svc 后关闭旧 TCP 连接，允许原生栈重新选路。
+            command += ['--native-probe', '--close-tcp']
         with (folder / 'run.log').open('w') as log:
             completed = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=120)
         driver_codes[mode]=completed.returncode
