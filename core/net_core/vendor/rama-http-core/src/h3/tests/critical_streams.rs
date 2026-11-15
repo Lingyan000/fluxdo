@@ -649,3 +649,49 @@ async fn ordered_startup_keeps_peer_settings_live_and_cancellation_before_reques
         }).await.unwrap();
     }
 }
+
+/// 请求流分配后再选择冷/热策略，动态索引必须来自当前连接，敏感值仍禁止入表。
+#[tokio::test(start_paused = true)]
+async fn sampled_request_phases_use_live_qpack_and_preserve_sensitivity() {
+    use rama_http_types::proto::h3::qpack::encoding::ConnectionHeaderPreferences;
+    timeout(LIMIT, async {
+        let pair=Pair::in_memory(None,None).await;
+        let mut config=Config::default().with_browser_qpack_decoder_limits();
+        config.encoder.target_capacity=4096;
+        config.encoder.defer_dynamic_first_section=true;
+        config.encoder.field_section_base=FieldSectionBase::FromFieldPreferences;
+        let (mut client,driver)=client::handshake::<Body,_>(pair.client.clone(),config.clone(),Executor::new()).unwrap();
+        spawn(driver.run());
+        config.observation=Some(Default::default());
+        let (mut server,driver)=server::handshake(pair.server.clone(),config).unwrap();
+        spawn(driver.run());
+        let receiver=spawn(async move {
+            let mut fields=Vec::new();
+            for _ in 0..4 {
+                let (request,response)=server.accept().await.unwrap().resolve().await.unwrap();
+                let observed=request.extensions().get_ref::<H3RequestObservation>().unwrap();
+                fields.push(*observed.fields.last().unwrap());
+                response.send_response(Response::new(Body::empty())).await.unwrap();
+            }
+            fields
+        });
+        let mut initial=HeaderPreferences::default();
+        initial.headers.insert("x-phase",FieldPreferences {representation:Representation::LiteralName,..Default::default()});
+        let mut reused=HeaderPreferences::default();
+        reused.headers.insert("x-phase",FieldPreferences {representation:Representation::DynamicIndexBeforeBase,..Default::default()});
+        for index in 0..4 {
+            let mut request=Request::builder().uri("https://localhost/test").header("x-phase","same value").body(Body::empty()).unwrap();
+            if index==3 {request.headers_mut().get_mut("x-phase").unwrap().set_sensitive(true);}
+            request.extensions().insert(ConnectionHeaderPreferences(vec![initial.clone(),reused.clone()]));
+            request.extensions().insert(FieldSectionBase::FromFieldPreferences);
+            client.send_request(request).await.unwrap().into_body().collect().await.unwrap();
+        }
+        let fields=receiver.await.unwrap();
+        assert_eq!(fields[0].representation,FieldRepresentation::LiteralName);
+        assert_eq!(fields[1].representation,FieldRepresentation::DynamicIndex);
+        assert_eq!(fields[2].representation,FieldRepresentation::DynamicIndex);
+        assert!(fields[3].never_index);
+        assert_ne!(fields[3].representation,FieldRepresentation::DynamicIndex);
+        pair.close().await;
+    }).await.unwrap();
+}

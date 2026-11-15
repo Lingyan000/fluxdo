@@ -1,0 +1,28 @@
+生产 H3 采样与回放验证（持续更新）
+
+实现
+- TCP 与 QUIC 分开采样；H3 使用两个独立 localhost origin，每个连接记录首次与后续两个请求。
+- 只接收完整 QUIC 引擎观测及冻结的首请求边界。采样服务不签发 TLS 票据，恢复握手不得校准完整握手模板。
+- 按观测构造 TLS、QUIC 参数、包号宽度、H3 SETTINGS、关键流分配、冷/热 QPACK、逐请求 PRIORITY_UPDATE。
+- GREASE 标识、负载及保留版本值每连接重建；旧版本协商草案参数 0xff73db 按格式解析，不按 UA 主版本分支。
+- 只排序实际请求头并应用编码偏好，不复制 Cookie、CSRF、Origin、Referer 值。原有 CSRF 业务逻辑未改。
+- 网络重置关闭专用端点、更换票据域，采样代次防止旧结果发布。未完成 H3 校准时保持既有 TCP 路径。
+
+已执行验证
+- 生产 HttpEgressClient 完成 H2 -> H3 和三个连续 H3 请求；使用独立服务端观察真实报文。
+- Chromium 156 的当前比对字段通过：TLS 稳定字段/扩展、QUIC 参数、首包几何和包号宽度、SETTINGS、关键流编号、三阶段共同字段 QPACK。
+- Chromium 实验显式使用 --origin-to-force-quic-on 和本机证书 SPKI 许可，不能证明真实 WebView 原生 Alt-Svc 采样在该平台可用。
+- 独立 QPACK/优先级测试 2 项通过，QUIC 禁用票据完整握手测试 1 项通过。
+- 网络核心 132 项通过；架构守卫及采样服务测试 18 项通过。
+- 全量 flutter analyze：578 项，唯一 error 为未改动 glass_readability_test.dart 的 expanded 参数；本次涉及网络文件未出现分析问题。
+
+验证工具
+- examples/h3_production_client.rs 使用生产 Listener 和 HttpEgressClient，不以独立自制请求客户端代替。
+- tool/compare_h3_production.py 对共同请求字段做逐项比较，保留所有失败字段。不同业务值的动态索引数值不跨连接比较。
+- apple-production-h3 工作流先用原生 WKWebView 校准 TCP，再运行生产 H3 探针和 Core 回放；云端结果必须另附运行编号。
+
+不能据此声称的结论
+- Initial 随机分片的算法分布尚未与浏览器实现等价；当前 Chaos 策略按包内分片，浏览器可能跨整轮首包分片。
+- 当前探针没有覆盖条件请求、上传等全部浏览器 QPACK 策略；三阶段 fetch 样本不能代表所有请求类型。
+- 完整真机、蜂窝/Wi-Fi 切换、弱网丢包、Retry/迁移及线上 CF 结果仍需专门证据。
+- iOS 模拟器不是真机；macOS 宿主上的 Core 回放不等于 iOS 静态库产物验证。

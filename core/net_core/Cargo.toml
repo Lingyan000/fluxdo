@@ -39,8 +39,7 @@ rama-http-backend = { git = "https://github.com/plabayo/rama", rev = "23d59722e1
 rama-http-core = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["quic"] }
 rama-crypto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["boring"] }
 
-[dev-dependencies]
-# 诊断程序读取原始 QUIC Initial；复用网络核心已经锁定的协议实现。
+# 生产 H3 模板读取 QUIC Initial；复用网络核心已经锁定的协议实现。
 rama-quic-proto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false }
 
 # 苹果端系统代理与 PAC（与 URLSession / WKWebView 读取同一份设置）

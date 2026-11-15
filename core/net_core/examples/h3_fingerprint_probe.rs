@@ -272,6 +272,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         } else { serde_json::Value::Null };
                         let fields = request.extensions().get_ref::<H3RequestObservation>()
                             .map(|r| json!({"stream_id":r.stream_id,"fields":r.fields,"fields_complete":r.fields_complete,
+                                "names": request.extensions().get_ref::<rama::http::proto::h3::PseudoHeaderOrder>()
+                                    .into_iter().flat_map(|order|order.iter().map(|p|p.as_str().to_owned()))
+                                    .chain(request.headers().iter().map(|(n,_)|n.as_str().to_owned())).collect::<Vec<_>>(),
                                 "priority":r.priority.as_ref().map(|v| String::from_utf8_lossy(v).into_owned())}));
                         let path = request
                             .uri()
@@ -417,7 +420,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .transpose()?;
     let tls_shape = hello.as_ref().and_then(|bytes| bytes.get(4..))
         .map(rama::tls::client::parse_client_hello).transpose()?
-        .map(|hello| json!({"cipher_suites":hello.cipher_suites(),"groups":hello.ext_supported_groups(),
+        .map(|hello| json!({"hello":hello,"cipher_suites":hello.cipher_suites(),"groups":hello.ext_supported_groups(),
             "signature_algorithms":hello.ext_signature_algorithms(),"alpn":hello.ext_alpn(),
             "extension_ids":hello.extensions().iter().map(|e| u16::from(e.id())).collect::<Vec<_>>()}));
     let certificate_rejected = connection_errors

@@ -48,6 +48,7 @@ class FingerprintTemplateService {
   Future<void>? _inflight;
   Completer<void>? _cancelProbe;
   int _generation = 0;
+  String? _h3Attempted;
 
   /// 核心启动后调用：检查模板，必要时采样。并发调用合并为一次。
   Future<void> ensure(int port) {
@@ -85,6 +86,7 @@ class FingerprintTemplateService {
     _cancelProbe?.complete();
     _cancelProbe = null;
     templateReady.value = false;
+    _h3Attempted = null;
   }
 
   Future<void> _ensure(int port, int generation, Future<void> cancelled) async {
@@ -144,10 +146,28 @@ class FingerprintTemplateService {
           !status.needsRevalidation &&
           status.userAgent == userAgent;
     }
+    if (!_isCurrent(port, generation) || !templateReady.value || status == null) return;
+    final h3Identity = '$port|$userAgent|${status.h3Ports.join(',')}';
+    if (!status.h3Ready && status.h3Ports.length == 2 && _h3Attempted != h3Identity) {
+      _h3Attempted = h3Identity;
+      for (final probePort in status.h3Ports) {
+        if (!_isCurrent(port, generation)) return;
+        if (_testProbe != null) {
+          await _testProbe!(probePort, cancelled);
+        } else {
+          await _probe(probePort, cancelled, path: '/fluxdo-h3');
+        }
+      }
+      if (!_isCurrent(port, generation)) return;
+      final finalStatus = await _status(port);
+      if (!_isCurrent(port, generation)) return;
+      NetworkLogger.log('[Fingerprint] H3 独立校准：ready=${finalStatus?.h3Ready == true}，'
+          'reason=${finalStatus?.h3Error ?? "none"}');
+    }
   }
 
   /// 隐藏 WebView 访问探针页，等页面内 fetch 完成（标题变化）或超时。
-  Future<void> _probe(int port, Future<void> cancelled) async {
+  Future<void> _probe(int port, Future<void> cancelled, {String path = _probePath}) async {
     final done = Completer<void>();
     HeadlessInAppWebView? webView;
     try {
@@ -155,7 +175,7 @@ class FingerprintTemplateService {
         webViewEnvironment:
             WindowsWebViewEnvironmentService.instance.environment,
         initialUrlRequest: URLRequest(
-          url: WebUri('https://localhost:$port$_probePath'),
+          url: WebUri('https://localhost:$port$path'),
         ),
         initialSettings: InAppWebViewSettings(
           userAgent: AppConstants.webViewUserAgentOverride,
@@ -200,6 +220,9 @@ class FingerprintTemplateService {
               userAgent: value['user_agent'] as String?,
               needsRevalidation: value['needs_revalidation'] == true,
               cacheState: value['cache_state'] as String?,
+              h3Ready: value['h3']?['enabled_for_template'] == true,
+              h3Ports: _h3Ports(value['h3']?['probe_ports']),
+              h3Error: value['h3']?['error'] as String?,
             );
     }
     final client = HttpClient()..findProxy = (_) => 'DIRECT';
@@ -218,6 +241,9 @@ class FingerprintTemplateService {
         userAgent: json['user_agent'] as String?,
         needsRevalidation: json['needs_revalidation'] == true,
         cacheState: json['cache_state'] as String?,
+        h3Ready: json['h3']?['enabled_for_template'] == true,
+        h3Ports: _h3Ports(json['h3']?['probe_ports']),
+        h3Error: json['h3']?['error'] as String?,
       );
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 读取模板状态失败: $e', level: 'warning');
@@ -226,6 +252,10 @@ class FingerprintTemplateService {
       client.close(force: true);
     }
   }
+
+  static List<int> _h3Ports(dynamic value) => value is List
+      ? value.whereType<int>().where((port) => port > 0 && port <= 65535).toSet().take(2).toList()
+      : const [];
 }
 
 class _TemplateStatus {
@@ -234,10 +264,16 @@ class _TemplateStatus {
     required this.userAgent,
     required this.needsRevalidation,
     this.cacheState,
+    this.h3Ready = false,
+    this.h3Ports = const [],
+    this.h3Error,
   });
 
   final bool ready;
   final String? userAgent;
   final bool needsRevalidation;
   final String? cacheState;
+  final bool h3Ready;
+  final List<int> h3Ports;
+  final String? h3Error;
 }

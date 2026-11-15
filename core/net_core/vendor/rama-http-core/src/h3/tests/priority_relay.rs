@@ -101,3 +101,38 @@ async fn priority_observer_reports_connection_close_without_observation_enabled(
     .await
     .unwrap();
 }
+
+/// 每次请求使用实际分配的流编号；字段格式保留，但不能突破控制帧预算。
+#[tokio::test(start_paused = true)]
+async fn sampled_priority_targets_each_new_request_and_rejects_oversized_values() {
+    use rama_core::extensions::ExtensionsRef as _;
+    use rama_http_types::proto::h3::{control::RequestPriority,observation::H3RequestObservation};
+    timeout(LIMIT,async {
+        let pair=Pair::in_memory(None,None).await;
+        let (mut client,driver)=client::handshake::<Body,_>(pair.client.clone(),Config::default(),Executor::new()).unwrap();
+        spawn(driver.run());
+        let (mut server,driver)=server::handshake(pair.server.clone(),Config {observation:Some(Default::default()),..Config::default()}).unwrap();
+        spawn(driver.run());
+        let receiver=spawn(async move {
+            let mut streams=Vec::new();
+            for _ in 0..3 {
+                let (request,response)=server.accept().await.unwrap().resolve().await.unwrap();
+                let mut priority=response.peer_priority();
+                loop {if priority.changed().await.unwrap()==Priority::new(1,true).unwrap(){break;}}
+                streams.push(request.extensions().get_ref::<H3RequestObservation>().unwrap().stream_id);
+                response.send_response(Response::new(Body::empty())).await.unwrap();
+            }
+            streams
+        });
+        for _ in 0..3 {
+            let request=Request::builder().uri("https://localhost/").body(Body::empty()).unwrap();
+            request.extensions().insert(RequestPriority("u=1, i".into()));
+            drop(client.send_request(request).await.unwrap());
+        }
+        assert_eq!(receiver.await.unwrap(),vec![0,4,8]);
+        let request=Request::builder().uri("https://localhost/").body(Body::empty()).unwrap();
+        request.extensions().insert(RequestPriority(vec![b'x';1025].into()));
+        assert!(client.send_request(request).await.is_err());
+        pair.close().await;
+    }).await.unwrap();
+}

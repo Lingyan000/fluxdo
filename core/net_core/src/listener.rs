@@ -75,6 +75,7 @@ impl Listener {
         let listener = TcpListener::bind((bind_addr, bind_port)).await?;
         let local_addr = listener.local_addr()?;
         *self.local_addr.write() = Some(local_addr);
+        crate::h3_probe::start(self.templates.clone(), self.shutdown.clone()).await;
         info!("Local listener on {local_addr}");
         Ok(listener)
     }

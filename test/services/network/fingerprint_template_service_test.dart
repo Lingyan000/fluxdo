@@ -155,4 +155,41 @@ void main() {
     expect(probes, 1);
     expect(service.templateReady.value, false);
   });
+
+  test('TCP 已就绪仍独立采样两个 H3 origin，失败不重复采样或撤销 TCP', () async {
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3], 'error': 'UDP unavailable'},
+      },
+      probe: (port, _) async { ports.add(port); },
+      userAgent: () async => 'actual',
+    );
+    await service.ensure(1);
+    await service.ensure(1);
+    expect(ports, [2, 3]);
+    expect(service.templateReady.value, true);
+  });
+
+  test('H3 校准中停止核心会取消探针且不启动第二个 origin', () async {
+    final started = Completer<void>();
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3]},
+      },
+      probe: (port, cancelled) async {
+        ports.add(port); started.complete(); await cancelled;
+      },
+      userAgent: () async => 'actual',
+    );
+    final pending = service.ensure(1);
+    await started.future;
+    service.reset();
+    await pending;
+    expect(ports, [2]);
+    expect(service.templateReady.value, false);
+  });
 }

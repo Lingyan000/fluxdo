@@ -80,6 +80,7 @@ const MAX_CONNECTIONS: usize = 64;
 static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 struct Conn {
+    _h3_endpoint: Option<Arc<rama::quic::Endpoint>>,
     id: u64,
     service: HttpClientService<Body>,
     version: Version,
@@ -472,11 +473,16 @@ impl HttpEgressClient {
         let secure = scheme == "https";
         let (host, port) = authority_of(&request)?;
         let template = self.templates.as_ref().and_then(|t| t.snapshot());
-        let key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
+        let h3_profile = template.as_ref().filter(|t| t.is_calibrated()).and_then(|_| {
+            self.templates.as_ref()?.h3.snapshot(request.headers().get("user-agent").and_then(|v|v.to_str().ok()))
+        });
+        let mut key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
+        if let Some((revision,_)) = &h3_profile { if let Some(at)=key.rfind('#') {key.insert_str(at,&format!("#h3:{revision}"));} }
         let target = Target {
             key: &key,
             template: template.as_ref(),
             uses_browser_fingerprint: self.templates.is_some(),
+            h3_template: h3_profile.map(|(_,p)|p),
             host: &host,
             port,
             secure,
@@ -541,7 +547,7 @@ impl HttpEgressClient {
             ech_accepted: checkout.conn.ech_accepted,
             connect: started.elapsed(),
         };
-        let request = build_request(
+        let mut request = build_request(
             target.template,
             request,
             target.host,
@@ -549,6 +555,9 @@ impl HttpEgressClient {
             checkout.conn.version,
         )
         .map_err(Failure::Fatal)?;
+        if checkout.conn.version == Version::HTTP_3 && let Some(profile)=&target.h3_template {
+            profile.apply_request(&mut request);
+        }
         // 建连与连接池排队不消耗上传时限；完整上传阶段只启动一次，不按块续期。
         if let Some(started) = request
             .extensions()
@@ -792,6 +801,7 @@ impl HttpEgressClient {
             started.elapsed().as_millis()
         );
         Ok(Arc::new(Conn {
+            _h3_endpoint: None,
             id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
             service: established.conn,
             version: Version::HTTP_11,
@@ -867,6 +877,7 @@ impl HttpEgressClient {
                         .await.map_err(|e| HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}"))))?
                         .map_err(|e| HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}"))))?;
                     return Ok((Arc::new(Conn {
+                        _h3_endpoint: None,
                         id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
                         service: established.conn, version, resumed, ech_applied: false,
                         ech_accepted: false, tls_backend: "GnuTLS", _capacity: None,
@@ -942,6 +953,7 @@ impl HttpEgressClient {
                     HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
                 })?;
                 let conn = Conn {
+                    _h3_endpoint: None,
                     id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
                     service: established.conn,
                     version,
@@ -988,6 +1000,7 @@ struct Target<'a> {
     template: Option<&'a FingerprintTemplate>,
     /// 区分尚无样本的浏览器客户端与不使用指纹的普通/DoH 客户端。
     uses_browser_fingerprint: bool,
+    h3_template: Option<Arc<crate::h3_template::Profile>>,
     host: &'a str,
     port: u16,
     secure: bool,
@@ -1511,7 +1524,7 @@ mod tests {
             .header("x-end-to-end", "preserved")
             .body(Body::empty())
             .unwrap();
-        let request = build_request(None, request, "localhost", 80, Version::HTTP_11).unwrap();
+        let mut request = build_request(None, request, "localhost", 80, Version::HTTP_11).unwrap();
         assert!(!request.headers().contains_key("x-local"));
         assert!(!request.headers().contains_key("x-another"));
         assert!(!request.headers().contains_key("connection"));
@@ -1684,7 +1697,7 @@ mod tests {
             let request = Request::builder().uri(url).body(Body::empty()).unwrap();
             let (host, port) = authority_of(&request).unwrap();
             assert_eq!(port, expected_port);
-            let request = build_request(None, request, &host, port, Version::HTTP_11).unwrap();
+            let mut request = build_request(None, request, &host, port, Version::HTTP_11).unwrap();
             assert_eq!(request.uri().to_string(), url);
         }
     }

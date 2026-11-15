@@ -24,6 +24,7 @@ def output(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--production-h3', action='store_true', help='原生 TCP 校准后运行生产 H3 采样和 Core 回放')
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
     parser.add_argument('--close-tcp', action='store_true', help='H3 实验中服务端关闭旧 TCP 连接，排除持续复用的影响')
     parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
@@ -79,6 +80,22 @@ def main():
             else:
                 result['comparison'] = compare(folder)
                 result['passed'] = process.returncode == 0 and len(native) == 2 and all(r['success'] for r in native) and result['comparison']['all_checked_fields_match']
+                if args.production_h3 and result['passed']:
+                    production=folder / 'production-h3'
+                    production.mkdir()
+                    h3env=dict(env, FLUXDO_H3_NATIVE_DRIVER='1', FLUXDO_H3_BROWSER=str(driver.resolve()),
+                        FLUXDO_TCP_SAMPLES=str(folder), FLUXDO_H3_OUTPUT=str(production/'client'),
+                        SSL_CERT_FILE=str(production/'server/h3-ca.pem'), SSL_CERT_EXTRA_FILE=str(production/'server/h3-ca.pem'))
+                    examples=repo/'core/net_core/target/debug/examples'
+                    with (production/'run.log').open('w') as log:
+                        h3process=subprocess.run([str(examples/'h3_fingerprint_probe'),str(examples/'h3_production_client'),str(production/'server'),'--native-probe'],
+                            env=h3env,stdout=log,stderr=subprocess.STDOUT,timeout=240)
+                    result['production_h3_exit_code']=h3process.returncode
+                    result['passed'] &= h3process.returncode==0
+                    if (production/'client/profile.json').exists() and (production/'server/h3-capture.json').exists():
+                        from compare_h3_production import compare as compare_h3
+                        result['production_h3_comparison']=compare_h3(production)
+                        result['passed'] &= result['production_h3_comparison']['all_checked_fields_match']
         except (OSError, ValueError, KeyError, AssertionError, subprocess.TimeoutExpired) as error:
             result['error'] = str(error)
             result['passed'] = False

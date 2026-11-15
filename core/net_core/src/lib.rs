@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub mod browser_tls;
+pub mod h3_template;
+mod h3_probe;
 #[cfg(target_os = "linux")]
 pub mod linux_tls;
 pub mod cert;

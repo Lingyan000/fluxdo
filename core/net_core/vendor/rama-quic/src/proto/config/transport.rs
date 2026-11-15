@@ -50,6 +50,7 @@ pub struct TransportConfig {
     pub(crate) active_connection_id_limit: Option<VarInt>,
     pub(crate) max_ack_delay: Duration,
     pub(crate) wire: crate::profile::WireProfile,
+    pub(crate) initial_packet_number_lengths: Vec<u8>,
     pub(crate) send_window: u64,
     pub(crate) send_fairness: bool,
 
@@ -83,6 +84,13 @@ pub struct TransportConfig {
 }
 
 impl TransportConfig {
+    /// 完整采样的 Initial 包号宽度；按当前连接包号选择，超出样本后保留最后的最小宽度。
+    /// 编码器仍会按未确认包号距离扩展，不能截断合法的包号。
+    pub fn with_initial_packet_number_lengths(mut self, lengths:Vec<u8>)->Result<Self,ConfigError> {
+        if lengths.len()>16 || lengths.iter().any(|length|!(1..=4).contains(length)) {return Err(ConfigError::OutOfBounds);}
+        self.initial_packet_number_lengths=lengths;Ok(self)
+    }
+
     /// The encoded DATAGRAM frame limit advertised to the peer.
     ///
     /// A profile can separate this wire limit from the local retention budget.
@@ -638,6 +646,7 @@ impl Default for TransportConfig {
             active_connection_id_limit: None,
             max_ack_delay: Duration::from_millis(25),
             wire: crate::profile::WireProfile::default(),
+            initial_packet_number_lengths: Vec::new(),
             send_window: (8 * STREAM_RWND).into(),
             send_fairness: true,
 
@@ -685,6 +694,7 @@ impl fmt::Debug for TransportConfig {
             active_connection_id_limit,
             max_ack_delay,
             wire,
+            initial_packet_number_lengths,
             send_window,
             send_fairness,
             packet_threshold,
@@ -725,6 +735,7 @@ impl fmt::Debug for TransportConfig {
             .field("active_connection_id_limit", active_connection_id_limit)
             .field("max_ack_delay", max_ack_delay)
             .field("wire", wire)
+            .field("initial_packet_number_lengths",initial_packet_number_lengths)
             .field("receive_window", receive_window)
             .field("send_window", send_window)
             .field("send_fairness", send_fairness)

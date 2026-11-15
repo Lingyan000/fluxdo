@@ -1088,16 +1088,23 @@ impl Shared {
         push: bool,
         priority: Priority,
     ) -> Result<(), Error> {
+        self.send_priority_field(id, push, priority.field_value().as_bytes())
+    }
+
+    /// 保留合法的字段字节，同时复用原有控制队列预算和流 ID 校验。
+    pub(crate) fn send_priority_field(&self, id:u64, push:bool, value:&[u8]) -> Result<(), Error> {
+        if value.len()>1024 || Priority::parse(value).is_err() {
+            return Err(Error::stream(Code::H3_MESSAGE_ERROR,"invalid priority field"));
+        }
         let id = VarInt::from_u64(id)
             .map_err(|_error| Error::stream(Code::H3_ID_ERROR, "invalid priority target"))?;
-        let value = priority.field_value();
         let ty = if push {
             FrameType::PRIORITY_UPDATE_PUSH
         } else {
             FrameType::PRIORITY_UPDATE_REQUEST
         };
         let mut bytes = BytesMut::with_capacity(16);
-        FrameHeader::new(ty, (id.size() + value.as_bytes().len()) as u64)
+        FrameHeader::new(ty, (id.size() + value.len()) as u64)
             .encode(&mut bytes)
             .ok_or(Error::connection(
                 Code::H3_INTERNAL_ERROR,
@@ -1105,7 +1112,7 @@ impl Shared {
             ))?;
         id.encode(&mut bytes);
         let value_start = bytes.len();
-        bytes.extend_from_slice(value.as_bytes());
+        bytes.extend_from_slice(value);
         let bytes = bytes.freeze();
         let frame = ControlFrame::PriorityUpdate {
             push,

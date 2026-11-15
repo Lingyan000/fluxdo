@@ -145,6 +145,7 @@ pub struct FingerprintTemplate {
 /// 配置了缓存路径时落盘，冷启动即可回放，不必等 WebView 再经过一次镜像。
 #[derive(Default)]
 pub struct FingerprintTemplates {
+    pub h3: crate::h3_template::Templates,
     preset: Option<FingerprintTemplate>,
     pinned: bool,
     source: RwLock<TemplateSource>,
@@ -374,6 +375,7 @@ impl FingerprintTemplates {
         let old_hash = previous.replace(hash);
         let old_hello = self.hello.read().clone();
         if old_hash != Some(hash) {
+            self.h3.reset();
             self.generation.fetch_add(1, Ordering::Relaxed);
             // 不把新 TLS 与旧 H2/头模板拼成未采集过的组合。
             if old_hash.is_some() {
@@ -604,7 +606,7 @@ impl FingerprintTemplates {
             "cache_revision": cache_revision(),
             "runtime_identity": self.runtime_identity,
             "tls_capabilities": capabilities,
-            "h3": {"enabled_for_template": false, "reason": "native_quic_h3_profile_not_calibrated"},
+            "h3": self.h3.status(),
             "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
             "fetch_h2_priority_sampled": self.fetch_h2_priority.read().is_some(),
             "hpack_indexing": self.hpack_indexing.read().clone(),

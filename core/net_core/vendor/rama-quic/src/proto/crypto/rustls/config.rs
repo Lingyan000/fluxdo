@@ -111,6 +111,7 @@ impl QuicServerConfig {
         pieces.versions = Some(&versions);
         let modify = pieces.modify.take();
         let mut native = pieces.try_into_server_config_with_provider(provider)?;
+        if options.server_session_tickets==Some(false) {native.send_tls13_tickets=0;}
         native.max_early_data_size = if options.early_data { u32::MAX } else { 0 };
         if let Some(modify) = modify {
             native = (modify.0)(native)?;

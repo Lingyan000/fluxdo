@@ -528,6 +528,13 @@ where
             return Err(error);
         }
         let id = u64::from(send.id());
+        if let Some(phases) = request.extensions().get_ref::<rama_http_types::proto::h3::qpack::encoding::ConnectionHeaderPreferences>() {
+            if let Some(preferences) = phases.0.get((id / 4).min(phases.0.len().saturating_sub(1) as u64) as usize) {
+                request.extensions().insert(preferences.clone());
+            }
+            headers::wait_for_header_admission(&self.shared, request.extensions()).await?;
+        }
+
         let mut reader = Reader::new(recv, self.shared.clone(), id);
         reader.abort = Some(send.boxed_handle());
         let mut writer = Writer::new(send);
@@ -543,6 +550,9 @@ where
         }
         // The default path uses a zero-sized callback and removes this branch
         // at monomorphization: no priority handle or observer is created for it.
+        if let Some(priority)=request.extensions().get_ref::<rama_http_types::proto::h3::control::RequestPriority>() {
+            self.shared.send_priority_field(id,false,&priority.0)?;
+        }
         if OBSERVE {
             on_stream(PriorityHandle::new(&self.shared, id, false));
         }

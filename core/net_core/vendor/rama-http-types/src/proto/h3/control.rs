@@ -7,6 +7,10 @@ use rama_core::{
 };
 use rama_quic_proto::{Dir, Side, StreamId, coding::Codec as _};
 
+/// 请求流建立后发送的优先级；绑定新流 ID，不复制采样连接的流编号。
+#[derive(Clone, Debug, Extension)]
+pub struct RequestPriority(pub Bytes);
+
 /// Additional client control frames; peer and local resource limits still apply.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClientControlFrame {

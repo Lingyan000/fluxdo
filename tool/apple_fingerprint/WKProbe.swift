@@ -32,7 +32,7 @@ final class Probe: NSObject, WKNavigationDelegate {
             return
         }
         guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://localhost:") }),
-              let url = URL(string: raw), url.host == "localhost", url.path == "/fluxdo-probe" else {
+              let url = URL(string: raw), url.host == "localhost", (url.path == "/fluxdo-probe" || url.path == "/fluxdo-h3") else {
             complete(error: "只允许本地指纹探针地址")
             return
         }

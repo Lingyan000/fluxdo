@@ -219,3 +219,8 @@ impl HeaderPreferences {
             .any(|preferences| preferences.insertion.is_some())
     }
 }
+
+/// 按当前连接的请求流序号选择采样策略；不携带动态表索引或请求值。
+#[derive(Clone, Debug, Extension)]
+#[extension(tags(http))]
+pub struct ConnectionHeaderPreferences(pub Vec<HeaderPreferences>);
