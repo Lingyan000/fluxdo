@@ -462,14 +462,7 @@ impl Sample {
 
     /// 用同连接内首次出现、随后重复的新路径测量动态表准入，不按 UA 猜测。
     pub fn observe_value_reuse(&mut self, fields: &[h3::observation::ObservedFieldRepresentation]) -> Result<(), BoxError> {
-        use h3::observation::FieldRepresentation as R;
-        let [first, second] = fields else { return Err("value reuse observations missing".into()); };
-        if first.never_index || second.never_index { return Err("unexpected sensitive probe path".into()); }
-        self.insert_on_reuse = Some(match (first.representation, second.representation) {
-            (R::LiteralStaticName, R::DynamicPostBaseIndex) => true,
-            (R::DynamicIndex | R::DynamicPostBaseIndex, R::DynamicIndex | R::DynamicPostBaseIndex) => false,
-            _ => return Err("unsupported measured QPACK value reuse strategy".into()),
-        });
+        self.insert_on_reuse = Some(infer_value_reuse(fields)?);
         Ok(())
     }
 
@@ -1107,6 +1100,19 @@ fn infer_huffman(preference: &mut FieldPreferences, name: &[u8], value: &[u8]) {
     }
 }
 
+fn infer_value_reuse(fields: &[h3::observation::ObservedFieldRepresentation]) -> Result<bool, BoxError> {
+    use h3::observation::FieldRepresentation as R;
+    let [first, second] = fields else { return Err("value reuse observations missing".into()); };
+    if fields.iter().any(|f| f.never_index || FieldPreferences::from_observed(f).is_none()) {
+        return Err("invalid value reuse probe fields".into());
+    }
+    match (first.representation, second.representation) {
+        (R::LiteralStaticName, R::DynamicPostBaseIndex) => Ok(true),
+        (R::DynamicIndex | R::DynamicPostBaseIndex, R::DynamicIndex | R::DynamicPostBaseIndex) => Ok(false),
+        _ => Err("unsupported measured QPACK value reuse strategy".into()),
+    }
+}
+
 fn warm_fields_stable(phases: &[Vec<h3::observation::ObservedFieldRepresentation>]) -> bool {
     if phases.len() < 3 { return false; }
     let last = &phases[phases.len() - 1];
@@ -1147,6 +1153,21 @@ fn sample_values<B>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn value_reuse_policy_requires_complete_supported_observations() {
+        use h3::observation::{FieldRepresentation as R, ObservedFieldRepresentation as F};
+        let literal = F { representation: R::LiteralStaticName, index: Some(1),
+            name_huffman: false, value_huffman: true, never_index: false };
+        let post = F { representation: R::DynamicPostBaseIndex, index: Some(0),
+            value_huffman: false, ..literal };
+        let before = F { representation: R::DynamicIndex, ..post };
+        assert!(infer_value_reuse(&[literal, post]).unwrap());
+        assert!(!infer_value_reuse(&[before, before]).unwrap());
+        assert!(infer_value_reuse(&[]).is_err());
+        assert!(infer_value_reuse(&[literal, literal]).is_err());
+        assert!(infer_value_reuse(&[literal, F { never_index: true, ..post }]).is_err());
+        assert!(infer_value_reuse(&[literal, F { index: None, ..post }]).is_err());
+    }
     #[test]
     fn warm_strategy_must_leave_post_base_startup_before_reuse() {
         use h3::observation::{FieldRepresentation as R, ObservedFieldRepresentation as F};

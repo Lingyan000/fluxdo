@@ -28,6 +28,22 @@ class H3EvidenceTest(unittest.TestCase):
     def test_archived_native_sample_passes(self):
         self.assertTrue(self.evaluate())
 
+    def test_additional_sampled_phase_is_required_and_checked(self):
+        def extend(data):
+            data['profile']['wire_fields'].append(copy.deepcopy(data['profile']['wire_fields'][-1]))
+            request=copy.deepcopy(data['capture']['h3'][-1])
+            request['request']['stream_id']=12
+            data['capture']['h3'].append(request)
+        self.assertTrue(self.evaluate(extend))
+        def missing(data):
+            extend(data)
+            data['capture']['h3'].pop()
+        self.assertFalse(self.evaluate(missing))
+        def corrupt(data):
+            extend(data)
+            data['capture']['h3'][-1]['request']['fields_complete']=False
+        self.assertFalse(self.evaluate(corrupt))
+
     def test_incomplete_fields_fail(self):
         for phase in range(3):
             with self.subTest(phase=phase):
