@@ -1,0 +1,24 @@
+name: Apple runtime browser identity
+on:
+  push:
+    branches: ['diagnostics/apple-identity-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  identity:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Inspect public browser bundle metadata
+        run: python3 tool/apple_fingerprint/runtime_identity.py --output "$RUNNER_TEMP/apple-identity.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apple-runtime-identity-${{ github.run_id }}
+          path: ${{ runner.temp }}/apple-identity.json
+          retention-days: 14
