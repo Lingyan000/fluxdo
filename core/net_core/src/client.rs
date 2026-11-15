@@ -1194,8 +1194,8 @@ fn build_request(
     port: u16,
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
-    // 仅默认 fetch 用途复用采样优先级；显式请求优先级优先，导航和依赖其他
-    // 入站流 ID 的优先级不能直接跨连接复制。
+    // 仅默认 fetch 用途复用采样权重；显式优先级优先。采样依赖属于旧连接，
+    // 在新连接上挂到根节点，不能复制旧流号，也不能因此丢弃权重与排他标记。
     if version == Version::HTTP_2
         && let Some(template) = template.filter(|t| t.is_calibrated())
         && request.uri().scheme_str() == Some("https")
@@ -1205,9 +1205,9 @@ fn build_request(
         && !request.extensions().contains::<rama::http::proto::h2::frame::StreamDependency>()
         && !request.extensions().contains::<rama::http::proto::h2::frame::ReceivedStreamDependency>()
         && let Some(priority) = template.fetch_h2_priority.as_ref().and_then(|p| p.dependency.as_ref())
-        && priority.dependency_id == rama::http::proto::h2::frame::StreamId::zero()
     {
-        request.extensions().insert(priority.clone());
+        request.extensions().insert(rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), priority.weight, priority.is_exclusive));
     }
     let uri = request.uri();
     // 保留 wire 原样拼写转发，不做重新编码
@@ -2077,8 +2077,9 @@ mod tests {
         let templates = Arc::new(FingerprintTemplates::new(None));
         templates.record_hello(&template.hello);
         templates.record_hello(&template.hello);
+        // 原生 Android 样本会依赖旧连接中仍存在的流 5；生产回放保留属性并重挂根。
         let priority = rama::http::proto::h2::frame::StreamDependency::new(
-            rama::http::proto::h2::frame::StreamId::zero(), 219, true);
+            rama::http::proto::h2::frame::StreamId::from(5), 219, true);
         let sample = Request::builder().version(Version::HTTP_2)
             .header("user-agent", "priority-lab").body(()).unwrap();
         sample.extensions().insert(template.early_frames.clone());
@@ -2154,7 +2155,8 @@ mod tests {
             .unwrap();
         assert_eq!(response.version(), Version::HTTP_2);
         let (frames, order, actual_priority) = captured.lock().clone().unwrap();
-        assert_eq!(actual_priority, Some(priority));
+        assert_eq!(actual_priority, Some(rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), priority.weight, priority.is_exclusive)));
         let initial = |frames: &EarlyFrameCapture| {
             serde_json::to_value(frames)
                 .unwrap()

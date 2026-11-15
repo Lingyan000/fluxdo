@@ -81,7 +81,11 @@ def compare(folder):
             'accept_encoding': reference['accept_encoding'] == actual['accept_encoding'],
         }
         if reference.get('fetch_h2_priority') is not None:
-            checks['h2_fetch_priority'] = reference['fetch_h2_priority'] == actual.get('fetch_h2_priority')
+            expected_priority = dict(reference['fetch_h2_priority'])
+            if expected_priority.get('dependency') is not None:
+                # 采样流号属于另一条连接；生产 fetch 保留属性并重挂当前连接根节点。
+                expected_priority['dependency'] = dict(expected_priority['dependency'], dependency_id=0)
+            checks['h2_fetch_priority'] = expected_priority == actual.get('fetch_h2_priority')
         if policy is False:
             checks['fixed_extension_order'] = extension_ids(hello) == extension_ids(actual['hello'])
         if reference.get('low_entropy_client_hints') is not None:
@@ -126,6 +130,7 @@ def compare(folder):
               'excluded': ['random/key material', 'GREASE values', 'ECH ciphertext',
                            'padding length', 'PSK/cookie extensions', 'SETTINGS ACK timing'],
               'not_verified': ['platforms/devices outside the supplied capture and full application flow', 'Cloudflare outcome',
+                               'cross-connection H2 dependency-tree identity; sampled weights are reanchored to root',
                                'navigation/resource priority and exact HPACK bytes', 'QUIC/H3 fingerprint']}
     (folder / 'comparison.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return result
