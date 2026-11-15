@@ -325,6 +325,12 @@ class NetCoreConfig {
     if (serverIp != null && serverIp!.isNotEmpty) 'server_ip': serverIp,
     'webview_mitm': webViewMitm,
     'fingerprint_platform': Platform.operatingSystem,
+    // iOS 等平台的 UA 系统版本可能冻结；使用真实宿主版本校验缓存，
+    // 不将系统版本拼成浏览器版本，也不读取设备唯一标识。
+    'fingerprint_runtime_identity': jsonEncode([
+      Platform.operatingSystem,
+      Platform.operatingSystemVersion,
+    ]),
     if (fingerprintPreset != null) 'fingerprint_preset': fingerprintPreset,
     if (fingerprintUserAgent != null)
       'fingerprint_user_agent': fingerprintUserAgent,
@@ -424,6 +430,7 @@ class NetCoreStatus {
     this.templateSource,
     this.templatePreset,
     this.templateMode = 'auto',
+    this.templateDiagnostics = const {},
     this.userAgent,
     this.webViewMitm = false,
     this.systemProxy = false,
@@ -437,11 +444,13 @@ class NetCoreStatus {
   final bool running;
   final int? port;
 
-  /// 指纹模板是否就绪：就绪后 dio 的请求才按 WebView 指纹出站。
+  /// 真实采样是否完成校准；不代表全部协议字段一致或站点一定接受。
   final bool templateReady;
   final String? templateSource;
   final String? templatePreset;
   final String templateMode;
+  /// 核心生成的脱敏能力摘要，不含原始握手、Cookie、票据或私钥。
+  final Map<String, dynamic> templateDiagnostics;
 
   /// 采样时 WebView 的 UA；与当前 UA 不符说明 WebView 升级过，需要重采。
   final String? userAgent;
@@ -464,6 +473,9 @@ class NetCoreStatus {
       templateSource: json['template_source'] as String?,
       templatePreset: json['template_preset'] as String?,
       templateMode: json['template_mode'] as String? ?? 'auto',
+      templateDiagnostics: Map.unmodifiable(
+        json['template_diagnostics'] as Map<String, dynamic>? ?? const {},
+      ),
       userAgent: json['user_agent'] as String?,
       webViewMitm: json['webview_mitm'] == true,
       systemProxy: json['system_proxy'] == true,

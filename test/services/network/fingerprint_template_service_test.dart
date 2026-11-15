@@ -26,6 +26,27 @@ void main() {
     expect(probes, 0);
     expect(service.templateReady.value, true);
   });
+  test('同 UA 的磁盘缓存也执行当前进程两轮校准', () async {
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true,
+        'user_agent': 'frozen',
+        'needs_revalidation': probes < 2,
+        'cache_state': 'loaded_pending_revalidation',
+      },
+      userAgent: () async => 'frozen',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    await service.ensure(1);
+    expect(probes, 2);
+    expect(service.templateReady.value, true);
+    await service.ensure(1);
+    expect(probes, 2);
+  });
+
   test('切换核心取消旧探针，销毁后才启动新探针且旧结果不覆盖新状态', () async {
     var active = 0;
     var peak = 0;
@@ -69,6 +90,69 @@ void main() {
     service.reset();
     status.complete({'ready': true, 'user_agent': 'actual'});
     await pending;
+    expect(service.templateReady.value, false);
+  });
+  test('同一 UA 的未校准模板执行两轮采样后才就绪', () async {
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {'ready': probes >= 2, 'user_agent': 'Chrome/110'},
+      userAgent: () async => 'Chrome/110',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    await service.ensure(1);
+    expect(probes, 2);
+    expect(service.templateReady.value, true);
+  });
+
+  test('采样始终不完整时有界退出，不把部分模板当成就绪', () async {
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {'ready': false, 'user_agent': 'actual'},
+      userAgent: () async => 'actual',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    await service.ensure(1);
+    expect(probes, 2);
+    expect(service.templateReady.value, false);
+  });
+
+  test('首轮没有取得当前 UA 时不重复启动失败探针', () async {
+    var probes = 0;
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {'ready': false, 'user_agent': null},
+      userAgent: () async => 'actual',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    await service.ensure(1);
+    expect(probes, 1);
+    expect(service.templateReady.value, false);
+  });
+  test('两轮间取消会立即结束，不创建第二个 WebView', () async {
+    var reads = 0;
+    var probes = 0;
+    final firstProbeRead = Completer<void>();
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async {
+        reads++;
+        if (reads == 2) firstProbeRead.complete();
+        return {'ready': false, 'user_agent': 'actual'};
+      },
+      userAgent: () async => 'actual',
+      probe: (_, _) async {
+        probes++;
+      },
+    );
+    final pending = service.ensure(1);
+    await firstProbeRead.future;
+    service.reset();
+    await pending;
+    expect(probes, 1);
     expect(service.templateReady.value, false);
   });
 }

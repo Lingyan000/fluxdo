@@ -1,4 +1,5 @@
-//! WebView 流量镜像：按 WebView 自己的握手连接上游，HTTP 层（含 HTTP/2 帧）原样复刻。
+//! WebView 流量镜像：按已采集的握手与 HTTP/2 初始帧、伪头顺序配置上游。
+//! 这不代表完整 HPACK、HEADERS 优先级或 QUIC/H3 已获逐字复现。
 //!
 //! 流程：窥探 WebView 的 ClientHello → [`browser_tls::build`] 生成上游配置 →
 //! rama `TlsMitmRelay::handshake` 用传入的上游配置建立两侧 TLS（入站证书由应用 CA 签发）→
@@ -24,7 +25,7 @@ use rama::{
     extensions::ExtensionsRef,
     http::{
         Request,
-        proto::h2::{PseudoHeaderOrder, frame::EarlyFrameCapture},
+        proto::h2::{PseudoHeaderOrder, frame::{EarlyFrameCapture, StreamDependency}},
         proxy::mitm::{DefaultErrorResponse, HttpMitmRelay},
     },
     io::BridgeIo,
@@ -62,6 +63,15 @@ const PEEK_TIMEOUT: Duration = Duration::from_secs(10);
 /// 模板写盘的最小间隔（首次齐全时立即写）。
 const PERSIST_INTERVAL: Duration = Duration::from_secs(60);
 
+/// 模板格式、回放策略或依赖变化时淘汰旧缓存；不把应用版本当网络后端版本。
+pub fn cache_revision() -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in include_bytes!("../Cargo.lock") {
+        hash = (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3);
+    }
+    format!("3:{hash:016x}")
+}
+
 /// 运行期来源不写入采样文件，避免把预置误标为用户的真实采样。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TemplateSource {
@@ -87,6 +97,12 @@ impl TemplateSource {
 }
 
 /// 一份可回放的 WebView 指纹模板。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct H2FetchPriority {
+    /// None 是实际观察到未设置 PRIORITY；外层 None 则表示尚未采集。
+    pub dependency: Option<StreamDependency>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FingerprintTemplate {
     #[serde(skip)]
@@ -97,13 +113,26 @@ pub struct FingerprintTemplate {
     pub early_frames: EarlyFrameCapture,
     /// HTTP/2 伪头顺序
     pub pseudo_order: PseudoHeaderOrder,
-    /// fetch 类请求（sec-fetch-mode: cors）的请求头名顺序，小写
+    /// 已确认用途的 fetch 请求头名顺序，小写；旧 WebKit 可以没有 Fetch Metadata。
     pub fetch_header_order: Vec<String>,
     /// fetch 类请求的 Accept-Encoding
     pub accept_encoding: Option<String>,
     /// 采样时 WebView 的 User-Agent（WebView 升级后 UA 变化，宿主据此决定重采）
     #[serde(default)]
     pub user_agent: Option<String>,
+    /// 至少两次同能力握手观察到的扩展顺序策略；旧缓存缺省为未校准。
+    #[serde(default)]
+    pub tls_permute_extensions: Option<bool>,
+    /// fetch 实际发送的低熵 Client Hints；Some([]) 表示浏览器没有发送。
+    #[serde(default)]
+    pub low_entropy_client_hints: Option<Vec<(String, String)>>,
+    /// 宿主实际系统版本身份，不从 UA 推导；旧缓存缺失时由宿主身份校验淘汰。
+    #[serde(default)]
+    pub runtime_identity: Option<String>,
+    #[serde(default)]
+    pub cache_revision: Option<String>,
+    #[serde(default)]
+    pub fetch_h2_priority: Option<H2FetchPriority>,
     /// 模板版本：握手变化时递增，回放连接池据此淘汰旧指纹的连接
     #[serde(skip)]
     pub generation: u64,
@@ -121,10 +150,17 @@ pub struct FingerprintTemplates {
     h2: RwLock<Option<(EarlyFrameCapture, PseudoHeaderOrder)>>,
     fetch: RwLock<Option<(Vec<String>, Option<String>)>>,
     user_agent: RwLock<Option<String>>,
+    tls_permute_extensions: RwLock<Option<bool>>,
+    low_entropy_client_hints: RwLock<Option<Vec<(String, String)>>>,
     hello_hash: Mutex<Option<u64>>,
     generation: AtomicU64,
+    hello_observations: AtomicU64,
     cache_path: Option<PathBuf>,
     last_persist: Mutex<Option<Instant>>,
+    runtime_identity: Option<String>,
+    cache_state: RwLock<&'static str>,
+    fetch_h2_priority: RwLock<Option<H2FetchPriority>>,
+    capability_audit: RwLock<Option<(u64, serde_json::Value)>>,
 }
 
 /// 连接身份只比较稳定的浏览器能力，原始模板仍完整保留供新连接回放。
@@ -134,7 +170,8 @@ fn profile_hash(hello: &ClientHello) -> u64 {
         .extensions()
         .iter()
         .filter_map(|ext| {
-            if ext.id().is_grease() {
+            // padding 是否出现取决于本次 ClientHello 长度，同一内核也会变化。
+            if ext.id().is_grease() || matches!(u16::from(ext.id()), 21 | 41 | 44) {
                 return None;
             }
             let mut ext = ext.clone();
@@ -175,10 +212,9 @@ fn profile_hash(hello: &ClientHello) -> u64 {
             Some(ext)
         })
         .collect();
-    if browser_tls::is_chromium(hello) {
-        // Chromium 本来就逐连接打乱扩展顺序，出口也开启了同一策略。
-        extensions.sort_by_key(|ext| u16::from(ext.id()));
-    }
+    // 能力身份与扩展顺序分开：所有内核均由独立握手观察顺序策略。
+    // 否则非 Chromium 的顺序变化会被当成升级，清空 HTTP 采样而无法校准。
+    extensions.sort_by_key(|ext| u16::from(ext.id()));
     let profile = ClientHello::new(
         hello.protocol_version(),
         hello
@@ -208,6 +244,16 @@ impl FingerprintTemplates {
         user_agent: Option<&str>,
         preset_id: Option<&str>,
     ) -> Result<Self> {
+        Self::with_runtime_selection(cache_path, platform, user_agent, preset_id, None)
+    }
+
+    pub fn with_runtime_selection(
+        cache_path: Option<PathBuf>,
+        platform: &str,
+        user_agent: Option<&str>,
+        preset_id: Option<&str>,
+        runtime_identity: Option<&str>,
+    ) -> Result<Self> {
         if let Some(id) = preset_id {
             let preset = crate::presets::by_id(id)
                 .ok_or_else(|| NetError::Parse(format!("Unknown fingerprint preset: {id}")))?;
@@ -218,7 +264,12 @@ impl FingerprintTemplates {
                 ..Self::default()
             });
         }
-        Ok(Self::with_profile(cache_path, platform, user_agent))
+        Ok(Self::with_runtime_profile(
+            cache_path,
+            platform,
+            user_agent,
+            runtime_identity,
+        ))
     }
 
     pub fn with_profile(
@@ -226,28 +277,52 @@ impl FingerprintTemplates {
         platform: &str,
         user_agent: Option<&str>,
     ) -> Self {
+        Self::with_runtime_profile(cache_path, platform, user_agent, None)
+    }
+
+    fn with_runtime_profile(
+        cache_path: Option<PathBuf>,
+        platform: &str,
+        user_agent: Option<&str>,
+        runtime_identity: Option<&str>,
+    ) -> Self {
         let templates = Self {
             preset: crate::presets::select(platform, user_agent),
             cache_path,
+            runtime_identity: runtime_identity.map(str::to_owned),
+            cache_state: RwLock::new("missing"),
             ..Self::default()
         };
         let cached = templates.cache_path.as_ref().and_then(|path| {
             if std::fs::metadata(path).ok()?.len() > 256 * 1024 {
+                *templates.cache_state.write() = "oversized";
                 warn!("Ignore oversized fingerprint template cache");
                 return None;
             }
             let text = std::fs::read_to_string(path).ok()?;
             match serde_json::from_str::<FingerprintTemplate>(&text) {
-                Ok(template)
-                    if user_agent.is_none() || template.user_agent.as_deref() == user_agent =>
-                {
-                    Some(template)
-                }
-                Ok(_) => {
-                    info!("Fingerprint cache UA changed; using fallback until probe completes");
-                    None
+                Ok(template) => {
+                    let reason = if template.cache_revision.as_deref() != Some(&cache_revision()) {
+                        "schema_or_backend_changed"
+                    } else if user_agent.is_some() && template.user_agent.as_deref() != user_agent {
+                        "user_agent_changed"
+                    } else if runtime_identity.is_some() && template.runtime_identity.as_deref() != runtime_identity {
+                        "runtime_changed"
+                    } else if !template.is_calibrated() {
+                        "incomplete"
+                    } else {
+                        "loaded_pending_revalidation"
+                    };
+                    *templates.cache_state.write() = reason;
+                    if reason == "loaded_pending_revalidation" {
+                        Some(template)
+                    } else {
+                        info!("Fingerprint cache invalidated: {reason}");
+                        None
+                    }
                 }
                 Err(e) => {
+                    *templates.cache_state.write() = "invalid_json";
                     warn!(
                         "Ignore unreadable fingerprint template cache {}: {e}",
                         path.display()
@@ -266,6 +341,9 @@ impl FingerprintTemplates {
             *templates.fetch.write() =
                 Some((template.fetch_header_order, template.accept_encoding));
             *templates.user_agent.write() = template.user_agent;
+            *templates.tls_permute_extensions.write() = template.tls_permute_extensions;
+            *templates.low_entropy_client_hints.write() = template.low_entropy_client_hints;
+            *templates.fetch_h2_priority.write() = template.fetch_h2_priority;
         }
         templates
     }
@@ -274,9 +352,22 @@ impl FingerprintTemplates {
         if self.pinned {
             return;
         }
+        let first_in_process = self.hello_observations.fetch_add(1, Ordering::Relaxed) == 0;
+        // 同 UA 的引擎更新/实验变化也要重新比较本次进程内的两次握手。
+        // 不把旧缓存的一次握手算作本次校准，也允许过去的乱序策略恢复为固定顺序。
+        if first_in_process && *self.source.read() == TemplateSource::Cached {
+            *self.tls_permute_extensions.write() = None;
+            *self.h2.write() = None;
+            *self.fetch.write() = None;
+            *self.low_entropy_client_hints.write() = None;
+            *self.fetch_h2_priority.write() = None;
+            *self.last_persist.lock() = None;
+            self.generation.fetch_add(1, Ordering::Relaxed);
+        }
         let hash = profile_hash(hello);
         let mut previous = self.hello_hash.lock();
         let old_hash = previous.replace(hash);
+        let old_hello = self.hello.read().clone();
         if old_hash != Some(hash) {
             self.generation.fetch_add(1, Ordering::Relaxed);
             // 不把新 TLS 与旧 H2/头模板拼成未采集过的组合。
@@ -284,6 +375,22 @@ impl FingerprintTemplates {
                 *self.h2.write() = None;
                 *self.fetch.write() = None;
                 *self.user_agent.write() = None;
+                *self.tls_permute_extensions.write() = None;
+                *self.low_entropy_client_hints.write() = None;
+                *self.fetch_h2_priority.write() = None;
+                *self.last_persist.lock() = None;
+            }
+        } else if !first_in_process && let Some(old_hello) = old_hello {
+            let changed = extension_order(&old_hello) != extension_order(hello);
+            let policy_changed = {
+                let mut policy = self.tls_permute_extensions.write();
+                let next = Some(policy.unwrap_or(false) || changed);
+                let changed = *policy != next;
+                *policy = next;
+                changed
+            };
+            if policy_changed {
+                self.generation.fetch_add(1, Ordering::Relaxed);
                 *self.last_persist.lock() = None;
             }
         }
@@ -305,6 +412,11 @@ impl FingerprintTemplates {
         let Some(template) = self.captured_snapshot() else {
             return;
         };
+        // 首个导航请求已经有 TLS/H2，但 fetch 和第二次握手可能尚未到达。
+        // 此时写盘会把缺失字段缓存为“已就绪”，之后长期跳过重新采样。
+        if !template.is_calibrated() {
+            return;
+        }
         let result = serde_json::to_vec(&template)
             .map_err(std::io::Error::other)
             .and_then(|bytes| {
@@ -320,6 +432,16 @@ impl FingerprintTemplates {
 
     /// 从镜像经过的 WebView 请求中采集 HTTP 层特征。
     pub fn observe_request<B>(&self, request: &Request<B>) {
+        self.observe_request_kind(request, false);
+    }
+
+    /// 仅可信本地探针/诊断采集器可显式确认 fetch 用途；普通代理入口须用 observe_request。
+    /// 不依赖内核提供 Fetch Metadata，也不向被观察的请求补造任何头。
+    pub fn observe_probe_fetch<B>(&self, request: &Request<B>) {
+        self.observe_request_kind(request, true);
+    }
+
+    fn observe_request_kind<B>(&self, request: &Request<B>, known_probe_fetch: bool) {
         if self.pinned {
             return;
         }
@@ -349,10 +471,21 @@ impl FingerprintTemplates {
             }
             *current = Some(ua.to_owned());
         }
-        let is_fetch = headers
-            .get("sec-fetch-mode")
-            .is_some_and(|mode| mode.as_bytes() == b"cors");
+        let is_fetch = known_probe_fetch
+            || headers
+                .get("sec-fetch-mode")
+                .is_some_and(|mode| mode.as_bytes() == b"cors");
         if is_fetch {
+            if known_probe_fetch && request.version() == rama::http::Version::HTTP_2 {
+                let next = H2FetchPriority {
+                    dependency: extensions.get_ref::<rama::http::proto::h2::frame::ReceivedStreamDependency>().map(|p| p.0.clone()),
+                };
+                let mut current = self.fetch_h2_priority.write();
+                if current.as_ref().is_some_and(|old| old != &next) {
+                    self.generation.fetch_add(1, Ordering::Relaxed);
+                }
+                *current = Some(next);
+            }
             let order = headers
                 .keys()
                 .map(|name| name.as_str().to_owned())
@@ -361,12 +494,37 @@ impl FingerprintTemplates {
                 .get("accept-encoding")
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_owned);
-            *self.fetch.write() = Some((order, accept_encoding));
+            let next_fetch = Some((order, accept_encoding));
+            {
+                let mut current = self.fetch.write();
+                if current.is_some() && *current != next_fetch {
+                    self.generation.fetch_add(1, Ordering::Relaxed);
+                }
+                *current = next_fetch;
+            }
+            let hints = headers
+                .iter()
+                .filter_map(|(name, value)| {
+                    is_low_entropy_client_hint(name.as_str())
+                        .then(|| {
+                            value
+                                .to_str()
+                                .ok()
+                                .map(|value| (name.as_str().to_owned(), value.to_owned()))
+                        })
+                        .flatten()
+                })
+                .collect();
+            let mut current = self.low_entropy_client_hints.write();
+            if current.as_ref().is_some_and(|old| old != &hints) {
+                self.generation.fetch_add(1, Ordering::Relaxed);
+            }
+            *current = Some(hints);
         }
         self.maybe_persist();
     }
 
-    /// TLS 与 HTTP/2 特征都已采到时返回完整模板；fetch 请求头可缺省。
+    /// 返回可回放的 TLS/H2 模板；是否完成头部和顺序校准另查 is_calibrated。
     pub fn snapshot(&self) -> Option<FingerprintTemplate> {
         if self.pinned {
             return self.preset.clone();
@@ -386,6 +544,11 @@ impl FingerprintTemplates {
             fetch_header_order,
             accept_encoding,
             user_agent: self.user_agent.read().clone(),
+            tls_permute_extensions: *self.tls_permute_extensions.read(),
+            low_entropy_client_hints: self.low_entropy_client_hints.read().clone(),
+            runtime_identity: self.runtime_identity.clone(),
+            cache_revision: Some(cache_revision()),
+            fetch_h2_priority: self.fetch_h2_priority.read().clone(),
             generation: self.generation.load(Ordering::Relaxed),
         })
     }
@@ -393,16 +556,60 @@ impl FingerprintTemplates {
     /// 供宿主查询的模板状态：是否可回放、采样时的 UA。
     pub fn status_json(&self) -> String {
         let template = self.snapshot();
+        let capabilities = template.as_ref().map(|template| {
+            let mut cached = self.capability_audit.write();
+            if cached.as_ref().is_none_or(|(generation, _)| *generation != template.generation) {
+                *cached = Some((template.generation, browser_tls::capability_audit(&template.hello)));
+            }
+            cached.as_ref().unwrap().1.clone()
+        });
         serde_json::json!({
             // ready 仅表示真实采样就绪，不能因有预置而跳过后台探针。
-            "ready": template.as_ref().is_some_and(|template| template.source.id().is_none()),
+            "ready": template.as_ref().is_some_and(|template| template.source.id().is_none() && template.is_calibrated()),
             "source": template.as_ref().map(|template| template.source.name()),
             "preset": template.as_ref().and_then(|template| template.source.id()),
             "user_agent": self.user_agent.read().clone(),
+            "tls_permute_extensions": *self.tls_permute_extensions.read(),
+            "fetch_headers_sampled": self.low_entropy_client_hints.read().is_some(),
+            "tls_observations": self.hello_observations.load(Ordering::Relaxed),
+            "needs_revalidation": !self.pinned && self.hello_observations.load(Ordering::Relaxed) < 2,
+            "cache_state": *self.cache_state.read(),
+            "cache_revision": cache_revision(),
+            "runtime_identity": self.runtime_identity,
+            "tls_capabilities": capabilities,
+            "h3": {"enabled_for_template": false, "reason": "native_quic_h3_profile_not_calibrated"},
+            "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
+            "fetch_h2_priority_sampled": self.fetch_h2_priority.read().is_some(),
+            "not_verified": ["hpack_encoding", "navigation_priority", "quic_h3", "cf_acceptance"],
             "system_proxy": crate::system_proxy::configured(),
         })
         .to_string()
     }
+}
+
+impl FingerprintTemplate {
+    pub(crate) fn is_calibrated(&self) -> bool {
+        self.tls_permute_extensions.is_some()
+            && self.low_entropy_client_hints.is_some()
+            && self.user_agent.is_some()
+    }
+}
+
+/// 标准定义的三个低熵字段；高熵字段必须由目标站点的 Accept-CH 决定。
+pub(crate) fn is_low_entropy_client_hint(name: &str) -> bool {
+    matches!(
+        name,
+        "sec-ch-ua" | "sec-ch-ua-mobile" | "sec-ch-ua-platform"
+    )
+}
+
+fn extension_order(hello: &ClientHello) -> Vec<u16> {
+    hello
+        .extensions()
+        .iter()
+        .map(|ext| u16::from(ext.id()))
+        .filter(|id| !rama::tls::is_grease_u16(*id) && !matches!(*id, 21 | 41 | 44))
+        .collect()
 }
 
 /// 镜像 HTTP 层的采集中间件：请求原样转发，顺带把特征记入模板。
@@ -525,9 +732,7 @@ impl MirrorRelay {
             NetError::Proxy(format!("No TLS ClientHello from WebView for {host}"))
         })?;
         let browser = browser_tls::is_browser_like(&hello);
-        if browser {
-            self.templates.record_hello(&hello);
-        } else {
+        if !browser {
             debug!("Mirror {host}: non-browser client, not used as template");
         }
 
@@ -560,13 +765,14 @@ impl MirrorRelay {
                     let ingress_input = ServiceInput::new(ingress.clone());
                     ingress_input
                         .extensions()
-                        .insert(SecureTransport::with_client_hello(hello));
+                        .insert(SecureTransport::with_client_hello(hello.clone()));
                     let egress = ServiceInput::new(egress);
                     egress
                         .extensions()
                         .insert(ConnectorTarget(HostWithPort::new(server_host, port)));
                     // 握手放进独立任务：rama 握手 future 内部跨 await 持有借用，
                     // 直接嵌进泛型的重试循环会让编译器无法证明外层 future 对所有生命周期 Send
+                    let templates = this.templates.clone();
                     let handshake =
                         tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
                             let handshake = this.tls.handshake(
@@ -581,7 +787,13 @@ impl MirrorRelay {
                         )))
                     })?;
                     match outcome {
-                        Ok(Ok(tls_bridge)) => Ok((tls_bridge, ech_applied)),
+                        Ok(Ok(tls_bridge)) => {
+                            // 证书拒绝或中途失败的握手不能污染可回放模板。
+                            if browser {
+                                templates.record_hello(&hello);
+                            }
+                            Ok((tls_bridge, ech_applied))
+                        },
                         Ok(Err(error)) => match error.kind() {
                             TlsMitmRelayErrorKind::Handshake {
                                 direction: TlsMitmRelayErrorDirection::Egress,
@@ -728,10 +940,61 @@ mod profile_tests {
         ))
         .unwrap()
     }
+
+    #[test]
+    fn non_chromium_order_change_is_calibrated_without_losing_http_sample() {
+        // 合成顺序变化只验证算法，不声称 Safari 实际开启了乱序。
+        let reference = crate::presets::by_id("ios-safari18").unwrap();
+        assert!(!browser_tls::is_chromium(&reference.hello));
+        let templates = FingerprintTemplates::new(None);
+        templates.record_hello(&reference.hello);
+        let mut request = Request::builder()
+            .header("user-agent", "Fixture-WebKit/1")
+            .header("sec-fetch-mode", "cors")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(reference.early_frames);
+        request.extensions_mut().insert(reference.pseudo_order);
+        templates.observe_request(&request);
+        let mut next = serde_json::to_value(&reference.hello).unwrap();
+        next["extensions"].as_array_mut().unwrap().swap(1, 2);
+        templates.record_hello(&serde_json::from_value(next).unwrap());
+        let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(status["tls_permute_extensions"], true);
+        assert_eq!(status["ready"], true);
+    }
+
+    #[test]
+    fn damaged_or_wrong_ua_cache_does_not_suppress_probe() {
+        let path =
+            std::env::temp_dir().join(format!("fluxdo-cache-scenarios-{}.json", uuid_for_test()));
+        for contents in [b"{broken".to_vec(), vec![b'x'; 256 * 1024 + 1], {
+            let mut template = crate::presets::by_id("ios-safari18").unwrap();
+            template.user_agent = Some("old-runtime".into());
+            template.tls_permute_extensions = Some(false);
+            template.low_entropy_client_hints = Some(Vec::new());
+            serde_json::to_vec(&template).unwrap()
+        }] {
+            std::fs::write(&path, contents).unwrap();
+            let templates = FingerprintTemplates::with_profile(
+                Some(path.clone()),
+                "linux",
+                Some("new-runtime"),
+            );
+            let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+            assert_eq!(status["ready"], false);
+            assert!(templates.captured_snapshot().is_none());
+        }
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn explicit_preset_ignores_cache_and_capture_without_overwriting_auto_cache() {
         let path = std::env::temp_dir().join(format!("fluxdo-pinned-{}.json", uuid_for_test()));
-        let cached = crate::presets::by_id("android-webview133").unwrap();
+        let mut cached = crate::presets::by_id("android-webview133").unwrap();
+        cached.cache_revision = Some(cache_revision());
+        cached.tls_permute_extensions = Some(true);
+        cached.low_entropy_client_hints = Some(Vec::new());
+        cached.user_agent = Some("cached-lab".into());
         let original = serde_json::to_vec(&cached).unwrap();
         std::fs::write(&path, &original).unwrap();
         let pinned = FingerprintTemplates::with_selection(
@@ -795,6 +1058,8 @@ mod profile_tests {
         let sampled = templates.snapshot().unwrap();
         assert_eq!(sampled.source, TemplateSource::Sampled);
         assert!(sampled.generation > preset.generation);
+        assert!(!path.exists(), "首个握手不能把未校准模板写入缓存");
+        templates.record_hello(&sampled.hello);
         assert!(path.exists());
         let valid =
             FingerprintTemplates::with_profile(Some(path.clone()), "android", Some("Chrome/133.0"));
@@ -861,8 +1126,27 @@ mod profile_tests {
         let templates = FingerprintTemplates::default();
         templates.record_hello(&original);
         templates.record_hello(&next);
-        assert_eq!(templates.generation.load(Ordering::Relaxed), 1);
+        // 首次确认乱序策略会淘汰未校准连接；之后的随机值/顺序变化不再换代。
+        let calibrated = templates.generation.load(Ordering::Relaxed);
+        templates.record_hello(&original);
+        templates.record_hello(&next);
+        assert_eq!(templates.generation.load(Ordering::Relaxed), calibrated);
     }
+    #[test]
+    fn native_android_padding_presence_does_not_reset_calibration() {
+        let samples: Vec<ClientHello> = serde_json::from_str(include_str!(
+            "../tests/fixtures/android124_padding_presence.json"
+        )).unwrap();
+        let padding = |hello: &ClientHello| hello.extensions().iter().any(|e| u16::from(e.id()) == 21);
+        assert!(padding(&samples[0]));
+        assert!(!padding(&samples[1]));
+        assert_eq!(profile_hash(&samples[0]), profile_hash(&samples[1]));
+        let templates = FingerprintTemplates::new(None);
+        templates.record_hello(&samples[0]);
+        templates.record_hello(&samples[1]);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(true));
+    }
+
     #[test]
     fn protocol_capability_change_rotates_profile() {
         let original: ClientHello = serde_json::from_value(chrome()).unwrap();
@@ -870,5 +1154,196 @@ mod profile_tests {
         next["cipher_suites"].as_array_mut().unwrap().pop();
         let next: ClientHello = serde_json::from_value(next).unwrap();
         assert_ne!(profile_hash(&original), profile_hash(&next));
+    }
+
+    #[test]
+    fn order_policy_comes_from_observed_connections_not_chromium_brand() {
+        let reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = FingerprintTemplates::new(None);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), None);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(false));
+        let mut shuffled = serde_json::to_value(&reference.hello).unwrap();
+        shuffled["extensions"].as_array_mut().unwrap().swap(1, 2);
+        let shuffled = serde_json::from_value(shuffled).unwrap();
+        let generation = templates.generation.load(Ordering::Relaxed);
+        templates.record_hello(&shuffled);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(true));
+        assert!(templates.generation.load(Ordering::Relaxed) > generation);
+        templates.record_hello(&shuffled);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(true));
+    }
+
+    #[test]
+    fn legacy_cache_requires_new_backend_calibration() {
+        let path = std::env::temp_dir().join(format!("fluxdo-legacy-{}.json", uuid_for_test()));
+        std::fs::write(
+            &path,
+            include_str!("../tests/fixtures/chromium99_linux_probe.json"),
+        )
+        .unwrap();
+        let templates = FingerprintTemplates::new(Some(path.clone()));
+        assert!(templates.captured_snapshot().is_none());
+        let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(status["ready"], false);
+        assert_eq!(status["cache_state"], "schema_or_backend_changed");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cached_random_order_is_recalibrated_with_two_current_handshakes() {
+        let path = std::env::temp_dir().join(format!("fluxdo-revalidate-{}.json", uuid_for_test()));
+        let mut reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        )).unwrap();
+        reference.cache_revision = Some(cache_revision());
+        reference.tls_permute_extensions = Some(true);
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        let templates = FingerprintTemplates::new(Some(path.clone()));
+        assert_eq!(*templates.source.read(), TemplateSource::Cached);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), None);
+        templates.record_hello(&reference.hello);
+        assert_eq!(*templates.tls_permute_extensions.read(), Some(false));
+        let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(status["needs_revalidation"], false);
+        reference.cache_revision = Some("future-or-other-backend".into());
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        assert!(FingerprintTemplates::new(Some(path.clone())).captured_snapshot().is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn headers_priority_is_encoded_before_hpack_without_polluting_continuation() {
+        use rama::bytes::{BufMut, BytesMut};
+        use rama::http::{HeaderMap, Method};
+        use rama::http::proto::h2::{frame::{Headers, Pseudo, StreamId}, hpack};
+        for priority in [None, Some(StreamDependency::new(StreamId::zero(), 219, true))] {
+            let pseudo = Pseudo::request(Method::GET, &"https://localhost/test".parse().unwrap(), None);
+            let mut fields = HeaderMap::new();
+            fields.insert("x-test", "a".repeat(40_000).parse().unwrap());
+            let frame = Headers::new(StreamId::from(1), pseudo, fields, priority.clone());
+            let mut encoder = hpack::Encoder::default();
+            let mut buf = BytesMut::new();
+            let continuation = frame.encode(&mut encoder, &mut (&mut buf).limit(16_384 + 9)).unwrap();
+            assert_eq!(buf[3], 1);
+            assert_eq!(buf[4] & 0x20 != 0, priority.is_some());
+            if priority.is_some() { assert_eq!(&buf[9..14], &[0x80, 0, 0, 0, 219]); }
+            let mut tail = BytesMut::new();
+            continuation.encode(&mut (&mut tail).limit(16_384 + 9));
+            assert_eq!(tail[3], 9);
+            assert_eq!(tail[4] & 0x20, 0);
+        }
+    }
+
+    #[test]
+    fn frozen_ua_does_not_reuse_cache_across_runtime_changes() {
+        let path = std::env::temp_dir().join(format!("fluxdo-runtime-{}.json", uuid_for_test()));
+        let mut reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        ))
+        .unwrap();
+        // 模拟两个实际系统版本返回同一 UA；不把 UA 中的系统字段当真实版本。
+        reference.user_agent = Some("frozen-apple-ua".into());
+        reference.runtime_identity = Some("ios-runtime-A".into());
+        reference.cache_revision = Some(cache_revision());
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        for (runtime, reuse) in [("ios-runtime-A", true), ("ios-runtime-B", false)] {
+            let templates = FingerprintTemplates::with_runtime_selection(
+                Some(path.clone()),
+                "ios",
+                Some("frozen-apple-ua"),
+                None,
+                Some(runtime),
+            )
+            .unwrap();
+            assert_eq!(templates.captured_snapshot().is_some(), reuse);
+            let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+            assert_eq!(status["ready"], reuse);
+        }
+        reference.runtime_identity = None;
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        let templates = FingerprintTemplates::with_runtime_selection(
+            Some(path.clone()),
+            "ios",
+            Some("frozen-apple-ua"),
+            None,
+            Some("ios-runtime-B"),
+        )
+        .unwrap();
+        assert!(
+            templates.captured_snapshot().is_none(),
+            "旧缓存没有宿主版本时必须重采"
+        );
+        templates.record_hello(&reference.hello);
+        templates.record_hello(&reference.hello);
+        let mut request = Request::builder()
+            .header("user-agent", "frozen-apple-ua")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(reference.early_frames);
+        request.extensions_mut().insert(reference.pseudo_order);
+        templates.observe_probe_fetch(&request);
+        let saved: FingerprintTemplate =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved.runtime_identity.as_deref(), Some("ios-runtime-B"));
+        let restored = FingerprintTemplates::with_runtime_selection(
+            Some(path.clone()),
+            "ios",
+            Some("frozen-apple-ua"),
+            None,
+            Some("ios-runtime-B"),
+        )
+        .unwrap();
+        assert!(restored.captured_snapshot().is_some());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn navigation_cannot_persist_incomplete_fetch_and_client_hints() {
+        let path = std::env::temp_dir().join(format!("fluxdo-fetch-{}.json", uuid_for_test()));
+        let reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = FingerprintTemplates::new(Some(path.clone()));
+        templates.record_hello(&reference.hello);
+        templates.record_hello(&reference.hello);
+        let mut request = Request::builder()
+            .header("user-agent", "Chrome/99.0")
+            .header("sec-fetch-mode", "navigate")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(reference.early_frames);
+        request.extensions_mut().insert(reference.pseudo_order);
+        templates.observe_request(&request);
+        assert!(!path.exists());
+        request
+            .headers_mut()
+            .insert("sec-fetch-mode", "cors".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("sec-ch-ua", "\"Chromium\";v=\"99\"".parse().unwrap());
+        request
+            .headers_mut()
+            .insert("sec-ch-ua-full-version", "99.0.0.0".parse().unwrap());
+        templates.observe_request(&request);
+        let saved: FingerprintTemplate =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved.low_entropy_client_hints.unwrap(),
+            vec![("sec-ch-ua".into(), "\"Chromium\";v=\"99\"".into())]
+        );
+        assert_eq!(saved.tls_permute_extensions, Some(false));
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&templates.status_json()).unwrap()["ready"]
+                .as_bool()
+                .unwrap()
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

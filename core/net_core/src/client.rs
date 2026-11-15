@@ -809,6 +809,7 @@ impl HttpEgressClient {
         let started = Instant::now();
         let server_host: Host = host.parse()?;
         let hello = template.map(|template| template.hello.clone());
+        let permute_extensions = template.is_some_and(|t| t.tls_permute_extensions == Some(true));
         let h2_params = template.map(|template| H2ClientContextParams {
             early_frames: Some(template.early_frames.clone()),
             headers_pseudo_order: Some(template.pseudo_order.clone()),
@@ -841,6 +842,7 @@ impl HttpEgressClient {
                     server_host.clone(),
                     ech.as_deref(),
                     &sessions,
+                    permute_extensions,
                 )
                 .map_err(|e| {
                     HandshakeFailure::abort(NetError::Proxy(format!("Build egress: {e}")))
@@ -881,6 +883,11 @@ impl HttpEgressClient {
                 // 握手放进独立任务：rama 的 h2 握手 future 跨 await 持有借用，
                 // 直接留在这里会让编译器无法证明本 future 对所有生命周期 Send
                 let input = ConnectRequest::new(HostWithPort::new(server_host, port));
+                // 当前 rama 的普通 HTTP 握手从 ConnectRequest 读取 H2 参数，
+                // 只写到 TLS stream 会静默使用默认 SETTINGS / 窗口 / 伪头顺序。
+                if let Some(params) = tls.extensions().get_ref::<H2ClientContextParams>() {
+                    input.extensions().insert(params.clone());
+                }
                 // 普通 JoinHandle 在丢弃时会脱离外层继续运行；取消请求或
                 // 备用路径胜出时必须终止这个握手，避免遗留 socket/任务。
                 let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
@@ -918,12 +925,14 @@ impl HttpEgressClient {
                 e.with_context(&format!("Connect {host}:{port}"))
             })?;
         info!(
-            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}) in {}ms",
+            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}, h2_template: {}, tls_permute_extensions: {:?}) in {}ms",
             sender.ech_accepted,
             template.map_or("standard", |template| template
                 .source
                 .id()
                 .unwrap_or(template.source.name())),
+            template.is_some(),
+            template.and_then(|t| t.tls_permute_extensions),
             started.elapsed().as_millis()
         );
         Ok(sender)
@@ -1035,10 +1044,17 @@ fn tls_config(
     server_host: Host,
     ech: Option<&[u8]>,
     sessions: &ClientSessions,
+    permute_extensions: bool,
 ) -> Result<(TlsConnectorData, bool), BoxError> {
     match hello {
         Some(hello) => {
-            let built = browser_tls::build(hello, server_host, ech, Some(sessions))?;
+            let built = browser_tls::build_with_permutation(
+                hello,
+                server_host,
+                ech,
+                Some(sessions),
+                permute_extensions,
+            )?;
             Ok((built.connector_data, built.ech_applied))
         }
         None => {
@@ -1120,6 +1136,21 @@ fn build_request(
     port: u16,
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
+    // 仅默认 fetch 用途复用采样优先级；显式请求优先级优先，导航和依赖其他
+    // 入站流 ID 的优先级不能直接跨连接复制。
+    if version == Version::HTTP_2
+        && let Some(template) = template.filter(|t| t.is_calibrated())
+        && request.uri().scheme_str() == Some("https")
+        && template.user_agent.as_deref() == request.headers().get("user-agent").and_then(|v| v.to_str().ok())
+        && request.headers().get("sec-fetch-mode").is_some_and(|v| v == "cors")
+        && !request.headers().contains_key("priority")
+        && !request.extensions().contains::<rama::http::proto::h2::frame::StreamDependency>()
+        && !request.extensions().contains::<rama::http::proto::h2::frame::ReceivedStreamDependency>()
+        && let Some(priority) = template.fetch_h2_priority.as_ref().and_then(|p| p.dependency.as_ref())
+        && priority.dependency_id == rama::http::proto::h2::frame::StreamId::zero()
+    {
+        request.extensions().insert(priority.clone());
+    }
     let uri = request.uri();
     // 保留 wire 原样拼写转发，不做重新编码
     let path = uri
@@ -1161,6 +1192,53 @@ fn build_request(
         headers.remove(name);
     }
     if let Some(template) = template {
+        // UA 推导无法覆盖旧版 GREASE 品牌、Chromium/Chrome 品牌差异，
+        // 也无法判断自定义 WebView UA 是否抑制了 Client Hints。
+        // 只为同 UA 的 HTTPS 请求复用实际低熵采样；不伪造高熵提示。
+        if scheme == "https"
+            && template.user_agent.as_deref().is_some_and(|ua| {
+                headers.get("user-agent").and_then(|v| v.to_str().ok()) == Some(ua)
+            })
+            && let Some(hints) = &template.low_entropy_client_hints
+        {
+            // 旧 WebKit 的真实 fetch 不发送 Fetch Metadata。仅对同 UA 的 HTTPS
+            // cors 请求移除调用方额外添加的这一组头；不从回环探针复制站点关系，
+            // 不改 Origin、Referer、Cookie 或 CSRF，也不改导航请求和未校准模板。
+            if template.is_calibrated()
+                && headers.get("sec-fetch-mode").is_some_and(|v| v == "cors")
+                && !template
+                    .fetch_header_order
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case("sec-fetch-mode"))
+            {
+                let unsupported: Vec<_> = headers
+                    .keys()
+                    .filter(|name| name.as_str().starts_with("sec-fetch-"))
+                    .cloned()
+                    .collect();
+                for name in unsupported {
+                    headers.remove(name);
+                }
+            }
+            let supplied: Vec<_> = headers
+                .keys()
+                .filter(|name| crate::mirror::is_low_entropy_client_hint(name.as_str()))
+                .cloned()
+                .collect();
+            for name in supplied {
+                headers.remove(name);
+            }
+            for (name, value) in hints {
+                if crate::mirror::is_low_entropy_client_hint(name)
+                    && let (Ok(name), Ok(value)) = (
+                        HeaderName::from_bytes(name.as_bytes()),
+                        HeaderValue::from_str(value),
+                    )
+                {
+                    headers.insert(name, value);
+                }
+            }
+        }
         if let Some(value) = template
             .accept_encoding
             .as_deref()
@@ -1351,6 +1429,7 @@ mod tests {
                 Host::from_static("linux.do"),
                 ech,
                 &ClientSessions::default(),
+                false,
             )
             .unwrap();
             assert_eq!(applied, ech.is_some());
@@ -1749,5 +1828,234 @@ mod tests {
             pool_key(None, "linux.do", 443),
             pool_key(None, "linux.do", 8443)
         );
+    }
+
+    #[test]
+    fn sampled_client_hints_override_guesses_only_for_matching_ua() {
+        let mut template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        template.user_agent = Some("Chrome/99.0".into());
+        for hints in [
+            vec![],
+            vec![("sec-ch-ua".into(), "\"Chromium\";v=\"99\"".into())],
+        ] {
+            template.low_entropy_client_hints = Some(hints.clone());
+            for ua in ["Chrome/99.0", "different"] {
+                let request = Request::builder()
+                    .uri("https://localhost/test")
+                    .header("user-agent", ua)
+                    .header("sec-ch-ua", "guessed")
+                    .header("sec-ch-ua-mobile", "?1")
+                    .header("sec-ch-ua-full-version", "requested-by-origin")
+                    .body(Body::empty())
+                    .unwrap();
+                let built =
+                    build_request(Some(&template), request, "localhost", 443, Version::HTTP_2)
+                        .unwrap();
+                assert_eq!(
+                    built.headers()["sec-ch-ua-full-version"],
+                    "requested-by-origin"
+                );
+                if ua == "different" {
+                    assert_eq!(built.headers()["sec-ch-ua"], "guessed");
+                } else {
+                    assert!(!built.headers().contains_key("sec-ch-ua-mobile"));
+                    assert_eq!(
+                        built
+                            .headers()
+                            .get("sec-ch-ua")
+                            .map(|v| v.to_str().unwrap()),
+                        hints.first().map(|(_, v)| v.as_str())
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_webkit_fetch_metadata_matches_sample_without_changing_security_headers() {
+        // 原生 iOS 15.5 云端采样：不发送 Fetch Metadata；不使用 UA 版本阈值。
+        let reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        ))
+        .unwrap();
+        for (same_ua, calibrated, supports_metadata, scheme, mode, should_remove) in [
+            (true, true, false, "https", "cors", true),
+            (false, true, false, "https", "cors", false),
+            (true, false, false, "https", "cors", false),
+            (true, true, true, "https", "cors", false),
+            (true, true, false, "http", "cors", false),
+            (true, true, false, "https", "navigate", false),
+        ] {
+            let mut template = reference.clone();
+            if !calibrated {
+                template.tls_permute_extensions = None;
+            }
+            if supports_metadata {
+                template.fetch_header_order.push("sec-fetch-mode".into());
+            }
+            let request = Request::builder()
+                .uri(format!("{scheme}://localhost/test"))
+                .header(
+                    "user-agent",
+                    if same_ua {
+                        reference.user_agent.as_deref().unwrap()
+                    } else {
+                        "another-client"
+                    },
+                )
+                .header("sec-fetch-mode", mode)
+                .header("sec-fetch-site", "same-origin")
+                .header("sec-fetch-dest", "empty")
+                .header("origin", "https://localhost")
+                .header("referer", "https://localhost/topics/1")
+                .header("x-csrf-token", "unchanged-token")
+                .header("cookie", "session=unchanged")
+                .body(Body::empty())
+                .unwrap();
+            let built =
+                build_request(Some(&template), request, "localhost", 443, Version::HTTP_2).unwrap();
+            for name in ["sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest"] {
+                assert_eq!(
+                    built.headers().contains_key(name),
+                    !should_remove,
+                    "{same_ua}/{calibrated}/{supports_metadata}/{scheme}/{mode}: {name}"
+                );
+            }
+            assert_eq!(built.headers()["origin"], "https://localhost");
+            assert_eq!(built.headers()["referer"], "https://localhost/topics/1");
+            assert_eq!(built.headers()["x-csrf-token"], "unchanged-token");
+            assert_eq!(built.headers()["cookie"], "session=unchanged");
+        }
+    }
+
+    #[tokio::test]
+    async fn sampled_h2_settings_and_pseudo_order_reach_the_wire() {
+        use rama::{
+            http::proto::h2::{PseudoHeaderOrder, frame::EarlyFrameCapture},
+            http::server::HttpServer,
+            service::service_fn,
+            tls::{
+                boring::server::TlsAcceptorLayer,
+                server::{ServerAuthData, TlsServerConfig},
+            },
+        };
+        use std::convert::Infallible;
+        let template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        let priority = rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), 219, true);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(priority.clone()));
+        templates.observe_probe_fetch(&sample);
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("localhost"),
+            ),
+        )
+        .unwrap();
+        let mut trust = TlsClientConfig::new()
+            .with_server_name(Host::from_static("localhost"))
+            .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+            .unwrap();
+        trust.set_alpn([ApplicationProtocol::HTTP_2].into_iter().collect());
+        let tls = TlsServerConfig::new()
+            .with_server_auth(ServerAuthData::new(chain, key))
+            .with_alpn_http_auto();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let captured = Arc::new(parking_lot::Mutex::new(None));
+        let sink = captured.clone();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut http = HttpServer::auto(Executor::new());
+            http.h2_mut().set_observe_early_frames(true);
+            let http = http.service(service_fn(move |request: Request| {
+                *sink.lock() = Some((
+                    request
+                        .extensions()
+                        .get_ref::<EarlyFrameCapture>()
+                        .unwrap()
+                        .clone(),
+                    request
+                        .extensions()
+                        .get_ref::<PseudoHeaderOrder>()
+                        .unwrap()
+                        .clone(),
+                    request.extensions().get_ref::<rama::http::proto::h2::frame::ReceivedStreamDependency>().map(|p| p.0.clone()),
+                ));
+                async { Ok::<_, Infallible>(Response::new(Body::from("ok"))) }
+            }));
+            let _ = TlsAcceptorLayer::new(tls)
+                .into_layer(http)
+                .serve(ServiceInput::new(socket))
+                .await;
+        });
+        let client = HttpEgressClient::new(
+            Arc::new(EgressConnector::new(
+                None,
+                None,
+                None,
+                None,
+                Duration::from_secs(3),
+            )),
+            Some(templates),
+        );
+        *client.test_tls.lock() = Some(trust);
+        let response = client
+            .send(
+                Request::builder()
+                    .uri(format!("https://localhost:{port}/"))
+                    .header("user-agent", "priority-lab")
+                    .header("sec-fetch-mode", "cors")
+                    .body(Body::empty())
+                    .unwrap(),
+                Some(Duration::from_secs(5)),
+                Some(Duration::from_secs(5)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.version(), Version::HTTP_2);
+        let (frames, order, actual_priority) = captured.lock().clone().unwrap();
+        assert_eq!(actual_priority, Some(priority));
+        let initial = |frames: &EarlyFrameCapture| {
+            serde_json::to_value(frames)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f.get("Settings").is_none_or(|s| s["flags"] != 1))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(initial(&frames), initial(&template.early_frames));
+        assert_eq!(
+            serde_json::to_value(order).unwrap(),
+            serde_json::to_value(template.pseudo_order).unwrap()
+        );
+        // 镜像只能跨连接保留根依赖，不能把入站流 3 复制成当前流 3 的自依赖。
+        for (dependency_id, expected) in [(0u32, Some(31u8)), (3, None)] {
+            let request = Request::builder().uri(format!("https://localhost:{port}/"))
+                .header("user-agent", "priority-lab").header("sec-fetch-mode", "cors")
+                .body(Body::empty()).unwrap();
+            request.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(
+                rama::http::proto::h2::frame::StreamDependency::new(
+                    rama::http::proto::h2::frame::StreamId::from(dependency_id), 31, false)));
+            let response = client.send(request, Some(Duration::from_secs(5)), Some(Duration::from_secs(5))).await.unwrap();
+            assert_eq!(response.status().as_u16(), 200);
+            assert_eq!(captured.lock().as_ref().unwrap().2.as_ref().map(|p| p.weight), expected);
+        }
+        client.reset_connections().await;
+        server.abort();
     }
 }

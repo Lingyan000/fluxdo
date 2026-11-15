@@ -254,7 +254,7 @@ impl Http3Upgrade {
     where
         F: Future<Output = Result<Sender, BoxError>>,
     {
-        if egress.has_fixed_proxy() {
+        if target.template.is_some() || egress.has_fixed_proxy() {
             return tcp.await;
         }
         // 竞速的第二条连接也要占全局容量；已饱和时直接使用原 TCP 路径。
@@ -288,8 +288,10 @@ impl Http3Upgrade {
         exec: Executor,
         generation: u64,
     ) {
-        // 固定代理不支持直接 UDP；不占探针名额，不做 DNS 或重复写失败日志。
-        if egress.has_fixed_proxy() {
+        // TLS/TCP 与 H2 模板不包含 QUIC 传输参数、H3 SETTINGS 或 QPACK。
+        // 在实现相应采样前，浏览器模板请求不能升级为默认 QUIC 指纹。
+        // 固定代理同样不支持直接 UDP；两者都不启动后台探测。
+        if target.template.is_some() || egress.has_fixed_proxy() {
             return;
         }
         if !self.observe_at(target.key, target.host, headers, generation) {
@@ -1295,5 +1297,54 @@ mod tests {
         headers.insert("age", HeaderValue::from_static("2"));
         state.observe("key", "example.com", &headers);
         assert!(state.alternatives.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn browser_template_neither_starts_h3_probe_nor_uses_cached_alternative() {
+        let state = Arc::new(Http3Upgrade::default());
+        let template = crate::presets::by_id("android-webview133").unwrap();
+        let target = Target {
+            key: "https://localhost:443#1",
+            template: Some(&template),
+            host: "localhost",
+            port: 443,
+            secure: true,
+        };
+        let egress = Arc::new(EgressConnector::new(
+            None,
+            None,
+            None,
+            None,
+            Duration::from_secs(1),
+        ));
+        let pool = Arc::new(PoolState::default());
+        let mut headers = HeaderMap::new();
+        headers.insert("alt-svc", "h3=\":443\"; ma=600".parse().unwrap());
+        state.observe_and_upgrade(
+            &target,
+            &headers,
+            egress.clone(),
+            pool.clone(),
+            Executor::new(),
+            state.generation(),
+        );
+        assert!(state.alternatives.lock().is_empty());
+        // 模拟升级前已经保存的 Alt-Svc；不能绕过浏览器模板限制。
+        state.observe(target.key, target.host, &headers);
+        let result = state
+            .connect_or_tcp(&target, &egress, &pool, Executor::new(), async {
+                Err::<Sender, BoxError>("tcp-only-marker".into())
+            })
+            .await;
+        assert_eq!(result.err().unwrap().to_string(), "tcp-only-marker");
+        assert_eq!(state.probes.available_permits(), 2);
+        assert!(
+            !state
+                .alternatives
+                .lock()
+                .get(origin(target.key))
+                .unwrap()
+                .probing
+        );
     }
 }

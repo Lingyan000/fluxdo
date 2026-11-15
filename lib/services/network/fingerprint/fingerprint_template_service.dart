@@ -41,7 +41,7 @@ class FingerprintTemplateService {
   static const _probeTimeout = Duration(seconds: 15);
   static const _statusTimeout = Duration(seconds: 3);
 
-  /// 指纹模板已就绪（dio 按 WebView 指纹出站）。
+  /// TLS/H2 模板采样校准已就绪；不代表全协议指纹已验证或 CF 一定放行。
   final ValueNotifier<bool> templateReady = ValueNotifier(false);
 
   int? _port;
@@ -97,19 +97,40 @@ class FingerprintTemplateService {
     final userAgent =
         await (_testUserAgent?.call() ?? AppConstants.getUserAgent());
     if (!_isCurrent(port, generation)) return;
-    if (!status.ready || status.userAgent != userAgent) {
+    if (!status.ready ||
+        status.needsRevalidation ||
+        status.userAgent != userAgent) {
       templateReady.value = false;
       NetworkLogger.log(
-        '[Fingerprint] ${status.ready ? 'WebView 已升级' : '模板缺失'}，开始探针采样',
+        '[Fingerprint] 校准模板：ready=${status.ready}, '
+        'revalidate=${status.needsRevalidation}, cache=${status.cacheState}',
       );
       final elapsed = Stopwatch()..start();
-      if (_testProbe != null) {
-        await _testProbe!(port, cancelled);
-      } else {
-        await _probe(port, cancelled);
+      // 同一主版本也可能被实验开关改变 TLS 扩展顺序，因此由两次独立
+      // 握手校准，不使用版本阈值。核心在 done 后关闭采样连接。
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (_testProbe != null) {
+          await _testProbe!(port, cancelled);
+        } else {
+          await _probe(port, cancelled);
+        }
+        if (!_isCurrent(port, generation)) return;
+        status = await _status(port);
+        if (!_isCurrent(port, generation)) return;
+        if (status == null ||
+            status.userAgent != userAgent ||
+            (status.ready && !status.needsRevalidation)) {
+          break;
+        }
+        if (attempt == 0) {
+          await Future.any([
+            Future<void>.delayed(const Duration(milliseconds: 150)),
+            cancelled,
+          ]);
+          if (!_isCurrent(port, generation)) return;
+        }
       }
       if (!_isCurrent(port, generation)) return;
-      status = await _status(port);
       NetworkLogger.log(
         '[Fingerprint] 探针采样结束，耗时 ${elapsed.elapsedMilliseconds}ms，'
         '模板${status?.ready == true ? '已就绪' : '仍未就绪'}',
@@ -118,7 +139,10 @@ class FingerprintTemplateService {
     }
     if (_isCurrent(port, generation)) {
       templateReady.value =
-          status != null && status.ready && status.userAgent == userAgent;
+          status != null &&
+          status.ready &&
+          !status.needsRevalidation &&
+          status.userAgent == userAgent;
     }
   }
 
@@ -174,6 +198,8 @@ class FingerprintTemplateService {
           : _TemplateStatus(
               ready: value['ready'] == true,
               userAgent: value['user_agent'] as String?,
+              needsRevalidation: value['needs_revalidation'] == true,
+              cacheState: value['cache_state'] as String?,
             );
     }
     final client = HttpClient()..findProxy = (_) => 'DIRECT';
@@ -190,6 +216,8 @@ class FingerprintTemplateService {
       return _TemplateStatus(
         ready: json['ready'] == true,
         userAgent: json['user_agent'] as String?,
+        needsRevalidation: json['needs_revalidation'] == true,
+        cacheState: json['cache_state'] as String?,
       );
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 读取模板状态失败: $e', level: 'warning');
@@ -201,8 +229,15 @@ class FingerprintTemplateService {
 }
 
 class _TemplateStatus {
-  const _TemplateStatus({required this.ready, required this.userAgent});
+  const _TemplateStatus({
+    required this.ready,
+    required this.userAgent,
+    required this.needsRevalidation,
+    this.cacheState,
+  });
 
   final bool ready;
   final String? userAgent;
+  final bool needsRevalidation;
+  final String? cacheState;
 }
