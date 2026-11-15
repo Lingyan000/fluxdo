@@ -1,5 +1,8 @@
 QPACK 多请求场景（2026-11-15）
 
+后续 Apple 扩展验证发现并修复启动阶段误用和新字段值过早入表，详见 h3-apple-qpack-20261115.txt。
+原七场景现补充同一条件值第二、第三次使用，共九场景；下文保留首轮 Chromium 验证的历史范围。
+
 已确认并修复
 - FromFieldPreferences 的 Base 规划原先把 Automatic 字段直接选成静态/字面量，跳过动态表。
   Chromium 156 同流序号对照显示 If-None-Match、Range、变化后的 If-None-Match 均不一致。

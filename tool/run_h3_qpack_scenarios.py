@@ -37,15 +37,18 @@ def compare_cases(native, core):
             checks.update(methods=a['method'] == b['method'] == method,
                           body_digest=a['body_sha256'] == b['body_sha256'] == hashlib.sha256(body.encode()).hexdigest(),
                           observed_field_complete=a['request']['fields_complete'] and b['request']['fields_complete'],
+                          observed_field_shape=all(bool(r['request']['names']) and
+                              len(r['request']['names']) == len(r['request']['fields']) for r in (a, b)),
                           same_stream_phase=a['request']['stream_id'] == b['request']['stream_id'],
                           accept_encoding_value=a.get('accept_encoding') is not None and a.get('accept_encoding') == b.get('accept_encoding'))
             if key:
                 checks['business_header_preserved'] = a.get(key) == b.get(key) == value
-            af = fields(a['request']['names'], a['request']['fields'])
-            bf = fields(b['request']['names'], b['request']['fields'])
+            # 完整标记不能代替结构核验；空数组和长度错配必须明确失败。
+            af = fields(a['request']['names'], a['request']['fields']) if checks['observed_field_shape'] else {}
+            bf = fields(b['request']['names'], b['request']['fields']) if checks['observed_field_shape'] else {}
             differences = {name: {'native': af.get(name), 'core': rep}
                            for name, rep in bf.items() if af.get(name) != rep}
-            checks['qpack_common_fields'] = not differences
+            checks['qpack_common_fields'] = checks['observed_field_shape'] and not differences
             source_only=sorted(set(af)-set(bf))
         results.append({'case': case, 'checks': checks, 'differences': differences, 'source_fields_not_requested':source_only if a is not None and b is not None else [], 'passed': all(checks.values())})
     def same_connection(capture):
