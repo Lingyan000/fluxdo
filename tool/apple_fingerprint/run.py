@@ -55,6 +55,7 @@ def main():
     parser.add_argument('--simulator-limit', type=int, default=2)
     parser.add_argument('--include-oldest', action='store_true')
     parser.add_argument('--ios-version', help='仅重跑指定的已安装 iOS 运行时；省略时执行版本矩阵')
+    parser.add_argument('--mac-only', action='store_true', help='仅执行 macOS，用于快速定位共享核心差异')
     args = parser.parse_args()
     if args.qpack_scenarios and (not args.production_h3 or args.h3 or args.system_trust):
         parser.error('--qpack-scenarios requires --production-h3 without --h3/--system-trust')
@@ -159,6 +160,9 @@ def main():
     for mode in ('native', 'app'):
         case('macos-' + mode, Path(__file__).parent / 'mac_driver.py' if args.system_trust else mac,
              {'FLUXDO_APPLE_UA_MODE': mode, 'FLUXDO_MAC_DRIVER_BINARY': str(mac)})
+
+    if args.mac_only:
+        return 0 if all(r['passed'] for r in results) else 1
 
     simulator_data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
     (root / 'simulators.json').write_text(json.dumps(simulator_data, indent=2))

@@ -53,7 +53,9 @@ const cases=[
 ['range','GET',{'range':'bytes=0-15'},null],
 ['head','HEAD',{},null],
 ['conditional-changed','GET',{'if-none-match':'"fluxdo-lab-etag-changed-20261115"'},null],
-['form-again','POST',{'content-type':'application/x-www-form-urlencoded'},'sample=two&value=one']];
+['form-again','POST',{'content-type':'application/x-www-form-urlencoded'},'sample=two&value=one'],
+['conditional-again','GET',{'if-none-match':'"fluxdo-lab-etag"'},null],
+['conditional-third','GET',{'if-none-match':'"fluxdo-lab-etag"'},null]];
 for(const [name,method,headers,body] of cases){await (await fetch('/fluxdo-probe/qpack/'+name,{method,headers,body})).text();}
 await (await fetch('/fluxdo-probe/done')).text();
 }finally{await (await fetch('/fluxdo-probe/finished')).text();document.title='fluxdo-probe-done';}})();
