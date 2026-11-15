@@ -196,6 +196,7 @@ def main():
             'CFBundleName': 'WKProbe', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
             'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '15.0', 'LSRequiresIPhoneOS': True,
             'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'UIDeviceFamily': [1, 2],
+            'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
             'UILaunchScreen': {}, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True, 'NSAllowsArbitraryLoadsInWebContent': True}}
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
     sdk = output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'])
