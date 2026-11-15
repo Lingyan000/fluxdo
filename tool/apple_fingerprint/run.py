@@ -48,7 +48,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--production-h3', action='store_true', help='原生 TCP 校准后运行生产 H3 采样和 Core 回放')
-    parser.add_argument('--qpack-scenarios', action='store_true', help='生产 H3 验证后追加七种请求形态的原生/Core 对照')
+    parser.add_argument('--qpack-scenarios', action='store_true', help='生产 H3 验证后追加扩展请求和字段值复用的原生/Core 对照')
     parser.add_argument('--h3', action='store_true', help='验证原生证书回调下的 Alt-Svc/H3 采样能力')
     parser.add_argument('--close-tcp', action='store_true', help='H3 实验中服务端关闭旧 TCP 连接，排除持续复用的影响')
     parser.add_argument('--system-trust', action='store_true', help='只在一次性 CI 环境安装实验 CA，并要求系统校验')
