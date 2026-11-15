@@ -67,14 +67,21 @@ def initial_layout(flight):
     fragments = []
     pings = []
     per_packet = []
+    ordered_frames = True
+    next_offset = 0
     for packet in packets:
         packet_ranges = []
         for frame in packet:
             crypto = frame.get('Crypto') if isinstance(frame, dict) else None
             if crypto is not None:
                 start, length = crypto['offset'], crypto['len']
+                ordered_frames &= start == next_offset
+                next_offset = start + length
                 packet_ranges.append((start, start + length))
                 fragments.append(length)
+            elif not (isinstance(frame, dict) and 'Padding' in frame):
+                # PING 等帧本身也是随机布局证据，不能只根据 CRYPTO 数量推断有序。
+                ordered_frames = False
         per_packet.append(sorted(packet_ranges))
         ranges.extend(packet_ranges)
         pings.append(sum(frame == 'Ping' for frame in packet))
@@ -85,7 +92,7 @@ def initial_layout(flight):
     cross_packet = bool(first) and first[0][0] == 0 and any(
         a[1] < b[0] for a, b in zip(first, first[1:]))
     sizes = [packet[0][1]-packet[0][0] for packet in per_packet if len(packet)==1]
-    ordered_chunk = (sizes[0] if complete and len(sizes)==len(packets) and len(sizes)>1
+    ordered_chunk = (sizes[0] if ordered_frames and complete and len(sizes)==len(packets) and len(sizes)>1
         and len(set(sizes[:-1]))==1 and sizes[-1]<=sizes[0] else None)
     return {'ordered_crypto_chunk_size': ordered_chunk, 'complete_nonoverlapping_crypto': complete,
             'crypto_bytes': ranges[-1][1] if ranges else 0,

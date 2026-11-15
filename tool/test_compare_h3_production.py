@@ -105,6 +105,22 @@ class H3EvidenceTest(unittest.TestCase):
         self.assertEqual(initial_layout(data['native'])['ordered_crypto_chunk_size'],999)
         self.assertEqual(initial_layout(data['previous_core'])['ordered_crypto_chunk_size'],1161)
 
+    def test_archived_windows_unsplit_crypto_with_ping_is_not_ordered(self):
+        data=json.loads((Path(__file__).parent/'testdata/windows131_initial_ping.json').read_text())
+        self.assertIsNone(initial_layout(data['native'])['ordered_crypto_chunk_size'])
+        actual=initial_layout(data['core'])
+        self.assertTrue(actual['complete_nonoverlapping_crypto'])
+        self.assertEqual(actual['crypto_fragment_lengths'],[1191,597])
+        self.assertEqual(actual['pings_per_packet'],[0,2])
+        self.assertIsNone(actual['ordered_crypto_chunk_size'])
+
+    def test_reversed_single_crypto_packets_are_not_ordered(self):
+        flight={'frames':[[{'Crypto':{'offset':100,'len':100}}],
+                          [{'Crypto':{'offset':0,'len':100}}]]}
+        result=initial_layout(flight)
+        self.assertTrue(result['complete_nonoverlapping_crypto'])
+        self.assertIsNone(result['ordered_crypto_chunk_size'])
+
 
 if __name__ == '__main__':
     unittest.main()
