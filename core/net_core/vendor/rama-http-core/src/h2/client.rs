@@ -2033,6 +2033,10 @@ impl Peer {
         let headers_priority = extensions
             .get_ref::<StreamDependency>()
             .cloned()
+            .or_else(|| extensions
+                .get_ref::<rama_http_types::proto::h2::frame::ReceivedStreamDependency>()
+                .filter(|p| p.0.dependency_id == StreamId::zero())
+                .map(|p| p.0.clone()))
             .or(headers_priority);
 
         let is_connect = method == Method::CONNECT;

@@ -2,3 +2,4 @@
 固定原提交，不升级依赖。保留源码与许可证，Cargo.toml 展开 workspace 依赖。
 未复制上游 59 MB HPACK 互操作数据集；运行完整上游 fixture 测试时从上述提交恢复 fixtures/。
 本地补丁：保留并传递 H2 HEADERS 优先级，编码 PRIORITY 标志及五字节负载。
+入站 StreamDependency 使用单独的 ReceivedStreamDependency 类型；仅根依赖可跨连接传递，非根流 ID 留待显式映射。
