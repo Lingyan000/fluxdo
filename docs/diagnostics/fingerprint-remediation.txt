@@ -3,6 +3,7 @@
 范围：Android、iOS、macOS、Windows、Linux；TCP/TLS、H2、H3、请求头与缓存。
 约束：CSRF、Cookie、Origin、Referer 的业务策略不改；本轮不统一两条链路的出口。
 状态：修复已在工作区和独立诊断分支验证；本轮未发布到 dev 或创建 beta 标签。
+继续治理结果见 fingerprint-continuation-20261115.txt。
 阅读提示：本文件区分已修复、已确认但未修复、验证缺口；不能把测试通过理解为完整指纹一致。
 
 已修正并有对应证据
@@ -63,6 +64,10 @@ F14 跨平台验证宿主。
     Windows 报告统一 UTF-8；iOS 仅无任何浏览器采样的 simctl 冷启动超时允许重试一次，
     保留首轮失败；指纹差异、页面错误和校准失败均不靠重试掩盖。
 
+F15 HPACK 仅在 Huffman 严格更短时编码；等长/更长采用字面表示。
+    四组真实浏览器字节证据、修复前后回归与 429 项上游 HPACK 测试通过。
+    不改变敏感字段索引语义，完整动态表/上下文策略仍另行验证。
+
 仍需治理：已确认但未修复的问题
 R01 完整 QUIC/H3 生产模板缺失。
     依赖已有 QUIC Initial 捕获/编译，以及 H3 SETTINGS、QPACK 限额与启动配置能力；
@@ -105,7 +110,7 @@ R10 CF 因果仍未证实；上述差异和修复不等于保证不再触发挑�
 - 物理切网、代理/PAC、前后台以及 CF 结果需要真实应用证据。当前受控传输实验只覆盖核心行为。
 
 当前验证
-- Rust 核心 118 项通过；Dart 配置/采样与架构守卫合计 18 项通过；相关 5 文件 analyze 无问题。
+- Rust 核心 119 项通过；Dart 配置/采样与架构守卫合计 18 项通过；相关 5 文件 analyze 无问题。
 - 当前 Linux Core：5 组真实 Chromium 配置 + 五平台 10 组预置回放，共 15 组/75 个场景通过。
 - 原生 Android、Windows、Apple 最新云端证据与版本见 native-fingerprint-governance.txt。
 - Linux WPE 26.5 复测明确不匹配，纳入证据但不计作通过。

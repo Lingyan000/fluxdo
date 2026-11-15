@@ -4,16 +4,21 @@ use base64::Engine;
 use parking_lot::Mutex;
 use rama::http::proto::h3::observation::H3RequestObservation;
 use rama::{
+    Layer, Service, ServiceInput,
     extensions::ExtensionsRef,
-    http::{Body, Response},
+    http::{Body, Request, Response, server::HttpServer},
     net::tls::ApplicationProtocol,
     quic::{
         Endpoint,
         tls::{BoringTlsProvider, QuicServerConfigProvider, TlsOptions},
     },
     rt::Executor,
+    service::service_fn,
     tls::{
-        boring::core::{sha::sha256, x509::X509},
+        boring::{
+            core::{sha::sha256, x509::X509},
+            server::TlsAcceptorLayer,
+        },
         server::{GeneratedServerAuthConfig, ServerAuthData, TlsServerConfig},
     },
 };
@@ -22,15 +27,29 @@ use rama_quic_proto::{Side, capture};
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+// 不强迫协议选择，让 WebView 按 Alt-Svc 和自己的信任策略决定是否启用 H3。
+const NATIVE_PAGE: &str = r#"<!doctype html><title>fluxdo-probe</title><script>
+(async()=>{try{for(let i=0;i<24;i++){let r=await fetch('/fluxdo-probe/fetch?i='+i);
+if((await r.text())==='h3'){await fetch('/fluxdo-probe/done');break;}
+await new Promise(r=>setTimeout(r,500));}}finally{
+await fetch('/fluxdo-probe/finished');document.title='fluxdo-probe-done';}})();
+</script>"#;
+
 #[tokio::main(worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<_> = std::env::args().collect();
     let browser = args.get(1).ok_or("browser executable required")?;
-    let version = tokio::process::Command::new(browser)
-        .arg("--version")
-        .output()
-        .await?;
-    let version = String::from_utf8_lossy(&version.stdout).trim().to_owned();
+    let native_probe = args.iter().any(|a| a == "--native-probe");
+    let learn_alt_svc = native_probe || args.iter().any(|a| a == "--learn-alt-svc");
+    let version = if native_probe {
+        String::new()
+    } else {
+        let output = tokio::process::Command::new(browser)
+            .arg("--version")
+            .output()
+            .await?;
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
     let out = PathBuf::from(args.get(2).ok_or("output directory required")?);
     std::fs::create_dir_all(&out)?;
     let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::default())?;
@@ -38,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let spki = base64::engine::general_purpose::STANDARD
         .encode(sha256(&leaf.public_key()?.public_key_to_der()?));
     let tls = TlsServerConfig::new()
-        .with_server_auth(identity)
+        .with_server_auth(identity.clone())
         .with_alpn([ApplicationProtocol::HTTP_3].into_iter().collect());
     let config = BoringTlsProvider.server_config(&tls, TlsOptions::default())?;
     let endpoint = Endpoint::bind_server(
@@ -50,6 +69,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let destination = endpoint.local_addr()?;
     let proxy = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
     let port = proxy.local_addr()?.port();
+    let tcp_requests = Arc::new(Mutex::new(Vec::new()));
+    let native_finished = Arc::new(tokio::sync::Notify::new());
+    let tcp_server = if learn_alt_svc {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+        let tls = TlsServerConfig::new()
+            .with_server_auth(identity)
+            .with_alpn_http_auto();
+        let requests = tcp_requests.clone();
+        let finished = native_finished.clone();
+        Some(tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                let (stream, _) = listener.accept().await?;
+                let requests = requests.clone();
+                let finished = finished.clone();
+                let http = HttpServer::auto(Executor::new()).service(service_fn(
+                    move |request: Request| {
+                        let path = request
+                            .uri()
+                            .path()
+                            .map(|p| p.to_string())
+                            .unwrap_or_default();
+                        requests
+                            .lock()
+                            .push(json!({"path":path,"version":format!("{:?}",request.version())}));
+                        if path == "/fluxdo-probe/finished" {
+                            finished.notify_one();
+                        }
+                        let response = Response::builder()
+                            .header("alt-svc", format!("h3=\":{port}\"; ma=60"))
+                            .header("cache-control", "no-store")
+                            .header("content-type", "text/html")
+                            .body(Body::from(if path == "/fluxdo-probe" {
+                                NATIVE_PAGE
+                            } else {
+                                "tcp"
+                            }))
+                            .unwrap();
+                        async move { Ok::<_, std::convert::Infallible>(response) }
+                    },
+                ));
+                let service = TlsAcceptorLayer::new(tls.clone()).into_layer(http);
+                connections.spawn(async move { service.serve(ServiceInput::new(stream)).await });
+            }
+            #[allow(unreachable_code)]
+            Ok::<(), std::io::Error>(())
+        }))
+    } else {
+        None
+    };
     let packets = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let packet_sink = packets.clone();
     let forward = tokio::spawn(async move {
@@ -98,6 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let observation_sink = observations.clone();
     let done = Arc::new(tokio::sync::Notify::new());
     let finished = done.clone();
+    let native_done = native_finished.clone();
     let server_endpoint = endpoint.clone();
     let connection_errors = Arc::new(Mutex::new(Vec::new()));
     let error_sink = connection_errors.clone();
@@ -107,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // 预连接可能一直没有 HTTP 请求，不能阻塞后续连接的握手与请求。
             let observation_sink = observation_sink.clone();
             let finished = finished.clone();
+            let native_done = native_done.clone();
             let error_sink = error_sink.clone();
             connections.spawn(async move {
                 let result: Result<(), rama::error::BoxError> = async {
@@ -130,9 +201,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .path()
                             .map(|p| p.to_string())
                             .unwrap_or_default();
-                        let body = if path == "/" {
+                        let body = if path == "/fluxdo-probe" { NATIVE_PAGE } else if path == "/" {
                             "<!doctype html><script>fetch('/fetch').then(()=>fetch('/done')).then(()=>document.title='done')</script>"
-                        } else {
+                        } else if path.starts_with("/fluxdo-probe/") { "h3" } else {
                             "ok"
                         };
                         response
@@ -146,7 +217,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             json!({"path":path,"version":format!("{:?}",request.version()),
                             "connection":observer.map(|o| o.snapshot()),"request":fields}),
                         );
-                        if path == "/done" {
+                        if path == "/fluxdo-probe/finished" { native_done.notify_one(); }
+                        if path == "/done" || path == "/fluxdo-probe/done" {
                             finished.notify_one();
                         }
                     }
@@ -159,40 +231,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok::<(), rama::error::BoxError>(())
     });
     let mut command = tokio::process::Command::new(browser);
-    command
-        .args([
-            "--headless",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-background-networking",
-            "--no-first-run",
-            "--remote-debugging-port=0",
-            "--enable-quic",
-            "--host-resolver-rules=MAP localhost 127.0.0.1",
-        ])
-        .arg(format!(
-            "--user-data-dir={}",
-            out.join("browser-profile").display()
-        ))
-        .arg(format!("--origin-to-force-quic-on=localhost:{port}"));
-    let allow_spki = !args.iter().any(|a| a == "--without-spki");
+    if !native_probe {
+        command
+            .args([
+                "--headless",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-background-networking",
+                "--no-first-run",
+                "--remote-debugging-port=0",
+                "--enable-quic",
+                "--host-resolver-rules=MAP localhost 127.0.0.1",
+            ])
+            .arg(format!(
+                "--user-data-dir={}",
+                out.join("browser-profile").display()
+            ));
+        if !learn_alt_svc {
+            command.arg(format!("--origin-to-force-quic-on=localhost:{port}"));
+        }
+    }
+    let allow_spki = !native_probe && !args.iter().any(|a| a == "--without-spki");
     if allow_spki {
         command.arg(format!("--ignore-certificate-errors-spki-list={spki}"));
     }
-    let mut child = command
-        .arg(format!(
+    if !native_probe {
+        command.arg(format!(
             "--log-net-log={}",
             out.join("browser-netlog.json").display()
-        ))
-        .arg(format!("https://localhost:{port}/"))
+        ));
+    }
+    let path = if learn_alt_svc { "/fluxdo-probe" } else { "/" };
+    let mut child = command
+        .arg(format!("https://localhost:{port}{path}"))
         .stdout(std::fs::File::create(out.join("browser.stdout"))?)
         .stderr(std::fs::File::create(out.join("browser.stderr"))?)
         .kill_on_drop(true)
         .spawn()?;
-    let completed = tokio::time::timeout(Duration::from_secs(20), done.notified())
-        .await
-        .is_ok();
+    let mut driver_success = None;
+    let native_probe_finished = if native_probe {
+        match tokio::time::timeout(Duration::from_secs(95), child.wait()).await {
+            Ok(result) => {
+                driver_success = Some(result?.success());
+                driver_success == Some(true)
+            }
+            Err(_) => false,
+        }
+    } else if learn_alt_svc {
+        tokio::time::timeout(Duration::from_secs(25), native_finished.notified())
+            .await
+            .is_ok()
+    } else {
+        false
+    };
+    let completed = if learn_alt_svc {
+        observations
+            .lock()
+            .iter()
+            .any(|r| r["path"] == "/fluxdo-probe/done")
+    } else {
+        tokio::time::timeout(Duration::from_secs(20), done.notified())
+            .await
+            .is_ok()
+    };
     let _ = child.kill().await;
+    if let Some(tcp_server) = tcp_server {
+        tcp_server.abort();
+    }
     let server_error = if server.is_finished() {
         Some(format!("{:?}", server.await))
     } else {
@@ -231,7 +336,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .lock()
         .iter()
         .any(|error| error.contains("CERTIFICATE_VERIFY_FAILED"));
-    let expected_result_observed = if allow_spki {
+    let expected_result_observed = if native_probe {
+        native_probe_finished && !tcp_requests.lock().is_empty()
+    } else if learn_alt_svc {
+        native_probe_finished && completed
+    } else if allow_spki {
         completed
             && ["/", "/fetch", "/done"].iter().all(|path| {
                 observations
@@ -242,13 +351,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else {
         !completed && observations.lock().is_empty() && certificate_rejected
     };
-    let report = json!({"evidence_kind":"native_chromium_local_quic", "browser_version":version,"spki_override":allow_spki,
+    let report = json!({"evidence_kind":if native_probe { "native_webview_alt_svc" } else { "native_chromium_local_quic" }, "browser_version":version,"spki_override":allow_spki,
         "expected_result_observed":expected_result_observed,"certificate_rejected":certificate_rejected,
+        "native_probe":native_probe,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,
+        "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
+        "h3_sample_complete":completed,
         "server_error":server_error,"relay_error":relay_error,
         "connection_errors":*connection_errors.lock(),
         "completed":completed,"datagrams":datagrams.len(),"initial":flight.as_ref().ok(),"initial_error":flight.err().map(|e|e.to_string()),
         "transport_parameters":parameters,"tls":tls_shape,"h3":*observations.lock(),
-        "limitations":["command_line_test_only","first_udp_flow_initial_capture","not_a_production_webview_probe","not_a_replay_equivalence_test","no_0rtt_retry_or_migration_test"]});
+        "limitations":["local_generated_certificate","first_udp_flow_initial_capture","not_a_production_webview_probe","not_a_replay_equivalence_test","no_0rtt_retry_or_migration_test"]});
     std::fs::write(
         out.join("h3-capture.json"),
         serde_json::to_vec_pretty(&report)?,
