@@ -5,15 +5,19 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 import uuid
 
-url = next(arg for arg in sys.argv[1:] if arg.startswith('https://localhost:'))
+warmup = '--warmup' in sys.argv
+target = '--warmup' if warmup else next(arg for arg in sys.argv[1:] if arg.startswith('https://localhost:'))
 env = dict(os.environ)
 env['SIMCTL_CHILD_FLUXDO_APPLE_UA_MODE'] = env.get('FLUXDO_APPLE_UA_MODE', 'native')
 env['SIMCTL_CHILD_FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST'] = env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST', '0')
 report_name = 'fluxdo-report-' + uuid.uuid4().hex + '.json'
 env['SIMCTL_CHILD_FLUXDO_APPLE_REPORT_FILE'] = report_name
 try:
+    report_timeout = 110 if warmup else 75
+    deadline = time.monotonic() + report_timeout
     if env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST') == '1':
         # 仅一次性 CI 模拟器；run.py 创建并最终删除此设备，不改用户设备信任库。
         if env.get('GITHUB_ACTIONS') != 'true':
@@ -21,16 +25,22 @@ try:
         subprocess.run(['xcrun', 'simctl', 'keychain', env['FLUXDO_SIMULATOR_UDID'],
                         'add-root-cert', env['FLUXDO_APPLE_LAB_CA']], check=True, timeout=30)
     result = subprocess.run([
-        'xcrun', 'simctl', 'launch', '--terminate-running-process', '--console',
-        env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', url,
-    ], env=env, timeout=75, capture_output=True, text=True)
-    # 原始控制台保留在 stderr，stdout 只发布文件中完整的一份宿主结果。
+        'xcrun', 'simctl', 'launch', '--terminate-running-process',
+        env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', target,
+    ], env=env, timeout=25, capture_output=True, text=True)
+    # 不附着可能阻塞的 simctl 控制台；退出结果由本次启动的独立文件核验。
     sys.stderr.write(result.stdout)
     sys.stderr.write(result.stderr)
     code = result.returncode
+    if code:
+        raise RuntimeError('simctl launch failed: ' + str(code))
     container = subprocess.check_output(['xcrun', 'simctl', 'get_app_container',
         env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', 'data'], text=True, timeout=15).strip()
     report_path = Path(container) / 'tmp' / report_name
+    while not report_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    if not report_path.exists():
+        raise subprocess.TimeoutExpired(['native WKWebView report'], report_timeout)
     report = json.loads(report_path.read_text())
     if report.get('engine') != 'native WKWebView' or report.get('success') is not True:
         code = code or 1
@@ -38,7 +48,7 @@ try:
     report_path.unlink()
 except subprocess.TimeoutExpired:
     code = 124
-except (OSError, ValueError, subprocess.CalledProcessError) as error:
+except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
     print('原生宿主结果不完整: ' + str(error), file=sys.stderr, flush=True)
     code = 1
 finally:
