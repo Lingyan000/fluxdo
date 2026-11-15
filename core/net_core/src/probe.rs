@@ -6,7 +6,7 @@
 //! 回环采样提供 TLS/TCP 与 H2 的参考字段，不代表任意公网目标的完整指纹，
 //! 真 ECH、QUIC/H3、会话恢复和目标相关行为必须另做对照。
 
-use std::{convert::Infallible, sync::Arc, time::Duration};
+use std::{convert::Infallible, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 
 use rama::{
     Layer, Service, ServiceInput,
@@ -58,29 +58,32 @@ impl ProbeEndpoint {
     pub async fn serve(&self, stream: TcpStream) -> Result<()> {
         let (input, hello) =
             peek_client_hello_from_input(ServiceInput::new(stream), Some(PEEK_TIMEOUT)).await?;
-        // 探针页只由宿主自己的隐藏 WebView 打开，来源可信，握手一律采用。
-        // 不能按 GREASE 过滤：Linux 的 WebKitGTK 走 GnuTLS，握手里没有 GREASE，
-        // 过滤后这一端永远采不到模板（镜像入口来源不可控，仍保留过滤）
-        if let Some(hello) = hello.as_ref() {
-            self.templates.record_hello(hello);
-            info!(
-                "Probe captured WebView ClientHello (browser-like: {}, chromium: {})",
-                browser_tls::is_browser_like(hello),
-                browser_tls::is_chromium(hello)
-            );
-        } else {
+        // 只有真正访问探针的成功 TLS 连接才进入模板；证书重试、预连接和中止的
+        // 握手不能清空已校准状态。Linux WPE 没有 GREASE，也不能按品牌过滤。
+        if hello.is_none() {
             debug!("Probe: connection without ClientHello");
         }
 
         let templates = self.templates.clone();
         let finished = Arc::new(tokio::sync::Notify::new());
         let done = finished.clone();
+        let recorded = Arc::new(AtomicBool::new(false));
         let mut http = HttpServer::auto(Executor::new());
         http.h2_mut().set_observe_early_frames(true);
         let http = http.service(service_fn(move |request: Request| {
             let templates = templates.clone();
             let done = done.clone();
+            let hello = hello.clone();
+            let recorded = recorded.clone();
             async move {
+                let path = request.uri().path().map(|p| p.to_string());
+                if matches!(path.as_deref(), Some(PROBE_PATH | PROBE_FETCH_PATH))
+                    && !recorded.swap(true, Ordering::AcqRel)
+                    && let Some(hello) = hello.as_ref()
+                {
+                    templates.record_hello(hello);
+                    info!("Probe accepted WebView sample (chromium: {})", browser_tls::is_chromium(hello));
+                }
                 let is_done = request
                     .uri()
                     .path()
@@ -147,6 +150,34 @@ fn handle(templates: &FingerprintTemplates, request: Request) -> Response {
 mod scenario_tests {
     use super::*;
     use rama::extensions::ExtensionsMut;
+
+    #[tokio::test]
+    async fn rejected_and_unused_tls_connections_do_not_become_samples() {
+        use rama::net::address::Host;
+        use rama::tls::boring::core::{ssl::SslVerifyMode, tokio::SslStreamBuilder};
+        for allow_test_certificate in [false, true] {
+            let templates = Arc::new(FingerprintTemplates::new(None));
+            let probe = ProbeEndpoint::new(templates.clone()).unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (socket, _) = listener.accept().await.unwrap();
+                let _ = probe.serve(socket).await;
+            });
+            let reference = crate::presets::by_id("android-webview133").unwrap();
+            let mut data = browser_tls::build(&reference.hello, Host::from_static("localhost"), None, None).unwrap().connector_data;
+            // 仅此回环回归模拟成功的空预连接，生产证书校验保持不变。
+            if allow_test_certificate { data.config.set_verify(SslVerifyMode::NONE); }
+            let socket = tokio::net::TcpStream::connect(address).await.unwrap();
+            let result = SslStreamBuilder::new(data.into_ssl().unwrap(), socket).connect().await;
+            assert_eq!(result.is_ok(), allow_test_certificate);
+            drop(result);
+            tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap();
+            let status: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+            assert_eq!(status["tls_observations"], 0);
+            assert!(templates.captured_snapshot().is_none());
+        }
+    }
 
     #[test]
     fn probe_fetch_without_fetch_metadata_still_completes_sampling() {

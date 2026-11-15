@@ -41,5 +41,16 @@ void main() {
     expect(preset.templateSource, 'builtin');
     expect(preset.templatePreset, 'android-webview133');
     expect(NetCoreStatus.fromJson({'running': true}).templateSource, isNull);
+    expect(NetCoreStatus.fromJson({'running': true}).templateDiagnostics, isEmpty);
+    final status = NetCoreStatus.fromJson({
+      'running': true,
+      'template_diagnostics': {
+        'cache_state': 'runtime_changed',
+        'h3': {'enabled_for_template': false},
+        'tls_capabilities': {'status': 'backend_mismatch'},
+      },
+    });
+    expect(status.templateDiagnostics['cache_state'], 'runtime_changed');
+    expect(() => status.templateDiagnostics['extra'] = true, throwsUnsupportedError);
   });
 }

@@ -62,7 +62,7 @@ def initial_frames(template):
 
 
 def compare(folder):
-    load = lambda name: json.loads((folder / name).read_text())
+    load = lambda name: json.loads((folder / name).read_text(encoding='utf-8'))
     reference = load('reference.json')
     hello = reference['hello']
     policy = reference.get('tls_permute_extensions')
@@ -72,7 +72,7 @@ def compare(folder):
     if (folder / 'restored-core.json').exists():
         paths.append(folder / 'restored-core.json')
     for path in paths:
-        actual = json.loads(path.read_text())
+        actual = json.loads(path.read_text(encoding='utf-8'))
         checks = {
             'stable_tls_fields': stable_tls(hello) == stable_tls(actual['hello']),
             'tls_extension_set': sorted(extension_ids(hello)) == sorted(extension_ids(actual['hello'])),
@@ -119,8 +119,8 @@ def compare(folder):
               'excluded': ['random/key material', 'GREASE values', 'ECH ciphertext',
                            'padding length', 'PSK/cookie extensions', 'SETTINGS ACK timing'],
               'not_verified': ['platforms/devices outside the supplied capture and full application flow', 'Cloudflare outcome',
-                               'HEADERS priority and exact HPACK bytes', 'QUIC/H3 fingerprint']}
-    (folder / 'comparison.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+                               'navigation/resource priority and exact HPACK bytes', 'QUIC/H3 fingerprint']}
+    (folder / 'comparison.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return result
 
 

@@ -278,6 +278,7 @@ class LoggerUtils {
     map['templateMode'] = core.templateMode;
     map['templateSource'] = core.templateSource;
     map['templatePreset'] = core.templatePreset;
+    map['templateDiagnostics'] = core.templateDiagnostics;
     if (proxy.isValid) {
       map['proxyHost'] = '${proxy.host}:${proxy.port}';
     }

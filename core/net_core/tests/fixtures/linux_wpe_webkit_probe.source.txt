@@ -1,0 +1,6 @@
+来源：2026-11-15 本地 Playwright WPE WebKit 26.5 原生回环捕获；并非 Apple WKWebView。
+原始文件：/workspace/scratch/fingerprint-scenarios-verified-20261115/webkit/reference.json
+SHA256：0ba9ab01b529c946952089ee3e948a8bd9f0dd994bdcf115e008f7781504522f
+应用 Linux 插件 packages/flutter_inappwebview_linux/linux/CMakeLists.txt 明确使用 WPE 后端。
+应用实际安装的 WPE 版本仍应另采，不能把测试包版本当成所有用户的版本。
+样本不含业务请求、Cookie、认证令牌或私钥。

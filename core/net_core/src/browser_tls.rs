@@ -246,6 +246,39 @@ fn is_grease(value: u16) -> bool {
     value & 0x0f0f == 0x0a0a && value >> 8 == value & 0xff
 }
 
+/// 本机后端能力审计，只比较公开的算法编号与扩展编号，不输出票据、密钥或请求头。
+/// 作用域是未注入 ECH 的完整 TCP 握手；不代表目标站点或 QUIC 已验证。
+pub fn capability_audit(reference: &ClientHello) -> serde_json::Value {
+    fn fields(hello: &ClientHello) -> std::collections::BTreeMap<&'static str, Vec<u16>> {
+        let clean = |items: Vec<u16>| items.into_iter().filter(|id| !is_grease(*id)).collect::<Vec<_>>();
+        let mut extensions = clean(hello.extensions().iter().map(|e| u16::from(e.id()))
+            .filter(|id| !matches!(*id, 21 | 41 | 44)).collect());
+        extensions.sort_unstable();
+        std::collections::BTreeMap::from([
+            ("cipher_suites", clean(hello.cipher_suites().iter().map(|v| u16::from(*v)).collect())),
+            ("supported_groups", clean(hello.ext_supported_groups().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("signature_algorithms", clean(hello.ext_signature_algorithms().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("supported_versions", clean(hello.supported_versions().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("key_share_groups", clean(hello.ext_key_share_groups().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("extension_ids", extensions),
+        ])
+    }
+    let result = build(reference, Host::from_static("localhost"), None, None)
+        .and_then(|built| emit_client_hello(built.connector_data));
+    match result {
+        Ok(actual) => {
+            let expected = fields(reference);
+            let actual = fields(&actual);
+            let differences: std::collections::BTreeMap<_, _> = expected.iter()
+                .filter(|(name, values)| actual.get(**name) != Some(*values))
+                .map(|(name, values)| (*name, serde_json::json!({"sampled": values, "emitted": actual.get(name)})))
+                .collect();
+            serde_json::json!({"scope": "tcp_full_handshake_without_ech", "status": if differences.is_empty() { "checked_fields_match" } else { "backend_mismatch" }, "checked_fields": expected.keys().collect::<Vec<_>>(), "differences": differences})
+        }
+        Err(_) => serde_json::json!({"scope": "tcp_full_handshake_without_ech", "status": "backend_build_failed"}),
+    }
+}
+
 /// 不联网取出连接配置将要发出的 ClientHello：对着只收不发的对端开始握手。
 pub fn emit_client_hello(data: TlsConnectorData) -> Result<ClientHello, BoxError> {
     let ssl = data.into_ssl()?;
@@ -282,6 +315,22 @@ mod tests {
     use super::*;
 
     use crate::ech_test_keys::{ECH_CONFIG, ECH_KEY};
+
+    #[test]
+    fn linux_wpe_capability_loss_is_reported_without_exporting_handshake_secrets() {
+        let template: crate::mirror::FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/linux_wpe_webkit_probe.json"
+        )).unwrap();
+        let audit = capability_audit(&template.hello);
+        assert_eq!(audit["status"], "backend_mismatch");
+        let groups = audit["differences"]["supported_groups"]["sampled"].as_array().unwrap();
+        assert!(groups.iter().any(|id| id == 30));
+        assert!(!audit["differences"]["supported_groups"]["emitted"].as_array().unwrap().iter().any(|id| id == 30));
+        let serialized = audit.to_string();
+        for secret_field in ["ServerName", "user_agent", "Opaque", "session_ticket", "key_share_data"] {
+            assert!(!serialized.contains(secret_field));
+        }
+    }
 
     fn chrome156() -> ClientHello {
         serde_json::from_str(include_str!(
