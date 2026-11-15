@@ -242,7 +242,7 @@ void main() {
     final updated = store.loadIndex().single;
     expect(updated.manifest.version, latest.manifest.version);
     expect(updated.manifest.networkHosts, contains('api.ldspro.qzz.io'));
-    expect(updated.enabled, isFalse);
+    expect(updated.enabled, isTrue);
     expect(await store.readCode(updated.id), latest.code);
     await controller.setEnabled(updated.id, enabled: true);
     expect(controller.byId(updated.id)!.enabled, isTrue);
@@ -332,7 +332,7 @@ void main() {
     expect(await store.readStorage('com.example.points'), isEmpty);
   });
 
-  test('内置来源不随版本变更，新增权限时重新启用且撤销旧凭证', () async {
+  test('同源更新确认新增权限后保留启用并撤销旧凭证', () async {
     const source = 'asset:plugins/example/plugin.json';
     final controller = container.read(metaversePluginsProvider.notifier);
     final store = container.read(metaversePluginStoreProvider);
@@ -358,7 +358,7 @@ void main() {
         },
       }, source: source),
     );
-    expect(controller.byId(plugin.id)?.enabled, false);
+    expect(controller.byId(plugin.id)?.enabled, true);
     expect(await store.readToken(plugin.id), isNull);
     expect(
       await container.read(secretStoreProvider).readLegacyRecord(plugin.id, 'fixture-buyer-scope'),

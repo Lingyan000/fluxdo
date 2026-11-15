@@ -40,12 +40,12 @@ widget SearchPage = PageLayout(
 
 | 组件 | 参数与默认值 | 事件及行为 |
 | --- | --- | --- |
-| `PageLayout` | `children`、可选 `footer`、`loading: false` | `onRefresh`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
-| `ListPage` | `items`、可选 `search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，可点击加载更多，刷新保留已有条目 |
+| `PageLayout` | `children`、可选 `footer`、`loading: false`、`hasMore: false`、`loadingMore: false`、`loadMoreError: ""` | `onRefresh`、`onLoadMore`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
+| `ListPage` | `items`、可选 `search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，上滑接近底部时加载下一页，也保留手动加载入口，刷新保留已有条目 |
 | `DetailPage` | `sections`、可选 `header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
 | `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
 | `ActionBar` | `actions` 组件列表 | 操作靠右排列，窄屏自动换为纵向；事件由内部按钮声明 |
-| `TileGrid` | `children` | 按可用宽度选择列数，720 及以上三列，320 及以上两列，其余一列，间距 12 |
+| `TileGrid` | `children`、`layout: natural`、`columns: 0`、`minTileWidth: 0`、`spacing: 12`、`runSpacing: 12` | 自然高度、同排等高、瀑布流，详见下方网格布局 |
 | `Choice` | `label`、`selected: false` | `onSelected`，事件沿用声明参数，选择值由脚本管理 |
 | `EmptyState` | `title`、可选 `message`、`icon`、`action` | 空内容或错误状态，默认购物袋图标，通用场景建议指定 icon |
 | `SelectableLabel` | `text` | 可选择复制的 bodyMedium 文本 |
@@ -70,6 +70,24 @@ widget SearchPage = PageLayout(
 颜色 token 支持 primary、secondary、tertiary、error 及其 onX、XContainer、onXContainer，另有 surface、onSurface、onSurfaceVariant、surfaceContainerLowest、surfaceContainerLow、surfaceContainer、surfaceContainerHigh、surfaceContainerHighest、outline、outlineVariant。
 
 图标名支持 add、arrow_forward、bolt、bookmark、calendar、chart、check、check_circle、chevron_right、close、cloud、code、copy、credit_card、delete、download、edit、error、extension、favorite、gift、group、history、home、hub、image、info、key、link、lock、mail、notifications、open_in_new、payments、person、public、refresh、schedule、search、settings、share、shopping_cart、star、storefront、sync、tag、token、trending_up、verified、visibility、wallet、warning。
+
+## 网格布局
+
+`TileGrid.layout` 可选 `natural`（默认，逐行排列并保留各项高度）、`equalHeight`（同排补齐至最高项）和 `masonry`（下一项放入当前最短列）。布局根据组件实际尺寸计算，内容更新及窗口宽度变化后重新排列，支持从右向左的界面方向。等高针对卡片整体，卡片内部的文字行数与内容对齐由内部组件控制。
+
+`columns` 为正整数时指定列数。设为 0 或省略时，若 `minTileWidth > 0`，按最小项宽度自适应列数；否则延续默认断点，宽度 720 及以上三列、320 及以上两列，其余一列。`spacing` 和 `runSpacing` 分别设置水平、垂直间距，接受非负数。窄于最小项宽度时使用单列。
+
+```text
+TileGrid(
+  layout: "equalHeight",
+  minTileWidth: 150.0,
+  spacing: 12.0,
+  runSpacing: 16.0,
+  children: [...for item in data.items: Surface(child: Label(text: item.title))],
+)
+```
+
+网格由页面滚动容器承载，当前会布局所有已加载项。长列表应结合分页控制数据量。应用内 TileGrid 文档可实时切换三种布局、列数和间距。
 
 ## rfw 基础组件
 
@@ -119,7 +137,7 @@ widget SearchPage = PageLayout(
 
 `ListPage`、`DetailPage` 和 `FormPage` 管理自己的滚动区域，清单页面设 `scroll: false`。`ListPage.actions` 和 `DetailPage.actions` 接收单个组件，通常使用 `ActionBar`。`FormPage.actions` 接收组件列表，在提交按钮前展示附加操作。附加操作的禁用状态由插件传入。
 
-列表的 `items` 是条目组件列表。空列表会显示加载、错误或空态，非空列表在刷新时保留当前条目。声明 `onLoadMore` 后，`hasMore: true` 显示加载更多按钮，`loadingMore: true` 显示分页进度，`hasMore: false` 显示末尾提示。插件负责页码、追加数据和请求去重，分页请求失败时通过 `error` 与 `onRetry` 提供恢复入口。
+列表的 `items` 是条目组件列表。空列表会显示加载、错误或空态，非空列表在刷新时保留当前条目。声明 `onLoadMore` 后，`hasMore: true` 显示加载更多按钮，`loadingMore: true` 显示分页进度，`hasMore: false` 显示末尾提示。`PageLayout` 和 `ListPage` 会在向下滚动至距离底部 240 像素内触发 `onLoadMore`。内容不足一屏时继续上滑也会触发。加载期间以及错误、末页状态暂停自动分页。插件应在请求开始和结束时更新 `loading` 或 `loadingMore`，并负责页码、追加数据和请求去重，`ListPage` 分页请求失败时通过 `error` 与 `onRetry` 提供恢复入口，`PageLayout` 使用 `loadMoreError` 暂停自动分页并由插件提供重试操作。
 
 表单字段使用以下结构。
 

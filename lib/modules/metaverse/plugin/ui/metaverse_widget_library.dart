@@ -1,9 +1,11 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 // rfw 的 Switch 是界面描述里的分支节点，与 Material 的开关组件重名。
@@ -16,6 +18,7 @@ import '../../../../widgets/common/paged_list_footer.dart';
 
 part 'metaverse_page_components.dart';
 part 'metaverse_form_component.dart';
+part 'metaverse_tile_grid.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -177,6 +180,11 @@ Color? _color(BuildContext context, DataSource source, List<Object> key) {
 double? _number(DataSource source, List<Object> key) =>
     source.v<double>(key) ?? source.v<int>(key)?.toDouble();
 
+double _gridDimension(DataSource source, String name, double fallback) {
+  final value = _number(source, [name]);
+  return value != null && value.isFinite && value >= 0 ? value : fallback;
+}
+
 /// 文本参数：字符串，或若干片段的列表（拼接，便于混排数据引用）。
 String _text(DataSource source, List<Object> key) {
   final text = source.v<String>(key);
@@ -225,29 +233,26 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   'PageLayout': (context, source) => _PluginPageLayout(
     loading: source.v<bool>(['loading']) == true,
     onRefresh: source.voidHandler(['onRefresh']),
+    onLoadMore: source.voidHandler(['onLoadMore']),
+    hasMore: source.v<bool>(['hasMore']) == true,
+    loadingMore: source.v<bool>(['loadingMore']) == true,
+    loadMoreError: source.v<String>(['loadMoreError']) ?? '',
     footer: source.optionalChild(['footer']),
     children: source.childList(['children']),
   ),
-  'TileGrid': (context, source) {
-    final children = source.childList(['children']);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final count = constraints.maxWidth >= 720
-            ? 3
-            : constraints.maxWidth >= 320
-            ? 2
-            : 1;
-        final width = (constraints.maxWidth - (count - 1) * 12) / count;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final child in children) SizedBox(width: width, child: child),
-          ],
-        );
-      },
-    );
-  },
+  'TileGrid': (context, source) => _PluginTileGrid(
+    settings: (
+      layout: ArgumentDecoders.enumValue(
+        MetaverseTileGridLayout.values, source, ['layout'],
+      ) ?? MetaverseTileGridLayout.natural,
+      columns: source.v<int>(['columns']) ?? 0,
+      minTileWidth: _gridDimension(source, 'minTileWidth', 0),
+      spacing: _gridDimension(source, 'spacing', 12),
+      runSpacing: _gridDimension(source, 'runSpacing', 12),
+      direction: Directionality.of(context),
+    ),
+    children: source.childList(['children']),
+  ),
   'Choice': (context, source) => ChoiceChip(
     label: Text(_text(source, ['label'])),
     selected: source.v<bool>(['selected']) == true,
@@ -463,21 +468,60 @@ class _PluginPageLayout extends StatefulWidget {
     this.onRefresh,
     required this.loading,
     this.lazy = false,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.loadingMore = false,
+    this.loadMoreError = '',
   });
   final List<Widget> children;
   final Widget? footer;
   final VoidCallback? onRefresh;
   final bool loading;
   final bool lazy;
+  final VoidCallback? onLoadMore;
+  final bool hasMore;
+  final bool loadingMore;
+  final String loadMoreError;
   @override
   State<_PluginPageLayout> createState() => _PluginPageLayoutState();
 }
 
 class _PluginPageLayoutState extends State<_PluginPageLayout> {
   Completer<void>? _refresh;
+  bool _moreRequested = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    final delta = switch (notification) {
+      ScrollUpdateNotification() => notification.scrollDelta ?? 0,
+      OverscrollNotification() => notification.overscroll,
+      _ => 0.0,
+    };
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.vertical ||
+        delta <= 0) {
+      return false;
+    }
+    if (notification.metrics.extentAfter < 240 &&
+        widget.hasMore &&
+        !widget.loading &&
+        !widget.loadingMore &&
+        widget.loadMoreError.isEmpty &&
+        !_moreRequested &&
+        widget.onLoadMore != null) {
+      _moreRequested = true;
+      widget.onLoadMore!();
+    }
+    return false;
+  }
   @override
   void didUpdateWidget(_PluginPageLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if ((oldWidget.loading && !widget.loading) ||
+        (oldWidget.loadingMore && !widget.loadingMore) ||
+        !widget.hasMore ||
+        widget.loadMoreError.isNotEmpty) {
+      _moreRequested = false;
+    }
     if (!widget.loading) {
       _refresh?.complete();
       _refresh = null;
@@ -541,6 +585,10 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
           child: scroll,
         );
       }
+      scroll = NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: scroll,
+      );
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

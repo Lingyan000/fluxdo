@@ -46,6 +46,10 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     return _PluginPageLayout(
       lazy: true,
       loading: loading,
+      onLoadMore: items.isEmpty ? null : loadMore,
+      hasMore: hasMore,
+      loadingMore: loadingMore,
+      loadMoreError: error,
       onRefresh: source.voidHandler(['onRefresh']),
       footer: source.optionalChild(['actions']),
       children: [

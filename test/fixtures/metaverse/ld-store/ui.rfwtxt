@@ -11,6 +11,9 @@ widget Card = Column(crossAxisAlignment: "stretch", children: [
 ]);
 
 widget Market = PageLayout(
+  hasMore: data.more,
+  onLoadMore: event "more" {},
+  loadMoreError: data.message,
   loading: data.loading,
   onRefresh: event "refresh" {},
   children: [
@@ -61,7 +64,7 @@ widget Market = PageLayout(
         default: SizedBoxShrink(),
       }),
     },
-    TileGrid(children: [
+    TileGrid(layout: "equalHeight", children: [
       ...for item in data.rows: Surface(padding: [0.0], onTap: event "product" {id: item.id}, child: Column(crossAxisAlignment: "stretch", children: [
         AspectRatio(aspectRatio: 1.25, child: Image(url: item.image, fit: "cover")),
         Padding(padding: [12.0], child: Column(crossAxisAlignment: "stretch", children: [
@@ -79,6 +82,10 @@ widget Market = PageLayout(
 );
 
 widget Product = PageLayout(
+  hasMore: data.commentsMore,
+  loadingMore: data.commentsLoading,
+  loadMoreError: data.commentsError,
+  onLoadMore: event "commentsMore" {},
   loading: data.loading,
   onRefresh: event "retry" {},
   footer: switch data.ready {
@@ -251,7 +258,7 @@ widget ExternalFeedback = switch data.externalError {
   default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.externalError, color: "error")),
 };
 
-widget BuyerOrders = PageLayout(loading: data.loading, onRefresh: event "ordersRefresh" {}, children: [
+widget BuyerOrders = PageLayout(hasMore: data.more, onLoadMore: event "ordersMore" {}, loadMoreError: data.error, loading: data.loading, onRefresh: event "ordersRefresh" {}, children: [
   switch data.needsSession {
     true: SizedBoxShrink(),
     default: Wrap(spacing: 8.0, runSpacing: 8.0, children: [

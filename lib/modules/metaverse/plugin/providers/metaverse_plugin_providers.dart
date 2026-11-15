@@ -144,7 +144,7 @@ class MetaversePluginsController
     return null;
   }
 
-  /// 安装（或按同一清单地址更新）一个插件。安装后默认未开启。
+  /// 安装一个插件，或在用户确认后更新同源插件并保留其启用状态。
   ///
   /// 从别的地址装来的同 id 清单视为另一个插件：已有的本地数据与凭证一并清除，
   /// 避免新清单继承旧插件的授权。
@@ -178,25 +178,14 @@ class MetaversePluginsController
       }
     }
     await _store.writeCode(manifest.id, package.code);
-    if (changedSource || changedPermissions) {
-      await _replace(
-        InstalledMetaversePlugin(
-          manifest: manifest,
-          source: package.source,
-          codeRevision: MetaversePluginStore.revisionOf(package.code),
-        ),
-      );
-    } else {
-      // 同一来源的重复安装：保留开关状态（这些权限用户已经确认过）。
-      await _replace(
-        InstalledMetaversePlugin(
-          manifest: manifest,
-          source: package.source,
-          codeRevision: MetaversePluginStore.revisionOf(package.code),
-          enabled: previous?.enabled ?? false,
-        ),
-      );
-    }
+    await _replace(
+      InstalledMetaversePlugin(
+        manifest: manifest,
+        source: package.source,
+        codeRevision: MetaversePluginStore.revisionOf(package.code),
+        enabled: !changedSource && (previous?.enabled ?? false),
+      ),
+    );
     return byId(manifest.id)!;
   }
 

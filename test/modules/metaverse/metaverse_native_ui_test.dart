@@ -1438,7 +1438,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       },
       {
         'id': '2',
-        'title': '社区数字纪念卡',
+        'title': '社区数字纪念卡与开发者工具兑换套装',
         'price': '3.00 LDC',
         'stock': '库存 不限',
         'image': '',
