@@ -31,6 +31,11 @@ try:
         'xcrun', 'simctl', 'launch', '--terminate-running-process',
         env['FLUXDO_SIMULATOR_UDID'], app_id, target,
     ]
+    # 首次启动会同时拉起 UIKit 与 WebContent；先定位结果目录，避免启动后
+    # 再让安装服务查询容器而超时，误把已启动的应用判成失败并重启设备。
+    container = subprocess.check_output(['xcrun', 'simctl', 'get_app_container',
+        env['FLUXDO_SIMULATOR_UDID'], app_id, 'data'], text=True, timeout=75 if warmup else 15).strip()
+    report_path = Path(container) / 'tmp' / report_name
     with subprocess.Popen(launch_command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, text=True) as launch:
         try:
@@ -55,9 +60,6 @@ try:
     code = launch.returncode
     if code:
         raise RuntimeError('simctl launch failed: ' + str(code))
-    container = subprocess.check_output(['xcrun', 'simctl', 'get_app_container',
-        env['FLUXDO_SIMULATOR_UDID'], app_id, 'data'], text=True, timeout=15).strip()
-    report_path = Path(container) / 'tmp' / report_name
     while not report_path.exists() and time.monotonic() < deadline:
         time.sleep(0.25)
     if not report_path.exists():
