@@ -1,5 +1,7 @@
-//! 仅回环实验：记录真实浏览器的 QUIC Initial、H3 SETTINGS、关键流和 QPACK 表示。
+//! 诊断采集：记录真实浏览器的 QUIC Initial、H3 SETTINGS、关键流和 QPACK 表示。
 //! SPKI 放行是命令行实验条件，不是移动 WebView 的生产能力，也不构成完整回放验证。
+#[path = "support/trusted_origin.rs"]
+mod trusted_origin;
 use base64::Engine;
 use parking_lot::Mutex;
 use rama::http::proto::h3::observation::H3RequestObservation;
@@ -145,9 +147,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
     let out = PathBuf::from(args.get(2).ok_or("output directory required")?);
     std::fs::create_dir_all(&out)?;
-    let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
-        rama::net::address::Domain::from_static("localhost"),
-    ))?;
+    let trusted = trusted_origin::TrustedOrigin::load()?;
+    if trusted.is_some() && (!native_probe || std::env::var("FLUXDO_NATIVE_PROBE_FORCE_QUIC").as_deref() == Ok("1")) {
+        return Err("trusted origin requires native driver without forced QUIC".into());
+    }
+    let hostname = trusted.as_ref().map(|v| v.hostname.as_str()).unwrap_or("localhost");
+    let bind_address = trusted.as_ref().map(|v| v.address).unwrap_or(std::net::Ipv4Addr::LOCALHOST);
+    let identity = if let Some(origin) = &trusted { origin.identity()? } else {
+        ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
+            rama::net::address::Domain::from_static("localhost"),
+        ))?
+    };
     std::fs::write(
         out.join("h3-ca.pem"),
         X509::from_der(identity.cert_chain.last().ok_or("missing lab CA")?.as_ref())?.to_pem()?,
@@ -166,12 +176,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .await?;
     let destination = endpoint.local_addr()?;
-    let proxy = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await?);
+    let proxy = Arc::new(tokio::net::UdpSocket::bind((bind_address, 0)).await?);
     let port = proxy.local_addr()?.port();
     let tcp_requests = Arc::new(Mutex::new(Vec::new()));
     let native_finished = Arc::new(tokio::sync::Notify::new());
     let tcp_server = if learn_alt_svc {
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+        let listener = tokio::net::TcpListener::bind((bind_address, port)).await?;
         let tls = TlsServerConfig::new()
             .with_server_auth(identity)
             .with_alpn_http_auto();
@@ -456,6 +466,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let allow_spki = !native_probe && !args.iter().any(|a| a == "--without-spki");
     let native_force_quic = native_probe
         && std::env::var("FLUXDO_NATIVE_PROBE_FORCE_QUIC").as_deref() == Ok("1");
+    if native_probe {
+        command.env("FLUXDO_NATIVE_NETLOG_PATH", out.join("browser-netlog.json"));
+    }
+    if trusted.is_some() {
+        command.env("FLUXDO_TRUSTED_PROBE_HOST", hostname);
+        command.env_remove("FLUXDO_NATIVE_PROBE_SPKI");
+    }
     if native_force_quic {
         // 原生驱动自行核验临时 CI 与来源限制；传递的是当前采集器的公开证书指纹。
         command.env("FLUXDO_NATIVE_PROBE_SPKI", &spki);
@@ -472,7 +489,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let path = if learn_alt_svc { "/fluxdo-probe" } else { "/" };
     let mut child = command
-        .arg(format!("https://localhost:{port}{path}"))
+        .arg(format!("https://{hostname}:{port}{path}"))
         .stdout(std::fs::File::create(out.join("browser.stdout"))?)
         .stderr(std::fs::File::create(out.join("browser.stderr"))?)
         .kill_on_drop(true)
@@ -595,14 +612,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         "native_probe":native_probe,"native_probe_force_quic":native_force_quic,"learn_alt_svc":learn_alt_svc,"native_probe_finished":native_probe_finished,"server_closes_tcp":close_tcp,
         "network_scenario":{"block_quic":block_quic,"drop_first_initial":drop_initial,"require_retry":require_retry,"drop_post_response":drop_post_response,
             "dropped_datagrams":dropped.load(std::sync::atomic::Ordering::Relaxed),"issued_retries":retries.load(std::sync::atomic::Ordering::Relaxed)},
-        "driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
+        "trusted_origin":trusted.is_some(),"origin_hostname":hostname,"driver_success":driver_success,"tcp_requests":*tcp_requests.lock(),
         "h3_sample_complete":joint_capture_complete,
         "joint_capture_complete":joint_capture_complete,"selected_flow_id":selected_flow,"flows":flow_summaries,
         "server_error":server_error,"relay_error":relay_error,
         "connection_errors":*connection_errors.lock(),
         "completed":completed,"datagrams":datagrams.len(),"initial":flight.as_ref().ok(),"initial_error":flight.err().map(|e|e.to_string()),
         "transport_parameters":parameters,"tls":tls_shape,"h3":*observations.lock(),
-        "limitations":["local_generated_certificate","not_a_production_webview_probe","not_a_replay_equivalence_test","no_0rtt_retry_or_migration_test"]});
+        "limitations":[if trusted.is_some() {"controlled_tailnet_certificate"} else {"local_generated_certificate"},"not_a_production_webview_probe","not_a_replay_equivalence_test","no_0rtt_retry_or_migration_test"]});
     std::fs::write(
         out.join("h3-capture.json"),
         serde_json::to_vec_pretty(&report)?,

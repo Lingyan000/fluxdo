@@ -1,5 +1,6 @@
 """仅临时云端模拟器的官方 WebView 调试入口；不供产品调用。"""
 import base64
+import re
 from contextlib import contextmanager
 from pathlib import Path
 import tempfile
@@ -15,8 +16,11 @@ def scoped_quic_control(adb, env, url):
         return
     target = urlparse(url)
     spki = env.get('FLUXDO_NATIVE_PROBE_SPKI', '')
+    trusted_host = env.get('FLUXDO_TRUSTED_PROBE_HOST', '')
+    trusted = (bool(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9-]+\.ts\.net', trusted_host))
+               and target.hostname == trusted_host and not forced)
     if (env.get('GITHUB_ACTIONS') != 'true' or target.scheme != 'https' or
-            target.hostname != 'localhost' or target.path not in ('/fluxdo-h3', '/fluxdo-probe') or
+            (target.hostname != 'localhost' and not trusted) or target.path not in ('/fluxdo-h3', '/fluxdo-probe') or
             target.username or target.password or not target.port or
             (forced and len(base64.b64decode(spki, validate=True)) != 32)):
         raise ValueError('QUIC control requires an ephemeral runner and exact probe origin/SPKI')

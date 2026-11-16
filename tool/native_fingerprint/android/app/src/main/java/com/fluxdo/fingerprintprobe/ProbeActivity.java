@@ -8,17 +8,22 @@ import android.webkit.*;
 import android.util.Log;
 import org.json.JSONObject;
 
-// 诊断专用 Activity，只接受 adb reverse 映射的 localhost 探针。
+// 诊断专用 Activity：本地探针或显式指定的 tailnet 可信证书探针。
 public final class ProbeActivity extends Activity {
     private WebView view;
     private Uri target;
     private boolean finished;
     private String nativeUa;
     private UdpBridge udpBridge;
+    private boolean trustedCertificateRequired;
+    private int sslErrors;
+    private int sslErrorsProceeded;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         target = Uri.parse(getIntent().getStringExtra("url"));
-        if (!"https".equals(target.getScheme()) || !"localhost".equals(target.getHost()) || (!"/fluxdo-probe".equals(target.getPath()) && !"/fluxdo-h3".equals(target.getPath()))) { finish(); return; }
+        String trustedHost = getIntent().getStringExtra("trustedHost");
+        trustedCertificateRequired = trustedHost != null && trustedHost.matches("[a-z0-9][a-z0-9-]*\\.[a-z0-9-]+\\.ts\\.net") && trustedHost.equals(target.getHost());
+        if (!"https".equals(target.getScheme()) || (!"localhost".equals(target.getHost()) && !trustedCertificateRequired) || (!"/fluxdo-probe".equals(target.getPath()) && !"/fluxdo-h3".equals(target.getPath()))) { finish(); return; }
         view = new WebView(this);
         setContentView(view);
         view.getSettings().setJavaScriptEnabled(true);
@@ -33,8 +38,14 @@ public final class ProbeActivity extends Activity {
                 if (request.isForMainFrame()) complete("navigation " + error.getErrorCode() + ": " + error.getDescription());
             }
             @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) {
+                sslErrors++;
+                if (trustedCertificateRequired) {
+                    handler.cancel();
+                    complete("certificate " + error.getPrimaryError());
+                    return;
+                }
                 Uri url = Uri.parse(error.getUrl());
-                if (url.getHost().equals(target.getHost()) && url.getPort() == target.getPort() && "https".equals(url.getScheme())) handler.proceed();
+                if (url.getHost().equals(target.getHost()) && url.getPort() == target.getPort() && "https".equals(url.getScheme())) { sslErrorsProceeded++; handler.proceed(); }
                 else handler.cancel();
             }
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
@@ -47,7 +58,7 @@ public final class ProbeActivity extends Activity {
                 if ("fluxdo-probe-done".equals(title)) complete(null);
             }
         });
-        if (getIntent().getBooleanExtra("udpBridge", false)) {
+        if (!trustedCertificateRequired && getIntent().getBooleanExtra("udpBridge", false)) {
             try { udpBridge = new UdpBridge(target.getPort()); }
             catch (Exception e) { complete("UDP bridge: " + e); return; }
         }
@@ -67,6 +78,9 @@ public final class ProbeActivity extends Activity {
             android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
             data.put("default_network_available", connectivity.getActiveNetwork() != null);
             data.put("udp_relay", udpBridge != null);
+            data.put("trusted_certificate_required", trustedCertificateRequired);
+            data.put("ssl_error_count", sslErrors);
+            data.put("ssl_errors_proceeded", sslErrorsProceeded);
             if (udpBridge != null) {
                 data.put("udp_dual_loopback", true);
                 data.put("udp_sent", udpBridge.sent.get());

@@ -35,6 +35,24 @@ class ScopedQuicControlTest(unittest.TestCase):
                     'FLUXDO_NATIVE_PROBE_SPKI': base64.b64encode(bytes(range(32))).decode()}
         self.url = 'https://localhost:43210/fluxdo-h3'
 
+    def test_trusted_origin_logging_never_forces_quic_or_trust(self):
+        env = {'GITHUB_ACTIONS': 'true', 'FLUXDO_NATIVE_PROBE_NETLOG': '1',
+               'FLUXDO_NATIVE_NETLOG_PATH': '/tmp/capture.json',
+               'FLUXDO_TRUSTED_PROBE_HOST': 'node.tailnet.ts.net'}
+        d = Device()
+        with scoped_quic_control(d.adb, env, 'https://node.tailnet.ts.net:43210/fluxdo-probe') as enabled:
+            self.assertFalse(enabled)
+            self.assertIn('--log-net-log=', d.content)
+            for flag in ('--host-resolver-rules', '--origin-to-force-quic-on', '--ignore-certificate-errors'):
+                self.assertNotIn(flag, d.content)
+        self.assertIsNone(d.content)
+        env.update(self.env)
+        with self.assertRaises(ValueError), scoped_quic_control(d.adb, env, 'https://node.tailnet.ts.net:43210/fluxdo-probe'):
+            pass
+        env['FLUXDO_NATIVE_PROBE_FORCE_QUIC'] = '0'
+        with self.assertRaises(ValueError), scoped_quic_control(d.adb, env, 'https://other.tailnet.ts.net:43210/fluxdo-probe'):
+            pass
+
     def test_disabled_does_not_touch_device(self):
         d = Device()
         with scoped_quic_control(d.adb, {}, self.url) as enabled:

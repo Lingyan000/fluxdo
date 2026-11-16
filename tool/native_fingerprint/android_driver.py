@@ -2,6 +2,7 @@
 """用真实 Android WebView 采样；Core 位于 Linux 宿主，须在报告中分别标注。"""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -11,10 +12,19 @@ from android_quic_control import scoped_quic_control
 def adb(*args):
     return subprocess.check_output(['adb', *args], text=True, timeout=20)
 
-url = next(a for a in sys.argv[1:] if a.startswith('https://localhost:'))
-port = urlparse(url).port
+url = next(a for a in sys.argv[1:] if a.startswith('https://'))
+target = urlparse(url)
+trusted_host = os.environ.get('FLUXDO_TRUSTED_PROBE_HOST', '')
+trusted = (bool(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.[a-z0-9-]+\.ts\.net', trusted_host))
+           and target.hostname == trusted_host)
+if (target.hostname != 'localhost' and not trusted) or target.username or target.password or not target.port:
+    raise ValueError('Only local or explicitly configured tailnet probe is allowed')
+if trusted and (os.environ.get('FLUXDO_NATIVE_PROBE_FORCE_QUIC') == '1' or os.environ.get('FLUXDO_ANDROID_H3_RELAY') == '1'):
+    raise ValueError('Trusted probe forbids forced QUIC and loopback relay')
+port = target.port
 package = 'com.fluxdo.fingerprintprobe'
-adb('reverse', f'tcp:{port}', f'tcp:{port}')
+if not trusted:
+    adb('reverse', f'tcp:{port}', f'tcp:{port}')
 try:
     with scoped_quic_control(adb, os.environ, url) as forced:
         logging = forced or (os.environ.get('FLUXDO_NATIVE_PROBE_NETLOG') == '1'
@@ -27,6 +37,7 @@ try:
             adb('logcat', '-c')
             adb('shell', 'am', 'start', '-W', '-n', package + '/.ProbeActivity', '--es', 'url', url,
                 '--es', 'mode', os.environ.get('FLUXDO_ANDROID_UA_MODE', 'native'),
+                '--es', 'trustedHost', trusted_host if trusted else 'none',
                 '--ez', 'udpBridge', 'true' if os.environ.get('FLUXDO_ANDROID_H3_RELAY')=='1' else 'false')
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
@@ -58,4 +69,5 @@ try:
             finally:
                 adb('shell', 'am', 'force-stop', package)
 finally:
-    adb('reverse', '--remove', f'tcp:{port}')
+    if not trusted:
+        adb('reverse', '--remove', f'tcp:{port}')

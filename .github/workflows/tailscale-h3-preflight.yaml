@@ -1,8 +1,12 @@
-name: Tailscale H3 trusted origin preflight
+name: Tailscale trusted origin diagnostics
 on:
-  push:
-    branches: ['diagnostics/tailscale-h3-preflight-20261116']
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '按需运行；构建完成后才加入临时节点'
+        type: choice
+        options: [preflight, android-h3]
+        default: preflight
 permissions:
   contents: read
 concurrency:
@@ -10,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   preflight:
-    if: github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    if: inputs.mode == 'preflight' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -43,4 +47,85 @@ jobs:
         with:
           name: tailscale-preflight-${{ github.run_id }}
           path: ${{ runner.temp }}/tailscale-evidence/result.json
+          retention-days: 7
+  android-h3:
+    if: inputs.mode == 'android-h3' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Validate and build before joining tailnet
+        run: |
+          PYTHONPATH=tool/native_fingerprint python3 -m unittest test_android_quic_control test_tailscale_preflight test_tailscale_h3
+          gradle -p tool/native_fingerprint/android :app:assembleDebug
+          cargo test --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe
+          cargo build --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe
+          chmod +x tool/native_fingerprint/android_driver.py
+      - name: Prepare emulator before joining tailnet
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sdkmanager 'system-images;android-35;google_apis;x86_64' 'platform-tools' 'emulator' > /dev/null
+      - name: Read public federation identifiers
+        id: config
+        run: |
+          python3 tool/native_fingerprint/tailscale_preflight.py --config
+          install -d -m 700 "$RUNNER_TEMP/fluxdo-tailscale-state"
+      - name: Join one ephemeral node
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
+        with:
+          oauth-client-id: ${{ steps.config.outputs.client_id }}
+          audience: ${{ steps.config.outputs.audience }}
+          tags: tag:fluxdo-ci
+          hostname: fluxdo-h3-preflight
+          version: '1.104.5'
+          statedir: ${{ runner.temp }}/fluxdo-tailscale-state
+          retry: '1'
+          timeout: 60s
+      - name: Verify trusted Alt-Svc and untrusted-certificate rejection
+        timeout-minutes: 8
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-boot-timeout: 180
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 100.100.100.100
+          script: |
+            adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
+            timeout 240s python3 tool/native_fingerprint/tailscale_h3.py --output "${{ runner.temp }}/trusted-h3"
+      - name: Leave tailnet immediately after test
+        if: always()
+        run: sudo tailscale logout || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tailscale-android-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/trusted-h3/**/*.json
+            ${{ runner.temp }}/trusted-h3/**/*.log
+            ${{ runner.temp }}/trusted-h3/**/*.stdout
+            ${{ runner.temp }}/trusted-h3/**/*.stderr
           retention-days: 7
