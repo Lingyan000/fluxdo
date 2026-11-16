@@ -34,7 +34,13 @@ Future<void> runProbe(List<String> arguments) async {
     await mainView.run().timeout(const Duration(seconds: 20));
     result['version'] = await WebViewEnvironment.getAvailableVersion();
     result['native_user_agent'] = await mainView.webViewController!.evaluateJavascript(source: 'navigator.userAgent');
-    final spki = Platform.environment['FLUXDO_NATIVE_PROBE_SPKI'];
+    var spki = Platform.environment['FLUXDO_NATIVE_PROBE_SPKI'];
+    final wrongPin = Platform.environment['FLUXDO_PROBE_WRONG_PIN'] == '1';
+    result['negative_pin_control'] = wrongPin;
+    if (wrongPin) {
+      if (Platform.environment['GITHUB_ACTIONS'] != 'true') throw StateError('negative control requires CI');
+      spki = base64Encode(List<int>.filled(32, 0));
+    }
     if (spki != null) {
       probeEnvironment = await WindowsH3ProbeEnvironment.create(port: uri.port, spki: spki, cancelled: cancellation.future);
     }

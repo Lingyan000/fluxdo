@@ -42,6 +42,8 @@ jobs:
       - name: Compare live Flutter probe and production Core
         run: |
           python tool/native_fingerprint/run.py --platform windows --production-h3 --qpack-scenarios --force-quic-control --driver "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" --output "$env:RUNNER_TEMP/native-fingerprint"
+      - name: Reject a different certificate key
+        run: python tool/native_fingerprint/windows_flutter/negative.py "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" "$env:RUNNER_TEMP/native-fingerprint/wrong-pin"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
