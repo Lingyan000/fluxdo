@@ -247,13 +247,9 @@ fn json_error(message: &str) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_init_logging() {
     let _ = catch_unwind(|| {
-        use tracing_subscriber::{EnvFilter, Layer as _, filter::LevelFilter, prelude::*};
+        use tracing_subscriber::{Layer as _, filter::LevelFilter, prelude::*};
         // 全局放到 debug，各层再按自己的级别过滤：宿主开详细日志时不用重建订阅者
-        let filter = EnvFilter::builder()
-            .with_default_directive(LevelFilter::WARN.into())
-            .from_env_lossy()
-            .add_directive("fluxdo_net=debug".parse().unwrap())
-            .add_directive("rama=warn".parse().unwrap());
+        let filter = crate::log::logging_filter();
         #[cfg(target_os = "android")]
         let system = tracing_android::layer("FluxdoNet")
             .ok()

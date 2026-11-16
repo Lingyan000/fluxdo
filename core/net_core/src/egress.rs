@@ -366,7 +366,7 @@ impl EgressConnector {
     }
 
     /// 按候选地址依次握手，见 [`Self::connect_with_handshake`]。
-    async fn connect_targets<T, F, Fut>(
+    pub(crate) async fn connect_targets<T, F, Fut>(
         &self,
         host: &str,
         port: u16,
@@ -430,7 +430,27 @@ impl EgressConnector {
                                 self.record_success(host, target, attempt_started.elapsed());
                                 return Ok(value);
                             }
-                            Err(failure) if !failure.retryable => return Err(failure.error),
+                            Err(failure) if !failure.retryable => {
+                                if matches!(&failure.error, NetError::Certificate(_)) {
+                                    // 证书拒绝以前在记录目标地址之前直接返回，无法对比 Wi-Fi/蜂窝出口。
+                                    // 代理场景不输出代理主机或凭据，目标站点地址族也不能猜测。
+                                    let (route, peer, family, sticky) = match target {
+                                        EgressTarget::Addr { addr, sticky } => (
+                                            "direct", addr.to_string(),
+                                            if addr.is_ipv4() { "ipv4" } else { "ipv6" }, *sticky,
+                                        ),
+                                        EgressTarget::Proxy(_) => ("proxy", "unknown".into(), "unknown", false),
+                                    };
+                                    warn!(
+                                        event = "egress_tls_rejected", host, port,
+                                        route, peerAddr = peer.as_str(), addressFamily = family,
+                                        stickyCandidate = sticky, echRequested = used_ech,
+                                        error = %failure.error,
+                                        "Egress TLS handshake rejected; no retry"
+                                    );
+                                }
+                                return Err(failure.error);
+                            }
                             Err(failure) => {
                                 warn!(
                                     "Egress TLS to {host}:{port} via {target} failed (ECH requested: {used_ech}): {}",
