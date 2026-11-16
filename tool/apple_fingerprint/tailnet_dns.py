@@ -40,11 +40,12 @@ def main():
         data = json.loads(args.state.read_text())
         status = json.loads(subprocess.check_output(['tailscale', 'status', '--json'], timeout=20))
         path, content = resolver_for(status)
-        if Path(path).exists():
-            raise RuntimeError('Refusing to replace an existing scoped resolver')
         # 公网解析保留 runner 原设置；仅当前 tailnet 的域名走 MagicDNS。
+        # daemon 也会创建分域文件；先让它撤回自身配置，再判断是否有其他现存配置。
         subprocess.run(['sudo', 'tailscale', 'set', '--accept-dns=false'], check=True, timeout=20)
         restore_public_dns(data)
+        if Path(path).exists():
+            raise RuntimeError('Refusing to replace an existing scoped resolver after disabling managed DNS')
         data['owned_resolver'] = {'path': path, 'content': content}
         args.state.write_text(json.dumps(data)+'\n')
         with tempfile.NamedTemporaryFile(mode='w') as source:
