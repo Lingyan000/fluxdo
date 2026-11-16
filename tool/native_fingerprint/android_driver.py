@@ -17,9 +17,11 @@ package = 'com.fluxdo.fingerprintprobe'
 adb('reverse', f'tcp:{port}', f'tcp:{port}')
 try:
     with scoped_quic_control(adb, os.environ, url) as forced:
+        logging = forced or (os.environ.get('FLUXDO_NATIVE_PROBE_NETLOG') == '1'
+                             and bool(os.environ.get('FLUXDO_NATIVE_NETLOG_PATH')))
         try:
             adb('shell', 'am', 'force-stop', package)
-            if forced:
+            if logging:
                 adb('shell', 'run-as', package, 'mkdir', '-p', 'files')
                 adb('shell', 'run-as', package, 'rm', '-f', 'files/probe-netlog.json')
             adb('logcat', '-c')
@@ -33,13 +35,14 @@ try:
                     if '{' in line:
                         result = json.loads(line[line.index('{'):])
                         result['diagnostic_force_quic'] = forced
+                        result['diagnostic_netlog'] = logging
                         print(json.dumps(result), flush=True)
                         raise SystemExit(0 if result.get('success') else 1)
                 time.sleep(.25)
             raise RuntimeError('Android WebView probe timed out')
         finally:
             try:
-                if forced:
+                if logging:
                     # 此宿主没有业务登录；保留参数读取、解析和 SELinux 错误，避免按错误标签漏采。
                     logs = adb('logcat', '-d')
                     sys.stderr.write('\n'.join(line for line in logs.splitlines() if any(

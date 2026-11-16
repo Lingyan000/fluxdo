@@ -85,6 +85,33 @@ class ScopedQuicControlTest(unittest.TestCase):
                 raise RuntimeError('sample failed')
         self.assertEqual(d.content, original)
 
+    def test_logging_only_keeps_default_network_and_trust(self):
+        env = {'GITHUB_ACTIONS': 'true', 'FLUXDO_NATIVE_PROBE_NETLOG': '1',
+               'FLUXDO_NATIVE_NETLOG_PATH': '/tmp/capture.json'}
+        d = Device('_ --old-flag\n')
+        with scoped_quic_control(d.adb, env, self.url) as forced:
+            self.assertFalse(forced)
+            self.assertEqual(d.content, '_ --webview-verbose-logging '
+                '--log-net-log=/data/data/com.fluxdo.fingerprintprobe/files/probe-netlog.json\n')
+        self.assertEqual(d.content, '_ --old-flag\n')
+
+    def test_logging_only_requires_ci_and_debuggable_emulator(self):
+        env = {'GITHUB_ACTIONS': 'true', 'FLUXDO_NATIVE_PROBE_NETLOG': '1',
+               'FLUXDO_NATIVE_NETLOG_PATH': '/tmp/capture.json'}
+        for device, settings, error in [(Device(), {**env, 'GITHUB_ACTIONS': 'false'}, ValueError),
+                (Device(build='user'), env, RuntimeError),
+                (Device(serial='physical-device'), env, RuntimeError)]:
+            with self.subTest(settings=settings, device=device.serial):
+                with self.assertRaises(error), scoped_quic_control(device.adb, settings, self.url):
+                    pass
+                self.assertFalse(any(call[0] == 'push' for call in device.calls))
+
+    def test_logging_without_output_does_not_change_tcp_probe(self):
+        d = Device()
+        with scoped_quic_control(d.adb, {'FLUXDO_NATIVE_PROBE_NETLOG': '1'}, self.url) as forced:
+            self.assertFalse(forced)
+        self.assertEqual(d.calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()
