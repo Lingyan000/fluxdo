@@ -9,8 +9,9 @@ import time
 import uuid
 
 warmup = '--warmup' in sys.argv
-target = '--warmup' if warmup else next(arg for arg in sys.argv[1:] if arg.startswith('https://localhost:'))
+target = '--warmup' if warmup else next(arg for arg in sys.argv[1:] if arg.startswith('https://'))
 env = dict(os.environ)
+env['SIMCTL_CHILD_FLUXDO_TRUSTED_PROBE_HOST'] = env.get('FLUXDO_TRUSTED_PROBE_HOST', '')
 env['SIMCTL_CHILD_FLUXDO_APPLE_UA_MODE'] = env.get('FLUXDO_APPLE_UA_MODE', 'native')
 env['SIMCTL_CHILD_FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST'] = env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST', '0')
 report_name = 'fluxdo-report-' + uuid.uuid4().hex + '.json'
@@ -18,7 +19,7 @@ env['SIMCTL_CHILD_FLUXDO_APPLE_REPORT_FILE'] = report_name
 try:
     report_timeout = 110 if warmup else 75
     deadline = time.monotonic() + report_timeout
-    if env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST') == '1':
+    if env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST') == '1' and not env.get('FLUXDO_TRUSTED_PROBE_HOST'):
         # 仅一次性 CI 模拟器；run.py 创建并最终删除此设备，不改用户设备信任库。
         if env.get('GITHUB_ACTIONS') != 'true':
             raise RuntimeError('system-trust experiment requires an ephemeral GitHub runner')

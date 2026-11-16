@@ -19,6 +19,23 @@ CASES = {'conditional', 'form', 'json', 'range', 'head', 'conditional-changed',
 
 def audit_browser(driver_path, netlog_path, hostname, negative=False):
     driver = json.loads(driver_path.read_text().strip())
+    if driver.get('engine') == 'native WKWebView':
+        evaluations = driver.get('system_trust_evaluations', [])
+        strict = (driver.get('trusted_certificate_required') is True
+                  and driver.get('ssl_errors_proceeded') == 0 and driver.get('diagnostic_force_quic') is False
+                  and driver.get('udp_relay') is False and bool(evaluations)
+                  and all(e.get('hostname') == hostname for e in evaluations))
+        if negative:
+            passed = (strict and driver.get('success') is False and driver.get('certificate_rejected') is True
+                      and driver.get('ssl_error_count', 0) > 0
+                      and any(e.get('system_trusted') is False for e in evaluations))
+        else:
+            passed = (strict and driver.get('success') is True and driver.get('ssl_error_count') == 0
+                      and all(e.get('system_trusted') is True for e in evaluations))
+        return {'passed': passed, 'negative': negative, 'driver': driver,
+                'verification_backend': 'Security.framework default system trust',
+                'certificate_results': evaluations, 'netlog_completeness': None,
+                'command_line_check': 'Chromium flags not applicable to WKWebView'}
     data, completeness = read_netlog(netlog_path.read_text())
     names = {v: k for k, v in data['constants']['logEventTypes'].items()}
     ids = {e['source']['id'] for e in data['events']
@@ -121,7 +138,7 @@ def production_replay(root, output, native, domain, env, driver=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--platform', choices=['android', 'windows'], default='android')
+    parser.add_argument('--platform', choices=['android', 'windows', 'macos', 'ios'], default='android')
     parser.add_argument('--driver', type=Path)
     parser.add_argument('--production', action='store_true')
     parser.add_argument('--app-only', action='store_true', help='保留原生 UA 已有证据，仅补应用 UA 与负对照')
@@ -132,12 +149,15 @@ def main():
     driver = args.driver.resolve() if args.driver else root/'tool/native_fingerprint/android_driver.py'
     suffix = '.exe' if os.name == 'nt' else ''
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {'passed': False, 'scope': 'Android emulator to its Linux runner through emulator NAT' if args.platform == 'android' else 'Windows minimal Flutter host and production Core on the same runner',
-              'platform': args.platform,
+    report = {'passed': False, 'scope': 'Android emulator to its Linux runner through emulator NAT' if args.platform == 'android' else 'native diagnostic host and Core on the same runner; iOS uses a simulator with Core on macOS',
+              'platform': args.platform, 'core_host_platform': sys.platform,
+              'native_reference_close_tcp': args.platform in ('macos', 'ios'),
               'browserstack_sessions': 0, 'rows': [],
               'production_requested': args.production, 'app_only': args.app_only,
               'not_verified': ['full Flutter production environment', 'cross-node tailnet path',
                                'physical devices', 'public Internet direct path', 'Cloudflare acceptance']}
+    if args.platform == 'ios':
+        report['not_verified'].append('Core running inside the iOS app; replay runs on the macOS host')
     try:
         domain, address = node_identity(json.loads(subprocess.check_output(['tailscale', 'status', '--json'], timeout=20)))
         report.update(hostname=domain, address=address)
@@ -151,8 +171,10 @@ def main():
                 openssl = str(Path(shutil.which('git')).parent.parent/'usr/bin/openssl.exe')
             if not openssl:
                 raise RuntimeError('openssl executable missing')
+            openssl_config = folder/'negative-cert.conf'
+            openssl_config.write_text('[req]\ndistinguished_name=dn\nx509_extensions=v3\n[dn]\n[v3]\nsubjectAltName=DNS:'+domain+'\n')
             subprocess.run([openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
-                            '-subj', f'/CN={domain}', '-addext', f'subjectAltName=DNS:{domain}',
+                            '-subj', f'/CN={domain}', '-config', str(openssl_config),
                             '-keyout', str(bad_key), '-out', str(bad_cert)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             bad_key.chmod(0o600)
@@ -166,11 +188,12 @@ def main():
                     'private_key': str(bad_key if negative else key)}))
                 env = dict(os.environ, FLUXDO_TRUSTED_PROBE_CONFIG=str(config),
                            FLUXDO_NATIVE_PROBE_NETLOG='1', FLUXDO_NATIVE_PROBE_FORCE_QUIC='0',
-                           FLUXDO_ANDROID_H3_RELAY='0', FLUXDO_ANDROID_UA_MODE='app' if mode == 'app' else 'native')
+                           FLUXDO_ANDROID_H3_RELAY='0', FLUXDO_ANDROID_UA_MODE='app' if mode == 'app' else 'native',
+                           FLUXDO_APPLE_UA_MODE='app' if mode == 'app' else 'native')
                 with (args.output/f'{mode}.log').open('w') as log:
                     result = subprocess.run([str(root/'core/net_core/target/debug/examples'/('h3_fingerprint_probe'+suffix)),
                         str(driver), str(output),
-                        '--native-probe', '--qpack-scenarios'], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=65)
+                        '--native-probe', '--qpack-scenarios'] + (['--close-tcp'] if args.platform in ('macos', 'ios') else []), env=env, stdout=log, stderr=subprocess.STDOUT, timeout=65)
                 row = audit(output, domain, negative)
                 row.update(case=mode, exit_code=result.returncode)
                 row['passed'] &= result.returncode != 0 if negative else result.returncode == 0

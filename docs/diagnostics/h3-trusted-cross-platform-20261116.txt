@@ -1,0 +1,61 @@
+可信 H3 跨平台续验记录（2026-11-16）
+
+本轮边界
+- 延续 h3-trusted-origin-20261116.txt 的 Android 正常证书信任结果。
+- 不修改 CSRF、Cookie、Origin、Referer 业务策略。
+- 本轮没有创建 BrowserStack 设备会话；未查询到剩余免费分钟数。
+
+已推送的 Windows 测试入口
+- 分支 diagnostics/fingerprint-governance-review-20261115 与专用 CI 分支，提交：
+  bc44d885cb4ed9cb9d549fc9d25e81876546325a。
+- Windows 最小 Flutter 宿主使用与主 WebView 相同的环境；可信入口不启用独立
+  QUIC/SPKI 环境。审计读取实际 NetLog 命令行，并核验主控制器存活与 profile 清理。
+- 这仍是最小诊断宿主，不是完整应用持久 profile 的实测。
+
+Windows 云端失败证据
+- https://github.com/Lingyan000/fluxdo/actions/runs/43799775477
+- job 133076882726。Core 的三个示例编译成功，随后 Flutter 静态检查失败：
+  include_file_not_found: package:flutter_lints/flutter.yaml。
+- 根因：prepare.py 重写 pubspec.yaml 时遗漏生成模板的 dev_dependencies，
+  但保留了引用 flutter_lints 的 analysis_options.yaml。
+- 未进入 Windows 可执行文件构建和 H3 网络验证，不能计为通过。
+- Tailscale 加入步骤未执行；BrowserStack 设备会话为零。
+- 云端产物 14196465334，仅含生产源码摘要，不能作为网络抓包证据。
+- 本地修复保留当前 Flutter 模板的开发依赖，不关闭静态检查、不写死新的 lint 版本。
+  已实际重新生成工程，核对 dev_dependencies 与原模板相同。
+- 本地离线 pub get 缺少 flutter_inappwebview_linux 缓存，因此修复后完整工程的
+ 依赖解析、静态检查和 Windows 编译仍待云端复验。
+
+Apple 续验实现（待 Apple SDK 编译和云端运行）
+- WKWebView 接受显式配置的单个 ts.net 可信域名；通过 Security.framework
+  记录系统信任评估，仍交回系统默认处理，不对可信域名使用 useCredential。
+- 正向必须有主机名匹配、系统信任成功的证据；同域名自签证书负对照必须被拒绝，
+  且服务器没有收到 TCP/H3 应用请求。缺少信任评估也判失败。
+- macOS、iOS 26.2 与 iOS 15.5 的宿主在入网前构建、创建模拟器并预热。
+  每次只加入一个节点，应用 UA 和负对照串行执行，结束后登出并删除本次模拟器。
+- 原生 Apple 基准使用服务端关闭旧 TCP 连接来观察 Alt-Svc 切换，报告明确记录此条件；
+  不能据此证明业务长连接自然切换行为。
+- iOS 使用模拟器，生产 Core 回放运行在 macOS 宿主，报告明确排除 iOS App 内 Core 实测。
+- 证书负对照使用临时 OpenSSL 配置生成 SAN，兼容不支持 -addext 的 LibreSSL。
+- 新流程只增加诊断与验证入口，不改变正式应用的本地自签 H3 探针设计。
+
+上一轮本地校验与阻塞
+- 相关 Python 41 项测试通过；修改的 Python 文件语法检查通过。
+- 本次架构守卫未能加载：沙箱禁止绑定 127.0.0.1 动态端口，errno=1。
+  不能把加载失败算作测试通过，也没有证据把它归因于业务代码。
+- 前一个已推送提交阶段架构守卫 8 项通过；该结果不冒充本地新增改动的复验结果。
+- App Automate 只读账户检查的 workflow dispatch 未执行：自动审批因 ChatGPT
+  账户用量上限无法完成。这是审批服务失败，不是风险判定；没有换通道绕过。
+- 后续推送、Windows 重跑、Apple 云端运行尚未执行。保留本地改动等待审批能力恢复。
+
+尚未闭环
+- Windows 共享主环境的正常信任 H3、Apple 正常信任 H3 的本轮复验。
+- Linux 原生 H3、完整应用、iOS 设备内 Core、物理设备网络切换及线上 CF 接受情况。
+- 面向正式用户的可信 H3 校准入口。Tailscale 诊断成功不等于产品部署完成。
+
+审批恢复后的本地复验
+- GitHub 只读请求和需要回环端口的测试执行均已恢复。
+- 完整生成的 Windows 最小工程联网 pub get 成功，flutter analyze --no-pub 无问题。
+  flutter_lints 缺失修复已有完整工程的静态检查证据，仍不代替 Windows 运行结果。
+- 相关 Python 44 项通过（含证书/本地 socket 检查），架构守卫 8 项通过。
+- App Automate 只读账户检查已发起，不启动设备。

@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""先构建并预热原生宿主，随后才加入短时测试网络；不修改系统证书库。"""
+import argparse
+import json
+from pathlib import Path
+import platform
+import plistlib
+import subprocess
+
+from run import run, output, warmup_simulator
+
+
+def cleanup(root):
+    path = root/'devices.json'
+    if not path.exists():
+        return
+    for udid in json.loads(path.read_text()):
+        subprocess.run(['xcrun', 'simctl', 'shutdown', udid], timeout=30, check=False)
+        subprocess.run(['xcrun', 'simctl', 'delete', udid], timeout=30, check=True)
+    path.write_text('[]\n')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--ios-version', default='26.2')
+    parser.add_argument('--ios-only', action='store_true')
+    parser.add_argument('--cleanup', action='store_true')
+    args = parser.parse_args()
+    root = args.output.resolve()
+    if args.cleanup:
+        cleanup(root)
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    repo = Path(__file__).resolve().parents[2]
+    source = Path(__file__).with_name('WKProbe.swift')
+    identity = repo/'ios/Runner/BrowserIdentity.swift'
+    targets = []
+    if not args.ios_only:
+        binary = root/'WKProbe-macos'
+        run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source, identity,
+             '-framework', 'AppKit', '-framework', 'WebKit', '-framework', 'Security', '-o', binary], timeout=120)
+        targets.append({'name': 'macos', 'platform': 'macos', 'driver': str(binary), 'env': {}})
+    data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
+    runtime = next((r for r in data['runtimes'] if r.get('isAvailable') and r.get('version') == args.ios_version
+                    and r.get('name', '').startswith('iOS ')), None)
+    if runtime is None:
+        raise RuntimeError('Requested installed iOS runtime unavailable: '+args.ios_version)
+    devices = [d for d in data['devices'].get(runtime['identifier'], [])
+               if d.get('isAvailable') and 'iPhone' in d['name']]
+    compatible = [d for d in runtime.get('supportedDeviceTypes', []) if d.get('productFamily') == 'iPhone']
+    if not devices and not compatible:
+        raise RuntimeError('Requested iOS runtime has no compatible iPhone device type')
+    device_type = devices[0]['deviceTypeIdentifier'] if devices else compatible[0]['identifier']
+    app = root/'WKProbe.app'
+    app.mkdir(exist_ok=True)
+    info = {'CFBundleExecutable': 'WKProbe', 'CFBundleIdentifier': 'org.fluxdo.fingerprint.probe',
+            'CFBundleName': 'WKProbe', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
+            'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '15.0', 'LSRequiresIPhoneOS': True,
+            'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'UIDeviceFamily': [1, 2],
+            'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
+            'UILaunchScreen': {}, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}}
+    (app/'Info.plist').write_bytes(plistlib.dumps(info))
+    arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
+    run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library',
+         '-sdk', output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path']),
+         '-target', arch+'-apple-ios15.0-simulator', source, identity,
+         '-framework', 'UIKit', '-framework', 'WebKit', '-framework', 'Security', '-o', app/'WKProbe'], timeout=180)
+    run(['codesign', '--force', '--sign', '-', app], timeout=30)
+    udid = output(['xcrun', 'simctl', 'create', 'FluxDO-Trusted-H3', device_type, runtime['identifier']])
+    (root/'devices.json').write_text(json.dumps([udid])+'\n')
+    try:
+        run(['xcrun', 'simctl', 'boot', udid], timeout=90)
+        simulator = Path(output(['xcode-select', '-p']))/'Applications/Simulator.app'
+        run(['open', '-a', simulator, '--args', '-CurrentDeviceUDID', udid], timeout=30)
+        run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
+        run(['xcrun', 'simctl', 'install', udid, app], timeout=60)
+        warmup_simulator(root, runtime['version'], udid)
+        targets.append({'name': 'ios-'+runtime['version'], 'platform': 'ios',
+                        'driver': str(Path(__file__).with_name('ios_driver.py').resolve()),
+                        'env': {'FLUXDO_SIMULATOR_UDID': udid}})
+        (root/'targets.json').write_text(json.dumps(targets, indent=2)+'\n')
+    except Exception:
+        cleanup(root)
+        raise
+
+
+if __name__ == '__main__':
+    main()

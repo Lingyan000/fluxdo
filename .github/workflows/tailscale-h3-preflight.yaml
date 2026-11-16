@@ -5,7 +5,7 @@ on:
       mode:
         description: '按需运行；构建完成后才加入临时节点'
         type: choice
-        options: [preflight, android-h3, android-production-h3, windows-production-h3, browserstack-account]
+        options: [preflight, android-h3, android-production-h3, windows-production-h3, apple-production-h3, ios15-production-h3, browserstack-account]
         default: preflight
       app_only:
         description: '已有原生 UA 证据时，仅补应用 UA 与证书负对照'
@@ -236,3 +236,74 @@ jobs:
               'available_os_versions': sorted({str(d.get('os')) + ' ' + str(d.get('os_version')) for d in devices}),
               'remaining_free_minutes_verified': False}
           print(json.dumps(report, indent=2))
+  apple-h3:
+    if: (inputs.mode == 'apple-production-h3' || inputs.mode == 'ios15-production-h3') && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: macos-15
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Install iOS 15 runtime before joining tailnet
+        if: inputs.mode == 'ios15-production-h3'
+        run: python3 tool/apple_fingerprint/install_legacy_runtime.py --version 15.5 --output "$RUNNER_TEMP/ios15-capability"
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: apple-fingerprint-macos-15
+          cache-on-failure: true
+      - name: Build and warm native hosts before joining tailnet
+        run: |
+          command -v cmake || brew install cmake
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          chmod +x tool/apple_fingerprint/ios_driver.py
+          cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+          python3 tool/apple_fingerprint/prepare_trusted.py --output "$RUNNER_TEMP/trusted-apple-prepared" ${{ inputs.mode == 'ios15-production-h3' && '--ios-version 15.5 --ios-only' || '--ios-version 26.2' }}
+      - name: Read public federation identifiers
+        id: config
+        run: |
+          python3 tool/native_fingerprint/tailscale_preflight.py --config
+          install -d -m 700 "$RUNNER_TEMP/fluxdo-tailscale-state"
+      - name: Join one ephemeral Apple node
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
+        with:
+          oauth-client-id: ${{ steps.config.outputs.client_id }}
+          audience: ${{ steps.config.outputs.audience }}
+          tags: tag:fluxdo-ci
+          hostname: fluxdo-h3-apple
+          version: '1.104.5'
+          statedir: ${{ runner.temp }}/fluxdo-tailscale-state
+          retry: '1'
+          timeout: 60s
+      - name: Verify default system trust and production replay
+        timeout-minutes: 13
+        run: python3 tool/apple_fingerprint/run_trusted.py --prepared "$RUNNER_TEMP/trusted-apple-prepared" --output "$RUNNER_TEMP/trusted-apple"
+      - name: Leave tailnet before uploading evidence
+        if: always()
+        run: |
+          if command -v tailscale >/dev/null; then sudo tailscale logout; fi
+      - name: Remove only simulators created by this job
+        if: always()
+        run: python3 tool/apple_fingerprint/prepare_trusted.py --output "$RUNNER_TEMP/trusted-apple-prepared" --cleanup
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tailscale-apple-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/trusted-apple/**/*.json
+            ${{ runner.temp }}/trusted-apple/**/*.log
+            ${{ runner.temp }}/trusted-apple/**/*.stdout
+            ${{ runner.temp }}/trusted-apple/**/*.stderr
+            ${{ runner.temp }}/trusted-apple-prepared/*.json
+            ${{ runner.temp }}/trusted-apple-prepared/*.log
+            ${{ runner.temp }}/ios15-capability/*.json
+          retention-days: 7

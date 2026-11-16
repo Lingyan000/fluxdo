@@ -1,6 +1,7 @@
 // 原生 WKWebView 回环采样宿主；只用于诊断，不包含业务登录或 CSRF 流程。
 import Foundation
 import WebKit
+import Security
 #if os(macOS)
 import AppKit
 #else
@@ -14,6 +15,10 @@ final class Probe: NSObject, WKNavigationDelegate {
     var finished = false
     var target: URL?
     var nativeUA = ""
+    var trustedCertificateRequired = false
+    var trustEvaluations: [[String: Any]] = []
+    var certificateErrors = 0
+    var credentialsUsed = 0
 
     func start() {
         if CommandLine.arguments.contains("--warmup") {
@@ -31,9 +36,17 @@ final class Probe: NSObject, WKNavigationDelegate {
             }
             return
         }
-        guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://localhost:") }),
-              let url = URL(string: raw), url.host == "localhost", (url.path == "/fluxdo-probe" || url.path == "/fluxdo-h3") else {
-            complete(error: "只允许本地指纹探针地址")
+        guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://") }),
+              let url = URL(string: raw), url.scheme == "https", url.user == nil, url.password == nil,
+              let hostname = url.host, url.port != nil, (url.path == "/fluxdo-probe" || url.path == "/fluxdo-h3") else {
+            complete(error: "指纹探针地址无效")
+            return
+        }
+        let trustedHost = ProcessInfo.processInfo.environment["FLUXDO_TRUSTED_PROBE_HOST"] ?? ""
+        trustedCertificateRequired = trustedHost == hostname &&
+            trustedHost.range(of: "^[a-z0-9][a-z0-9-]*\\.[a-z0-9-]+\\.ts\\.net$", options: .regularExpression) != nil
+        guard hostname == "localhost" || trustedCertificateRequired else {
+            complete(error: "只允许本地或显式指定的可信探针地址")
             return
         }
         target = url
@@ -83,6 +96,20 @@ final class Probe: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // 可信入口只观察系统验证结果，始终交回系统处理，不安装根证书或放行错误。
+        if trustedCertificateRequired {
+            let space = challenge.protectionSpace
+            if space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+               let trust = space.serverTrust {
+                var failure: CFError?
+                let valid = SecTrustEvaluateWithError(trust, &failure)
+                trustEvaluations.append(["hostname": space.host, "port": space.port,
+                    "system_trusted": valid, "error": failure.map { String(describing: $0) } ?? ""])
+                if !valid { certificateErrors += 1 }
+            }
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
         // 系统信任实验不使用证书回调放行，确保 OS 真正验证实验 CA 与主机名。
         if ProcessInfo.processInfo.environment["FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST"] == "1" {
             completionHandler(.performDefaultHandling, nil)
@@ -93,6 +120,7 @@ final class Probe: NSObject, WKNavigationDelegate {
         if space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
            space.host == "localhost", space.port == target?.port,
            let trust = space.serverTrust {
+            credentialsUsed += 1
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else {
             completionHandler(.performDefaultHandling, nil)
@@ -113,6 +141,11 @@ final class Probe: NSObject, WKNavigationDelegate {
         #endif
         let result: [String: Any] = ["engine": "native WKWebView", "platform": platform,
             "warmup": CommandLine.arguments.contains("--warmup"),
+            "trusted_certificate_required": trustedCertificateRequired,
+            "system_trust_evaluations": trustEvaluations,
+            "ssl_error_count": certificateErrors, "ssl_errors_proceeded": credentialsUsed,
+            "certificate_rejected": certificateErrors > 0,
+            "diagnostic_force_quic": false, "udp_relay": false,
             "requires_system_trust": ProcessInfo.processInfo.environment["FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST"] == "1",
             "os": ProcessInfo.processInfo.operatingSystemVersionString,
             "native_user_agent": nativeUA, "custom_user_agent": webView.customUserAgent ?? "",

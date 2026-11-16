@@ -29,6 +29,21 @@ class TrustedAuditTest(unittest.TestCase):
         (self.folder/'browser.stderr').write_text(self.flags)
         return audit(self.folder, self.host, negative)['passed']
 
+    def test_apple_requires_actual_system_evaluation_without_credentials(self):
+        self.driver.update(engine='native WKWebView', system_trust_evaluations=[
+            {'hostname': self.host, 'system_trusted': True}])
+        self.assertTrue(self.check())
+        self.driver['system_trust_evaluations'] = []
+        self.assertFalse(self.check())
+        self.driver['system_trust_evaluations'] = [{'hostname': 'other.ts.net', 'system_trusted': True}]
+        self.assertFalse(self.check())
+        self.driver.update(success=False, certificate_rejected=True, ssl_error_count=1,
+                           system_trust_evaluations=[{'hostname': self.host, 'system_trusted': False}])
+        self.capture.update(h3=[], tcp_requests=[], joint_capture_complete=False)
+        self.assertTrue(self.check(negative=True))
+        self.driver['ssl_errors_proceeded'] = 1
+        self.assertFalse(self.check(negative=True))
+
     def test_windows_requires_actual_flags_and_shared_main_lifecycle(self):
         self.driver.update(engine='Flutter WebView2 production probe environment',
                            environment_kind='shared_main', main_survived=True,
