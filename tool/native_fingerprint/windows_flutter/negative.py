@@ -25,7 +25,8 @@ for line in (output/'browser.stdout').read_text().splitlines():
 checks = {'collector_rejected': run.returncode != 0,
           'driver_rejected': capture.get('driver_success') is False,
           'no_application_requests': not capture.get('h3') and not capture.get('tcp_requests'),
-          'explicit_negative_result': len(results) == 1 and results[0].get('success') is False and bool(results[0].get('error'))}
+          'explicit_negative_result': len(results) == 1 and results[0].get('success') is False and bool(results[0].get('error')),
+          'cleanup_complete': len(results) == 1 and results[0].get('main_profile_removed') is True and not results[0].get('cleanup_error')}
 summary = {'checks':checks, 'passed':all(checks.values()), 'driver':results}
 (output/'negative-control.json').write_text(json.dumps(summary, indent=2)+'\n')
 print(json.dumps(summary))

@@ -21,6 +21,8 @@ Future<void> runProbe(List<String> arguments) async {
   WebViewEnvironment? mainEnvironment;
   WindowsH3ProbeEnvironment? probeEnvironment;
   Directory? mainDirectory;
+  Future<void>? mainStarted;
+  Future<void>? probeStarted;
   final cancellation = Completer<void>();
   try {
     final uri = Uri.parse(arguments.firstWhere((arg) => arg.startsWith('https://localhost:')));
@@ -31,7 +33,8 @@ Future<void> runProbe(List<String> arguments) async {
     mainEnvironment = await WebViewEnvironment.create(settings: WebViewEnvironmentSettings(userDataFolder: mainDirectory.path));
     mainView = HeadlessInAppWebView(webViewEnvironment: mainEnvironment,
       initialData: InAppWebViewInitialData(data: '<title>main-alive</title>'));
-    await mainView.run().timeout(const Duration(seconds: 20));
+    mainStarted = mainView.run();
+    await mainStarted.timeout(const Duration(seconds: 20));
     result['version'] = await WebViewEnvironment.getAvailableVersion();
     result['native_user_agent'] = await mainView.webViewController!.evaluateJavascript(source: 'navigator.userAgent');
     var spki = Platform.environment['FLUXDO_NATIVE_PROBE_SPKI'];
@@ -63,7 +66,8 @@ Future<void> runProbe(List<String> arguments) async {
       onTitleChanged: (_, title) { if (title == 'fluxdo-probe-done' && !done.isCompleted) done.complete(); },
     );
     // 先订阅错误，避免原生回调早于 run 返回时成为未处理异常。
-    final completion = Future.wait([probeView.run(), done.future]).timeout(const Duration(seconds: 45));
+    probeStarted = probeView.run();
+    final completion = Future.wait([probeStarted, done.future]).timeout(const Duration(seconds: 45));
     await completion;
     await probeView.dispose(); probeView = null;
     await probeEnvironment?.dispose();
@@ -76,14 +80,36 @@ Future<void> runProbe(List<String> arguments) async {
   } finally {
     cancellation.complete();
     try {
-      await probeView?.dispose();
-      await probeEnvironment?.dispose();
-      await mainView?.dispose();
-      await mainEnvironment?.dispose();
-      if (mainDirectory != null && await mainDirectory.exists()) await mainDirectory.delete(recursive: true);
-    } catch (error) { result['cleanup_error'] = error.toString(); }
+      try {
+        await disposeProbeResources(started: probeStarted,
+          disposeView: () async => await probeView?.dispose(),
+          disposeEnvironment: () async => await probeEnvironment?.dispose());
+      } finally {
+        await disposeProbeResources(started: mainStarted,
+          disposeView: () async => await mainView?.dispose(),
+          disposeEnvironment: () async => await mainEnvironment?.dispose());
+      }
+      // WebView2 的进程退出与文件锁释放可能晚于环境 dispose 返回。
+      if (mainDirectory != null) await removeProfile(mainDirectory);
+      result['main_profile_removed'] = mainDirectory == null || !await mainDirectory.exists();
+    } catch (error) {
+      result['cleanup_error'] = error.toString();
+      result['success'] = false;
+    }
     stdout.writeln(jsonEncode(result));
     await stdout.flush();
     exit(result['success'] == true ? 0 : 1);
+  }
+}
+
+Future<void> removeProfile(Directory directory) async {
+  for (var attempt = 0; attempt < 21; attempt++) {
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+      return;
+    } on FileSystemException {
+      if (attempt == 20) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
   }
 }
