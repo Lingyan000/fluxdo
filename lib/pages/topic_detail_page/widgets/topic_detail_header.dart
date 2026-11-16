@@ -315,6 +315,7 @@ class TopicDetailHeader extends ConsumerWidget {
             detail: detail,
             wordsPerMinute: PreloadedDataService()
                 .siteSettingsSync?['read_time_word_count'] as num?,
+            onJumpToPost: onJumpToPost,
           ),
 
           // AI 摘要 & 订阅按钮
