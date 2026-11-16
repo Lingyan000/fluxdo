@@ -290,6 +290,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
             report["native_user_agent"] = native
             report["custom_user_agent"] = userAgent
             report["os"] = ProcessInfo.processInfo.operatingSystemVersionString
+            report["browser_identity"] = BrowserIdentity.diagnostics()
             let config: [String: Any] = ["bind_addr": "127.0.0.1", "bind_port": 0,
                 "fingerprint_platform": "ios", "fingerprint_user_agent": userAgent,
                 "fingerprint_runtime_identity": ProcessInfo.processInfo.operatingSystemVersionString,
@@ -328,6 +329,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
                 finish()
                 return
             }
+            report["stage"] = "controlled_replay"
             guard let profileText = coreProfile() else { throw CoreProbeError.failed("Calibrated profile missing") }
             defer { coreFreeString(profileText) }
             let profile = try JSONSerialization.jsonObject(with: Data(String(cString: profileText).utf8))

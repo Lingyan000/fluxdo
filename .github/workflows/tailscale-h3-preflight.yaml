@@ -11,6 +11,11 @@ on:
         description: '独立真机观察使用的已验证 iOS Core 运行编号；必须重算抓包并匹配 Core 源码'
         type: string
         default: ''
+      physical_ios_major:
+        description: '独立观察的 iOS 大版本；每次仍只允许一个 120 秒会话'
+        type: choice
+        options: ['15', '26']
+        default: '15'
       app_only:
         description: '已有原生 UA 证据时，仅补应用 UA 与证书负对照'
         type: boolean
@@ -93,7 +98,7 @@ jobs:
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
-        run: python3 tool/apple_fingerprint/browserstack_core.py --ipa "$RUNNER_TEMP/physical-prepared/ios-core-trace.ipa" --controlled-core-result "$RUNNER_TEMP/core-baseline.json" --output "$RUNNER_TEMP/physical-observation" --ios-major 15
+        run: python3 tool/apple_fingerprint/browserstack_core.py --ipa "$RUNNER_TEMP/physical-prepared/ios-core-trace.ipa" --controlled-core-result "$RUNNER_TEMP/core-baseline.json" --output "$RUNNER_TEMP/physical-observation" --ios-major '${{ inputs.physical_ios_major }}'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

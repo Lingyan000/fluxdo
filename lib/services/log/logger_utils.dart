@@ -195,6 +195,9 @@ class LoggerUtils {
 
       // User-Agent
       device['userAgent'] = AppConstants.userAgent;
+      if (Platform.isIOS || Platform.isMacOS) {
+        device['browserIdentity'] = AppConstants.browserIdentityDiagnostics;
+      }
 
       // WebView 版本
       final webViewVersion = _parseWebViewVersion();
@@ -213,13 +216,15 @@ class LoggerUtils {
 
   /// 从缓存的 User-Agent 中解析 WebView/浏览器引擎版本
   static String? _parseWebViewVersion() {
+    // Apple UA 的 Version 可能来自兼容回退，不能记录为已确认的内核版本。
+    if (Platform.isIOS || Platform.isMacOS) {
+      final version = AppConstants.verifiedSafariProductVersion;
+      return version == null ? null : 'Safari/$version';
+    }
     final ua = AppConstants.userAgent;
     // Chrome/xxx.x.x.x（Android WebView 和桌面端）
     final chromeMatch = RegExp(r'Chrome/([\d.]+)').firstMatch(ua);
     if (chromeMatch != null) return 'Chrome/${chromeMatch.group(1)}';
-    // Safari/xxx（iOS WKWebView）
-    final safariMatch = RegExp(r'Version/([\d.]+).*Safari').firstMatch(ua);
-    if (safariMatch != null) return 'Safari/${safariMatch.group(1)}';
     return null;
   }
 

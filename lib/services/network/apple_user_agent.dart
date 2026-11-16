@@ -19,3 +19,22 @@ String completeIosUserAgent(String ua, {String? safariProductVersion}) {
       : ua.replaceFirst('Mobile/', 'Version/$version Mobile/');
   return '$completed Safari/604.1';
 }
+
+/// 日志里的产品版本只接受 Bundle 实测值；UA 声明和 WebKit token 单独标记。
+Map<String, Object?> appleBrowserIdentityDiagnostics({
+  required String userAgent,
+  String? safariProductVersion,
+  String readStatus = 'not_read',
+}) {
+  final verified = iosSafariUserAgentVersion(safariProductVersion);
+  return {
+    'safari_product_version': verified,
+    'safari_version_verified': verified != null,
+    'safari_version_source': verified == null ? 'unknown' : 'safari_bundle',
+    'safari_read_status': readStatus,
+    'ua_declared_version': RegExp(r'Version/([^ ]+)').firstMatch(userAgent)?.group(1),
+    'ua_webkit_token': RegExp(r'AppleWebKit/([^ ]+)').firstMatch(userAgent)?.group(1),
+    'ua_version_verified': verified != null &&
+        RegExp(r'Version/([^ ]+)').firstMatch(userAgent)?.group(1) == verified,
+  };
+}

@@ -28,6 +28,20 @@ class AppConstants {
   /// Apple 平台 Safari 真实产品版本号（从 Safari Bundle 读取），
   /// 用于补齐 WKWebView 默认 UA 缺失的 `Version/x.y`。
   static String? _cachedSafariVersion;
+  static String _safariReadStatus = 'not_read';
+  static Map<String, dynamic> _nativeBrowserIdentity = {};
+
+  static String? get verifiedSafariProductVersion =>
+      iosSafariUserAgentVersion(_cachedSafariVersion);
+
+  static Map<String, Object?> get browserIdentityDiagnostics => {
+    ..._nativeBrowserIdentity,
+    ...appleBrowserIdentityDiagnostics(
+      userAgent: userAgent,
+      safariProductVersion: _cachedSafariVersion,
+      readStatus: _safariReadStatus,
+    ),
+  };
 
   /// 与 Apple 原生层通信的系统信息 channel。
   static const MethodChannel _systemInfoChannel = MethodChannel(
@@ -213,16 +227,31 @@ class AppConstants {
   /// 读不到时返回 null，由 sanitize / fallback 处使用保守默认值。
   static Future<String?> _readSafariVersion() async {
     try {
+      if (Platform.isIOS) {
+        try {
+          _nativeBrowserIdentity = await _systemInfoChannel
+              .invokeMapMethod<String, dynamic>('getBrowserIdentity') ?? {};
+        } on MissingPluginException {
+          // 兼容尚未重编译的宿主；仍使用原有版本接口，不推导未知版本。
+        } catch (_) {
+          _nativeBrowserIdentity = {'native_metadata_status': 'channel_error'};
+        }
+      }
       final version = await _systemInfoChannel.invokeMethod<String>(
         'getSafariVersion',
       );
-      if (version == null || version.isEmpty) {
+      final verified = iosSafariUserAgentVersion(version);
+      if (verified == null) {
+        _safariReadStatus = version == null || version.isEmpty
+            ? 'metadata_unavailable' : 'metadata_invalid';
         debugPrint('[AppConstants] Safari 产品版本不可读，使用既有 UA 兼容回退');
         return null;
       }
       debugPrint('[AppConstants] Safari product version: $version');
-      return version;
+      _safariReadStatus = 'read';
+      return verified;
     } catch (e) {
+      _safariReadStatus = 'channel_error';
       debugPrint('[AppConstants] 读取 Safari 产品版本失败: $e');
       return null;
     }

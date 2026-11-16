@@ -47,6 +47,7 @@ import workmanager_apple
     systemInfoChannel.setMethodCallHandler { call, result in
       switch call.method {
       case "getSafariVersion": result(BrowserIdentity.safariVersion())
+      case "getBrowserIdentity": result(BrowserIdentity.diagnostics())
       default: result(FlutterMethodNotImplemented)
       }
     }
