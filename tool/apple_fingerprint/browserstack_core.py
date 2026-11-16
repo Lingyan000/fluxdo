@@ -135,6 +135,8 @@ def main():
                 report['passed'] = False
         if started is not None:
             report['local_session_window_seconds'] = round(time.monotonic()-started, 2)
+            if session is None:
+                report['creation_outcome'] = 'Unknown without session id; no retry; server idle timeout is 30 seconds'
         if session and report['session_released']:
             try:
                 data = api(f'/app-automate/sessions/{session}.json')
