@@ -19,11 +19,18 @@ import 'm3e_motion.dart';
 /// - 形状缩放按"动画全程最大回转半径"精确计算,保证任意帧不画出 size 之外;
 ///   与规格的唯一偏差是不保留 38/48 的容器留白(调用方把 size 当可见尺寸,
 ///   详见 _Md3LoadingGeometry.scaleFactor)。
+///
+/// 传入 [progress] 时为确定态,对照 LoadingIndicator(progress):
+/// 圆形(旋转 18° 以便平滑过渡)随进度 morph 到 SoftBurst,
+/// 同时逆时针旋转半圈;不启动任何 ticker。
 class LoadingSpinner extends StatefulWidget {
   final Color? color;
   final double size;
 
-  const LoadingSpinner({super.key, this.color, this.size = 48});
+  /// 确定态进度,超出 0..1 时截断;为 null 时是不定态循环动画。
+  final double? progress;
+
+  const LoadingSpinner({super.key, this.color, this.size = 48, this.progress});
 
   @override
   State<LoadingSpinner> createState() => _LoadingSpinnerState();
@@ -61,10 +68,21 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final enabled = M3eFlags.of(context).enabled;
-    if (enabled == _m3eEnabled && _cycleController.isAnimating) return;
-    _m3eEnabled = enabled;
-    if (enabled) {
+    _m3eEnabled = M3eFlags.of(context).enabled;
+    _syncTickers();
+  }
+
+  @override
+  void didUpdateWidget(LoadingSpinner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if ((widget.progress == null) != (oldWidget.progress == null)) {
+      _syncTickers();
+    }
+  }
+
+  /// 只有 M3E 开启的不定态需要 ticker,确定态完全由 [progress] 驱动。
+  void _syncTickers() {
+    if (_m3eEnabled && widget.progress == null) {
       if (!_cycleController.isAnimating) _cycleController.forward(from: 0);
       if (!_rotationController.isAnimating) _rotationController.repeat();
     } else {
@@ -97,6 +115,7 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
         width: widget.size,
         height: widget.size,
         child: CircularProgressIndicator(
+          value: widget.progress?.clamp(0.0, 1.0),
           color: widget.color,
           strokeWidth: (widget.size / 12).clamp(2.0, 4.0),
           padding: EdgeInsets.zero,
@@ -106,6 +125,26 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
 
     // LoadingIndicatorTokens.ActiveIndicatorColor = Primary。
     final color = widget.color ?? Theme.of(context).colorScheme.primary;
+
+    final progress = widget.progress;
+    if (progress != null) {
+      final value = progress.clamp(0.0, 1.0);
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(
+          painter: _LoadingIndicatorPainter(
+            morph: _Md3LoadingGeometry.determinateMorph,
+            morphProgress: value,
+            // Compose: rotation = -progress * 180,逆时针。
+            rotationDegrees: -value * 180,
+            scaleFactor: _Md3LoadingGeometry.determinateScaleFactor,
+            color: color,
+            path: _path,
+          ),
+        ),
+      );
+    }
 
     return SizedBox(
       width: widget.size,
@@ -118,13 +157,14 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
                 _Md3LoadingGeometry.morphCurve.transform(_cycleController.value);
             return CustomPaint(
               painter: _LoadingIndicatorPainter(
-                morphIndex: _morphIndex,
+                morph: _Md3LoadingGeometry.morphs[_morphIndex],
                 morphProgress: progress,
                 // Compose: rotate(progress * 90 + morphRotationTargetAngle +
                 // globalRotation),弹簧过冲会带动旋转一起回弹。
                 rotationDegrees: progress * 90 +
                     _morphRotationTargetAngle +
                     _rotationController.value * 360,
+                scaleFactor: _Md3LoadingGeometry.scaleFactor,
                 color: color,
                 path: _path,
               ),
@@ -177,14 +217,30 @@ abstract final class _Md3LoadingGeometry {
   /// (每段 morph × progress ∈ [0, 过冲峰值])采样,按 painter 的实际口径
   /// (控制点包围盒中心对齐 + 绕中心旋转)求最大回转半径,反推出
   /// 任意帧都不会画出 size 之外的最大缩放。
-  static final double scaleFactor = 0.5 / _maxAnimatedRadius();
+  static final double scaleFactor =
+      0.5 / _maxAnimatedRadius(morphs, morphCurve.peakValue);
 
-  static double _maxAnimatedRadius() {
+  /// 确定态序列,对应 LoadingIndicatorDefaults.DeterminateIndicatorPolygons:
+  /// 圆形先转 360°/20,与同角度的 SoftBurst 对齐后 morph 更平滑。
+  static final Morph determinateMorph = Morph(
+    MaterialShapes.circle
+        .transformed(
+          (Matrix4.identity()..rotateZ(math.pi * 2 / 20)).asPointTransformer(),
+        )
+        .normalized(),
+    MaterialShapes.softBurst.normalized(),
+  );
+
+  /// 确定态进度不过冲,包络只需覆盖 0..1。
+  static final double determinateScaleFactor =
+      0.5 / _maxAnimatedRadius([determinateMorph], 1);
+
+  static double _maxAnimatedRadius(List<Morph> morphs, double peak) {
     var worst = 0.0;
     const samples = 48;
     for (final morph in morphs) {
       for (var s = 0; s <= samples; s++) {
-        final cubics = morph.asCubics(morphCurve.peakValue * s / samples);
+        final cubics = morph.asCubics(peak * s / samples);
         // 与 Path.getBounds 口径一致:包围盒含控制点;painter 每帧按该
         // 包围盒中心对齐画布中心后旋转,约束量即各点到该中心的最大距离。
         var minX = double.infinity, minY = double.infinity;
@@ -221,16 +277,18 @@ abstract final class _Md3LoadingGeometry {
 
 class _LoadingIndicatorPainter extends CustomPainter {
   _LoadingIndicatorPainter({
-    required this.morphIndex,
+    required this.morph,
     required this.morphProgress,
     required this.rotationDegrees,
+    required this.scaleFactor,
     required this.color,
     required this.path,
   });
 
-  final int morphIndex;
+  final Morph morph;
   final double morphProgress;
   final double rotationDegrees;
+  final double scaleFactor;
   final Color color;
 
   /// State 持有的复用 Path,toPath 内部每次会 reset。
@@ -240,12 +298,11 @@ class _LoadingIndicatorPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _Md3LoadingGeometry.morphs[morphIndex]
-        .toPath(progress: morphProgress, path: path);
+    morph.toPath(progress: morphProgress, path: path);
 
     // 对应 Compose processPath:normalized 形状(0..1 空间)按
     // size × scaleFactor 缩放,包围盒中心对齐画布中心,再绕画布中心旋转。
-    final scale = size.shortestSide * _Md3LoadingGeometry.scaleFactor;
+    final scale = size.shortestSide * scaleFactor;
     final boundsCenter = path.getBounds().center;
     final center = size.center(Offset.zero);
     _paint.color = color;
@@ -261,9 +318,10 @@ class _LoadingIndicatorPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LoadingIndicatorPainter oldDelegate) {
-    return oldDelegate.morphIndex != morphIndex ||
+    return !identical(oldDelegate.morph, morph) ||
         oldDelegate.morphProgress != morphProgress ||
         oldDelegate.rotationDegrees != rotationDegrees ||
+        oldDelegate.scaleFactor != scaleFactor ||
         oldDelegate.color != color;
   }
 }
