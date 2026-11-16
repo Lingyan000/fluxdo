@@ -247,6 +247,16 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     return compute(_parsePostStreamJson, response.data!);
   }
 
+  /// 话题近 30 天的每日浏览量，没有浏览的日子服务端不返回
+  Future<List<TopicViewStat>> getTopicViewStats(int topicId) async {
+    final response = await _dio.get('/t/$topicId/view-stats.json');
+    final stats = (response.data as Map<String, dynamic>)['stats'] as List?;
+    return [
+      for (final item in stats ?? const [])
+        ?TopicViewStat.fromJson(item as Map<String, dynamic>),
+    ];
+  }
+
   /// 按帖子编号获取帖子
   Future<PostStream> getPostsByNumber(int topicId, {required int postNumber, required bool asc, bool includeSuggested = false}) async {
     final response = await _dio.get<String>(

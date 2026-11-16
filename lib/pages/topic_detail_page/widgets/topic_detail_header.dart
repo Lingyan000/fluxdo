@@ -27,6 +27,7 @@ import '../../../theme/app_colors.dart';
 import '../../../services/preloaded_data_service.dart';
 import 'topic_state_summary.dart';
 import 'topic_statistics.dart';
+import 'topic_view_stats_sheet.dart';
 
 /// 话题详情页头部组件
 class TopicDetailHeader extends ConsumerWidget {
@@ -275,6 +276,11 @@ class TopicDetailHeader extends ConsumerWidget {
                       Symbols.visibility_rounded,
                       NumberUtils.formatCount(detail.views),
                       label: context.l10n.topicDetail_viewsLabel,
+                      onTap: () => showTopicViewStatsSheet(
+                        context,
+                        topicId: detail.id,
+                        totalViews: detail.views,
+                      ),
                     ),
                     Tooltip(
                       message: TimeUtils.formatTooltipTime(detail.createdAt),
@@ -343,12 +349,14 @@ class TopicDetailHeader extends ConsumerWidget {
     IconData icon,
     String text, {
     String? label,
+    VoidCallback? onTap,
   }) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
     // 图标、数值与标签同段排版：数值与标签共用基线，图标经
     // inlineIconSpan 按基线定位。拆成 Row 里的多个组件各自居中时，西文
     // 数字与中文回退字体的行高不同会让两段文字上下错开
-    return Text.rich(
+    final content = Text.rich(
       TextSpan(
         children: [
           _metadataIconSpan(theme, icon),
@@ -363,16 +371,28 @@ class TopicDetailHeader extends ConsumerWidget {
             const WidgetSpan(child: SizedBox(width: 2)),
             TextSpan(
               text: label,
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant.withValues(
-                  alpha: 0.5,
-                ),
-              ),
+              style: TextStyle(color: muted.withValues(alpha: 0.5)),
             ),
           ],
+          // 可点开明细的项末尾带小箭头，与统计行一致
+          if (onTap != null)
+            inlineIconSpan(
+              Symbols.chevron_right_rounded,
+              size: 14,
+              color: muted.withValues(alpha: 0.5),
+              textStyle: theme.textTheme.bodySmall ?? const TextStyle(),
+            ),
         ],
       ),
       style: theme.textTheme.bodySmall,
+    );
+    if (onTap == null) return content;
+    return InkWell(
+      customBorder: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(8),
+      ),
+      onTap: onTap,
+      child: content,
     );
   }
 

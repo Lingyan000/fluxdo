@@ -1896,6 +1896,24 @@ class TopicLink {
   }
 }
 
+/// 话题某一天的浏览量（`/t/:id/view-stats.json`）
+class TopicViewStat {
+  /// 服务端按 UTC 日期汇总；这里只用年月日，不代表具体时刻
+  final DateTime day;
+  final int views;
+
+  const TopicViewStat({required this.day, required this.views});
+
+  static TopicViewStat? fromJson(Map<String, dynamic> json) {
+    final day = TimeUtils.parseUtcTime(json['viewed_at'] as String?);
+    if (day == null) return null;
+    return TopicViewStat(
+      day: DateTime(day.year, day.month, day.day),
+      views: (json['views'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// 话题详情模型
 class TopicDetail {
   final int id;
