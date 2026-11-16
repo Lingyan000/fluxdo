@@ -1,0 +1,79 @@
+Linux 原生 TLS 接入与 H3 连接关联（2026-11-15）
+
+本轮实际实现
+1. Linux Core 新增动态加载的 GnuTLS 后端。运行时生成两次 ClientHello，核对稳定能力、
+   扩展排列策略及采样 ALPN；仅完整匹配且模板已校准、无需注入 ECH 时采用。
+   不按 UA 品牌、操作系统版本或浏览器版本白名单判断。库缺失或不匹配时保留已有路径，
+   日志仍明确报告后端差异。只在 Linux 引入 libloading 0.9.1，其他四个平台不加载 GnuTLS。
+2. 出口仍由现有 EgressConnector 负责，包含 DNS、代理、双栈选址、超时和备用连接。
+   GnuTLS C 回调只读写有界内存，由 Tokio 驱动 socket。启用系统信任、目标主机校验，
+   证书错误终止，不以更换后端或忽略证书恢复。IP 目标验证 SAN，不发送 DNS SNI。
+3. TLS 票据复用现有 AES-GCM 容器，按后端、库版本、策略、主机、端口与模板隔离。
+   兼容 TLS 1.2/1.3；损坏票据重新创建干净会话后做完整认证。缓存大小和有效期有界。
+4. Linux 的 WebView 代理入口，在已校准模板匹配原生后端且不注入 ECH 时，
+   保留浏览器端到端 TLS 和 HTTP，通过原有选址/代理出口转发。
+   会话恢复不会因精简 ClientHello 而切回 BoringSSL。
+   原始浏览器验证源站证书；未认证的窥探握手不计入采样，独立探针继续负责校准。
+5. ECH 注入仍使用原有 BoringSSL 路径，未为了指纹相同关闭隐私功能。
+   状态分别报告无 ECH 原生后端与 ECH 回退能力；不能宣称 ECH 情况也与 WPE 全面一致。
+6. 缓存策略版本升为 5；连接日志增加实际 TLS 后端。
+   CSRF、Cookie、Origin、Referer 业务策略未修改。
+
+实施中通过验证发现的适配问题
+- WPE ALPN 包含 http/1.0，仅预设 h2/http/1.1 会导致能力不匹配。
+  现直接采用采样的 ALPN；协商得到 HTTP/1.0 时按实际版本发送。
+- 握手成功后的密文写出可能 Pending。保存完成状态，避免再次调用握手。
+- GnuTLS 处理 TLS 1.3 票据后可能返回 AGAIN，此时输入缓冲仍有应用数据。
+  现在先消费已有密文再读 socket，避免合并读取时等待不会到来的后续数据。
+  代理端到端测试修复前挂起、修复后通过；未以放宽超时掩盖。
+
+验证
+- Rust 核心 127 项通过，包括 8 项原生后端回归：证书拒绝/主机名错误、
+  小缓冲分段写入、TLS 1.2 恢复、TLS 1.3 加密票据重载、损坏票据、取消/断开、
+  作用域隔离、ALPN/能力准入、透明隧道的源站信任与恢复（部分同一用例包含多项断言）。
+- 真 WPE WebKit 26.5、GnuTLS 3.8.9：稳定 TLS 字段、扩展集合、ALPN、
+  H2 初始帧、伪头顺序、默认 fetch 优先级与请求头存在性对照通过。
+- Chromium 99/110/156、110 乱序开关、156 自定义 UA、WPE，加 10 组五平台预置，
+  合计 16 组/80 个传输场景通过。预置回放不是对应平台真机。
+- Flutter 网络配置/指纹服务及架构守卫 18 项通过。
+
+H3 采集关联修复
+先前采集首个 UDP 流，却可能用另一条连接的 H3 请求进行比较，不能作为完整联合模板。
+现在每条浏览器 UDP 连接使用独立 flow_id，并通过上游 socket 关联服务端 H3 请求。
+报告保留各 flow 的 Initial；正对照要求每个 H3 请求都关联完整 Initial。
+实际 Chromium 156 复现：导航使用 flow 0，fetch/done 使用 flow 1；两组分别完成。
+99/110/156 正对照与 156 不受信证书负对照通过。
+这修复了实验数据关联，尚不是生产 H3 模板回放；Apple 原生 H3 仍需受信、可达 UDP 的端点。
+
+证据位置
+/workspace/scratch/linux-native-tls-20261115/final-matrix
+/workspace/scratch/linux-native-core-final2.log
+/workspace/scratch/linux-native-flutter-tests.log
+/workspace/scratch/linux-native-mirror-debug3.log
+/workspace/scratch/h3-joint-20261115
+
+依赖与 ABI 资料
+https://docs.rs/libloading/0.9.1/libloading/
+https://gnutls.org/manual/html_node/Asynchronous-operation.html
+https://www.gnutls.org/reference/gnutls-gnutls.html
+
+尚未完成的范围
+生产 H3 采样/回放闭环、完整 HPACK/QPACK 动态策略及导航/资源优先级，
+iOS 冻结 UA 的登录兼容策略，以及 iOS 15.0 原生验证仍未完成；不把本轮通过当成全部解决。
+
+后续补充：上述 Linux 修复源码 7467971f2752a67851b2446bdbacf1eccca7f7a2 的云端结果全部通过。
+Android/Windows：https://github.com/Lingyan000/fluxdo/actions/runs/43686477548
+macOS/iOS 26.2：https://github.com/Lingyan000/fluxdo/actions/runs/43686477647
+iOS 15.5：https://github.com/Lingyan000/fluxdo/actions/runs/43686478020
+已下载并逐项核对 matrix.json：11 个实例/55 个场景（macOS 控制重复；9 个唯一配置）。
+这批结果早于下一步 HPACK 索引探针，后者单独重跑验证，详见 hpack-policy-20261115.txt。
+
+独立算法互操作补验
+使用 Python/OpenSSL 3.5.8 的独立 TLS 1.3 服务端，分别只允许 X448、ffdhe2048，
+以及 RSA-PSS 限制密钥证书（rsa-pss）/Ed448 证书 + X25519。四组生产 HttpEgressClient 请求均返回 200/ok，
+不是仅比对 ClientHello 算法编号。服务端固定单组、TLS 1.3；完整源码见
+examples/linux_tls_negotiation.rs 与 tool/native_fingerprint/linux/verify_negotiation.py。
+使用现有真实 WPE 两次样本，不把同一个 Hello 复制两次冒充采样；首轮诊断错误地固定排列，
+被后端匹配拒绝、尚未联网，失败记录保留。改为实际两次样本策略后全部通过。
+证据：/workspace/scratch/linux-native-algorithms-v3-20261115/matrix.json；v2 保留原三组结果。
+实验私钥仅留在本地临时目录，不进入源码、Actions artifact 或交付证据包。

@@ -41,6 +41,17 @@ import workmanager_apple
   }
 
   private func registerNativeChannels(messenger: FlutterBinaryMessenger) {
+    let systemInfoChannel = FlutterMethodChannel(
+      name: "com.fluxdo/system_info", binaryMessenger: messenger
+    )
+    systemInfoChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "getSafariVersion": result(BrowserIdentity.safariVersion())
+      case "getBrowserIdentity": result(BrowserIdentity.diagnostics())
+      default: result(FlutterMethodNotImplemented)
+      }
+    }
+
     MiniAppScenes.shared.attach(messenger)
     PublicFileHandler.shared.register(messenger: messenger)
     // 媒体转码通道(音视频压缩到 4MB:AVAssetWriter 硬编,零依赖)

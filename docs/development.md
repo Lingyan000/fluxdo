@@ -193,3 +193,32 @@ security find-identity -v -p codesigning   # 应列出 "FluxDO Code Signing"
 然后在 `apple/Local.xcconfig` 中启用（见 example 文件的「用法 1」）。切换后首次启动钥匙串还会弹最后一次（旧 ACL 只认 adhoc 旧构建），点「始终允许」后 rebuild 不再弹。
 
 CI 发版使用同一张证书：把 p12 的 base64 与密码配置为仓库 secrets `MACOS_CODESIGN_P12_BASE64` / `MACOS_CODESIGN_P12_PASSWORD`（见 `.github/workflows/build.yaml` 的 "Setup macOS code signing" 步骤）。secrets 缺失时（如 fork）自动回退 adhoc 签名，构建不会失败。自签证书不等于公证，用户下载 DMG 后仍需右键打开或 `xattr -cr` 解除隔离，与 adhoc 时代一致。
+
+
+## 网络回归 CI
+
+`network-regression.yaml` 在 PR、dev/main 推送时按改动路径选择检查；文档改动只经过选择和结果汇总。
+同一 PR 的旧任务会被新提交取消，不启动 BrowserStack、不连接私有 Tailnet、不探测公网指纹服务。
+
+本地复用同一入口（先完成 `just sync` 或 `dart tool/project_prep.dart test`）：
+
+```sh
+python3 tool/ci/network_checks.py dart
+python3 tool/ci/network_checks.py rust
+python3 tool/ci/network_checks.py python
+```
+
+- Dart：网络专项测试、全部架构守卫、定向 analyze。范围在 `tool/ci/network_checks.json`，没有接入应用的存量全量失败。
+- Rust：Linux 上运行全部 Core 库测试，使用本地套接字；0 项测试不能算成功。
+- Python：严格证据比对、负对照、采样驱动清理和设备预算测试，不创建真实设备会话。
+- 原生代码变化：追加对应 Core 编译检查；共享 Core 变化检查 Android arm64、Windows、macOS 和 iOS device/simulator。
+  Apple Swift 身份代码以 iOS 15 部署目标检查。这些是 Core/SDK 编译检查，不是五平台完整应用构建或真机运行证据。
+- 缓存依赖和 Rust 编译结果；冷缓存可能明显慢于本地或后续运行。`Network regression result` 是统一汇总状态，仓库规则可将其设为必需检查。
+
+`network-diagnostics.yaml` 是唯一手动诊断入口，每次选择一个平台；默认 TCP，H3 必须显式选择。
+Windows Flutter 选项固定运行生产 H3 探针及错误 SPKI 负对照。H3 未校准时严格诊断会失败，不表示 TLS/H2 不可用。
+诊断使用一次性 GitHub runner/模拟器，不访问付费真机平台；产物保留 7 天。
+完整应用仍沿用现有 `build.yaml` 发布构建，不在每次提交重复打包。
+
+本轮清理了 16 个已提交的临时工作流及 2 个本地遗留文件，统一为两个入口；GitHub 上另含早期已删文件，共停用 19 个旧入口。旧分支与工作流保存在 `archive/fingerprint-diagnostics-20261116` 标签；
+分支到提交的映射及恢复方式见 `docs/diagnostics/ci-cleanup-20261116.json`。历史测试报告及运行记录保留。

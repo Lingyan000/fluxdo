@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <!-- QUIC 需要查询默认网络；与正式应用 connectivity_plus 合并后的权限一致。 -->
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="Fingerprint probe">
+    <activity android:name=".ProbeActivity" android:exported="true" />
+    <activity android:name=".HostedServiceActivity" android:exported="true" />
+  </application>
+</manifest>

@@ -120,10 +120,17 @@ class NetworkSettingsService {
   NetworkSettingsService._internal() {
     _proxyService.notifier.addListener(_handleProxySettingsChanged);
     SystemProxyService.instance.version.addListener(_handleSystemProxyChanged);
-    FingerprintTemplateService.instance.templateReady.addListener(() {
-      _coreService.refreshStatus();
-      _touch();
-    });
+    FingerprintTemplateService.instance.templateReady.addListener(
+      _refreshTemplateStatus,
+    );
+    FingerprintTemplateService.instance.calibrationRevision.addListener(
+      _refreshTemplateStatus,
+    );
+  }
+
+  void _refreshTemplateStatus() {
+    _coreService.refreshStatus();
+    _touch();
   }
 
   static final NetworkSettingsService instance =
@@ -531,7 +538,10 @@ class NetworkSettingsService {
       // 直连模式下 WebView 不经过核心，指纹只能靠探针采样
       if (port != null &&
           current.fingerprintPreset == FingerprintPreset.automatic) {
-        final validation = FingerprintTemplateService.instance.ensure(port);
+        final validation = FingerprintTemplateService.instance.ensure(
+          port,
+          waitForH3: false,
+        );
         if (Platform.isWindows && fingerprintUserAgent == null) {
           // 首次启动先确定代理，再获取真实 UA 并核对已有模板。
           // 复用同一个采样任务，避免首个业务请求抢在版本校验前使用旧模板。

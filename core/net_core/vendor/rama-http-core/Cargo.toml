@@ -1,0 +1,62 @@
+[package]
+"name" = "rama-http-core"
+"description" = "rama http protocol implementation and low level utilities"
+"version" = "0.5.0"
+"license" = "MIT OR Apache-2.0"
+"edition" = "2024"
+"repository" = "https://github.com/plabayo/rama"
+"keywords" = ["io", "async", "proxy", "http", "rama"]
+"categories" = ["asynchronous", "network-programming", "web-programming"]
+"authors" = ["Glen De Cauwsemaecker <glen@plabayo.tech>"]
+"rust-version" = "1.96.0"
+"metadata" = { "docs" = { "rs" = { "all-features" = true, "rustdoc-args" = ["--cfg", "docsrs"], "targets" = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "x86_64-apple-darwin", "aarch64-apple-ios", "aarch64-linux-android"] } } }
+
+[features]
+"dial9" = ["rama-http/dial9"]
+"default" = []
+"quic" = ["dep:rama-quic", "dep:rama-quic-proto"]
+"opentelemetry" = ["rama-core/opentelemetry", "rama-http/opentelemetry", "rama-quic?/opentelemetry"]
+"fuzz-utils" = []
+"tls" = ["rama-http-types/tls"]
+"unstable" = []
+
+[dependencies]
+"ahash" = { "version" = "0.8" }
+"atomic-waker" = { "version" = "1.1" }
+"futures-channel" = { "version" = "0.3" }
+"httparse" = { "version" = "1.10" }
+"httpdate" = { "version" = "1.0" }
+"indexmap" = { "version" = "2", "features" = ["std"] }
+"itoa" = { "version" = "1" }
+"parking_lot" = { "version" = "0.13" }
+"pin-project-lite" = { "version" = "0.2" }
+"rama-core" = { "version" = "0.5.0", "default-features" = false, "features" = ["std"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-http" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-http-types" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-net" = { "version" = "0.5.0", "default-features" = false, "features" = ["std"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-quic" = { "version" = "0.5.0", "default-features" = false, "optional" = true, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-quic-proto" = { "version" = "0.5.0", "default-features" = false, "optional" = true, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-utils" = { "version" = "0.5.0", "default-features" = false, "features" = ["std"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"serde" = { "version" = "1.0", "default-features" = false, "features" = ["alloc", "derive"] }
+"slab" = { "version" = "0.4" }
+"tokio" = { "version" = "1.54.1", "features" = ["io-util"] }
+"want" = { "version" = "0.3.2" }
+
+[dev-dependencies]
+"quickcheck" = { "version" = "1.1" }
+"rama-error" = { "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-http" = { "version" = "0.5.0", "default-features" = false, "features" = ["compression"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-quic" = { "version" = "0.5.0", "default-features" = false, "features" = ["rustls", "ring", "test-utils"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-tls" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"rama-udp" = { "version" = "0.5.0", "default-features" = false, "features" = ["test-utils"], "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555" }
+"serde_json" = { "version" = "1.0" }
+"tokio" = { "version" = "1.54.1", "features" = ["rt-multi-thread", "macros", "sync", "net"] }
+"tokio-rustls" = { "version" = "0.26", "default-features" = false, "features" = ["logging", "tls12"] }
+"tokio-test" = { "version" = "0.4" }
+"tracing-test" = { "version" = "0.2" }
+"webpki-roots" = { "version" = "1.0" }
+
+[lints]
+"rust" = { "unreachable_pub" = "deny", "unused_imports" = "warn", "unexpected_cfgs" = { "level" = "warn", "check-cfg" = ["cfg(fuzzing)", "cfg(loom)"] }, "unsafe_op_in_unsafe_fn" = "warn" }
+"clippy" = { "all" = { "level" = "warn", "priority" = -1 }, "type_complexity" = "allow", "result_large_err" = "allow", "unwrap_used" = "deny", "expect_used" = "deny", "panic" = "deny", "print_stdout" = "deny", "dbg_macro" = "deny", "todo" = "deny", "unimplemented" = "deny", "unreachable" = "deny", "get_unwrap" = "deny", "unchecked_time_subtraction" = "deny", "ignore_without_reason" = "warn", "let_underscore_future" = "warn", "let_underscore_must_use" = "warn", "unused_result_ok" = "warn", "map_err_ignore" = "warn", "assertions_on_result_states" = "warn", "if_let_mutex" = "warn", "await_holding_lock" = "warn", "await_holding_refcell_ref" = "warn", "large_futures" = "warn", "mem_forget" = "warn", "unnecessary_safety_doc" = "warn", "unnecessary_safety_comment" = "warn", "multiple_unsafe_ops_per_block" = "warn", "undocumented_unsafe_blocks" = "warn", "default_union_representation" = "warn", "ptr_as_ptr" = "warn", "ptr_cast_constness" = "warn", "as_ptr_cast_mut" = "warn", "borrow_as_ptr" = "warn", "ref_as_ptr" = "warn", "cast_ptr_alignment" = "warn", "transmute_ptr_to_ptr" = "warn", "float_cmp" = "warn", "float_cmp_const" = "warn", "lossy_float_literal" = "warn", "imprecise_flops" = "warn", "suboptimal_flops" = "warn", "invalid_upcast_comparisons" = "warn", "rc_mutex" = "warn", "debug_assert_with_mut_call" = "warn", "iter_not_returning_iterator" = "warn", "expl_impl_clone_on_copy" = "warn", "infallible_try_from" = "warn", "allow_attributes" = "warn", "enum_glob_use" = "warn", "equatable_if_let" = "warn", "filter_map_next" = "warn", "needless_continue" = "warn", "needless_borrow" = "warn", "match_wildcard_for_single_variants" = "warn", "match_same_arms" = "warn", "implicit_clone" = "warn", "rest_pat_in_fully_bound_structs" = "warn", "fn_params_excessive_bools" = "warn", "manual_let_else" = "warn", "single_match_else" = "warn", "unnested_or_patterns" = "warn", "ref_option" = "warn", "option_option" = "warn", "str_to_string" = "warn", "uninlined_format_args" = "warn", "return_self_not_must_use" = "warn", "use_self" = "warn", "unused_self" = "warn", "needless_pass_by_ref_mut" = "warn", "needless_pass_by_value" = "warn", "trivially_copy_pass_by_ref" = "warn", "redundant_clone" = "warn", "inefficient_to_string" = "warn", "linkedlist" = "warn", "macro_use_imports" = "warn", "verbose_file_reads" = "warn", "exit" = "warn", "fallible_impl_from" = "warn" }
+"rustdoc" = { "broken_intra_doc_links" = "deny" }

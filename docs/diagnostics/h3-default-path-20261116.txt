@@ -1,0 +1,98 @@
+正式 H3 采样入口与生命周期验证（2026-11-16）
+
+后续 Android 内部网络日志、证书/Alt-Svc 证据及重采样修复见 h3-default-netlog-20261116.txt。
+
+本轮范围
+- 接续 PR 432，基点 b50eee39a65c88eddc632b69cfb8549609b4b0dc。
+- Windows 将独立探针环境接入正式采样服务；Android 补齐默认配置对照。
+- 没有修改 CSRF、Cookie/Origin/Referer 业务策略；没有新增 BrowserStack 会话。
+
+Windows 正式实现
+- 从当前核心状态读取各 H3 端口对应的公开 SPKI，要求规范 Base64 且解码恰好 32 字节。
+  缺失或非法指纹时不创建原生环境，也不退回共享环境放行证书。
+- 每个探针使用独立临时 profile；参数仅指定 localhost 当前端口、当前 SPKI 和 IPv4 回环解析。
+  不改业务 WebView 环境，不导入根证书，不使用全局 ignore-certificate-errors。
+- QUIC 内部已知根豁免按主机判断；不能误称其本身也按端口隔离。这里用独立环境、精确 SPKI、
+  当前端口导航限制和自有固定探针页共同限定范围；H3 证书回调一律拒绝再次兜底放行。
+- TLS/H2 首次就绪仍可提前返回，独立 H3 校准在后台串行执行；主环境无需重建。
+- 超时或取消后迟到的原生环境仍回收；已经取消时不会继续创建原生环境。
+
+控制器创建和销毁顺序
+- 本地 Windows 插件 HeadlessInAppWebView.run 在原生异步创建回调中才注册控制器并返回成功。
+  Dart dispose 在 _running=false 时直接返回。原先 run 超时后立即 dispose 可能漏掉迟到控制器。
+- 现在保留原始创建 Future，按创建结束、销毁控制器、销毁独立环境的顺序处理。
+  调用方最多等待五秒清理，后台仍负责迟到结果，不提前释放创建中的环境。
+- 创建失败仍回收资源；控制器销毁失败也执行环境释放，错误不会被当作采样成功。
+- 原生文件锁短时间未释放时有界重试临时目录删除；仍占用时记录日志，不无限阻塞业务。
+
+本地检查
+- 独立环境与资源生命周期八项、原采样状态机十一项、架构守卫八项，共二十七项通过。
+- 定向 Flutter 分析无问题。最小 Flutter 宿主也已单独分析。
+- 新宿主逐字复制生产环境管理类并记录 SHA-256，使用项目内 Windows 插件；
+  主 WebView 在探针运行期间保持存活，采样后验证主控制器仍可执行 JS、探针目录已移除。
+  这不是完整 FluxDO Flutter 应用或实体用户设备的认证。
+- 独立 profile 采到的是当前真实 WebView2 引擎；尚未证明它与业务 profile 的持久化实验配置完全一致。
+  同版本与同 UA 不能单独证明全部 H3 策略一致，该边界不能用隔离环境的通过结果掩盖。
+
+Android 默认对照第一轮
+- Actions 43784581053，代码 b50eee39a65c88eddc632b69cfb8549609b4b0dc，整体失败。
+- Android 15 / WebView 124.0.6367.219；两种 UA 的 TCP/H2 通过，四次 H3 探针默认网络可用，
+  调试参数关闭、页面完成，但 UDP 发送/接收为零，每个 origin 只有 22 次 TCP 请求。
+- 发现旧转发器只监听 IPv4，而正式 Core 同时监听 IPv4/IPv6；这轮不能排除诊断地址族差异。
+- 产物 14188914830，104333 字节，SHA-256
+  28a1e4b04e58e67328d25b171b4c2814d6c446f5b6e88d3257d4629b98870b27。
+
+Android 双栈对照
+- 转发器现在同时监听 127.0.0.1 与 ::1；回复回到原接收 socket，不混合连接映射。
+  创建映射和关闭使用同一锁，保持最多八条映射并防止关闭时新建泄漏。
+- 真实 Java UDP 回显验证两种地址的 1200 字节原样往返、两个独立上游流和关闭后端口可重新绑定。
+- Actions 43785596765，代码 9b0c02fccee231179ff72c95a80226f00c9b6f1f：上述回显通过。
+  Android 两种 UA 的 TCP/H2 通过，默认 H3 仍未完成；四次探针全部明确记录
+  default_network_available=true、udp_dual_loopback=true、diagnostic_force_quic=false、UDP 0/0。
+- 四个 origin 均只观察到 22 次 TCP 请求，reason=native_probe_only_tcp_observed。
+  页面完成不等于 H3 成功，没有将驱动 success=true 冒充模板校准通过。
+- 这排除了旧宿主权限缺失与转发器只监听 IPv4 两项干扰；尚未拿到默认路径的证书/Alt-Svc
+  内部拒绝事件，不能仅凭零 UDP 断言具体失败层。前轮 Chromium 源码限制证据仍保留。
+- 产物 14189564172，114725 字节，SHA-256
+  90c3b48f747b81cb37659253651a4e3bdb2f15a3b4b6c7fc89b8f0e9fa045c1c。
+
+Windows Flutter 首轮
+- Actions 43785251952，代码 8095a85bfb2e0eca798c70e7ac17b56a6884a198，工作流报告成功。
+- Windows Server 2022 / WebView2 131.0.2903.86；TLS/H2、生产 H3 基线、九种扩展请求通过。
+  七次 Flutter 宿主实例（其中五次独立 H3 环境）均记录主 WebView 可执行 JS、探针 profile 已移除。
+- 逐项检查却发现七次主 profile 删除全部遇到文件锁，宿主仅记录 cleanup_error，仍退出成功。
+  因此首轮只承认上述报文和主控制器存活结论，不能当作完整生命周期验证通过。
+- 修复宿主：主 profile 删除最多重试五秒，清理异常设置 success=false；负向对照也要求清理完成。
+  宿主使用生产 disposeProbeResources，等待迟到的控制器创建结束后再销毁环境。
+- 中间任务 43787213914 在编译阶段主动取消，因其仍包含忽略清理失败的旧宿主；不记为通过。
+- 源文件摘要与该提交的 Windows CRLF 检出内容一致：
+  6533fcd6468760ad2da850732479566aa0f750a80e0d84f0edec8d6872ad6e6d。
+  Git LF 内容摘要为 96e4397e9c2aca9374c4a0df5208d867156a03aa36e284c8f9138ccac3b5d547。
+- 产物 14190772301，183121 字节，SHA-256
+  33a27d93097733980d873c46fe64acfd6024ab98824b847bab007de2fc86a2fd。
+
+Windows Flutter 修正后复验
+- Actions 43787511036，代码 7e105edc681ae741264fb48ef222b645b34a62c4，全部步骤通过。
+- Windows Server 2022 / WebView2 131.0.2903.86；TLS/H2、生产 H3 基线与九种扩展请求再次通过。
+  这是同一 Windows 覆盖范围的 Flutter 集成复验，不在前轮累计 108 个场景中重复加九。
+- 七次正对照宿主都满足 main_survived=true、probe_profile_removed=true、main_profile_removed=true，
+  没有 cleanup_error；其中五次使用独立生产 H3 环境。首次文件锁问题已在本轮复验中消除。
+- 错误 SPKI 负向对照：采集器和宿主均退出失败，应用请求 H3/TCP 均为零，主 profile 清理完成。
+  采集器实际记录两个 UDP 数据报、两条 CERTIFICATE_VERIFY_FAILED，certificate_rejected=true。
+  因此不是只凭“没有流量”猜测证书拒绝。错误页面未进入主控制器存活断言，main_survived=false
+  是该字段初始值，不解释为主 WebView 被破坏；主控制器存活证据来自七次正对照。
+- 生产环境类与提交的 Windows CRLF 内容逐字摘要一致：
+  822d26b36e5148cebb6fdde98402bae94c142a9af92572485ccb5ef1d9fa8af2。
+  Git LF 内容摘要为 1832f6c1e9fe97ad25932d09a979f100bd0f4ee2b8da893a5dccae59423d3710。
+- 产物 14191880021，187979 字节，SHA-256
+  5bcbc553f6e9045456b937d5dbbb6fb4219faae839e26a84443cd07f01e8b634。
+- 本地再次逐项核验矩阵、九请求、七个宿主 JSON、生产源码摘要与错误证书原始记录，均通过。
+  修正后的宿主定向 Dart 分析和八项架构守卫通过。
+- 工作流沿用 force-quic-control 参数名传递采集器证书与驱动入口；宿主实际使用生产环境类，
+  该类不依赖 CI 标志。不能把这项受控的本机采样误写成共享业务 profile 的默认 Alt-Svc 测试。
+
+尚未完成
+- Android 正式 user 系统没有上述任意命令行入口；当前默认本地自签证书路径不能宣称已支持 H3。
+  受信任远程采样入口需要可控域名与 UDP 服务，目前未提供或部署。
+- iOS/macOS 前轮原生校准证据保留，Linux 后端能力按实际采样记录；本轮没有把 Windows 参数
+  套给其他平台。完整真机、iOS 本机 Core、蜂窝切换和线上 CF 放行仍不在本轮通过范围。

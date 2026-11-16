@@ -1,0 +1,106 @@
+后续状态更新：Initial 跨包布局、有序分片上限及 QPACK 自动字段问题已继续修复。
+本文件保留上一轮证据与失败记录；新增范围和限制以 h3-initial-layout-20261115.txt、
+h3-qpack-request-matrix-20261115.txt、h3-apple-qpack-20261115.txt 为准。旧的包长相同比对不能证明 CRYPTO 分片相同。
+
+生产 H3 采样与回放验证（持续更新）
+
+实现
+- TCP 与 QUIC 分开采样；H3 使用两个独立 localhost origin，每个连接记录首次与后续两个请求。
+- 只接收完整 QUIC 引擎观测及冻结的首请求边界。采样服务不签发 TLS 票据，恢复握手不得校准完整握手模板。
+- 按观测构造 TLS、QUIC 参数、包号宽度、H3 SETTINGS、关键流分配、冷/热 QPACK、逐请求 PRIORITY_UPDATE。
+- GREASE 标识、负载及保留版本值每连接重建；旧版本协商草案参数 0xff73db 按格式解析，不按 UA 主版本分支。
+- 只排序实际请求头并应用编码偏好，不复制 Cookie、CSRF、Origin、Referer 值。原有 CSRF 业务逻辑未改。
+- 网络重置关闭专用端点、更换票据域，采样代次防止旧结果发布。未完成 H3 校准时保持既有 TCP 路径。
+
+已执行验证
+- 生产 HttpEgressClient 完成 H2 -> H3 和三个连续 H3 请求；使用独立服务端观察真实报文。
+- Chromium 99、110、156 的当前比对字段通过：TLS 稳定字段/扩展、QUIC 参数、首包几何和包号宽度、SETTINGS、关键流编号、三阶段共同字段 QPACK。
+- Chromium 实验显式使用 --origin-to-force-quic-on 和本机证书 SPKI 许可，不能证明真实 WebView 原生 Alt-Svc 采样在该平台可用。
+- 独立 QPACK/优先级测试 2 项通过，QUIC 禁用票据完整握手测试 1 项通过。
+- 网络核心 132 项通过；架构守卫及采样服务测试 19 项通过，包含 TCP 就绪后不等待可选 H3、后台任务串行与取消。
+- 本次变更的三个 Dart 文件单独 analyze 无问题。
+- 生产配置的回环网络场景四项通过：首次 Initial 丢包、Retry、UDP 阻断回退 H2、reset 后重建 H3。每项服务端仅记录一次 POST；H3 的 12 字节请求体完整。
+- reset 两轮 H3 连接标识不同，旧会话不恢复，QPACK 请求流重新从 0 开始，存在的 GREASE 值重新生成。
+- 全量 flutter analyze：578 项，唯一 error 为未改动 glass_readability_test.dart 的 expanded 参数；本次涉及网络文件未出现分析问题。
+
+验证工具
+- examples/h3_production_client.rs 使用生产 Listener 和 HttpEgressClient，不以独立自制请求客户端代替。
+- tool/compare_h3_production.py 对共同请求字段做逐项比较，保留所有失败字段。不同业务值的动态索引数值不跨连接比较。
+- tool/run_h3_network_scenarios.py 保存故障注入计数、协议回退、连接标识、恢复状态和服务端请求次数；不同于报文字段等价比对。
+- apple-production-h3 工作流先用原生 WKWebView 校准 TCP，再运行生产 H3 探针和 Core 回放；云端结果必须另附运行编号。
+
+不能据此声称的结论
+- Initial 随机分片的算法分布尚未与浏览器实现等价；当前 Chaos 策略按包内分片，浏览器可能跨整轮首包分片。
+  已有 Chromium 156 原始参考样本中，第一个 Initial 含 offset=1457 的 CRYPTO 片段，第二个含
+  offset=65 的片段；对应 Core 首包只含 offset=0、len=1211 的连续数据。二者包长一致不能证明分片策略一致。
+  Chromium 99/110 参考样本还存在 2 字节片段；当前随机切片最小切点为 32，不能宣称其随机分布已复现。
+- 当前探针没有覆盖条件请求、上传等全部浏览器 QPACK 策略；三阶段 fetch 样本不能代表所有请求类型。
+- 完整真机、蜂窝/Wi-Fi 切换、复杂弱网、连接迁移及线上 CF 结果仍需专门证据。回环故障注入不能替代这些场景。
+- iOS 模拟器不是真机；macOS 宿主上的 Core 回放不等于 iOS 静态库产物验证。
+
+云端扩展
+- macOS/iOS 工作流 43701014885，提交 582ebae31dfa135e51655b076085e01ef69b4c74：macOS 原生 UA、应用 UA、iOS 26.2 原生 UA 的当前 H3 比对字段通过；iOS 应用 UA 只记录两次请求，判定失败，不能汇总为全通过。
+- 上述缺少末次观测的采集器时序已修正：客户端退出后等待服务端发布 finished 观测，再结束采集。必须重新云端验证。
+- 修复复验 43702919972（ae80f35f）：macOS / iOS 26.2 各原生和应用 UA 共四组通过。下载 artifact 14157540394 后，加入控制帧语义检查的本地复核也全部通过。
+- Android 使用原生 WebView 加模拟器 UDP 字节转发，Core 仍在 Linux 宿主；转发有界且逐源端口隔离，不可标注为 Android 原生 Core 或真机。
+- Android 工作流 43701585801，提交 5169d4de：Android 15 / WebView 124.0.6367.219，原生及应用 UA 均通过 TCP/H2 比对，但本地 H3 探测无 QUIC 观测，UDP 转发计数为零。H3 校准未完成。
+- Windows 工作流 43701585272，同提交：TCP/H2 比对通过，本地 H3 探测仅有 TCP 请求，无 QUIC 观测。不能以 Linux Chromium 强制 QUIC 实验代替 WebView2 原生可用性。
+- Windows 首次启动只等待 TLS/H2 校验，H3 在同一串行采样任务中继续；日志在 error 为空时记录 reason，避免失败原因显示为 none。
+- Windows 使用原生 WebView2 和 Windows Core；iOS 15.5 单独工作流运行，不能由现代 iOS 结果替代。
+- iOS 15.5 工作流 43701584440（5169d4de）两种 UA 的 H3 校准失败：采样带 MAX_PUSH_ID，被模板构造当作不支持的已知控制帧拒绝。历史原生观测显示额度 ID 99。
+- 已按采样额度接入底层原生 max_pushes 状态机，并受既有 max_requests 预算约束；缺失、溢出、超限或多次 MAX_PUSH_ID 均拒绝，不静默丢弃。两份样本也须有相同额度；不按平台/版本硬编码。
+- 增补控制帧语义比对，已有 Chromium 99/110/156 和现代 Apple 通过样本复核通过；新增额度边界测试通过。修复后的 iOS 15.5 仍需新的云端运行确认。
+- iOS 15.5 修复复验 43703489482（75a406c7）已完成：iOS 15.5 原生/应用 UA 及 macOS 原生/应用 UA 共四组通过。
+  artifact 14158320643，SHA-256 0cd550f1a1d997662ff4e1dcc71a2b2fb8e1a9ef89208da748454cf982c19967。
+  下载原始产物后再次比对，包括 MAX_PUSH_ID 实际额度；iOS 仍是 15.5 模拟器，Core 位于 macOS。
+  相关模板测试 4 项、底层推送额度/取消/乱序等测试 12 项通过；不外推为 iOS 15.0 或真机验证。
+
+后续证据审计与传输场景
+- 发现旧版比对器会放过 fields_complete=false、空字段集合和 timed_out 首请求边界。
+  已在真实 iOS 15.5 产物副本上分别复现三项误报；修复后严格要求源样本、冻结边界、
+  当前连接观测、字段完整标记、命名字段对齐、伪头唯一性和请求流编号，同时检查驱动成功状态。
+  额外核对 Initial 完整性、冻结首请求的插入关联和三个请求是否来自选中的同一连接。
+- 新增 tool/test_compare_h3_production.py，使用带运行编号和摘要的实际采样 fixture；10 项回归通过。
+  严格复核 iOS 15.5/macOS 四组、iOS 26.2/macOS 四组和 Chromium 99/110/156 三组，共 11 组仍通过。
+- 上传完整性从仅比较长度改为两端均可核验的 SHA-256，覆盖 H3 与 UDP 阻断后的 H2。
+  相同长度但错误摘要的负对照被拒绝。无业务 Cookie、CSRF、Origin、Referer 值参与修改。
+- 最新本机生产 Core 六类传输场景通过：首次 Initial 丢包、Retry、UDP 阻断、连接 reset、
+  扩展请求、服务端已接受 POST 后丢失响应。扩展请求包含 65539 字节二进制上传、If-None-Match 原值保留，以及三个同连接
+  并发 H3 GET；上传与每个并发请求均只在服务端收到一次。这是功能验证，不是全部 QPACK 策略等价证明。
+- 丢失写入响应场景在服务端接收完整 POST 后主动关闭 QUIC，客户端返回错误且没有重放；
+  随后的读取成功到达完成标记。不能将此结果等同于所有真实网络中均具有严格一次语义。
+- H3 状态现在区分未观测、仅 TCP、QUIC 已连接但样本待完成、等待第二个样本和校准失败；
+  没观测到 QUIC 不等同于浏览器没有 H3 能力。
+
+Chromium 本地采样证书限制
+- Chromium 124.0.6367.219 的 net/http/http_network_transaction.cc:1334-1340 在处理
+  Alt-Svc 前要求 SSLInfo 有效且 IsCertStatusError=false；Chromium 131.0.6778.85:1474-1480 同样如此。
+  124 与已采样 Android WebView 的版本相同；131 仅作为 Edge/WebView2 131 的上游同主版本佐证，
+  不声称对应 Microsoft 的精确源码提交。
+- 来源：https://chromium.googlesource.com/chromium/src/+/refs/tags/124.0.6367.219/net/http/http_network_transaction.cc
+  SHA-256 c55f5406c9e261f9c6ecfbedb1ad928e5b6595378e975ad963adc0b2c6a74667。
+- 来源：https://chromium.googlesource.com/chromium/src/+/refs/tags/131.0.6778.85/net/http/http_network_transaction.cc
+  SHA-256 84d0c0cb1daf7277044b209585de50cfd5940798cb258d793a7feedbad74221c。
+- Windows 对照 run 43711850656（7cd0abe1）记录默认配置和当前临时证书 SPKI 许可配置，均不强制 QUIC。
+  artifact 14160993141，SHA-256 b8d81e53494e7c833f6237d3151b5a2e92dc6d89e178dfeafbb51ba6704ae339。
+  默认组两个端口均只有 22 次 TCP 请求，没有本地 Alt-Svc 事件或 QUIC 会话，证书回调报 CertificateIsInvalid。
+  SPKI 组两个端口各出现 21 个 Alt-Svc 事件及 1 条本地 QUIC 会话，但均以 CERTIFICATE_VERIFY_FAILED 失败。
+  实测 WebView2 为 131.0.2903.86。两组 H3 校准均失败，工作流保留失败状态。
+- tool/native_fingerprint/summarize_h3_netlog.py 按 localhost 与实际探针端口过滤。
+  默认组中 config.edge.skype.com 的后台 QUIC 连接被排除，不能当作本地采样成功。
+  不得把 SPKI 在桌面 Chromium 的效果直接外推到 WebView2；也不能把此次证书失败说成客户端不支持 H3。
+- 追加根证书与 SPKI 组合对照 run 43713106331（dcd54fb6），仅在一次性 GitHub runner 执行。
+  驱动未输出结果，本地探针也没有 HTTP 请求，不能把这次前置步骤失败当作信任组合的验证结论。
+  artifact 14161124713，SHA-256 b8371cf0c3f6fa85753a1fb5429589fb375b3122ee3df06d2eb1ab668126f764。
+- 复验改为由 Core 调试构建直接提供本次探针的公开根证书，避免诊断宿主另做系统 TLS 握手。
+  证书信息不包含私钥；release 状态中不导出该调试字段。
+  run 43714132035（2403ddb0）只输出 trust-root 阶段，没有进入 WebView，说明前置阻塞仍存在。
+  artifact 14161698886，SHA-256 5d64080b0fe59d22606225c51cdc387ff0968a2cb7fe35d9963dbfed66e9ca1d。
+- 改用一次性管理员 runner 的机器根库，run 43714531114（d2b18af0）两个探针均成功导入根证书，
+  WebView 页面访问完成，证书回调无错误；退出时两个根证书均有 root-removed 日志。
+  然而两个本地 QUIC 会话仍被 CERTIFICATE_VERIFY_FAILED 拒绝，H3 校准失败。
+  artifact 14161803659，SHA-256 8050c334e02eb082aa0f927806223070f4c56761d6233c0ae6a35fa4b7626229。
+  此结果排除了仅仅没有导入根证书的解释；不能把桌面 Chromium 的 SPKI 许可行为当作 WebView2 保证。
+- 当前本地采样信任方案在实测 WebView2 131.0.2903.86 上不可用，产品继续保持未校准时 TCP 回退。
+  后续需要受信任的采样端点或经证实可用的内核信任接口，不能靠关闭产品证书校验来称为修复。
+  所有根证书操作仅在一次性 CI 诊断模式执行，不进入产品配置；没有新增 BrowserStack 真机会话。

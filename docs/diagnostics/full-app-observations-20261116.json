@@ -1,0 +1,193 @@
+{
+  "ios": {
+    "run": 43821295939,
+    "head": "a00a532da96eb32af23cd9843dfaed580edbe938",
+    "job": 133144752902,
+    "workflow_conclusion": "success",
+    "observation_artifact": 14206367562,
+    "observation_artifact_sha256": "9d960c66b59524245638d4d685e652c1b751f69f51d1f022139c1183444e15ef",
+    "release_artifact": 14206507137,
+    "release_artifact_github_digest": "sha256:cc1d6d22d164cb49784c2409d2fb2d08d855aaafffa79e3151b1470f285b7b80",
+    "release_archive_independently_downloaded": false,
+    "result": {
+      "passed": true,
+      "scope": "Full release app install and launch only; not H3, login or CF acceptance",
+      "maximum_session_creations": 1,
+      "observation_budget_seconds": 120,
+      "session_released": true,
+      "remaining_free_minutes_verified": false,
+      "application": {
+        "CFBundleIdentifier": "com.github.lingyan000.fluxdo",
+        "CFBundleShortVersionString": "0.2.30",
+        "CFBundleVersion": "2026111316",
+        "MinimumOSVersion": "15.0"
+      },
+      "ipa_sha256": "481120465cf85485bbadc75589cfd2a4cee27a36384b29c4ad2be88d9cd17ee8",
+      "requested_device": {
+        "device": "iPhone 14",
+        "os_version": "26"
+      },
+      "creation_requests_sent": 1,
+      "active_bundle_id": "com.github.lingyan000.fluxdo",
+      "local_session_window_seconds": 62.2,
+      "platform_session": {
+        "status": "done",
+        "duration": 35,
+        "device": "iPhone 14",
+        "os_version": "26.6"
+      }
+    },
+    "visible_labels": [
+      "FluxDO",
+      "Guest access",
+      "Log in",
+      "Network settings",
+      "Sincere · Friendly · United · Professional"
+    ],
+    "files_sha256": {
+      "result.json": "807dd03cd995a48d7233adc4ce54fc0efa1aaa048724c8c28352d24dd37335ec",
+      "launch.xml": "7c4dab4252a0cdaeb6c6bc903eef382a1e06dfa52195e734dfde5b8e6812428b",
+      "launch.png": "cbf21f7dfcf27aecb85d9495df753c4501a87cd23aad77bc9279d2461c6a1d94"
+    },
+    "audit": "Observation ZIP digest verified; XML and screenshot inspected; full release build and ABI assertions passed in CI. Not login/network/CF acceptance."
+  },
+  "source_identity": {
+    "a00a532da96eb32af23cd9843dfaed580edbe938": {
+      "lib": "06822f010ed2196f628791efd31d3a6493f563e2",
+      "ios": "14f61d26da9f4a246e2437ef2a675ba14704da89",
+      "android": "322bd8f69a59357be746e310c0b641ff6bfa602f",
+      "core/net_core": "5913ea4be16d2a9519ceaec1d31e5077cb9bde6a",
+      "pubspec.yaml": "699f6375ece296714fbc1dfb8c5cd9a395d34f5c",
+      "pubspec.lock": "830a7f5f48d75ada4675a99124ab554d7491fb22",
+      "packages/fluxdo_render": "aa611044c15688733f70961339fced3757cdb231"
+    },
+    "1c320bdae6caf6c0898ac1875e307e141d0a4fa7": {
+      "lib": "06822f010ed2196f628791efd31d3a6493f563e2",
+      "ios": "14f61d26da9f4a246e2437ef2a675ba14704da89",
+      "android": "322bd8f69a59357be746e310c0b641ff6bfa602f",
+      "core/net_core": "5913ea4be16d2a9519ceaec1d31e5077cb9bde6a",
+      "pubspec.yaml": "699f6375ece296714fbc1dfb8c5cd9a395d34f5c",
+      "pubspec.lock": "830a7f5f48d75ada4675a99124ab554d7491fb22",
+      "packages/fluxdo_render": "aa611044c15688733f70961339fced3757cdb231"
+    }
+  },
+  "android_initial": {
+    "run": 43822564156,
+    "head": "1c320bdae6caf6c0898ac1875e307e141d0a4fa7",
+    "job": 133148787900,
+    "workflow_conclusion": "failure",
+    "release_build": "success",
+    "release_artifact": 14206960853,
+    "release_artifact_github_digest": "sha256:4b23edee9e9fe5dddfa1737bba1cf8060783fefaa0aa04ae016a2c46a24550bb",
+    "observation_artifact": 14206508473,
+    "observation_artifact_sha256": "feee2183f3ac4c07af556ddf7b0a23a1946ca592843d57294ffe74e9859987e9",
+    "result": {
+      "passed": false,
+      "full_flutter_app": true,
+      "physical_device": false,
+      "scope": "Release app startup and emulator network disconnect/reconnect; not radio handoff or CF acceptance",
+      "apk_sha256": "0127f12f259c993140f9aa9322f267d0bc44ce46d81952c0366f4166286b6344",
+      "android_version": "15",
+      "webview_provider": "Current WebView package (name, version): (com.google.android.webview, 124.0.6367.219)",
+      "online": {
+        "pid": 2810,
+        "core_library_loaded": false,
+        "wifi_enabled": "1",
+        "mobile_data_enabled": "1"
+      },
+      "offline": {
+        "pid": 2810,
+        "core_library_loaded": false,
+        "wifi_enabled": "0",
+        "mobile_data_enabled": "0"
+      },
+      "restored": {
+        "pid": 2810,
+        "core_library_loaded": false,
+        "wifi_enabled": "1",
+        "mobile_data_enabled": "1"
+      },
+      "network_restored": true,
+      "app_stopped": true
+    },
+    "audit": "ZIP digest verified. Core startup, template ready and a sampled H2 connection are present in logcat from PID 2810; old script only looked for a standalone library filename. Mapping-aware replay required; initial workflow remains failed."
+  },
+  "android_replay_setup_failure": {
+    "run": 43826799537,
+    "job": 133162455274,
+    "head": "950fb3b111f6fadbd5bc4dc3593fc79eb5801899",
+    "workflow_conclusion": "failure",
+    "source_and_apk_hash_verified": true,
+    "emulator_started": false,
+    "reason": "setup-android default requested obsolete tools package",
+    "fix": "Explicit platform-tools in 52f68cfa1952eb82fff3aa0f6924205095bc6837"
+  },
+  "android_replay": {
+    "run": 43827066836,
+    "head": "52f68cfa1952eb82fff3aa0f6924205095bc6837",
+    "job": 133163321241,
+    "workflow_conclusion": "success",
+    "source_build_run": 43822564156,
+    "observation_artifact": 14206958233,
+    "observation_artifact_sha256": "a6559f3092ce68f516a8bb5d6b4a4e864ac5bd5be330c961175da1c2277d6543",
+    "result": {
+      "passed": true,
+      "full_flutter_app": true,
+      "physical_device": false,
+      "scope": "Release app startup and emulator network disconnect/reconnect; not radio handoff or CF acceptance",
+      "apk_sha256": "0127f12f259c993140f9aa9322f267d0bc44ce46d81952c0366f4166286b6344",
+      "android_version": "15",
+      "webview_provider": "Current WebView package (name, version): (com.google.android.webview, 124.0.6367.219)",
+      "online": {
+        "pid": 2494,
+        "core_library_loaded": true,
+        "core_mapping": {
+          "kind": "apk_entry",
+          "mapping_offset": 72835072,
+          "entry_start": 67190784,
+          "entry_end": 86266000
+        },
+        "wifi_enabled": "1",
+        "mobile_data_enabled": "1"
+      },
+      "offline": {
+        "pid": 2494,
+        "core_library_loaded": true,
+        "core_mapping": {
+          "kind": "apk_entry",
+          "mapping_offset": 72835072,
+          "entry_start": 67190784,
+          "entry_end": 86266000
+        },
+        "wifi_enabled": "0",
+        "mobile_data_enabled": "0"
+      },
+      "restored": {
+        "pid": 2494,
+        "core_library_loaded": true,
+        "core_mapping": {
+          "kind": "apk_entry",
+          "mapping_offset": 72835072,
+          "entry_start": 67190784,
+          "entry_end": 86266000
+        },
+        "wifi_enabled": "1",
+        "mobile_data_enabled": "1"
+      },
+      "network_restored": true,
+      "app_stopped": true
+    },
+    "files_sha256": {
+      "restored.maps": "3f589f023d506b245aaa8ba45828d49e3e8e69c5233d7364eb1c8b77c4db9042",
+      "application.log": "75ec86cf24af2dc1e01d9a9887636412f0f86a65f221c89a638e024d47424ebd",
+      "result.json": "602a39fb67783db06e4d4108b7cfc38b598f9f9c2c9484524f691ea6e205bf88",
+      "offline.maps": "e1b9769948a5599282bd73129fa6d7e2bb06e757d1259c13352bc771e6cf15b7",
+      "restored.png": "da1c0b0ac1e60fee4b6e88c8626eb3a30c1b46bcb599c738e649327aaab7b9bb",
+      "offline.png": "bdc79bedb282db162c27313caacd7195a7c59ffe5651b4aca1121fb80f8deb5d",
+      "online.maps": "3dfd87428711aaf9350352621f50fba9f1f056f37ea825ff7b674289cef7a2ab",
+      "online.png": "9f982bbe7ac856d5cce76859ac50a64368896493d3323aa0df71c625d36b51df"
+    },
+    "audit": "Observation ZIP digest verified; same APK hash as initial run; raw executable APK mappings match declared Core range in every phase; PID unchanged; network 1/1 -> 0/0 -> 1/1; Core start, template ready, sampled H2 connection in same PID logcat; cleanup confirmed. Full APK entry range/hash/source trees verified by CI, release ZIP not independently downloaded locally.",
+    "ui_observation": "Welcome screen visible behind Android notification permission dialog; no login or guest interaction."
+  }
+}

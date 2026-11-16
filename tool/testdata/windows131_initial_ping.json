@@ -1,0 +1,202 @@
+{
+  "provenance": {
+    "run": 43735072626,
+    "head": "4f29c55f3263b4a2cbf7aca6088cc8d4635fc60d",
+    "artifact": 14170336952,
+    "artifact_sha256": "20a70d8cc4a2c4865b137f4e13bbb32ca0f5f2b4488bbd47eaf86e83eddd2e9d"
+  },
+  "native": {
+    "available_versions": [],
+    "chosen_version": null,
+    "coalesced": false,
+    "complete": true,
+    "datagram_sizes": [
+      1230,
+      1230
+    ],
+    "dcid_len": 8,
+    "first_packet_number": 1,
+    "frames": [
+      [
+        {
+          "Crypto": {
+            "len": 1191,
+            "offset": 0
+          }
+        }
+      ],
+      [
+        {
+          "Crypto": {
+            "len": 50,
+            "offset": 1598
+          }
+        },
+        {
+          "Padding": {
+            "len": 1
+          }
+        },
+        "Ping",
+        {
+          "Crypto": {
+            "len": 407,
+            "offset": 1191
+          }
+        },
+        "Ping",
+        {
+          "Padding": {
+            "len": 5
+          }
+        },
+        "Ping",
+        "Ping",
+        {
+          "Padding": {
+            "len": 2
+          }
+        },
+        "Ping",
+        "Ping",
+        {
+          "Padding": {
+            "len": 456
+          }
+        },
+        "Ping",
+        {
+          "Padding": {
+            "len": 103
+          }
+        },
+        "Ping",
+        {
+          "Crypto": {
+            "len": 24,
+            "offset": 1765
+          }
+        },
+        {
+          "Crypto": {
+            "len": 25,
+            "offset": 1740
+          }
+        },
+        {
+          "Crypto": {
+            "len": 92,
+            "offset": 1648
+          }
+        }
+      ]
+    ],
+    "packet_number_len": 1,
+    "packet_number_lengths": [
+      1,
+      1
+    ],
+    "packet_numbers": [
+      1,
+      2
+    ],
+    "padding": "Frames",
+    "parameters": [
+      8,
+      32,
+      9,
+      4,
+      12583,
+      15,
+      3,
+      6,
+      3192758453334807604,
+      16741339,
+      1,
+      18258,
+      5,
+      7
+    ],
+    "scid_len": 0,
+    "token_len": 0,
+    "trailing_bytes": [
+      0,
+      0
+    ],
+    "version": 1
+  },
+  "core": {
+    "available_versions": [],
+    "chosen_version": null,
+    "coalesced": false,
+    "complete": true,
+    "datagram_sizes": [
+      1230,
+      1230
+    ],
+    "dcid_len": 8,
+    "first_packet_number": 1,
+    "frames": [
+      [
+        {
+          "Crypto": {
+            "len": 1191,
+            "offset": 0
+          }
+        }
+      ],
+      [
+        {
+          "Padding": {
+            "len": 583
+          }
+        },
+        "Ping",
+        {
+          "Crypto": {
+            "len": 597,
+            "offset": 1191
+          }
+        },
+        "Ping",
+        {
+          "Padding": {
+            "len": 8
+          }
+        }
+      ]
+    ],
+    "packet_number_len": 1,
+    "packet_number_lengths": [
+      1,
+      1
+    ],
+    "packet_numbers": [
+      1,
+      2
+    ],
+    "padding": "Frames",
+    "parameters": [
+      3,
+      15,
+      8,
+      1,
+      3781270894683005629,
+      9,
+      18258,
+      5,
+      4,
+      32,
+      16741339,
+      6,
+      7
+    ],
+    "scid_len": 0,
+    "token_len": 0,
+    "trailing_bytes": [
+      0,
+      0
+    ],
+    "version": 1
+  }
+}

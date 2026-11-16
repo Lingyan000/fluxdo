@@ -1,0 +1,787 @@
+#![expect(
+    clippy::panic,
+    clippy::allow_attributes,
+    reason = "vendored from upstream `h2`: matches upstream invariant-violation panicking style"
+)]
+
+use super::Header;
+
+use fnv::FnvHasher;
+
+use crate::{header, method::Method, proto::h2::PseudoHeader};
+
+use std::collections::VecDeque;
+use std::hash::{Hash, Hasher};
+use std::{cmp, mem};
+
+/// HPACK encoder table
+#[derive(Debug)]
+pub(super) struct Table {
+    mask: usize,
+    indices: Vec<Option<Pos>>,
+    slots: VecDeque<Slot>,
+    inserted: usize,
+    // Size is in bytes
+    size: usize,
+    max_size: usize,
+}
+
+#[derive(Debug)]
+pub(super) enum Index {
+    // The header is already fully indexed
+    Indexed(usize, Header),
+
+    // The name is indexed, but not the value
+    Name(usize, Header),
+
+    // The full header has been inserted into the table.
+    Inserted(usize),
+
+    // Only the value has been inserted (hpack table idx, slots idx)
+    InsertedValue(usize, usize),
+
+    // The header is not indexed by this table
+    NotIndexed(Header),
+}
+
+#[derive(Debug)]
+struct Slot {
+    hash: HashValue,
+    header: Header,
+    next: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct Pos {
+    index: usize,
+    hash: HashValue,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct HashValue(usize);
+
+const MAX_SIZE: usize = 1 << 16;
+const DYN_OFFSET: usize = 62;
+
+macro_rules! probe_loop {
+    ($probe_var: ident < $len: expr, $body: expr) => {
+        debug_assert!($len > 0);
+        loop {
+            if $probe_var < $len {
+                $body
+                $probe_var += 1;
+            } else {
+                $probe_var = 0;
+            }
+        }
+    };
+}
+
+impl Table {
+    pub(super) fn new(max_size: usize, capacity: usize) -> Self {
+        if capacity == 0 {
+            Self {
+                mask: 0,
+                indices: vec![],
+                slots: VecDeque::new(),
+                inserted: 0,
+                size: 0,
+                max_size,
+            }
+        } else {
+            let capacity = cmp::max(to_raw_capacity(capacity).next_power_of_two(), 8);
+
+            Self {
+                mask: capacity.wrapping_sub(1),
+                indices: vec![None; capacity],
+                slots: VecDeque::with_capacity(usable_capacity(capacity)),
+                inserted: 0,
+                size: 0,
+                max_size,
+            }
+        }
+    }
+
+    #[inline]
+    pub(super) fn capacity(&self) -> usize {
+        usable_capacity(self.indices.len())
+    }
+
+    pub(super) fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    /// Gets the header stored in the table
+    pub(super) fn resolve<'a>(&'a self, index: &'a Index) -> &'a Header {
+        match *index {
+            Index::Indexed(_, ref h) | Index::Name(_, ref h) | Index::NotIndexed(ref h) => h,
+            Index::Inserted(idx) | Index::InsertedValue(_, idx) => &self.slots[idx].header,
+        }
+    }
+
+    #[allow(clippy::unused_self)]
+    pub(super) fn resolve_idx(&self, index: &Index) -> usize {
+        match *index {
+            Index::Indexed(idx, ..) | Index::Name(idx, ..) => idx,
+            Index::Inserted(idx) => idx + DYN_OFFSET,
+            Index::InsertedValue(_name_idx, slot_idx) => slot_idx + DYN_OFFSET,
+            Index::NotIndexed(_) => panic!("cannot resolve index"),
+        }
+    }
+
+    /// Index the header in the HPACK table.
+    pub(super) fn index(&mut self, header: Header) -> Index {
+        // Check the static table
+        let statik = index_static(&header);
+
+        // Never-indexed literals must not become indexed even on an exact
+        // static-table match (RFC 7541 §6.2.3).
+        if header.is_sensitive()
+            && let Some((index, _)) = statik
+        {
+            return Index::Name(index, header);
+        }
+
+        // 保留敏感头规则；非敏感字段可以按当前浏览器的实际采样选择索引策略。
+        let skip_value = match &header {
+            Header::Field { name, value } if !name.is_sensitive() => value.hpack_indexing().map(|index| !index),
+            _ => None,
+        }.unwrap_or_else(|| header.skip_value_index());
+        if skip_value {
+            // Right now, if this is true, the header name is always in the
+            // static table. At some point in the future, this might not be true
+            // and this logic will need to be updated.
+            // 采样也可能要求自定义字段不索引，未出现在静态表时按字面名称编码。
+            return Index::new(statik, header);
+        }
+
+        // If the header is already indexed by the static table, return that
+        if let Some((n, true)) = statik {
+            return Index::Indexed(n, header);
+        }
+
+        // 显式的采样索引选择可以使用剩余容量，但不能超出对端动态表上限。
+        let explicit_index = matches!(&header, Header::Field { value, .. } if value.hpack_indexing() == Some(true));
+        if header.len() > self.max_size || (!explicit_index && header.len() * 4 > self.max_size * 3) {
+            return Index::new(statik, header);
+        }
+
+        self.index_dynamic(header, statik)
+    }
+
+    fn index_dynamic(&mut self, header: Header, statik: Option<(usize, bool)>) -> Index {
+        debug_assert!(self.assert_valid_state("one"));
+
+        if header.len() + self.size < self.max_size || !header.is_sensitive() {
+            // Only grow internal storage if needed
+            self.reserve_one();
+        }
+
+        if self.indices.is_empty() {
+            // If `indices` is not empty, then it is impossible for all
+            // `indices` entries to be `Some`. So, we only need to check for the
+            // empty case.
+            return Index::new(statik, header);
+        }
+
+        let hash = hash_header(&header);
+
+        let desired_pos = desired_pos(self.mask, hash);
+        let mut probe = desired_pos;
+        let mut dist = 0;
+
+        // Start at the ideal position, checking all slots
+        probe_loop!(probe < self.indices.len(), {
+            if let Some(pos) = self.indices[probe] {
+                // The slot is already occupied, but check if it has a lower
+                // displacement.
+                let their_dist = probe_distance(self.mask, pos.hash, probe);
+
+                let slot_idx = pos.index.wrapping_add(self.inserted);
+
+                if their_dist < dist {
+                    // Index robinhood
+                    return self.index_vacant(header, hash, dist, probe, statik);
+                } else if pos.hash == hash && self.slots[slot_idx].header.name() == header.name() {
+                    // Matching name, check values
+                    return self.index_occupied(header, hash, pos.index, statik.map(|(n, _)| n));
+                }
+            } else {
+                return self.index_vacant(header, hash, dist, probe, statik);
+            }
+
+            dist += 1;
+        });
+    }
+
+    fn index_occupied(
+        &mut self,
+        header: Header,
+        hash: HashValue,
+        mut index: usize,
+        statik: Option<usize>,
+    ) -> Index {
+        debug_assert!(self.assert_valid_state("top"));
+
+        // There already is a match for the given header name. Check if a value
+        // matches. The header will also only be inserted if the table is not at
+        // capacity.
+        loop {
+            // Compute the real index into the VecDeque
+            let real_idx = index.wrapping_add(self.inserted);
+
+            // A matching value still cannot be indexed when forwarding a
+            // never-indexed field; only its name may reference the table.
+            if header.is_sensitive() {
+                return Index::Name(real_idx + DYN_OFFSET, header);
+            }
+
+            if self.slots[real_idx].header.value_eq(&header) {
+                // We have a full match!
+                return Index::Indexed(real_idx + DYN_OFFSET, header);
+            }
+
+            if let Some(next) = self.slots[real_idx].next {
+                index = next;
+                continue;
+            }
+
+            self.update_size(header.len(), Some(index));
+
+            // Insert the new header
+            self.insert(header, hash);
+
+            // Recompute real_idx as it just changed.
+            let new_real_idx = index.wrapping_add(self.inserted);
+
+            // The previous node in the linked list may have gotten evicted
+            // while making room for this header.
+            if new_real_idx < self.slots.len() {
+                let idx = 0usize.wrapping_sub(self.inserted);
+
+                self.slots[new_real_idx].next = Some(idx);
+            }
+
+            debug_assert!(self.assert_valid_state("bottom"));
+
+            // Even if the previous header was evicted, we can still reference
+            // it when inserting the new one...
+            return if let Some(n) = statik {
+                // If name is in static table, use it instead
+                Index::InsertedValue(n, 0)
+            } else {
+                Index::InsertedValue(real_idx + DYN_OFFSET, 0)
+            };
+        }
+    }
+
+    fn index_vacant(
+        &mut self,
+        header: Header,
+        hash: HashValue,
+        mut dist: usize,
+        mut probe: usize,
+        statik: Option<(usize, bool)>,
+    ) -> Index {
+        if header.is_sensitive() {
+            return Index::new(statik, header);
+        }
+
+        debug_assert!(self.assert_valid_state("top"));
+        debug_assert!(dist == 0 || self.indices[probe.wrapping_sub(1) & self.mask].is_some());
+
+        // Passing in `usize::MAX` for prev_idx since there is no previous
+        // header in this case.
+        if self.update_size(header.len(), None) {
+            while dist != 0 {
+                let back = probe.wrapping_sub(1) & self.mask;
+
+                if let Some(pos) = self.indices[back] {
+                    let their_dist = probe_distance(self.mask, pos.hash, back);
+
+                    if their_dist < (dist - 1) {
+                        probe = back;
+                        dist -= 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    probe = back;
+                    dist -= 1;
+                }
+            }
+        }
+
+        debug_assert!(self.assert_valid_state("after update"));
+
+        self.insert(header, hash);
+
+        let pos_idx = 0usize.wrapping_sub(self.inserted);
+
+        let prev = self.indices[probe].replace(Pos {
+            index: pos_idx,
+            hash,
+        });
+
+        if let Some(mut prev) = prev {
+            // Shift forward
+            let mut probe = probe + 1;
+
+            probe_loop!(probe < self.indices.len(), {
+                let pos = &mut self.indices[probe];
+
+                prev = match pos.replace(prev) {
+                    Some(p) => p,
+                    None => break,
+                };
+            });
+        }
+
+        debug_assert!(self.assert_valid_state("bottom"));
+
+        if let Some((n, _)) = statik {
+            Index::InsertedValue(n, 0)
+        } else {
+            Index::Inserted(0)
+        }
+    }
+
+    fn insert(&mut self, header: Header, hash: HashValue) {
+        self.inserted = self.inserted.wrapping_add(1);
+
+        self.slots.push_front(Slot {
+            hash,
+            header,
+            next: None,
+        });
+    }
+
+    pub(super) fn resize(&mut self, size: usize) {
+        self.max_size = size;
+
+        if size == 0 {
+            self.size = 0;
+
+            self.indices.fill(None);
+
+            self.slots.clear();
+            self.inserted = 0;
+        } else {
+            self.converge(None);
+        }
+    }
+
+    fn update_size(&mut self, len: usize, prev_idx: Option<usize>) -> bool {
+        self.size += len;
+        self.converge(prev_idx)
+    }
+
+    fn converge(&mut self, prev_idx: Option<usize>) -> bool {
+        let mut ret = false;
+
+        while self.size > self.max_size {
+            ret = true;
+            self.evict(prev_idx);
+        }
+
+        ret
+    }
+
+    fn evict(&mut self, prev_idx: Option<usize>) {
+        let pos_idx = (self.slots.len() - 1).wrapping_sub(self.inserted);
+
+        debug_assert!(!self.slots.is_empty());
+        debug_assert!(self.assert_valid_state("one"));
+
+        // Remove the header
+        #[allow(clippy::expect_used)]
+        let slot = self.slots.pop_back().expect("slots to never be empty here");
+        let mut probe = desired_pos(self.mask, slot.hash);
+
+        // Update the size
+        self.size -= slot.header.len();
+
+        debug_assert_eq!(
+            self.indices
+                .iter()
+                .filter_map(|p| *p)
+                .filter(|p| p.index == pos_idx)
+                .count(),
+            1
+        );
+
+        // Find the associated position
+        probe_loop!(probe < self.indices.len(), {
+            #[allow(clippy::expect_used)]
+            let mut pos = self.indices[probe]
+                .expect("position to be Some when found as an active probe slot");
+
+            if pos.index == pos_idx {
+                if let Some(idx) = slot.next {
+                    pos.index = idx;
+                    self.indices[probe] = Some(pos);
+                } else if Some(pos.index) == prev_idx {
+                    pos.index = 0usize.wrapping_sub(self.inserted + 1);
+                    self.indices[probe] = Some(pos);
+                } else {
+                    self.indices[probe] = None;
+                    self.remove_phase_two(probe);
+                }
+
+                break;
+            }
+        });
+
+        debug_assert!(self.assert_valid_state("two"));
+    }
+
+    // Shifts all indices that were displaced by the header that has just been
+    // removed.
+    fn remove_phase_two(&mut self, probe: usize) {
+        let mut last_probe = probe;
+        let mut probe = probe + 1;
+
+        probe_loop!(probe < self.indices.len(), {
+            if let Some(pos) = self.indices[probe] {
+                if probe_distance(self.mask, pos.hash, probe) > 0 {
+                    self.indices[last_probe] = self.indices[probe].take();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+
+            last_probe = probe;
+        });
+
+        debug_assert!(self.assert_valid_state("two"));
+    }
+
+    fn reserve_one(&mut self) {
+        let len = self.slots.len();
+
+        if len == self.capacity() {
+            if len == 0 {
+                let new_raw_cap = 8;
+                self.mask = 8 - 1;
+                self.indices = vec![None; new_raw_cap];
+            } else {
+                let raw_cap = self.indices.len();
+                self.grow(raw_cap << 1);
+            }
+        }
+    }
+
+    #[inline]
+    fn grow(&mut self, new_raw_cap: usize) {
+        // This path can never be reached when handling the first allocation in
+        // the map.
+
+        debug_assert!(self.assert_valid_state("top"));
+
+        // find first ideally placed element -- start of cluster
+        let mut first_ideal = 0;
+
+        for (i, pos) in self.indices.iter().enumerate() {
+            if let Some(pos) = *pos
+                && 0 == probe_distance(self.mask, pos.hash, i)
+            {
+                first_ideal = i;
+                break;
+            }
+        }
+
+        // visit the entries in an order where we can simply reinsert them
+        // into self.indices without any bucket stealing.
+        let old_indices = mem::replace(&mut self.indices, vec![None; new_raw_cap]);
+        self.mask = new_raw_cap.wrapping_sub(1);
+
+        for &pos in &old_indices[first_ideal..] {
+            self.reinsert_entry_in_order(pos);
+        }
+
+        for &pos in &old_indices[..first_ideal] {
+            self.reinsert_entry_in_order(pos);
+        }
+
+        debug_assert!(self.assert_valid_state("bottom"));
+    }
+
+    fn reinsert_entry_in_order(&mut self, pos: Option<Pos>) {
+        if let Some(pos) = pos {
+            // Find first empty bucket and insert there
+            let mut probe = desired_pos(self.mask, pos.hash);
+
+            probe_loop!(probe < self.indices.len(), {
+                #[allow(unused)]
+                if let Some(them) = self.indices[probe] {
+                    debug_assert!({
+                        let their_distance = probe_distance(self.mask, them.hash, probe);
+                        let our_distance = probe_distance(self.mask, pos.hash, probe);
+
+                        their_distance >= our_distance
+                    })
+                } else {
+                    // empty bucket, insert here
+                    self.indices[probe] = Some(pos);
+                    return;
+                }
+            });
+        }
+    }
+
+    #[cfg(not(test))]
+    #[allow(clippy::unused_self)]
+    fn assert_valid_state(&self, _: &'static str) -> bool {
+        true
+    }
+
+    #[cfg(test)]
+    #[allow(clippy::unused_self)]
+    fn assert_valid_state(&self, _msg: &'static str) -> bool {
+        /*
+            // Checks that the internal map structure is valid
+            //
+            // Ensure all hash codes in indices match the associated slot
+            for pos in &self.indices {
+                if let Some(pos) = *pos {
+                    let real_idx = pos.index.wrapping_add(self.inserted);
+
+                    if real_idx.wrapping_add(1) != 0 {
+                        assert!(real_idx < self.slots.len(),
+                                "out of index; real={}; len={}, msg={}",
+                                real_idx, self.slots.len(), msg);
+
+                        assert_eq!(pos.hash, self.slots[real_idx].hash,
+                                   "index hash does not match slot; msg={}", msg);
+                    }
+                }
+            }
+
+            // Every index is only available once
+            for i in 0..self.indices.len() {
+                if self.indices[i].is_none() {
+                    continue;
+                }
+
+                for j in i+1..self.indices.len() {
+                    assert_ne!(self.indices[i], self.indices[j],
+                                "duplicate indices; msg={}", msg);
+                }
+            }
+
+            for (index, slot) in self.slots.iter().enumerate() {
+                let mut indexed = None;
+
+                // First, see if the slot is indexed
+                for (i, pos) in self.indices.iter().enumerate() {
+                    if let Some(pos) = *pos {
+                        let real_idx = pos.index.wrapping_add(self.inserted);
+                        if real_idx == index {
+                            indexed = Some(i);
+                            // Already know that there is no dup, so break
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(actual) = indexed {
+                    // Ensure that it is accessible..
+                    let desired = desired_pos(self.mask, slot.hash);
+                    let mut probe = desired;
+                    let mut dist = 0;
+
+                    probe_loop!(probe < self.indices.len(), {
+                        assert!(self.indices[probe].is_some(),
+                                "unexpected empty slot; probe={}; hash={:?}; msg={}",
+                                probe, slot.hash, msg);
+
+                        let pos = self.indices[probe].unwrap();
+
+                        let their_dist = probe_distance(self.mask, pos.hash, probe);
+                        let real_idx = pos.index.wrapping_add(self.inserted);
+
+                        if real_idx == index {
+                            break;
+                        }
+
+                        assert!(dist <= their_dist,
+                                "could not find entry; actual={}; desired={}" +
+                                "probe={}, dist={}; their_dist={}; index={}; msg={}",
+                                actual, desired, probe, dist, their_dist,
+                                index.wrapping_sub(self.inserted), msg);
+
+                        dist += 1;
+                    });
+                } else {
+                    // There is exactly one next link
+                    let cnt = self.slots.iter().map(|s| s.next)
+                        .filter(|n| *n == Some(index.wrapping_sub(self.inserted)))
+                        .count();
+
+                    assert_eq!(1, cnt, "more than one node pointing here; msg={}", msg);
+                }
+            }
+        */
+
+        // TODO: Ensure linked lists are correct: no cycles, etc...
+
+        true
+    }
+}
+
+#[cfg(test)]
+impl Table {
+    /// Returns the number of headers in the table
+    pub(super) fn len(&self) -> usize {
+        self.slots.len()
+    }
+
+    /// Returns the table size
+    pub(super) fn size(&self) -> usize {
+        self.size
+    }
+}
+
+impl Index {
+    fn new(v: Option<(usize, bool)>, e: Header) -> Self {
+        match v {
+            None => Self::NotIndexed(e),
+            Some((n, true)) => Self::Indexed(n, e),
+            Some((n, false)) => Self::Name(n, e),
+        }
+    }
+}
+
+#[inline]
+fn usable_capacity(cap: usize) -> usize {
+    cap - cap / 4
+}
+
+#[inline]
+fn to_raw_capacity(n: usize) -> usize {
+    n + n / 3
+}
+
+#[inline]
+fn desired_pos(mask: usize, hash: HashValue) -> usize {
+    hash.0 & mask
+}
+
+#[inline]
+fn probe_distance(mask: usize, hash: HashValue, current: usize) -> usize {
+    current.wrapping_sub(desired_pos(mask, hash)) & mask
+}
+
+fn hash_header(header: &Header) -> HashValue {
+    const MASK: u64 = (MAX_SIZE as u64) - 1;
+
+    let mut h = FnvHasher::default();
+    header.name().hash(&mut h);
+    HashValue((h.finish() & MASK) as usize)
+}
+
+/// Checks the static table for the header. If found, returns the index and a
+/// boolean representing if the value matched as well.
+fn index_static(header: &Header) -> Option<(usize, bool)> {
+    match *header {
+        Header::Field {
+            ref name,
+            ref value,
+        } => match name.standard() {
+            Some(header::StandardHeader::AcceptCharset) => Some((15, false)),
+            Some(header::StandardHeader::AcceptEncoding) => {
+                if value == "gzip, deflate" {
+                    Some((16, true))
+                } else {
+                    Some((16, false))
+                }
+            }
+            Some(header::StandardHeader::AcceptLanguage) => Some((17, false)),
+            Some(header::StandardHeader::AcceptRanges) => Some((18, false)),
+            Some(header::StandardHeader::Accept) => Some((19, false)),
+            Some(header::StandardHeader::AccessControlAllowOrigin) => Some((20, false)),
+            Some(header::StandardHeader::Age) => Some((21, false)),
+            Some(header::StandardHeader::Allow) => Some((22, false)),
+            Some(header::StandardHeader::Authorization) => Some((23, false)),
+            Some(header::StandardHeader::CacheControl) => Some((24, false)),
+            Some(header::StandardHeader::ContentDisposition) => Some((25, false)),
+            Some(header::StandardHeader::ContentEncoding) => Some((26, false)),
+            Some(header::StandardHeader::ContentLanguage) => Some((27, false)),
+            Some(header::StandardHeader::ContentLength) => Some((28, false)),
+            Some(header::StandardHeader::ContentLocation) => Some((29, false)),
+            Some(header::StandardHeader::ContentRange) => Some((30, false)),
+            Some(header::StandardHeader::ContentType) => Some((31, false)),
+            Some(header::StandardHeader::Cookie) => Some((32, false)),
+            Some(header::StandardHeader::Date) => Some((33, false)),
+            Some(header::StandardHeader::Etag) => Some((34, false)),
+            Some(header::StandardHeader::Expect) => Some((35, false)),
+            Some(header::StandardHeader::Expires) => Some((36, false)),
+            Some(header::StandardHeader::From) => Some((37, false)),
+            Some(header::StandardHeader::Host) => Some((38, false)),
+            Some(header::StandardHeader::IfMatch) => Some((39, false)),
+            Some(header::StandardHeader::IfModifiedSince) => Some((40, false)),
+            Some(header::StandardHeader::IfNoneMatch) => Some((41, false)),
+            Some(header::StandardHeader::IfRange) => Some((42, false)),
+            Some(header::StandardHeader::IfUnmodifiedSince) => Some((43, false)),
+            Some(header::StandardHeader::LastModified) => Some((44, false)),
+            Some(header::StandardHeader::Link) => Some((45, false)),
+            Some(header::StandardHeader::Location) => Some((46, false)),
+            Some(header::StandardHeader::MaxForwards) => Some((47, false)),
+            Some(header::StandardHeader::ProxyAuthenticate) => Some((48, false)),
+            Some(header::StandardHeader::ProxyAuthorization) => Some((49, false)),
+            Some(header::StandardHeader::Range) => Some((50, false)),
+            Some(header::StandardHeader::Referer) => Some((51, false)),
+            Some(header::StandardHeader::Refresh) => Some((52, false)),
+            Some(header::StandardHeader::RetryAfter) => Some((53, false)),
+            Some(header::StandardHeader::Server) => Some((54, false)),
+            Some(header::StandardHeader::SetCookie) => Some((55, false)),
+            Some(header::StandardHeader::StrictTransportSecurity) => Some((56, false)),
+            Some(header::StandardHeader::TransferEncoding) => Some((57, false)),
+            Some(header::StandardHeader::UserAgent) => Some((58, false)),
+            Some(header::StandardHeader::Vary) => Some((59, false)),
+            Some(header::StandardHeader::Via) => Some((60, false)),
+            Some(header::StandardHeader::WwwAuthenticate) => Some((61, false)),
+            _ => None,
+        },
+        Header::NeverIndexed(ref value) => {
+            let index = match value.name() {
+                PseudoHeader::Authority => 1,
+                PseudoHeader::Method => 2,
+                PseudoHeader::Scheme => 6,
+                PseudoHeader::Path => 4,
+                PseudoHeader::Status => 8,
+                PseudoHeader::Protocol => return None,
+            };
+            Some((index, false))
+        }
+        Header::Authority(_) => Some((1, false)),
+        Header::Method(ref v) => match *v {
+            Method::GET => Some((2, true)),
+            Method::POST => Some((3, true)),
+            _ => Some((2, false)),
+        },
+        Header::Scheme(ref v) => match &**v {
+            "http" => Some((6, true)),
+            "https" => Some((7, true)),
+            _ => Some((6, false)),
+        },
+        Header::Path(ref v) => match &**v {
+            "/" => Some((4, true)),
+            "/index.html" => Some((5, true)),
+            _ => Some((4, false)),
+        },
+        Header::Protocol(..) => None,
+        Header::Status(ref v) => match u16::from(*v) {
+            200 => Some((8, true)),
+            204 => Some((9, true)),
+            206 => Some((10, true)),
+            304 => Some((11, true)),
+            400 => Some((12, true)),
+            404 => Some((13, true)),
+            500 => Some((14, true)),
+            _ => Some((8, false)),
+        },
+    }
+}

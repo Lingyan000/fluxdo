@@ -1,0 +1,272 @@
+可信 H3 跨平台续验记录（2026-11-16）
+
+本轮边界
+- 延续 h3-trusted-origin-20261116.txt 的 Android 正常证书信任结果。
+- 不修改 CSRF、Cookie、Origin、Referer 业务策略。
+- 最新累计创建一次 BrowserStack 真机会话：平台记录 18 秒，已释放；未查询到剩余免费分钟数。
+- 下文按验证进展保留历史状态；各阶段的“尚未”及“零会话”仅适用于当时，最新结果见末尾。
+
+已推送的 Windows 测试入口
+- 分支 diagnostics/fingerprint-governance-review-20261115 与专用 CI 分支，提交：
+  bc44d885cb4ed9cb9d549fc9d25e81876546325a。
+- Windows 最小 Flutter 宿主使用与主 WebView 相同的环境；可信入口不启用独立
+  QUIC/SPKI 环境。审计读取实际 NetLog 命令行，并核验主控制器存活与 profile 清理。
+- 这仍是最小诊断宿主，不是完整应用持久 profile 的实测。
+
+Windows 云端失败证据
+- https://github.com/Lingyan000/fluxdo/actions/runs/43799775477
+- job 133076882726。Core 的三个示例编译成功，随后 Flutter 静态检查失败：
+  include_file_not_found: package:flutter_lints/flutter.yaml。
+- 根因：prepare.py 重写 pubspec.yaml 时遗漏生成模板的 dev_dependencies，
+  但保留了引用 flutter_lints 的 analysis_options.yaml。
+- 未进入 Windows 可执行文件构建和 H3 网络验证，不能计为通过。
+- Tailscale 加入步骤未执行；BrowserStack 设备会话为零。
+- 云端产物 14196465334，仅含生产源码摘要，不能作为网络抓包证据。
+- 本地修复保留当前 Flutter 模板的开发依赖，不关闭静态检查、不写死新的 lint 版本。
+  已实际重新生成工程，核对 dev_dependencies 与原模板相同。
+- 本地离线 pub get 缺少 flutter_inappwebview_linux 缓存，因此修复后完整工程的
+ 依赖解析、静态检查和 Windows 编译仍待云端复验。
+
+Apple 续验实现（待 Apple SDK 编译和云端运行）
+- WKWebView 接受显式配置的单个 ts.net 可信域名；通过 Security.framework
+  记录系统信任评估，仍交回系统默认处理，不对可信域名使用 useCredential。
+- 正向必须有主机名匹配、系统信任成功的证据；同域名自签证书负对照必须被拒绝，
+  且服务器没有收到 TCP/H3 应用请求。缺少信任评估也判失败。
+- macOS、iOS 26.2 与 iOS 15.5 的宿主在入网前构建、创建模拟器并预热。
+  每次只加入一个节点，应用 UA 和负对照串行执行，结束后登出并删除本次模拟器。
+- 原生 Apple 基准使用服务端关闭旧 TCP 连接来观察 Alt-Svc 切换，报告明确记录此条件；
+  不能据此证明业务长连接自然切换行为。
+- iOS 使用模拟器，生产 Core 回放运行在 macOS 宿主，报告明确排除 iOS App 内 Core 实测。
+- 证书负对照使用临时 OpenSSL 配置生成 SAN，兼容不支持 -addext 的 LibreSSL。
+- 新流程只增加诊断与验证入口，不改变正式应用的本地自签 H3 探针设计。
+
+上一轮本地校验与阻塞
+- 相关 Python 41 项测试通过；修改的 Python 文件语法检查通过。
+- 本次架构守卫未能加载：沙箱禁止绑定 127.0.0.1 动态端口，errno=1。
+  不能把加载失败算作测试通过，也没有证据把它归因于业务代码。
+- 前一个已推送提交阶段架构守卫 8 项通过；该结果不冒充本地新增改动的复验结果。
+- App Automate 只读账户检查的 workflow dispatch 未执行：自动审批因 ChatGPT
+  账户用量上限无法完成。这是审批服务失败，不是风险判定；没有换通道绕过。
+- 后续推送、Windows 重跑、Apple 云端运行尚未执行。保留本地改动等待审批能力恢复。
+
+审批恢复前的待办（后续完成情况见下文）
+- Windows 共享主环境的正常信任 H3、Apple 正常信任 H3 的本轮复验。
+- Linux 原生 H3、完整应用、iOS 设备内 Core、物理设备网络切换及线上 CF 接受情况。
+- 面向正式用户的可信 H3 校准入口。Tailscale 诊断成功不等于产品部署完成。
+
+审批恢复后的本地复验
+- GitHub 只读请求和需要回环端口的测试执行均已恢复。
+- 完整生成的 Windows 最小工程联网 pub get 成功，flutter analyze --no-pub 无问题。
+  flutter_lints 缺失修复已有完整工程的静态检查证据，仍不代替 Windows 运行结果。
+- 相关 Python 44 项通过（含证书/本地 socket 检查），架构守卫 8 项通过。
+- App Automate 只读账户检查已发起，不启动设备。
+
+Windows 共享环境复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43801959442
+  提交 3bf501f70bb4b10b30c3158a5af9307a8a4bada3，job 133084061228，成功。
+- WebView2 131.0.2903.86；主 WebView 与采样 WebView 使用同一环境，不加 QUIC/SPKI 强制参数。
+- 证据下载后独立复核：正常证书 cert_status=0、known_root=true，两个生产校准 origin 同样通过。
+  生产 Core 27 项传输比对、九类请求 QPACK 比对通过；当前校准模板与原生共享环境的 27 项也通过。
+- 同域名不可信证书负对照：cert_status=4、known_root=false、net_error=-202，
+  TCP/H3 应用请求均为零。六次宿主运行的主控制器存活与临时 profile 删除均通过。
+- 与上一轮独立环境模板直接交叉比较出现两项差异：GREASE 控制帧随机长度、首请求 QPACK 流启动状态。
+  这不是已证明由环境隔离引起的差异；来源还包括随机性和 SETTINGS/请求时序。
+  不能用旧轮模板直接代替当前环境校准。本轮实时采样后的原生/Core 对照通过。
+- 产物 14197062162（705920 字节），下载 SHA-256 与 GitHub digest 一致：
+  db73cee1b296c7879aab92d47ee7f3d1151bb89f65e49ea669ec7472b4550078
+- 显式登出和 Action 最终停止 Tailscale 均成功。新增 BrowserStack 会话为零。
+
+App Automate 账户结果
+- https://github.com/Lingyan000/fluxdo/actions/runs/43801861617 成功。
+- automate_plan=Free，running=0、queued=0、parallel_sessions_max_allowed=5。
+- 设备列表含 iOS 15 与 26；这是可选大版本，不证明具体设备的次版本或当前调度成功。
+- 未获得剩余免费分钟数。新增真机入口须先通过同源码模拟器公开协议检查，
+  只发送一次会话创建请求，从创建开始计 120 秒观察预算，随后 DELETE 释放设备；不重试创建。
+  只读公开协议检查不代替受控服务端的完整指纹抓包，也不访问用户账户或发送业务写入。
+
+Linux 已测后端的范围核对
+- 实际加载的 WPE libsoup 库通过 soup_get_major/minor/micro_version 返回 3.6.5；
+  WPE 库的动态依赖指向该打包版本，版本判断不依赖 UA 猜测。
+- 对应上游 tag 3.6.5：766e17528251c9b696a6076300ac61adc95536ac。
+  https://github.com/GNOME/libsoup/blob/766e17528251c9b696a6076300ac61adc95536ac/libsoup/soup-connection.c
+  soup_connection_create_io_data 仅实例化 HTTP/1.x 和 HTTP/2 实现，协商路径也只选择这三种版本。
+- 这条已测 libsoup 连接路径不是 H3 实现；应维持此前已验证的原生 TLS/H2 路径，
+  不把 Apple WebKit 的 H3 能力套到它上面，也不外推为所有 Linux WebView 永久不支持 H3。
+- 本地 libsoup 二进制 SHA-256：3fed8b167430f3b22c86498da384cc955489820a9a9a604bb75c3997d922a7c5。
+  对应 soup-connection.c SHA-256：2c3788647c77596827b4822192d46e35bfbb0169023a4453a5332be0ffa54645。
+
+Apple 首轮失败与修正证据
+- 43801967886：iOS 26.2 安装成功，但 simctl 冷启动两次超过原 25 秒预算；
+  未进入网络测试。保留产物 14198210170，SHA-256：
+  c22521998c07e1e3ee7aa27266662f21f886a47e2081a5f01efda8a205fc89d6
+- 43803450710：生产 Core 成功交叉编译为 aarch64-apple-ios-sim 静态库，
+  Swift 类型检查与实际链接成功；首次安装超过原 60 秒预算，未进入应用内网络验证。
+- 后续只调整模拟器冷启动和首次安装预算，正常网络导航时限不变；
+  保存预热 stdout/stderr、截图、安装失败及清理失败记录。macOS 可独立验证。
+- 43805023923：macOS 入网成功，但网络步骤立即失败；产物上传同时因 ENOTFOUND 失败。
+  官方 Tailscale Action 在入网时改系统 DNS，其恢复在产物上传之后；显式登出后
+  此临时 DNS 不可用。现已在登出后、上传之前恢复入网前的 DNS 和搜索域。
+  因第一份结果未能上传，不能把网络步骤失败直接归因于 DNS；后续主日志也输出失败原因。
+
+应用内 Core 的比对约束
+- iOS 诊断宿主调用实际生产 C ABI，并确认释放宿主后 Core 已停止。
+- 传输比对使用该实例刚校准的原始模板，不复用 macOS 宿主上一轮的模板。
+  原生请求的九场景 QPACK 对照仍单独保留，严格检查项目不删减。
+- 模板导出接口仅存在于 debug_assertions 构建，不进入正式发布 ABI。
+- 上述编译和脚本实现不等于应用内运行通过；以最终云端产物为准。
+
+iOS 15 构建通过后的阻塞已定位
+- 43805974479：iOS 15.5 (19F70)、WebKit 8613，首次预热成功；
+  aarch64-apple-ios-sim 应用已安装，aarch64-apple-ios 真机 IPA 编译及签名均成功。
+- 该轮产物 14198947838，SHA-256：
+  25da356053e4dc57e3a21cda693e7abcbb089fa02dbb5efe11591d257e394f86
+- 43806600522 的 macOS 独立复验也在同一位置失败；产物 14198389921，SHA-256：
+  62940240ddb4469fe1ddab7e1caad99874c6702d0c667ded37cd80faff922013
+- 两轮错误均为 tailscale cert 调用 ACME 目录时无法解析 acme-v02.api.letsencrypt.org。
+  未进入 WebView/H3 验证；BrowserStack 会话均为零。DNS 恢复后产物上传与清理成功。
+- 修复为保留公网 DNS，仅为当前 tailnet 设置 /etc/resolver 分域解析；
+  不覆盖现有文件，退出时只删除内容仍匹配的自建 resolver，并恢复原设置。
+
+同实例模板导出的本地校验
+- Core 库 137 项测试通过；协议比较、证书、会话门槛共 39 项 Python 测试通过；架构守卫 8 项通过。
+- 实际加载动态库，C ABI 初始化、未校准返回 null、返回字符串释放、detach 后停止均通过。
+- 关闭 debug_assertions 编译后核对动态符号：正常 Core ABI 存在，原始模板导出不存在；
+  该检查验证条件编译边界，不冒充完整 release 应用构建。随后已恢复调试构建。
+
+Mac 分域解析修复的验证过程
+- 43807523154 首次分域修复被现存 resolver 保护拦住：daemon 自己也创建了该域的文件。
+  不覆盖该文件；改为先关闭 daemon 的 DNS 管理，待它撤回配置后再检查与创建。
+- 43807827559 已通过分域解析步骤，公网 ACME 域名和当前 tailnet 主机名都解析成功；
+  后续实际系统信任与 H3 复验也成功，详情如下。
+
+macOS 默认系统信任复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43807827559
+  提交 c9a047206b1c37a26086b997c81bff1648ccfa2b，job 133102544529，成功。
+- macOS 15.8.2 (24H232)、WebKit Bundle 20621，应用 UA 中 Version/27.2
+  来自 runner 安装的 Safari Bundle；该产品版本不冒充 WebKit Bundle 版本。
+- 下载后独立重算：28 项传输检查、九场景 QPACK 对照全部通过；
+  两个生产校准 origin 及原生正对照均由系统正常验证证书，没有回调放行。
+- 同域名自签证书负对照被系统拒绝，TCP/H3 应用请求均为零。
+- 产物 14198823577（66899 字节），SHA-256 与 GitHub digest 一致：
+  f16788b875fd8ca9ab78b9947e853a5548aa0d94741a7d15917a4879fd0cad6d
+- 登出、DNS 恢复、产物上传和 daemon 停止均成功；BrowserStack 会话为零。
+
+iOS 26.2 本机 Core 续验的准备失败
+- 43808141993：Swift 类型检查、实际生产 Core 静态库及链接均通过，安装也成功。
+  simctl launch 返回应用 PID；随后 get_app_container 的 15 秒时限耗尽，
+  不是应用没有启动。恢复重启的 bootstatus 又超过 240 秒，未进入网络步骤。
+- 产物 14199872557（3949518 字节），SHA-256：
+  55d0fa94a019c84808ae95caba6ed2c0c6997159e51b16b8741a477dcb790204
+- 驱动改为先查容器再启动应用，避开 UIKit/WebContent 首次启动高负载阶段。
+  回归模拟“启动后容器服务超时”：旧驱动失败（124），修复后成功并删除结果文件、终止应用。
+  六项 Apple 驱动/真机门槛用例及八项架构守卫通过；实际云端重跑单独记录。
+
+iOS 15.5 应用内生产 Core 已通过
+- https://github.com/Lingyan000/fluxdo/actions/runs/43808369127
+  提交 c9a047206b1c37a26086b997c81bff1648ccfa2b，job 133108359545。
+- 原生正常系统信任、生产校准与 macOS 回放通过；同域名自签证书负对照被拒。
+- 实际 aarch64-apple-ios-sim 应用通过生产 C ABI 发出请求并退出 Core；
+  下载原始数据后重算，该实例模板的 28 项传输检查及九场景 QPACK 对照均通过。
+  macOS 回放同样为 28 项及九场景通过，两条执行路径分别保存，不能互相替代。
+- 产物 14201045689（106485 字节），SHA-256：
+  b3539098553279ccc3600ff5dd56925b08de21c69fbe44af291821b7de83c080
+- 整体任务仍为失败：公开 cloudflare-quic.com 诊断页上，原生四次、Core 十二次
+  均为 HTTP/2、TLS 1.3，Core 均返回 200，但未满足公开 H3 条件。
+  不能把两边都 H2 当作 H3 通过；真机会话被前置检查拦住，新增会话仍为零。
+  原报告未保存公开响应的 Alt-Svc，因此不能直接判定是 UDP 出口或 Core 实现问题。
+
+iOS 26.2 应用内生产 Core 复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43809996419
+  提交 a1c7e13b71159c37d8369f626681dc5f1f7437f1，job 133114699304，整体成功。
+- 首次预热成功，未进行恢复重启。正常系统信任、两个生产校准 origin 与证书负对照通过。
+- 原始数据独立复核：macOS 回放和实际 iOS 应用内 C ABI 回放分别为 28 项传输、
+  九场景 QPACK 全通过；应用内 Core 运行与 detach 后停止均确认。
+- iOS 26.2 (23C54)，原生 UA 的 CPU iPhone OS 为 18_7；应用 UA 的 Safari Version/26.2
+  取自实际 Bundle。15.5 的两项均为 15.5。不能按被冻结的 UA 系统版本选择模板。
+- 两份应用内实际采样仍显示：15.5 的 initial_max_data 为 1 MiB，三种 stream_data
+  为 128 KiB；26.2 分别为 16 MiB、2 MiB。回放均匹配各自实测值，没有新增版本白名单。
+- 产物 14200589472（169028 字节），SHA-256：
+  b3807540dc82bc123482289da233938720efdd7fccbe217ca5e26ef7b1b18fcf
+- DNS 恢复、登出、模拟器删除和 daemon 停止成功；BrowserStack 会话为零。
+
+公开端点的协议发现条件
+- 独立 Ubuntu CI 43812120835、43812526758：cloudflare-quic.com 与 one.one.one.one
+  的 /cdn-cgi/trace 返回 200，但没有 Alt-Svc；同源首页虽然返回 403，响应头仍声明
+  h3=":443"; ma=86400。拒绝响应不能丢弃头部证据，也不代表已取得受保护页面内容。
+- 因此前一次只重复读 trace 不足以完成 Alt-Svc 发现。新诊断只 fetch 同源首页读取
+  协议声明，不导航、不执行其内容、不提交验证；然后再次读取公开 trace。
+  保留原生和 Core 的 Alt-Svc、server、协议与退出状态，不强制 QUIC、不放行证书。
+- 真机包改为模拟器检查全通过后才构建；仍只有一次有界设备会话入口。
+
+公开模拟器检查与独立真机观察
+- 43812916275 的受控校准再次通过，但公开 trace 首次导航在 8 秒截止前未完成，
+  尚未读到协议响应，不能声称是 H2/H3 不匹配，也不能据此断言 UDP 被阻断。
+  产物 14201766850，SHA-256：
+  9631ccad52894499bb91804b179d415238013e17882d501baa5f38fa5a33972d
+- 首次公开导航预算改为 20 秒，后续仍为 8 秒；不强制 QUIC，不跳过公开站点证书校验。
+- 后续真机作为独立网络观察：使用已完成受控验证的 43808369127，重新计算 35 项检查，
+  并要求 baseline 与本次 core/net_core 的 Git tree 完全相同：
+  5913ea4be16d2a9519ceaec1d31e5077cb9bde6a。
+  prerequisite 显式保留 simulator_public_h3_verified=false；它没有把模拟器公网失败改为通过。
+
+iOS 15.1 首次物理设备观察：失败位置已确定
+- https://github.com/Lingyan000/fluxdo/actions/runs/43815637954
+  提交 508bd7b6f21cdbc2313328c61f7465e12aaa6ea8，job 133126935390。
+- 请求设备 iPad 9th / iOS 15，实际为 iOS 15.1 (19B74)、WebKit Bundle 8612。
+  真机 IPA 编译、签名、上传、安装、启动及实际生产 Core C ABI 运行均完成。
+- 唯一一次创建请求取得 session id；平台记录 duration=18 秒，status=done；
+  本地窗口（含创建和释放）45.15 秒，DELETE 成功、session_released=true。
+  账户 Free 且空闲检查通过；接口未验证剩余分钟数，不把 18 秒推断为剩余额度。
+- 应用报告 Live iOS TCP calibration incomplete，tls_observations=1、template_ready=false。
+  两次探针导航均完成，但尚未形成第二次独立 TLS；H3 校准及公开 trace 均未执行。
+  Core 已 detach 停止。这不是公网 H3 失败，也不是线上 CF 接受性证据。
+- 同时观察到实际请求 UA 为 Macintosh，而预期 UA 为 iPad Version/15.1。
+  独立 IPA 没有模拟器注入的 FLUXDO_APPLE_UA_MODE=app；旧宿主未显式设置 customUserAgent。
+  iPad 导航默认 UA 与空页 navigator.userAgent 可以不同，不能只看导航前读到的值。
+- 源码对照：正式 Dart 宿主已显式传入应用 UA，并在两轮间等待 150 ms；
+  Core 在 done 后等待 100 ms 关闭采样连接。旧 Swift 诊断宿主漏了等待，
+  下一次导航可能赶在关闭之前复用连接。该差异不能直接算作正式应用的相同缺陷。
+- 4b813bf49c1e4a1b3a9247a6de1efda96917cb71 修复诊断宿主：显式传入同一应用 UA、
+  对齐 150 ms 间隔、核对实际采样 UA，并区分真机/模拟器报告标签及失败阶段。
+  应用内验证去掉 UA 环境变量，增加 iPad 模拟器选择，用真实运行防止遗漏被 CI 掩盖。
+- 产物 14201684562（3745 字节），下载摘要与 GitHub digest 一致：
+  f1960aeebd5160d0b2d06e70d25db1e3ee790165216a5d057f280a4c0611774e
+  本轮只启动一次 BrowserStack 会话；后续修复先用云模拟器检查。
+- 本地实际 Core 的回环 HTTP/1.1 对照确认复用窗口：首轮计数 1，done 后立即再请求
+  仍为 1；150 ms 后重新建连计数为 2，Core 退出确认。此检查不冒充 WebKit/H2 真机验证。
+- 真机还明确返回 safari_bundle_version 为空，而 webkit_bundle_version=8612；
+  模拟器中读取 MobileSafari.app 成功不能外推为真机也可读。15.1 此轮的 Version/15.1
+  来自既有 UA 兼容回退，不是已读取 Safari 真实产品版本。当前证据不能区分沙盒限制、
+  安装位置或平台重签环境影响；现代真机的冻结 UA 回退风险仍须单独验证。
+  本轮不为消除诊断失败而伪造产品版本、不用 WebKit 内部构建号冒充 Safari 版本。
+- 真机关键字段已持久归档到 ios15-physical-observation-20261116.json；
+  它是原始产物的字段摘录，原始 ZIP 的哈希单独保留，未保留会话标识或临时证书。
+
+iPad 宿主修复后的云模拟器复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43816721538
+  提交 4b813bf49c1e4a1b3a9247a6de1efda96917cb71，job 133130349642，整体成功。
+- iPad / iOS 15.5 (19F70)，不再向应用内 Core 宿主传 FLUXDO_APPLE_UA_MODE=app。
+  实际 tls_observations=2；采样 UA 与应用 UA 相同，全部校准 WebView 使用同一显式 UA。
+- 下载原始产物后独立重算：应用内生产 Core 的 28 项传输检查、九场景 QPACK 全通过；
+  正常系统证书信任与同域名不可信证书负对照通过，Core detach 后停止。
+- 产物 14203288121（101085 字节），SHA-256 与 GitHub digest 一致：
+  131b75917ea1812f5fc5e2774e194fd0a9dfcfbbc51e8ac6890564364d9758a4
+- 登出、DNS 恢复、模拟器删除及 daemon 停止全部成功；没有创建新的 BrowserStack 会话。
+  此结果证明修复后 iPad 模拟器的受控校准与回放，不等于修复后的真机公网 H3 已通过。
+- 本轮本地 Apple 驱动/门槛 7 项、正式 Dart 采样服务 13 项、架构守卫 8 项通过。
+
+当前仍不能宣称全部闭环
+- 修复后的 iOS 15.5 物理设备已重跑：本地 TLS/H3 校准通过，原生与 Core 公网仍为 H2；
+  Safari 产品版本为空已显式记为未验证，既有登录 UA 兼容回退保留。
+- 受控可信入口不是正式用户可用的长期 H3 校准服务，Android 产品入口仍有部署缺口。
+- 完整 Flutter 真机、蜂窝/Wi-Fi 切换、连接迁移和线上 CF 接受性仍无完整实测证据。
+- 完整业务持久 profile 的实验配置、任意并发/驱逐/导航、整个头集合及随机分布
+  不属于当前已通过的有限场景，不能外推为逐字节完全一致。
+- PR 432 保持 Draft，未合并 dev、未创建新的发布标签。CSRF 业务策略未改。
+
+本轮独立完成工作与协助清单
+- 修复后物理设备运行 43820609697、完整应用构建运行、SDK 检查和清理结果，
+  统一记录在 fingerprint-closure-20261116.txt；本地真机关键字段及重算断言见
+  ios15-physical-retry-20261116.json。此补充保留前述失败原始记录，不覆盖历史事实。
+- 本轮 BrowserStack 会话上限两个；每次从创建开始最多观察 120 秒并主动释放。
+  完整应用启动检查与公开协议检查是不同范围，不互相替代。

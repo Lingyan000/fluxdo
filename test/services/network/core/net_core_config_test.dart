@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,10 @@ void main() {
     );
     expect(copied.toJson()['fingerprint_user_agent'], 'actual WebView UA');
     expect(copied.toJson()['fingerprint_platform'], Platform.operatingSystem);
+    expect(
+      jsonDecode(copied.toJson()['fingerprint_runtime_identity'] as String),
+      [Platform.operatingSystem, Platform.operatingSystemVersion],
+    );
     expect(copied.toJson()['fingerprint_preset'], 'android-chrome149');
     expect(
       copied.toJson()['http3_cache_path'],
@@ -36,5 +41,16 @@ void main() {
     expect(preset.templateSource, 'builtin');
     expect(preset.templatePreset, 'android-webview133');
     expect(NetCoreStatus.fromJson({'running': true}).templateSource, isNull);
+    expect(NetCoreStatus.fromJson({'running': true}).templateDiagnostics, isEmpty);
+    final status = NetCoreStatus.fromJson({
+      'running': true,
+      'template_diagnostics': {
+        'cache_state': 'runtime_changed',
+        'h3': {'enabled_for_template': false},
+        'tls_capabilities': {'status': 'backend_mismatch'},
+      },
+    });
+    expect(status.templateDiagnostics['cache_state'], 'runtime_changed');
+    expect(() => status.templateDiagnostics['extra'] = true, throwsUnsupportedError);
   });
 }

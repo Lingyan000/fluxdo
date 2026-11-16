@@ -1,0 +1,110 @@
+历史阶段记录：下文保留当时结果。当前修复状态与最终原生复核以
+fingerprint-remediation.txt、native-fingerprint-governance.txt 为准。
+尤其旧文中的“HEADERS 优先级未实现”和“额外 Fetch Metadata 未修复”已有后续修复。
+
+Apple 原生 WKWebView 云端指纹验证
+日期：2026-11-15
+
+最终结果
+三轮累计覆盖 macOS 15.8.2、iOS 18.5/26.1/26.2 的原始及应用 UA，共八种组合。
+八种组合均已取得通过的原生采样和 Core 字段对照；去重后覆盖 40 个传输场景。
+最后一轮使用 Xcode 26.3，macOS 与 iOS 26.2 四组全部通过，GitHub 任务成功。
+这不表示前两轮全绿：其中三组启动/采样失败及全部原始证据均予保留。
+
+执行范围
+使用 GitHub macos-15 runner，直接编译并运行原生 AppKit/UIKit + WKWebView 诊断宿主。
+不是 Linux WebKit、Playwright Safari 或仅修改 UA 的 Chromium 模拟。
+两种模式分别使用 WKWebView 默认 UA，以及按 lib/constants.dart 当前 Apple 规则补齐的 UA。
+宿主只访问回环 HTTPS 探针，不登录业务站点、不执行 CF 挑战。
+生产 Rust ProbeEndpoint 采集模板，生产 HttpEgressClient 发起回环请求并验证实际 TLS/H2。
+iOS 浏览器在模拟器内运行，Core 对照客户端在同一台 Mac 上运行；未验证 iOS 版 Core 二进制。
+Swift 最小宿主复用关键采样配置，不等同于完整 Flutter 应用及插件链路测试。
+
+代码与运行
+调查基线：ea34f93d0e4407b99981e757c9f6eeae3989cf62。
+独立分支：diagnostics/apple-fingerprint-20261115。
+指纹修正提交：aa578ab24931bd2d21214d36fb89303fe681b953。
+首轮诊断提交：8def48adc818b0c137950edca01c4eb7f7e9d2f0。
+驱动收尾修正：e6dffb5c1246be76cc9c08b93849ca4bf1117449。
+首轮运行：https://github.com/Lingyan000/fluxdo/actions/runs/43658836415
+第二轮运行：https://github.com/Lingyan000/fluxdo/actions/runs/43660263143
+远端 dev 后续三笔提交到 43f26c9a，没有修改这次涉及的 core/net_core、指纹服务或 constants.dart。
+没有覆盖远端 dev 的后续开发，没有发布版本或修改 CSRF。
+
+首轮实际环境与结果
+macOS 15.8.2（24H232）、ARM64，Xcode 16.4（16F6）、iOS Simulator SDK 18.5。
+- macOS 默认 UA：通过。
+- macOS 应用 UA：通过。
+- iOS 26.2 默认 UA：通过。
+- iOS 26.2 应用 UA：通过。
+- iOS 26.1 默认 UA：采样未完成，未进入 Core 对照，不能算指纹不一致。
+- iOS 26.1 应用 UA：通过。
+五组通过结果在本地重新执行比较器，结果一致。
+原始 ZIP SHA256：d78ae5905e1256570c88a82d8b2aa136e35b5cdee48ceb45148836d2e4f20b34。
+
+首轮失败的证据及处理
+ios-26.1-native/probe-status-0.json：tls_observations=0，fetch_headers_sampled=false。
+probe-status-1.json：tls_observations=1，fetch_headers_sampled=true，ready=false。
+仅有一个宿主成功完成记录，Rust 报“两轮采样仍未完成校准”。
+第一轮模拟器宿主冷启动尚未产生握手，实验驱动已结束等待并启动下一轮。
+修正仅在实验工具：等待外部宿主完整结束，iOS 驱动失败时结束模拟器应用，记录每轮耗时。
+生产 Dart 探针 15 秒超时未修改；此次不宣称验证了真实应用冷启动的 15 秒性能预算。
+第二轮同时加入 runner 中最旧的可用 iOS 运行时，避免只验证最新两个版本。
+
+第二轮结果
+macOS 默认/应用 UA、iOS 26.1 默认/应用 UA、iOS 18.5 默认/应用 UA，共六组通过。
+iOS 26.2 两组均未成功启动原生宿主：browser-0.stdout 为空，驱动退出码 124，
+等待约 90 秒后收尾，没有 reference.json，也没有进入 Core 字段比较。
+这是启动阶段失败，不能归类为 TLS/H2 不一致。整条工作流因此保持失败状态。
+原始 ZIP SHA256：38f5da761f6d2ddd3ea8930591ed5fdc46abfcf87e25403c8263e5a54280e9d1。
+两轮合计已取得全部八种组合的通过证据，但没有把它表述为第二轮全绿。
+
+工具链匹配复核
+runner 官方清单显示已安装 Xcode 26.3/26.2，但默认仍为 16.4。
+https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md
+诊断分支增加显式选择 Xcode 26.3，针对 iOS 26.2 和 macOS 重跑。
+此时尚不能仅根据默认 Xcode 较旧就认定它是模拟器启动卡住的根因。
+第三轮提交：76500ded3fcdbdcaf33f79ce91a2710dd5d35a52。
+第三轮运行：https://github.com/Lingyan000/fluxdo/actions/runs/43661708929
+结果：macOS 原始/应用 UA、iOS 26.2 原始/应用 UA，四组全部通过；整体任务 success。
+环境：macOS 15.8.2 ARM64，Xcode 26.3（17C529）。
+原始 ZIP SHA256：fc5d914450e95fd2dc9f45679b86fcf9bed035c9cb391e244e1607b8f50dc0c4。
+四组均在本地再次运行比较器并通过；与首轮相同组合相比，稳定 TLS/H2 字段未变化。
+iOS 26.2 原始 UA 首次驱动耗时 68027ms，第二轮 5064ms；应用 UA 两轮 4988/6464ms。
+耗时包含 simctl 启动、宿主/内核初始化和页面采样，不能直接拿来评价生产页面的 15 秒时限。
+工具链切换与新云端实例同时发生，因此不能据此单独证明 Xcode 版本导致前轮启动失败。
+
+本次样本中的 iOS 版本差异
+同一第二轮 Mac 实例上，iOS 18.5 与 26.1 的原生样本存在以下差异：
+- 26.1 的 SupportedGroups 和 key_share 增加 4588（X25519MLKEM768），key_share 长度 1216；
+  18.5 的普通 X25519 key_share 为 32 字节，26.1 同时保留该项。
+- SupportedVersions：18.5 含 TLS 1.3/1.2/1.1/1.0；26.1 为 TLS 1.3/1.2。
+- TLS 1.3 套件顺序：18.5 为 4865,4866,4867；26.1 为 4866,4867,4865。
+- H2 SETTINGS 顺序：18.5 为 [2,4,3]；26.1 为 [2,4,3,9]，新增 no_rfc7540_priorities=1。
+- 两者伪头顺序相同，窗口更新增量均为 10485760。
+这些是实际样本差异，不据此新增全局版本阈值；Core 按各自真实采样复现的字段均通过。
+
+验证字段与边界
+检查 TLS 套件、协议版本、扩展集合/排列策略、支持组、签名算法、ALPN/ALPS、
+证书压缩、EC 格式、key_share 组别与长度、H2 初始帧/窗口/伪头、Accept-Encoding 和低熵 Client Hints。
+每组还覆盖连续复用、连接池重置、四请求并发、磁盘模板恢复、响应超时后恢复。
+不把随机密钥、GREASE 值、ECH 密文、padding 长度、PSK/cookie 和 ACK 时序当作稳定字段。
+首轮未观察到 TLS 会话恢复，不把连接复用测试当成会话恢复验证。
+没有验证 H3、完整 HPACK/HEADERS 优先级、真实出口变化、公网 DoH/ECH 或 Cloudflare 判断。
+项目最低支持 iOS 15 / macOS 12，本次可用云端版本不覆盖全部受支持版本。
+
+新发现：真实系统版本与 UA 版本不同
+iOS 26.1 与 26.2 的原生 WKWebView 都返回 CPU iPhone OS 18_7。
+按现有应用 UA 补齐规则，得到 Version/18.7，而非实际系统 26.x。
+首轮这两个 iOS 版本的稳定 TLS/H2 字段相同，不能凭 UA 相同推断系统未升级。
+这说明 UA 的系统字段不适合作为实际 iOS 版本来源；缓存失效判断也不应仅依赖该字段。
+这是版本标识/缓存依据的后续改进点，不是本轮已证明的 CF 触发因果；当前未修改生产 UA 规则。
+macOS 默认/应用 UA、iOS 26.2 默认/应用 UA 的稳定 TLS/H2 字段一致，低熵 Client Hints 均为空。
+
+复现入口
+工作流：.github/workflows/apple-fingerprint-probe.yaml。
+宿主：tool/apple_fingerprint/WKProbe.swift。
+调度与对照：tool/apple_fingerprint/run.py、ios_driver.py、tool/compare_fingerprint_capture.py。
+输出包含 environment.json、simulators.json、matrix.json、每轮原生宿主输出、探针状态、模板、
+实际 Core 采集、场景连接身份和逐项比较结果。
+本地信任根仅通过实验进程附加信任传入，没有安装到系统钥匙串，也没有关闭生产 Core 证书校验。

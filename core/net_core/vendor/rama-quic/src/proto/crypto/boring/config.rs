@@ -469,7 +469,7 @@ pub(crate) fn server_config_from_rama(
         .cloned();
     Ok(if data.issues_certificates() {
         ServerCrypto::Resolver(Arc::new(QuicServerCertIssuer {
-            contexts: contexts(|| data.acceptor_builder_without_identity())?,
+            contexts: contexts(|| data.acceptor_builder_without_identity(), options)?,
             data,
             early_data: options.early_data,
             initializer,
@@ -514,7 +514,7 @@ impl QuicServerConfig {
     ) -> Result<Self, TlsConfigError> {
         Ok(Self {
             issued: None,
-            contexts: contexts(|| data.clone().into_static_acceptor_builder())?,
+            contexts: contexts(|| data.clone().into_static_acceptor_builder(), options)?,
             early_data: options.early_data,
             store_peer_chain: data.stores_client_certificate_chain(),
             initializer,
@@ -524,9 +524,14 @@ impl QuicServerConfig {
 
 fn contexts(
     builder: impl Fn() -> Result<SslAcceptorBuilder, BoxError>,
+    options: TlsOptions,
 ) -> Result<[SslContext; 2], TlsConfigError> {
     let context = |version: Version| -> Result<SslContext, TlsConfigError> {
         let mut builder = builder()?;
+        if options.server_session_tickets==Some(false) {
+            builder.set_options(rama_crypto::dep::boring::ssl::SslOptions::NO_TICKET);
+            builder.set_num_tickets(0);
+        }
         let invalid = |error: ErrorStack| TlsConfigError::InvalidConfiguration(error.into());
         builder
             .set_min_proto_version(Some(SslVersion::TLS1_3))

@@ -1,0 +1,60 @@
+H3 Initial 布局续查（2026-11-15）
+
+已证实的问题
+1. Chromium 156 的原生首包携带 ClientHello 头部及尾部，中段在后续包；旧 Core 只能包内乱序。
+2. 旧 Core 最小分片 32 字节、额外 PING 上限 3，与 Chromium 99/110/156 的实测及源码不符。
+3. iOS 26.2 的真实模拟器 WKWebView 样本按 999 字节切 CRYPTO；旧 Core 按 1161 字节。
+   两者 UDP 包大小仍相等，所以此前仅比较 datagram_sizes 的报告漏掉了这一差异。
+   证据：Actions 43702919972 / artifact 14157540394，tool/testdata/ios26_initial_layout.json 保留原始元数据。
+4. 采集端在响应发送完成后才记录请求，客户端退出时可能丢失最后一条观测。
+   同时 warm 请求头先于其 PRIORITY_UPDATE 到达，会使控制帧集合偶发缺项。
+
+版本依据（不按 UA 写版本白名单）
+- 实测 Chromium 99.0.4812.0 DEPS 指向 QUICHE cb6ab3eb3fdf36c5db3a4a845f4af1c7c5d68b7e。
+- 实测 Chromium 110.0.5481.38 DEPS 指向 QUICHE bb8ac619a1e6563a94cf2abd0e59df9d795fa8a3。
+  两者单包算法允许 0..10 次分片尝试，PING 为 random % min(10, padding)，充足空间时为 0..9。
+- 实测 Chromium 156.0.8078.79 DEPS 指向 QUICHE a1628192cf32ba40d21e0dd80f485d68c24ff87a。
+  包内算法与先读取的 51a950dba2100da7e7977aa97759470507d1ebb8 一致，分片尝试与额外 PING 均为 2..10。
+- 54f21233321b7a5ef64386f2dc11156039ae32a4（2024-12-03）引入 Chaos Protection v2；
+  f16e5a92bb55c438f0c96def92e73ca7f67b3f09（2024-12-06）给新算法增加最小次数。
+  上游提交日期不等于所有 Chromium/WebView/Edge 的启用日期，不能据此宣称统一版本分界。
+- 来源：
+  https://chromium.googlesource.com/chromium/src/+/99.0.4812.0/DEPS
+  https://chromium.googlesource.com/chromium/src/+/110.0.5481.38/DEPS
+  https://github.com/google/quiche/blob/51a950dba2100da7e7977aa97759470507d1ebb8/quiche/quic/core/quic_chaos_protector.cc
+  https://github.com/google/quiche/blob/51a950dba2100da7e7977aa97759470507d1ebb8/quiche/quic/core/quic_packet_creator.cc
+  https://github.com/google/quiche/commit/f16e5a92bb55c438f0c96def92e73ca7f67b3f09
+
+实现
+- 实测首包有 CRYPTO 中段空洞时，按当前握手长度重新规划首包头尾及后续中段，再做包内细分。
+- 多包有序样本从数据推导分片上限；两次校准要求该特征一致，不把 999 写成平台常量。
+- 初始布局只存偏移、长度、帧形状；真正发送使用新 TLS 数据，普通 ACK/丢包恢复队列继续跟踪 CRYPTO。
+- 现有预算限制、token、CID、包头保护长度、拥塞窗口等完整检查仍保留。
+  不适配的布局由底层回退，不声称所有握手长度与所有网络事件都维持同样指纹。
+- 旧单包与观察到跨包交错的策略采用各自有源码依据的随机范围。
+- 采样等待已观察到的逐请求 PRIORITY，2 秒内未到则明确失败；不影响普通业务请求。
+- 请求在响应前记录；比对器新增 CRYPTO 完整无重复覆盖、跨包策略、有序分片上限检查。
+
+范围限制
+两条连接的随机样本不能证明完整分布，短 ClientHello 的现代单包路径与历史单包策略仍可能歧义。
+本轮未推断所有 Chromium 分支/实验开关的切换版本；不能把结构检查通过称为全指纹等价。
+iOS/macOS 的修复已用下述新云端抓包复核；真机、WiFi/蜂窝切换、生产 CF 结果仍另行验证。
+QPACK 全部请求用途矩阵、Android/Windows 默认原生 H3 证书信任、真机网络场景仍不因本补丁完成。
+CSRF 业务逻辑和字段值未修改；本轮 BrowserStack 新会话数为 0。
+
+本轮本地结果
+- Chromium 99/110/156 三组通过加强后的 Initial 布局及三阶段 QPACK 检查。
+- 10 项 Initial 回放/恢复测试、5 项包内细分测试、4 项模板测试通过。
+- 六项生产网络场景通过：Initial 丢包、Retry、UDP 阻断、reset、扩展请求、POST 响应丢失不重放。
+- 比对器 13 项通过，包含原始 iOS 26.2 元数据的漏检回归和 CRYPTO 重复/缺失负对照。
+- 首轮 Apple 云端 43718742877：两组 macOS 通过，iOS 26.2 在 simctl 预热启动超时，未运行网络验证。
+  artifact 14163578528，SHA-256 9c34e73cfca14e4bbf926422f661641d9ea8112ba372f2afca221743ac976657。
+
+Apple 最终复验
+- Actions https://github.com/Lingyan000/fluxdo/actions/runs/43720046188，提交 2e85dc08e7dc6dbc6c27671840e1129e1f699cae。
+- artifact 14163813278，SHA-256 0f17f378f531bb6007c9c2329cf3d15f26c707d9a7d23c74bc6bea8ca264c9d2。
+- macos-native、macos-app、ios-26.2-native、ios-26.2-app 四组 TCP/H2 和生产 H3 全部通过。
+- iOS 两组实际 CRYPTO 均为 999 + 483，原生 WKWebView 与 Core 一致；此前 Core 为 1161 + 321。
+- 本轮模拟器预热第一次成功，未执行恢复重试。前一轮超时保留为环境失败，不计为网络测试。
+- app 表示采用应用 UA 配置的原生诊断宿主，不是完整 Flutter 应用；iOS 在模拟器中采样，Core 在 macOS 上回放。
+- 本次不重跑已通过的 iOS 15.5 全套环境；其先前证据与当前 26.2 实测分别陈列，不能合称所有 iOS 版本通过。

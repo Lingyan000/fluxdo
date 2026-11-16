@@ -95,16 +95,13 @@ impl TicketStore {
     }
     pub fn put(self: &Arc<Self>, scope: &str, session: &SslSessionRef) {
         let Ok(der) = session.to_der() else { return };
-        if der.len() > 16 * 1024 {
-            return;
-        }
-        let expires = session
-            .time()
-            .saturating_add(session.timeout() as u64)
-            .min(now() + 86400);
-        if expires <= now() {
-            return;
-        }
+        let expires = session.time().saturating_add(session.timeout() as u64);
+        self.put_bytes(scope, der, expires);
+    }
+    /// 不同 TLS 后端共用加密容器，但调用方必须使用独立的后端/策略作用域。
+    pub(crate) fn put_bytes(self: &Arc<Self>, scope: &str, der: Vec<u8>, expires: u64) {
+        let expires = expires.min(now() + 86400);
+        if der.len() > 16 * 1024 || scope.len() != 64 || expires <= now() { return; }
         let mut tickets = self.tickets.lock();
         tickets.retain(|t| t.expires > now());
         while tickets.iter().filter(|t| t.scope == scope).count() >= 2 {
@@ -126,13 +123,16 @@ impl TicketStore {
         self.schedule();
     }
     pub fn take(self: &Arc<Self>, scope: &str) -> Option<SslSession> {
+        SslSession::from_der(&self.take_bytes(scope)?).ok()
+    }
+    pub(crate) fn take_bytes(self: &Arc<Self>, scope: &str) -> Option<Vec<u8>> {
         let mut tickets = self.tickets.lock();
         tickets.retain(|t| t.expires > now());
         let i = tickets.iter().position(|t| t.scope == scope)?;
         let ticket = tickets.remove(i)?;
         drop(tickets);
         self.schedule();
-        SslSession::from_der(&ticket.der).ok()
+        Some(ticket.der)
     }
     fn schedule(self: &Arc<Self>) {
         self.dirty.store(true, Ordering::Release);

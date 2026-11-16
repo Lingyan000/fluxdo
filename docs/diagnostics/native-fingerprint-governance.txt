@@ -1,0 +1,74 @@
+原生浏览器指纹复核与修复证据（2026-11-15）
+
+结论
+最终原生任务全部通过所列字段和传输场景的比较，Linux WPE 的后端差异单独保留为失败。
+这不是“所有平台所有指纹完全相同”，不是完整 Flutter 应用或 CF 挑战成功的证明。
+
+运行时与证据边界
+Android：API 35 / Android 15 模拟器 AE3A.240806.043；WebView 124.0.6367.219。
+  原生 UA、按应用规则处理后的 UA 两种配置；浏览器在 Android，Core 在 Linux 宿主。
+Windows：Windows NT 10.0.20348.0；WebView2 131.0.2903.86，UA Chrome/131 Edg/131。
+  原生 WinForms WebView2 宿主和 Windows Core。不能称为当前最新 WebView2 版本。
+macOS：15.8.2 (24H232)，WKWebView；原生 UA 与应用 UA 两种配置；Core 在 macOS。
+iOS 26.2：模拟器 23C54，原生 WKWebView，原生 UA 与应用 UA 两种配置；Core 在 macOS。
+iOS 15.5：模拟器 19F70，原生 WKWebView，原生 UA 与应用 UA 两种配置；Core 在 macOS。
+  iOS 15.0 原生运行仍受当前 macOS 宿主限制，未将 15.5 结果外推到全部 15.x。
+Linux：Playwright headless WPE WebKit 26.5；实际仓库 Linux 插件也是 WPE 后端家族，
+  但版本和编译条件不代表用户安装的所有发行版本。真实复测仍存在 BoringSSL 能力差异。
+
+每种配置的检查
+两次独立浏览器采样、三条新 Core 连接，检查公开稳定 TLS 字段/扩展集合与排列策略、
+H2 初始帧、伪头顺序、默认 fetch HEADERS 优先级、Accept-Encoding、低熵 Client Hints、
+Fetch Metadata 存在性，以及连接复用、连接池重置、四请求冷并发、磁盘缓存恢复、超时恢复。
+每配置 5 个传输场景；三个工作流共 11 个 case（macOS 控制组重复），55 个场景通过。
+去重后是 9 种原生配置、45 个场景，不含 Linux WPE。磁盘恢复测试不等同 TLS 会话恢复。
+
+最终云端来源（已下载并核对 SHA256）
+Android / Windows：
+https://github.com/Lingyan000/fluxdo/actions/runs/43680308904
+commit 896a42a279fe85403b8e4ac7f476a07c20741134
+Android artifact 14147658966，88276 bytes
+SHA256 4f37a706b739129ac5f640d485a82670993c54c9dd78786065909ed61c0b8968
+Windows artifact 14148412088，111135 bytes
+SHA256 c4bc1ab1189f6b425503059e6f9bcefbe73f011c52eca0cb4fcf9eb867742a26
+
+macOS / iOS 26.2：
+https://github.com/Lingyan000/fluxdo/actions/runs/43680309131
+commit 06428a26dd4344ccd1f40c03ef63589d8a833d77
+artifact 14148471586，253231 bytes
+SHA256 7afbdfa2b9ea3eb12153d7e8fa5d285c404ebc5c51ba9c6aa5555772124b5f88
+
+iOS 15.5（含 macOS 控制组）：
+https://github.com/Lingyan000/fluxdo/actions/runs/43680308908
+commit 8207fff31a62e6e43edd338bf48a139dce82e9e1
+artifact 14148685246，179454 bytes
+SHA256 f8b737f9c53c6ec84c1324a98a8753b8e1efa9afbd6e1f3fa6b39859e4d19e6b
+
+失败证据与修复闭环
+- Android 先前任务 43678574522，commit 2d121d1e9a982dcfa53fe7566ca13160b01ec84e：
+  原生 UA 校准失败，应用 UA 通过。有效探针握手两次，一次含 extension 21 padding、另一次没有。
+  artifact 14147048811，SHA256 0e5be063e0e2244f308d15c660ac0d213bca83b35e65b654bb854d1ad28d076a。
+  提取实际样本为 android124_padding_presence.json；旧能力哈希回归失败，修复后通过，
+  最终同一模拟器/WebView 两种 UA 均通过。不能把失败归因于用户更换 UA 或系统版本。
+- Windows 任务 43677450512 的采集完成，写报告遇到 cp1252 编码错误；统一 UTF-8 后原生任务通过。
+- 审计功能首轮本地矩阵因提前初始化全局实验信任库导致 15 组失败。
+  改为完全独立、无网络的 HelloSink 配置，生产证书校验保持平台校验；新目录复跑 15/15 通过。
+- 拒绝的 TLS 握手、无 HTTP 的预连接不再计样本。真实 TLS 准入回归通过。
+- Linux WPE 本轮 wpe-final-v2：Core 实际缺少 X448/FFDHE、部分签名算法，并多 EMS 扩展。
+  status.tls_capabilities.status 为 backend_mismatch，采样 ready 不是完整一致性标记。
+
+本地验证
+118 项 Rust 核心测试通过；Dart 配置/采样和架构守卫共 18 项通过；相关 5 文件 analyze 通过。
+Linux Chromium 99.0.4812.0、110.0.5481.38、156.0.8078.79、110 乱序开关、156 自定义 UA
+共 5 组真实浏览器，另加五平台 10 组预置回放，共 15 组/75 场景通过。
+预置回放不计作这些平台的真实浏览器采样。
+
+已确认但未修复/未覆盖
+完整生产 H3 模板、完整 HPACK、导航/资源上下文优先级、Linux TLS 后端能力差异、
+iOS 冻结 UA 的 Safari 版本补齐，以及物理切网、真实代理/PAC、前后台、完整 Flutter 应用、
+真实手机和 CF 结果。具体边界与后续验收见 fingerprint-remediation.txt。
+Apple 官方冻结 UA 说明：https://webkit.org/blog/17333/webkit-features-in-safari-26-0/
+原生 WebKit bundle 号是内部构建号；iOS 查询 MobileSafari bundle 未获版本，未据此伪造 UA。
+
+改动约束
+CSRF、Cookie、Origin、Referer 的业务策略未改；未统一两条链路的出口；未发布 dev 或 beta。
