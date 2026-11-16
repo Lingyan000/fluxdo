@@ -32,7 +32,13 @@ Android 官方 BouncyCastle 提供者映射到 `PKIXCertPathValidatorSpi`，没�
   `UnsupportedOperationException` 识别为“不支持”；其他异常保留。
 - `android.rs`：系统校验已成功、无 OCSP staple 且补充接口不支持时，
   清除已处理的 Java 异常并跳过补充检查，记录明确警告。
-- 存在 staple 但无法校验时仍失败；支持检查器时沿用原来的撤销检查。
+- 存在 staple 且提供者不支持时，BoringSSL 构建改走本地验证，只有完整验证成功才放行。
+  `ocsp_verify.rs` 使用已有 yasna/x509-parser 解码，BoringSSL 验签，不引入其他加密库。
+  校验 CertID 的序列号与签发者摘要、响应者身份/授权、签名算法参数、响应时间和状态；
+  受委托响应者必须由可信链中的直接签发者签发，并具有 OCSPSigning 用途。
+  自带证书不能充当信任锚点；revoked、unknown、未知关键扩展和无法验证的数据均拒绝。
+  支持 Java 检查器的提供者沿用原路径；非 BoringSSL 构建保持无法验证即拒绝。
+- `android_ocsp.rs` 只把平台已验证的证书链材料转入本地验证，不改变系统信任结论。
 - 名称、期限、用途、信任链、应用证书策略、ECH 和失败重试策略不变。
 - 其他平台源码不变。
 
@@ -40,7 +46,15 @@ Android 官方 BouncyCastle 提供者映射到 `PKIXCertPathValidatorSpi`，没�
 
 Linux 的 `cargo test --locked --lib` 包含真实 JVM/JNI 回归，需要 Java 运行时包含
 `jdk.compiler` 模块，并可通过 `java` 和 `JAVA_HOME` 或系统安装路径找到 JVM。
-测试直接加载生产能力探测模块，覆盖“不支持、真实异常、可用”及 staple 边界。
+测试直接加载生产能力探测和 OCSP 桥接模块，覆盖“不支持、真实异常、可用”及 staple 边界。
+OpenSSL 在临时目录生成并独立验证正向响应；29 组响应还覆盖撤销、未知状态、错误签名、
+错误证书、同名伪造 CA、无授权/过期响应者、关键扩展、RSA-PSS 参数和损坏编码。
+另测过期/未来/无 nextUpdate 旧响应，并逐字节截断和翻转响应验证解析失败边界。
+此测试需 `openssl`、`python3`，不访问外部 OCSP 服务，不安装测试证书，临时私钥测试后删除。
+
+已有公开 Android 15 系统 JAR 时，可在上述 `cargo test` 前设置
+`FLUXDO_ANDROID_ALL=/path/to/android-all-15-robolectric-12650502.jar`，
+以实际 Android BC 提供者再次执行同一组 JNI 回退用例；常规 CI 不下载这个大文件。
 
 另可下载上述公开 Android 系统类到仓库外，然后执行：
 

@@ -30,6 +30,8 @@
 //! fetching only for system-rooted chains unless a staple is supplied; API 23
 //! has no supplementary revocation check. For a chain with an issuer, a supplied
 //! Android staple must validate; malformed or invalid staples are rejected.
+//! BoringSSL builds validate staples locally if the Android provider does not
+//! implement the optional revocation checker, after platform trust succeeds.
 //! Apple uses Security framework policy.
 //! These checks do not promise hard-fail revocation or revocation of every CA.
 //!

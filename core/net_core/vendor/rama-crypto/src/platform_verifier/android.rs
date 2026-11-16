@@ -20,6 +20,12 @@ use crate::pki_types::CertificateDer;
 mod revocation;
 use revocation::{RevocationChecker, allow_unsupported_revocation, revocation_checker};
 
+#[cfg(feature = "boring")]
+use crate::ocsp::verify as native_ocsp;
+#[cfg(feature = "boring")]
+#[path = "android_ocsp.rs"]
+mod native_bridge;
+
 /// `id-kp-serverAuth`: a leaf that restricts its extended key usages must
 /// allow server authentication.
 const SERVER_AUTH_EKU: &str = "1.3.6.1.5.5.7.3.1";
@@ -706,6 +712,24 @@ fn check_revocation(
             return Ok(());
         }
         Ok(RevocationChecker::Unsupported) => {
+            #[cfg(feature = "boring")]
+            {
+                // 只接受平台已经构建的链中的签发者，响应附带证书不能充当信任锚点。
+                let issuer = list_get(env, valid_chain, 1)?;
+                let response = ocsp_response.expect("未携带 staple 的分支已提前处理");
+                let result = native_bridge::verify_staple(env, leaf, &issuer, response, now_millis / 1000)?;
+                if result.is_ok() {
+                    rama_core::telemetry::tracing::debug!(
+                        event = "tls_ocsp_native_verified",
+                        "Android supplementary checker unavailable; OCSP staple verified locally"
+                    );
+                }
+                return result.map_err(|err| PlatformVerifyError::with_source(
+                    if err == native_ocsp::Error::Revoked { PlatformVerifyErrorKind::Revoked }
+                    else { PlatformVerifyErrorKind::Other }, err,
+                ));
+            }
+            #[cfg(not(feature = "boring"))]
             return Err(PlatformVerifyError::with_source(
                 PlatformVerifyErrorKind::Other,
                 BoxError::from_static_str("Android certificate provider cannot validate the supplied OCSP staple"),

@@ -17,6 +17,10 @@
 
 use std::time::{Duration, SystemTime};
 
+#[cfg(feature = "boring")]
+#[path = "ocsp_verify.rs"]
+pub mod verify;
+
 use rama_core::error::{BoxError, BoxErrorExt as _, ErrorContext};
 use yasna::{
     Tag,
