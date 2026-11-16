@@ -105,16 +105,29 @@ def main():
         simulator = Path(output(['xcode-select', '-p']))/'Applications/Simulator.app'
         run(['open', '-a', simulator, '--args', '-CurrentDeviceUDID', udid], timeout=30)
         run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
-        run(['xcrun', 'simctl', 'install', udid, app], timeout=60)
+        # 新建模拟器首次安装会等待系统应用注册；独立于探针的网络超时。
+        run(['xcrun', 'simctl', 'install', udid, app], timeout=180)
         warmup_simulator(root, runtime['version'], udid)
         if core_app:
-            run(['xcrun', 'simctl', 'install', udid, core_app], timeout=60)
+            run(['xcrun', 'simctl', 'install', udid, core_app], timeout=180)
         targets.append({'name': 'ios-'+runtime['version'], 'platform': 'ios',
                         'driver': str(Path(__file__).with_name('ios_driver.py').resolve()),
                         'env': {'FLUXDO_SIMULATOR_UDID': udid}, 'ios_core_installed': bool(core_app)})
         (root/'targets.json').write_text(json.dumps(targets, indent=2)+'\n')
-    except Exception:
-        cleanup(root)
+    except Exception as error:
+        (root/'preparation-failure.json').write_text(json.dumps({'error': str(error), 'udid': udid,
+            'network_test_started': False}, indent=2)+'\n')
+        with (root/'preparation-device.log').open('w') as log:
+            try:
+                subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show', '--last', '2m', '--style', 'compact',
+                    '--predicate', 'process == "installd" OR process == "WKProbe" OR eventMessage CONTAINS "org.fluxdo.fingerprint"'],
+                    stdout=log, stderr=subprocess.STDOUT, timeout=20, check=False)
+            except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
+                log.write('\n'+str(diagnostic_error)+'\n')
+        try:
+            cleanup(root)
+        except Exception as cleanup_error:
+            (root/'cleanup-failure.json').write_text(json.dumps({'error': str(cleanup_error)})+'\n')
         raise
 
 
