@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一次有预算上限的 iOS 真机协议检查；必须先通过同源码模拟器测试。"""
+"""一次有预算上限的 iOS 真机协议检查；必须有同源码的 iOS Core 运行证据。"""
 import argparse
 import base64
 import http.client
@@ -11,6 +11,7 @@ import time
 import uuid
 
 from verify_public_trace import verify
+from validate_core_baseline import valid_baseline
 
 
 class APIError(RuntimeError):
@@ -74,7 +75,9 @@ def observe(hub, session, deadline):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ipa', type=Path, required=True)
-    parser.add_argument('--simulator-result', type=Path, required=True)
+    prerequisite = parser.add_mutually_exclusive_group(required=True)
+    prerequisite.add_argument('--simulator-result', type=Path)
+    prerequisite.add_argument('--controlled-core-result', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--ios-major', type=int, default=15)
     args = parser.parse_args()
@@ -84,9 +87,15 @@ def main():
     session = None
     started = None
     try:
-        simulator = json.loads(args.simulator_result.read_text())
-        if simulator.get('passed') is not True or not verify(simulator.get('driver', {}), False):
-            raise RuntimeError('Simulator public-trace prerequisite failed; no device started')
+        if args.controlled_core_result:
+            baseline = json.loads(args.controlled_core_result.read_text())
+            if not valid_baseline(baseline):
+                raise RuntimeError('Controlled iOS Core baseline invalid; no device started')
+            report['prerequisite'] = baseline
+        else:
+            simulator = json.loads(args.simulator_result.read_text())
+            if simulator.get('passed') is not True or not verify(simulator.get('driver', {}), False):
+                raise RuntimeError('Simulator public-trace prerequisite failed; no device started')
         credentials = [os.environ.get(k) for k in ('BROWSERSTACK_USERNAME', 'BROWSERSTACK_ACCESS_KEY')]
         if not all(credentials):
             raise RuntimeError('Configured credentials missing; no device started')

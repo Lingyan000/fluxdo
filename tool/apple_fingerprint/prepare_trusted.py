@@ -11,6 +11,15 @@ import subprocess
 from run import run, output, warmup_simulator
 
 
+def app_info():
+    return {'CFBundleExecutable': 'WKProbe', 'CFBundleIdentifier': 'org.fluxdo.fingerprint.probe',
+            'CFBundleName': 'WKProbe', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
+            'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '15.0', 'LSRequiresIPhoneOS': True,
+            'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'UIDeviceFamily': [1, 2],
+            'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
+            'UILaunchScreen': {}, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}}
+
+
 def cleanup(root):
     path = root/'devices.json'
     if not path.exists():
@@ -62,12 +71,7 @@ def main():
     device_type = devices[0]['deviceTypeIdentifier'] if devices else compatible[0]['identifier']
     app = root/'WKProbe.app'
     app.mkdir(exist_ok=True)
-    info = {'CFBundleExecutable': 'WKProbe', 'CFBundleIdentifier': 'org.fluxdo.fingerprint.probe',
-            'CFBundleName': 'WKProbe', 'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
-            'CFBundleShortVersionString': '1.0', 'MinimumOSVersion': '15.0', 'LSRequiresIPhoneOS': True,
-            'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'UIDeviceFamily': [1, 2],
-            'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
-            'UILaunchScreen': {}, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}}
+    info = app_info()
     (app/'Info.plist').write_bytes(plistlib.dumps(info))
     arch = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
     run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library',

@@ -10,6 +10,7 @@ import subprocess
 import zipfile
 
 from run import output, run
+from prepare_trusted import app_info
 
 
 def main():
@@ -21,6 +22,7 @@ def main():
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     prepared = args.prepared.resolve()
+    prepared.mkdir(parents=True, exist_ok=True)
     # Cloudflare 提供的公开只读协议诊断页；不访问用户账户、不发送业务写入。
     trace = {'url': 'https://cloudflare-quic.com/cdn-cgi/trace'}
     simulator = prepared/'WKCoreTrace.app'
@@ -30,6 +32,10 @@ def main():
         run(['codesign', '--force', '--sign', '-', simulator], timeout=30)
     if args.simulator_only:
         return
+    source = Path(__file__).with_name('WKProbe.swift')
+    run(['xcrun', '--sdk', 'iphoneos', 'swiftc', '-typecheck', '-swift-version', '5', '-parse-as-library',
+         '-D', 'FLUXDO_CORE_DIAGNOSTIC', '-sdk', output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path']),
+         '-target', 'arm64-apple-ios15.0', source, repo/'ios/Runner/BrowserIdentity.swift', source.with_name('IOSCoreProbe.swift')], timeout=90)
     target = 'aarch64-apple-ios'
     run(['rustup', 'target', 'add', target], timeout=120)
     run(['cargo', 'rustc', '--locked', '--manifest-path', repo/'core/net_core/Cargo.toml',
@@ -37,7 +43,7 @@ def main():
          env=dict(os.environ, IPHONEOS_DEPLOYMENT_TARGET='15.0'))
     app = prepared/'Payload/WKCoreProbe.app'
     app.mkdir(parents=True)
-    info = plistlib.loads((simulator/'Info.plist').read_bytes())
+    info = dict(app_info(), CFBundleIdentifier='org.fluxdo.fingerprint.core')
     info['CFBundleSupportedPlatforms'] = ['iPhoneOS']
     info['DTPlatformName'] = 'iphoneos'
     (app/'Info.plist').write_bytes(plistlib.dumps(info))

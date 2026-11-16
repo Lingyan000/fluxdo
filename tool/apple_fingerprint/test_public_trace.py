@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from browserstack_core import check_plan, main
 from verify_public_trace import verify
+from validate_core_baseline import valid_baseline
 
 
 class PublicTraceTest(unittest.TestCase):
@@ -40,6 +41,14 @@ class PublicTraceTest(unittest.TestCase):
                              ('queued_sessions', 1), ('parallel_sessions_max_allowed', 0)]:
             with self.assertRaises(RuntimeError):
                 check_plan(dict(good, **{field: value}))
+
+    def test_controlled_baseline_requires_same_sources_and_nonempty_checks(self):
+        good = {'kind': 'controlled_ios_core', 'passed': True, 'baseline_core_tree': 'a'*40,
+                'current_core_tree': 'a'*40, 'checks': {'captured_wire_matches': True}}
+        self.assertTrue(valid_baseline(good))
+        for changes in ({'passed': False}, {'current_core_tree': 'b'*40}, {'checks': {}},
+                        {'checks': {'captured_wire_matches': False}}, {'baseline_core_tree': ''}):
+            self.assertFalse(valid_baseline(dict(good, **changes)))
 
     def test_observation_failure_still_releases_the_only_session(self):
         calls = []

@@ -108,7 +108,8 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
                 navigationGeneration += 1
                 let generation = navigationGeneration
                 webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak webView] in
+                // 公网首次 DNS/TLS 建连单独有界，后续导航仍用较短预算。
+                DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 20 : 8)) { [weak self, weak webView] in
                     // 只取消仍在等待的导航；前一轮已完成的定时器不能影响下一轮。
                     guard let self = self, self.navigationGeneration == generation, self.navigation != nil else { return }
                     self.finishNavigation(CoreProbeError.failed("Public trace navigation timed out"))
