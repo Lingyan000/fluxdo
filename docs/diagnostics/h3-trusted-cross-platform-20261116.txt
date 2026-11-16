@@ -3,7 +3,8 @@
 本轮边界
 - 延续 h3-trusted-origin-20261116.txt 的 Android 正常证书信任结果。
 - 不修改 CSRF、Cookie、Origin、Referer 业务策略。
-- 本轮没有创建 BrowserStack 设备会话；未查询到剩余免费分钟数。
+- 最新累计创建一次 BrowserStack 真机会话：平台记录 18 秒，已释放；未查询到剩余免费分钟数。
+- 下文按验证进展保留历史状态；各阶段的“尚未”及“零会话”仅适用于当时，最新结果见末尾。
 
 已推送的 Windows 测试入口
 - 分支 diagnostics/fingerprint-governance-review-20261115 与专用 CI 分支，提交：
@@ -196,3 +197,68 @@ iOS 26.2 应用内生产 Core 复验完成
   协议声明，不导航、不执行其内容、不提交验证；然后再次读取公开 trace。
   保留原生和 Core 的 Alt-Svc、server、协议与退出状态，不强制 QUIC、不放行证书。
 - 真机包改为模拟器检查全通过后才构建；仍只有一次有界设备会话入口。
+
+公开模拟器检查与独立真机观察
+- 43812916275 的受控校准再次通过，但公开 trace 首次导航在 8 秒截止前未完成，
+  尚未读到协议响应，不能声称是 H2/H3 不匹配，也不能据此断言 UDP 被阻断。
+  产物 14201766850，SHA-256：
+  9631ccad52894499bb91804b179d415238013e17882d501baa5f38fa5a33972d
+- 首次公开导航预算改为 20 秒，后续仍为 8 秒；不强制 QUIC，不跳过公开站点证书校验。
+- 后续真机作为独立网络观察：使用已完成受控验证的 43808369127，重新计算 35 项检查，
+  并要求 baseline 与本次 core/net_core 的 Git tree 完全相同：
+  5913ea4be16d2a9519ceaec1d31e5077cb9bde6a。
+  prerequisite 显式保留 simulator_public_h3_verified=false；它没有把模拟器公网失败改为通过。
+
+iOS 15.1 首次物理设备观察：失败位置已确定
+- https://github.com/Lingyan000/fluxdo/actions/runs/43815637954
+  提交 508bd7b6f21cdbc2313328c61f7465e12aaa6ea8，job 133126935390。
+- 请求设备 iPad 9th / iOS 15，实际为 iOS 15.1 (19B74)、WebKit Bundle 8612。
+  真机 IPA 编译、签名、上传、安装、启动及实际生产 Core C ABI 运行均完成。
+- 唯一一次创建请求取得 session id；平台记录 duration=18 秒，status=done；
+  本地窗口（含创建和释放）45.15 秒，DELETE 成功、session_released=true。
+  账户 Free 且空闲检查通过；接口未验证剩余分钟数，不把 18 秒推断为剩余额度。
+- 应用报告 Live iOS TCP calibration incomplete，tls_observations=1、template_ready=false。
+  两次探针导航均完成，但尚未形成第二次独立 TLS；H3 校准及公开 trace 均未执行。
+  Core 已 detach 停止。这不是公网 H3 失败，也不是线上 CF 接受性证据。
+- 同时观察到实际请求 UA 为 Macintosh，而预期 UA 为 iPad Version/15.1。
+  独立 IPA 没有模拟器注入的 FLUXDO_APPLE_UA_MODE=app；旧宿主未显式设置 customUserAgent。
+  iPad 导航默认 UA 与空页 navigator.userAgent 可以不同，不能只看导航前读到的值。
+- 源码对照：正式 Dart 宿主已显式传入应用 UA，并在两轮间等待 150 ms；
+  Core 在 done 后等待 100 ms 关闭采样连接。旧 Swift 诊断宿主漏了等待，
+  下一次导航可能赶在关闭之前复用连接。该差异不能直接算作正式应用的相同缺陷。
+- 4b813bf49c1e4a1b3a9247a6de1efda96917cb71 修复诊断宿主：显式传入同一应用 UA、
+  对齐 150 ms 间隔、核对实际采样 UA，并区分真机/模拟器报告标签及失败阶段。
+  应用内验证去掉 UA 环境变量，增加 iPad 模拟器选择，用真实运行防止遗漏被 CI 掩盖。
+- 产物 14201684562（3745 字节），下载摘要与 GitHub digest 一致：
+  f1960aeebd5160d0b2d06e70d25db1e3ee790165216a5d057f280a4c0611774e
+  本轮只启动一次 BrowserStack 会话；后续修复先用云模拟器检查。
+- 本地实际 Core 的回环 HTTP/1.1 对照确认复用窗口：首轮计数 1，done 后立即再请求
+  仍为 1；150 ms 后重新建连计数为 2，Core 退出确认。此检查不冒充 WebKit/H2 真机验证。
+- 真机还明确返回 safari_bundle_version 为空，而 webkit_bundle_version=8612；
+  模拟器中读取 MobileSafari.app 成功不能外推为真机也可读。15.1 此轮的 Version/15.1
+  来自既有 UA 兼容回退，不是已读取 Safari 真实产品版本。当前证据不能区分沙盒限制、
+  安装位置或平台重签环境影响；现代真机的冻结 UA 回退风险仍须单独验证。
+  本轮不为消除诊断失败而伪造产品版本、不用 WebKit 内部构建号冒充 Safari 版本。
+- 真机关键字段已持久归档到 ios15-physical-observation-20261116.json；
+  它是原始产物的字段摘录，原始 ZIP 的哈希单独保留，未保留会话标识或临时证书。
+
+iPad 宿主修复后的云模拟器复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43816721538
+  提交 4b813bf49c1e4a1b3a9247a6de1efda96917cb71，job 133130349642，整体成功。
+- iPad / iOS 15.5 (19F70)，不再向应用内 Core 宿主传 FLUXDO_APPLE_UA_MODE=app。
+  实际 tls_observations=2；采样 UA 与应用 UA 相同，全部校准 WebView 使用同一显式 UA。
+- 下载原始产物后独立重算：应用内生产 Core 的 28 项传输检查、九场景 QPACK 全通过；
+  正常系统证书信任与同域名不可信证书负对照通过，Core detach 后停止。
+- 产物 14203288121（101085 字节），SHA-256 与 GitHub digest 一致：
+  131b75917ea1812f5fc5e2774e194fd0a9dfcfbbc51e8ac6890564364d9758a4
+- 登出、DNS 恢复、模拟器删除及 daemon 停止全部成功；没有创建新的 BrowserStack 会话。
+  此结果证明修复后 iPad 模拟器的受控校准与回放，不等于修复后的真机公网 H3 已通过。
+- 本轮本地 Apple 驱动/门槛 7 项、正式 Dart 采样服务 13 项、架构守卫 8 项通过。
+
+当前仍不能宣称全部闭环
+- 物理设备上的修复后公网 H3 尚未重跑；iOS 15.1 真机的 Safari 产品版本读取失败仍保留回退。
+- 受控可信入口不是正式用户可用的长期 H3 校准服务，Android 产品入口仍有部署缺口。
+- 完整 Flutter 真机、蜂窝/Wi-Fi 切换、连接迁移和线上 CF 接受性仍无完整实测证据。
+- 完整业务持久 profile 的实验配置、任意并发/驱逐/导航、整个头集合及随机分布
+  不属于当前已通过的有限场景，不能外推为逐字节完全一致。
+- PR 432 保持 Draft，未合并 dev、未创建新的发布标签。CSRF 业务策略未改。
