@@ -248,5 +248,110 @@
     "network-diagnostics.yaml"
   ],
   "recovery": "git fetch origin tag archive/fingerprint-diagnostics-20261116; git switch -c recovery/<name> <sha>",
-  "note": "归档提交仅保存分支历史；未将独立实验代码合并进审阅分支。"
+  "note": "归档提交仅保存分支历史；未将独立实验代码合并进审阅分支。",
+  "disabled_workflows": [
+    {
+      "id": 419834656,
+      "path": ".github/workflows/android-full-app-check.yaml",
+      "name": "Full Android release verification"
+    },
+    {
+      "id": 419861284,
+      "path": ".github/workflows/android-full-app-replay.yaml",
+      "name": "Replay existing full Android app"
+    },
+    {
+      "id": 419030206,
+      "path": ".github/workflows/android-production-h3.yaml",
+      "name": "Android production H3 through emulator UDP relay"
+    },
+    {
+      "id": 418756249,
+      "path": ".github/workflows/apple-fingerprint-probe.yaml",
+      "name": "Apple WKWebView fingerprint probe"
+    },
+    {
+      "id": 418948725,
+      "path": ".github/workflows/apple-h3-ios15-probe.yaml",
+      "name": "iOS 15 WKWebView H3 system trust probe"
+    },
+    {
+      "id": 418899466,
+      "path": ".github/workflows/apple-h3-native-probe.yaml",
+      "name": "Native WKWebView H3 sampling capability"
+    },
+    {
+      "id": 418805558,
+      "path": ".github/workflows/apple-ios15-probe.yaml",
+      "name": "iOS 15 WKWebView fingerprint probe"
+    },
+    {
+      "id": 418949355,
+      "path": ".github/workflows/apple-ios150-probe.yaml",
+      "name": "iOS 15.0 WKWebView on macOS 14"
+    },
+    {
+      "id": 419030197,
+      "path": ".github/workflows/apple-production-h3-ios15.yaml",
+      "name": "iOS 15 production H3 replay"
+    },
+    {
+      "id": 419025869,
+      "path": ".github/workflows/apple-production-h3.yaml",
+      "name": "Production H3 replay with native WKWebView"
+    },
+    {
+      "id": 418950157,
+      "path": ".github/workflows/apple-runtime-identity.yaml",
+      "name": "Apple runtime browser identity"
+    },
+    {
+      "id": 419077305,
+      "path": ".github/workflows/browserstack-preflight.yaml",
+      "name": "BrowserStack connection preflight"
+    },
+    {
+      "id": 419097445,
+      "path": ".github/workflows/browserstack-smoke.yaml",
+      "name": "BrowserStack single Android smoke test"
+    },
+    {
+      "id": 419896886,
+      "path": ".github/workflows/hosted-h3-services.yaml",
+      "name": "Inspect hosted H3 services with native WebView"
+    },
+    {
+      "id": 419826729,
+      "path": ".github/workflows/ios-full-app-check.yaml",
+      "name": "Full iOS release verification"
+    },
+    {
+      "id": 418871104,
+      "path": ".github/workflows/native-fingerprint-probe.yaml",
+      "name": "Native Android and Windows fingerprint probe"
+    },
+    {
+      "id": 419676333,
+      "path": ".github/workflows/tailscale-h3-preflight.yaml",
+      "name": "Tailscale H3 trusted origin preflight"
+    },
+    {
+      "id": 419625833,
+      "path": ".github/workflows/windows-flutter-h3.yaml",
+      "name": "Windows Flutter production H3 probe environment"
+    },
+    {
+      "id": 419030200,
+      "path": ".github/workflows/windows-production-h3.yaml",
+      "name": "Windows production H3 replay"
+    }
+  ],
+  "cleanup_result": {
+    "remote_branches_removed": 27,
+    "local_branches_removed": 17,
+    "tracked_workflows_removed": 16,
+    "local_leftover_workflows_removed": 2,
+    "github_workflows_disabled": 19,
+    "history_preserved": true
+  }
 }

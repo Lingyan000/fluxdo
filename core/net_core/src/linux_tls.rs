@@ -926,6 +926,14 @@ mod tests {
             let f = fixture_for("localhost", None);
             let mut template: crate::mirror::FingerprintTemplate = serde_json::from_str(include_str!(
                 "../tests/fixtures/linux_wpe_webkit_probe.json")).unwrap();
+            // 此用例验证当前原生后端的透明转发，不要求 runner 的 GnuTLS
+            // 与归档 WPE 环境完全相同；固定旧握手会错误走入另一条 MITM 路径。
+            let first = emit_for(Some(&template.hello)).unwrap();
+            let second = emit_for(Some(&template.hello)).unwrap();
+            template.tls_permute_extensions = Some(
+                crate::mirror::extension_order(&first) != crate::mirror::extension_order(&second));
+            template.hello = first;
+            assert!(matches(&template.hello, template.tls_permute_extensions.unwrap()));
             template.cache_revision = Some(crate::mirror::cache_revision());
             let cache = f.root.join("template.json");
             std::fs::write(&cache, serde_json::to_vec(&template).unwrap()).unwrap();
