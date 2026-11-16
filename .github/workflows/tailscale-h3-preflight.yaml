@@ -1,0 +1,43 @@
+name: Tailscale H3 trusted origin preflight
+on:
+  push:
+    branches: ['diagnostics/tailscale-h3-preflight-20261116']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tailscale-h3-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read public federation identifiers
+        id: config
+        run: python3 tool/native_fingerprint/tailscale_preflight.py --config
+      - name: Join one ephemeral node
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
+        with:
+          oauth-client-id: ${{ steps.config.outputs.client_id }}
+          audience: ${{ steps.config.outputs.audience }}
+          tags: tag:fluxdo-ci
+          hostname: fluxdo-h3-preflight
+          version: '1.104.5'
+          retry: '1' # 官方参数表示总尝试次数；1 即只连接一次。
+          timeout: 60s
+      - name: Check certificate and local tailnet address sockets
+        run: python3 tool/native_fingerprint/tailscale_preflight.py --output "$RUNNER_TEMP/tailscale-evidence/result.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tailscale-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/tailscale-evidence/result.json
+          retention-days: 7
