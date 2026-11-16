@@ -1,5 +1,8 @@
 name: Full iOS release verification
 on:
+  push:
+    branches: ['diagnostics/tailscale-h3-preflight-20261116']
+    paths: ['.github/workflows/ios-full-app-check.yaml']
   workflow_dispatch:
     inputs:
       device_smoke:
@@ -13,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
     runs-on: macos-15
     timeout-minutes: 55
     env:
