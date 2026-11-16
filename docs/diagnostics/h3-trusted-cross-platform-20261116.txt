@@ -113,3 +113,49 @@ Apple 首轮失败与修正证据
   原生请求的九场景 QPACK 对照仍单独保留，严格检查项目不删减。
 - 模板导出接口仅存在于 debug_assertions 构建，不进入正式发布 ABI。
 - 上述编译和脚本实现不等于应用内运行通过；以最终云端产物为准。
+
+iOS 15 构建通过后的阻塞已定位
+- 43805974479：iOS 15.5 (19F70)、WebKit 8613，首次预热成功；
+  aarch64-apple-ios-sim 应用已安装，aarch64-apple-ios 真机 IPA 编译及签名均成功。
+- 该轮产物 14198947838，SHA-256：
+  25da356053e4dc57e3a21cda693e7abcbb089fa02dbb5efe11591d257e394f86
+- 43806600522 的 macOS 独立复验也在同一位置失败；产物 14198389921，SHA-256：
+  62940240ddb4469fe1ddab7e1caad99874c6702d0c667ded37cd80faff922013
+- 两轮错误均为 tailscale cert 调用 ACME 目录时无法解析 acme-v02.api.letsencrypt.org。
+  未进入 WebView/H3 验证；BrowserStack 会话均为零。DNS 恢复后产物上传与清理成功。
+- 修复为保留公网 DNS，仅为当前 tailnet 设置 /etc/resolver 分域解析；
+  不覆盖现有文件，退出时只删除内容仍匹配的自建 resolver，并恢复原设置。
+
+同实例模板导出的本地校验
+- Core 库 137 项测试通过；协议比较、证书、会话门槛共 39 项 Python 测试通过；架构守卫 8 项通过。
+- 实际加载动态库，C ABI 初始化、未校准返回 null、返回字符串释放、detach 后停止均通过。
+- 关闭 debug_assertions 编译后核对动态符号：正常 Core ABI 存在，原始模板导出不存在；
+  该检查验证条件编译边界，不冒充完整 release 应用构建。随后已恢复调试构建。
+
+Mac 分域解析修复的验证过程
+- 43807523154 首次分域修复被现存 resolver 保护拦住：daemon 自己也创建了该域的文件。
+  不覆盖该文件；改为先关闭 daemon 的 DNS 管理，待它撤回配置后再检查与创建。
+- 43807827559 已通过分域解析步骤，公网 ACME 域名和当前 tailnet 主机名都解析成功；
+  后续实际系统信任与 H3 复验也成功，详情如下。
+
+macOS 默认系统信任复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43807827559
+  提交 c9a047206b1c37a26086b997c81bff1648ccfa2b，job 133102544529，成功。
+- macOS 15.8.2 (24H232)、WebKit Bundle 20621，应用 UA 中 Version/27.2
+  来自 runner 安装的 Safari Bundle；该产品版本不冒充 WebKit Bundle 版本。
+- 下载后独立重算：28 项传输检查、九场景 QPACK 对照全部通过；
+  两个生产校准 origin 及原生正对照均由系统正常验证证书，没有回调放行。
+- 同域名自签证书负对照被系统拒绝，TCP/H3 应用请求均为零。
+- 产物 14198823577（66899 字节），SHA-256 与 GitHub digest 一致：
+  f16788b875fd8ca9ab78b9947e853a5548aa0d94741a7d15917a4879fd0cad6d
+- 登出、DNS 恢复、产物上传和 daemon 停止均成功；BrowserStack 会话为零。
+
+iOS 26.2 本机 Core 续验的准备失败
+- 43808141993：Swift 类型检查、实际生产 Core 静态库及链接均通过，安装也成功。
+  simctl launch 返回应用 PID；随后 get_app_container 的 15 秒时限耗尽，
+  不是应用没有启动。恢复重启的 bootstatus 又超过 240 秒，未进入网络步骤。
+- 产物 14199872557（3949518 字节），SHA-256：
+  55d0fa94a019c84808ae95caba6ed2c0c6997159e51b16b8741a477dcb790204
+- 驱动改为先查容器再启动应用，避开 UIKit/WebContent 首次启动高负载阶段。
+  回归模拟“启动后容器服务超时”：旧驱动失败（124），修复后成功并删除结果文件、终止应用。
+  六项 Apple 驱动/真机门槛用例及八项架构守卫通过；实际云端重跑单独记录。
