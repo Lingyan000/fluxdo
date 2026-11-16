@@ -274,6 +274,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
       ),
       // 新建会话只对私信有意义;频道 tab 隐藏 FAB
       floatingActionButton: BottomNavClearance(
+        mediaQuery: MediaQuery.of(context),
         child: AnimatedBuilder(
           animation: _tabController,
           builder: (context, _) => _tabController.index == 1

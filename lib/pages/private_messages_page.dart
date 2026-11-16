@@ -188,6 +188,7 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
         // 新建私信：此前只能从某个用户的头像菜单发起，对方没在可见处
         // 发过言就完全没有路径。对齐 Discourse 网页版私信列表的入口。
         floatingActionButton: BottomNavClearance(
+          mediaQuery: MediaQuery.of(context),
           child: FloatingActionButton(
             heroTag: 'composePm',
             onPressed: _composeNewMessage,
