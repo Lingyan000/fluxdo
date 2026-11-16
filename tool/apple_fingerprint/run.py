@@ -29,7 +29,7 @@ def warmup_simulator(root, version, udid):
             with Path(f'{stem}.stdout').open('w') as stdout, Path(f'{stem}.stderr').open('w') as stderr:
                 run([sys.executable, Path(__file__).parent/'ios_driver.py', '--warmup'],
                     env=dict(os.environ, FLUXDO_SIMULATOR_UDID=udid),
-                    stdout=stdout,stderr=stderr,timeout=150)
+                    stdout=stdout,stderr=stderr,timeout=200)
             reports = [json.loads(line) for line in Path(f'{stem}.stdout').read_text().splitlines()
                        if line.startswith('{')]
             if not any(report.get('warmup') and report.get('success') for report in reports):

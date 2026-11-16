@@ -19,7 +19,7 @@ env['SIMCTL_CHILD_FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST'] = env.get('FLUXDO_APPLE_RE
 report_name = 'fluxdo-report-' + uuid.uuid4().hex + '.json'
 env['SIMCTL_CHILD_FLUXDO_APPLE_REPORT_FILE'] = report_name
 try:
-    report_timeout = 110 if warmup else (185 if core_driver else 75)
+    report_timeout = 160 if warmup else (185 if core_driver else 75)
     deadline = time.monotonic() + report_timeout
     if env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST') == '1' and not env.get('FLUXDO_TRUSTED_PROBE_HOST'):
         # 仅一次性 CI 模拟器；run.py 创建并最终删除此设备，不改用户设备信任库。
@@ -34,7 +34,8 @@ try:
     with subprocess.Popen(launch_command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, text=True) as launch:
         try:
-            launch_stdout, launch_stderr = launch.communicate(timeout=25)
+            # 冷启动发生在网络测试前；单独给启动服务预算，不放宽正常网络导航时限。
+            launch_stdout, launch_stderr = launch.communicate(timeout=75 if warmup else 25)
         except subprocess.TimeoutExpired:
             # 在终止前保存宿主启动命令调用栈，区分模拟器服务阻塞和应用执行失败。
             try:

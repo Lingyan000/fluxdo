@@ -26,9 +26,12 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--ios-version', default='26.2')
     parser.add_argument('--ios-only', action='store_true')
+    parser.add_argument('--mac-only', action='store_true')
     parser.add_argument('--ios-core', action='store_true', help='另外构建并安装实际 iOS Core C ABI 宿主')
     parser.add_argument('--cleanup', action='store_true')
     args = parser.parse_args()
+    if args.mac_only and (args.ios_only or args.ios_core):
+        parser.error('--mac-only cannot be combined with iOS flags')
     root = args.output.resolve()
     if args.cleanup:
         cleanup(root)
@@ -43,6 +46,9 @@ def main():
         run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', source, identity,
              '-framework', 'AppKit', '-framework', 'WebKit', '-framework', 'Security', '-o', binary], timeout=120)
         targets.append({'name': 'macos', 'platform': 'macos', 'driver': str(binary), 'env': {}})
+    if args.mac_only:
+        (root/'targets.json').write_text(json.dumps(targets, indent=2)+'\n')
+        return
     data = json.loads(output(['xcrun', 'simctl', 'list', '--json']))
     runtime = next((r for r in data['runtimes'] if r.get('isAvailable') and r.get('version') == args.ios_version
                     and r.get('name', '').startswith('iOS ')), None)
