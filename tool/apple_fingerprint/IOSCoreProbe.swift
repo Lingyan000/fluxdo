@@ -1,4 +1,4 @@
-// iOS 模拟器内调用生产 C ABI；只访问显式指定的合成诊断源站。
+// iOS 宿主调用生产 C ABI；只访问显式指定的诊断源站。
 import Foundation
 import UIKit
 import WebKit
@@ -180,6 +180,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
         let result: [String: Any] = await withCheckedContinuation { continuation in
             let child = Probe()
             child.initialURL = url
+            child.userAgentOverride = userAgent
             child.completion = { continuation.resume(returning: $0) }
             probe = child
             controller.view = child.webView
@@ -296,15 +297,23 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
             let configText = String(data: try JSONSerialization.data(withJSONObject: config), encoding: .utf8)!
             let localPort = configText.withCString { coreInit($0) }
             guard localPort > 0 else { throw CoreProbeError.failed("Core initialization failed") }
-            for _ in 0..<2 { try await navigate("https://localhost:\(localPort)/fluxdo-probe") }
+            report["stage"] = "tcp_calibration"
+            for attempt in 0..<2 {
+                try await navigate("https://localhost:\(localPort)/fluxdo-probe")
+                // 与正式 Dart 宿主一致：服务端在 done 后 100 ms 关闭连接，
+                // 第二轮等待 150 ms，避免 iPad 全局连接池复用第一次 TLS。
+                if attempt == 0 { try await Task.sleep(nanoseconds: 150_000_000) }
+            }
             let tcp = try state()
             report["tcp_state"] = tcp
             guard tcp["template_ready"] as? Bool == true,
+                  tcp["user_agent"] as? String == userAgent,
                   let diagnostics = tcp["template_diagnostics"] as? [String: Any],
                   let h3 = diagnostics["h3"] as? [String: Any],
                   let ports = h3["probe_ports"] as? [Int], ports.count == 2 else {
                 throw CoreProbeError.failed("Live iOS TCP calibration incomplete")
             }
+            report["stage"] = "h3_calibration"
             for probePort in ports { try await navigate("https://localhost:\(probePort)/fluxdo-h3") }
             let calibrated = try state()
             report["calibrated_state"] = calibrated
@@ -313,6 +322,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
                 throw CoreProbeError.failed("Live iOS H3 calibration incomplete")
             }
             if trace != nil {
+                report["stage"] = "public_protocol"
                 try await publicTrace(url)
                 report["success"] = true
                 finish()

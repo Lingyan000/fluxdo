@@ -42,7 +42,9 @@ def main():
             config.write_text(json.dumps({'hostname': domain, 'address': address,
                                          'certificate': str(cert), 'private_key': str(key)}))
             env = dict(os.environ, **target['env'], FLUXDO_APPLE_CORE_DRIVER='1',
-                       FLUXDO_APPLE_UA_MODE='app', FLUXDO_TRUSTED_PROBE_CONFIG=str(config))
+                       FLUXDO_TRUSTED_PROBE_CONFIG=str(config))
+            # 与真机一致：应用内宿主必须自行传入 UA，不能靠 CI 环境变量补齐。
+            env.pop('FLUXDO_APPLE_UA_MODE', None)
             for name in ('SSL_CERT_FILE', 'SSL_CERT_EXTRA_FILE', 'FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST',
                          'FLUXDO_APPLE_LAB_CA', 'FLUXDO_NATIVE_PROBE_SPKI', 'FLUXDO_NATIVE_PROBE_FORCE_QUIC'):
                 env.pop(name, None)

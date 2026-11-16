@@ -21,6 +21,8 @@ final class Probe: NSObject, WKNavigationDelegate {
     var credentialsUsed = 0
     // 同进程 Core 诊断可复用导航逻辑；常规命令行宿主仍在报告后退出。
     var initialURL: String?
+    // 应用内宿主直接传入实际 UA，不依赖模拟器专用环境变量。
+    var userAgentOverride: String?
     var completion: (([String: Any]) -> Void)?
 
     func start() {
@@ -68,7 +70,9 @@ final class Probe: NSObject, WKNavigationDelegate {
                 return
             }
             self.nativeUA = ua
-            if ProcessInfo.processInfo.environment["FLUXDO_APPLE_UA_MODE"] == "app" {
+            if let override = self.userAgentOverride {
+                self.webView.customUserAgent = override
+            } else if ProcessInfo.processInfo.environment["FLUXDO_APPLE_UA_MODE"] == "app" {
                 self.webView.customUserAgent = self.appUA(ua)
             }
             self.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
@@ -139,8 +143,10 @@ final class Probe: NSObject, WKNavigationDelegate {
         finished = true
         #if os(macOS)
         let platform = "macos-wkwebview"
-        #else
+        #elseif targetEnvironment(simulator)
         let platform = "ios-simulator-wkwebview"
+        #else
+        let platform = "ios-device-wkwebview"
         #endif
         let result: [String: Any] = ["engine": "native WKWebView", "platform": platform,
             "warmup": CommandLine.arguments.contains("--warmup"),

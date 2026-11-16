@@ -34,6 +34,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--ios-version', default='26.2')
+    parser.add_argument('--device-family', choices=('iPhone', 'iPad'), default='iPhone')
     parser.add_argument('--ios-only', action='store_true')
     parser.add_argument('--mac-only', action='store_true')
     parser.add_argument('--ios-core', action='store_true', help='另外构建并安装实际 iOS Core C ABI 宿主')
@@ -64,10 +65,10 @@ def main():
     if runtime is None:
         raise RuntimeError('Requested installed iOS runtime unavailable: '+args.ios_version)
     devices = [d for d in data['devices'].get(runtime['identifier'], [])
-               if d.get('isAvailable') and 'iPhone' in d['name']]
-    compatible = [d for d in runtime.get('supportedDeviceTypes', []) if d.get('productFamily') == 'iPhone']
+               if d.get('isAvailable') and args.device_family in d['name']]
+    compatible = [d for d in runtime.get('supportedDeviceTypes', []) if d.get('productFamily') == args.device_family]
     if not devices and not compatible:
-        raise RuntimeError('Requested iOS runtime has no compatible iPhone device type')
+        raise RuntimeError('Requested iOS runtime has no compatible '+args.device_family+' device type')
     device_type = devices[0]['deviceTypeIdentifier'] if devices else compatible[0]['identifier']
     app = root/'WKProbe.app'
     app.mkdir(exist_ok=True)
