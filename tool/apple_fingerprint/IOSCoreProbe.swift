@@ -36,6 +36,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
     var traceView: WKWebView?
     var navigation: CheckedContinuation<Void, Error>?
     var navigationGeneration = 0
+    var navigationHeaders: [String: String] = [:]
     var report: [String: Any] = ["engine": "iOS production Core FFI", "core_running_on_ios": true,
         "physical_device": false, "full_flutter_app": false, "success": false]
     var requests: [[String: Any]] = []
@@ -61,6 +62,21 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(action.request.url == traceURL ? .allow : .cancel)
     }
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if response.isForMainFrame, let http = response.response as? HTTPURLResponse {
+            navigationHeaders = [:]
+            for (key, value) in http.allHeaderFields {
+                let name = String(describing: key).lowercased()
+                if name == "alt-svc" || name == "server" { navigationHeaders[name] = String(describing: value) }
+            }
+        }
+        decisionHandler(.allow)
+    }
+
+    func responseHeader(_ response: [String: Any], _ name: String) -> String {
+        let headers = response["headers"] as? [[String]] ?? []
+        return headers.first { $0.count == 2 && $0[0].lowercased() == name }?[1] ?? ""
+    }
 
     func traceFields(_ text: String) -> [String: String] {
         var result: [String: String] = [:]
@@ -81,8 +97,12 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
         traceView = webView
         controller.view = webView
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.path = "/"
+        components.query = nil
+        let primer = components.url!
         var native: [[String: String]] = []
-        for _ in 0..<4 {
+        for attempt in 0..<4 {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 navigation = continuation
                 navigationGeneration += 1
@@ -96,22 +116,53 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
                 }
             }
             let body = try await webView.evaluateJavaScript("document.body.innerText") as? String ?? ""
-            let fields = traceFields(body)
+            var fields = traceFields(body)
+            fields["alt_svc"] = navigationHeaders["alt-svc"] ?? ""
+            fields["server"] = navigationHeaders["server"] ?? ""
             native.append(fields)
+            report["native_public_trace"] = native
             if ["h3", "http/3"].contains(fields["http"]?.lowercased() ?? "") { break }
+            if attempt == 0 {
+                // trace 页不发送 Alt-Svc；只 fetch 同源首页取得协议声明，不导航、执行或提交其内容。
+                let result = try await webView.callAsyncJavaScript("""
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 8000);
+                    try {
+                        const response = await fetch(url, {credentials: 'omit', cache: 'no-store',
+                            redirect: 'error', signal: controller.signal});
+                        const result = {status: response.status, alt_svc: response.headers.get('alt-svc') || '',
+                            server: response.headers.get('server') || ''};
+                        await response.text();
+                        return result;
+                    } finally { clearTimeout(timer); }
+                    """, arguments: ["url": primer.absoluteString], in: nil, contentWorld: .page)
+                let advertisement = result as? [String: Any] ?? [:]
+                report["native_public_prime"] = advertisement
+                guard (advertisement["alt_svc"] as? String ?? "").lowercased().contains("h3=") else {
+                    throw CoreProbeError.failed("Public origin did not advertise H3 to WebView")
+                }
+            }
             try await Task.sleep(nanoseconds: 300_000_000)
         }
         report["native_public_trace"] = native
+        let advertised = try await request(primer.absoluteString)
+        report["core_public_prime"] = ["status": advertised["status"] ?? 0,
+            "alt_svc": responseHeader(advertised, "alt-svc"), "server": responseHeader(advertised, "server")]
+        guard responseHeader(advertised, "alt-svc").lowercased().contains("h3=") else {
+            throw CoreProbeError.failed("Public origin did not advertise H3 to Core")
+        }
         var core: [[String: Any]] = []
         for _ in 0..<12 {
             let response = try await request(url.absoluteString)
             let fields = traceFields(response["body"] as? String ?? "")
-            core.append(["http_version": response["http_version"] ?? "", "status": response["status"] ?? 0, "trace": fields])
+            core.append(["http_version": response["http_version"] ?? "", "status": response["status"] ?? 0,
+                "alt_svc": responseHeader(response, "alt-svc"), "server": responseHeader(response, "server"), "trace": fields])
             if response["http_version"] as? String == "3.0", ["h3", "http/3"].contains(fields["http"]?.lowercased() ?? "") { break }
             try await Task.sleep(nanoseconds: 300_000_000)
         }
         report["core_public_trace"] = core
-        report["scope"] = "Public protocol confirmation with live in-app calibration; no server-side wire fingerprint comparison"
+        report["public_final_state"] = try state()
+        report["scope"] = "Public protocol confirmation with live in-app calibration and same-origin Alt-Svc discovery; no server-side wire fingerprint comparison"
         guard native.contains(where: { ["h3", "http/3"].contains($0["http"]?.lowercased() ?? "") }),
               core.last?["http_version"] as? String == "3.0" else {
             throw CoreProbeError.failed("Native and Core did not both confirm public H3")

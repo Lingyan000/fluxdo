@@ -15,15 +15,21 @@ from run import output, run
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--prepared', type=Path, required=True)
+    stages = parser.add_mutually_exclusive_group()
+    stages.add_argument('--simulator-only', action='store_true')
+    stages.add_argument('--device-only', action='store_true')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     prepared = args.prepared.resolve()
     # Cloudflare 提供的公开只读协议诊断页；不访问用户账户、不发送业务写入。
     trace = {'url': 'https://cloudflare-quic.com/cdn-cgi/trace'}
     simulator = prepared/'WKCoreTrace.app'
-    shutil.copytree(prepared/'WKCoreProbe.app', simulator)
-    (simulator/'trace-target.json').write_text(json.dumps(trace)+'\n')
-    run(['codesign', '--force', '--sign', '-', simulator], timeout=30)
+    if not args.device_only:
+        shutil.copytree(prepared/'WKCoreProbe.app', simulator)
+        (simulator/'trace-target.json').write_text(json.dumps(trace)+'\n')
+        run(['codesign', '--force', '--sign', '-', simulator], timeout=30)
+    if args.simulator_only:
+        return
     target = 'aarch64-apple-ios'
     run(['rustup', 'target', 'add', target], timeout=120)
     run(['cargo', 'rustc', '--locked', '--manifest-path', repo/'core/net_core/Cargo.toml',

@@ -35,7 +35,7 @@ def main():
     subprocess.run(['xcrun', 'simctl', 'install', env['FLUXDO_SIMULATOR_UDID'], str(args.prepared/'WKCoreTrace.app')], check=True, timeout=60)
     with (args.output/'browser.stdout').open('w') as out, (args.output/'browser.stderr').open('w') as error:
         completed = subprocess.run([sys.executable, str(Path(__file__).with_name('ios_driver.py')), 'https://cloudflare-quic.com/cdn-cgi/trace'],
-                                   env=env, stdout=out, stderr=error, timeout=190)
+                                   env=env, stdout=out, stderr=error, timeout=205)
     report = json.loads((args.output/'browser.stdout').read_text())
     passed = completed.returncode == 0 and verify(report, False)
     (args.output/'result.json').write_text(json.dumps({'passed': passed, 'driver': report}, indent=2)+'\n')

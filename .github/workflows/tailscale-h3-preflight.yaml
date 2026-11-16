@@ -291,11 +291,11 @@ jobs:
           chmod +x tool/apple_fingerprint/ios_driver.py
           cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
           python3 tool/apple_fingerprint/prepare_trusted.py --output "$RUNNER_TEMP/trusted-apple-prepared" ${{ inputs.mode == 'macos-production-h3' && '--mac-only' || inputs.mode == 'ios15-production-h3' && '--ios-version 15.5 --ios-only' || '--ios-version 26.2' }} ${{ (inputs.mode == 'ios-core-production-h3' || inputs.ios_core || inputs.physical_ios) && '--ios-only --ios-core' || '' }}
-      - name: Prepare optional physical-device package before joining tailnet
+      - name: Prepare public-protocol simulator package before joining tailnet
         if: inputs.physical_ios
         run: |
-          PYTHONPATH=tool/apple_fingerprint python3 -m unittest test_public_trace
-          python3 tool/apple_fingerprint/prepare_device.py --prepared "$RUNNER_TEMP/trusted-apple-prepared"
+          PYTHONPATH=tool/apple_fingerprint python3 -m unittest test_public_trace test_ios_driver
+          python3 tool/apple_fingerprint/prepare_device.py --prepared "$RUNNER_TEMP/trusted-apple-prepared" --simulator-only
       - name: Read public federation identifiers
         id: config
         run: |
@@ -335,6 +335,9 @@ jobs:
         if: inputs.physical_ios && success()
         timeout-minutes: 4
         run: python3 tool/apple_fingerprint/verify_public_trace.py --prepared "$RUNNER_TEMP/trusted-apple-prepared" --output "$RUNNER_TEMP/trusted-apple/public-trace-simulator"
+      - name: Build physical-device package only after simulator checks pass
+        if: inputs.physical_ios && success()
+        run: python3 tool/apple_fingerprint/prepare_device.py --prepared "$RUNNER_TEMP/trusted-apple-prepared" --device-only
       - name: Run at most one bounded iOS physical-device session
         if: inputs.physical_ios && success()
         timeout-minutes: 5
