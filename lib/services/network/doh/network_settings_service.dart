@@ -472,6 +472,13 @@ class NetworkSettingsService {
         if (certService.isLoaded || await certService.ensureCaCert()) {
           caCertPem = certService.certPem;
           caKeyPem = certService.keyPem;
+        } else {
+          // 设备身份不可用时关闭拦截，不能让两个空字段触发内置 CA 兜底。
+          webViewMitm = false;
+          NetworkLogger.log(
+            '[NetCore] 设备 CA 不可用，WebView 不走 MITM',
+            level: 'warning',
+          );
         }
       }
 

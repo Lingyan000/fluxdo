@@ -152,6 +152,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
           command -v cmake || brew install cmake
+          xcrun swiftc -typecheck -swift-version 5 macos/Runner/DohProxyCertHandler.swift
           for sdk in iphoneos iphonesimulator; do
             target=arm64-apple-ios15.0
             if [ "$sdk" = iphonesimulator ]; then target=arm64-apple-ios15.0-simulator; fi
