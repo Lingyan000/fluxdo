@@ -182,7 +182,7 @@ impl Templates {
         } else {
             "native_quic_h3_profile_not_calibrated"
         };
-        let status=serde_json::json!({"enabled_for_template":state.ready.is_some(), "probe_ports":state.ports,"probe_spki":state.spki,
+        let status=serde_json::json!({"enabled_for_template":state.ready.is_some(), "epoch":state.epoch, "probe_ports":state.ports,"probe_spki":state.spki,
             "observations":if state.ready.is_some() {2} else if state.first.is_some() {1} else {0},
             "activity":state.activity,"error":state.error,"reason":reason});
         #[cfg(debug_assertions)]
@@ -1243,11 +1243,14 @@ mod tests {
     fn reset_invalidates_sampling_generation_and_clears_diagnostic_error() {
         let templates = Templates::default();
         let epoch = templates.epoch();
+        assert_eq!(templates.status()["epoch"], epoch);
         templates.ports(vec![10001, 10002]);
         templates.failure("prior error");
         templates.reset();
         assert_ne!(epoch, templates.epoch());
         let state = templates.status();
+        assert_eq!(state["epoch"], templates.epoch());
+        assert_eq!(state["epoch"], epoch + 1);
         assert!(state["error"].is_null());
         assert_eq!(state["probe_ports"], serde_json::json!([10001, 10002]));
         assert!(templates.snapshot(Some("ua")).is_none());

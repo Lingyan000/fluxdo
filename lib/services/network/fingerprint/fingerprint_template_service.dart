@@ -163,7 +163,9 @@ class FingerprintTemplateService {
     // 不能让未启用 QUIC 的 WebView 将首次业务请求额外阻塞两个探针超时。
     tcpValidation.complete();
     if (!_isCurrent(port, generation) || !templateReady.value || status == null) return;
-    final h3Identity = '$port|$userAgent|${status.h3Ports.join(',')}';
+    // 同 UA/端口的 TLS 配置变化也会使核心清空 H3；只抑制同一代、同一证书的重复失败。
+    final h3Identity = jsonEncode([port, userAgent, status.h3Epoch,
+      for (final probePort in status.h3Ports) [probePort, status.h3Spki[probePort]]]);
     if (!status.h3Ready && status.h3Ports.length == 2 && _h3Attempted != h3Identity) {
       _h3Attempted = h3Identity;
       for (final probePort in status.h3Ports) {
@@ -262,6 +264,7 @@ class FingerprintTemplateService {
               needsRevalidation: value['needs_revalidation'] == true,
               cacheState: value['cache_state'] as String?,
               h3Ready: value['h3']?['enabled_for_template'] == true,
+              h3Epoch: _h3Epoch(value['h3']?['epoch']),
               h3Ports: _h3Ports(value['h3']?['probe_ports']),
               h3Spki: _h3Spki(value['h3']?['probe_spki']),
               h3Error: (value['h3']?['error'] ?? value['h3']?['reason']) as String?,
@@ -284,6 +287,7 @@ class FingerprintTemplateService {
         needsRevalidation: json['needs_revalidation'] == true,
         cacheState: json['cache_state'] as String?,
         h3Ready: json['h3']?['enabled_for_template'] == true,
+        h3Epoch: _h3Epoch(json['h3']?['epoch']),
         h3Ports: _h3Ports(json['h3']?['probe_ports']),
         h3Spki: _h3Spki(json['h3']?['probe_spki']),
         h3Error: (json['h3']?['error'] ?? json['h3']?['reason']) as String?,
@@ -295,6 +299,8 @@ class FingerprintTemplateService {
       client.close(force: true);
     }
   }
+
+  static int _h3Epoch(dynamic value) => value is int && value >= 0 ? value : 0;
 
   static Map<int, String> _h3Spki(dynamic value) => value is Map
       ? {for (final entry in value.entries)
@@ -314,6 +320,7 @@ class _TemplateStatus {
     required this.needsRevalidation,
     this.cacheState,
     this.h3Ready = false,
+    this.h3Epoch = 0,
     this.h3Ports = const [],
     this.h3Spki = const {},
     this.h3Error,
@@ -324,6 +331,7 @@ class _TemplateStatus {
   final bool needsRevalidation;
   final String? cacheState;
   final bool h3Ready;
+  final int h3Epoch;
   final List<int> h3Ports;
   final Map<int, String> h3Spki;
   final String? h3Error;

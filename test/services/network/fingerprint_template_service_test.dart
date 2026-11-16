@@ -193,6 +193,43 @@ void main() {
     expect(service.templateReady.value, false);
   });
 
+  test('同 UA 和端口的 H3 模板失效后按核心采样代次重新校准', () async {
+    var epoch = 1;
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3], 'epoch': epoch}},
+      probe: (port, _) async { ports.add(port); },
+      userAgent: () async => 'actual',
+    );
+    await service.ensure(1);
+    await service.ensure(1);
+    expect(ports, [2, 3]);
+    epoch++;
+    await service.ensure(1);
+    await service.ensure(1);
+    expect(ports, [2, 3, 2, 3]);
+    expect(service.templateReady.value, true);
+  });
+
+  test('同端口探针证书变化后重试，但映射顺序变化不重复采样', () async {
+    var pins = <String, String>{'2': 'first', '3': 'second'};
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3], 'probe_spki': pins}},
+      probe: (port, _) async { ports.add(port); },
+      userAgent: () async => 'actual',
+    );
+    await service.ensure(1);
+    pins = {'3': 'second', '2': 'first'};
+    await service.ensure(1);
+    expect(ports, [2, 3]);
+    pins = {'3': 'second', '2': 'new'};
+    await service.ensure(1);
+    expect(ports, [2, 3, 2, 3]);
+  });
+
   test('首次启动可在 TCP 校验完成后返回，H3 继续串行且可被取消', () async {
     final started = Completer<void>();
     var probes = 0;
