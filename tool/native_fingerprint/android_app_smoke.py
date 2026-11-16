@@ -4,9 +4,41 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import struct
 import time
+import zipfile
 
 PACKAGE = 'com.github.lingyan000.fluxdo'
+
+
+def core_mapping_evidence(maps, apk, installed_apks):
+    """现代 Android 直接 mmap APK 内未压缩的 so；必须核对该库的字节范围。"""
+    entry_range = None
+    with zipfile.ZipFile(apk) as archive:
+        entry = archive.getinfo('lib/x86_64/libfluxdo_net.so')
+        if entry.compress_type == zipfile.ZIP_STORED:
+            with apk.open('rb') as source:
+                source.seek(entry.header_offset)
+                header = source.read(30)
+            if header[:4] != b'PK\x03\x04':
+                raise ValueError('Invalid APK local header')
+            name_size, extra_size = struct.unpack_from('<HH', header, 26)
+            start = entry.header_offset + 30 + name_size + extra_size
+            entry_range = (start, start + entry.file_size)
+    roots = {str(Path(path).parent) + '/' for path in installed_apks}
+    for line in maps.splitlines():
+        fields = line.split(None, 5)
+        if len(fields) != 6 or 'x' not in fields[1]:
+            continue
+        path = fields[5]
+        if path.endswith('/libfluxdo_net.so') and any(path.startswith(root) for root in roots):
+            return {'kind': 'extracted_library'}
+        if path in installed_apks and entry_range:
+            offset = int(fields[2], 16)
+            if entry_range[0] <= offset < entry_range[1]:
+                return {'kind': 'apk_entry', 'mapping_offset': offset,
+                        'entry_start': entry_range[0], 'entry_end': entry_range[1]}
+    return None
 
 
 def main():
@@ -20,16 +52,19 @@ def main():
               'apk_sha256': hashlib.sha256(args.apk.read_bytes()).hexdigest()}
     changed = False
     owned_emulator = False
+    installed_apks = []
     def adb(*command, timeout=20):
         return subprocess.check_output(['adb', *command], timeout=timeout).decode(errors='replace').strip()
     def capture(name):
         pid = adb('shell', 'pidof', PACKAGE)
         if not pid or not pid.isdecimal(): raise RuntimeError('Full app process missing or ambiguous')
         maps = adb('shell', 'cat', f'/proc/{pid}/maps')
-        loaded = 'libfluxdo_net.so' in maps
+        (args.output/(name+'.maps')).write_text(maps+'\n')
+        evidence = core_mapping_evidence(maps, args.apk, installed_apks)
         png = subprocess.check_output(['adb', 'exec-out', 'screencap', '-p'], timeout=15)
         (args.output/(name+'.png')).write_bytes(png)
-        return {'pid': int(pid), 'core_library_loaded': loaded,
+        return {'pid': int(pid), 'core_library_loaded': evidence is not None,
+                'core_mapping': evidence,
                 'wifi_enabled': adb('shell', 'settings', 'get', 'global', 'wifi_on'),
                 'mobile_data_enabled': adb('shell', 'settings', 'get', 'global', 'mobile_data')}
     try:
@@ -42,6 +77,10 @@ def main():
                                           if 'Current WebView package' in line), 'unknown')
         adb('root'); adb('wait-for-device')
         adb('install', str(args.apk), timeout=90)
+        installed_apks = [line.removeprefix('package:') for line in adb('shell', 'pm', 'path', PACKAGE).splitlines()
+                          if line.startswith('package:')]
+        if not installed_apks:
+            raise RuntimeError('Installed APK location unavailable')
         adb('logcat', '-c')
         adb('shell', 'am', 'start', '-W', '-n', PACKAGE+'/.MainActivity')
         time.sleep(10)

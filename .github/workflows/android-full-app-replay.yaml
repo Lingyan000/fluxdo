@@ -1,0 +1,91 @@
+name: Replay existing full Android app
+on:
+  push:
+    branches: ['diagnostics/tailscale-h3-preflight-20261116']
+    paths: ['.github/workflows/android-full-app-replay.yaml']
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: '已完成完整 release 构建的运行编号；校验源码树和 APK 摘要后复用'
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: fluxdo-full-android-verification
+  cancel-in-progress: false
+jobs:
+  replay:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_RUN: ${{ inputs.source_run }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify original build provenance
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          run = os.environ['SOURCE_RUN']
+          assert run.isdecimal()
+          endpoint = 'repos/Lingyan000/fluxdo/actions/runs/'+run
+          info = json.loads(subprocess.check_output(['gh', 'api', endpoint]))
+          assert info['path'] == '.github/workflows/android-full-app-check.yaml'
+          assert info['event'] == 'workflow_dispatch'
+          assert info['head_branch'] == 'diagnostics/tailscale-h3-preflight-20261116'
+          jobs = json.loads(subprocess.check_output(['gh', 'api', endpoint+'/jobs']))['jobs']
+          assert any(step['name'] == 'Build full release app with ephemeral debug signing'
+                     and step['conclusion'] == 'success' for job in jobs for step in job['steps'])
+          pathlib.Path('.source-head').write_text(info['head_sha'])
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: full-android-release-${{ inputs.source_run }}
+          path: dist
+          run-id: ${{ inputs.source_run }}
+          github-token: ${{ github.token }}
+      - name: Verify unchanged production code and APK
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          evidence = json.loads(pathlib.Path('dist/build-evidence.json').read_text())
+          head = pathlib.Path('.source-head').read_text()
+          assert evidence['head'] == head
+          assert evidence['full_flutter_app'] and evidence['release'] and evidence['core_library_packaged']
+          assert evidence['architecture'] == 'x86_64'
+          assert hashlib.sha256(pathlib.Path('dist/fluxdo-x86_64-validation.apk').read_bytes()).hexdigest() == evidence['apk_sha256']
+          for path in ('lib', 'android', 'core/net_core', 'pubspec.yaml', 'pubspec.lock', 'packages/fluxdo_render'):
+              original = subprocess.check_output(['git', 'rev-parse', head+':'+path])
+              current = subprocess.check_output(['git', 'rev-parse', 'HEAD:'+path])
+              assert original == current, 'Production source changed: '+path
+          PY
+          PYTHONPATH=tool/native_fingerprint python3 -m unittest test_android_app_smoke
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 tool/native_fingerprint/android_app_smoke.py --apk dist/fluxdo-x86_64-validation.apk --output "$RUNNER_TEMP/android-full-app"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-android-observation-${{ github.run_id }}
+          path: ${{ runner.temp }}/android-full-app/
+          retention-days: 7
