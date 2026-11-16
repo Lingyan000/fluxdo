@@ -299,6 +299,9 @@ jobs:
           statedir: ${{ runner.temp }}/fluxdo-tailscale-state
           retry: '1'
           timeout: 60s
+      - name: Preserve public DNS and scope MagicDNS to this tailnet
+        timeout-minutes: 2
+        run: python3 tool/apple_fingerprint/tailnet_dns.py --state "$RUNNER_TEMP/apple-dns-before.json" --split
       - name: Verify default system trust and production replay
         timeout-minutes: 13
         run: python3 tool/apple_fingerprint/run_trusted.py --prepared "$RUNNER_TEMP/trusted-apple-prepared" --output "$RUNNER_TEMP/trusted-apple"
