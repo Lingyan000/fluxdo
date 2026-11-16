@@ -109,12 +109,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--production', action='store_true')
+    parser.add_argument('--app-only', action='store_true', help='保留原生 UA 已有证据，仅补应用 UA 与负对照')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     args.output.mkdir(parents=True, exist_ok=True)
     report = {'passed': False, 'scope': 'Android emulator to its Linux runner through emulator NAT',
               'browserstack_sessions': 0, 'rows': [],
-              'production_requested': args.production,
+              'production_requested': args.production, 'app_only': args.app_only,
               'not_verified': ['full Flutter production environment', 'cross-node tailnet path',
                                'physical devices', 'public Internet direct path', 'Cloudflare acceptance']}
     try:
@@ -134,7 +135,7 @@ def main():
                             '-keyout', str(bad_key), '-out', str(bad_cert)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             bad_key.chmod(0o600)
-            for mode in ('native', 'app', 'untrusted'):
+            for mode in (('app', 'untrusted') if args.app_only else ('native', 'app', 'untrusted')):
                 output = args.output/mode
                 config = folder/'origin.json'
                 negative = mode == 'untrusted'

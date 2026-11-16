@@ -8,6 +8,7 @@ import sys
 import time
 from urllib.parse import urlparse
 from android_quic_control import scoped_quic_control
+from android_adb import capture_netlog
 
 def adb(*args):
     return subprocess.check_output(['adb', *args], text=True, timeout=20)
@@ -58,14 +59,9 @@ try:
                     logs = adb('logcat', '-d')
                     sys.stderr.write('\n'.join(line for line in logs.splitlines() if any(
                         key in line.lower() for key in ('chromium', 'commandline', 'avc:', 'net::'))) + '\n')
-                    netlog = subprocess.run(['adb', 'shell', 'run-as', package, 'cat',
-                        'files/probe-netlog.json'], text=True, capture_output=True, timeout=20)
                     path = os.environ.get('FLUXDO_NATIVE_NETLOG_PATH')
-                    if path and netlog.returncode == 0:
-                        from pathlib import Path
-                        Path(path).write_text(netlog.stdout)
-                    else:
-                        sys.stderr.write('probe-netlog unavailable: ' + netlog.stderr + netlog.stdout[:300])
+                    if path:
+                        capture_netlog(path)
             finally:
                 adb('shell', 'am', 'force-stop', package)
 finally:

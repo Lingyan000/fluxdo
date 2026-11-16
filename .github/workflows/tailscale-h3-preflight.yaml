@@ -7,6 +7,10 @@ on:
         type: choice
         options: [preflight, android-h3, android-production-h3]
         default: preflight
+      app_only:
+        description: '已有原生 UA 证据时，仅补应用 UA 与证书负对照'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -76,7 +80,7 @@ jobs:
           gradle-version: '8.14'
       - name: Validate and build before joining tailnet
         run: |
-          PYTHONPATH=tool/native_fingerprint python3 -m unittest test_android_quic_control test_tailscale_preflight test_tailscale_h3
+          PYTHONPATH=tool/native_fingerprint python3 -m unittest test_android_quic_control test_tailscale_preflight test_tailscale_h3 test_android_adb
           gradle -p tool/native_fingerprint/android :app:assembleDebug
           cargo test --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe --example h3_production_client
           cargo build --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe --example h3_production_client --example fingerprint_probe
@@ -115,7 +119,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 100.100.100.100
           script: |
             adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
-            timeout 360s python3 tool/native_fingerprint/tailscale_h3.py ${{ inputs.mode == 'android-production-h3' && '--production' || '' }} --output "${{ runner.temp }}/trusted-h3"
+            timeout 360s python3 tool/native_fingerprint/tailscale_h3.py ${{ inputs.mode == 'android-production-h3' && '--production' || '' }} ${{ inputs.app_only && '--app-only' || '' }} --output "${{ runner.temp }}/trusted-h3"
       - name: Leave tailnet immediately after test
         if: always()
         run: sudo tailscale logout || true
