@@ -29,6 +29,19 @@ class TrustedAuditTest(unittest.TestCase):
         (self.folder/'browser.stderr').write_text(self.flags)
         return audit(self.folder, self.host, negative)['passed']
 
+    def test_windows_requires_actual_flags_and_shared_main_lifecycle(self):
+        self.driver.update(engine='Flutter WebView2 production probe environment',
+                           environment_kind='shared_main', main_survived=True,
+                           main_profile_removed=True, isolated_h3_environment=False)
+        self.flags = ''
+        self.netlog['constants']['clientInfo'] = {'command_line': 'msedgewebview2.exe --log-net-log=probe.json'}
+        self.assertTrue(self.check())
+        self.netlog['constants']['clientInfo']['command_line'] += ' --ignore-certificate-errors'
+        self.assertFalse(self.check())
+        self.netlog['constants']['clientInfo']['command_line'] = 'msedgewebview2.exe --log-net-log=probe.json'
+        self.driver['main_profile_removed'] = False
+        self.assertFalse(self.check())
+
     def test_default_h3_requires_all_evidence(self):
         self.assertTrue(self.check())
         self.driver['ssl_errors_proceeded'] = 1

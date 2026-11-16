@@ -5,7 +5,7 @@ on:
       mode:
         description: '按需运行；构建完成后才加入临时节点'
         type: choice
-        options: [preflight, android-h3, android-production-h3]
+        options: [preflight, android-h3, android-production-h3, windows-production-h3, browserstack-account]
         default: preflight
       app_only:
         description: '已有原生 UA 证据时，仅补应用 UA 与证书负对照'
@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tailscale-h3-preflight
+  group: tailscale-h3-${{ inputs.mode == 'browserstack-account' && 'account' || 'network' }}
   cancel-in-progress: false
 jobs:
   preflight:
@@ -133,3 +133,106 @@ jobs:
             ${{ runner.temp }}/trusted-h3/**/*.stdout
             ${{ runner.temp }}/trusted-h3/**/*.stderr
           retention-days: 7
+  windows-h3:
+    if: inputs.mode == 'windows-production-h3' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: windows-2022
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: ilammy/setup-nasm@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - name: Build Core and shared-main-environment Flutter host
+        run: |
+          cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tool/native_fingerprint/windows_flutter/prepare.py "$env:RUNNER_TEMP/h3-flutter"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location "$env:RUNNER_TEMP/h3-flutter"
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter analyze
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter build windows --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - name: Read public federation identifiers
+        id: config
+        run: python tool/native_fingerprint/tailscale_preflight.py --config
+      - name: Join one ephemeral Windows node
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
+        with:
+          oauth-client-id: ${{ steps.config.outputs.client_id }}
+          audience: ${{ steps.config.outputs.audience }}
+          tags: tag:fluxdo-ci
+          hostname: fluxdo-h3-windows
+          version: '1.104.5'
+          retry: '1'
+          timeout: 60s
+      - name: Verify normal trust in shared main WebView environment
+        timeout-minutes: 6
+        run: python tool/native_fingerprint/tailscale_h3.py --platform windows --driver "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" --production --output "$env:RUNNER_TEMP/trusted-h3"
+      - name: Leave tailnet before uploading evidence
+        if: always()
+        run: |
+          if (Get-Command tailscale -ErrorAction SilentlyContinue) { tailscale logout }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tailscale-windows-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/trusted-h3/**/*.json
+            ${{ runner.temp }}/trusted-h3/**/*.log
+            ${{ runner.temp }}/trusted-h3/**/*.stdout
+            ${{ runner.temp }}/trusted-h3/**/*.stderr
+            ${{ runner.temp }}/h3-flutter/production-source.json
+          retention-days: 7
+  browserstack-account:
+    if: inputs.mode == 'browserstack-account' && github.repository == 'Lingyan000/fluxdo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read App Automate account and device availability without sessions
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        shell: python
+        run: |
+          import base64, http.client, json, os
+          values = [os.environ.get(name) for name in ('BROWSERSTACK_USERNAME', 'BROWSERSTACK_ACCESS_KEY')]
+          if not all(values):
+              raise SystemExit('Missing configured BrowserStack credentials; no device started')
+          auth = 'Basic ' + base64.b64encode(':'.join(values).encode()).decode()
+          def read(path):
+              connection = http.client.HTTPSConnection('api-cloud.browserstack.com', timeout=20)
+              try:
+                  connection.request('GET', path, headers={'Authorization': auth})
+                  response = connection.getresponse()
+                  if response.status != 200:
+                      raise RuntimeError(f'Read-only account check: HTTP {response.status}')
+                  return json.loads(response.read())
+              finally:
+                  connection.close()
+          plan = read('/app-automate/plan.json')
+          fields = ('automate_plan', 'parallel_sessions_running', 'parallel_sessions_max_allowed', 'queued_sessions')
+          devices = read('/app-automate/devices.json')
+          report = {'plan': {name: plan.get(name) for name in fields}, 'device_sessions_created': 0,
+              'available_os_versions': sorted({str(d.get('os')) + ' ' + str(d.get('os_version')) for d in devices}),
+              'remaining_free_minutes_verified': False}
+          print(json.dumps(report, indent=2))

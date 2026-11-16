@@ -4,12 +4,13 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 
-from tailscale_preflight import node_identity, socket_checks
+from tailscale_preflight import node_identity, socket_checks, issue_certificate
 from summarize_h3_netlog import read_netlog
 
 CASES = {'conditional', 'form', 'json', 'range', 'head', 'conditional-changed',
@@ -26,16 +27,23 @@ def audit_browser(driver_path, netlog_path, hostname, negative=False):
              and names[e['type']] == 'CERT_VERIFIER_JOB' and 'cert_status' in e.get('params', {})]
     flags = [line for line in driver_path.with_suffix('.stderr').read_text().splitlines()
              if 'COMMAND-LINE FLAGS' in line]
+    windows = driver.get('engine') == 'Flutter WebView2 production probe environment'
+    if windows:
+        command_line = data['constants'].get('clientInfo', {}).get('command_line', '')
+        flags = [command_line] if command_line else []
     clean_flags = bool(flags) and all('--log-net-log=' in line and not any(flag in line for flag in
         ('--origin-to-force-quic-on', '--ignore-certificate-errors', '--host-resolver-rules')) for line in flags)
     strict = (driver.get('trusted_certificate_required') is True
               and driver.get('ssl_errors_proceeded') == 0
               and driver.get('udp_relay') is False
               and driver.get('diagnostic_force_quic') is False)
+    if windows:
+        strict &= (driver.get('environment_kind') == 'shared_main' and driver.get('main_survived') is True
+                   and driver.get('main_profile_removed') is True and driver.get('isolated_h3_environment') is False)
     if negative:
         passed = (strict and clean_flags and driver.get('success') is False
                   and driver.get('ssl_error_count', 0) > 0
-                  and str(driver.get('error', '')).startswith('certificate ')
+                  and (driver.get('certificate_rejected') is True if windows else str(driver.get('error', '')).startswith('certificate '))
                   and any(c.get('cert_status', 0) != 0 for c in certs))
     else:
         passed = (strict and clean_flags and driver.get('success') is True
@@ -62,14 +70,15 @@ def audit(folder, hostname, negative=False):
     return row
 
 
-def production_replay(root, output, native, domain, env):
+def production_replay(root, output, native, domain, env, driver=None):
     """正式 Listener 状态机采两次 H3，实际 HttpEgressClient 发九种合成请求。"""
     sys.path.insert(0, str(root/'tool'))
     from compare_fingerprint_capture import compare
     from run_h3_qpack_scenarios import compare_cases
     from compare_h3_production import transport_checks
     examples = root/'core/net_core/target/debug/examples'
-    driver = root/'tool/native_fingerprint/android_driver.py'
+    driver = driver or root/'tool/native_fingerprint/android_driver.py'
+    suffix = '.exe' if os.name == 'nt' else ''
     samples = output/'tcp-samples'
     samples.mkdir()
     tcp_env = dict(env, FLUXDO_LAB_EXTERNAL_DRIVER='1', SSL_CERT_FILE=str(samples/'ca.pem'),
@@ -77,7 +86,7 @@ def production_replay(root, output, native, domain, env):
     for key in ('FLUXDO_TRUSTED_PROBE_CONFIG', 'FLUXDO_TRUSTED_PROBE_HOST'):
         tcp_env.pop(key, None)
     with (output/'tcp.log').open('w') as log:
-        tcp = subprocess.run([str(examples/'fingerprint_probe'), str(driver), str(samples)], env=tcp_env,
+        tcp = subprocess.run([str(examples/('fingerprint_probe'+suffix)), str(driver), str(samples)], env=tcp_env,
                              stdout=log, stderr=subprocess.STDOUT, timeout=90)
     tcp_comparison = compare(samples)
     result = {'tcp_exit_code': tcp.returncode, 'tcp_comparison': tcp_comparison, 'passed': False}
@@ -91,7 +100,7 @@ def production_replay(root, output, native, domain, env):
                 'FLUXDO_H3_DIAGNOSTIC_SPKI', 'FLUXDO_NATIVE_PROBE_TRUST_ROOT'):
         replay_env.pop(key, None)
     with (output/'replay.log').open('w') as log:
-        replay = subprocess.run([str(examples/'h3_fingerprint_probe'), str(examples/'h3_production_client'),
+        replay = subprocess.run([str(examples/('h3_fingerprint_probe'+suffix)), str(examples/('h3_production_client'+suffix)),
                                  str(core), '--native-probe'], env=replay_env,
                                 stdout=log, stderr=subprocess.STDOUT, timeout=120)
     result['replay_exit_code'] = replay.returncode
@@ -101,7 +110,7 @@ def production_replay(root, output, native, domain, env):
     checks, layout = transport_checks(json.loads((core/'client/profile.json').read_text()), capture)
     result['transport_comparison'] = {'passed': all(checks.values()), 'checks': checks, 'initial_layout': layout}
     result['comparison'] = compare_cases(json.loads((native/'h3-capture.json').read_text()), capture)
-    result['comparison']['scope'] = 'trusted tailnet origin; native Android emulator vs production Core on Linux; common fields'
+    result['comparison']['scope'] = 'trusted tailnet origin; native browser vs production Core; common fields; see driver platform identity'
     result['passed'] = (replay.returncode == 0 and result['comparison']['passed']
                         and result['transport_comparison']['passed']
                         and all(row['passed'] for row in result['calibration_browsers']))
@@ -112,12 +121,19 @@ def production_replay(root, output, native, domain, env):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--platform', choices=['android', 'windows'], default='android')
+    parser.add_argument('--driver', type=Path)
     parser.add_argument('--production', action='store_true')
     parser.add_argument('--app-only', action='store_true', help='保留原生 UA 已有证据，仅补应用 UA 与负对照')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
+    if args.platform != 'android' and not args.driver:
+        parser.error('--driver is required for this platform')
+    driver = args.driver.resolve() if args.driver else root/'tool/native_fingerprint/android_driver.py'
+    suffix = '.exe' if os.name == 'nt' else ''
     args.output.mkdir(parents=True, exist_ok=True)
-    report = {'passed': False, 'scope': 'Android emulator to its Linux runner through emulator NAT',
+    report = {'passed': False, 'scope': 'Android emulator to its Linux runner through emulator NAT' if args.platform == 'android' else 'Windows minimal Flutter host and production Core on the same runner',
+              'platform': args.platform,
               'browserstack_sessions': 0, 'rows': [],
               'production_requested': args.production, 'app_only': args.app_only,
               'not_verified': ['full Flutter production environment', 'cross-node tailnet path',
@@ -127,19 +143,21 @@ def main():
         report.update(hostname=domain, address=address)
         with tempfile.TemporaryDirectory(prefix='fluxdo-trusted-h3-') as temporary:
             folder = Path(temporary)
-            cert, key = folder/'cert.pem', folder/'key.pem'
-            subprocess.run(['sudo', 'tailscale', 'cert', '--cert-file', str(cert), '--key-file', str(key), domain],
-                           check=True, timeout=120, stdout=subprocess.DEVNULL)
-            subprocess.run(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', str(cert), str(key)], check=True)
-            key.chmod(0o600)
+            cert, key = issue_certificate(folder, domain)
             report['preflight'] = socket_checks(cert, key, domain, address)
             bad_cert, bad_key = folder/'bad-cert.pem', folder/'bad-key.pem'
-            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+            openssl = shutil.which('openssl')
+            if openssl is None and os.name == 'nt':
+                openssl = str(Path(shutil.which('git')).parent.parent/'usr/bin/openssl.exe')
+            if not openssl:
+                raise RuntimeError('openssl executable missing')
+            subprocess.run([openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                             '-subj', f'/CN={domain}', '-addext', f'subjectAltName=DNS:{domain}',
                             '-keyout', str(bad_key), '-out', str(bad_cert)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             bad_key.chmod(0o600)
-            for mode in (('app', 'untrusted') if args.app_only else ('native', 'app', 'untrusted')):
+            modes = ('native', 'untrusted') if args.platform == 'windows' else (('app', 'untrusted') if args.app_only else ('native', 'app', 'untrusted'))
+            for mode in modes:
                 output = args.output/mode
                 config = folder/'origin.json'
                 negative = mode == 'untrusted'
@@ -150,8 +168,8 @@ def main():
                            FLUXDO_NATIVE_PROBE_NETLOG='1', FLUXDO_NATIVE_PROBE_FORCE_QUIC='0',
                            FLUXDO_ANDROID_H3_RELAY='0', FLUXDO_ANDROID_UA_MODE='app' if mode == 'app' else 'native')
                 with (args.output/f'{mode}.log').open('w') as log:
-                    result = subprocess.run([str(root/'core/net_core/target/debug/examples/h3_fingerprint_probe'),
-                        str(root/'tool/native_fingerprint/android_driver.py'), str(output),
+                    result = subprocess.run([str(root/'core/net_core/target/debug/examples'/('h3_fingerprint_probe'+suffix)),
+                        str(driver), str(output),
                         '--native-probe', '--qpack-scenarios'], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=65)
                 row = audit(output, domain, negative)
                 row.update(case=mode, exit_code=result.returncode)
@@ -159,7 +177,7 @@ def main():
                 if args.production and not negative and row['passed']:
                     replay_output = args.output/(mode+'-replay')
                     replay_output.mkdir()
-                    row['production'] = production_replay(root, replay_output, output, domain, env)
+                    row['production'] = production_replay(root, replay_output, output, domain, env, driver)
                     row['passed'] &= row['production']['passed']
                 report['rows'].append(row)
                 (args.output/'result.json').write_text(json.dumps(report, indent=2)+'\n')

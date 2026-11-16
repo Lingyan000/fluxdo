@@ -74,6 +74,18 @@ def socket_checks(cert, key, domain, address, *, cafile=None):
     return {'system_trust_and_hostname_verified': True, 'local_tailnet_udp_1200_byte_echo': True}
 
 
+def issue_certificate(folder, domain):
+    """证书副本限定在调用者的临时目录；Windows 使用现有管理员服务。"""
+    cert, key = folder/'cert.pem', folder/'key.pem'
+    prefix = [] if os.name == 'nt' else ['sudo']
+    subprocess.run([*prefix, 'tailscale', 'cert', '--cert-file', str(cert), '--key-file', str(key), domain],
+                   check=True, timeout=120, stdout=subprocess.DEVNULL)
+    if os.name != 'nt':
+        subprocess.run(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', str(cert), str(key)], check=True)
+    key.chmod(0o600)
+    return cert, key
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', action='store_true')
@@ -96,11 +108,7 @@ def main():
         report['hostname'] = domain
         # 证书和私钥只在临时目录中存在；不写入输出目录，也不缓存或上传。
         with tempfile.TemporaryDirectory(prefix='fluxdo-cert-') as folder:
-            cert, key = Path(folder)/'cert.pem', Path(folder)/'key.pem'
-            subprocess.run(['sudo', 'tailscale', 'cert', '--cert-file', str(cert), '--key-file', str(key), domain],
-                           check=True, timeout=120, stdout=subprocess.DEVNULL)
-            subprocess.run(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', str(cert), str(key)], check=True)
-            key.chmod(0o600)
+            cert, key = issue_certificate(Path(folder), domain)
             report['checks'] = socket_checks(cert, key, domain, address)
             report['passed'] = True
     except Exception as error:
