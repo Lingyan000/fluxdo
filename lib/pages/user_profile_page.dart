@@ -340,7 +340,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   void _onTabChanged() {
-    if (_tabController.indexIsChanging) return;
+    // 点击切换时动画一开始 index 就已更新,此时立即发请求,不等动画结束。
     if (_user == null || _user!.profileHidden) return;
     final changed = _activeTabIndex != _tabController.index;
     _activeTabIndex = _tabController.index;
@@ -2469,9 +2469,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildBadgesTab() {
-    if (_badgesLoading && _badges == null) {
-      return const UserBadgeListSkeleton();
-    }
     if (_badgesError != null) {
       return ErrorView(
         error: _badgesError!,
@@ -2479,7 +2476,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         onRetry: _loadBadges,
       );
     }
-    final badges = _badges ?? const <badge_model.UserBadge>[];
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架
+    final badges = _badges;
+    if (badges == null) return const UserBadgeListSkeleton();
     final own = ref.watch(currentUserProvider).value?.id == _user?.id;
     final theme = Theme.of(context);
     return ListView(
@@ -2756,8 +2755,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       );
     }
 
-    // 优先检查 loading 状态
-    if (isLoading && actions == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (actions == null) {
       final actionType = int.tryParse(filter);
       final ownPost =
           filter == 'all' ||
@@ -2775,7 +2774,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
 
     // 空状态
-    if (actions == null || actions.isEmpty) {
+    if (actions.isEmpty) {
       return AppEmptyState(
         icon: const Icon(Symbols.inbox_rounded),
         title: context.l10n.userProfile_noContent,
@@ -3634,15 +3633,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _reactionsLoading;
     final hasMore = _reactionsHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && reactions == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (reactions == null) {
       return const UserActionListSkeleton(
         type: UserActivitySkeletonType.reaction,
       );
     }
 
     // 空状态
-    if (reactions == null || reactions.isEmpty) {
+    if (reactions.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3704,13 +3703,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _boostsLoading;
     final hasMore = _boostsHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && boosts == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (boosts == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.boost);
     }
 
     // 空状态
-    if (boosts == null || boosts.isEmpty) {
+    if (boosts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3770,13 +3769,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final hasMore = _votesHasMore;
     const padding = EdgeInsets.symmetric(vertical: 12);
 
-    // 优先检查 loading 状态
-    if (isLoading && topics == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (topics == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.topic);
     }
 
     // 空状态
-    if (topics == null || topics.isEmpty) {
+    if (topics.isEmpty) {
       return AppEmptyState(
         icon: const Icon(Symbols.how_to_vote_rounded),
         title: context.l10n.userProfile_noVotes,
@@ -3862,13 +3861,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _solvedLoading;
     final hasMore = _solvedHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && posts == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (posts == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.reply);
     }
 
     // 空状态
-    if (posts == null || posts.isEmpty) {
+    if (posts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
