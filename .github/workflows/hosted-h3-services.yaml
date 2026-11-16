@@ -1,0 +1,52 @@
+name: Inspect hosted H3 services with native WebView
+on:
+  push:
+    branches: ['diagnostics/tailscale-h3-preflight-20261116']
+    paths: ['.github/workflows/hosted-h3-services.yaml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fluxdo-hosted-h3-inspection
+  cancel-in-progress: false
+jobs:
+  android:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Build diagnostic WebView host
+        run: gradle -p tool/native_fingerprint/android :app:assembleDebug
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
+            python3 tool/native_fingerprint/hosted_services_probe.py --output "$RUNNER_TEMP/hosted-h3"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-h3-services-${{ github.run_id }}
+          path: ${{ runner.temp }}/hosted-h3/
+          retention-days: 7

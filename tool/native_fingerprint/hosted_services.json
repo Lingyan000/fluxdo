@@ -1,0 +1,5 @@
+[
+  {"name": "browserleaks", "url": "https://quic.browserleaks.com/"},
+  {"name": "scrapfly", "url": "https://quic.tools.scrapfly.io/api/fp/quic"},
+  {"name": "impersonate", "url": "https://fp.impersonate.pro/api/http3"}
+]

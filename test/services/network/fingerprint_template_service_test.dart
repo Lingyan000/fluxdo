@@ -193,6 +193,49 @@ void main() {
     expect(service.templateReady.value, false);
   });
 
+  test('H3 探针异常不撤销本地 TCP 模板，停止重启后才允许新一轮尝试', () async {
+    var fail = true;
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => {
+        'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3]},
+      },
+      probe: (port, _) async {
+        ports.add(port);
+        if (fail) throw StateError('local H3 probe unavailable');
+      },
+      userAgent: () async => 'actual',
+    );
+    await service.ensure(1);
+    await service.ensure(1);
+    expect(ports, [2]);
+    expect(service.templateReady.value, true);
+    fail = false;
+    service.reset();
+    await service.ensure(1);
+    expect(ports, [2, 2, 3]);
+    expect(service.templateReady.value, true);
+  });
+
+  test('H3 最终状态暂时不可读时保留已验证的本地 TLS 和 H2', () async {
+    var reads = 0;
+    final ports = <int>[];
+    final service = FingerprintTemplateService.forTesting(
+      status: (_) async => ++reads == 2 ? null : {
+        'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': false, 'probe_ports': [2, 3]},
+      },
+      probe: (port, _) async { ports.add(port); },
+      userAgent: () async => 'actual',
+    );
+    await service.ensure(1);
+    expect(service.templateReady.value, true);
+    await service.ensure(1);
+    expect(ports, [2, 3]);
+    expect(service.templateReady.value, true);
+  });
+
   test('同 UA 和端口的 H3 模板失效后按核心采样代次重新校准', () async {
     var epoch = 1;
     final ports = <int>[];
