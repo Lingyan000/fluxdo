@@ -1,9 +1,13 @@
 // iOS 宿主调用生产 C ABI；只访问显式指定的诊断源站。
 import Foundation
+import CFNetwork
 import UIKit
 import WebKit
 
 typealias CoreEvent = @convention(c) (UInt64, UInt8, UnsafeMutablePointer<UInt8>?, Int) -> Void
+typealias CoreLog = @convention(c) (UInt8, UnsafeMutablePointer<UInt8>?, Int) -> Void
+@_silgen_name("fluxdo_net_init_logging") func coreInitLogging()
+@_silgen_name("fluxdo_net_set_log_callback") func coreSetLogCallback(_ callback: CoreLog?)
 @_silgen_name("fluxdo_net_init") func coreInit(_ config: UnsafePointer<CChar>) -> Int32
 @_silgen_name("fluxdo_net_status_json") func coreStatus() -> UnsafeMutablePointer<CChar>?
 @_silgen_name("fluxdo_net_diagnostic_h3_profile_json") func coreProfile() -> UnsafeMutablePointer<CChar>?
@@ -25,6 +29,21 @@ private func receiveCoreEvent(_ id: UInt64, _ kind: UInt8, _ bytes: UnsafeMutabl
     DispatchQueue.main.async { CoreProbe.active?.receive(id, kind, data) }
 }
 
+private func receiveCoreLog(_ level: UInt8, _ bytes: UnsafeMutablePointer<UInt8>?, _ size: Int) {
+    let data = bytes.map { Data(bytes: $0, count: size) } ?? Data()
+    if let bytes = bytes { coreFree(bytes, size) }
+    guard let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let message = row["message"] as? String, message.contains("HTTP/3 upgrade") else { return }
+    // 只保留固定分类；不导出代理地址、目标域名、查询串或原始错误正文。
+    let reason = message.contains("configured proxy uses TCP") ? "proxy_requires_tcp" :
+        message.contains("H3 connect timeout") ? "connect_timeout" :
+        message.contains("ready in") ? "upgrade_ready" : "upgrade_unavailable"
+    DispatchQueue.main.async {
+        guard let active = CoreProbe.active, active.protocolEvents.count < 16 else { return }
+        active.protocolEvents.append(reason)
+    }
+}
+
 @MainActor
 final class CoreProbe: NSObject, WKNavigationDelegate {
     static var active: CoreProbe?
@@ -41,6 +60,7 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
         "physical_device": false, "full_flutter_app": false, "success": false]
     var requests: [[String: Any]] = []
     var calibrations: [[String: Any]] = []
+    var protocolEvents: [String] = []
     struct Pending {
         var head: [String: Any] = [:]
         var bytes = Data()
@@ -92,6 +112,13 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
 
     func publicTrace(_ url: URL) async throws {
         traceURL = url
+        if let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() {
+            let choices = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as NSArray
+            let types = choices.compactMap { ($0 as? NSDictionary)?[kCFProxyTypeKey] as? String }
+            report["public_proxy_route"] = ["types": types,
+                "requires_pac_evaluation": types.contains(kCFProxyTypeAutoConfigurationURL as String) ||
+                    types.contains(kCFProxyTypeAutoConfigurationJavaScript as String)]
+        }
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
         webView.customUserAgent = userAgent
         webView.navigationDelegate = self
@@ -261,6 +288,8 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
 
     func run() async {
         CoreProbe.active = self
+        coreSetLogCallback(receiveCoreLog)
+        coreInitLogging()
         coreSetCallback(receiveCoreEvent)
         do {
             let traceConfig = Bundle.main.url(forResource: "trace-target", withExtension: "json")
@@ -371,7 +400,10 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
         finished = true
         report["requests"] = requests
         report["calibration_browsers"] = calibrations
+        coreSetLogCallback(nil)
+        report["protocol_events"] = protocolEvents
         coreDetach()
+        CoreProbe.active = nil
         report["core_shutdown"] = (try? state()["running"] as? Bool) == false
         if report["core_shutdown"] as? Bool != true { report["success"] = false }
         if traceURL != nil {
