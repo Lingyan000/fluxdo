@@ -6,6 +6,39 @@ from pathlib import Path
 import re
 
 
+def read_netlog(raw):
+    """保留未关闭流中的完整事件，但明确标注截断，不能据此证明事件不存在。"""
+    try:
+        return json.loads(raw), {'document_complete': True, 'discarded_tail_bytes': 0}
+    except json.JSONDecodeError:
+        marker = re.search(r'"events"\s*:\s*\[', raw)
+        if marker is None:
+            raise
+        # 常量必须完整；不能从损坏的事件名映射猜测网络错误。
+        data = json.loads(raw[:marker.start()] + '"events":[]}')
+        decoder = json.JSONDecoder()
+        cursor = marker.end()
+        while True:
+            while cursor < len(raw) and raw[cursor].isspace():
+                cursor += 1
+            try:
+                event, end = decoder.raw_decode(raw, cursor)
+            except json.JSONDecodeError:
+                break
+            if not isinstance(event, dict):
+                raise ValueError('NetLog event must be an object')
+            data['events'].append(event)
+            cursor = end
+            while cursor < len(raw) and raw[cursor].isspace():
+                cursor += 1
+            if cursor >= len(raw) or raw[cursor] != ',':
+                break
+            cursor += 1
+        return data, {'document_complete': False,
+                      'discarded_tail_bytes': len(raw[cursor:].encode('utf-8')),
+                      'limitation': 'complete event prefix only; absence is not proof of no later event'}
+
+
 def summarize(data, ports):
     names = {value: key for key, value in data['constants']['logEventTypes'].items()}
     events = data['events']
@@ -43,7 +76,9 @@ def main():
     rows = []
     for path in sorted(args.folder.rglob('browser-netlog-*.json')):
         status = json.loads((path.parent / 'status.json').read_text())
-        row = summarize(json.loads(path.read_text()), set(status['h3']['probe_ports']))
+        data, completeness = read_netlog(path.read_text())
+        row = summarize(data, set(status['h3']['probe_ports']))
+        row['capture'] = completeness
         row['file'] = str(path.relative_to(args.folder))
         rows.append(row)
         print(row['file'], 'local QUIC sessions:', row['local_quic_sessions'],
