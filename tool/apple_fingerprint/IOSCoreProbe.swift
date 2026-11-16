@@ -6,6 +6,7 @@ import WebKit
 typealias CoreEvent = @convention(c) (UInt64, UInt8, UnsafeMutablePointer<UInt8>?, Int) -> Void
 @_silgen_name("fluxdo_net_init") func coreInit(_ config: UnsafePointer<CChar>) -> Int32
 @_silgen_name("fluxdo_net_status_json") func coreStatus() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("fluxdo_net_diagnostic_h3_profile_json") func coreProfile() -> UnsafeMutablePointer<CChar>?
 @_silgen_name("fluxdo_net_free_string") func coreFreeString(_ value: UnsafeMutablePointer<CChar>?)
 @_silgen_name("fluxdo_net_set_event_callback") func coreSetCallback(_ callback: CoreEvent?)
 @_silgen_name("fluxdo_net_request_start") func coreRequest(_ meta: UnsafePointer<CChar>) -> UInt64
@@ -265,6 +266,11 @@ final class CoreProbe: NSObject, WKNavigationDelegate {
                 finish()
                 return
             }
+            guard let profileText = coreProfile() else { throw CoreProbeError.failed("Calibrated profile missing") }
+            defer { coreFreeString(profileText) }
+            let profile = try JSONSerialization.jsonObject(with: Data(String(cString: profileText).utf8))
+            guard profile is [String: Any] else { throw CoreProbeError.failed("Calibrated profile unavailable") }
+            report["calibrated_profile"] = profile
             let origin = "https://\(host):\(port)"
             var reached = false
             for _ in 0..<15 {

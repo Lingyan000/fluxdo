@@ -35,7 +35,6 @@ def main():
         if not previous['passed']:
             raise RuntimeError('Native trusted-origin reference failed')
         native = json.loads((folder/'app/h3-capture.json').read_text())
-        profile = json.loads((folder/'app-replay/core/client/profile.json').read_text())
         domain, address = node_identity(json.loads(subprocess.check_output(['tailscale', 'status', '--json'], timeout=20)))
         with tempfile.TemporaryDirectory(prefix='fluxdo-ios-core-') as temp:
             config = Path(temp)/'origin.json'
@@ -52,6 +51,9 @@ def main():
                     target['driver'], str(out/'capture'), '--native-probe', '--qpack-scenarios'],
                     env=env, stdout=log, stderr=subprocess.STDOUT, timeout=205)
             driver = json.loads((out/'capture/browser.stdout').read_text())
+            # 随机字段和连接初始状态必须与当前实例的采样比较，不能复用另一轮模板。
+            profile = driver['calibrated_profile']
+            (out/'profile.json').write_text(json.dumps(profile, indent=2)+'\n')
             capture = json.loads((out/'capture/h3-capture.json').read_text())
             comparisons = compare_cases(native, capture)
             checks, layout = transport_checks(profile, capture)

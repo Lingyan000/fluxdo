@@ -166,6 +166,25 @@ impl Core {
         system_proxy::clear_pac_cache();
     }
 
+    /// 诊断宿主读取当前实例的校准结果；正式构建不暴露原始采样。
+    #[cfg(debug_assertions)]
+    pub fn diagnostic_h3_profile(&self) -> serde_json::Value {
+        let Some(reference) = self.templates.captured_snapshot() else {
+            return serde_json::Value::Null;
+        };
+        let Some((_, profile)) = self.templates.h3.snapshot(reference.user_agent.as_deref()) else {
+            return serde_json::Value::Null;
+        };
+        serde_json::json!({
+            "hello": profile.sample.hello, "flight": profile.sample.flight,
+            "parameters": profile.sample.parameters, "boundary": profile.sample.boundary,
+            "warm_boundary": profile.sample.warm_boundary, "wire_fields": profile.sample.wire_fields,
+            "insert_on_reuse": profile.sample.insert_on_reuse, "quic": profile.quic,
+            "permute_tls": profile.permute_tls, "header_order": profile.sample.header_order,
+            "pseudo_order": profile.sample.pseudo_order,
+        })
+    }
+
     /// 宿主用于判断「dio 现在能不能按浏览器指纹出站」以及是否需要重新采样。
     pub fn status_json(&self) -> String {
         let template = self.templates.snapshot();
