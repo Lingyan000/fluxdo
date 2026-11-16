@@ -1,4 +1,6 @@
 //! 诊断宿主：实际浏览器完成生产 H3 探针后，生产 Core 向独立采集端发送请求。
+#[path = "support/trusted_origin.rs"]
+mod trusted_origin;
 use fluxdo_net::{
     client::HttpEgressClient,
     egress::EgressConnector,
@@ -57,7 +59,19 @@ async fn main() -> Result<(), BoxError> {
         Duration::from_secs(5),
     ));
     let listener = Arc::new(Listener::new(egress.clone(), None, templates.clone())?);
-    let socket = listener.bind("127.0.0.1", 0).await?;
+    let trusted = trusted_origin::TrustedOrigin::load()?;
+    let hostname = trusted.as_ref().map(|v| v.hostname.as_str()).unwrap_or("localhost");
+    if trusted.is_some() && (std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_none()
+        || ["FLUXDO_H3_DIAGNOSTIC_SPKI", "FLUXDO_NATIVE_PROBE_TRUST_ROOT", "FLUXDO_NATIVE_PROBE_FORCE_QUIC"]
+            .iter().any(|key| std::env::var(key).as_deref() == Ok("1"))) {
+        return Err("trusted calibration requires native driver without trust or QUIC overrides".into());
+    }
+    let socket = if let Some(origin) = &trusted {
+        #[cfg(debug_assertions)]
+        { listener.bind_with_diagnostic_h3_identity(origin.address, origin.identity()?).await? }
+        #[cfg(not(debug_assertions))]
+        { return Err("trusted calibration is available only in diagnostic debug builds".into()); }
+    } else { listener.bind("127.0.0.1", 0).await? };
     let task = tokio::spawn(listener.clone().serve(socket));
     let state: serde_json::Value = serde_json::from_str(&templates.status_json())?;
     let browser = std::env::var("FLUXDO_H3_BROWSER")?;
@@ -67,7 +81,7 @@ async fn main() -> Result<(), BoxError> {
         "native_driver":std::env::var_os("FLUXDO_H3_NATIVE_DRIVER").is_some(),
         "force_quic":std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some(),
         "native_probe_force_quic":std::env::var("FLUXDO_NATIVE_PROBE_FORCE_QUIC").as_deref()==Ok("1"),
-        "tcp_calibration_source":samples,"probe":"production Listener / HttpEgressClient",
+        "trusted_origin":trusted.is_some(),"origin_hostname":hostname,"tcp_calibration_source":samples,"probe":"production Listener / HttpEgressClient",
         "physical_device":false}))?,
     )?;
     for (index, port) in state["h3"]["probe_ports"]
@@ -83,7 +97,7 @@ async fn main() -> Result<(), BoxError> {
         let helper = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let helper_port = helper.local_addr()?.port();
         let html = format!(
-            "<!doctype html><script>(async()=>{{for(let i=0;i<10;i++){{let r=await fetch('https://localhost:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-policy'){{for(let j=0;j<2;j++)await(await fetch('https://localhost:{port}/fluxdo-h3/reuse')).text();break;}}await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
+            "<!doctype html><script>(async()=>{{for(let i=0;i<10;i++){{let r=await fetch('https://{hostname}:{port}/fluxdo-h3/fetch');if(await r.text()==='h3-policy'){{for(let j=0;j<2;j++)await(await fetch('https://{hostname}:{port}/fluxdo-h3/reuse')).text();break;}}await new Promise(r=>setTimeout(r,150));}}document.title='done';}})()</script>"
         );
         let helper_task = tokio::spawn(async move {
             use rama::{
@@ -136,7 +150,8 @@ async fn main() -> Result<(), BoxError> {
             } else {
                 command.env_remove("FLUXDO_NATIVE_PROBE_CA_PEM");
             }
-            command.arg(format!("https://localhost:{port}/fluxdo-h3"));
+            if trusted.is_some() { command.env("FLUXDO_TRUSTED_PROBE_HOST", hostname); }
+            command.arg(format!("https://{hostname}:{port}/fluxdo-h3"));
         } else {
             if std::env::var_os("FLUXDO_H3_FORCE_QUIC").is_some() {
                 command.arg(format!("--origin-to-force-quic-on=localhost:{port}"));

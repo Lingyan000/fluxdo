@@ -47,6 +47,25 @@ pub async fn start(templates: Arc<FingerprintTemplates>, shutdown: CancellationT
     templates.h3.ports(ports);
 }
 
+/// 仅调试宿主提供证书和受控地址；发布构建不暴露远程采样入口。
+#[cfg(debug_assertions)]
+pub async fn start_with_identity(
+    templates: Arc<FingerprintTemplates>,
+    shutdown: CancellationToken,
+    address: std::net::Ipv4Addr,
+    identity: ServerAuthData,
+) -> Result<(), BoxError> {
+    let mut ports = Vec::new();
+    for _ in 0..2 {
+        match bind_identity(templates.clone(), shutdown.clone(), address, identity.clone()).await {
+            Ok(port) => ports.push(port),
+            Err(error) => { shutdown.cancel(); return Err(error); }
+        }
+    }
+    templates.h3.ports(ports);
+    Ok(())
+}
+
 async fn bind(
     templates: Arc<FingerprintTemplates>,
     shutdown: CancellationToken,
@@ -54,6 +73,16 @@ async fn bind(
     let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
         rama::net::address::Domain::from_static("localhost"),
     ))?;
+    bind_identity(templates, shutdown, std::net::Ipv4Addr::LOCALHOST, identity).await
+}
+
+// 生产与诊断共用采样状态机；诊断仅替换监听地址和服务器身份。
+async fn bind_identity(
+    templates: Arc<FingerprintTemplates>,
+    shutdown: CancellationToken,
+    address: std::net::Ipv4Addr,
+    identity: ServerAuthData,
+) -> Result<u16, BoxError> {
     let tls = TlsServerConfig::new()
         .with_server_auth(identity.clone())
         .with_alpn_http_auto();
@@ -76,23 +105,23 @@ async fn bind(
     let endpoint = Endpoint::bind_server(
         Executor::new(),
         config.clone(),
-        "127.0.0.1:0".parse::<std::net::SocketAddr>()?,
+        std::net::SocketAddr::new(address.into(), 0),
     )
     .await?;
     let port = endpoint.local_addr()?.port();
     templates.h3.probe_certificate(port, spki);
     #[cfg(debug_assertions)]
     templates.h3.probe_ca(port, probe_ca);
-    let tcp = TcpListener::bind(("127.0.0.1", port)).await?;
+    let tcp = TcpListener::bind((address, port)).await?;
     // localhost 可能优先解析到 ::1；两个地址使用同一证书和同一 origin。
-    let endpoint6 = Endpoint::bind_server(
+    let endpoint6 = if address.is_loopback() { Endpoint::bind_server(
         Executor::new(),
         config,
         std::net::SocketAddr::new(std::net::Ipv6Addr::LOCALHOST.into(), port),
     )
     .await
-    .ok();
-    let tcp6 = TcpListener::bind(("::1", port)).await.ok();
+    .ok() } else { None };
+    let tcp6 = if address.is_loopback() { TcpListener::bind(("::1", port)).await.ok() } else { None };
     let token = shutdown.clone();
     let activity = templates.clone();
     tokio::spawn(async move {
@@ -217,4 +246,42 @@ async fn bind(
         }
     });
     Ok(port)
+}
+
+#[cfg(all(test, debug_assertions))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn diagnostic_identity_uses_two_origins_and_releases_tcp_udp() {
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        let shutdown = CancellationToken::new();
+        let identity = ServerAuthData::new_generated(GeneratedServerAuthConfig::generated_ca_for(
+            rama::net::address::Domain::from_static("localhost"),
+        )).unwrap();
+        start_with_identity(templates.clone(), shutdown.clone(), std::net::Ipv4Addr::LOCALHOST, identity).await.unwrap();
+        let state: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        let ports: Vec<u16> = state["h3"]["probe_ports"].as_array().unwrap().iter()
+            .map(|v| v.as_u64().unwrap() as u16).collect();
+        assert_eq!(ports.len(), 2);
+        assert_ne!(ports[0], ports[1]);
+        for port in &ports {
+            assert!(tokio::net::TcpStream::connect(("127.0.0.1", *port)).await.is_ok());
+            assert!(tokio::net::UdpSocket::bind(("127.0.0.1", *port)).await.is_err());
+        }
+        shutdown.cancel();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            for port in ports {
+                loop {
+                    if let Ok(tcp) = TcpListener::bind(("127.0.0.1", port)).await {
+                        if let Ok(udp) = tokio::net::UdpSocket::bind(("127.0.0.1", port)).await {
+                            drop((tcp, udp));
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        }).await.expect("probe sockets must be released after cancellation");
+    }
 }

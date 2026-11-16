@@ -5,7 +5,7 @@ on:
       mode:
         description: '按需运行；构建完成后才加入临时节点'
         type: choice
-        options: [preflight, android-h3]
+        options: [preflight, android-h3, android-production-h3]
         default: preflight
 permissions:
   contents: read
@@ -49,7 +49,7 @@ jobs:
           path: ${{ runner.temp }}/tailscale-evidence/result.json
           retention-days: 7
   android-h3:
-    if: inputs.mode == 'android-h3' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    if: (inputs.mode == 'android-h3' || inputs.mode == 'android-production-h3') && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -78,15 +78,15 @@ jobs:
         run: |
           PYTHONPATH=tool/native_fingerprint python3 -m unittest test_android_quic_control test_tailscale_preflight test_tailscale_h3
           gradle -p tool/native_fingerprint/android :app:assembleDebug
-          cargo test --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe
-          cargo build --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe
+          cargo test --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe --example h3_production_client
+          cargo build --locked --manifest-path core/net_core/Cargo.toml --example h3_fingerprint_probe --example h3_production_client --example fingerprint_probe
           chmod +x tool/native_fingerprint/android_driver.py
       - name: Prepare emulator before joining tailnet
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          sdkmanager 'system-images;android-35;google_apis;x86_64' 'platform-tools' 'emulator' > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'system-images;android-35;google_apis;x86_64' 'platform-tools' 'emulator' > /dev/null
       - name: Read public federation identifiers
         id: config
         run: |
@@ -104,7 +104,7 @@ jobs:
           retry: '1'
           timeout: 60s
       - name: Verify trusted Alt-Svc and untrusted-certificate rejection
-        timeout-minutes: 8
+        timeout-minutes: 10
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -115,7 +115,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 100.100.100.100
           script: |
             adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
-            timeout 240s python3 tool/native_fingerprint/tailscale_h3.py --output "${{ runner.temp }}/trusted-h3"
+            timeout 360s python3 tool/native_fingerprint/tailscale_h3.py ${{ inputs.mode == 'android-production-h3' && '--production' || '' }} --output "${{ runner.temp }}/trusted-h3"
       - name: Leave tailnet immediately after test
         if: always()
         run: sudo tailscale logout || true
