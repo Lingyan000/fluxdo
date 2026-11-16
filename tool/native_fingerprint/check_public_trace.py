@@ -1,0 +1,28 @@
+"""只读核对公开诊断页是否声明 H3；不保存响应中的出口 IP。"""
+import json
+from pathlib import Path
+import sys
+import urllib.request
+
+
+def main():
+    rows = []
+    for host in ('cloudflare-quic.com', 'one.one.one.one'):
+        for path in ('/', '/cdn-cgi/trace'):
+            row = {'url': 'https://'+host+path}
+            try:
+                with urllib.request.urlopen(row['url'], timeout=15) as response:
+                    row.update(status=response.status, final_url=response.url,
+                               alt_svc=response.headers.get('alt-svc'), server=response.headers.get('server'))
+                    if path.endswith('/trace'):
+                        fields = dict(line.split('=', 1) for line in response.read(8192).decode().splitlines() if '=' in line)
+                        row['trace'] = {k: fields.get(k) for k in ('http', 'tls', 'sni')}
+            except Exception as error:
+                row['error'] = str(error)
+            rows.append(row)
+            print(json.dumps(row), flush=True)
+    Path(sys.argv[1]).write_text(json.dumps(rows, indent=2)+'\n')
+
+
+if __name__ == '__main__':
+    main()

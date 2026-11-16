@@ -5,7 +5,7 @@ on:
       mode:
         description: '按需运行；构建完成后才加入临时节点'
         type: choice
-        options: [preflight, android-h3, android-production-h3, windows-production-h3, macos-production-h3, apple-production-h3, ios15-production-h3, ios-core-production-h3, browserstack-account]
+        options: [preflight, android-h3, android-production-h3, windows-production-h3, macos-production-h3, apple-production-h3, ios15-production-h3, ios-core-production-h3, browserstack-account, public-endpoint]
         default: preflight
       app_only:
         description: '已有原生 UA 证据时，仅补应用 UA 与证书负对照'
@@ -22,9 +22,24 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tailscale-h3-${{ inputs.mode == 'browserstack-account' && 'account' || 'network' }}
+  group: tailscale-h3-${{ (inputs.mode == 'browserstack-account' || inputs.mode == 'public-endpoint') && 'account' || 'network' }}
   cancel-in-progress: false
 jobs:
+  public-endpoint:
+    if: inputs.mode == 'public-endpoint' && github.repository == 'Lingyan000/fluxdo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read public protocol advertisements without devices
+        run: python3 tool/native_fingerprint/check_public_trace.py "$RUNNER_TEMP/public-endpoint.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-endpoint-${{ github.run_id }}
+          path: ${{ runner.temp }}/public-endpoint.json
+          retention-days: 7
   preflight:
     if: inputs.mode == 'preflight' && github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
     runs-on: ubuntu-latest
