@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from compare_h3_production import compare, initial_layout
+from compare_h3_production import compare, initial_layout, transport_checks
 
 
 class H3EvidenceTest(unittest.TestCase):
@@ -24,6 +24,23 @@ class H3EvidenceTest(unittest.TestCase):
             (root / 'client/profile.json').write_text(json.dumps(data['profile']))
             (root / 'server/h3-capture.json').write_text(json.dumps(data['capture']))
             return compare(root)['all_checked_fields_match']
+
+    def test_transport_checks_reject_corrupt_initial_tls_and_parameters(self):
+        self.assertTrue(all(transport_checks(self.fixture['profile'], self.fixture['capture'])[0].values()))
+        for mutate in [lambda d: d['capture']['initial'].update(datagram_sizes=[1]),
+                       lambda d: d['capture'].update(tls={}),
+                       lambda d: d['capture'].update(transport_parameters=[])]:
+            data = copy.deepcopy(self.fixture)
+            mutate(data)
+            self.assertFalse(all(transport_checks(data['profile'], data['capture'])[0].values()))
+
+    def test_transport_checks_require_frozen_boundary_and_calibration(self):
+        for mutate in [lambda d: d['capture']['h3'][0]['first_request_boundary'].update(status='timed_out'),
+                       lambda d: d['profile'].update(wire_fields=[]),
+                       lambda d: d['capture'].update(h3=[])]:
+            data = copy.deepcopy(self.fixture)
+            mutate(data)
+            self.assertFalse(all(transport_checks(data['profile'], data['capture'])[0].values()))
 
     def test_archived_native_sample_passes(self):
         self.assertTrue(self.evaluate())

@@ -24,7 +24,7 @@ Tailscale 一次性设置（已完成，保留用于复现）
    可进一步增加 custom claim workflow_ref：
    Lingyan000/fluxdo/.github/workflows/tailscale-h3-preflight.yaml@refs/heads/diagnostics/tailscale-h3-preflight-20261116
 4. 返回生成的 Client ID 和 Audience。它们不是秘密；不要提供 OAuth secret、auth key 或 JWT。
-   填入 tool/native_fingerprint/tailscale-oidc.json 后，才推送专用预检分支。
+   填入 tool/native_fingerprint/tailscale-oidc.json 后，推送专用分支并手动选择工作流模式。
    当前配置已填写；缺少标识时脚本会在加入网络前失败。
 
 实现和额度边界
@@ -56,8 +56,9 @@ Tailscale 一次性设置（已完成，保留用于复现）
   Linux 系统信任链和主机名均验证通过，未使用自定义 CA、证书豁免或跳过主机名检查。
 - 本地配置/TLS 正反对照 3 项和架构守卫 8 项通过。
 - 这是同一节点向自身 tailnet 地址发起的 TLS/UDP 检查，不是跨节点路径测试。
-  尚未部署可信远程 H3 采样服务，也未执行原生 WebView 的正常信任链、QUIC/H3/QPACK 校准。
-  后续需实现可信证书采样入口及诊断驱动，才可继续验证 Android 默认环境和 Windows 业务 profile。
+  后续已完成受控可信 H3 采集端、Android 原生正常信任链和生产模板回放，见
+  docs/diagnostics/h3-trusted-origin-20261116.txt；这里的单节点预检本身不计作 H3 证据。
+  正式应用可信入口与 Windows 业务 profile 等剩余范围以新报告为准。
   未修改 CSRF、Cookie、Origin、Referer 策略；不把本次预检计入原有 108 组 H3 扩展请求。
 
 官方依据

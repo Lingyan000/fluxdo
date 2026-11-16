@@ -106,19 +106,16 @@ def initial_layout(flight):
             'pings_per_packet': pings}
 
 
-def compare(folder):
-    source=json.loads((folder/'client/profile.json').read_text())
-    actual=json.loads((folder/'server/h3-capture.json').read_text())
-    requests=actual.get('h3', [])
+def transport_checks(source, actual):
+    """传输与首请求边界检查，可用于请求路径不同的扩展场景。"""
+    requests = actual.get('h3', [])
     if not requests:
-        result={'checks':{'three_production_h3_requests':False},'all_checked_fields_match':False,
-                'field_comparison':[], 'error':'missing production H3 requests'}
-        (folder/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
-        return result
-    phase_count=len(source['wire_fields'])
-    compared=requests[:phase_count]
-    checks={'calibrated':phase_count>=3,'three_production_h3_requests':len(requests)>=3,
-        'all_sampled_phases_received':phase_count>=3 and len(compared)==phase_count,
+        return {'production_h3_requests_present': False}, None
+    compared = requests[:len(source['wire_fields'])]
+    checks = {
+        'source_calibrated':len(source['wire_fields'])>=3,
+        'actual_first_boundary_frozen':requests[0]['first_request_boundary'].get('status')=='ready'
+            and complete_boundary(requests[0]['first_request_boundary'].get('snapshot', {}), require_bindings=True),
         'driver_succeeded':actual.get('driver_success') is True,
         'source_initial_complete':source['flight'].get('complete') is True,
         'actual_initial_complete':actual['initial'].get('complete') is True,
@@ -148,6 +145,25 @@ def compare(folder):
     else:
         checks['tls_raw_evidence_present']=False
     checks['initial_streams']=streams(source['boundary'])==streams(requests[0]['first_request_boundary']['snapshot'])
+    return checks, {'source': source_layout, 'actual': actual_layout}
+
+
+def compare(folder):
+    source=json.loads((folder/'client/profile.json').read_text())
+    actual=json.loads((folder/'server/h3-capture.json').read_text())
+    requests=actual.get('h3', [])
+    if not requests:
+        result={'checks':{'three_production_h3_requests':False},'all_checked_fields_match':False,
+                'field_comparison':[], 'error':'missing production H3 requests'}
+        (folder/'comparison.json').write_text(json.dumps(result,indent=2)+'\n')
+        return result
+    phase_count=len(source['wire_fields'])
+    compared=requests[:phase_count]
+    checks={'calibrated':phase_count>=3,'three_production_h3_requests':len(requests)>=3,
+        'all_sampled_phases_received':phase_count>=3 and len(compared)==phase_count,
+    }
+    transport, layouts = transport_checks(source, actual)
+    checks.update(transport)
     warm=compared[-1] if compared else requests[0]
     checks['warm_streams']=streams(source['warm_boundary'])==streams(warm['connection'])
     checks['warm_control_frames']=controls(source['warm_boundary'])==controls(warm['connection'])
@@ -181,7 +197,7 @@ def compare(folder):
         differences.append({'phase':i,'differences':mismatch,'unmatched_fields':sorted(missing),
             'source_fields_not_requested':sorted(set(expected)-set(emitted))})
     result={'checks':checks,'all_checked_fields_match':all(checks.values()),'field_comparison':differences,
-        'initial_layout':{'source':source_layout,'actual':actual_layout},
+        'initial_layout':layouts,
         'scope':'production HttpEgressClient versus fresh local browser samples',
         'not_verified':['physical device and production network','Cloudflare acceptance','exact QPACK bytes for identical business requests',
             'random Initial layout distribution','cross-stream arrival order',

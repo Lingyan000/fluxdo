@@ -67,6 +67,7 @@ def production_replay(root, output, native, domain, env):
     sys.path.insert(0, str(root/'tool'))
     from compare_fingerprint_capture import compare
     from run_h3_qpack_scenarios import compare_cases
+    from compare_h3_production import transport_checks
     examples = root/'core/net_core/target/debug/examples'
     driver = root/'tool/native_fingerprint/android_driver.py'
     samples = output/'tcp-samples'
@@ -96,10 +97,13 @@ def production_replay(root, output, native, domain, env):
     result['replay_exit_code'] = replay.returncode
     result['calibration_browsers'] = [audit_browser(core/'client'/f'browser-{i}.stdout',
         core/'client'/f'browser-netlog-{i}.json', domain) for i in range(2)]
-    result['comparison'] = compare_cases(json.loads((native/'h3-capture.json').read_text()),
-                                        json.loads((core/'h3-capture.json').read_text()))
+    capture = json.loads((core/'h3-capture.json').read_text())
+    checks, layout = transport_checks(json.loads((core/'client/profile.json').read_text()), capture)
+    result['transport_comparison'] = {'passed': all(checks.values()), 'checks': checks, 'initial_layout': layout}
+    result['comparison'] = compare_cases(json.loads((native/'h3-capture.json').read_text()), capture)
     result['comparison']['scope'] = 'trusted tailnet origin; native Android emulator vs production Core on Linux; common fields'
     result['passed'] = (replay.returncode == 0 and result['comparison']['passed']
+                        and result['transport_comparison']['passed']
                         and all(row['passed'] for row in result['calibration_browsers']))
     (output/'comparison.json').write_text(json.dumps(result, indent=2)+'\n')
     return result
