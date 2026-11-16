@@ -3,15 +3,26 @@ import json
 from pathlib import Path
 import sys
 import urllib.request
+import urllib.error
 
 
 def main():
     rows = []
-    for host in ('cloudflare-quic.com', 'one.one.one.one'):
-        for path in ('/', '/cdn-cgi/trace'):
+    targets = {
+        'cloudflare-quic.com': ('/', '/cdn-cgi/trace'),
+        'one.one.one.one': ('/', '/cdn-cgi/trace'),
+        'www.cloudflare.com': ('/robots.txt', '/cdn-cgi/trace'),
+        'speed.cloudflare.com': ('/__down?bytes=0', '/cdn-cgi/trace'),
+    }
+    for host, paths in targets.items():
+        for path in paths:
             row = {'url': 'https://'+host+path}
             try:
-                with urllib.request.urlopen(row['url'], timeout=15) as response:
+                try:
+                    response = urllib.request.urlopen(row['url'], timeout=10)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
                     row.update(status=response.status, final_url=response.url,
                                alt_svc=response.headers.get('alt-svc'), server=response.headers.get('server'))
                     if path.endswith('/trace'):
