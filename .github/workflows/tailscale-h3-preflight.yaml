@@ -286,6 +286,8 @@ jobs:
         run: |
           python3 tool/native_fingerprint/tailscale_preflight.py --config
           install -d -m 700 "$RUNNER_TEMP/fluxdo-tailscale-state"
+      - name: Save runner DNS before Tailscale changes it
+        run: python3 tool/apple_fingerprint/tailnet_dns.py --state "$RUNNER_TEMP/apple-dns-before.json"
       - name: Join one ephemeral Apple node
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
         with:
@@ -308,6 +310,9 @@ jobs:
         if: always()
         run: |
           if command -v tailscale >/dev/null; then sudo tailscale logout; fi
+      - name: Restore runner DNS for public protocol checks
+        if: always()
+        run: python3 tool/apple_fingerprint/tailnet_dns.py --state "$RUNNER_TEMP/apple-dns-before.json" --restore
       - name: Verify public protocol on simulator before using a device
         if: inputs.physical_ios && success()
         timeout-minutes: 4
