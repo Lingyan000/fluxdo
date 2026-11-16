@@ -59,3 +59,37 @@ Apple 续验实现（待 Apple SDK 编译和云端运行）
   flutter_lints 缺失修复已有完整工程的静态检查证据，仍不代替 Windows 运行结果。
 - 相关 Python 44 项通过（含证书/本地 socket 检查），架构守卫 8 项通过。
 - App Automate 只读账户检查已发起，不启动设备。
+
+Windows 共享环境复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43801959442
+  提交 3bf501f70bb4b10b30c3158a5af9307a8a4bada3，job 133084061228，成功。
+- WebView2 131.0.2903.86；主 WebView 与采样 WebView 使用同一环境，不加 QUIC/SPKI 强制参数。
+- 证据下载后独立复核：正常证书 cert_status=0、known_root=true，两个生产校准 origin 同样通过。
+  生产 Core 27 项传输比对、九类请求 QPACK 比对通过；当前校准模板与原生共享环境的 27 项也通过。
+- 同域名不可信证书负对照：cert_status=4、known_root=false、net_error=-202，
+  TCP/H3 应用请求均为零。六次宿主运行的主控制器存活与临时 profile 删除均通过。
+- 与上一轮独立环境模板直接交叉比较出现两项差异：GREASE 控制帧随机长度、首请求 QPACK 流启动状态。
+  这不是已证明由环境隔离引起的差异；来源还包括随机性和 SETTINGS/请求时序。
+  不能用旧轮模板直接代替当前环境校准。本轮实时采样后的原生/Core 对照通过。
+- 产物 14197062162（705920 字节），下载 SHA-256 与 GitHub digest 一致：
+  db73cee1b296c7879aab92d47ee7f3d1151bb89f65e49ea669ec7472b4550078
+- 显式登出和 Action 最终停止 Tailscale 均成功。新增 BrowserStack 会话为零。
+
+App Automate 账户结果
+- https://github.com/Lingyan000/fluxdo/actions/runs/43801861617 成功。
+- automate_plan=Free，running=0、queued=0、parallel_sessions_max_allowed=5。
+- 设备列表含 iOS 15 与 26；这是可选大版本，不证明具体设备的次版本或当前调度成功。
+- 未获得剩余免费分钟数。新增真机入口须先通过同源码模拟器公开协议检查，
+  只发送一次会话创建请求，从创建开始计 120 秒观察预算，随后 DELETE 释放设备；不重试创建。
+  只读公开协议检查不代替受控服务端的完整指纹抓包，也不访问用户账户或发送业务写入。
+
+Linux 已测后端的范围核对
+- 实际加载的 WPE libsoup 库通过 soup_get_major/minor/micro_version 返回 3.6.5；
+  WPE 库的动态依赖指向该打包版本，版本判断不依赖 UA 猜测。
+- 对应上游 tag 3.6.5：766e17528251c9b696a6076300ac61adc95536ac。
+  https://github.com/GNOME/libsoup/blob/766e17528251c9b696a6076300ac61adc95536ac/libsoup/soup-connection.c
+  soup_connection_create_io_data 仅实例化 HTTP/1.x 和 HTTP/2 实现，协商路径也只选择这三种版本。
+- 这条已测 libsoup 连接路径不是 H3 实现；应维持此前已验证的原生 TLS/H2 路径，
+  不把 Apple WebKit 的 H3 能力套到它上面，也不外推为所有 Linux WebView 永久不支持 H3。
+- 本地 libsoup 二进制 SHA-256：3fed8b167430f3b22c86498da384cc955489820a9a9a604bb75c3997d922a7c5。
+  对应 soup-connection.c SHA-256：2c3788647c77596827b4822192d46e35bfbb0169023a4453a5332be0ffa54645。

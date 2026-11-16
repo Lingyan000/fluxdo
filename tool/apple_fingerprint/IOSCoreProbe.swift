@@ -25,12 +25,16 @@ private func receiveCoreEvent(_ id: UInt64, _ kind: UInt8, _ bytes: UnsafeMutabl
 }
 
 @MainActor
-final class CoreProbe {
+final class CoreProbe: NSObject, WKNavigationDelegate {
     static var active: CoreProbe?
     let controller: UIViewController
     var probe: Probe?
     var userAgent = ""
     var finished = false
+    var traceURL: URL?
+    var traceView: WKWebView?
+    var navigation: CheckedContinuation<Void, Error>?
+    var navigationGeneration = 0
     var report: [String: Any] = ["engine": "iOS production Core FFI", "core_running_on_ios": true,
         "physical_device": false, "full_flutter_app": false, "success": false]
     var requests: [[String: Any]] = []
@@ -42,7 +46,76 @@ final class CoreProbe {
     }
     var pending: [UInt64: Pending] = [:]
 
-    init(_ controller: UIViewController) { self.controller = controller }
+    init(_ controller: UIViewController) { self.controller = controller; super.init() }
+
+    func finishNavigation(_ error: Error? = nil) {
+        guard let pending = navigation else { return }
+        navigation = nil
+        if let error = error { pending.resume(throwing: error) } else { pending.resume() }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishNavigation() }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finishNavigation(error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finishNavigation(error) }
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(action.request.url == traceURL ? .allow : .cancel)
+    }
+
+    func traceFields(_ text: String) -> [String: String] {
+        var result: [String: String] = [:]
+        // 公开诊断响应也可能含出口 IP；证据只保留协议与 TLS 状态。
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            if parts.count == 2 && ["http", "tls", "sni"].contains(String(parts[0])) {
+                result[String(parts[0])] = String(parts[1])
+            }
+        }
+        return result
+    }
+
+    func publicTrace(_ url: URL) async throws {
+        traceURL = url
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
+        webView.customUserAgent = userAgent
+        webView.navigationDelegate = self
+        traceView = webView
+        controller.view = webView
+        var native: [[String: String]] = []
+        for _ in 0..<4 {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                navigation = continuation
+                navigationGeneration += 1
+                let generation = navigationGeneration
+                webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak webView] in
+                    // 只取消仍在等待的导航；前一轮已完成的定时器不能影响下一轮。
+                    guard let self = self, self.navigationGeneration == generation, self.navigation != nil else { return }
+                    self.finishNavigation(CoreProbeError.failed("Public trace navigation timed out"))
+                    webView?.stopLoading()
+                }
+            }
+            let body = try await webView.evaluateJavaScript("document.body.innerText") as? String ?? ""
+            let fields = traceFields(body)
+            native.append(fields)
+            if ["h3", "http/3"].contains(fields["http"]?.lowercased() ?? "") { break }
+            try await Task.sleep(nanoseconds: 300_000_000)
+        }
+        report["native_public_trace"] = native
+        var core: [[String: Any]] = []
+        for _ in 0..<12 {
+            let response = try await request(url.absoluteString)
+            let fields = traceFields(response["body"] as? String ?? "")
+            core.append(["http_version": response["http_version"] ?? "", "status": response["status"] ?? 0, "trace": fields])
+            if response["http_version"] as? String == "3.0", ["h3", "http/3"].contains(fields["http"]?.lowercased() ?? "") { break }
+            try await Task.sleep(nanoseconds: 300_000_000)
+        }
+        report["core_public_trace"] = core
+        report["scope"] = "Public protocol confirmation with live in-app calibration; no server-side wire fingerprint comparison"
+        guard native.contains(where: { ["h3", "http/3"].contains($0["http"]?.lowercased() ?? "") }),
+              core.last?["http_version"] as? String == "3.0" else {
+            throw CoreProbeError.failed("Native and Core did not both confirm public H3")
+        }
+    }
 
     func state() throws -> [String: Any] {
         guard let text = coreStatus() else { throw CoreProbeError.failed("Core status missing") }
@@ -136,14 +209,26 @@ final class CoreProbe {
         CoreProbe.active = self
         coreSetCallback(receiveCoreEvent)
         do {
-            guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://") }),
-                  let url = URL(string: raw), url.user == nil, url.password == nil,
-                  let host = url.host, let port = url.port,
-                  host == ProcessInfo.processInfo.environment["FLUXDO_TRUSTED_PROBE_HOST"],
-                  host.range(of: "^[a-z0-9][a-z0-9-]*\\.[a-z0-9-]+\\.ts\\.net$", options: .regularExpression) != nil,
-                  url.path == "/fluxdo-probe" else {
+            let traceConfig = Bundle.main.url(forResource: "trace-target", withExtension: "json")
+            let trace = try traceConfig.map { try JSONSerialization.jsonObject(with: Data(contentsOf: $0)) as! [String: String] }
+            guard let raw = trace?["url"] ?? CommandLine.arguments.first(where: { $0.hasPrefix("https://") }),
+                  let url = URL(string: raw), url.scheme == "https", url.user == nil, url.password == nil,
+                  let host = url.host else {
                 throw CoreProbeError.failed("Explicit trusted synthetic origin required")
             }
+            let port = url.port ?? 443
+            if trace == nil {
+                guard host == ProcessInfo.processInfo.environment["FLUXDO_TRUSTED_PROBE_HOST"],
+                      host.range(of: "^[a-z0-9][a-z0-9-]*\\.[a-z0-9-]+\\.ts\\.net$", options: .regularExpression) != nil,
+                      url.port != nil, url.path == "/fluxdo-probe" else {
+                    throw CoreProbeError.failed("Explicit trusted synthetic origin required")
+                }
+            } else { traceURL = url }
+            #if targetEnvironment(simulator)
+            report["physical_device"] = false
+            #else
+            report["physical_device"] = true
+            #endif
             let identity = Probe()
             controller.view = identity.webView
             let native = try await identity.webView.evaluateJavaScript("navigator.userAgent") as! String
@@ -173,6 +258,12 @@ final class CoreProbe {
             guard let diagnostics = calibrated["template_diagnostics"] as? [String: Any],
                   let h3 = diagnostics["h3"] as? [String: Any], h3["enabled_for_template"] as? Bool == true else {
                 throw CoreProbeError.failed("Live iOS H3 calibration incomplete")
+            }
+            if trace != nil {
+                try await publicTrace(url)
+                report["success"] = true
+                finish()
+                return
             }
             let origin = "https://\(host):\(port)"
             var reached = false
@@ -213,6 +304,20 @@ final class CoreProbe {
         coreDetach()
         report["core_shutdown"] = (try? state()["running"] as? Bool) == false
         if report["core_shutdown"] as? Bool != true { report["success"] = false }
+        if traceURL != nil {
+            guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { exit(1) }
+            if let name = ProcessInfo.processInfo.environment["FLUXDO_APPLE_REPORT_FILE"],
+               name.hasPrefix("fluxdo-report-"), !name.contains("/") {
+                do { try data.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name), options: .atomic) }
+                catch { exit(1) }
+            }
+            let text = UITextView(frame: controller.view.bounds)
+            text.isEditable = false
+            text.accessibilityIdentifier = "fluxdo-core-report"
+            text.text = String(data: data, encoding: .utf8)!
+            controller.view = text
+            return
+        }
         guard let name = ProcessInfo.processInfo.environment["FLUXDO_APPLE_REPORT_FILE"],
               name.hasPrefix("fluxdo-report-"), !name.contains("/"),
               let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { exit(1) }
