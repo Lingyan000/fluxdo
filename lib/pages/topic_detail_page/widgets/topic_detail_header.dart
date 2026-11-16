@@ -277,30 +277,32 @@ class TopicDetailHeader extends ConsumerWidget {
                     ),
                     Tooltip(
                       message: TimeUtils.formatTooltipTime(detail.createdAt),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Symbols.schedule_rounded,
-                            size: 14,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant
-                                .withValues(alpha: 0.7),
-                          ),
-                          const SizedBox(width: 4),
-                          RelativeTimeText(
-                            dateTime: detail.createdAt,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant
-                                      .withValues(alpha: 0.8),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                          ),
-                        ],
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            _metadataIconSpan(
+                              Theme.of(context),
+                              Symbols.schedule_rounded,
+                            ),
+                            // 相对时间是独立组件，按基线嵌入与其他项对齐
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: RelativeTimeText(
+                                dateTime: detail.createdAt,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withValues(alpha: 0.8),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ),
                   ],
@@ -342,32 +344,49 @@ class TopicDetailHeader extends ConsumerWidget {
     String? label,
   }) {
     final theme = Theme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
+    // 图标、数值与标签同段排版：图标按 middle 对齐文字中线，数值与标签
+    // 共用基线。拆成 Row 里的多个组件各自居中时，图标会偏高，西文数字
+    // 与中文回退字体的行高不同也会让两段文字上下错开
+    return Text.rich(
+      TextSpan(
+        children: [
+          _metadataIconSpan(theme, icon),
+          TextSpan(
+            text: text,
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (label != null) ...[
+            const WidgetSpan(child: SizedBox(width: 2)),
+            TextSpan(
+              text: label,
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant.withValues(
+                  alpha: 0.5,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      style: theme.textTheme.bodySmall,
+    );
+  }
+
+  /// 元数据项前的图标及其后间距
+  InlineSpan _metadataIconSpan(ThemeData theme, IconData icon) => TextSpan(
+    children: [
+      WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Icon(
           icon,
           size: 14,
           color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
         ),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        if (label != null) ...[
-          const SizedBox(width: 2),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+      ),
+      const WidgetSpan(child: SizedBox(width: 4)),
+    ],
+  );
 }

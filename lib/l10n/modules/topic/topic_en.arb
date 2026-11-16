@@ -28,7 +28,7 @@
   "topicDetail_linksLabel": "Links",
   "topicDetail_mostLikedReplies": "Most liked replies",
   "topicDetail_noLikedReplies": "No replies have been liked yet",
-  "topicDetail_postCountShort": "{count, plural, one {1 post} other {{count} posts}}",
+  "topicDetail_postUnit": "{count, plural, one {post} other {posts}}",
   "topicDetail_linkClicks": "{count, plural, one {1 click} other {{count} clicks}}",
   "topicDetail_slowModeNotice": "Please wait {duration} between posts in this topic.",
   "topicDetail_autoDeleteRepliesNotice": "Replies to this topic are automatically deleted after {duration}.",
