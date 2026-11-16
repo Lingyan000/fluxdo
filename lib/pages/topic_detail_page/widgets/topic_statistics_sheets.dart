@@ -9,6 +9,7 @@ import '../../../models/search_result.dart';
 import '../../../models/topic.dart';
 import '../../../utils/number_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
+import '../../../widgets/common/inline_icon_span.dart';
 import '../../../widgets/common/smart_avatar.dart';
 
 /// 话题统计区各弹层的列表内容：参与者、链接、获赞最多的回复。
@@ -185,6 +186,7 @@ class _CountPill extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final color = colorScheme.onSurfaceVariant;
+    final textStyle = theme.textTheme.labelMedium;
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: colorScheme.surfaceContainerHighest,
@@ -197,14 +199,13 @@ class _CountPill extends StatelessWidget {
         child: Text.rich(
           TextSpan(
             children: [
-              if (icon != null) ...[
-                WidgetSpan(
-                  alignment: PlaceholderAlignment.middle,
-                  // 心形上宽下尖，字形在图标方框里偏上，下移做光学补偿
-                  child: Transform.translate(
-                    offset: const Offset(0, 0.75),
-                    child: Icon(icon, size: 13, fill: 1, color: color),
-                  ),
+              if (icon case final icon?) ...[
+                inlineIconSpan(
+                  icon,
+                  size: 13,
+                  fill: 1,
+                  color: color,
+                  textStyle: textStyle ?? const TextStyle(),
                 ),
                 const WidgetSpan(child: SizedBox(width: 3)),
               ],
@@ -218,7 +219,7 @@ class _CountPill extends StatelessWidget {
               ],
             ],
           ),
-          style: theme.textTheme.labelMedium?.copyWith(color: color),
+          style: textStyle?.copyWith(color: color),
         ),
       ),
     );

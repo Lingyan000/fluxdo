@@ -12,6 +12,7 @@ import '../../../providers/discourse_providers.dart';
 import '../../../utils/font_awesome_helper.dart';
 import '../../../widgets/topic/topic_summary_widget.dart';
 import '../../../widgets/common/emoji_text.dart';
+import '../../../widgets/common/inline_icon_span.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/relative_time_text.dart';
 import '../../../utils/number_utils.dart';
@@ -344,9 +345,9 @@ class TopicDetailHeader extends ConsumerWidget {
     String? label,
   }) {
     final theme = Theme.of(context);
-    // 图标、数值与标签同段排版：图标按 middle 对齐文字中线，数值与标签
-    // 共用基线。拆成 Row 里的多个组件各自居中时，图标会偏高，西文数字
-    // 与中文回退字体的行高不同也会让两段文字上下错开
+    // 图标、数值与标签同段排版：数值与标签共用基线，图标经
+    // inlineIconSpan 按基线定位。拆成 Row 里的多个组件各自居中时，西文
+    // 数字与中文回退字体的行高不同会让两段文字上下错开
     return Text.rich(
       TextSpan(
         children: [
@@ -378,13 +379,11 @@ class TopicDetailHeader extends ConsumerWidget {
   /// 元数据项前的图标及其后间距
   InlineSpan _metadataIconSpan(ThemeData theme, IconData icon) => TextSpan(
     children: [
-      WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: Icon(
-          icon,
-          size: 14,
-          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-        ),
+      inlineIconSpan(
+        icon,
+        size: 14,
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+        textStyle: theme.textTheme.bodySmall ?? const TextStyle(),
       ),
       const WidgetSpan(child: SizedBox(width: 4)),
     ],

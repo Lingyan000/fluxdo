@@ -11,6 +11,7 @@ import '../../../services/discourse/discourse_service.dart';
 import '../../../utils/link_launcher.dart';
 import '../../../utils/number_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
+import '../../../widgets/common/inline_icon_span.dart';
 import '../../../widgets/common/smart_avatar.dart';
 import '../../../widgets/user/user_card.dart';
 import 'topic_statistics_sheets.dart';
@@ -190,7 +191,7 @@ class _TopicStatisticsState extends State<TopicStatistics> {
         ),
       if (minutes > 3)
         _StatItem(
-          icon: Symbols.auto_stories_rounded,
+          icon: Symbols.menu_book_rounded,
           value: '$minutes',
           label: l10n.topicDetail_readMinutesLabel,
           semanticLabel: l10n.topicDetail_readMinutes(minutes),
@@ -232,20 +233,24 @@ class _StatItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = theme.colorScheme.onSurfaceVariant;
+    final textStyle = theme.textTheme.bodySmall ?? const TextStyle();
     final content = Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      // 图标、数值、标签与箭头同段排版：图标按 middle 对齐文字中线，数值与
-      // 标签共用基线。拆成 Row 里的多个组件各自居中时，图标会偏高，西文
-      // 数字与中文回退字体的行高不同也会让两段文字上下错开
+      // 图标、数值、标签与箭头同段排版：数值与标签共用基线，图标经
+      // inlineIconSpan 按基线定位。拆成 Row 里的多个组件各自居中时，西文
+      // 数字与中文回退字体的行高不同会让两段文字上下错开
       child: Text.rich(
         TextSpan(
           children: [
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child:
-                  leading ??
-                  Icon(icon, size: 14, color: color.withValues(alpha: 0.7)),
-            ),
+            if (leading case final leading?)
+              WidgetSpan(alignment: PlaceholderAlignment.middle, child: leading)
+            else
+              inlineIconSpan(
+                icon,
+                size: 14,
+                color: color.withValues(alpha: 0.7),
+                textStyle: textStyle,
+              ),
             WidgetSpan(child: SizedBox(width: leading != null ? 6 : 4)),
             TextSpan(
               text: value,
@@ -260,13 +265,11 @@ class _StatItem extends StatelessWidget {
               style: TextStyle(color: color.withValues(alpha: 0.5)),
             ),
             if (onTap != null)
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Icon(
-                  Symbols.chevron_right_rounded,
-                  size: 14,
-                  color: color.withValues(alpha: 0.5),
-                ),
+              inlineIconSpan(
+                Symbols.chevron_right_rounded,
+                size: 14,
+                color: color.withValues(alpha: 0.5),
+                textStyle: textStyle,
               ),
           ],
         ),
