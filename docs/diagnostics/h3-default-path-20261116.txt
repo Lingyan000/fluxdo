@@ -1,5 +1,7 @@
 正式 H3 采样入口与生命周期验证（2026-11-16）
 
+后续 Android 内部网络日志、证书/Alt-Svc 证据及重采样修复见 h3-default-netlog-20261116.txt。
+
 本轮范围
 - 接续 PR 432，基点 b50eee39a65c88eddc632b69cfb8549609b4b0dc。
 - Windows 将独立探针环境接入正式采样服务；Android 补齐默认配置对照。
