@@ -12,8 +12,6 @@ import '../../../utils/emoji_shortcodes.dart';
 class ChatComposerController extends TextEditingController {
   ChatComposerController({super.text});
 
-  static final RegExp _shortcode = RegExp(r':([a-zA-Z0-9_+\-]+):');
-
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
@@ -40,7 +38,7 @@ class ChatComposerController extends TextEditingController {
     final fontSize = style?.fontSize ?? 16;
     final emojiSize = fontSize * 1.35;
 
-    for (final match in _shortcode.allMatches(text)) {
+    for (final match in EmojiHandler.shortcodeMatches(text)) {
       if (composing != null &&
           match.start < composing.end &&
           match.end > composing.start) {

@@ -1422,7 +1422,7 @@ class _ChatChannelPageState extends ConsumerState<ChatChannelPage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  EmojiText(
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

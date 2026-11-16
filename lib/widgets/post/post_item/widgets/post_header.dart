@@ -24,6 +24,7 @@ import '../../../user/user_card.dart';
 import '../../whisper_indicator.dart';
 import '../../post_boost/boost_danmaku.dart';
 import 'post_granted_badge.dart';
+import '../../../common/emoji_text.dart';
 
 /// 获取 emoji 图片 URL（未加载完成时返回空字符串，由 errorBuilder 处理）
 String _getEmojiUrl(String emojiName) {
@@ -45,7 +46,7 @@ class _PostAnniversaryIcon extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Image(
-        image: discourseImageProvider(url),
+        image: emojiImageProvider(url),
         width: 14,
         height: 14,
         errorBuilder: (_, _, _) => const SizedBox.shrink(),
@@ -261,14 +262,7 @@ class PostHeader extends ConsumerWidget {
                     const SizedBox(width: 4),
                     Tooltip(
                       message: userStatus.description ?? '',
-                      child: Image(
-                        image: emojiImageProvider(
-                          _getEmojiUrl(userStatus.emoji!),
-                        ),
-                        width: 16,
-                        height: 16,
-                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                      ),
+                      child: EmojiImage(userStatus.emoji!, size: 16),
                     ),
                   ],
                   if (isTopicOwner && post.postNumber > 1) ...[

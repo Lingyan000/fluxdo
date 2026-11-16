@@ -21,6 +21,7 @@ import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
+import 'package:fluxdo/widgets/common/emoji_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../storage/bookmark_hive_test_support.dart';
@@ -404,10 +405,10 @@ void main() {
     expect(find.text('已打开 1 个'), findsNothing);
     expect(find.text('1'), findsOneWidget);
 
-    final titleText = tester.widget<Text>(
+    final titleText = tester.widget<EmojiText>(
       find.byKey(const ValueKey('bookmark-workspace-mobile-title-text')),
     );
-    expect(titleText.data, 'Alpha');
+    expect(titleText.text, 'Alpha');
     expect(titleText.maxLines, 1);
     expect(titleText.overflow, TextOverflow.ellipsis);
 

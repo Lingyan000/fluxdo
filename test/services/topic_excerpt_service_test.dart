@@ -43,6 +43,16 @@ void main() {
     expect(images.single, endsWith('/uploads/visible.jpg'));
   });
 
+  test('emoji 图片在摘要里保留为短代码', () {
+    expect(
+      TopicExcerptService.cleanExcerpt(
+        '<p>谢谢<img src="/images/emoji/twitter/smile.png?v=16" '
+        'title=":smile:" class="emoji" alt=":smile:"></p>',
+      ),
+      '谢谢:smile:',
+    );
+  });
+
   test('图片过滤不受属性顺序、引号、多个 class 和 SVG 参数影响', () {
     const cooked =
         '<img src="/uploads/custom.png" class="emoji extra">'

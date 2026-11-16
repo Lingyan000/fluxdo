@@ -215,6 +215,7 @@ Future<void> _pumpSourcePreview(
       width: 400,
       theme: ThemeData(),
       category: null,
+      emojiUrlOf: topicCardEmojiUrlResolver,
     );
   });
   await tester.pumpWidget(

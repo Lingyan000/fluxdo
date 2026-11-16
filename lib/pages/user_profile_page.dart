@@ -18,7 +18,6 @@ import '../utils/time_utils.dart';
 import '../utils/number_utils.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
-import '../services/emoji_handler.dart';
 
 import 'package:dio/dio.dart';
 
@@ -70,6 +69,7 @@ import '../l10n/s.dart';
 import '../widgets/common/hero_image.dart';
 import '../theme/app_colors.dart';
 import '../utils/color_utils.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 用户个人页
 /// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
@@ -2435,25 +2435,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget _buildStatusEmoji(UserStatus status) {
     final emoji = status.emoji;
     if (emoji == null || emoji.isEmpty) return const SizedBox.shrink();
-
-    final isEmojiName =
-        emoji.contains(RegExp(r'[a-zA-Z0-9_]')) &&
-        !emoji.contains(RegExp(r'[^\x00-\x7F]'));
-
-    if (isEmojiName) {
-      final cleanName = emoji.replaceAll(':', '');
-      final emojiUrl = _getEmojiUrl(cleanName);
-
-      return Image(
-        image: emojiImageProvider(emojiUrl),
-        width: 18,
-        height: 18,
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-      );
-    }
-
-    return Text(emoji, style: const TextStyle(fontSize: 16));
+    return EmojiImage(emoji, size: 18);
   }
 
   Widget _buildActivityTab() {
@@ -3296,7 +3278,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           child: Row(
             children: [
               Expanded(
-                child: Text(
+                child: EmojiText(
                   topic.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -3347,7 +3329,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           child: Row(
             children: [
               Expanded(
-                child: Text(
+                child: EmojiText(
                   topic?.title ??
                       context.l10n.userProfile_topicHash(
                         targetTopicId.toString(),
@@ -3411,7 +3393,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    EmojiText(
                       link.title ?? link.url,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -4056,9 +4038,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return Symbols.history_rounded;
     }
   }
-
-  String _getEmojiUrl(String emojiName) =>
-      EmojiHandler().getEmojiUrl(emojiName);
 
   String _getActionLabel(int? type) {
     switch (type) {

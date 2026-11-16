@@ -61,6 +61,7 @@ import '../services/log/log_writer.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 个人页面
 class ProfilePage extends ConsumerStatefulWidget {
@@ -1437,15 +1438,16 @@ class _ProfileStatusContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (emoji?.isNotEmpty ?? false) ...[
-          if (RegExp(r'[^\x00-\x7F]').hasMatch(emoji!))
-            Text(emoji!, style: const TextStyle(fontSize: 18, height: 1))
-          else
-            PreferenceStatusEmoji(emoji!, size: 18),
+          PreferenceStatusEmoji(emoji!, size: 18),
           if (text.isNotEmpty) const SizedBox(width: 6),
         ],
         if (text.isNotEmpty)
           Flexible(
-            child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: EmojiText(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
       ],
     ),

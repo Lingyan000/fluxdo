@@ -26,6 +26,7 @@ import '../l10n/s.dart';
 
 import 'package:app_icons/app_icons.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 徽章详情页面
 class BadgePage extends ConsumerStatefulWidget {
@@ -529,7 +530,7 @@ class _UserBadgeItem extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
+                            child: EmojiText(
                               userBadge.topicTitle!,
                               style: TextStyle(
                                 color: theme.colorScheme.onSurfaceVariant,

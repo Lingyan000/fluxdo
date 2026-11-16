@@ -26,6 +26,7 @@ import '../providers/selected_topic_provider.dart';
 import 'create_topic_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 草稿列表 Provider
 final draftsProvider = FutureProvider.autoDispose<List<Draft>>((ref) async {
@@ -514,7 +515,7 @@ class _DraftCard extends StatelessWidget {
               const SizedBox(height: 12),
 
               // 标题
-              Text(
+              EmojiText(
                 title,
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w500,
