@@ -34,6 +34,9 @@ def main():
             row['error'] = str(error)
         rows.append(row)
         (args.output/'matrix.json').write_text(json.dumps(rows, indent=2)+'\n')
+        # 即使产物上传失败，CI 主日志仍保留结果和失败阶段，不只留下退出码。
+        print(json.dumps({'target': target['name'], 'passed': row['passed'],
+              'exit_code': row.get('exit_code'), 'error': row.get('error') or row.get('result', {}).get('error')}), flush=True)
     return 0 if rows and all(r['passed'] for r in rows) else 1
 
 
