@@ -100,8 +100,9 @@ final class CoreProbe {
     }
 
     func request(_ url: String, method: String = "GET", headers: [[String]] = [], body: String = "") async throws -> [String: Any] {
+        let length = body.isEmpty ? [] : [["content-length", String(body.utf8.count)]]
         let meta: [String: Any] = ["method": method, "url": url,
-            "headers": [["user-agent", userAgent], ["accept", "*/*"]] + headers,
+            "headers": [["user-agent", userAgent], ["accept", "*/*"]] + headers + length,
             "has_body": !body.isEmpty, "connect_timeout_ms": 5000,
             "send_timeout_ms": 5000, "receive_timeout_ms": 5000]
         let json = String(data: try JSONSerialization.data(withJSONObject: meta), encoding: .utf8)!

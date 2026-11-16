@@ -76,6 +76,10 @@ def main():
         core_info = dict(info, CFBundleIdentifier='org.fluxdo.fingerprint.core')
         (core_app/'Info.plist').write_bytes(plistlib.dumps(core_info))
         target = 'aarch64-apple-ios-sim' if arch == 'arm64' else 'x86_64-apple-ios'
+        # 先检查 Swift 宿主，再进行耗时的 Rust 交叉编译。
+        run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-typecheck', '-swift-version', '5', '-parse-as-library',
+             '-D', 'FLUXDO_CORE_DIAGNOSTIC', '-sdk', output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path']),
+             '-target', arch+'-apple-ios15.0-simulator', source, identity, source.with_name('IOSCoreProbe.swift')], timeout=90)
         run(['rustup', 'target', 'add', target], timeout=120)
         run(['cargo', 'rustc', '--locked', '--manifest-path', repo/'core/net_core/Cargo.toml',
              '--lib', '--crate-type', 'staticlib', '--target', target], timeout=1200,
