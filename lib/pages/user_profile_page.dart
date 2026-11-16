@@ -44,6 +44,7 @@ import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
 import '../widgets/user/user_profile_header.dart';
+import '../widgets/user/activity_card_layout.dart';
 import '../widgets/user/activity_post_card.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/user/ignore_duration_picker.dart';
@@ -2793,24 +2794,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        key: PageStorageKey('user_${_username}_$filter'),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: actions.length + 1,
-        itemBuilder: (context, index) {
-          if (index == actions.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
-              onRetry: () => _loadMoreActions(filter),
-            );
-          }
-          return _buildActionItem(actions[index], (
-            index: index,
-            count: actions.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          key: PageStorageKey('user_${_username}_$filter'),
+          padding: padding,
+          itemCount: actions.length + 1,
+          itemBuilder: (context, index) {
+            if (index == actions.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
+                onRetry: () => _loadMoreActions(filter),
+              );
+            }
+            return _buildActionItem(actions[index], (
+              index: index,
+              count: actions.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3675,24 +3678,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: reactions.length + 1,
-        itemBuilder: (context, index) {
-          if (index == reactions.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore:
-                  _reactionsLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _reactionsLoadMoreFailed,
-              onRetry: _loadMoreReactions,
-            );
-          }
-          return _buildReactionItem(reactions[index], (
-            index: index,
-            count: reactions.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: reactions.length + 1,
+          itemBuilder: (context, index) {
+            if (index == reactions.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _reactionsLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _reactionsLoadMoreFailed,
+                onRetry: _loadMoreReactions,
+              );
+            }
+            return _buildReactionItem(reactions[index], (
+              index: index,
+              count: reactions.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3741,23 +3746,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: boosts.length + 1,
-        itemBuilder: (context, index) {
-          if (index == boosts.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _boostsLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _boostsLoadMoreFailed,
-              onRetry: _loadMoreBoosts,
-            );
-          }
-          return _buildBoostItem(boosts[index], (
-            index: index,
-            count: boosts.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: boosts.length + 1,
+          itemBuilder: (context, index) {
+            if (index == boosts.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _boostsLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _boostsLoadMoreFailed,
+                onRetry: _loadMoreBoosts,
+              );
+            }
+            return _buildBoostItem(boosts[index], (
+              index: index,
+              count: boosts.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3767,7 +3775,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
-    const padding = EdgeInsets.symmetric(vertical: 12);
 
     // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
     if (topics == null) {
@@ -3799,58 +3806,61 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: padding,
-        itemCount: topics.length + 1,
-        itemBuilder: (context, index) {
-          if (index == topics.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _votesLoadMoreFailed,
-              onRetry: _loadMoreVotes,
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: topics.length + 1,
+          itemBuilder: (context, index) {
+            if (index == topics.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _votesLoadMoreFailed,
+                onRetry: _loadMoreVotes,
+              );
+            }
+            final topic = topics[index];
+            void openTopic() => _openTopic(
+              topicId: topic.id,
+              initialTitle: topic.title,
+              scrollToPostNumber:
+                  ref.read(preferencesProvider).defaultNestedView
+                  ? null
+                  : topic.lastReadPostNumber,
             );
-          }
-          final topic = topics[index];
-          void openTopic() => _openTopic(
-            topicId: topic.id,
-            initialTitle: topic.title,
-            scrollToPostNumber: ref.read(preferencesProvider).defaultNestedView
-                ? null
-                : topic.lastReadPostNumber,
-          );
-          return MorphingDialogAnchor(
-            enabled: enableLongPress,
-            bottomGap: index == topics.length - 1
-                ? 0
-                : SegmentedCardItem.gapOf(context, 4),
-            builder: (cardContext) => ActivityTopicCard(
-              topic: topic,
-              position: (index: index, count: topics.length),
-              categories: categories,
-              onTap: openTopic,
-              onPreviewIntent: enableLongPress
-                  ? () => TopicPreviewPreloader.preload(
-                      ref.read(discourseServiceProvider),
-                      topic.id,
-                    )
-                  : null,
-              onLongPress: enableLongPress
-                  ? () => TopicPreviewDialog.show(
-                      context,
-                      topic: topic,
-                      onOpen: openTopic,
-                      sourceContext: cardContext,
-                      anchorColor: PageBackgroundScope.contentColor(
+            return MorphingDialogAnchor(
+              enabled: enableLongPress,
+              bottomGap: index == topics.length - 1
+                  ? 0
+                  : SegmentedCardItem.gapOf(context, 4),
+              builder: (cardContext) => ActivityTopicCard(
+                topic: topic,
+                position: (index: index, count: topics.length),
+                categories: categories,
+                onTap: openTopic,
+                onPreviewIntent: enableLongPress
+                    ? () => TopicPreviewPreloader.preload(
+                        ref.read(discourseServiceProvider),
+                        topic.id,
+                      )
+                    : null,
+                onLongPress: enableLongPress
+                    ? () => TopicPreviewDialog.show(
                         context,
-                        Theme.of(context).cardTheme.color ??
-                            Theme.of(context).colorScheme.surfaceContainerLow,
-                      ),
-                    )
-                  : null,
-            ),
-          );
-        },
+                        topic: topic,
+                        onOpen: openTopic,
+                        sourceContext: cardContext,
+                        anchorColor: PageBackgroundScope.contentColor(
+                          context,
+                          Theme.of(context).cardTheme.color ??
+                              Theme.of(context).colorScheme.surfaceContainerLow,
+                        ),
+                      )
+                    : null,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -3899,23 +3909,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: posts.length + 1,
-        itemBuilder: (context, index) {
-          if (index == posts.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _solvedLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _solvedLoadMoreFailed,
-              onRetry: _loadMoreSolved,
-            );
-          }
-          return _buildSolvedItem(posts[index], (
-            index: index,
-            count: posts.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: posts.length + 1,
+          itemBuilder: (context, index) {
+            if (index == posts.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _solvedLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _solvedLoadMoreFailed,
+                onRetry: _loadMoreSolved,
+              );
+            }
+            return _buildSolvedItem(posts[index], (
+              index: index,
+              count: posts.length,
+            ));
+          },
+        ),
       ),
     );
   }

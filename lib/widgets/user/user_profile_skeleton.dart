@@ -302,12 +302,14 @@ class UserActionListSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Skeleton(
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: itemCount,
-        itemBuilder: (context, index) => ActivityCardFrame(
-          position: (index: index, count: itemCount),
-          child: UserActionItemSkeleton(type: type),
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: itemCount,
+          itemBuilder: (context, index) => ActivityCardFrame(
+            position: (index: index, count: itemCount),
+            child: UserActionItemSkeleton(type: type),
+          ),
         ),
       ),
     );

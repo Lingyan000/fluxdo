@@ -45,44 +45,49 @@ void main() {
                         child: UserActionListSkeleton(itemCount: 2, type: type),
                       ),
                       Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          children: [
-                            ActivityPostCard(
-                              position: (index: 0, count: 2),
-                              title: '标题',
-                              actionLabel: '动作',
-                              actionActor:
-                                  type == UserActivitySkeletonType.receivedLike
-                                  ? TopicUser(
-                                      id: 2,
-                                      username: 'a',
-                                      avatarTemplate: '',
-                                    )
-                                  : null,
-                              bodyFirst: type == UserActivitySkeletonType.reply,
-                              excerpt: type == UserActivitySkeletonType.reply
-                                  ? '<p>正文<br>正文</p>'
-                                  : null,
-                              occurredAt: DateTime.now().toUtc(),
-                              author: TopicUser(
-                                id: 1,
-                                username: 'Lin',
-                                avatarTemplate: '',
-                              ),
-                              categoryId: 1,
-                              categories: {
-                                1: Category(
+                        // 与资料页一致，由列表外壳统一决定卡片形态和两侧间距。
+                        child: ActivityCardList(
+                          builder: (context, padding) => ListView(
+                            padding: padding,
+                            children: [
+                              ActivityPostCard(
+                                position: (index: 0, count: 2),
+                                title: '标题',
+                                actionLabel: '动作',
+                                actionActor:
+                                    type ==
+                                        UserActivitySkeletonType.receivedLike
+                                    ? TopicUser(
+                                        id: 2,
+                                        username: 'a',
+                                        avatarTemplate: '',
+                                      )
+                                    : null,
+                                bodyFirst:
+                                    type == UserActivitySkeletonType.reply,
+                                excerpt: type == UserActivitySkeletonType.reply
+                                    ? '<p>正文<br>正文</p>'
+                                    : null,
+                                occurredAt: DateTime.now().toUtc(),
+                                author: TopicUser(
                                   id: 1,
-                                  name: '分类',
-                                  color: '0088cc',
-                                  textColor: 'ffffff',
-                                  slug: 'test',
+                                  username: 'Lin',
+                                  avatarTemplate: '',
                                 ),
-                              },
-                              onTap: () {},
-                            ),
-                          ],
+                                categoryId: 1,
+                                categories: {
+                                  1: Category(
+                                    id: 1,
+                                    name: '分类',
+                                    color: '0088cc',
+                                    textColor: 'ffffff',
+                                    slug: 'test',
+                                  ),
+                                },
+                                onTap: () {},
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
