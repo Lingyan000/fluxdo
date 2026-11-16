@@ -13,6 +13,7 @@ from compare_fingerprint_capture import compare
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--production-h3', action='store_true')
+parser.add_argument('--driver', type=Path, help='显式指定原生诊断宿主')
 parser.add_argument('--qpack-scenarios', action='store_true', help='基线通过后比较九种原生/Core 扩展请求')
 parser.add_argument('--spki-control', action='store_true', help='额外运行 Windows 临时证书许可对照，不代表默认配置')
 parser.add_argument('--root-trust-only', action='store_true', help='只运行一次性 CI 的根证书与 SPKI 组合对照')
@@ -29,6 +30,8 @@ if args.qpack_scenarios and not args.production_h3:
 root = Path(__file__).resolve().parents[2]
 binary = root / 'core/net_core/target/debug/examples' / ('fingerprint_probe.exe' if os.name == 'nt' else 'fingerprint_probe')
 driver = root / ('tool/native_fingerprint/windows/bin/Release/net8.0-windows/Probe.exe' if args.platform == 'windows' else 'tool/native_fingerprint/android_driver.py')
+if args.driver:
+    driver = args.driver.resolve()
 args.output.mkdir(parents=True, exist_ok=True)
 matrix = []
 for mode in ((['forced-native-spki-control', 'forced-app-spki-control'] if args.platform == 'android' else ['forced-spki-control']) if args.force_quic_control else ['root-spki-control'] if args.root_trust_only else ['native', 'app'] if args.platform == 'android' else
@@ -38,7 +41,7 @@ for mode in ((['forced-native-spki-control', 'forced-app-spki-control'] if args.
     env = dict(os.environ, FLUXDO_LAB_EXTERNAL_DRIVER='1', FLUXDO_ANDROID_UA_MODE='app' if 'app' in mode.split('-') else 'native',
                SSL_CERT_FILE=str(folder / 'ca.pem'), SSL_CERT_EXTRA_FILE=str(folder / 'ca.pem'))
     result = {'case': folder.name, 'browser_platform': args.platform, 'core_host': platform.platform(),
-              'evidence_kind': 'native_minimal_host', 'full_flutter_app': False}
+              'evidence_kind': 'native_minimal_host', 'full_flutter_app': False, 'driver': str(driver)}
     try:
         with (folder / 'run.log').open('w', encoding='utf-8') as log:
             process = subprocess.run([str(binary), str(driver), str(folder)], env=env,

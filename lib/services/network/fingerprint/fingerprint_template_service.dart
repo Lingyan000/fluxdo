@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../constants.dart';
 import '../../network_logger.dart';
 import '../../windows_webview_environment_service.dart';
+import 'windows_h3_probe_environment.dart';
 
 /// 指纹模板采样服务。
 ///
@@ -170,7 +171,7 @@ class FingerprintTemplateService {
         if (_testProbe != null) {
           await _testProbe!(probePort, cancelled);
         } else {
-          await _probe(probePort, cancelled, path: '/fluxdo-h3');
+          await _probe(probePort, cancelled, path: '/fluxdo-h3', spki: status.h3Spki[probePort]);
         }
       }
       if (!_isCurrent(port, generation)) return;
@@ -182,25 +183,43 @@ class FingerprintTemplateService {
   }
 
   /// 隐藏 WebView 访问探针页，等页面内 fetch 完成（标题变化）或超时。
-  Future<void> _probe(int port, Future<void> cancelled, {String path = _probePath}) async {
+  Future<void> _probe(int port, Future<void> cancelled, {String path = _probePath, String? spki}) async {
     final done = Completer<void>();
     HeadlessInAppWebView? webView;
+    WindowsH3ProbeEnvironment? h3Environment;
+    final isolatedH3 = Platform.isWindows && path == '/fluxdo-h3';
+    var stopped = false;
+    unawaited(cancelled.then((_) => stopped = true));
     try {
+      if (isolatedH3) {
+        h3Environment = await WindowsH3ProbeEnvironment.create(
+          port: port, spki: spki ?? '', cancelled: cancelled,
+        );
+        if (stopped) return;
+      }
       webView = HeadlessInAppWebView(
         webViewEnvironment:
-            WindowsWebViewEnvironmentService.instance.environment,
+            h3Environment?.environment ?? WindowsWebViewEnvironmentService.instance.environment,
         initialUrlRequest: URLRequest(
           url: WebUri('https://localhost:$port$path'),
         ),
         initialSettings: InAppWebViewSettings(
           userAgent: AppConstants.webViewUserAgentOverride,
           cacheEnabled: false,
+          useShouldOverrideUrlLoading: true,
         ),
+        shouldOverrideUrlLoading: (controller, action) async {
+          final uri = action.request.url;
+          return uri != null && uri.scheme == 'https' && uri.host == 'localhost' &&
+                  uri.port == port && (uri.path == path || uri.path.startsWith('$path/'))
+              ? NavigationActionPolicy.ALLOW : NavigationActionPolicy.CANCEL;
+        },
+        // Windows H3 只允许精确 SPKI；证书回调不能兜底放行另一把密钥。
         // 只放行核心的自签证书：限定 localhost（部分平台不提供端口，有端口时再核对）
         onReceivedServerTrustAuthRequest: (controller, challenge) async {
           final space = challenge.protectionSpace;
           final trusted =
-              space.host == 'localhost' &&
+              !isolatedH3 && space.host == 'localhost' &&
               (space.port == null || space.port == port);
           return ServerTrustAuthResponse(
             action: trusted
@@ -221,7 +240,11 @@ class FingerprintTemplateService {
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 探针采样失败: $e', level: 'warning');
     } finally {
-      await webView?.dispose();
+      try {
+        await webView?.dispose();
+      } finally {
+        await h3Environment?.dispose();
+      }
     }
   }
 
@@ -237,6 +260,7 @@ class FingerprintTemplateService {
               cacheState: value['cache_state'] as String?,
               h3Ready: value['h3']?['enabled_for_template'] == true,
               h3Ports: _h3Ports(value['h3']?['probe_ports']),
+              h3Spki: _h3Spki(value['h3']?['probe_spki']),
               h3Error: (value['h3']?['error'] ?? value['h3']?['reason']) as String?,
             );
     }
@@ -258,6 +282,7 @@ class FingerprintTemplateService {
         cacheState: json['cache_state'] as String?,
         h3Ready: json['h3']?['enabled_for_template'] == true,
         h3Ports: _h3Ports(json['h3']?['probe_ports']),
+        h3Spki: _h3Spki(json['h3']?['probe_spki']),
         h3Error: (json['h3']?['error'] ?? json['h3']?['reason']) as String?,
       );
     } catch (e) {
@@ -267,6 +292,12 @@ class FingerprintTemplateService {
       client.close(force: true);
     }
   }
+
+  static Map<int, String> _h3Spki(dynamic value) => value is Map
+      ? {for (final entry in value.entries)
+          if (int.tryParse(entry.key.toString()) case final int port)
+            if (entry.value is String) port: entry.value as String}
+      : const {};
 
   static List<int> _h3Ports(dynamic value) => value is List
       ? value.whereType<int>().where((port) => port > 0 && port <= 65535).toSet().take(2).toList()
@@ -281,6 +312,7 @@ class _TemplateStatus {
     this.cacheState,
     this.h3Ready = false,
     this.h3Ports = const [],
+    this.h3Spki = const {},
     this.h3Error,
   });
 
@@ -290,5 +322,6 @@ class _TemplateStatus {
   final String? cacheState;
   final bool h3Ready;
   final List<int> h3Ports;
+  final Map<int, String> h3Spki;
   final String? h3Error;
 }

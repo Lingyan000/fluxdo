@@ -1,0 +1,54 @@
+name: Windows Flutter production H3 probe environment
+on:
+  push:
+    branches: ['diagnostics/windows-flutter-h3-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-flutter-h3-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: ilammy/setup-nasm@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - name: Build production collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Build minimal Flutter host using production environment
+        run: |
+          python tool/native_fingerprint/windows_flutter/prepare.py "$env:RUNNER_TEMP/h3-flutter"
+          Push-Location "$env:RUNNER_TEMP/h3-flutter"
+          flutter pub get
+          flutter build windows --release
+          Pop-Location
+      - name: Compare live Flutter probe and production Core
+        run: |
+          python tool/native_fingerprint/run.py --platform windows --production-h3 --qpack-scenarios --force-quic-control --driver "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" --output "$env:RUNNER_TEMP/native-fingerprint"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-flutter-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/**/*.json
+            ${{ runner.temp }}/native-fingerprint/**/*.log
+            ${{ runner.temp }}/native-fingerprint/**/*.stdout
+            ${{ runner.temp }}/native-fingerprint/**/*.stderr
+            ${{ runner.temp }}/h3-flutter/production-source.json
