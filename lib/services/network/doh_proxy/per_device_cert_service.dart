@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +17,22 @@ class PerDeviceCertService {
   PerDeviceCertService._();
   static final PerDeviceCertService instance = PerDeviceCertService._();
 
+  @visibleForTesting
+  PerDeviceCertService.forTesting({
+    required Future<Directory> Function() certsDirectory,
+    required ({String certPem, String keyPem})? Function() generateCa,
+  }) : _directoryProvider = certsDirectory, _generator = generateCa;
+
+  Future<Directory> Function()? _directoryProvider;
+  ({String certPem, String keyPem})? Function()? _generator;
+  Future<void> _operations = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final result = _operations.then((_) => operation());
+    _operations = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
   static const _certInstalledKey = 'per_device_cert_installed';
 
   String? _certPem;
@@ -32,36 +49,67 @@ class PerDeviceCertService {
   bool get isLoaded => _loaded && _certPem != null && _keyPem != null;
 
   /// 确保 CA 证书存在（有则读取，无则生成并存储）
-  Future<bool> ensureCaCert() async {
+  Future<bool> ensureCaCert() => _serialized(_ensureCaCert);
+
+  Future<bool> _ensureCaCert() async {
     if (isLoaded) return true;
 
     final dir = await _certsDir();
     final certFile = File('${dir.path}/ca.crt');
     final keyFile = File('${dir.path}/ca.key');
+    final bundle = File('${dir.path}/ca.json');
+    String cert;
+    String key;
 
-    if (certFile.existsSync() && keyFile.existsSync()) {
-      _certPem = await certFile.readAsString();
-      _keyPem = await keyFile.readAsString();
-      _loaded = true;
-      debugPrint('[PerDeviceCert] 已加载本地 CA 证书');
-      return true;
+    if (await bundle.exists()) {
+      // 损坏时保留现场，不能悄悄换掉用户已经安装到系统的信任锚点。
+      try {
+        final data = jsonDecode(await bundle.readAsString()) as Map<String, dynamic>;
+        if (data['version'] != 1) return false;
+        cert = data['certPem'] as String;
+        key = data['keyPem'] as String;
+        if (cert.trim().isEmpty || key.trim().isEmpty) return false;
+      } catch (_) {
+        debugPrint('[PerDeviceCert] CA 存储损坏，需显式重新生成并安装');
+        return false;
+      }
+    } else {
+      final hasCert = await certFile.exists();
+      final hasKey = await keyFile.exists();
+      if (hasCert != hasKey) {
+        debugPrint('[PerDeviceCert] CA 证书与私钥文件不完整');
+        return false;
+      }
+      if (hasCert) {
+        cert = await certFile.readAsString();
+        key = await keyFile.readAsString();
+        if (cert.trim().isEmpty || key.trim().isEmpty) return false;
+      } else {
+        final result = _generator != null ? _generator!() : NetCoreService.instance.generateCa();
+        if (result == null) {
+          debugPrint('[PerDeviceCert] CA 生成失败');
+          return false;
+        }
+        cert = result.certPem;
+        key = result.keyPem;
+      }
+      await dir.create(recursive: true);
+      final temporary = File('${bundle.path}.tmp');
+      await temporary.writeAsString(jsonEncode({
+        'version': 1, 'certPem': cert, 'keyPem': key,
+      }), flush: true);
+      await temporary.rename(bundle.path);
+      // 新格式原子保存整对材料，旧格式仅在成功迁移后清理。
+      if (hasCert) {
+        await certFile.delete();
+        await keyFile.delete();
+      }
     }
 
-    // 通过网络核心生成新 CA
-    final result = NetCoreService.instance.generateCa();
-    if (result == null) {
-      debugPrint('[PerDeviceCert] CA 生成失败');
-      return false;
-    }
-
-    await dir.create(recursive: true);
-    await certFile.writeAsString(result.certPem);
-    await keyFile.writeAsString(result.keyPem);
-
-    _certPem = result.certPem;
-    _keyPem = result.keyPem;
+    _certPem = cert;
+    _keyPem = key;
     _loaded = true;
-    debugPrint('[PerDeviceCert] 新 CA 证书已生成并保存');
+    debugPrint('[PerDeviceCert] CA 证书与私钥已就绪');
     return true;
   }
 
@@ -77,7 +125,9 @@ class PerDeviceCertService {
     }
 
     try {
-      final mobileconfig = _buildMobileConfig(_certPem!);
+      final cert = _certPem;
+      if (cert == null) return false;
+      final mobileconfig = _buildMobileConfig(cert);
       final success = await _profileChannel.invokeMethod<bool>(
         'installProfile',
         mobileconfig,
@@ -109,20 +159,26 @@ class PerDeviceCertService {
   }
 
   /// 重置内存状态并删除已有证书文件，下次 ensureCaCert 会重新生成
-  Future<void> reset() async {
+  Future<void> reset() => _serialized(() async {
     _certPem = null;
     _keyPem = null;
     _loaded = false;
+    await clearCertInstalled();
     try {
       final dir = await _certsDir();
       final certFile = File('${dir.path}/ca.crt');
       final keyFile = File('${dir.path}/ca.key');
+      final bundle = File('${dir.path}/ca.json');
+      final temporary = File('${bundle.path}.tmp');
+      if (await bundle.exists()) await bundle.delete();
+      if (await temporary.exists()) await temporary.delete();
       if (certFile.existsSync()) await certFile.delete();
       if (keyFile.existsSync()) await keyFile.delete();
     } catch (_) {}
-  }
+  });
 
   Future<Directory> _certsDir() async {
+    if (_directoryProvider != null) return _directoryProvider!();
     final appSupport = await getApplicationSupportDirectory();
     return Directory('${appSupport.path}/certs');
   }

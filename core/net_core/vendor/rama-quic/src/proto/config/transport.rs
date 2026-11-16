@@ -50,6 +50,9 @@ pub struct TransportConfig {
     pub(crate) active_connection_id_limit: Option<VarInt>,
     pub(crate) max_ack_delay: Duration,
     pub(crate) wire: crate::profile::WireProfile,
+    pub(crate) initial_packet_number_lengths: Vec<u8>,
+    pub(crate) initial_cross_packet_chaos: bool,
+    pub(crate) initial_crypto_chunk_size: Option<u16>,
     pub(crate) send_window: u64,
     pub(crate) send_fairness: bool,
 
@@ -83,6 +86,28 @@ pub struct TransportConfig {
 }
 
 impl TransportConfig {
+    /// 仅在原生采样观察到跨包 CRYPTO 交错时启用；用当前握手长度重新规划。
+    pub fn with_initial_cross_packet_chaos(mut self, enabled: bool) -> Self {
+        self.initial_cross_packet_chaos = enabled;
+        self
+    }
+
+    /// 采样到的有序多包握手每包 CRYPTO 上限；数据仍来自本次 TLS 输出。
+    pub fn with_initial_crypto_chunk_size(mut self, size: Option<u16>) -> Result<Self, ConfigError> {
+        if size.is_some_and(|size| size == 0 || size > MAX_UDP_PAYLOAD) {
+            return Err(ConfigError::OutOfBounds);
+        }
+        self.initial_crypto_chunk_size = size;
+        Ok(self)
+    }
+
+    /// 完整采样的 Initial 包号宽度；按当前连接包号选择，超出样本后保留最后的最小宽度。
+    /// 编码器仍会按未确认包号距离扩展，不能截断合法的包号。
+    pub fn with_initial_packet_number_lengths(mut self, lengths:Vec<u8>)->Result<Self,ConfigError> {
+        if lengths.len()>16 || lengths.iter().any(|length|!(1..=4).contains(length)) {return Err(ConfigError::OutOfBounds);}
+        self.initial_packet_number_lengths=lengths;Ok(self)
+    }
+
     /// The encoded DATAGRAM frame limit advertised to the peer.
     ///
     /// A profile can separate this wire limit from the local retention budget.
@@ -638,6 +663,9 @@ impl Default for TransportConfig {
             active_connection_id_limit: None,
             max_ack_delay: Duration::from_millis(25),
             wire: crate::profile::WireProfile::default(),
+            initial_packet_number_lengths: Vec::new(),
+            initial_cross_packet_chaos: false,
+            initial_crypto_chunk_size: None,
             send_window: (8 * STREAM_RWND).into(),
             send_fairness: true,
 
@@ -685,6 +713,9 @@ impl fmt::Debug for TransportConfig {
             active_connection_id_limit,
             max_ack_delay,
             wire,
+            initial_packet_number_lengths,
+            initial_cross_packet_chaos,
+            initial_crypto_chunk_size,
             send_window,
             send_fairness,
             packet_threshold,
@@ -725,6 +756,9 @@ impl fmt::Debug for TransportConfig {
             .field("active_connection_id_limit", active_connection_id_limit)
             .field("max_ack_delay", max_ack_delay)
             .field("wire", wire)
+            .field("initial_packet_number_lengths",initial_packet_number_lengths)
+            .field("initial_cross_packet_chaos",initial_cross_packet_chaos)
+            .field("initial_crypto_chunk_size",initial_crypto_chunk_size)
             .field("receive_window", receive_window)
             .field("send_window", send_window)
             .field("send_fairness", send_fairness)

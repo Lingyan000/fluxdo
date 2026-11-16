@@ -11,21 +11,27 @@ use rama_quic_proto::{
     packet::{Header, InitialHeader, PacketNumber, SpaceId},
     profile::{
         InitialFlightLayout,
-        initial::{InitialFrame, InitialPacket},
+        initial::{InitialFrame, InitialPacket, RecordedInitialFlight},
     },
 };
 
 use super::{Connection, ConnectionSide, State, transmit::SentFrames};
 
+mod chaos_flight;
+
 impl Connection {
+    fn initial_layout(&self) -> Option<&RecordedInitialFlight> {
+        self.generated_initial.as_ref().or_else(|| match self.config.wire.packetization.layout() {
+            InitialFlightLayout::Recorded(flight) => Some(flight),
+            _ => None,
+        })
+    }
+
     pub(super) fn recorded_initial(&self, space: SpaceId, number: u64) -> Option<&InitialPacket> {
         if space != SpaceId::Initial || !self.side.is_client() || !self.recorded_initial {
             return None;
         }
-        match self.config.wire.packetization.layout() {
-            InitialFlightLayout::Recorded(flight) => flight.packet(number),
-            _ => None,
-        }
+        self.initial_layout()?.packet(number)
     }
 
     /// Validate actual header/protection geometry, then replace the fresh CRYPTO
@@ -33,9 +39,10 @@ impl Connection {
     /// A layout that does not fit this connection, for example a ClientHello of
     /// another length, is not used: the Initial is packetized as usual.
     pub(super) fn prepare_recorded_initial(&mut self) -> Result<(), TransportError> {
-        let InitialFlightLayout::Recorded(_) = self.config.wire.packetization.layout() else {
-            return Ok(());
-        };
+        if self.config.initial_cross_packet_chaos || self.config.initial_crypto_chunk_size.is_some() {
+            self.generated_initial = self.prepare_generated_initial();
+        }
+        if self.initial_layout().is_none() { return Ok(()); }
         if !self.side.is_client() || self.spaces[SpaceId::Initial].crypto.is_none() {
             return Err(TransportError::INTERNAL_ERROR(
                 "recorded Initial requires a client with Initial keys",
@@ -50,7 +57,7 @@ impl Connection {
 
     /// Bind the recorded layout to this connection; errors on any mismatch.
     fn fit_recorded_initial(&mut self) -> Result<(), TransportError> {
-        let InitialFlightLayout::Recorded(flight) = self.config.wire.packetization.layout() else {
+        let Some(flight) = self.initial_layout().cloned() else {
             return Err(TransportError::INTERNAL_ERROR(
                 "missing recorded Initial layout",
             ));
@@ -165,7 +172,7 @@ impl Connection {
         if !self.side.is_client() || !self.recorded_initial {
             return None;
         }
-        let InitialFlightLayout::Recorded(flight) = self.config.wire.packetization.layout() else {
+        let Some(flight) = self.initial_layout().cloned() else {
             return None;
         };
         (!flight.in_number_order()
@@ -185,7 +192,7 @@ impl Connection {
         max_size: usize,
         number: u64,
     ) -> Result<SentFrames, TransportError> {
-        let InitialFlightLayout::Recorded(flight) = self.config.wire.packetization.layout() else {
+        let Some(flight) = self.initial_layout().cloned() else {
             return Err(TransportError::INTERNAL_ERROR(
                 "missing recorded Initial layout",
             ));

@@ -634,3 +634,80 @@ fn recorded_initial_tails_stay_outside_protection_and_recovery_counts_them() {
         }
     }
 }
+
+/// 认证并重组本次 TLS 输出，覆盖两种 QUIC 版本、变长握手及首包/中间包丢失。
+#[test]
+fn generated_cross_packet_chaos_preserves_handshake_and_recovers_loss() {
+    for version in [Version::V1, Version::V2] {
+        for extra_protocols in [7, 14] {
+            for dropped in [None, Some(0), Some(1)] {
+                let profile = base_profile(version)
+                    .with_packetization(PacketizationProfile::standard().with_layout(InitialFlightLayout::Chaos));
+                let (mut pair, _) = pair(&profile);
+                let mut protocols = vec![b"rama-quic-test".to_vec()];
+                protocols.extend((0..extra_protocols).map(|i| vec![b'a' + i; 200]));
+                let mut config = crate::proto::ClientConfig::new(Arc::new(
+                    super::util::client_crypto_with_alpn(protocols)));
+                config.apply_quic_profile(&profile).unwrap();
+                config.set_transport_config(Arc::new(crate::proto::TransportConfig::from_quic_profile(&profile)
+                    .unwrap().with_initial_cross_packet_chaos(true)));
+                let client = pair.begin_connect(config);
+                pair.drive_client();
+                let observed = flight(&pair);
+                let layout = RecordedInitialFlight::try_from(&observed).unwrap();
+                assert!(layout.packets().len() >= 2);
+                let mut ranges: Vec<_> = layout.packets()[0].frames().iter().filter_map(|f| match f {
+                    InitialFrame::Crypto { offset, len } => Some((*offset, *offset + *len as u64)),
+                    _ => None,
+                }).collect();
+                ranges.sort_unstable();
+                assert_eq!(ranges[0].0, 0);
+                assert_eq!(ranges.last().unwrap().1, layout.crypto_len() as u64);
+                assert!(ranges.windows(2).any(|r| r[0].1 < r[1].0));
+                if let Some(index) = dropped { pair.server.inbound.remove(index).unwrap(); }
+                pair.drive();
+                let server = pair.server.assert_accept();
+                assert!(!pair.client_conn_mut(client).is_handshaking());
+                assert!(!pair.server_conn_mut(server).is_handshaking());
+            }
+        }
+    }
+}
+
+/// 有序分片沿用采样上限，握手变长时重新计算末包，不能只匹配 UDP 大小。
+#[test]
+fn generated_ordered_chunks_preserve_sampled_limit_and_fresh_bytes() {
+    for version in [Version::V1, Version::V2] {
+        for extra_protocols in [7, 14] {
+            let profile = base_profile(version);
+            let (mut pair, _) = pair(&profile);
+            let mut protocols = vec![b"rama-quic-test".to_vec()];
+            protocols.extend((0..extra_protocols).map(|i| vec![b'a' + i; 200]));
+            let mut config = crate::proto::ClientConfig::new(Arc::new(
+                super::util::client_crypto_with_alpn(protocols)));
+            config.apply_quic_profile(&profile).unwrap();
+            config.set_transport_config(Arc::new(crate::proto::TransportConfig::from_quic_profile(&profile)
+                .unwrap().with_initial_crypto_chunk_size(Some(999)).unwrap()));
+            let client = pair.begin_connect(config);
+            pair.drive_client();
+            let observed = flight(&pair);
+            let layout = RecordedInitialFlight::try_from(&observed).unwrap();
+            assert!(layout.packets().len() >= 2);
+            for (index, packet) in layout.packets().iter().enumerate() {
+                let crypto: Vec<_> = packet.frames().iter().filter_map(|f| match f {
+                    InitialFrame::Crypto { offset, len } => Some((*offset, *len)),
+                    _ => None,
+                }).collect();
+                assert_eq!(crypto.len(), 1);
+                assert_eq!(crypto[0].0, index as u64 * 999);
+                if index + 1 < layout.packets().len() { assert_eq!(crypto[0].1, 999); }
+                else { assert!(crypto[0].1 <= 999); }
+            }
+            pair.server.inbound.pop_front().unwrap();
+            pair.drive();
+            let server = pair.server.assert_accept();
+            assert!(!pair.client_conn_mut(client).is_handshaking());
+            assert!(!pair.server_conn_mut(server).is_handshaking());
+        }
+    }
+}

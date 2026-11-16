@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'config/site_customization.dart';
 import 'config/sites/linuxdo.dart';
 import 'services/network/client_hints.dart';
+import 'services/network/apple_user_agent.dart';
 import 'services/windows_webview_environment_service.dart';
 
 /// 应用常量
@@ -24,11 +25,25 @@ class AppConstants {
   static final Completer<String> _uaCompleter = Completer<String>();
   static bool _uaInitialized = false;
 
-  /// macOS Safari 真实版本号（从 /Applications/Safari.app 读取），
+  /// Apple 平台 Safari 真实产品版本号（从 Safari Bundle 读取），
   /// 用于补齐 WKWebView 默认 UA 缺失的 `Version/x.y`。
-  static String? _cachedMacSafariVersion;
+  static String? _cachedSafariVersion;
+  static String _safariReadStatus = 'not_read';
+  static Map<String, dynamic> _nativeBrowserIdentity = {};
 
-  /// 与原生层通信的系统信息 channel（目前只有 macOS 用到）
+  static String? get verifiedSafariProductVersion =>
+      iosSafariUserAgentVersion(_cachedSafariVersion);
+
+  static Map<String, Object?> get browserIdentityDiagnostics => {
+    ..._nativeBrowserIdentity,
+    ...appleBrowserIdentityDiagnostics(
+      userAgent: userAgent,
+      safariProductVersion: _cachedSafariVersion,
+      readStatus: _safariReadStatus,
+    ),
+  };
+
+  /// 与 Apple 原生层通信的系统信息 channel。
   static const MethodChannel _systemInfoChannel = MethodChannel(
     'com.fluxdo/system_info',
   );
@@ -71,10 +86,9 @@ class AppConstants {
 
     try {
       // 移动端 / macOS 尝试获取 WebView 的真实 UA，确保 UA 与 WebView 能力匹配
-      if (Platform.isMacOS) {
-        // macOS WKWebView 默认 UA 缺 Version/x.y 和 Safari/，sanitize 时要补；
-        // 这里先读真实 Safari 版本号缓存住。
-        _cachedMacSafariVersion = await _readMacSafariVersion();
+      if (Platform.isMacOS || Platform.isIOS) {
+        // WKWebView UA 缺少 Safari 产品版本；系统段可能冻结，不能作为真实版本来源。
+        _cachedSafariVersion = await _readSafariVersion();
       }
       final webViewUA = await InAppWebViewController.getDefaultUserAgent();
       // 清理 UA，使其看起来像普通浏览器
@@ -181,32 +195,11 @@ class AppConstants {
       sanitized = sanitized.replaceAll(RegExp(r'Version/[^ ]+ *'), '');
     }
 
-    if (Platform.isIOS && !sanitized.contains('Safari/')) {
-      // iOS WKWebView UA 缺少 Version/x.x 和 Safari/xxx
-      // Google 通过此特征检测 WebView 并拒绝 OAuth 登录
-      //
-      // WKWebView: "... (KHTML, like Gecko) Mobile/15E148"
-      // Safari:    "... (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1"
-      //
-      // 真实 Safari 的 Version/ 只有 major.minor 两段，
-      // 不跟 iOS 的补丁号（iOS 18_3_2 → Version/18.3）
-
-      // 提取 iOS 主版本号和次版本号（仅取前两段）
-      final versionMatch = RegExp(r'CPU (?:iPhone )?OS (\d+)[_\.](\d+)')
-          .firstMatch(sanitized);
-      final version = versionMatch != null
-          ? '${versionMatch.group(1)}.${versionMatch.group(2)}'
-          : '18.0';
-
-      // iOS Safari/ 固定为 604.1（自 iOS 11 起冻结，不随系统版本变化）
-      const safariBuild = '604.1';
-
-      // 在 Mobile/ 前插入 Version/x.x
-      sanitized = sanitized.replaceFirstMapped(
-        RegExp(r'Mobile/'),
-        (m) => 'Version/$version ${m.group(0)}',
+    if (Platform.isIOS) {
+      sanitized = completeIosUserAgent(
+        sanitized,
+        safariProductVersion: _cachedSafariVersion,
       );
-      sanitized = '$sanitized Safari/$safariBuild';
     }
 
     if (Platform.isMacOS) {
@@ -221,7 +214,7 @@ class AppConstants {
         final webKitMatch = RegExp(r'AppleWebKit/([^\s]+)')
             .firstMatch(sanitized);
         final webKitVersion = webKitMatch?.group(1) ?? '605.1.15';
-        final safariVersion = _cachedMacSafariVersion ?? '18.5';
+        final safariVersion = _cachedSafariVersion ?? '18.5';
         sanitized = '$sanitized Version/$safariVersion Safari/$webKitVersion';
       }
     }
@@ -230,18 +223,36 @@ class AppConstants {
   }
 
   /// 从原生层读取本机 Safari 的版本号 (CFBundleShortVersionString)。
-  /// 用于补齐 macOS WKWebView 默认 UA 缺失的 Version/x.y 段。
+  /// 用于补齐 Apple WKWebView 默认 UA 缺失的 Version/x.y 段。
   /// 读不到时返回 null，由 sanitize / fallback 处使用保守默认值。
-  static Future<String?> _readMacSafariVersion() async {
+  static Future<String?> _readSafariVersion() async {
     try {
+      if (Platform.isIOS) {
+        try {
+          _nativeBrowserIdentity = await _systemInfoChannel
+              .invokeMapMethod<String, dynamic>('getBrowserIdentity') ?? {};
+        } on MissingPluginException {
+          // 兼容尚未重编译的宿主；仍使用原有版本接口，不推导未知版本。
+        } catch (_) {
+          _nativeBrowserIdentity = {'native_metadata_status': 'channel_error'};
+        }
+      }
       final version = await _systemInfoChannel.invokeMethod<String>(
         'getSafariVersion',
       );
-      if (version == null || version.isEmpty) return null;
-      debugPrint('[AppConstants] macOS Safari version: $version');
-      return version;
+      final verified = iosSafariUserAgentVersion(version);
+      if (verified == null) {
+        _safariReadStatus = version == null || version.isEmpty
+            ? 'metadata_unavailable' : 'metadata_invalid';
+        debugPrint('[AppConstants] Safari 产品版本不可读，使用既有 UA 兼容回退');
+        return null;
+      }
+      debugPrint('[AppConstants] Safari product version: $version');
+      _safariReadStatus = 'read';
+      return verified;
     } catch (e) {
-      debugPrint('[AppConstants] 读取 macOS Safari 版本失败: $e');
+      _safariReadStatus = 'channel_error';
+      debugPrint('[AppConstants] 读取 Safari 产品版本失败: $e');
       return null;
     }
   }
@@ -289,7 +300,7 @@ class AppConstants {
       // macOS 底层是 WKWebView (WebKit)，使用 Safari 风格的 UA 与引擎匹配。
       // Apple 自 2017 起冻结了 OS 段 (10_15_7) 和 WebKit/Safari 数字 (605.1.15)，
       // Version/ 跟真实 Safari 走；这里是降级路径，读不到时给一个保守值。
-      final safariVersion = _cachedMacSafariVersion ?? '18.5';
+      final safariVersion = _cachedSafariVersion ?? '18.5';
       return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
           'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/$safariVersion '
           'Safari/605.1.15';

@@ -23,9 +23,15 @@ pub struct TlsOptions {
     pub(crate) alpn: AlpnPolicy,
     pub(crate) early_data: bool,
     pub(crate) client_sessions: ClientSessionPolicy,
+    pub(crate) server_session_tickets: Option<bool>,
 }
 
 impl TlsOptions {
+    /// 采样服务可关闭票据签发，保证重连仍是完整握手；默认保留后端行为。
+    pub fn with_server_session_tickets(mut self, enabled: bool) -> Self {
+        self.server_session_tickets=Some(enabled);self
+    }
+
     generate_set_and_with! {
         /// Client ticket policy. Servers ignore this client-only option.
         /// Connection pooling remains an independent application decision.

@@ -75,7 +75,21 @@ impl Listener {
         let listener = TcpListener::bind((bind_addr, bind_port)).await?;
         let local_addr = listener.local_addr()?;
         *self.local_addr.write() = Some(local_addr);
+        crate::h3_probe::start(self.templates.clone(), self.shutdown.clone()).await;
         info!("Local listener on {local_addr}");
+        Ok(listener)
+    }
+
+    /// 仅诊断宿主替换 H3 采样的证书与地址，TLS/H2 监听仍固定本机。
+    #[cfg(debug_assertions)]
+    pub async fn bind_with_diagnostic_h3_identity(
+        &self,
+        address: std::net::Ipv4Addr,
+        identity: rama::tls::server::ServerAuthData,
+    ) -> std::result::Result<TcpListener, rama::error::BoxError> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+        *self.local_addr.write() = Some(listener.local_addr()?);
+        crate::h3_probe::start_with_identity(self.templates.clone(), self.shutdown.clone(), address, identity).await?;
         Ok(listener)
     }
 

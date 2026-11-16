@@ -58,7 +58,7 @@ just run / build   # flutter run / build
 - 全量测试中存在与改动无关的存量失败。判断失败是否由自己引起，要在干净的 HEAD 上对比同一个用例。
 - 改动 `packages/fluxdo_render` 时，验证流程（全量 golden、fixture 索引）见 [fluxdo-render](.agents/skills/fluxdo-render/SKILL.md)。
 - 能机械检查的规则放进 `test/architecture/` 守卫测试。合理的存量用法通过基线计数豁免，只降不升。
-- TODO：CI 还没有运行守卫测试和 analyze，要先治理存量问题再接入。在此之前，提交前请自行运行 `flutter test test/architecture`。
+- 网络回归 CI 已运行全部架构守卫和网络相关定向 analyze；尚未接入整个应用的全量测试与全量 analyze。提交前仍请自行运行 `flutter test test/architecture`。
 
 ## 提交
 

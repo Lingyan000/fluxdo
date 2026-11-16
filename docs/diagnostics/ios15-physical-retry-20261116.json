@@ -1,0 +1,34 @@
+{
+  "run": 43820609697,
+  "commit": "bc3203db55e3f5983d4145c9d1e8d382388271b3",
+  "artifact": 14203938705,
+  "artifact_sha256": "e748d657a550f3ed21cdbd34063bc3f938d5f822a66ab6f84e65b535d6642cf1",
+  "checks": {
+    "one_session": true,
+    "released": true,
+    "core_stopped": true,
+    "physical_device": true,
+    "tcp_ready": true,
+    "two_tls": true,
+    "ua_matches": true,
+    "two_h3_origins": true,
+    "h3_calibrated": true,
+    "native_advertised_h3": true,
+    "core_advertised_h3": true,
+    "core_http2_requests_succeed": true
+  },
+  "public_h3_passed": false,
+  "browser_identity": {
+    "os_version": "Version 15.5 (Build 19F77)",
+    "safari_product_version": null,
+    "safari_read_status": "metadata_unavailable_or_invalid",
+    "safari_version_source": "unavailable",
+    "safari_version_verified": false,
+    "webkit_bundle_version": "8613.2.7.0.7",
+    "webkit_short_version": "8613"
+  },
+  "system_proxy_configured": true,
+  "local_session_window_seconds": 51.77,
+  "platform_duration_seconds": null,
+  "note": "Configured proxy alone does not prove target PAC decision; no raw route was captured. HTTP/2 fallback success is not public H3 success."
+}

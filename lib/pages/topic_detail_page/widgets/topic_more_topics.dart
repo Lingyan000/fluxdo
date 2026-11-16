@@ -16,6 +16,7 @@ import '../../../widgets/common/icon_glyph_span.dart';
 import '../../../widgets/common/smart_avatar.dart';
 import '../../category_topics_page.dart';
 import '../topic_detail_page.dart';
+import '../../../widgets/common/emoji_text.dart';
 
 /// 帖子流末尾的推荐区(对齐网页版 more-topics)
 ///
@@ -263,7 +264,7 @@ class _MoreTopicTile extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        EmojiText(
           topic.title,
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w500,

@@ -4,8 +4,9 @@
 //! 宿主也可在运行时下发 per-device CA。叶子证书由 rama 的 MITM issuer 按上游证书
 //! 镜像签发（见 [`crate::mirror`]），这里只负责 CA 本身。
 
-use rama::tls::boring::core::{pkey::PKey, x509::X509};
+use rama::tls::boring::core::{pkey::{PKey, Private}, x509::X509};
 use rama_crypto::cert::{CertificateSubject, SelfSignedCaConfig, generate_certificate_authority};
+use rama_crypto::dep::x509_parser::{certificate::X509Certificate, prelude::FromDer as _};
 
 use crate::error::{NetError, Result};
 
@@ -61,18 +62,50 @@ pub fn generate_ca_pem() -> Result<(String, String)> {
     ))
 }
 
-/// 仅信任当前核心 CA；校验签名链、有效期和目标主机，不按签发者名称放行。
+/// 在监听前验证签发材料，避免启动成功后才发现密钥不匹配或 CA 不可用。
+pub(crate) fn parse_mitm_ca(cert_pem: &str, key_pem: &str) -> Result<(X509, PKey<Private>)> {
+    let cert = X509::from_pem(cert_pem.as_bytes())
+        .map_err(|e| NetError::Certificate(format!("Invalid CA certificate: {e}")))?;
+    let key = PKey::private_key_from_pem(key_pem.as_bytes())
+        .map_err(|e| NetError::Certificate(format!("Invalid CA key: {e}")))?;
+    let public_key = cert.public_key()
+        .map_err(|e| NetError::Certificate(format!("Invalid CA public key: {e}")))?;
+    if !key.public_eq(&public_key) {
+        return Err(NetError::Certificate("CA certificate and private key do not match".into()));
+    }
+    let der = cert.to_der().map_err(|e| NetError::Certificate(format!("Invalid CA encoding: {e}")))?;
+    let (_, parsed) = X509Certificate::from_der(&der)
+        .map_err(|_| NetError::Certificate("Invalid CA encoding".into()))?;
+    let is_ca = parsed.basic_constraints().is_ok_and(|v| v.is_some_and(|v| v.value.ca));
+    let can_sign = parsed.key_usage().is_ok_and(|v| v.is_none_or(|v| v.value.key_cert_sign()));
+    if !is_ca || !can_sign || !permits_server_auth(&parsed) || !parsed.validity().is_valid() {
+        return Err(NetError::Certificate("CA constraints, signing usage or validity rejected".into()));
+    }
+    Ok((cert, key))
+}
+
+// 与 TLS 服务器用途一致：未限制 EKU 可以使用；显式限制时必须包含 serverAuth。
+fn permits_server_auth(cert: &X509Certificate<'_>) -> bool {
+    cert.extended_key_usage().is_ok_and(|usage| usage.is_none_or(|usage| usage.value.server_auth))
+}
+
+/// 仅信任当前核心 CA；校验签名链、用途、有效期和 SAN 主机，不按 CN 放行。
 pub fn verify_webview_leaf(ca_pem: &str, der: &[u8], host: &str) -> bool {
     use rama::tls::boring::core::{
         stack::Stack,
-        x509::{X509StoreContext, store::X509StoreBuilder, verify::X509VerifyParam},
+        x509::{X509StoreContext, store::X509StoreBuilder, verify::{X509CheckFlags, X509VerifyParam}},
     };
     let verify = || -> std::result::Result<bool, rama::tls::boring::core::error::ErrorStack> {
         let leaf = X509::from_der(der)?;
         let ca = X509::from_pem(ca_pem.as_bytes())?;
+        let ca_der = ca.to_der()?;
+        if !X509Certificate::from_der(&ca_der).is_ok_and(|(_, cert)| permits_server_auth(&cert)) {
+            return Ok(false);
+        }
         let mut store = X509StoreBuilder::new()?;
         store.add_cert(ca)?;
         let mut params = X509VerifyParam::new()?;
+        params.set_hostflags(X509CheckFlags::NEVER_CHECK_SUBJECT | X509CheckFlags::NO_PARTIAL_WILDCARDS);
         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
             params.set_ip(ip)?;
         } else {
@@ -87,6 +120,13 @@ pub fn verify_webview_leaf(ca_pem: &str, der: &[u8], host: &str) -> bool {
         && host.len() <= 253
         && !der.is_empty()
         && der.len() <= 65536
+        && X509Certificate::from_der(der).is_ok_and(|(rest, cert)| {
+            rest.is_empty()
+                && permits_server_auth(&cert)
+                && cert.key_usage().is_ok_and(|usage| usage.is_none_or(|usage| {
+                    usage.value.digital_signature() || usage.value.key_encipherment() || usage.value.key_agreement()
+                }))
+        })
         && verify().unwrap_or(false)
 }
 
@@ -94,7 +134,7 @@ pub fn verify_webview_leaf(ca_pem: &str, der: &[u8], host: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn leaf(ca_pem: &str, key_pem: &str, expired: bool) -> Vec<u8> {
+    fn leaf_with_policy(ca_pem: &str, key_pem: &str, expired: bool, server_auth: bool, dns: Option<&str>) -> Vec<u8> {
         use rama::tls::boring::core::{
             asn1::Asn1Time,
             bn::BigNum,
@@ -128,16 +168,58 @@ mod tests {
             .unwrap();
         cert.append_extension(&KeyUsage::new().digital_signature().build().unwrap())
             .unwrap();
-        cert.append_extension(&ExtendedKeyUsage::new().server_auth().build().unwrap())
-            .unwrap();
-        let san = SubjectAlternativeName::new()
-            .dns("image.example")
-            .ip("127.0.0.1")
-            .build(&cert.x509v3_context(Some(&ca), None))
-            .unwrap();
-        cert.append_extension(&san).unwrap();
+        let mut usage = ExtendedKeyUsage::new();
+        if server_auth { usage.server_auth(); } else { usage.client_auth(); }
+        cert.append_extension(&usage.build().unwrap()).unwrap();
+        if let Some(dns) = dns {
+            let san = SubjectAlternativeName::new().dns(dns).ip("127.0.0.1")
+                .build(&cert.x509v3_context(Some(&ca), None)).unwrap();
+            cert.append_extension(&san).unwrap();
+        }
         cert.sign(&key, MessageDigest::sha256()).unwrap();
         cert.build().to_der().unwrap()
+    }
+
+    fn leaf(ca_pem: &str, key_pem: &str, expired: bool) -> Vec<u8> {
+        leaf_with_policy(ca_pem, key_pem, expired, true, Some("image.example"))
+    }
+
+    #[test]
+    fn webview_trust_rejects_client_only_certificates_and_legacy_name_matching() {
+        let (ca, key) = generate_ca_pem().unwrap();
+        for (server_auth, san) in [(false, Some("image.example")), (true, None), (true, Some("im*.example"))] {
+            let der = leaf_with_policy(&ca, &key, false, server_auth, san);
+            assert!(!verify_webview_leaf(&ca, &der, "image.example"), "server_auth={server_auth}, SAN={san:?}");
+        }
+    }
+
+    #[test]
+    fn mirror_rejects_mismatched_ca_and_key_before_serving() {
+        let (ca, _) = generate_ca_pem().unwrap();
+        let (_, wrong_key) = generate_ca_pem().unwrap();
+        assert!(crate::mirror::MirrorRelay::new(&ca, &wrong_key,
+            std::sync::Arc::new(crate::mirror::FingerprintTemplates::default())).is_err());
+    }
+
+    #[test]
+    fn mitm_issuer_requires_ca_constraints() {
+        let (ca, key) = generate_ca_pem().unwrap();
+        assert!(parse_mitm_ca(&ca, &key).is_ok());
+        let leaf_pem = String::from_utf8(X509::from_der(&leaf(&ca, &key, false)).unwrap().to_pem().unwrap()).unwrap();
+        assert!(parse_mitm_ca(&leaf_pem, &key).is_err());
+    }
+
+    #[tokio::test]
+    async fn incomplete_custom_ca_never_falls_back_to_embedded_issuer() {
+        let (ca, key) = generate_ca_pem().unwrap();
+        for (cert, key) in [(Some(ca), None), (None, Some(key))] {
+            let result = crate::core::Core::start(crate::NetConfig {
+                webview_mitm: true, ca_cert_pem: cert, ca_key_pem: key,
+                ..Default::default()
+            }).await;
+            if let Ok(core) = &result { core.stop_listener().await; }
+            assert!(matches!(result, Err(NetError::Certificate(_))));
+        }
     }
 
     #[test]

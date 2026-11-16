@@ -14,6 +14,7 @@ import '../../services/toast_service.dart';
 import '../../widgets/common/error_view.dart';
 import 'channel/chat_channel_page.dart';
 import 'chat_list_page.dart' show ChatChannelAvatar;
+import '../../widgets/common/emoji_text.dart';
 
 /// 频道浏览器:全部公共频道(含未加入),搜索 + 加入/进入
 class ChatBrowseChannelsPage extends ConsumerStatefulWidget {
@@ -203,7 +204,7 @@ class _ChatBrowseChannelsPageState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          EmojiText(
                             channel.title ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -213,7 +214,7 @@ class _ChatBrowseChannelsPageState
                           ),
                           if (channel.description?.isNotEmpty == true) ...[
                             const SizedBox(height: 2),
-                            Text(
+                            EmojiText(
                               channel.description!,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,

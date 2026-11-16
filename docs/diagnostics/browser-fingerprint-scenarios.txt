@@ -1,0 +1,86 @@
+历史阶段记录：下文保留当时结果。当前修复状态与最终原生复核以
+fingerprint-remediation.txt、native-fingerprint-governance.txt 为准。
+尤其旧文中的“HEADERS 优先级未实现”和“额外 Fetch Metadata 未修复”已有后续修复。
+
+浏览器指纹扩展场景验证
+日期：2026-11-15
+基线：ea34f93d，工作区未提交修改。
+
+结论
+16 组矩阵中 15 组通过已列字段检查，1 组真实 Linux WebKit 存在 TLS 差异。
+全部 16 组均完成 5 类传输场景；传输成功不等于完整指纹一致。
+本轮没有执行 macOS WKWebView、iOS 模拟器/真机、Windows WebView2 或 Android 真机测试。
+
+证据分层
+1. 真实 Linux 浏览器：Chromium 99.0.4812.0、110.0.5481.38、156.0.8078.79，
+   加 110 显式开启 PermuteTLSExtensions、156 自定义 UA，共 5 组，全部通过。
+2. 真实 Linux Playwright WebKit 26.5（下载构建 2336，headless WPE）：1 组。
+   实际运行在 Linux；即使默认 UA 写着 Macintosh，也不是 macOS Safari 或 WKWebView。
+   H2 和头部字段通过，TLS 字段不一致，矩阵正确返回失败。
+3. 仓库预置模板：Android 2 组、iOS Safari 17/18/26、macOS Safari 18/26、
+   Windows Edge 152/153/154，共 10 组，通过已列字段检查。
+   模板来源记录在 core/net_core/presets/manifest.json。
+   回放使用实验 UA、空低熵 Client Hints 和显式实验顺序策略；不作为这些平台的实时采样证据。
+
+每组实验
+- 真实浏览器两轮独立进程采样，读取生产 ProbeEndpoint；模板回放组跳过真实采样。
+- 3 次强制重建连接，比较 Core 实际发出的 TLS/H2。
+- 连续请求复用：校验 ExchangeInfo.connection_id 相同、reused=true。
+- 连接池重置：调用生产 reset_connections，校验新连接 ID、reused=false。
+  这是网络切换后的连接池行为模拟，没有改变物理网卡、出口 IP 或 DNS。
+- 冷连接并发：4 个同时请求，校验使用同一 H2 连接。
+- 磁盘缓存恢复：新建模板仓库和客户端，验证恢复后的请求与采样字段。
+- 响应头超时：服务端延迟 200ms，客户端时限 25ms，校验 ReceiveTimeout；
+  之后再次请求成功。未修改 CSRF、bootstrap 分类或业务重试。
+
+总计 80 个传输场景通过；每组 12 次成功请求及 1 次预期超时。
+记录连接复用与 tls_resumed；本次没有观察到 TLS 会话恢复，不能宣称验证了恢复握手。
+采集文件包含 reference、缓存、TLS 发包、各阶段快照、请求头和连接身份。
+
+新确认并修正的兼容性问题
+1. 本地探针只凭 sec-fetch-mode=cors 判定 fetch，缺少该头会一直不 ready。
+   修正：仅本地固定 /fluxdo-probe/fetch 路径显式标识采样用途。
+   普通代理请求仍使用原识别规则，导航不会因此提前变成完整模板。
+2. 非 Chromium 扩展顺序变化会被能力哈希当成升级，清空 HTTP 采样，无法校准。
+   修正：所有内核的能力身份都忽略扩展排列，顺序策略仍独立比较原始握手。
+   回归用例使用合成 Safari 顺序变化，不声称某版 WKWebView 实际开启随机排列。
+另覆盖损坏、超大、UA 不符缓存均不抑制重新采样。
+两项修正均留有修复前失败、修复后通过的测试日志。
+
+真实 Linux WebKit 尚未解决的差异
+- SupportedGroups 原样含 X448（30）及 FFDHE 256..260，Core 输出缺少这些项。
+- 签名算法缺少 2057/2058/2059（RSA-PSS-PSS）及 2056（Ed448）。
+- 扩展集合中 Core 多出 23（extended_master_secret）。
+具体逐项值见 webkit/comparison.json。不能将这个结果外推为 Apple WKWebView 同样存在这些差异。
+这些差异涉及 TLS 后端能力与映射，不靠伪造 UA 或填入后端不支持的能力解决。
+本轮保留失败结果，没有降低比较标准以取得全绿，也没有修改 TLS 后端依赖。
+
+自动验证
+Rust：browser_tls 14、mirror 10、presets 2、client 32、probe 1，共 59 项通过。
+Dart：采样生命周期及 Client Hints，共 14 项通过；两个相关文件 analyze 无问题。
+未做完整应用构建或全平台发布编译。
+
+复现
+先按项目开发文档准备 Rust 环境，然后：
+  cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe
+  python tool/run_fingerprint_scenarios.py --output /tmp/fingerprint-new-run --chromium /path/to/chromium --fixtures
+可追加 --chromium99、--chromium110；WebKit 使用 --webkit-driver /absolute/path/to/tool/fingerprint_webkit_driver.py。
+WebKit 驱动依赖独立安装的 Python Playwright 与 WebKit 浏览器，不改项目运行时依赖。
+每次使用新的输出目录；矩阵存在任何不一致会返回非零并保存原始数据。
+当前环境缺失的 WebKit 动态库仅解压到 /workspace/.tools 下，没有修改系统信任或应用依赖。
+
+iOS/macOS 的后续验证路径
+- 云端 Mac 或 GitHub macOS runner：运行原生 macOS WKWebView 探针和相同 Core 采集器。
+  原生 WebView 是否能在 runner 会话中稳定运行仍须先做环境验证，不能把 Playwright Safari 等同于它。
+- 同一 Mac 上用 Xcode Simulator 运行应用或最小 WKWebView 测试宿主，覆盖 iOS 版本及采样流程。
+  模拟器覆盖 API/流程，不代表真机网络栈、系统代理、硬件和实际网络条件全部一致。
+- 通过 TestFlight/测试安装包或有访问权限的远程设备服务收集真实 iPhone/iPad 行为。
+  优先使用应用自己的 WKWebView 配置；HTTPS 采集器直接终止浏览器连接，避免代理替换握手。
+  由采集器保存 TLS/H2 特征，再与 Core 的同目标请求对照；单纯手机抓包无法直接读出加密 H2。
+- 现有 /__fluxdo/template 接口仅返回状态；完整模板落在 fingerprint_template.json，
+  现有普通日志不等于完整模板导出。若做用户侧诊断包，需要另补明确的模板及环境信息导出。
+以上 Apple 路径为可行方案，本轮未创建云 Mac、运行 GitHub workflow 或发布测试包。
+
+仍未覆盖
+真实 CF 判断与历史循环、公网 DoH/ECH、实际代理/出口切换、TLS 会话恢复、
+完整 HPACK/HEADERS 优先级与时序、QUIC/H3 模板、五个平台原生 WebView 真机矩阵。

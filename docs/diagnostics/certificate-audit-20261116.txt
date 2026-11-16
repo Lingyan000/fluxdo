@@ -1,0 +1,40 @@
+证书处理补充审查（2026-11-16，Asia/Shanghai）
+
+确认并修复
+1. Core 的 WebView 额外信任检查缺少服务器证书用途限制，且允许 CN 回退和部分通配符。
+   新增 EKU/KU 检查，仅按 SAN 校验目标；保留当前 CA、签名链、有效期和 IP 校验。
+2. 镜像代理启动未验证 CA 与私钥匹配、CA 约束和有效期；现在启动监听前拒绝错误材料。
+   自定义 CA 仅提供一半时明确失败，不能静默选择内置 CA。
+3. 设备证书并发加载可能生成不同身份；证书和私钥分开写入可能留下半对材料。
+   加载/重置串行化，以临时文件和 rename 原子发布 ca.json，旧格式迁移保留原证书。
+   损坏或不完整材料不自动换 CA；重置清除已安装标记，保存失败不发布内存状态。
+   宿主无法加载设备 CA 时停止此次 WebView MITM，避免空字段触发共享 CA 回退。
+4. macOS 重复证书处理按名称删除钥匙串条目，可能影响同名证书。
+   现在对已经存在的精确证书继续设置信任，不按名称删除。
+5. Android network_security_config 全局信任随包 CA；Core 默认 TrustManager 同样遵循该配置。
+   Dart 也曾在启动时将代理 CA 加入 SecurityContext.defaultContext。
+   移除这两处全局扩展，WebView 使用当前 Core CA 校验回调；补齐 SVG 查看页回调。
+   用户安装的系统证书和 Apple/Windows 已有设备 CA 安装流程保持原有行为。
+
+验证证据
+- 修改前同一 Rust 回归检出了 clientAuth-only 叶子被接受、CA 与密钥不匹配仍能构造代理。
+- 修改后完整 Rust 库测试 146 项通过，包含原有 H3 不可信证书拒绝等网络测试。
+- 设备 CA 存储 5 项、全局信任真实 TLS 1 项、架构守卫 9 项，共 15 项通过。
+- 全局信任测试使用临时自签证书和本机 TLS 服务：显式信任正对照成功，默认请求失败；
+  仅还原旧 ProxyCertificate 实现再运行时，默认请求在初始化后错误成功，测试按预期失败。
+  恢复修复后该负对照通过。未向系统安装测试证书。
+- 本地重新构建动态库，Dart → FFI → Core 的 3 项 WebView 信任测试全部通过：
+  当前 CA/正确主机通过；其他 CA、错误主机、缺失/损坏 DER、关闭 MITM/停止 Core 被拒绝。
+  首次执行因 worktree 没有动态库而失败，配置本次构建产物后重跑；不将缺库失败计为通过。
+- 相关 Dart analyze 无问题；Python 69 项通过；现有网络 workflow 通过 actionlint。
+  Python 首次因沙箱禁止本地 socket 失败，授予测试端口权限后重跑通过。
+- 现有网络 CI 纳入新增测试，并追加 macOS 证书处理文件的 Swift typecheck。
+
+边界
+- 上述 Linux 本地 TLS/FFI、Android 配置信任守卫不等于五个平台真机 WebView 验证。
+  本轮未使用 BrowserStack 额度，也未改动 CSRF 或发布 beta。
+- 不将这些发现直接认定为 issue #433 的 Wi-Fi-only 根因；仍需原用户复测和脱敏日志。
+- Android 提供者不支持可选撤销 API 时，无 stapled OCSP 且系统信任已通过的兼容修复已在此前提交。
+  本次审查结束时，收到 stapled OCSP 而该提供者无法检查仍会拒绝；后续已补本地验签，
+  详见 android-ocsp-20261116.txt，不再把接口未实现本身作为拒绝合法响应的理由。
+- 设备 CA 仍存放于应用支持目录，本轮没有实现系统硬件密钥库迁移或移除用户自行安装的旧根证书。

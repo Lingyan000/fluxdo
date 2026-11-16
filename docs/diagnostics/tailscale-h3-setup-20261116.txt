@@ -1,0 +1,67 @@
+Tailscale 可信采样入口预检结果（2026-11-16，北京时间）
+
+状态
+- 用户提供的公开 OIDC Client ID/Audience 已配置；联合身份登录、可信证书签发和预检通过。
+- 当前 GitHub 集成访问 Actions variables/secrets 管理接口返回 HTTP 403。
+  本方案使用非秘密的 OIDC 联合身份标识，无需扩展该权限或传递长期密钥。
+- 共执行两轮串行预检，每轮仅一个 Linux 临时节点、最长十分钟、一次连接尝试；BrowserStack 会话数为零。
+  检查系统信任链和主机名、本机 tailnet 地址上的 TCP/TLS 与 1200 字节 UDP 回显。
+  不代表跨节点 UDP 路由、WebView 接纳证书、H3/QPACK 或公网直连通过。
+
+Tailscale 一次性设置（已完成，保留用于复现）
+1. 在 DNS 页面启用 MagicDNS、HTTPS Certificates。
+   https://console.tailscale.com/admin/dns
+   发证会在公开证书透明日志中出现节点域名；预检采用中性的 fluxdo-h3-preflight 主机名。
+2. 为 CI 创建 tag:fluxdo-ci，仅由管理员管理。
+   如果使用策略文件，在现有 tagOwners 中增加该项，不覆盖原有策略：
+   "tag:fluxdo-ci": ["autogroup:admin"]
+3. 进入 Trust credentials，选择 Credential → OpenID Connect：
+   https://console.tailscale.com/admin/settings/trust-credentials
+   Issuer: GitHub Actions；自定义时填 https://token.actions.githubusercontent.com
+   Subject:
+   repo:Lingyan000/fluxdo:ref:refs/heads/diagnostics/tailscale-h3-preflight-20261116
+   权限仅 Auth Keys → Write，选择 tag:fluxdo-ci。
+   可进一步增加 custom claim workflow_ref：
+   Lingyan000/fluxdo/.github/workflows/tailscale-h3-preflight.yaml@refs/heads/diagnostics/tailscale-h3-preflight-20261116
+4. 返回生成的 Client ID 和 Audience。它们不是秘密；不要提供 OAuth secret、auth key 或 JWT。
+   填入 tool/native_fingerprint/tailscale-oidc.json 后，推送专用分支并手动选择工作流模式。
+   当前配置已填写；缺少标识时脚本会在加入网络前失败。
+
+实现和额度边界
+- 官方 Tailscale Action v4 固定到 064b10558093f38325e838ddea35486bdc6b1d5c，客户端 1.104.5。
+- 使用 GitHub 临时 OIDC 令牌，只准入上述仓库/分支；无 pull_request 触发。
+- 仅上传 result.json；节点状态全量 JSON、证书私钥、ACME 状态不上传、不缓存。
+- 证书副本由 Python 临时目录退出时删除。节点/ACME 状态置于 RUNNER_TEMP 下权限 0700 的独立目录，
+  不上传或缓存，随临时 runner 销毁；Action post 负责节点登出和停止进程，不声称其主动删除状态目录。
+  最终运行日志确认 Successfully logged out of Tailscale 和 Stopped tailscale，未出现相应清理失败日志。
+- 配置和本地证书负对照不消耗 Tailscale 额度。首轮在读取发证状态目录时失败，修复后第二轮发证成功。
+  最终 job 耗时 50 秒，不等同于已查询实际计费时长；本轮不再启动重复发证或设备会话。
+- 后续原始 QUIC 由本项目采样程序终止，不使用 Tailscale Serve/Funnel 的 HTTPS 终止替代。
+  本阶段不向正式应用加入 VPN 依赖，也不证明 Windows 业务/独立 profile 策略相同。
+
+云端结果与缺陷修复
+- 首轮：https://github.com/Lingyan000/fluxdo/actions/runs/43794102834
+  提交 766e56411d144fdcec50b17cb75556485235f048；OIDC 和入网成功，发证失败：
+  500 Internal Server Error: no TailscaleVarRoot。
+  官方 Action 默认内存状态不提供发证需要的状态根目录；不能以入网成功认定发证可用。
+  失败产物 14193680992，SHA-256：
+  caf6a10278ca275fec4e25b4bdcb1af080eb224bbefd439a2ae56247766f0400
+- 修复：显式创建私有临时状态目录，通过 Action statedir 输入传入；不增加长期密钥。
+- 最终：https://github.com/Lingyan000/fluxdo/actions/runs/43794304617
+  提交 e0f8337efb74f0198254a0bcee4ae71acc25d915；job 133059502667，成功，耗时 50 秒。
+  产物创建于 2026-11-16 10:48:37（北京时间），ID 14193582542，400 字节，仅 result.json。
+  下载 ZIP 的 SHA-256 已与 GitHub digest 核对：
+  1465aec33d567b21ab213aab51d1664ae79b8a26ecf5e792abb7788302f3228a
+  passed=true，system_trust_and_hostname_verified=true，local_tailnet_udp_1200_byte_echo=true。
+  Linux 系统信任链和主机名均验证通过，未使用自定义 CA、证书豁免或跳过主机名检查。
+- 本地配置/TLS 正反对照 3 项和架构守卫 8 项通过。
+- 这是同一节点向自身 tailnet 地址发起的 TLS/UDP 检查，不是跨节点路径测试。
+  后续已完成受控可信 H3 采集端、Android 原生正常信任链和生产模板回放，见
+  docs/diagnostics/h3-trusted-origin-20261116.txt；这里的单节点预检本身不计作 H3 证据。
+  正式应用可信入口与 Windows 业务 profile 等剩余范围以新报告为准。
+  未修改 CSRF、Cookie、Origin、Referer 策略；不把本次预检计入原有 108 组 H3 扩展请求。
+
+官方依据
+https://tailscale.com/docs/features/workload-identity-federation
+https://tailscale.com/docs/integrations/github/github-action
+https://tailscale.com/docs/how-to/set-up-https-certificates

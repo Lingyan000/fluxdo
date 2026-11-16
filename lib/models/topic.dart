@@ -1865,13 +1865,53 @@ class TopicLink {
   final String title;
   final int clicks;
 
-  const TopicLink({required this.url, this.title = '', this.clicks = 0});
+  /// 站内链接（指向本站话题、帖子等）
+  final bool internal;
 
-  factory TopicLink.fromJson(Map<String, dynamic> json) => TopicLink(
-    url: json['url'] as String? ?? '',
-    title: json['title'] as String? ?? '',
-    clicks: json['clicks'] as int? ?? 0,
-  );
+  /// 指向本站上传的附件
+  final bool attachment;
+
+  /// 链接域名，服务端未下发时从 [url] 解析
+  final String domain;
+
+  const TopicLink({
+    required this.url,
+    this.title = '',
+    this.clicks = 0,
+    this.internal = false,
+    this.attachment = false,
+    this.domain = '',
+  });
+
+  factory TopicLink.fromJson(Map<String, dynamic> json) {
+    final url = json['url'] as String? ?? '';
+    return TopicLink(
+      url: url,
+      title: json['title'] as String? ?? '',
+      clicks: json['clicks'] as int? ?? 0,
+      internal: json['internal'] as bool? ?? false,
+      attachment: json['attachment'] as bool? ?? false,
+      domain: json['domain'] as String? ?? Uri.tryParse(url)?.host ?? '',
+    );
+  }
+}
+
+/// 话题某一天的浏览量（`/t/:id/view-stats.json`）
+class TopicViewStat {
+  /// 服务端按 UTC 日期汇总；这里只用年月日，不代表具体时刻
+  final DateTime day;
+  final int views;
+
+  const TopicViewStat({required this.day, required this.views});
+
+  static TopicViewStat? fromJson(Map<String, dynamic> json) {
+    final day = TimeUtils.parseUtcTime(json['viewed_at'] as String?);
+    if (day == null) return null;
+    return TopicViewStat(
+      day: DateTime(day.year, day.month, day.day),
+      views: (json['views'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// 话题详情模型

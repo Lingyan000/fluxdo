@@ -1,0 +1,9 @@
+来源：https://github.com/plabayo/rama/tree/23d59722e125fb6f2de66df588f772205318e555/rama-http-core
+固定原提交，不升级依赖。保留源码与许可证，Cargo.toml 展开 workspace 依赖。
+未复制上游 59 MB HPACK 互操作数据集；运行完整上游 fixture 测试时从上述提交恢复 fixtures/。
+本地补丁：保留并传递 H2 HEADERS 优先级，编码 PRIORITY 标志及五字节负载。
+入站 StreamDependency 使用单独的 ReceivedStreamDependency 类型；仅根依赖可跨连接传递，非根流 ID 留待显式映射。
+本地补丁：请求流分配后选择冷/热 QPACK 策略；按当前请求流编号发送有界 PRIORITY_UPDATE，不复用样本流编号。
+QPACK 字段 Base 规划保留 Automatic 的自动动态表编码；精确静态命中、敏感字段、容量和阻塞预算仍约束输出。
+QPACK 可按原生实测启用字段值复用准入：首次字面量、复用后入表；Base 取当前表边界，避免启动期 post-Base 永久复用。
+非敏感字段的连接内记忆同时受动态表容量和字段块预算限制；新连接重新计数，不保存或复用历史动态索引。

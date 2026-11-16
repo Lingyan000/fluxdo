@@ -1,0 +1,487 @@
+{
+  "hello": {
+    "protocol_version": 771,
+    "cipher_suites": [
+      56026,
+      4865,
+      4866,
+      4867,
+      49195,
+      49199,
+      49196,
+      49200,
+      52393,
+      52392,
+      49171,
+      49172,
+      156,
+      157,
+      47,
+      53
+    ],
+    "compression_algorithms": [
+      0
+    ],
+    "extensions": [
+      {
+        "Opaque": {
+          "id": 47802,
+          "data": []
+        }
+      },
+      {
+        "ServerName": "localhost"
+      },
+      {
+        "Opaque": {
+          "id": 23,
+          "data": []
+        }
+      },
+      {
+        "Opaque": {
+          "id": 65281,
+          "data": [
+            0
+          ]
+        }
+      },
+      {
+        "SupportedGroups": [
+          43690,
+          29,
+          23,
+          24
+        ]
+      },
+      {
+        "ECPointFormats": [
+          0
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 35,
+          "data": []
+        }
+      },
+      {
+        "ApplicationLayerProtocolNegotiation": [
+          [
+            104,
+            50
+          ],
+          [
+            104,
+            116,
+            116,
+            112,
+            47,
+            49,
+            46,
+            49
+          ]
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 5,
+          "data": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "SignatureAlgorithms": [
+          1027,
+          2052,
+          1025,
+          1283,
+          2053,
+          1281,
+          2054,
+          1537
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 18,
+          "data": []
+        }
+      },
+      {
+        "Opaque": {
+          "id": 51,
+          "data": [
+            0,
+            41,
+            170,
+            170,
+            0,
+            1,
+            0,
+            0,
+            29,
+            0,
+            32,
+            110,
+            142,
+            139,
+            78,
+            117,
+            98,
+            135,
+            104,
+            254,
+            157,
+            228,
+            105,
+            228,
+            55,
+            40,
+            165,
+            119,
+            232,
+            1,
+            140,
+            116,
+            26,
+            52,
+            246,
+            218,
+            226,
+            48,
+            251,
+            254,
+            169,
+            206,
+            99
+          ]
+        }
+      },
+      {
+        "Opaque": {
+          "id": 45,
+          "data": [
+            1,
+            1
+          ]
+        }
+      },
+      {
+        "SupportedVersions": [
+          56026,
+          772,
+          771
+        ]
+      },
+      {
+        "CertificateCompression": [
+          2
+        ]
+      },
+      {
+        "ApplicationSettings": {
+          "protocols": [
+            [
+              104,
+              50
+            ]
+          ],
+          "new_codepoint": false
+        }
+      },
+      {
+        "Opaque": {
+          "id": 60138,
+          "data": [
+            0
+          ]
+        }
+      },
+      {
+        "Opaque": {
+          "id": 21,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ]
+  },
+  "early_frames": [
+    {
+      "Settings": {
+        "flags": 0,
+        "config": {
+          "header_table_size": 65536,
+          "enable_push": null,
+          "max_concurrent_streams": 1000,
+          "initial_window_size": 6291456,
+          "max_frame_size": null,
+          "max_header_list_size": 262144,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": [
+            1,
+            3,
+            4,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "WindowUpdate": {
+        "stream_id": 0,
+        "size_increment": 15663105
+      }
+    },
+    {
+      "Settings": {
+        "flags": 1,
+        "config": {
+          "header_table_size": null,
+          "enable_push": null,
+          "max_concurrent_streams": null,
+          "initial_window_size": null,
+          "max_frame_size": null,
+          "max_header_list_size": null,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": null
+        }
+      }
+    }
+  ],
+  "pseudo_order": [
+    ":method",
+    ":authority",
+    ":scheme",
+    ":path"
+  ],
+  "fetch_header_order": [
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "user-agent",
+    "sec-ch-ua-platform",
+    "accept",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "referer",
+    "accept-encoding",
+    "accept-language"
+  ],
+  "accept_encoding": "gzip, deflate, br",
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/99.0.4812.0 Safari/537.36"
+}

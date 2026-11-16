@@ -100,8 +100,7 @@ pub async fn connect_http_tunnel(
         Err(_) => format!("{target_host}:{target_port}"),
     };
     info!(
-        "Connecting to upstream HTTP proxy {} for {}",
-        proxy.proxy_url(),
+        "Connecting to upstream HTTP proxy [redacted] for {}",
         authority
     );
 
@@ -196,8 +195,7 @@ pub async fn connect_socks5_tunnel(
     }
 
     info!(
-        "Connecting to upstream SOCKS5 proxy {} for {}:{}",
-        proxy.proxy_url(),
+        "Connecting to upstream SOCKS5 proxy [redacted] for {}:{}",
         target_host,
         target_port
     );
@@ -378,8 +376,7 @@ pub async fn connect_shadowsocks_tunnel(
     };
 
     info!(
-        "Connecting to upstream Shadowsocks proxy {} for {}:{} with cipher {}",
-        proxy.proxy_url(),
+        "Connecting to upstream Shadowsocks proxy [redacted] for {}:{} with cipher {}",
         target_host,
         target_port,
         cipher_name

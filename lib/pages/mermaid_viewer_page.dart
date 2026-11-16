@@ -5,6 +5,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../theme/app_colors.dart';
 import '../l10n/s.dart';
+import '../services/webview_settings.dart';
 import 'package:common_ui/common_ui.dart';
 import 'image_viewer_page.dart';
 
@@ -111,6 +112,8 @@ class _MermaidViewerPageState extends State<MermaidViewerPage> {
                 child: InAppWebView(
                   key: ValueKey('mermaid-svg-$_attempt'),
                   initialUrlRequest: URLRequest(url: WebUri(widget.svgUrl)),
+                  onReceivedServerTrustAuthRequest: (controller, challenge) =>
+                      WebViewSettings.handleServerTrustAuthRequest(challenge),
                   initialSettings: InAppWebViewSettings(
                     // 纯 SVG 静态文档,无需 JS
                     javaScriptEnabled: false,

@@ -1,0 +1,446 @@
+{
+  "hello": {
+    "protocol_version": 771,
+    "cipher_suites": [
+      4866,
+      4867,
+      4865,
+      4868,
+      49196,
+      52393,
+      49325,
+      49162,
+      49195,
+      49324,
+      49161,
+      49200,
+      52392,
+      49172,
+      49199,
+      49171,
+      157,
+      49309,
+      53,
+      156,
+      49308,
+      47,
+      159,
+      52394,
+      49311,
+      57,
+      158,
+      49310,
+      51
+    ],
+    "compression_algorithms": [
+      0
+    ],
+    "extensions": [
+      {
+        "Opaque": {
+          "id": 5,
+          "data": [
+            1,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "SignatureAlgorithms": [
+          1025,
+          2057,
+          2052,
+          1027,
+          2055,
+          1281,
+          2058,
+          2053,
+          1283,
+          2056,
+          1537,
+          2059,
+          2054,
+          1539,
+          513,
+          515
+        ]
+      },
+      {
+        "RecordSizeLimit": 16385
+      },
+      {
+        "ServerName": "localhost"
+      },
+      {
+        "Opaque": {
+          "id": 35,
+          "data": []
+        }
+      },
+      {
+        "ApplicationLayerProtocolNegotiation": [
+          [
+            104,
+            50
+          ],
+          [
+            104,
+            116,
+            116,
+            112,
+            47,
+            49,
+            46,
+            49
+          ],
+          [
+            104,
+            116,
+            116,
+            112,
+            47,
+            49,
+            46,
+            48
+          ]
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 45,
+          "data": [
+            2,
+            1,
+            0
+          ]
+        }
+      },
+      {
+        "SupportedGroups": [
+          23,
+          24,
+          25,
+          29,
+          30,
+          256,
+          257,
+          258,
+          259,
+          260
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 51,
+          "data": [
+            0,
+            105,
+            0,
+            23,
+            0,
+            65,
+            4,
+            58,
+            236,
+            240,
+            103,
+            94,
+            109,
+            217,
+            154,
+            53,
+            127,
+            141,
+            62,
+            241,
+            226,
+            84,
+            1,
+            22,
+            5,
+            74,
+            85,
+            192,
+            230,
+            17,
+            216,
+            72,
+            129,
+            146,
+            70,
+            221,
+            116,
+            4,
+            139,
+            73,
+            210,
+            59,
+            140,
+            160,
+            103,
+            92,
+            30,
+            29,
+            46,
+            123,
+            68,
+            46,
+            42,
+            100,
+            110,
+            55,
+            183,
+            72,
+            221,
+            101,
+            62,
+            52,
+            42,
+            23,
+            80,
+            192,
+            69,
+            47,
+            217,
+            170,
+            28,
+            0,
+            29,
+            0,
+            32,
+            240,
+            119,
+            91,
+            237,
+            250,
+            41,
+            232,
+            160,
+            23,
+            3,
+            197,
+            138,
+            23,
+            126,
+            3,
+            115,
+            249,
+            149,
+            111,
+            19,
+            200,
+            46,
+            183,
+            162,
+            236,
+            126,
+            39,
+            226,
+            64,
+            44,
+            113,
+            116
+          ]
+        }
+      },
+      {
+        "SupportedVersions": [
+          772,
+          771,
+          770,
+          769
+        ]
+      },
+      {
+        "ECPointFormats": [
+          0
+        ]
+      },
+      {
+        "Opaque": {
+          "id": 65281,
+          "data": [
+            0
+          ]
+        }
+      },
+      {
+        "Opaque": {
+          "id": 21,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    ]
+  },
+  "early_frames": [
+    {
+      "Settings": {
+        "flags": 0,
+        "config": {
+          "header_table_size": 65536,
+          "enable_push": 0,
+          "max_concurrent_streams": null,
+          "initial_window_size": 6291456,
+          "max_frame_size": null,
+          "max_header_list_size": null,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": [
+            4,
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "WindowUpdate": {
+        "stream_id": 0,
+        "size_increment": 15663105
+      }
+    },
+    {
+      "Settings": {
+        "flags": 1,
+        "config": {
+          "header_table_size": null,
+          "enable_push": null,
+          "max_concurrent_streams": null,
+          "initial_window_size": null,
+          "max_frame_size": null,
+          "max_header_list_size": null,
+          "enable_connect_protocol": null,
+          "no_rfc7540_priorities": null,
+          "setting_order": null
+        }
+      }
+    }
+  ],
+  "pseudo_order": [
+    ":method",
+    ":scheme",
+    ":authority",
+    ":path"
+  ],
+  "fetch_header_order": [
+    "referer",
+    "accept",
+    "user-agent",
+    "accept-encoding",
+    "accept-language",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site"
+  ],
+  "accept_encoding": "gzip, deflate, br",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15",
+  "tls_permute_extensions": true,
+  "low_entropy_client_hints": []
+}

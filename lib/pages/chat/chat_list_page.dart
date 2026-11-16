@@ -443,7 +443,7 @@ class _ChatChannelTile extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Flexible(
-                                child: Text(
+                                child: EmojiText(
                                   title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

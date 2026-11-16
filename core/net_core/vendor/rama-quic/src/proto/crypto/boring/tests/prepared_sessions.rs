@@ -351,3 +351,19 @@ fn shared_handshake_settings_apply_without_peer_preparation() {
             .unwrap_err();
     }
 }
+
+/// 探针关闭票据后，同一客户端重复连接也必须使用完整握手。
+#[test]
+fn sampling_server_disables_tickets_without_changing_default_servers() {
+    for tickets in [false,true] {
+        let (policy,server)=configs();
+        let client=BoringTlsProvider.client_config(&policy,TlsOptions::default()).unwrap().crypto;
+        let server=BoringTlsProvider.server_config(&server,TlsOptions::default().with_server_session_tickets(tickets))
+            .unwrap().crypto.into_fixed();
+        for attempt in 0..3 {
+            let mut c=client.clone().start_session(Version::V1,"localhost",&params(Side::Client)).unwrap();
+            let mut s=server.clone().start_session(Version::V1,&params(Side::Server)).unwrap();
+            check_session(&mut *c,&mut *s,tickets && attempt>0);
+        }
+    }
+}

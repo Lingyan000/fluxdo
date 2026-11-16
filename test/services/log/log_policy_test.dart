@@ -4,6 +4,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_policy.dart';
 
 void main() {
+  test('历史 Core 请求路径和非法 DoH 输入不会在导出时暴露密钥', () {
+    for (final message in [
+      '[Core/fluxdo_net::client] Request GET /private-key?dns=encoded',
+      'Request GET https://resolver.example/private-key?dns=encoded',
+      "Invalid DOH URL 'https://resolver.example/private-key': invalid character",
+      "Unsupported DOH URL scheme 'http': http://resolver.example/private-key",
+      'Missing URL scheme: resolver.example/private-key',
+    ]) {
+      final row = jsonEncode({'message': message, 'sessionId': 'old'});
+      final exported = LogPolicy.export(row);
+      expect(exported, isNot(contains('private-key')));
+      expect(exported, isNot(contains('encoded')));
+      expect(exported, contains('[redacted]'));
+    }
+  });
+
+  test('导出头与历史正文共同脱敏，保留排查证书需要的目标信息', () {
+    final old = {
+      'sessionId': 'old',
+      'computerName': 'Alice-PC',
+      'proxyHost': 'private-proxy.example:7890',
+      'dohServer': 'https://resolver.example/account-path-secret?key=query-secret',
+      'fields': {'doh_server_ech': 'https://user:pass@resolver.example/secret'},
+      'message': 'DoH https://resolver.example/path-secret，'
+          '应用代理 socks5://private-proxy.example:7890，'
+          '系统代理 [fd00::1234]:8080; via proxy private-proxy.example:7890; '
+          'SOCKS5 proxy socks5h://private-proxy.example:7890; '
+          'Shadowsocks proxy ss://fd00::1234:8080',
+      'peerAddr': '203.0.113.1:443',
+      'addressFamily': 'ipv4',
+      'echRequested': true,
+      'error': 'platform verifier: certificate issuer is not trusted',
+    };
+    final current = LogPolicy.normalize({...old, 'message': 'current'});
+    final content = '${jsonEncode(old)}\n${jsonEncode(current)}';
+    for (final fullHistory in [true, false]) {
+      final exported = LogPolicy.export(content, fullHistory: fullHistory, headers: [
+        {...old, '_header': 'device_info', 'proxyEnabled': true},
+      ]);
+      for (final private in [
+        'Alice-PC', 'private-proxy.example', 'fd00::1234',
+        'resolver.example', 'path-secret', 'query-secret', 'user:pass',
+      ]) {
+        expect(exported, isNot(contains(private)), reason: private);
+      }
+      expect(exported, contains('203.0.113.1:443'));
+      expect(exported, contains('"echRequested":true'));
+      expect(exported, contains('certificate issuer is not trusted'));
+      expect(exported, contains('"proxyEnabled":true'));
+    }
+  });
+
   test('敏感字段和 URL 参数统一移除，诊断字段保留', () {
     final row = LogPolicy.normalize({
       'url': 'https://user:password@example.com:8443/image?token=hidden#secret',

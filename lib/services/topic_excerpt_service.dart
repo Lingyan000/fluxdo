@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 
+import '../utils/emoji_shortcodes.dart';
 import '../utils/url_helper.dart';
 import 'discourse/discourse_service.dart';
 import 'topic_preview_preloader.dart';
@@ -81,6 +82,17 @@ class TopicExcerptService {
       final tag = node is dom.Element ? node.localName : null;
       if (tag == 'br') {
         buffer.writeln();
+        return;
+      }
+      // emoji 图片还原成短代码,由展示层按 emoji 渲染
+      if (tag == 'img') {
+        final img = node as dom.Element;
+        if (img.classes.contains('emoji')) {
+          final label = img.attributes['alt'] ?? img.attributes['title'];
+          if (label != null && emojiShortcodeRegex.hasMatch(label)) {
+            buffer.write(label);
+          }
+        }
         return;
       }
       if (blockTags.contains(tag)) buffer.writeln();

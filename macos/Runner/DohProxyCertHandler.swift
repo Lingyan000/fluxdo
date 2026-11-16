@@ -54,18 +54,8 @@ import Security
             kSecAttrLabel as String: "DOH Proxy CA",
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        if addStatus == errSecDuplicateItem {
-            // 旧证书存在，替换
-            SecItemDelete([
-                kSecClass as String: kSecClassCertificate,
-                kSecAttrLabel as String: "DOH Proxy CA",
-            ] as CFDictionary)
-            let retryStatus = SecItemAdd(addQuery as CFDictionary, nil)
-            if retryStatus != errSecSuccess {
-                NSLog("[DohProxyCertHandler] Failed to replace CA: %d", retryStatus)
-                return false
-            }
-        } else if addStatus != errSecSuccess {
+        // 重复表示这张证书已经存在，只需继续设置它的信任；名称不是唯一标识，不能按名称批量删除。
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
             NSLog("[DohProxyCertHandler] Failed to add CA: %d", addStatus)
             return false
         }

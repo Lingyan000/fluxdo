@@ -51,6 +51,7 @@ import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
 import '../../providers/shortcut_provider.dart';
 import '../ai/ai_post_review_button.dart';
+import '../common/emoji_text.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -333,7 +334,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet> {
             AppIcon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
             Expanded(
-              child: Text(
+              child: EmojiText(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

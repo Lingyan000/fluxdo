@@ -105,13 +105,36 @@ class EmojiHandler {
     }
   }
 
+  /// 站点 `enable_inline_emoji_translation`:开启时紧贴文字的短代码也转表情。
+  static bool get inlineTranslation =>
+      PreloadedDataService()
+          .siteSettingsSync?['enable_inline_emoji_translation'] ==
+      true;
+
+  /// 展示文本里应转成表情的短代码(规则见 [displayEmojiShortcodeMatches])。
+  ///
+  /// [inline] 为 null 时跟随站点设置;摘要等由 cooked 还原出的文本里,
+  /// 短代码是 cooked 已判定过的表情,传 true 全量转换。
+  static Iterable<RegExpMatch> shortcodeMatches(String text, {bool? inline}) =>
+      displayEmojiShortcodeMatches(text, inline: inline ?? inlineTranslation);
+
   /// 将文本中的 :emoji: 替换为 HTML img 标签
   String replaceEmojis(String text) {
-    return text.replaceAllMapped(emojiShortcodeRegex, (match) {
+    final buffer = StringBuffer();
+    var last = 0;
+    for (final match in shortcodeMatches(text)) {
       final name = normalizeEmojiShortcodeName(match.group(1)!);
       final fullUrl = getEmojiUrl(name);
-      return '<img src="$fullUrl" alt=":$name:" class="emoji" title=":$name:">';
-    });
+      buffer
+        ..write(text.substring(last, match.start))
+        ..write(
+          '<img src="$fullUrl" alt=":$name:" class="emoji" title=":$name:">',
+        );
+      last = match.end;
+    }
+    if (last == 0) return text;
+    buffer.write(text.substring(last));
+    return buffer.toString();
   }
 
   /// 获取 emoji 的完整 URL

@@ -13,6 +13,8 @@ import 'package:fluxdo/theme/app_theme.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/user/user_profile_header.dart';
+import 'package:fluxdo/utils/responsive.dart';
+import 'package:fluxdo/widgets/user/activity_card_layout.dart';
 import 'package:fluxdo/widgets/user/activity_post_card.dart';
 import 'package:fluxdo/widgets/user/user_profile_skeleton.dart';
 import 'package:fluxdo/widgets/post/post_item/widgets/reaction_emoji.dart';
@@ -1179,8 +1181,12 @@ void main() {
             matching: find.byType(ActivityPostCard),
           ),
         );
-        expect(cardRect.left, listRect.left);
-        expect(cardRect.right, listRect.right);
+        // 卡片形态带底色，两侧与栏边留出间距；平铺形态贴边铺满。
+        final inset = listRect.width < Breakpoints.mobile
+            ? 0.0
+            : ActivityCardList.gutter;
+        expect(cardRect.left, listRect.left + inset);
+        expect(cardRect.right, listRect.right - inset);
         expect(cardRect.left, skeletonRect.left);
         expect(cardRect.right, skeletonRect.right);
         final voteSegment = tester.widget<SegmentedCardItem>(

@@ -13,6 +13,7 @@ import '../../network_logger.dart';
 import '../doh/ech_dns_policy.dart';
 import '../proxy/proxy_settings_service.dart';
 import 'net_core_bindings.dart';
+import 'net_core_diagnostics.dart';
 import 'network_health_monitor.dart';
 
 /// 网络核心的生命周期与配置。
@@ -158,6 +159,10 @@ class NetCoreService {
 
   /// 重新读取核心状态（模板是否就绪等）。探针采样后调用。
   void refreshStatus() => _refreshStatus();
+
+  /// 导出时直接读取原生核心；失败不发布 stopped，也不把缓存伪装成实时状态。
+  NetCoreDiagnosticSnapshot readDiagnostics() =>
+      NetCoreDiagnosticSnapshot.capture(_bindings.statusJson);
 
   /// 丢弃所有池化连接。网络切换后调用：旧连接绑在旧网络的源地址上，
   /// 不主动丢弃会一直等到 NAT 超时才失败。
@@ -325,6 +330,12 @@ class NetCoreConfig {
     if (serverIp != null && serverIp!.isNotEmpty) 'server_ip': serverIp,
     'webview_mitm': webViewMitm,
     'fingerprint_platform': Platform.operatingSystem,
+    // iOS 等平台的 UA 系统版本可能冻结；使用真实宿主版本校验缓存，
+    // 不将系统版本拼成浏览器版本，也不读取设备唯一标识。
+    'fingerprint_runtime_identity': jsonEncode([
+      Platform.operatingSystem,
+      Platform.operatingSystemVersion,
+    ]),
     if (fingerprintPreset != null) 'fingerprint_preset': fingerprintPreset,
     if (fingerprintUserAgent != null)
       'fingerprint_user_agent': fingerprintUserAgent,
@@ -335,14 +346,13 @@ class NetCoreConfig {
     if (caKeyPem != null) 'ca_key_pem': caKeyPem,
   };
 
-  /// 日志用的配置摘要：不含账号密码与证书。
+  /// 日志用的配置摘要：不含设备名称、解析/代理地址、账号密码与证书。
   String describe() {
     final parts = <String>[
-      enableDoh ? 'DoH ${dohServer ?? '默认'}' : 'DoH 关',
+      enableDoh ? 'DoH 开' : 'DoH 关',
       if (upstreamProxy != null && upstreamProxy!.isValid)
-        '应用代理 ${upstreamProxy!.protocol.storageValue}://'
-            '${upstreamProxy!.host}:${upstreamProxy!.port}',
-      if (systemProxy != null) '系统代理 ${systemProxy!.host}:${systemProxy!.port}',
+        '应用代理 ${upstreamProxy!.protocol.storageValue}',
+      if (systemProxy != null) '系统代理 开',
       if (serverIp != null && serverIp!.isNotEmpty) '指定 IP $serverIp',
       if (preferIpv6) '优先 IPv6',
       webViewMitm ? 'WebView 经核心' : 'WebView 直连',
@@ -424,6 +434,7 @@ class NetCoreStatus {
     this.templateSource,
     this.templatePreset,
     this.templateMode = 'auto',
+    this.templateDiagnostics = const {},
     this.userAgent,
     this.webViewMitm = false,
     this.systemProxy = false,
@@ -437,11 +448,13 @@ class NetCoreStatus {
   final bool running;
   final int? port;
 
-  /// 指纹模板是否就绪：就绪后 dio 的请求才按 WebView 指纹出站。
+  /// 真实采样是否完成校准；不代表全部协议字段一致或站点一定接受。
   final bool templateReady;
   final String? templateSource;
   final String? templatePreset;
   final String templateMode;
+  /// 核心生成的脱敏能力摘要，不含原始握手、Cookie、票据或私钥。
+  final Map<String, dynamic> templateDiagnostics;
 
   /// 采样时 WebView 的 UA；与当前 UA 不符说明 WebView 升级过，需要重采。
   final String? userAgent;
@@ -464,6 +477,9 @@ class NetCoreStatus {
       templateSource: json['template_source'] as String?,
       templatePreset: json['template_preset'] as String?,
       templateMode: json['template_mode'] as String? ?? 'auto',
+      templateDiagnostics: Map.unmodifiable(
+        json['template_diagnostics'] as Map<String, dynamic>? ?? const {},
+      ),
       userAgent: json['user_agent'] as String?,
       webViewMitm: json['webview_mitm'] == true,
       systemProxy: json['system_proxy'] == true,
