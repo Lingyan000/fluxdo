@@ -36,6 +36,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14'
+      - name: Verify dual loopback UDP relay
+        run: |
+          mkdir -p "${{ runner.temp }}/udp-test"
+          javac -d "${{ runner.temp }}/udp-test" tool/native_fingerprint/android/app/src/main/java/com/fluxdo/fingerprintprobe/UdpBridge.java tool/native_fingerprint/android/UdpBridgeSmoke.java
+          java -cp "${{ runner.temp }}/udp-test" com.fluxdo.fingerprintprobe.UdpBridgeSmoke | tee "${{ runner.temp }}/udp-test/result.json"
       - name: Build native WebView host
         run: gradle -p tool/native_fingerprint/android :app:assembleDebug
       - name: Build Core diagnostic collector
@@ -60,6 +65,7 @@ jobs:
         with:
           name: android-production-h3-${{ github.run_id }}
           path: |
+            ${{ runner.temp }}/udp-test/result.json
             ${{ runner.temp }}/native-fingerprint/**/*.json
             ${{ runner.temp }}/native-fingerprint/**/*.log
             ${{ runner.temp }}/native-fingerprint/**/*.stdout

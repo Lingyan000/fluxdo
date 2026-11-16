@@ -68,6 +68,7 @@ public final class ProbeActivity extends Activity {
             data.put("default_network_available", connectivity.getActiveNetwork() != null);
             data.put("udp_relay", udpBridge != null);
             if (udpBridge != null) {
+                data.put("udp_dual_loopback", true);
                 data.put("udp_sent", udpBridge.sent.get());
                 data.put("udp_received", udpBridge.received.get());
                 data.put("udp_error", udpBridge.error);

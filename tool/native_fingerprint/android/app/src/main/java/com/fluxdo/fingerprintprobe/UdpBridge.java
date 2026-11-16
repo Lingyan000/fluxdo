@@ -8,44 +8,61 @@ import java.util.concurrent.atomic.AtomicLong;
 // 每个浏览器源端口独立上游 socket，最多 8 条映射，不混合不同 QUIC 连接的报文。
 final class UdpBridge implements AutoCloseable {
     private final DatagramSocket listener;
-    private final int port;
+    private final DatagramSocket listener6;
+    private final InetSocketAddress destination;
     private final ConcurrentHashMap<SocketAddress, DatagramSocket> flows = new ConcurrentHashMap<>();
     private volatile boolean closed;
     final AtomicLong sent = new AtomicLong();
     final AtomicLong received = new AtomicLong();
     volatile String error;
     UdpBridge(int port) throws Exception {
-        this.port = port;
-        listener = new DatagramSocket(new InetSocketAddress("127.0.0.1", port));
-        new Thread(this::run, "probe-udp-listener").start();
+        this(port, new InetSocketAddress("10.0.2.2", port));
     }
-    private void run() {
+    // 测试可指定本机回显端点，正式模拟器仍固定转发到其宿主。
+    UdpBridge(int port, InetSocketAddress destination) throws Exception {
+        this.destination = destination;
+        listener = new DatagramSocket(new InetSocketAddress("127.0.0.1", port));
+        try {
+            listener6 = new DatagramSocket(new InetSocketAddress("::1", listener.getLocalPort()));
+        } catch (Exception error) {
+            listener.close();
+            throw error;
+        }
+        new Thread(() -> run(listener), "probe-udp-listener").start();
+        new Thread(() -> run(listener6), "probe-udp-listener6").start();
+    }
+    int localPort() { return listener.getLocalPort(); }
+    private void run(DatagramSocket incoming) {
         try {
             while (!closed) {
                 DatagramPacket packet = new DatagramPacket(new byte[65535], 65535);
-                listener.receive(packet);
+                incoming.receive(packet);
                 SocketAddress source = packet.getSocketAddress();
-                DatagramSocket upstream = flows.get(source);
-                if (upstream == null) {
+                DatagramSocket upstream;
+                synchronized (flows) {
+                  if (closed) return;
+                  upstream = flows.get(source);
+                  if (upstream == null) {
                     if (flows.size() >= 8) continue;
                     upstream = new DatagramSocket();
-                    upstream.connect(InetAddress.getByName("10.0.2.2"), port);
+                    upstream.connect(destination);
                     upstream.setSoTimeout(15000);
                     flows.put(source, upstream);
                     DatagramSocket flow = upstream;
-                    new Thread(() -> replies(source, flow), "probe-udp-replies").start();
+                    new Thread(() -> replies(incoming, source, flow), "probe-udp-replies").start();
+                }
                 }
                 upstream.send(new DatagramPacket(packet.getData(), packet.getLength()));
                 sent.incrementAndGet();
             }
         } catch (Exception e) { if (!closed) error = e.toString(); }
     }
-    private void replies(SocketAddress source, DatagramSocket upstream) {
+    private void replies(DatagramSocket incoming, SocketAddress source, DatagramSocket upstream) {
         try {
             while (!closed) {
                 DatagramPacket packet = new DatagramPacket(new byte[65535], 65535);
                 upstream.receive(packet);
-                listener.send(new DatagramPacket(packet.getData(), packet.getLength(), source));
+                incoming.send(new DatagramPacket(packet.getData(), packet.getLength(), source));
                 received.incrementAndGet();
             }
         } catch (SocketTimeoutException ignored) {
@@ -55,7 +72,10 @@ final class UdpBridge implements AutoCloseable {
     @Override public void close() {
         closed = true;
         listener.close();
-        for (DatagramSocket socket : flows.values()) socket.close();
-        flows.clear();
+        listener6.close();
+        synchronized (flows) {
+            for (DatagramSocket socket : flows.values()) socket.close();
+            flows.clear();
+        }
     }
 }
