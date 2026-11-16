@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../../../constants.dart';
 import '../../network_logger.dart';
 import '../../windows_webview_environment_service.dart';
+import 'h3_calibration_status.dart';
 import 'windows_h3_probe_environment.dart';
 
 /// 指纹模板采样服务。
@@ -45,6 +46,9 @@ class FingerprintTemplateService {
   /// TLS/H2 模板采样校准已就绪；不代表全协议指纹已验证或 CF 一定放行。
   final ValueNotifier<bool> templateReady = ValueNotifier(false);
 
+  /// 当前代采样任务完成（包括 H3 失败）；与 TLS/H2 提前就绪分别通知。
+  final ValueNotifier<int> calibrationRevision = ValueNotifier(0);
+
   int? _port;
   Future<void>? _inflight;
   Future<void>? _tcpValidation;
@@ -79,6 +83,7 @@ class FingerprintTemplateService {
           if (!tcpValidation.isCompleted) tcpValidation.complete();
           if (identical(_inflight, task)) _inflight = null;
           if (identical(_cancelProbe, cancel)) _cancelProbe = null;
+          if (_isCurrent(port, generation)) calibrationRevision.value++;
         });
     _inflight = task;
     return waitForH3 ? task : tcpValidation.future;
@@ -166,7 +171,9 @@ class FingerprintTemplateService {
     // 同 UA/端口的 TLS 配置变化也会使核心清空 H3；只抑制同一代、同一证书的重复失败。
     final h3Identity = jsonEncode([port, userAgent, status.h3Epoch,
       for (final probePort in status.h3Ports) [probePort, status.h3Spki[probePort]]]);
-    if (!status.h3Ready && status.h3Ports.length == 2 && _h3Attempted != h3Identity) {
+    if (status.h3.state != H3CalibrationState.sampled &&
+        status.h3Ports.length == 2 &&
+        _h3Attempted != h3Identity) {
       _h3Attempted = h3Identity;
       for (final probePort in status.h3Ports) {
         if (!_isCurrent(port, generation)) return;
@@ -179,8 +186,9 @@ class FingerprintTemplateService {
       if (!_isCurrent(port, generation)) return;
       final finalStatus = await _status(port);
       if (!_isCurrent(port, generation)) return;
-      NetworkLogger.log('[Fingerprint] H3 独立校准：ready=${finalStatus?.h3Ready == true}，'
-          'reason=${finalStatus?.h3Error ?? "none"}');
+      final h3 = finalStatus?.h3 ?? H3CalibrationStatus.fromJson(null);
+      NetworkLogger.log('[Fingerprint] H3 独立校准：state=${h3.state.name}，'
+          'reason=${h3.reason}；仅表示本地采样，不代表业务请求使用 H3 或 CF 放行');
     }
   }
 
@@ -263,11 +271,10 @@ class FingerprintTemplateService {
               userAgent: value['user_agent'] as String?,
               needsRevalidation: value['needs_revalidation'] == true,
               cacheState: value['cache_state'] as String?,
-              h3Ready: value['h3']?['enabled_for_template'] == true,
+              h3: H3CalibrationStatus.fromJson(value['h3']),
               h3Epoch: _h3Epoch(value['h3']?['epoch']),
               h3Ports: _h3Ports(value['h3']?['probe_ports']),
               h3Spki: _h3Spki(value['h3']?['probe_spki']),
-              h3Error: (value['h3']?['error'] ?? value['h3']?['reason']) as String?,
             );
     }
     final client = HttpClient()..findProxy = (_) => 'DIRECT';
@@ -286,11 +293,10 @@ class FingerprintTemplateService {
         userAgent: json['user_agent'] as String?,
         needsRevalidation: json['needs_revalidation'] == true,
         cacheState: json['cache_state'] as String?,
-        h3Ready: json['h3']?['enabled_for_template'] == true,
+        h3: H3CalibrationStatus.fromJson(json['h3']),
         h3Epoch: _h3Epoch(json['h3']?['epoch']),
         h3Ports: _h3Ports(json['h3']?['probe_ports']),
         h3Spki: _h3Spki(json['h3']?['probe_spki']),
-        h3Error: (json['h3']?['error'] ?? json['h3']?['reason']) as String?,
       );
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 读取模板状态失败: $e', level: 'warning');
@@ -319,20 +325,18 @@ class _TemplateStatus {
     required this.userAgent,
     required this.needsRevalidation,
     this.cacheState,
-    this.h3Ready = false,
+    required this.h3,
     this.h3Epoch = 0,
     this.h3Ports = const [],
     this.h3Spki = const {},
-    this.h3Error,
   });
 
   final bool ready;
   final String? userAgent;
   final bool needsRevalidation;
   final String? cacheState;
-  final bool h3Ready;
+  final H3CalibrationStatus h3;
   final int h3Epoch;
   final List<int> h3Ports;
   final Map<int, String> h3Spki;
-  final String? h3Error;
 }

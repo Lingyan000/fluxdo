@@ -120,10 +120,17 @@ class NetworkSettingsService {
   NetworkSettingsService._internal() {
     _proxyService.notifier.addListener(_handleProxySettingsChanged);
     SystemProxyService.instance.version.addListener(_handleSystemProxyChanged);
-    FingerprintTemplateService.instance.templateReady.addListener(() {
-      _coreService.refreshStatus();
-      _touch();
-    });
+    FingerprintTemplateService.instance.templateReady.addListener(
+      _refreshTemplateStatus,
+    );
+    FingerprintTemplateService.instance.calibrationRevision.addListener(
+      _refreshTemplateStatus,
+    );
+  }
+
+  void _refreshTemplateStatus() {
+    _coreService.refreshStatus();
+    _touch();
   }
 
   static final NetworkSettingsService instance =

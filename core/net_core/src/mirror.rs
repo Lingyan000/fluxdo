@@ -610,7 +610,13 @@ impl FingerprintTemplates {
             "coverage": ["tls_client_hello", "h2_initial_frames", "h2_pseudo_order", "fetch_header_presence"],
             "fetch_h2_priority_sampled": self.fetch_h2_priority.read().is_some(),
             "hpack_indexing": self.hpack_indexing.read().clone(),
-            "not_verified": ["hpack_encoding", "navigation_priority", "quic_h3", "cf_acceptance"],
+            // 本地 H3 模板就绪不等于业务请求协议、端到端一致性或站点放行已验证。
+            "verification_scope": {
+                "h3_template": "local_two_origin_calibration",
+                "business_request_protocol": "per_connection_logs",
+                "cf_acceptance": "not_verified",
+            },
+            "not_verified": ["hpack_encoding", "navigation_priority", "quic_h3_end_to_end", "cf_acceptance"],
             "system_proxy": crate::system_proxy::configured(),
         })
         .to_string()
@@ -1010,6 +1016,24 @@ mod profile_tests {
             "../tests/fixtures/chrome156_linux_do_hello.json"
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn status_distinguishes_local_h3_sampling_from_end_to_end_verification() {
+        let templates = FingerprintTemplates::new(None);
+        templates.h3.failure("UDP unavailable");
+        let failed: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(failed["h3"]["enabled_for_template"], false);
+        assert_eq!(failed["h3"]["error"], "UDP unavailable");
+        assert_eq!(failed["verification_scope"]["h3_template"], "local_two_origin_calibration");
+        assert_eq!(failed["verification_scope"]["business_request_protocol"], "per_connection_logs");
+        assert_eq!(failed["verification_scope"]["cf_acceptance"], "not_verified");
+        assert!(failed["not_verified"].as_array().unwrap().contains(&serde_json::json!("quic_h3_end_to_end")));
+        assert!(!failed["not_verified"].as_array().unwrap().contains(&serde_json::json!("quic_h3")));
+        templates.h3.reset();
+        let reset: serde_json::Value = serde_json::from_str(&templates.status_json()).unwrap();
+        assert_eq!(reset["h3"]["error"], serde_json::Value::Null);
+        assert_eq!(reset["verification_scope"], failed["verification_scope"]);
     }
 
     #[test]

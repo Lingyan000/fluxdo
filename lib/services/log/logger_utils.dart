@@ -271,19 +271,12 @@ class LoggerUtils {
     }
 
     final proxy = ProxySettingsService.instance.current;
-    final core = NetCoreService.instance.status;
-    // 保留旧字段含义，新增实际出口，避免把系统代理误读为直连。
-    map['proxyEnabled'] = proxy.isValid;
-    map['systemProxyEnabled'] = core.systemProxy;
-    map['effectiveProxyEnabled'] = proxy.isValid || core.systemProxy;
-    map['proxySource'] = proxy.isValid
-        ? 'app'
-        : (core.systemProxy ? 'system' : 'direct');
+    map.addAll(
+      NetCoreService.instance.readDiagnostics().toLogFields(
+        appProxyEnabled: proxy.isValid,
+      ),
+    );
     map['fingerprintSelection'] = doh.fingerprintPreset;
-    map['templateMode'] = core.templateMode;
-    map['templateSource'] = core.templateSource;
-    map['templatePreset'] = core.templatePreset;
-    map['templateDiagnostics'] = core.templateDiagnostics;
     if (proxy.isValid) {
       map['proxyHost'] = '${proxy.host}:${proxy.port}';
     }

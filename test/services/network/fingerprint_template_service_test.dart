@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/network/core/net_core_diagnostics.dart';
 import 'package:fluxdo/services/network/fingerprint/fingerprint_template_service.dart';
 
 void main() {
@@ -77,6 +79,7 @@ void main() {
     await Future.wait([first, second]);
     expect(probed, [1, 2]);
     expect(peak, 1);
+    expect(service.calibrationRevision.value, 1);
     expect(service.templateReady.value, true);
   });
   test('停止核心后旧状态查询不能恢复就绪状态', () async {
@@ -91,6 +94,7 @@ void main() {
     status.complete({'ready': true, 'user_agent': 'actual'});
     await pending;
     expect(service.templateReady.value, false);
+    expect(service.calibrationRevision.value, 0);
   });
   test('同一 UA 的未校准模板执行两轮采样后才就绪', () async {
     var probes = 0;
@@ -302,4 +306,74 @@ void main() {
     expect(probes, 1);
     expect(service.templateReady.value, false);
   });
+
+  for (final result in ['sampled', 'notReady', 'unknown', 'probeException']) {
+    test('TCP 提前返回后 H3 $result 仍通知刷新当前诊断', () async {
+      final release = Completer<void>();
+      var finished = false;
+      var notifications = 0;
+      Map<String, dynamic>? exported;
+      Map<String, dynamic>? status() => finished && result == 'unknown'
+          ? null
+          : {
+              'ready': true,
+              'user_agent': 'actual',
+              'h3': {
+                'enabled_for_template': finished && result == 'sampled',
+                'probe_ports': [2, 3],
+                'reason': 'observed_test_result',
+              },
+            };
+      final service = FingerprintTemplateService.forTesting(
+        status: (_) async => status(),
+        userAgent: () async => 'actual',
+        probe: (port, _) async {
+          await release.future;
+          if (result == 'probeException') throw StateError('probe failed');
+          if (port == 3) finished = true;
+        },
+      );
+      service.calibrationRevision.addListener(() {
+        notifications++;
+        final current = status();
+        exported = NetCoreDiagnosticSnapshot.capture(() => current == null
+            ? null
+            : jsonEncode({'running': true, 'template_diagnostics': current}))
+            .toLogFields(appProxyEnabled: false);
+      });
+      await service.ensure(1, waitForH3: false);
+      expect(service.templateReady.value, true);
+      expect(notifications, 0);
+      final completion = service.ensure(1);
+      release.complete();
+      await completion;
+      expect(service.templateReady.value, true);
+      expect(notifications, 1);
+      expect(exported!['h3CalibrationState'],
+          result == 'probeException' ? 'notReady' : result);
+    });
+  }
+
+  test('H3 结束前停止或换核心，旧代完成不通知刷新', () async {
+    final started = Completer<void>();
+    final service = FingerprintTemplateService.forTesting(
+      status: (port) async => {
+        'ready': true, 'user_agent': 'actual',
+        'h3': {'enabled_for_template': port == 4, 'probe_ports': [2, 3]},
+      },
+      userAgent: () async => 'actual',
+      probe: (_, cancelled) async { started.complete(); await cancelled; },
+    );
+    var notifications = 0;
+    service.calibrationRevision.addListener(() => notifications++);
+    final old = service.ensure(1);
+    await started.future;
+    service.reset();
+    await old;
+    expect(notifications, 0);
+    await service.ensure(4);
+    expect(notifications, 1);
+    expect(service.templateReady.value, true);
+  });
+
 }

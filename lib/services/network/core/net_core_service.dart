@@ -13,6 +13,7 @@ import '../../network_logger.dart';
 import '../doh/ech_dns_policy.dart';
 import '../proxy/proxy_settings_service.dart';
 import 'net_core_bindings.dart';
+import 'net_core_diagnostics.dart';
 import 'network_health_monitor.dart';
 
 /// 网络核心的生命周期与配置。
@@ -158,6 +159,10 @@ class NetCoreService {
 
   /// 重新读取核心状态（模板是否就绪等）。探针采样后调用。
   void refreshStatus() => _refreshStatus();
+
+  /// 导出时直接读取原生核心；失败不发布 stopped，也不把缓存伪装成实时状态。
+  NetCoreDiagnosticSnapshot readDiagnostics() =>
+      NetCoreDiagnosticSnapshot.capture(_bindings.statusJson);
 
   /// 丢弃所有池化连接。网络切换后调用：旧连接绑在旧网络的源地址上，
   /// 不主动丢弃会一直等到 NAT 超时才失败。
