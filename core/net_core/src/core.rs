@@ -36,7 +36,8 @@ impl Core {
         }
         let ca = match (&self.config.ca_cert_pem, &self.config.ca_key_pem) {
             (Some(cert), Some(_)) => cert.as_str(),
-            _ => crate::cert::embedded_ca_pem(),
+            (None, None) => crate::cert::embedded_ca_pem(),
+            _ => return false,
         };
         crate::cert::verify_webview_leaf(ca, der, host)
     }
@@ -114,7 +115,10 @@ impl Core {
         let mirror = if config.webview_mitm {
             let (cert_pem, key_pem) = match (&config.ca_cert_pem, &config.ca_key_pem) {
                 (Some(cert), Some(key)) => (cert.as_str(), key.as_str()),
-                _ => (cert::embedded_ca_pem(), cert::embedded_ca_key_pem()),
+                (None, None) => (cert::embedded_ca_pem(), cert::embedded_ca_key_pem()),
+                _ => return Err(crate::error::NetError::Certificate(
+                    "Custom CA certificate and key must be provided together".into(),
+                )),
             };
             info!("WebView MITM uses browser fingerprint mirror egress");
             Some(Arc::new(MirrorRelay::new(

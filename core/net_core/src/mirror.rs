@@ -38,7 +38,6 @@ use rama::{
     tls::{
         SecureTransport,
         boring::{
-            core::{pkey::PKey, x509::X509},
             proxy::{
                 HandshakeRelayClassification, TlsMitmRelay, TlsMitmRelayErrorDirection,
                 TlsMitmRelayErrorKind,
@@ -727,10 +726,7 @@ impl MirrorRelay {
         ca_key_pem: &str,
         templates: Arc<FingerprintTemplates>,
     ) -> Result<Self> {
-        let crt = X509::from_pem(ca_cert_pem.as_bytes())
-            .map_err(|e| NetError::Proxy(format!("Invalid CA certificate: {e}")))?;
-        let key = PKey::private_key_from_pem(ca_key_pem.as_bytes())
-            .map_err(|e| NetError::Proxy(format!("Invalid CA key: {e}")))?;
+        let (crt, key) = crate::cert::parse_mitm_ca(ca_cert_pem, ca_key_pem)?;
         Ok(Self {
             tls: TlsMitmRelay::new_cached_in_memory(crt, key),
             http: HttpMitmRelay::new(Executor::new()).with_http_middleware((
