@@ -125,6 +125,27 @@ void main() {
     expect(await root.list().isEmpty, true);
   });
 
+  test('原生控制器创建超时后先等迟到结果，再销毁控制器和环境', () async {
+    final started = Completer<void>();
+    final events = <String>[];
+    await disposeProbeResources(started: started.future,
+        disposeView: () async { events.add('view'); },
+        disposeEnvironment: () async { events.add('environment'); },
+        timeout: const Duration(milliseconds: 10));
+    expect(events, isEmpty);
+    started.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(events, ['view', 'environment']);
+  });
+
+  test('创建失败仍清理控制器，控制器销毁失败仍释放环境', () async {
+    final events = <String>[];
+    await expectLater(disposeProbeResources(started: Future<void>.error(StateError('create')),
+        disposeView: () async { events.add('view'); throw StateError('dispose'); },
+        disposeEnvironment: () async { events.add('environment'); }), throwsStateError);
+    expect(events, ['view', 'environment']);
+  });
+
   test('原生环境创建失败会清理空目录', () async {
     final root = await Directory.systemTemp.createTemp('h3-test-');
     addTearDown(() => root.delete(recursive: true));

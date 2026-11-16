@@ -186,6 +186,7 @@ class FingerprintTemplateService {
   Future<void> _probe(int port, Future<void> cancelled, {String path = _probePath, String? spki}) async {
     final done = Completer<void>();
     HeadlessInAppWebView? webView;
+    Future<void>? started;
     WindowsH3ProbeEnvironment? h3Environment;
     final isolatedH3 = Platform.isWindows && path == '/fluxdo-h3';
     var stopped = false;
@@ -233,18 +234,20 @@ class FingerprintTemplateService {
           }
         },
       );
-      await webView.run().timeout(_probeTimeout);
+      started = webView.run();
+      await Future.any([started, cancelled]).timeout(_probeTimeout);
+      if (stopped) return;
       await Future.any([done.future, cancelled]).timeout(_probeTimeout);
     } on TimeoutException {
       NetworkLogger.log('[Fingerprint] 探针采样超时', level: 'warning');
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 探针采样失败: $e', level: 'warning');
     } finally {
-      try {
-        await webView?.dispose();
-      } finally {
-        await h3Environment?.dispose();
-      }
+      await disposeProbeResources(
+        started: started,
+        disposeView: () async => webView?.dispose(),
+        disposeEnvironment: h3Environment?.dispose,
+      );
     }
   }
 

@@ -119,3 +119,25 @@ class WindowsH3ProbeEnvironment {
     }
   }
 }
+
+/// 原生控制器在 run 返回前尚未注册，提前 dispose 会直接返回而留下迟到的控制器。
+/// 超时只结束调用方的等待，实际资源仍按创建完成、控制器销毁、环境销毁的顺序回收。
+Future<void> disposeProbeResources({
+  required Future<void>? started,
+  required Future<void> Function() disposeView,
+  Future<void> Function()? disposeEnvironment,
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final cleanup = () async {
+    try { await started; } catch (_) { /* 创建失败也继续回收已分配的资源。 */ }
+    try { await disposeView(); }
+    finally { await disposeEnvironment?.call(); }
+  }();
+  try {
+    await cleanup.timeout(timeout);
+  } on TimeoutException {
+    unawaited(cleanup.catchError((Object error) {
+      debugPrint('[Fingerprint] 迟到探针清理失败: $error');
+    }));
+  }
+}
