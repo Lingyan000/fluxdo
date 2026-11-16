@@ -159,3 +159,40 @@ iOS 26.2 本机 Core 续验的准备失败
 - 驱动改为先查容器再启动应用，避开 UIKit/WebContent 首次启动高负载阶段。
   回归模拟“启动后容器服务超时”：旧驱动失败（124），修复后成功并删除结果文件、终止应用。
   六项 Apple 驱动/真机门槛用例及八项架构守卫通过；实际云端重跑单独记录。
+
+iOS 15.5 应用内生产 Core 已通过
+- https://github.com/Lingyan000/fluxdo/actions/runs/43808369127
+  提交 c9a047206b1c37a26086b997c81bff1648ccfa2b，job 133108359545。
+- 原生正常系统信任、生产校准与 macOS 回放通过；同域名自签证书负对照被拒。
+- 实际 aarch64-apple-ios-sim 应用通过生产 C ABI 发出请求并退出 Core；
+  下载原始数据后重算，该实例模板的 28 项传输检查及九场景 QPACK 对照均通过。
+  macOS 回放同样为 28 项及九场景通过，两条执行路径分别保存，不能互相替代。
+- 产物 14201045689（106485 字节），SHA-256：
+  b3539098553279ccc3600ff5dd56925b08de21c69fbe44af291821b7de83c080
+- 整体任务仍为失败：公开 cloudflare-quic.com 诊断页上，原生四次、Core 十二次
+  均为 HTTP/2、TLS 1.3，Core 均返回 200，但未满足公开 H3 条件。
+  不能把两边都 H2 当作 H3 通过；真机会话被前置检查拦住，新增会话仍为零。
+  原报告未保存公开响应的 Alt-Svc，因此不能直接判定是 UDP 出口或 Core 实现问题。
+
+iOS 26.2 应用内生产 Core 复验完成
+- https://github.com/Lingyan000/fluxdo/actions/runs/43809996419
+  提交 a1c7e13b71159c37d8369f626681dc5f1f7437f1，job 133114699304，整体成功。
+- 首次预热成功，未进行恢复重启。正常系统信任、两个生产校准 origin 与证书负对照通过。
+- 原始数据独立复核：macOS 回放和实际 iOS 应用内 C ABI 回放分别为 28 项传输、
+  九场景 QPACK 全通过；应用内 Core 运行与 detach 后停止均确认。
+- iOS 26.2 (23C54)，原生 UA 的 CPU iPhone OS 为 18_7；应用 UA 的 Safari Version/26.2
+  取自实际 Bundle。15.5 的两项均为 15.5。不能按被冻结的 UA 系统版本选择模板。
+- 两份应用内实际采样仍显示：15.5 的 initial_max_data 为 1 MiB，三种 stream_data
+  为 128 KiB；26.2 分别为 16 MiB、2 MiB。回放均匹配各自实测值，没有新增版本白名单。
+- 产物 14200589472（169028 字节），SHA-256：
+  b3807540dc82bc123482289da233938720efdd7fccbe217ca5e26ef7b1b18fcf
+- DNS 恢复、登出、模拟器删除和 daemon 停止成功；BrowserStack 会话为零。
+
+公开端点的协议发现条件
+- 独立 Ubuntu CI 43812120835、43812526758：cloudflare-quic.com 与 one.one.one.one
+  的 /cdn-cgi/trace 返回 200，但没有 Alt-Svc；同源首页虽然返回 403，响应头仍声明
+  h3=":443"; ma=86400。拒绝响应不能丢弃头部证据，也不代表已取得受保护页面内容。
+- 因此前一次只重复读 trace 不足以完成 Alt-Svc 发现。新诊断只 fetch 同源首页读取
+  协议声明，不导航、不执行其内容、不提交验证；然后再次读取公开 trace。
+  保留原生和 Core 的 Alt-Svc、server、协议与退出状态，不强制 QUIC、不放行证书。
+- 真机包改为模拟器检查全通过后才构建；仍只有一次有界设备会话入口。
