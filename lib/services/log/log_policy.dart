@@ -21,6 +21,15 @@ class LogPolicy {
     final bounded = text.length > 8192 ? text.substring(0, 8192) : text;
     // 兼容历史版本已经写入消息正文的配置摘要。
     var value = bounded.replaceAllMapped(
+      RegExp(r'(\bRequest\s+[A-Z]+)\s+(?:https?://|/)[^\s]+'),
+      (m) => '${m[1]} [redacted]',
+    ).replaceAllMapped(
+      RegExp(
+        r'(Invalid DOH URL|Unsupported DOH URL scheme|Missing host in DOH URL|Missing URL scheme)[^\r\n]*',
+        caseSensitive: false,
+      ),
+      (m) => '${m[1]}: [redacted]',
+    ).replaceAllMapped(
       RegExp(r'\bDoH\s+https?://[^\s，,）)]+', caseSensitive: false),
       (_) => 'DoH [redacted]',
     ).replaceAllMapped(

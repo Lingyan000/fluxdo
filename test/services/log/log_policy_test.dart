@@ -4,6 +4,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_policy.dart';
 
 void main() {
+  test('历史 Core 请求路径和非法 DoH 输入不会在导出时暴露密钥', () {
+    for (final message in [
+      '[Core/fluxdo_net::client] Request GET /private-key?dns=encoded',
+      'Request GET https://resolver.example/private-key?dns=encoded',
+      "Invalid DOH URL 'https://resolver.example/private-key': invalid character",
+      "Unsupported DOH URL scheme 'http': http://resolver.example/private-key",
+      'Missing URL scheme: resolver.example/private-key',
+    ]) {
+      final row = jsonEncode({'message': message, 'sessionId': 'old'});
+      final exported = LogPolicy.export(row);
+      expect(exported, isNot(contains('private-key')));
+      expect(exported, isNot(contains('encoded')));
+      expect(exported, contains('[redacted]'));
+    }
+  });
+
   test('导出头与历史正文共同脱敏，保留排查证书需要的目标信息', () {
     final old = {
       'sessionId': 'old',

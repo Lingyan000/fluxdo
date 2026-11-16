@@ -1322,7 +1322,8 @@ fn build_request(
         let reordered = reorder_headers(headers, &template.fetch_header_order);
         *request.headers_mut() = reordered;
     }
-    debug!("Request {} {}", request.method(), request.uri());
+    // DoH 等服务可能把账号密钥放在路径内，诊断只记录方法和连接目标。
+    debug!(method = %request.method(), authority, "HTTP request prepared");
     Ok(request)
 }
 
