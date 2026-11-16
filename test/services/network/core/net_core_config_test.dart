@@ -3,8 +3,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/network/core/net_core_service.dart';
+import 'package:fluxdo/services/network/proxy/proxy_settings_service.dart';
 
 void main() {
+  test('日志摘要不暴露 DoH 与代理配置，实际网络配置仍完整', () {
+    const config = NetCoreConfig(
+      enableDoh: true,
+      dohServer: 'https://resolver.example/path-secret',
+      upstreamProxy: ProxySettings(enabled: true, host: 'private-proxy.example', port: 7890),
+      systemProxy: NetCoreProxy(host: 'private-system.example', port: 8080),
+    );
+    final description = config.describe();
+    expect(description, contains('DoH 开'));
+    expect(description, contains('应用代理 http'));
+    expect(description, contains('系统代理 开'));
+    expect(description, isNot(contains('.example')));
+    expect(description, isNot(contains('path-secret')));
+    expect(config.toJson()['doh_server'], config.dohServer);
+    expect((config.toJson()['upstream_proxy'] as Map)['host'], 'private-proxy.example');
+  });
+
   test('配置复制保留实际 UA 并传递平台身份', () {
     const config = NetCoreConfig(
       fingerprintUserAgent: 'actual WebView UA',

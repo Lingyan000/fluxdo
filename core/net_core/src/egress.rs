@@ -58,7 +58,7 @@ pub enum EgressTarget {
 impl fmt::Display for EgressTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Proxy(proxy) => write!(f, "proxy {}:{}", proxy.host, proxy.port),
+            Self::Proxy(_) => f.write_str("proxy [redacted]"),
             Self::Addr { addr, .. } => write!(f, "{addr}"),
         }
     }

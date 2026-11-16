@@ -346,14 +346,13 @@ class NetCoreConfig {
     if (caKeyPem != null) 'ca_key_pem': caKeyPem,
   };
 
-  /// 日志用的配置摘要：不含账号密码与证书。
+  /// 日志用的配置摘要：不含设备名称、解析/代理地址、账号密码与证书。
   String describe() {
     final parts = <String>[
-      enableDoh ? 'DoH ${dohServer ?? '默认'}' : 'DoH 关',
+      enableDoh ? 'DoH 开' : 'DoH 关',
       if (upstreamProxy != null && upstreamProxy!.isValid)
-        '应用代理 ${upstreamProxy!.protocol.storageValue}://'
-            '${upstreamProxy!.host}:${upstreamProxy!.port}',
-      if (systemProxy != null) '系统代理 ${systemProxy!.host}:${systemProxy!.port}',
+        '应用代理 ${upstreamProxy!.protocol.storageValue}',
+      if (systemProxy != null) '系统代理 开',
       if (serverIp != null && serverIp!.isNotEmpty) '指定 IP $serverIp',
       if (preferIpv6) '优先 IPv6',
       webViewMitm ? 'WebView 经核心' : 'WebView 直连',

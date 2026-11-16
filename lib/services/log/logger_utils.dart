@@ -47,7 +47,7 @@ class LoggerUtils {
       sharePath = shareFile.path;
       stage = 'writeExportFile';
       await shareFile.writeAsString(
-        '$header${LogPolicy.export(logContent, fullHistory: fullHistory)}',
+        LogPolicy.export(logContent, fullHistory: fullHistory, headers: header),
       );
       return shareFile.path;
     } catch (error, stackTrace) {
@@ -104,7 +104,6 @@ class LoggerUtils {
       } else if (Platform.isWindows) {
         final info = await deviceInfo.windowsInfo;
         buf.writeln('平台: Windows (${info.buildNumber})');
-        buf.writeln('设备: ${info.computerName}');
       }
     } catch (_) {}
 
@@ -124,20 +123,18 @@ class LoggerUtils {
   }
 
   /// 构建分享文件头部的设备和应用信息（JSONL 格式）
-  static Future<String> _buildShareHeader() async {
-    final buf = StringBuffer();
+  static Future<List<Map<String, dynamic>>> _buildShareHeader() async {
+    final headers = <Map<String, dynamic>>[];
 
     try {
       final pkg = await PackageInfo.fromPlatform();
-      buf.writeln(
-        jsonEncode({
-          '_header': 'app_info',
-          'appName': pkg.appName,
-          'version': pkg.version,
-          'buildNumber': pkg.buildNumber,
-          'packageName': pkg.packageName,
-        }),
-      );
+      headers.add({
+        '_header': 'app_info',
+        'appName': pkg.appName,
+        'version': pkg.version,
+        'buildNumber': pkg.buildNumber,
+        'packageName': pkg.packageName,
+      });
     } catch (_) {}
 
     try {
@@ -183,7 +180,6 @@ class LoggerUtils {
         device = {
           '_header': 'device_info',
           'platform': 'Windows',
-          'computerName': info.computerName,
           'buildNumber': info.buildNumber,
         };
       } else {
@@ -208,10 +204,10 @@ class LoggerUtils {
       // 网络配置信息
       device.addAll(_getNetworkConfigMap());
 
-      buf.writeln(jsonEncode(device));
+      headers.add(device);
     } catch (_) {}
 
-    return buf.toString();
+    return headers;
   }
 
   /// 从缓存的 User-Agent 中解析 WebView/浏览器引擎版本
@@ -238,8 +234,7 @@ class LoggerUtils {
     // DOH 配置
     final doh = NetworkSettingsService.instance.current;
     if (doh.dohEnabled) {
-      final serverName = _findDohServerName(doh.selectedServerUrl);
-      final parts = <String>[serverName];
+      final parts = <String>[S.current.common_enable];
       if (doh.preferIPv6) parts.add('IPv6');
       lines.add('DOH: ${parts.join(', ')}');
     } else {
@@ -249,7 +244,7 @@ class LoggerUtils {
     // HTTP 代理
     final proxy = ProxySettingsService.instance.current;
     if (proxy.isValid) {
-      lines.add('代理: ${proxy.host}:${proxy.port}');
+      lines.add('代理: ${proxy.protocol.storageValue}');
     } else {
       lines.add(S.current.deviceInfo_proxyOff);
     }
@@ -266,7 +261,6 @@ class LoggerUtils {
     final doh = NetworkSettingsService.instance.current;
     map['dohEnabled'] = doh.dohEnabled;
     if (doh.dohEnabled) {
-      map['dohServer'] = doh.selectedServerUrl;
       map['preferIPv6'] = doh.preferIPv6;
     }
 
@@ -277,20 +271,8 @@ class LoggerUtils {
       ),
     );
     map['fingerprintSelection'] = doh.fingerprintPreset;
-    if (proxy.isValid) {
-      map['proxyHost'] = '${proxy.host}:${proxy.port}';
-    }
 
     return map;
-  }
-
-  /// 根据 DOH 服务器 URL 查找名称
-  static String _findDohServerName(String url) {
-    final servers = NetworkSettingsService.instance.servers;
-    for (final server in servers) {
-      if (server.url == url) return server.name;
-    }
-    return url;
   }
 
   /// 读取并解析 JSONL，逆序返回（最新在前）。
