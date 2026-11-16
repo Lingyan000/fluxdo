@@ -9,6 +9,8 @@ import time
 import uuid
 
 warmup = '--warmup' in sys.argv
+core_driver = os.environ.get('FLUXDO_APPLE_CORE_DRIVER') == '1'
+app_id = 'org.fluxdo.fingerprint.core' if core_driver else 'org.fluxdo.fingerprint.probe'
 target = '--warmup' if warmup else next(arg for arg in sys.argv[1:] if arg.startswith('https://'))
 env = dict(os.environ)
 env['SIMCTL_CHILD_FLUXDO_TRUSTED_PROBE_HOST'] = env.get('FLUXDO_TRUSTED_PROBE_HOST', '')
@@ -17,7 +19,7 @@ env['SIMCTL_CHILD_FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST'] = env.get('FLUXDO_APPLE_RE
 report_name = 'fluxdo-report-' + uuid.uuid4().hex + '.json'
 env['SIMCTL_CHILD_FLUXDO_APPLE_REPORT_FILE'] = report_name
 try:
-    report_timeout = 110 if warmup else 75
+    report_timeout = 110 if warmup else (185 if core_driver else 75)
     deadline = time.monotonic() + report_timeout
     if env.get('FLUXDO_APPLE_REQUIRE_SYSTEM_TRUST') == '1' and not env.get('FLUXDO_TRUSTED_PROBE_HOST'):
         # 仅一次性 CI 模拟器；run.py 创建并最终删除此设备，不改用户设备信任库。
@@ -27,7 +29,7 @@ try:
                         'add-root-cert', env['FLUXDO_APPLE_LAB_CA']], check=True, timeout=30)
     launch_command = [
         'xcrun', 'simctl', 'launch', '--terminate-running-process',
-        env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', target,
+        env['FLUXDO_SIMULATOR_UDID'], app_id, target,
     ]
     with subprocess.Popen(launch_command, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, text=True) as launch:
@@ -53,14 +55,15 @@ try:
     if code:
         raise RuntimeError('simctl launch failed: ' + str(code))
     container = subprocess.check_output(['xcrun', 'simctl', 'get_app_container',
-        env['FLUXDO_SIMULATOR_UDID'], 'org.fluxdo.fingerprint.probe', 'data'], text=True, timeout=15).strip()
+        env['FLUXDO_SIMULATOR_UDID'], app_id, 'data'], text=True, timeout=15).strip()
     report_path = Path(container) / 'tmp' / report_name
     while not report_path.exists() and time.monotonic() < deadline:
         time.sleep(0.25)
     if not report_path.exists():
         raise subprocess.TimeoutExpired(['native WKWebView report'], report_timeout)
     report = json.loads(report_path.read_text())
-    if report.get('engine') != 'native WKWebView' or report.get('success') is not True:
+    expected_engine = 'iOS production Core FFI' if core_driver and not warmup else 'native WKWebView'
+    if report.get('engine') != expected_engine or report.get('success') is not True:
         code = code or 1
     print(json.dumps(report), flush=True)
     report_path.unlink()
@@ -74,7 +77,7 @@ finally:
     # 驱动失败也结束模拟器中的应用，避免下一轮误采上一轮迟到的握手。
     try:
         subprocess.run(['xcrun', 'simctl', 'terminate', env['FLUXDO_SIMULATOR_UDID'],
-                        'org.fluxdo.fingerprint.probe'], timeout=15, capture_output=True)
+                        app_id], timeout=15, capture_output=True)
     except subprocess.TimeoutExpired:
         pass
 raise SystemExit(code)

@@ -19,6 +19,9 @@ final class Probe: NSObject, WKNavigationDelegate {
     var trustEvaluations: [[String: Any]] = []
     var certificateErrors = 0
     var credentialsUsed = 0
+    // 同进程 Core 诊断可复用导航逻辑；常规命令行宿主仍在报告后退出。
+    var initialURL: String?
+    var completion: (([String: Any]) -> Void)?
 
     func start() {
         if CommandLine.arguments.contains("--warmup") {
@@ -36,7 +39,7 @@ final class Probe: NSObject, WKNavigationDelegate {
             }
             return
         }
-        guard let raw = CommandLine.arguments.first(where: { $0.hasPrefix("https://") }),
+        guard let raw = initialURL ?? CommandLine.arguments.first(where: { $0.hasPrefix("https://") }),
               let url = URL(string: raw), url.scheme == "https", url.user == nil, url.password == nil,
               let hostname = url.host, url.port != nil, (url.path == "/fluxdo-probe" || url.path == "/fluxdo-h3") else {
             complete(error: "指纹探针地址无效")
@@ -153,6 +156,12 @@ final class Probe: NSObject, WKNavigationDelegate {
             "safari_bundle_version": BrowserIdentity.safariVersion() ?? "",
             "webkit_bundle_version": Bundle(for: WKWebView.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
             "success": error == nil, "error": error ?? ""]
+        if let completion = completion {
+            observation = nil
+            webView.stopLoading()
+            completion(result)
+            return
+        }
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) {
             // simctl 的控制台转发可能在应用退出时丢失最后一行；每次启动使用独立结果文件。
@@ -203,6 +212,7 @@ final class Host: UIResponder, UIApplicationDelegate {
 }
 #endif
 
+#if !FLUXDO_CORE_DIAGNOSTIC
 @main
 struct Entry {
     @MainActor static func main() {
@@ -217,3 +227,4 @@ struct Entry {
         #endif
     }
 }
+#endif

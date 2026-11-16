@@ -2,6 +2,7 @@
 """先构建并预热原生宿主，随后才加入短时测试网络；不修改系统证书库。"""
 import argparse
 import json
+import os
 from pathlib import Path
 import platform
 import plistlib
@@ -25,6 +26,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--ios-version', default='26.2')
     parser.add_argument('--ios-only', action='store_true')
+    parser.add_argument('--ios-core', action='store_true', help='另外构建并安装实际 iOS Core C ABI 宿主')
     parser.add_argument('--cleanup', action='store_true')
     args = parser.parse_args()
     root = args.output.resolve()
@@ -67,6 +69,25 @@ def main():
          '-target', arch+'-apple-ios15.0-simulator', source, identity,
          '-framework', 'UIKit', '-framework', 'WebKit', '-framework', 'Security', '-o', app/'WKProbe'], timeout=180)
     run(['codesign', '--force', '--sign', '-', app], timeout=30)
+    core_app = None
+    if args.ios_core:
+        core_app = root/'WKCoreProbe.app'
+        core_app.mkdir(exist_ok=True)
+        core_info = dict(info, CFBundleIdentifier='org.fluxdo.fingerprint.core')
+        (core_app/'Info.plist').write_bytes(plistlib.dumps(core_info))
+        target = 'aarch64-apple-ios-sim' if arch == 'arm64' else 'x86_64-apple-ios'
+        run(['rustup', 'target', 'add', target], timeout=120)
+        run(['cargo', 'rustc', '--locked', '--manifest-path', repo/'core/net_core/Cargo.toml',
+             '--lib', '--crate-type', 'staticlib', '--target', target], timeout=1200,
+             env=dict(os.environ, IPHONEOS_DEPLOYMENT_TARGET='15.0'))
+        library = repo/'core/net_core/target'/target/'debug/libfluxdo_net.a'
+        run(['xcrun', '--sdk', 'iphonesimulator', 'swiftc', '-swift-version', '5', '-parse-as-library',
+             '-D', 'FLUXDO_CORE_DIAGNOSTIC', '-sdk', output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path']),
+             '-target', arch+'-apple-ios15.0-simulator', source, identity, source.with_name('IOSCoreProbe.swift'), library,
+             '-framework', 'UIKit', '-framework', 'WebKit', '-framework', 'Security',
+             '-framework', 'CFNetwork', '-framework', 'CoreFoundation', '-lc++', '-liconv',
+             '-o', core_app/'WKProbe'], timeout=180)
+        run(['codesign', '--force', '--sign', '-', core_app], timeout=30)
     udid = output(['xcrun', 'simctl', 'create', 'FluxDO-Trusted-H3', device_type, runtime['identifier']])
     (root/'devices.json').write_text(json.dumps([udid])+'\n')
     try:
@@ -76,9 +97,11 @@ def main():
         run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], timeout=240)
         run(['xcrun', 'simctl', 'install', udid, app], timeout=60)
         warmup_simulator(root, runtime['version'], udid)
+        if core_app:
+            run(['xcrun', 'simctl', 'install', udid, core_app], timeout=60)
         targets.append({'name': 'ios-'+runtime['version'], 'platform': 'ios',
                         'driver': str(Path(__file__).with_name('ios_driver.py').resolve()),
-                        'env': {'FLUXDO_SIMULATOR_UDID': udid}})
+                        'env': {'FLUXDO_SIMULATOR_UDID': udid}, 'ios_core_installed': bool(core_app)})
         (root/'targets.json').write_text(json.dumps(targets, indent=2)+'\n')
     except Exception:
         cleanup(root)
