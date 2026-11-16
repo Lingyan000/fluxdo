@@ -56,6 +56,10 @@ tracing-android = "0.2"
 ndk-context = "0.1"
 jni-sys = "0.4"
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# 在本地 JVM 执行生产 JNI 能力探测，覆盖 Android 提供者不实现可选 API 的路径。
+jni = { version = "0.22", features = ["invocation"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
@@ -70,6 +74,7 @@ panic = "unwind"
 strip = false
 
 [patch."https://github.com/plabayo/rama"]
+rama-crypto = { path = "vendor/rama-crypto" }
 rama-quic = { path = "vendor/rama-quic" }
 rama-http-types = { path = "vendor/rama-http-types" }
 rama-http-core = { path = "vendor/rama-http-core" }

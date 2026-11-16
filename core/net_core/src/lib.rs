@@ -36,6 +36,8 @@ mod request_trace;
 mod session_cache;
 pub mod system_proxy;
 mod upload_timeout;
+#[cfg(all(test, target_os = "linux"))]
+mod android_revocation_tests;
 pub mod upstream;
 
 #[cfg(test)]
