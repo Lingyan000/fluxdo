@@ -1,0 +1,84 @@
+name: Full iOS release verification
+on:
+  workflow_dispatch:
+    inputs:
+      device_smoke:
+        description: '构建通过后，最多一个120秒完整App安装启动会话'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: fluxdo-full-ios-verification
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'Lingyan000/fluxdo' && github.ref == 'refs/heads/diagnostics/tailscale-h3-preflight-20261116'
+    runs-on: macos-15
+    timeout-minutes: 55
+    env:
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          cache: true
+      - uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: ios-full-release
+          cache-on-failure: true
+      - name: Build actual release app without signing or publishing
+        run: |
+          flutter pub get
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          dart tool/flutterw.dart build ios --release --no-codesign
+          mkdir -p dist
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, plistlib, subprocess, zipfile
+          app = pathlib.Path('build/ios/iphoneos/Runner.app')
+          symbols = subprocess.check_output(['nm', '-gU', str(app/'Runner')], text=True)
+          assert '_fluxdo_net_request_start' in symbols
+          assert '_fluxdo_net_diagnostic_h3_profile_json' not in symbols
+          info = plistlib.loads((app/'Info.plist').read_bytes())
+          assert info['CFBundleIdentifier'] == 'com.github.lingyan000.fluxdo'
+          ipa = pathlib.Path('dist/fluxdo-unsigned.ipa')
+          with zipfile.ZipFile(ipa, 'w', zipfile.ZIP_DEFLATED) as archive:
+              for path in sorted(app.rglob('*')):
+                  if path.is_file(): archive.write(path, 'Payload/Runner.app/'+str(path.relative_to(app)))
+          pathlib.Path('dist/build-evidence.json').write_text(json.dumps({
+              'head': os.environ['GITHUB_SHA'], 'full_flutter_app': True, 'release': True,
+              'core_ffi_present': True, 'debug_profile_export_absent': True,
+              'bundle_id': info['CFBundleIdentifier'], 'minimum_ios': info.get('MinimumOSVersion'),
+              'ipa_sha256': hashlib.sha256(ipa.read_bytes()).hexdigest()}, indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: full-ios-release-${{ github.run_id }}
+          path: dist/
+          retention-days: 7
+      - name: Verify device budget and cleanup tests
+        if: inputs.device_smoke
+        run: PYTHONPATH=tool/apple_fingerprint python3 -m unittest test_full_app_smoke test_public_trace
+      - name: One bounded full iOS 26 app launch
+        if: inputs.device_smoke
+        timeout-minutes: 5
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: python3 tool/apple_fingerprint/browserstack_app_smoke.py --ipa dist/fluxdo-unsigned.ipa --output "$RUNNER_TEMP/full-app-smoke" --ios-major 26
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-ios-observation-${{ github.run_id }}
+          path: ${{ runner.temp }}/full-app-smoke/
+          retention-days: 7
