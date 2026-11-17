@@ -4,6 +4,7 @@ plugins {
 
 apply(from = "gradle/cargokit_compat.gradle")
 apply(from = "gradle/kotlin_compat.gradle")
+apply(from = "gradle/compile_sdk_compat.gradle")
 
 allprojects {
     repositories {
