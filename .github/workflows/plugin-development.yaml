@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: 4db1ef682f442a52b37a625b5aa8892f24573d14
+          ref: 16a691631642ba80f9d07acba0fe73f891fe1fcb
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -78,6 +78,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force app/assets/certs | Out-Null
           "FLUXDO_PLUGIN_TOOLS=$((Resolve-Path tools).Path)" >> $env:GITHUB_ENV
+          "FLUXDO_DART=$env:FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart.exe" >> $env:GITHUB_ENV
       - name: Check SDK against real host APIs
         working-directory: app
         run: node tool/plugin_tools/check_sdk_contract.mjs
