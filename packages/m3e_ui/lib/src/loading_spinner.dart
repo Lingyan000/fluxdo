@@ -6,7 +6,7 @@ import 'package:material_new_shapes/material_new_shapes.dart';
 import 'm3e_flags.dart';
 import 'm3e_motion.dart';
 
-/// Material 3 Expressive LoadingIndicator(不定态)的 1:1 复刻。
+/// Material 3 Expressive LoadingIndicator 的形状加载动画。
 ///
 /// 规格与动画节奏逐项对照 Compose material3 的 LoadingIndicator.kt:
 /// - 7 个 MaterialShapes 循环 morph:
@@ -17,8 +17,8 @@ import 'm3e_motion.dart';
 /// - 每次 morph 完成后形状指针步进,叠加 90° 步进旋转(初始 90°);
 /// - 全局旋转 4666ms/圈,线性,与 morph 的 progress*90° 弹性旋转叠加;
 /// - 形状缩放按"动画全程最大回转半径"精确计算,保证任意帧不画出 size 之外;
-///   与规格的唯一偏差是不保留 38/48 的容器留白(调用方把 size 当可见尺寸,
-///   详见 _Md3LoadingGeometry.scaleFactor)。
+///   默认构造将 size 当可见尺寸；[LoadingSpinner.standard] 使用官方容器
+///   尺寸与 38/48 留白比例，适用于列表分页等独立加载区域。
 ///
 /// 传入 [progress] 时为确定态,对照 LoadingIndicator(progress):
 /// 圆形(旋转 18° 以便平滑过渡)随进度 morph 到 SoftBurst,
@@ -26,11 +26,22 @@ import 'm3e_motion.dart';
 class LoadingSpinner extends StatefulWidget {
   final Color? color;
   final double size;
+  final bool _standardSizing;
 
   /// 确定态进度,超出 0..1 时截断;为 null 时是不定态循环动画。
   final double? progress;
 
-  const LoadingSpinner({super.key, this.color, this.size = 48, this.progress});
+  const LoadingSpinner({super.key, this.color, this.size = 48, this.progress})
+    : _standardSizing = false;
+
+  /// 使用 48 的透明容器和 38 的动态图形尺寸基准。
+  ///
+  /// 缩放对照 AndroidX LoadingIndicator.kt 的 calculateScaleFactor 与
+  /// ActiveIndicatorScale，旋转所需的额外缩放由形状边界推导。
+  const LoadingSpinner.standard({super.key, this.color})
+    : size = 48,
+      progress = null,
+      _standardSizing = true;
 
   @override
   State<LoadingSpinner> createState() => _LoadingSpinnerState();
@@ -111,14 +122,20 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
   Widget build(BuildContext context) {
     // M3E 关闭时回退经典转圈:size 语义平移,线宽按 48→4 的比例缩放。
     if (!M3eFlags.of(context).enabled) {
+      final indicatorSize = widget._standardSizing ? 24.0 : widget.size;
       return SizedBox(
         width: widget.size,
         height: widget.size,
-        child: CircularProgressIndicator(
-          value: widget.progress?.clamp(0.0, 1.0),
-          color: widget.color,
-          strokeWidth: (widget.size / 12).clamp(2.0, 4.0),
-          padding: EdgeInsets.zero,
+        child: Center(
+          child: SizedBox.square(
+            dimension: indicatorSize,
+            child: CircularProgressIndicator(
+              value: widget.progress?.clamp(0.0, 1.0),
+              color: widget.color,
+              strokeWidth: (indicatorSize / 12).clamp(2.0, 4.0),
+              padding: EdgeInsets.zero,
+            ),
+          ),
         ),
       );
     }
@@ -164,7 +181,9 @@ class _LoadingSpinnerState extends State<LoadingSpinner>
                 rotationDegrees: progress * 90 +
                     _morphRotationTargetAngle +
                     _rotationController.value * 360,
-                scaleFactor: _Md3LoadingGeometry.scaleFactor,
+                scaleFactor: widget._standardSizing
+                    ? _Md3LoadingGeometry.standardScaleFactor
+                    : _Md3LoadingGeometry.scaleFactor,
                 color: color,
                 path: _path,
               ),
@@ -219,6 +238,22 @@ abstract final class _Md3LoadingGeometry {
   /// 任意帧都不会画出 size 之外的最大缩放。
   static final double scaleFactor =
       0.5 / _maxAnimatedRadius(morphs, morphCurve.peakValue);
+
+  // 与官方相同：在原始形状上比较普通边界与最大旋转边界，
+  // 取各形状所需缩放的最小值，再应用 ActiveSize / ContainerSize。
+  static final double standardScaleFactor = _standardScaleFactor();
+
+  static double _standardScaleFactor() {
+    var scale = 1.0;
+    for (final polygon in _polygons) {
+      final bounds = polygon.calculateBounds();
+      final maxBounds = polygon.calculateMaxBounds();
+      final scaleX = (bounds[2] - bounds[0]) / (maxBounds[2] - maxBounds[0]);
+      final scaleY = (bounds[3] - bounds[1]) / (maxBounds[3] - maxBounds[1]);
+      scale = math.min(scale, math.max(scaleX, scaleY));
+    }
+    return scale * (38 / 48);
+  }
 
   /// 确定态序列,对应 LoadingIndicatorDefaults.DeterminateIndicatorPolygons:
   /// 圆形先转 360°/20,与同角度的 SoftBurst 对齐后 morph 更平滑。

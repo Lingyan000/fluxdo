@@ -1762,7 +1762,7 @@ class _LoadMoreIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(child: LoadingSpinner(size: 24)),
+      child: Center(child: LoadingSpinner.standard()),
     );
   }
 }
