@@ -1,4 +1,5 @@
 allprojects {
+    apply(from = rootProject.file("gradle/legacy-process.gradle"))
     repositories {
         google()
         mavenCentral()
@@ -16,6 +17,18 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 
+    // 兼容 AGP 9 过渡期：部分插件仅检查 AGP 主版本，就假定内置 Kotlin 已启用。
+    // 项目暂时关闭内置 Kotlin 时，按实际源码为这些 Android 库补充编译插件。
+    // 仅处理包含 Kotlin 源码的库；不依赖具体第三方插件名称。
+    pluginManager.withPlugin("com.android.library") {
+        val legacyKotlin = providers.gradleProperty("android.builtInKotlin").orNull == "false"
+        val kotlinSources = fileTree("src") { include("**/*.kt") }
+        if (legacyKotlin && !kotlinSources.isEmpty &&
+            !pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
+            pluginManager.apply("org.jetbrains.kotlin.android")
+        }
+    }
+
     // 统一所有插件子项目的 Java/Kotlin 编译目标为 17，匹配 Kotlin 2.2 默认 JVM target。
     // 解决部分插件（如 flutter_avif_android 声明 Java 11、audio_session 声明 Kotlin 11）导致的
     // "Inconsistent JVM Target Compatibility" 构建失败。
@@ -24,6 +37,20 @@ subprojects {
         // 1. 通过反射修改 android extension 的 compileOptions，避免 AGP import 依赖
         extensions.findByName("android")?.let { androidExt ->
             try {
+                // Android 库使用至少与宿主相同的编译 SDK，避免旧插件声明
+                // compileSdk 31 与 Flutter 引入的新 AndroidX AAR 要求冲突。
+                val appAndroid = rootProject.findProject(":app")
+                    ?.extensions?.findByName("android")
+                val appSdk = appAndroid?.javaClass?.getMethod("getCompileSdkVersion")
+                    ?.invoke(appAndroid) as? String
+                val librarySdk = androidExt.javaClass.getMethod("getCompileSdkVersion")
+                    .invoke(androidExt) as? String
+                val appSdkLevel = appSdk?.removePrefix("android-")?.toIntOrNull()
+                val librarySdkLevel = librarySdk?.removePrefix("android-")?.toIntOrNull()
+                if (appSdkLevel != null && librarySdkLevel != null && librarySdkLevel < appSdkLevel) {
+                    androidExt.javaClass.getMethod("compileSdkVersion", String::class.java)
+                        .invoke(androidExt, appSdk)
+                }
                 val compileOptions = androidExt.javaClass
                     .getMethod("getCompileOptions")
                     .invoke(androidExt)

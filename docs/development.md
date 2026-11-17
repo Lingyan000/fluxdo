@@ -60,8 +60,12 @@ Dart 和 Flutter 来自同一个 SDK；不需要修改其他项目的全局 SDK�
 独立的 `devtools_extension` 仍跟随 `devtools_extensions` 宿主使用旧 Material，
 待宿主支持独立 UI 包后一起迁移，避免新旧主题上下文不匹配。
 
-Apple 工程继续使用现有 CocoaPods 配置，Android 继续使用现有 AGP 配置；
-SDK 升级不同时启用 HCPP 或改动平台构建方式。
+Android 构建链与 Flutter 3.50 模板对齐：Gradle 9.5.0、AGP 9.3.1、Kotlin 2.4.20，Java/JVM 目标仍为 17。
+部分第三方插件仍使用旧 Kotlin 插件与 AGP DSL，因此保留 `android.builtInKotlin=false` 和
+`android.newDsl=false`；待这些插件迁移后再统一启用内置 Kotlin。Android 库按实际 Kotlin 源码补齐旧编译插件，
+编译 SDK 不低于宿主；这些处理不改变应用的 minSdk/targetSdk。旧 CargoKit 的 `Project.exec` 调用
+由 `android/gradle/legacy-process.gradle` 转到 Gradle 的 `ExecOperations`，不改 pub 缓存。
+Apple 继续使用 CocoaPods；未启用 HCPP。
 
 ## 常用命令
 
