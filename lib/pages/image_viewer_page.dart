@@ -729,6 +729,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   Future<void> _restoreSystemUI() async {
+    // 未进入沉浸模式，或已在退场起点恢复时，不再切换系统栏模式。
+    // 多余的 manual → edgeToEdge 切换也会触发安全区变化；普通查看时
+    // 没有启用安全区冻结，会让底下的聊天输入栏在 dispose 后上下跳动。
+    if (!_systemUiHidden) return;
     _systemUiHidden = false;
     ImmersiveInsetsHold.release();
     // Flutter 3.41+ 引擎在 setSystemChromeEnabledSystemUIMode 的 EDGE_TO_EDGE
