@@ -1,0 +1,11 @@
+// 部分插件仅根据 AGP 版本判断内置 Kotlin 是否可用，忽略应用显式关闭它。
+// 在 Android library 应用时就补齐 Kotlin 插件，避免静态源码检测将条件分支
+// 误判为“已应用 KGP”，最终漏编译整个 Kotlin 插件。按源码选择，不维护包名列表。
+subprojects { child ->
+    child.plugins.withId('com.android.library') {
+        if (child.providers.gradleProperty('android.builtInKotlin').orNull == 'false' &&
+                !child.fileTree('src').matching { include '**/*.kt' }.isEmpty()) {
+            child.pluginManager.apply('org.jetbrains.kotlin.android')
+        }
+    }
+}

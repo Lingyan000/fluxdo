@@ -1,4 +1,9 @@
+plugins {
+    id("org.jetbrains.kotlin.android") apply false
+}
+
 apply(from = "gradle/cargokit_compat.gradle")
+apply(from = "gradle/kotlin_compat.gradle")
 
 allprojects {
     repositories {
