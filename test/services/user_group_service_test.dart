@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;

@@ -5,8 +5,9 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/material_ui_finders.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
@@ -1585,7 +1586,7 @@ Future<void> main() async {
           );
         } else {
           await tester.tap(
-            find.byTooltip(
+            findMaterialTooltip(
               MaterialLocalizations.of(tester.element(shell))
                   .modalBarrierDismissLabel,
             ),

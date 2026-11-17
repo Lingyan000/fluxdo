@@ -4,7 +4,7 @@
 /// 让它与源码模式机制对齐（外显 pin + 「更多」面板网格）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_editor_tools.dart';

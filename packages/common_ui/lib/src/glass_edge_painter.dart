@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 从导航外壳原样提取，保持 05294df6 的 SweepGradient 方向性高光。
 class GlassEdgePainter extends CustomPainter {

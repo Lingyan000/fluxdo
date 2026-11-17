@@ -7,7 +7,7 @@
 ///   序列化与 cook 导入链（见 fluxdo_render 的 FluxdoEditorContentActions）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxdo_render/editor.dart' show FluxdoEditorContentActions;
 

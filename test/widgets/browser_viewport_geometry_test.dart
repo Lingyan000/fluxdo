@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/browser_safe_area.dart';
 import 'package:fluxdo/widgets/browser/browser_web_viewport.dart';

@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -211,7 +211,9 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
           0.0,
           returnExtent,
         );
-    _sheet.reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _sheet.reduceMotion =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     _sheet.expressive = M3eFlags.of(context).enabled;
     _sheet.refreshExtent = topInset + feedbackExtent;
     return NotificationListener<RefreshRevealNotification>(

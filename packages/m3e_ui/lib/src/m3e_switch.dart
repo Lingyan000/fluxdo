@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'm3e_flags.dart';
 import 'm3e_motion.dart';
@@ -48,7 +48,9 @@ class _M3eSwitchState extends State<M3eSwitch> with TickerProviderStateMixin {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduced = MediaQuery.disableAnimationsOf(context);
+    _reduced =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     if (_reduced || !M3eFlags.of(context).enabled) {
       _position.value = widget.value ? 1 : 0;
       _press.value = 0;

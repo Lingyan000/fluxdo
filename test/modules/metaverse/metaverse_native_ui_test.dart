@@ -7,11 +7,12 @@ import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/material_ui_finders.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/metaverse_page.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
@@ -467,7 +468,7 @@ void main() {
     expect(find.byType(PinInput), findsOneWidget);
     await snapshot(tester, 'payment');
     await tester.tap(
-      find.byTooltip(
+      findMaterialTooltip(
         tester.element(find.byType(Scaffold).first).l10n.common_cancel,
       ),
     );
@@ -789,7 +790,7 @@ widget Thumbnail = Image(url: "https://images.example.org/product.png", width: 9
         ),
       );
       await tester.pumpAndSettle();
-      final retry = find.byTooltip(S.current.common_retry);
+      final retry = findMaterialTooltip(S.current.common_retry);
       expect(retry, findsOneWidget);
       expect(
         find.bySemanticsLabel(S.current.common_imageUnavailable),
@@ -862,14 +863,14 @@ widget Thumbnail = Image(url: data.url, width: 96.0, height: 96.0);
       findsOneWidget,
     );
     expect(requests, 1);
-    expect(find.byTooltip(S.current.common_retry), findsNothing);
+    expect(findMaterialTooltip(S.current.common_retry), findsNothing);
     content.update('url', 'https://images.example.org/bad.ico');
     await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate((widget) => widget is ScalableImageWidget),
       findsNothing,
     );
-    expect(find.byTooltip(S.current.common_retry), findsOneWidget);
+    expect(findMaterialTooltip(S.current.common_retry), findsOneWidget);
     expect(requests, 2);
     expect(tester.takeException(), isNull);
   });
@@ -920,7 +921,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       tester.getCenter(find.byIcon(Symbols.close_rounded)).dy,
     );
     await tester.tap(
-      find.byTooltip(
+      findMaterialTooltip(
         tester.element(find.byType(Scaffold).first).l10n.common_clear,
       ),
     );
@@ -1400,7 +1401,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     await tester.ensureVisible(pay);
     await tester.pumpAndSettle();
     expect(pay.hitTestable(), findsOneWidget);
-    final cancel = find.byTooltip(l.common_cancel);
+    final cancel = findMaterialTooltip(l.common_cancel);
     await tester.ensureVisible(cancel);
     await tester.pumpAndSettle();
     expect(cancel.hitTestable(), findsOneWidget);

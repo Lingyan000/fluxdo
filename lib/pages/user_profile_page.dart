@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -838,7 +838,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   /// 用户动作分页助手
   static final _actionsPaginationHelper = PaginationHelpers.forList<UserAction>(
-    keyExtractor: (a) => '${a.topicId}_${a.postNumber}_${a.actionType}',
+    keyExtractor: (a) => a.dedupeKey,
     expectedPageSize: 30,
   );
 
@@ -3973,22 +3973,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         action.actionType == UserActionType.newTopic ||
         action.actionType == UserActionType.reply;
     final author = action.author ?? (ownPost ? _activityOwner : null);
-    final actor = TopicUser(
-      id: 0,
-      username: action.username ?? _user!.username,
-      avatarTemplate: action.avatarTemplate ?? _user!.avatarTemplate ?? '',
-    );
+    final wasLiked = action.actionType == UserActionType.wasLiked;
     return ActivityPostCard(
       position: position,
       author: author,
       title: action.title,
-      actionLabel: action.actionType == UserActionType.wasLiked
+      actionLabel: wasLiked
           ? action.postNumber == 1
                 ? context.l10n.userProfile_actionCreatedTopic
                 : context.l10n.common_reply
           : _getActionLabel(action.actionType),
       actionIcon: _getActionIcon(action.actionType),
-      actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
+      // 获赞的帖子作者就是资料页主人，首行改为点赞人
+      actionActor: wasLiked ? action.actor : null,
+      actorVerb: wasLiked ? context.l10n.userProfile_likedThisPost : null,
       occurredAt: action.actingAt,
       postNumber: action.postNumber,
       excerpt: action.excerpt,

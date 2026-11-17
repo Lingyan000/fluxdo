@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 // 0.2.5 的 ListController.jumpToIndex 会停止当前滚动活动。结构更新只需

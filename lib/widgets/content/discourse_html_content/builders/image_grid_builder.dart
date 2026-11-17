@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -299,7 +299,15 @@ class _GridImageTileState extends State<_GridImageTile> {
         : displayHeight;
     final cachePx = (maxSide * dpr).round();
     // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
-    ImageDecodeSpecMemo.remember(displayUrl, cachePx, cachePx);
+    final provider = ImageDecodeSpecMemo.remember(
+      displayUrl,
+      ResizeImage(
+        discourseImageProvider(displayUrl),
+        width: cachePx,
+        height: cachePx,
+        policy: ResizeImagePolicy.fit,
+      ),
+    );
     return SizedBox(
       width: widget.columnWidth,
       height: displayHeight,
@@ -310,18 +318,13 @@ class _GridImageTileState extends State<_GridImageTile> {
         child: HeroImage(
           heroTag: widget.heroTag,
           style: _gridStyle,
-          flightImage: discourseImageProvider(displayUrl),
+          flightImage: provider,
           onTap: () => _openViewer(context, fullUrl),
           // RepaintBoundary:加载 spinner 动画/首绘隔离在格子内,
           // 不连带整个帖子 segment 每帧重绘
           child: RepaintBoundary(
             child: Image(
-              image: ResizeImage(
-                discourseImageProvider(displayUrl),
-                width: cachePx,
-                height: cachePx,
-                policy: ResizeImagePolicy.fit,
-              ),
+              image: provider,
               fit: BoxFit.cover,
               width: widget.columnWidth,
               height: displayHeight,

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../../l10n/s.dart';
 import '../../../providers/message_bus_providers.dart';
 import '../../../widgets/common/smart_avatar.dart';

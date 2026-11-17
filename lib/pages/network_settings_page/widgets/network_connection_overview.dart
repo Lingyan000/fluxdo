@@ -3,7 +3,7 @@ import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -68,7 +68,8 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context) ||
+    if ((MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !TickerMode.valuesOf(context).enabled) {
       _motion.value = 1;
     } else if (!_started) {
@@ -85,7 +86,8 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
             oldWidget.webViewViaCore != widget.webViewViaCore ||
             oldWidget.dns != widget.dns ||
             oldWidget.outbound != widget.outbound) &&
-        !MediaQuery.disableAnimationsOf(context) &&
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) &&
         TickerMode.valuesOf(context).enabled) {
       _motion.forward(from: 0);
     }
@@ -161,7 +163,10 @@ class _NetworkConnectionOverviewState extends State<NetworkConnectionOverview>
         IconButton.filledTonal(
           tooltip: l.networkStatus_restart,
           onPressed: applying ? null : _restart,
-          icon: applying && !MediaQuery.disableAnimationsOf(context)
+          icon:
+              applying &&
+                  !(MediaQuery.disableAnimationsOf(context) ||
+                      MediaQuery.reduceMotionOf(context))
               ? const SizedBox.square(
                   dimension: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),

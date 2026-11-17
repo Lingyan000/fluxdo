@@ -7,7 +7,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui show PathOperation;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 对称的摊开书本；中间书脊和左右书页使用同一套线宽。
 class OpenBookPainter extends CustomPainter {

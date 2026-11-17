@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -204,7 +204,13 @@ class _GroupPageState extends ConsumerState<GroupPage>
     if (section == _section) return;
     _resetContentScroll();
     setState(() => _section = section);
-    _contentFade.forward(from: MediaQuery.disableAnimationsOf(context) ? 1 : 0);
+    _contentFade.forward(
+      from:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
+          ? 1
+          : 0,
+    );
     if (!_loading && !_loaded.contains(section)) _loadSection();
   }
 

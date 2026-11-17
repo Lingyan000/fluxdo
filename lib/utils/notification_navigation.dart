@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_icons/app_icons.dart';
 import '../l10n/s.dart';
@@ -120,6 +120,20 @@ void _markNotificationRead(
   container
       .read(recentNotificationsProvider.notifier)
       .markAsRead(notification.id);
+  // 历史通知页按已读筛选分别缓存，只同步当前存活的那几份
+  for (final filter in NotificationReadFilter.values) {
+    final provider = notificationListProvider(filter);
+    if (container.exists(provider)) {
+      container.read(provider.notifier).markAsRead(notification.id);
+    }
+  }
+  for (final tab in NotificationPanelTab.values) {
+    if (tab == NotificationPanelTab.all) continue;
+    final provider = categorizedNotificationsProvider(tab);
+    if (container.exists(provider)) {
+      container.read(provider.notifier).markAsRead(notification.id);
+    }
+  }
   container
       .read(discourseServiceProvider)
       .markNotificationRead(notification.id)

@@ -2,7 +2,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 窄屏投影态的预测返回手势进度（0=原位，1=完全滑出）。
 ///

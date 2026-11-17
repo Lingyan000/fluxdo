@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../utils/relative_time_clock.dart';
 import '../../utils/time_utils.dart';

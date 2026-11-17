@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../models/category.dart';
 import '../../models/topic.dart';
@@ -34,6 +34,7 @@ class ActivityPostCard extends StatelessWidget {
     this.actionIcon,
     this.author,
     this.actionActor,
+    this.actorVerb,
     this.occurredAt,
     this.postNumber,
     this.excerpt,
@@ -56,7 +57,11 @@ class ActivityPostCard extends StatelessWidget {
   final VoidCallback? onPreviewIntent;
   final Widget? footer;
   final TopicUser? author;
+
+  /// 发起动作的用户（点赞人、回复人等）。设置后首行改为「动作者 + [actorVerb]」，
+  /// 不再显示 [author]；正文排在标题之前。
   final TopicUser? actionActor;
+  final String? actorVerb;
   final DateTime? occurredAt;
   final int? postNumber;
   final String? excerpt;
@@ -79,7 +84,9 @@ class ActivityPostCard extends StatelessWidget {
     final category = categories[categoryId];
     final parent = categories[category?.parentCategoryId];
     final body = excerpt?.trim();
-    final showBodyFirst = bodyFirst && body != null && body.isNotEmpty;
+    final actorFirst = actionActor != null;
+    final showBodyFirst =
+        (bodyFirst || actorFirst) && body != null && body.isNotEmpty;
     final reaction = normalizeEmojiShortcodeName(reactionId ?? '');
     final metadata = Wrap(
       spacing: 8,
@@ -90,7 +97,7 @@ class ActivityPostCard extends StatelessWidget {
           spacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (actionIcon != null && actionActor == null)
+            if (actionIcon != null)
               Icon(
                 actionIcon,
                 size: 15,
@@ -111,91 +118,57 @@ class ActivityPostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (actionActor != null) ...[
+          if (actionActor != null)
+            _ActivityActorHeader(
+              actor: actionActor!,
+              verb: actorVerb ?? actionLabel,
+              reactionId: reaction,
+              postNumber: postNumber,
+              occurredAt: occurredAt,
+              metaStyle: metaStyle,
+            )
+          else
             ActivityCardHeader(
+              avatar: author == null
+                  ? null
+                  : _ActivityLink(
+                      alignment: AlignmentDirectional.centerStart,
+                      onTap: () => EmbeddedStackScope.openProfile(
+                        context,
+                        author!.username,
+                      ),
+                      child: SmartAvatar(
+                        imageUrl: author!.avatarTemplate.isEmpty
+                            ? ''
+                            : author!.getAvatarUrl(size: 80),
+                        radius: 18,
+                        fallbackText: author!.username,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
+                        foregroundColor: secondary,
+                      ),
+                    ),
+              identity: author == null
+                  ? null
+                  : _ActivityAuthor(author: author!),
+              metadata: metadata,
               timestamp: occurredAt == null
                   ? null
                   : RelativeTimeText(dateTime: occurredAt, style: metaStyle),
-              metadata: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height:
-                        MediaQuery.textScalerOf(context)
-                            .scale(metaStyle?.fontSize ?? 12) *
-                        1.4,
-                    child: Icon(
-                      Symbols.favorite_rounded,
-                      size: 15,
-                      color: context.emphasis.accent,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _ActivityLink(
-                          minimumSize: Size.zero,
-                          padding: EdgeInsets.zero,
-                          onTap: () => EmbeddedStackScope.openProfile(
-                            context,
-                            actionActor!.username,
-                          ),
-                          child: Text(
-                            '@${actionActor!.username}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: metaStyle?.copyWith(
-                              color: theme.colorScheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          context.l10n.userProfile_likedThisPost,
-                          style: metaStyle,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ),
-            const SizedBox(height: 12),
-          ],
-          ActivityCardHeader(
-            avatar: author == null
-                ? null
-                : _ActivityLink(
-                    alignment: AlignmentDirectional.centerStart,
-                    onTap: () => EmbeddedStackScope.openProfile(
-                      context,
-                      author!.username,
-                    ),
-                    child: SmartAvatar(
-                      imageUrl: author!.avatarTemplate.isEmpty
-                          ? ''
-                          : author!.getAvatarUrl(size: 80),
-                      radius: 18,
-                      fallbackText: author!.username,
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
-                      foregroundColor: secondary,
-                    ),
-                  ),
-            identity: author == null ? null : _ActivityAuthor(author: author!),
-            metadata: metadata,
-            timestamp: occurredAt == null || actionActor != null
-                ? null
-                : RelativeTimeText(dateTime: occurredAt, style: metaStyle),
-          ),
           if (showBodyFirst) ...[
             const SizedBox(height: 12),
-            _ActivityExcerpt(html: body, quoted: quoteExcerpt),
+            _ActivityExcerpt(
+              html: body,
+              quoted: quoteExcerpt,
+              // 动作者优先时引用的是自己的原文，只需唤起记忆
+              maxLines: actorFirst && quoteExcerpt ? 2 : 4,
+            ),
+          ],
+          // 与帖子里一致，Boost 气泡挂在所 Boost 的正文下方
+          if (actorFirst && boostNote != null) ...[
+            const SizedBox(height: 10),
+            boostNote!,
           ],
           if (title.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -232,7 +205,7 @@ class ActivityPostCard extends StatelessWidget {
               ],
             ),
           ],
-          if (reaction.isNotEmpty) ...[
+          if (reaction.isNotEmpty && !actorFirst) ...[
             const SizedBox(height: 10),
             Semantics(
               image: true,
@@ -244,7 +217,10 @@ class ActivityPostCard extends StatelessWidget {
             const SizedBox(height: 10),
             _ActivityExcerpt(html: body, quoted: quoteExcerpt),
           ],
-          if (boostNote != null) ...[const SizedBox(height: 10), boostNote!],
+          if (boostNote != null && !actorFirst) ...[
+            const SizedBox(height: 10),
+            boostNote!,
+          ],
           if (category != null) ...[
             const SizedBox(height: 4),
             _ActivityLink(
@@ -393,6 +369,81 @@ class ActivityTopicCard extends StatelessWidget {
   }
 }
 
+/// 动作者优先的首行：头像、昵称与动作连成一句，回应表情随句内联。
+class _ActivityActorHeader extends StatelessWidget {
+  const _ActivityActorHeader({
+    required this.actor,
+    required this.verb,
+    required this.reactionId,
+    required this.postNumber,
+    required this.occurredAt,
+    required this.metaStyle,
+  });
+
+  final TopicUser actor;
+  final String verb;
+  final String reactionId;
+  final int? postNumber;
+  final DateTime? occurredAt;
+  final TextStyle? metaStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final secondary = theme.colorScheme.onSurfaceVariant;
+    final verbStyle = theme.textTheme.bodyMedium?.copyWith(color: secondary);
+    void openProfile() =>
+        EmbeddedStackScope.openProfile(context, actor.username);
+    return ActivityCardHeader(
+      avatar: _ActivityLink(
+        alignment: AlignmentDirectional.centerStart,
+        onTap: openProfile,
+        child: SmartAvatar(
+          imageUrl: actor.avatarTemplate.isEmpty
+              ? ''
+              : actor.getAvatarUrl(size: 80),
+          radius: 18,
+          fallbackText: actor.username,
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+          foregroundColor: secondary,
+        ),
+      ),
+      metadata: Wrap(
+        spacing: 6,
+        runSpacing: 2,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _ActivityLink(
+            minimumSize: Size.zero,
+            padding: EdgeInsets.zero,
+            onTap: openProfile,
+            child: Text(
+              actor.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(verb, style: verbStyle),
+          if (reactionId.isNotEmpty)
+            Semantics(
+              image: true,
+              label: ':$reactionId:',
+              child: ReactionEmoji(reactionId: reactionId, size: 18),
+            ),
+          if (postNumber != null && postNumber! > 0)
+            Text('#$postNumber', style: metaStyle),
+        ],
+      ),
+      timestamp: occurredAt == null
+          ? null
+          : RelativeTimeText(dateTime: occurredAt, style: metaStyle),
+    );
+  }
+}
+
 class _ActivityAuthor extends StatelessWidget {
   const _ActivityAuthor({required this.author});
   final TopicUser author;
@@ -480,16 +531,21 @@ class _ActivityLink extends StatelessWidget {
 }
 
 class _ActivityExcerpt extends StatelessWidget {
-  const _ActivityExcerpt({required this.html, required this.quoted});
+  const _ActivityExcerpt({
+    required this.html,
+    required this.quoted,
+    this.maxLines = 4,
+  });
   final String html;
   final bool quoted;
+  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final text = CollapsedHtmlContent(
       html: html,
-      maxLines: 4,
+      maxLines: maxLines,
       textStyle:
           (quoted ? theme.textTheme.bodyMedium : theme.textTheme.bodyLarge)
               ?.copyWith(height: 1.5),
@@ -523,57 +579,76 @@ class _ActivityExcerpt extends StatelessWidget {
   }
 }
 
-/// Boost 留言气泡随内容收拢，长留言在卡片内换行。
+/// Boost 留言气泡，尺寸与帖子内的 Boost 一致；长留言在卡片内换行，
+/// 首行与头像居中。
 class ActivityBoostNote extends StatelessWidget {
   const ActivityBoostNote({super.key, required this.actor, required this.text});
   final TopicUser actor;
   final String text;
 
+  static const double _avatarSize = 20;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurface,
+      height: 1.2,
+    );
+    final lineHeight =
+        MediaQuery.textScalerOf(context).scale(style?.fontSize ?? 12) * 1.2;
     return Align(
       alignment: Alignment.centerLeft,
       child: DecoratedBox(
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: PageBackgroundScope.contentColor(
             context,
-            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
           ),
-          borderRadius: context.shapes.borderRadius(22),
+          shape: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(12),
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Tooltip(
-              message: actor.displayName,
-              child: _ActivityLink(
-                onTap: () =>
-                    EmbeddedStackScope.openProfile(context, actor.username),
-                child: SmartAvatar(
-                  imageUrl: actor.avatarTemplate.isEmpty
-                      ? ''
-                      : actor.getAvatarUrl(size: 48),
-                  radius: 12,
-                  fallbackText: actor.username,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                  foregroundColor: theme.colorScheme.onSurfaceVariant,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.fromSTEB(3, 3, 8, 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Tooltip(
+                message: actor.displayName,
+                child: _ActivityLink(
+                  minimumSize: Size.zero,
+                  padding: EdgeInsets.zero,
+                  onTap: () =>
+                      EmbeddedStackScope.openProfile(context, actor.username),
+                  child: SmartAvatar(
+                    imageUrl: actor.avatarTemplate.isEmpty
+                        ? ''
+                        : actor.getAvatarUrl(size: 48),
+                    radius: _avatarSize / 2,
+                    fallbackText: actor.username,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    foregroundColor: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
-            ),
-            Flexible(
-              child: Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(0, 10, 12, 10),
-                child: EmojiText(
-                  text,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    top: math.max(0, (_avatarSize - lineHeight) / 2),
+                  ),
+                  child: EmojiText(
+                    text,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: style,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

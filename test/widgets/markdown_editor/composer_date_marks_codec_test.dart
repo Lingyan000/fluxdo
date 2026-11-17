@@ -2,7 +2,7 @@ import 'package:fluxdo_render/semantic_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/semantic_composer_codec.dart';
 // 真实 cook 严格相等，不放宽门禁或将支持项退回源码。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'dismissible_popup_menu.dart';
 import 'ui_emphasis.dart';
@@ -14,6 +14,7 @@ class MenuTabItem<T> {
     this.menuBuilder,
     this.onSelected,
     this.selectedValue,
+    this.badgeCount,
   }) : assert(menuBuilder == null || onSelected != null);
 
   final String label;
@@ -21,19 +22,35 @@ class MenuTabItem<T> {
   final PopupMenuItemBuilder<T>? menuBuilder;
   final ValueChanged<T>? onSelected;
   final T? selectedValue;
+
+  /// 未读数，为 null 或 0 时不显示。常驻图标时是图标角标，常驻文字时跟在文字后。
+  final int? badgeCount;
 }
 
-/// 图标栏目导航。选中项展开文字，菜单复用公共弹层的手势与键盘交互。
+/// 栏目常驻显示的内容，另一部分在选中时显现。两种形态共用尺寸与揭示动画。
+enum MenuTabMode {
+  /// 常驻图标，选中时展开文字。适合栏目固定、需要省位的导航（如资料页）。
+  icon,
+
+  /// 常驻文字，选中时显现图标。适合需要一眼读懂的分类筛选（如通知面板）。
+  label,
+}
+
+/// 栏目导航。选中项显现另一半内容，菜单复用公共弹层的手势与键盘交互。
 class MenuTabBar<T> extends StatefulWidget implements PreferredSizeWidget {
   const MenuTabBar({
     super.key,
     required this.controller,
     required this.items,
+    this.mode = MenuTabMode.icon,
     this.showAllLabels = false,
   });
 
   final TabController controller;
   final List<MenuTabItem<T>> items;
+  final MenuTabMode mode;
+
+  /// 所有栏目都显示完整内容（宽屏空间充足时）
   final bool showAllLabels;
 
   @override
@@ -80,20 +97,37 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     assert(widget.items.length == widget.controller.length);
     if (widget.items.isEmpty) return const SizedBox(height: 48);
     final theme = Theme.of(context);
+    final labelMode = widget.mode == MenuTabMode.label;
+    // 常驻文字时未选中项也显示文字，字重降一档避免整排过重
     final style = theme.textTheme.titleSmall!.copyWith(
-      fontWeight: FontWeight.w700,
+      fontWeight: labelMode ? FontWeight.w600 : FontWeight.w700,
     );
-    final widths = <double>[];
-    for (var index = 0; index < widget.items.length; index++) {
-      final item = widget.items[index];
+    final countStyle = theme.textTheme.labelSmall!.copyWith(
+      color: context.emphasis.selected,
+      fontWeight: FontWeight.w600,
+    );
+    double measure(String text, TextStyle style) {
       final painter = TextPainter(
-        text: TextSpan(text: item.label, style: style),
+        text: TextSpan(text: text, style: style),
         textDirection: Directionality.of(context),
         textScaler: MediaQuery.textScalerOf(context),
         maxLines: 1,
       )..layout();
-      widths.add(44 + painter.width + (item.menuBuilder == null ? 0 : 22));
+      final width = painter.width;
       painter.dispose();
+      return width;
+    }
+
+    final widths = <double>[];
+    for (var index = 0; index < widget.items.length; index++) {
+      final item = widget.items[index];
+      final count = labelMode ? _countText(item) : null;
+      widths.add(
+        44 +
+            measure(item.label, style) +
+            (count == null ? 0 : 4 + measure(count, countStyle)) +
+            (item.menuBuilder == null ? 0 : 22),
+      );
     }
 
     return AnimatedBuilder(
@@ -141,6 +175,7 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
                     equalSlots ? slotWidth : widths[index] + extra,
                     widths[index] - 44,
                     progress[index],
+                    countStyle,
                   ),
               ],
             );
@@ -150,6 +185,12 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     );
   }
 
+  static String? _countText(MenuTabItem<Object?> item) {
+    final count = item.badgeCount ?? 0;
+    if (count <= 0) return null;
+    return count > 99 ? '99+' : '$count';
+  }
+
   Widget _tab(
     BuildContext context,
     MenuTabItem<T> item,
@@ -157,57 +198,95 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     double width,
     double labelWidth,
     double progress,
+    TextStyle countStyle,
   ) {
     final active = index == _selected;
     final direction = Directionality.of(context);
-    final labelStart = (width + 28 - labelWidth) / 2;
-    final iconStart = (width - 22 - (labelWidth + 6) * progress) / 2;
-    // 文字保持最终位置，从图标旁逐渐显露，软边遮罩避免切断字形。
-    final revealEdge = (1 - progress) * (labelWidth + 6) / 2 - 6;
+    final labelMode = widget.mode == MenuTabMode.label;
+    final count = labelMode ? _countText(item) : null;
+    final icon = ExcludeSemantics(
+      child: Badge(
+        isLabelVisible: !labelMode && _countText(item) != null,
+        label: Text(_countText(item) ?? ''),
+        child: Icon(item.icon, size: 22),
+      ),
+    );
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(item.label),
+        if (count != null) ...[
+          const SizedBox(width: 4),
+          Text(count, style: countStyle),
+        ],
+        if (item.menuBuilder != null) ...[
+          const SizedBox(width: 4),
+          const ExcludeSemantics(
+            child: Icon(Symbols.expand_more_rounded, size: 18),
+          ),
+        ],
+      ],
+    );
+    // 常驻部分随选中程度让位，显现部分停在最终位置，由软边遮罩从
+    // 相邻一侧逐渐露出，避免切断字形或图标。
+    final revealWidth = labelMode ? 22.0 : labelWidth;
+    final revealEdge = (1 - progress) * (revealWidth + 6) / 2 - 6;
+    Widget reveal(Widget child) => Opacity(
+      opacity: progress,
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => LinearGradient(
+          // 文字从图标一侧（起始侧）露出，图标从文字一侧（末端侧）露出
+          begin:
+              (labelMode
+                      ? AlignmentDirectional.centerEnd
+                      : AlignmentDirectional.centerStart)
+                  .resolve(direction),
+          end:
+              (labelMode
+                      ? AlignmentDirectional.centerStart
+                      : AlignmentDirectional.centerEnd)
+                  .resolve(direction),
+          colors: const [Colors.transparent, Colors.white],
+          stops: [
+            (revealEdge / revealWidth).clamp(0.0, 1.0),
+            ((revealEdge + 6) / revealWidth).clamp(0.0, 1.0),
+          ],
+        ).createShader(bounds),
+        child: child,
+      ),
+    );
     final content = SizedBox(
       width: width,
       height: 48,
       child: Stack(
         alignment: Alignment.center,
         clipBehavior: Clip.none,
-        children: [
-          PositionedDirectional(
-            start: iconStart,
-            child: ExcludeSemantics(child: Icon(item.icon, size: 22)),
-          ),
-          if (progress > 0 && labelWidth > 0)
-            PositionedDirectional(
-              start: labelStart,
-              width: labelWidth,
-              child: Opacity(
-                opacity: progress,
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (bounds) => LinearGradient(
-                    begin: AlignmentDirectional.centerStart.resolve(direction),
-                    end: AlignmentDirectional.centerEnd.resolve(direction),
-                    colors: const [Colors.transparent, Colors.white],
-                    stops: [
-                      (revealEdge / labelWidth).clamp(0.0, 1.0),
-                      ((revealEdge + 6) / labelWidth).clamp(0.0, 1.0),
-                    ],
-                  ).createShader(bounds),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(item.label),
-                      if (item.menuBuilder != null) ...[
-                        const SizedBox(width: 4),
-                        const ExcludeSemantics(
-                          child: Icon(Symbols.expand_more_rounded, size: 18),
-                        ),
-                      ],
-                    ],
+        children: labelMode
+            ? [
+                if (progress > 0)
+                  PositionedDirectional(
+                    start: (width - 28 - labelWidth) / 2,
+                    child: reveal(icon),
                   ),
+                PositionedDirectional(
+                  start: (width - labelWidth + 28 * progress) / 2,
+                  width: labelWidth,
+                  child: label,
                 ),
-              ),
-            ),
-        ],
+              ]
+            : [
+                PositionedDirectional(
+                  start: (width - 22 - (labelWidth + 6) * progress) / 2,
+                  child: icon,
+                ),
+                if (progress > 0 && labelWidth > 0)
+                  PositionedDirectional(
+                    start: (width + 28 - labelWidth) / 2,
+                    width: labelWidth,
+                    child: reveal(label),
+                  ),
+              ],
       ),
     );
     return Tab(
@@ -225,7 +304,12 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
           : Tooltip(
               message: item.label,
               child: Semantics(
-                label: active ? null : item.label,
+                // 常驻文字时文字本身可读，只需补未读数
+                label: active || labelMode
+                    ? null
+                    : _countText(item) != null
+                    ? '${item.label} ${item.badgeCount}'
+                    : item.label,
                 child: content,
               ),
             ),

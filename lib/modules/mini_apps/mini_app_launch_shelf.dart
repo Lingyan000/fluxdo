@@ -1,5 +1,5 @@
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
@@ -137,6 +137,9 @@ class MiniAppRecentSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scale = MediaQuery.textScalerOf(context);
+    double itemWidth(int index) => index == 0
+        ? 208 * scale.scale(1).clamp(1.0, 1.35)
+        : 104 * scale.scale(1).clamp(1.0, 1.4);
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 20),
       child: Column(
@@ -165,14 +168,17 @@ class MiniAppRecentSection extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               scrollDirection: Axis.horizontal,
               itemCount: apps.length,
+              // separated 的尺寸索引包含分隔项，最后一张后面没有间距。
+              itemExtentBuilder: (index, _) {
+                if (index < 0 || index >= apps.length * 2 - 1) return null;
+                return index.isOdd ? 8 : itemWidth(index ~/ 2);
+              },
               separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final app = apps[index];
                 final featured = index == 0;
                 return SizedBox(
-                  width: featured
-                      ? 208 * scale.scale(1).clamp(1.0, 1.35)
-                      : 104 * scale.scale(1).clamp(1.0, 1.4),
+                  width: itemWidth(index),
                   child: SegmentedCardItem(
                     index: 0,
                     count: 1,

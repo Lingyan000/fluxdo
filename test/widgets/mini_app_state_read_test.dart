@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -277,11 +276,7 @@ void main() {
             child: TranslationProvider(
               child: MaterialApp(
                 theme: ThemeData(extensions: const [M3eFlags()]),
-                localizationsDelegates: const [
-                  GlobalMaterialLocalizations.delegate,
-                  GlobalWidgetsLocalizations.delegate,
-                  GlobalCupertinoLocalizations.delegate,
-                ],
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
                 supportedLocales: AppLocaleUtils.supportedLocales,
                 home: MiniAppRunnerPage(
                   details: details,
@@ -365,11 +360,7 @@ void main() {
           child: TranslationProvider(
             child: MaterialApp(
               theme: ThemeData(extensions: const [M3eFlags()]),
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               supportedLocales: AppLocaleUtils.supportedLocales,
               home: MiniAppRunnerPage(
                 details: _details,
@@ -499,11 +490,7 @@ void main() {
             child: TranslationProvider(
               child: MaterialApp(
                 theme: ThemeData(extensions: const [M3eFlags()]),
-                localizationsDelegates: const [
-                  GlobalMaterialLocalizations.delegate,
-                  GlobalWidgetsLocalizations.delegate,
-                  GlobalCupertinoLocalizations.delegate,
-                ],
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
                 supportedLocales: AppLocaleUtils.supportedLocales,
                 home: MiniAppRunnerPage(
                   details: _details,

@@ -5,7 +5,7 @@ import 'dart:collection' show UnmodifiableListView;
 import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -915,7 +915,10 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                                     ),
                                     opacity: _snapshotVisible ? 1 : 0,
                                     duration:
-                                        MediaQuery.disableAnimationsOf(context)
+                                        (MediaQuery.disableAnimationsOf(
+                                              context,
+                                            ) ||
+                                            MediaQuery.reduceMotionOf(context))
                                         ? Duration.zero
                                         : const Duration(milliseconds: 120),
                                     onEnd: () {
@@ -950,7 +953,9 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                         child: IgnorePointer(
                           ignoring: !_addressEditing && _currentUrl.isNotEmpty,
                           child: AnimatedSwitcher(
-                            duration: MediaQuery.disableAnimationsOf(context)
+                            duration:
+                                (MediaQuery.disableAnimationsOf(context) ||
+                                    MediaQuery.reduceMotionOf(context))
                                 ? Duration.zero
                                 : const Duration(milliseconds: 240),
                             transitionBuilder: (child, animation) =>

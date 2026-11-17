@@ -12,7 +12,7 @@
 //   delete_outline → delete、error_outline → error、info_outline → info ……
 //
 // import 处理：若文件含 `Icons.` 且没有 material_symbols_icons import，
-//   在第一个 `import 'package:flutter/material.dart';` 之后追加。
+//   在第一个 `import 'package:material_ui/material_ui.dart';` 之后追加。
 //
 // 用法：
 //   dart run tool/migrate_icons.dart            # dry-run，仅打印影响面
@@ -21,7 +21,7 @@
 
 import 'dart:io';
 
-const _materialImport = "import 'package:flutter/material.dart';";
+const _materialImport = "import 'package:material_ui/material_ui.dart';";
 const _symbolsImport =
     "import 'package:material_symbols_icons/symbols.dart';";
 

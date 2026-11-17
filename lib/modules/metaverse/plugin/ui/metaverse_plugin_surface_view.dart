@@ -1,6 +1,6 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:rfw/rfw.dart';
 

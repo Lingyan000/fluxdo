@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// M3E 组件风格全局开关,以 ThemeExtension 注入。
 ///

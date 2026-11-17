@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 纸张纹理：程序生成的可平铺小图（颗粒 + 纤维 + 轻微斑驳）。
 ///

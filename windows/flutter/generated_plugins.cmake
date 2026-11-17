@@ -18,15 +18,15 @@ list(APPEND FLUTTER_PLUGIN_LIST
   irondash_engine_context
   local_auth_windows
   media_kit_libs_windows_video
-  media_kit_video
   quickjs_engine
   record_windows
   screen_brightness_windows
   screen_retriever_windows
-  share_plus
   super_native_extensions
   url_launcher_windows
+  share_plus
   volume_controller
+  media_kit_video
   window_manager
 )
 

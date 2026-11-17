@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -48,7 +48,7 @@ void main() {
     addTearDown(controller.dispose);
     Widget host(bool reduced) => MaterialApp(
       home: MediaQuery(
-        data: MediaQueryData(disableAnimations: reduced),
+        data: MediaQueryData(reduceMotion: reduced),
         child: Scaffold(
           body: ValueListenableBuilder<bool>(
             valueListenable: visible,

@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart' show UiShapes;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/theme/shape_presets.dart';

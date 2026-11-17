@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -155,7 +155,9 @@ class MiniAppRunnerPage extends ConsumerStatefulWidget {
               navigator,
               motion,
               session,
-              reduceMotion: MediaQuery.disableAnimationsOf(navigator.context),
+              reduceMotion:
+                  (MediaQuery.disableAnimationsOf(navigator.context) ||
+                  MediaQuery.reduceMotionOf(navigator.context)),
             )
           : null;
       Widget panelBuilder(BuildContext context) {
@@ -2032,12 +2034,16 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
         );
         return TweenAnimationBuilder<Color?>(
           tween: ColorTween(end: top),
-          duration: MediaQuery.disableAnimationsOf(context)
+          duration:
+              (MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.reduceMotionOf(context))
               ? Duration.zero
               : const Duration(milliseconds: 260),
           builder: (context, top, _) => TweenAnimationBuilder<Color?>(
             tween: ColorTween(end: bottom),
-            duration: MediaQuery.disableAnimationsOf(context)
+            duration:
+                (MediaQuery.disableAnimationsOf(context) ||
+                    MediaQuery.reduceMotionOf(context))
                 ? Duration.zero
                 : const Duration(milliseconds: 260),
             builder: (context, bottom, _) => _buildPage(context, top!, bottom!),

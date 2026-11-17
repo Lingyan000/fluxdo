@@ -55,7 +55,7 @@ brew install --cask Lingyan000/tap/fluxdo
 
 ### 前置要求
 
-- Flutter SDK 3.47.9（版本由 `.fvmrc` 固定）
+- Flutter SDK 3.50.0（版本由 `.fvmrc` 固定）
 - Rust 工具链（用于编译 DOH 代理）
 - Android Studio / Xcode（移动端开发）
 

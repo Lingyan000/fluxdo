@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -49,7 +49,9 @@ Widget _buildAnimatedBlurBarrier({
     valueListenable: blurReady,
     builder: (context, ready, _) => TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: ready ? 1 : 0),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 120),
       curve: Curves.easeOut,

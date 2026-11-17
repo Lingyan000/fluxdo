@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 节日图案：按 24×24 栅格设计的线稿，描边粗细与 Material Symbols 一致，
 /// 颜色取主题（描边强调色、浅色填充、点缀第三色），明暗主题下都协调。

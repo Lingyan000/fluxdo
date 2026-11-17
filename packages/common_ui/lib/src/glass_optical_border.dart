@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 色罩之后的光学轮廓：窄高光、内侧柔光与背光暗边分别绘制。
 /// 不参与背景模糊，也不再被色罩冲淡。使用真实轮廓法线求光照，

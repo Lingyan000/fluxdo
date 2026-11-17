@@ -1,7 +1,7 @@
 import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
@@ -188,6 +188,7 @@ class _PrivateMessagesPageState extends ConsumerState<PrivateMessagesPage>
         // 新建私信：此前只能从某个用户的头像菜单发起，对方没在可见处
         // 发过言就完全没有路径。对齐 Discourse 网页版私信列表的入口。
         floatingActionButton: BottomNavClearance(
+          mediaQuery: MediaQuery.of(context),
           child: FloatingActionButton(
             heroTag: 'composePm',
             onPressed: _composeNewMessage,

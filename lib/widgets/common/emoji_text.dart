@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../services/emoji_handler.dart';
 import '../../services/discourse_cache_manager.dart';

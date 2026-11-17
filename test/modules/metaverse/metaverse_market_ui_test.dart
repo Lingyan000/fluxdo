@@ -3,11 +3,12 @@ import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/material_ui_finders.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_api_examples.dart';
@@ -195,7 +196,7 @@ void main() {
           tester.getCenter(find.byIcon(Symbols.search_rounded)).dy,
           tester.getCenter(find.byIcon(Symbols.close_rounded)).dy,
         );
-        await tester.tap(find.byTooltip(S.current.common_clear));
+        await tester.tap(findMaterialTooltip(S.current.common_clear));
         await tester.pump();
         expect(find.text('LD士多'), findsOneWidget);
         await tester.enterText(find.byType(TextField), '随手记');

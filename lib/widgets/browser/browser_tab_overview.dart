@@ -2,7 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../services/browser_navigation.dart';
@@ -275,7 +275,9 @@ class BrowserTabOverview extends StatelessWidget {
     }
     return TweenAnimationBuilder<double>(
       tween: Tween(end: visible ? 1 : 0),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,

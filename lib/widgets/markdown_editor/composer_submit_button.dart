@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 正圆提交按钮。进入提交状态后起飞，不等待动效才发请求。
@@ -45,7 +45,8 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _animate =
-        !MediaQuery.disableAnimationsOf(context) &&
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) &&
         M3eFlags.of(context).enabled;
     if (!_animate) _flight.value = widget.busy ? 1 : 0;
   }

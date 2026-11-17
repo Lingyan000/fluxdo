@@ -48,7 +48,9 @@ class BrowserWebViewport extends StatelessWidget {
           ),
         ),
       ),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 260),
       builder: (context, decoration, child) =>

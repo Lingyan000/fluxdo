@@ -2,7 +2,7 @@ import 'package:common_ui/common_ui.dart';
 // ignore_for_file: deprecated_member_use
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../l10n/s.dart';

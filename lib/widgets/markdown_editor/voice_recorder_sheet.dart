@@ -10,7 +10,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;

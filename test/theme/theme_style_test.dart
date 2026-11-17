@@ -6,7 +6,7 @@ import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_style.dart';
 import 'package:fluxdo/utils/color_utils.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show FluxdoRenderStyle;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 

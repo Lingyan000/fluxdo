@@ -1,7 +1,7 @@
 /// 手势光标:grapheme 移动纯函数 + 滑钮手势步进/选择开关。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/cursor_swipe_control.dart';
 import 'package:shared_preferences/shared_preferences.dart';

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show ImageRun;
 import 'package:markdown/markdown.dart' as md;
 import '../../services/discourse_cook_service.dart';

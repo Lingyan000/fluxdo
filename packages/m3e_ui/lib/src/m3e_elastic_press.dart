@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -63,7 +63,8 @@ class _ElasticPressState extends State<M3eElasticPress>
     super.didChangeDependencies();
     _reduceMotion =
         !M3eFlags.of(context).enabled ||
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !TickerMode.valuesOf(context).enabled ||
         context.dependOnInheritedWidgetOfExactType<_PressScope>() != null;
     _resetIfDisabled();

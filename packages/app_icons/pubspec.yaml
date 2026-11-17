@@ -9,6 +9,7 @@ environment:
 resolution: workspace
 
 dependencies:
+  material_ui: ^1.11.1
   flutter:
     sdk: flutter
   material_symbols_icons: ^4.2951.0

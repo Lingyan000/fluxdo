@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 双模切换的「无并存淡入」壳:child(富/源编辑器)按 key 直切 ——
 /// 旧的**同帧从树里移除**(共享 focusNode + 输入模型异构,任何并存

@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -60,7 +60,9 @@ class _BrowserDockHostState extends State<BrowserDockHost>
     if (_interactiveOverview && animate) {
       _overviewAnimation.animateTo(
         value ? 1 : 0,
-        duration: MediaQuery.disableAnimationsOf(context)
+        duration:
+            (MediaQuery.disableAnimationsOf(context) ||
+                MediaQuery.reduceMotionOf(context))
             ? Duration.zero
             : const Duration(milliseconds: 280),
         curve: Curves.easeOutCubic,
@@ -262,7 +264,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
             TweenAnimationBuilder<double>(
               tween: Tween(end: reservedHeight),
               duration:
-                  media.disableAnimations ||
+                  (media.disableAnimations || media.reduceMotion) ||
                       browserInFront ||
                       _motion.active ||
                       justFinishedMotion
@@ -353,7 +355,7 @@ class _BrowserDockHostState extends State<BrowserDockHost>
             ),
             if (_motion.active &&
                 barTabs.isNotEmpty &&
-                !media.disableAnimations)
+                !(media.disableAnimations || media.reduceMotion))
               AnimatedBuilder(
                 animation: _motion,
                 child: Overlay.wrap(child: _buildCard(context, barTabs)),
@@ -440,7 +442,8 @@ class _BrowserDockHostState extends State<BrowserDockHost>
                   child: Opacity(
                     opacity:
                         _motion.active &&
-                            !MediaQuery.disableAnimationsOf(context)
+                            !(MediaQuery.disableAnimationsOf(context) ||
+                                MediaQuery.reduceMotionOf(context))
                         ? 0
                         : 1,
                     child: _buildCard(context, tabs),

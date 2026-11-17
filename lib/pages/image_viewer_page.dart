@@ -1,7 +1,7 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
@@ -11,6 +11,7 @@ import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
+import '../services/image_predecode_controller.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/image_save_utils.dart';
@@ -293,8 +294,12 @@ class _RouteFadeState extends State<_RouteFade> {
 }
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
-    with TickerProviderStateMixin, DoubleTapZoomMixin {
+    with TickerProviderStateMixin, DoubleTapZoomMixin, WidgetsBindingObserver {
   late int currentIndex;
+  final _predecoder = ImagePredecodeController();
+  Timer? _predecodeDelay;
+  int _pageDirection = 1;
+  bool _predecodePaused = false;
   bool _isSaving = false;
   bool _isSharing = false;
   bool _showUI = true;
@@ -456,7 +461,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 解码这类图会产生 100ms+ 的同步纹理上传,独占 raster 线程期间全 app
   /// 掉帧(诊断实测单帧 raster 148ms、后续帧排队 300ms)。maxScale 4.0
   /// 的放大浏览下该上限内清晰度无感知差异。
-  ImageProvider _clampedViewerProvider(String url) {
+  ResizeImage _clampedViewerProvider(
+    String url, {
+    DownloadPriority priority = DownloadPriority.high,
+  }) {
     final view = View.of(context);
     final longestPx = (view.physicalSize.longestSide * 3)
         .clamp(2048.0, 8192.0)
@@ -466,7 +474,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         url,
         bucket: BlobImageCache.originalBucket,
         // 用户主动点开的大图,插到所有预建/预取前面
-        priority: DownloadPriority.high,
+        priority: priority,
       ),
       width: longestPx,
       height: longestPx,
@@ -474,26 +482,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 缩略图占位 provider:按帖内登记的解码参数原样重建 —— ImageCache 的
-  /// key 是 ResizeImageKey(内层 key + 宽高 + 策略),参数一致才能同步命中
-  /// 帖内那份还在屏的解码位图;裸 provider 是不同 key,Hero 转场帧会白付
-  /// 一次全量解码(原图 jpg/png 尤其疼)。未登记(非帖内入口)退回裸
-  /// provider,行为同旧。
+  /// 复用源图的实际 provider，包含头像 bucket、解码尺寸和自定义解码器。
   ImageProvider _thumbnailProvider(String url) {
-    // 头像 URL 走 avatarBucket:与页面头像(SmartAvatar)同 bucket 同
-    // key,占位/飞行纹理直接命中已解码缓存(否则 content bucket 视为
-    // 全新资源,首次飞行拿不到纹理退化为无插值)
+    final source = ImageDecodeSpecMemo.peek(url);
+    if (source != null) return source;
     if (url.contains('/user_avatar/')) {
       return discourseImageProvider(url, bucket: BlobImageCache.avatarBucket);
     }
-    final spec = ImageDecodeSpecMemo.peek(url);
-    if (spec == null) return discourseImageProvider(url);
-    return ResizeImage(
-      discourseImageProvider(url),
-      width: spec.$1,
-      height: spec.$2,
-      policy: ResizeImagePolicy.fit,
-    );
+    return discourseImageProvider(url);
   }
 
   /// 下滑关闭判定:惯性投影终点法。
@@ -523,6 +519,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 图片查看器使用透明路由，底层页面仍会保持可见和Ticker活跃。
     // 查看大图期间暂停帖子动态内容，避免SVG动画与大图解码/缩放争抢
     // UI、raster和GPU；关闭查看器后由租约自动恢复。
@@ -556,6 +553,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       _navUserGesture = userGesture;
       _navUserGesture?.addListener(_onNavUserGestureChanged);
     }
+    _scheduleAdjacentPredecode();
   }
 
   /// 退场起点(按钮/程序化 pop):路由动画转 reverse 的第一帧,早于
@@ -567,7 +565,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 缩略图 Opacity 锁死在 0 ⇒ 飞行体撤走瞬间是空洞(黑闪)。详见
   /// [HeroVisibilityController.startPopping]。
   void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _scheduleAdjacentPredecode();
     if (status != AnimationStatus.reverse) return;
+    _cancelPredecode();
     _restoreSystemUIForExit();
     _publishExitFlightRect();
     HeroVisibilityController.instance.startPopping();
@@ -579,6 +579,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   void _onNavUserGestureChanged() {
     if (!(_route?.isCurrent ?? false)) return;
     if (_navUserGesture?.value == true) {
+      _cancelPredecode();
       _restoreSystemUIForExit();
       _publishExitFlightRect();
       HeroVisibilityController.instance.startPopping();
@@ -672,6 +673,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _predecodeDelay?.cancel();
+    _predecoder.dispose();
     HeroVisibilityController.instance.setExitFlightRect(null);
     _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
     _navUserGesture?.removeListener(_onNavUserGestureChanged);
@@ -729,6 +733,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   Future<void> _restoreSystemUI() async {
+    // 未进入沉浸模式，或已在退场起点恢复时，不再切换系统栏模式。
+    // 多余的 manual → edgeToEdge 切换也会触发安全区变化；普通查看时
+    // 没有启用安全区冻结，会让底下的聊天输入栏在 dispose 后上下跳动。
+    if (!_systemUiHidden) return;
     _systemUiHidden = false;
     ImmersiveInsetsHold.release();
     // Flutter 3.41+ 引擎在 setSystemChromeEnabledSystemUIMode 的 EDGE_TO_EDGE
@@ -747,6 +755,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 预加载相邻图片
   void _preloadAdjacentImages() {
+    _scheduleAdjacentPredecode();
     final images = widget.galleryImages;
     if (images == null || images.length <= 1) return;
 
@@ -761,6 +770,55 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     for (final url in preloadUrls) {
       unawaited(BlobImageCache.precache(BlobImageCache.originalBucket, url));
     }
+  }
+
+  void _cancelPredecode() {
+    _predecodeDelay?.cancel();
+    _predecoder.cancel();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    _predecodePaused = true;
+    _cancelPredecode();
+  }
+
+  void _scheduleAdjacentPredecode() {
+    _cancelPredecode();
+    final images = widget.galleryImages;
+    if (_predecodePaused ||
+        images == null ||
+        _route?.isCurrent != true ||
+        _route?.animation?.status != AnimationStatus.completed) {
+      return;
+    }
+    final next = currentIndex + _pageDirection;
+    if (next < 0 || next >= images.length) return;
+    // 转场结束、翻页停稳后再解码，快速连续翻页只保留最终方向的一张。
+    _predecodeDelay = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || _route?.isCurrent != true) return;
+      final controller = _galleryPageController;
+      if (controller != null &&
+          controller.hasClients &&
+          controller.position.isScrollingNotifier.value) {
+        _scheduleAdjacentPredecode();
+        return;
+      }
+      final provider = _clampedViewerProvider(
+        images[next],
+        priority: DownloadPriority.normal,
+      );
+      // 自定义动图/AVIF 解码器不参加静态图预解码。
+      final source = provider.imageProvider;
+      if (source is! BlobImageProvider) return;
+      unawaited(
+        _predecoder.prefetch(
+          provider: provider,
+          loadBytes: () => BlobImageCache.fetch(source.bucket, source.url),
+          configuration: createLocalImageConfiguration(context),
+        ),
+      );
+    });
   }
 
   /// 获取当前显示的图片 URL
@@ -1238,6 +1296,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         // 离场页重置缩放(与旧行为一致:PageView 不缓存
                         // 离屏页,离页即回初始状态)
                         _gestureControllers[currentIndex]?.reset();
+                        _pageDirection = index >= currentIndex ? 1 : -1;
                         setState(() {
                           currentIndex = index;
                         });
@@ -1362,7 +1421,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                 decoration: ShapeDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
                                   shape: RoundedSuperellipseBorder(
-                                    borderRadius: context.shapes.borderRadius(20),
+                                    borderRadius: context.shapes.borderRadius(
+                                      20,
+                                    ),
                                   ),
                                 ),
                                 child: Text(

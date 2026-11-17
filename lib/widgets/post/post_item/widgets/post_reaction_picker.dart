@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -234,7 +234,8 @@ class ReactionPickerController {
 
     _attachScrollListeners(context);
     _attachLifecycleObserver();
-    if (!MediaQuery.disableAnimationsOf(context)) {
+    if (!(MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context))) {
       prefetchReactionAnimations(_reactions);
     }
 

@@ -1,10 +1,11 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/discourse/discourse_service.dart';
 import '../../services/discourse_cache_manager.dart';
+import '../../services/image_decode_spec_memo.dart';
 import '../../pages/image_viewer_page.dart';
 import 'svg_view.dart';
 import '../common/hero_image.dart';
@@ -148,7 +149,7 @@ class _DiscourseImageState extends State<DiscourseImage> {
         heroTag: widget.heroTag!,
         style: _viewerStyle,
         flightImage: _resolvedUrl != null
-            ? discourseImageProvider(_resolvedUrl!)
+            ? ImageDecodeSpecMemo.peek(_resolvedUrl!)
             : null,
         onTap: widget.enableLightbox && !_isSvg ? _openLightbox : null,
         child: imageWidget,
@@ -169,7 +170,10 @@ class _DiscourseImageState extends State<DiscourseImage> {
   /// multi_frame_codec 的 #85831 / #94205 bug。
   Widget _buildNativeAnimatedImage(ThemeData theme) {
     return Image(
-      image: discourseImageProvider(_resolvedUrl!),
+      image: ImageDecodeSpecMemo.remember(
+        _resolvedUrl!,
+        discourseImageProvider(_resolvedUrl!),
+      ),
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
@@ -196,11 +200,14 @@ class _DiscourseImageState extends State<DiscourseImage> {
         : _kMaxDecodeHeight;
 
     return Image(
-      image: ResizeImage(
-        discourseImageProvider(_resolvedUrl!),
-        width: cacheWidth,
-        height: cacheHeight,
-        policy: ResizeImagePolicy.fit,
+      image: ImageDecodeSpecMemo.remember(
+        _resolvedUrl!,
+        ResizeImage(
+          discourseImageProvider(_resolvedUrl!),
+          width: cacheWidth,
+          height: cacheHeight,
+          policy: ResizeImagePolicy.fit,
+        ),
       ),
       width: widget.width,
       height: widget.height,

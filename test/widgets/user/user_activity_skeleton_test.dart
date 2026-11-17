@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -19,6 +19,10 @@ void main() {
   for (final (width, scale) in [(390.0, 1.0), (320.0, 2.0), (1440.0, 1.0)]) {
     for (final type in UserActivitySkeletonType.values) {
       testWidgets('活动骨架与内容对齐 $width/$scale/$type', (tester) async {
+        // 动作者优先时首行是动作者名字，没有单独的动作文字
+        final actorFirst =
+            type == UserActivitySkeletonType.receivedLike ||
+            type == UserActivitySkeletonType.actorPost;
         tester.view.physicalSize = Size(width, 1600);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
@@ -54,9 +58,7 @@ void main() {
                                 position: (index: 0, count: 2),
                                 title: '标题',
                                 actionLabel: '动作',
-                                actionActor:
-                                    type ==
-                                        UserActivitySkeletonType.receivedLike
+                                actionActor: actorFirst
                                     ? TopicUser(
                                         id: 2,
                                         username: 'a',
@@ -65,7 +67,12 @@ void main() {
                                     : null,
                                 bodyFirst:
                                     type == UserActivitySkeletonType.reply,
-                                excerpt: type == UserActivitySkeletonType.reply
+                                quoteExcerpt:
+                                    type ==
+                                    UserActivitySkeletonType.receivedLike,
+                                excerpt:
+                                    type == UserActivitySkeletonType.reply ||
+                                        actorFirst
                                     ? '<p>正文<br>正文</p>'
                                     : null,
                                 occurredAt: DateTime.now().toUtc(),
@@ -131,7 +138,7 @@ void main() {
                 const ValueKey('activity-skeleton-metadata'),
               ),
             ),
-            find.text('动作'),
+            actorFirst ? find.text('a') : find.text('动作'),
           ),
           (
             find.descendant(

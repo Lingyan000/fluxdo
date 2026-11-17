@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_artwork_palette.dart';
 import 'package:fluxdo/modules/mini_apps/mini_app_task_icon.dart';

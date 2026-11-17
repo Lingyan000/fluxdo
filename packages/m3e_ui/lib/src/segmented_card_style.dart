@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 分段卡片组的呈现模式。
 enum SegmentedCardMode {

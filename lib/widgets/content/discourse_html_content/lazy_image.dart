@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -245,22 +245,15 @@ class _LazyImageState extends State<LazyImage> {
       screenW,
     );
     final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
-    // 登记解码参数:查看器缩略图占位按同参重建 provider → 同 key 命中
-    // ImageCache,Hero 转场帧零重解码。
-    final key = widget.cacheKey;
-    if (key != null && key.isNotEmpty) {
-      ImageDecodeSpecMemo.remember(
-        key,
-        cacheWidth,
-        LazyImage._kMaxDecodeHeight,
-      );
-    }
-    return ResizeImage(
+    final provider = ResizeImage(
       widget.imageProvider,
       width: cacheWidth,
       height: LazyImage._kMaxDecodeHeight,
       policy: ResizeImagePolicy.fit,
     );
+    final key = widget.cacheKey;
+    if (key != null) ImageDecodeSpecMemo.remember(key, provider);
+    return provider;
   }
 
   @override

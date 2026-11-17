@@ -204,21 +204,27 @@ class NotificationCountState {
   final int unread;
   final int highPriority;
 
+  /// 按通知类型 id 分组的未读数，用于通知面板各分类的角标
+  final Map<int, int> grouped;
+
   const NotificationCountState({
     this.allUnread = 0,
     this.unread = 0,
     this.highPriority = 0,
+    this.grouped = const {},
   });
-  
+
   NotificationCountState copyWith({
     int? allUnread,
     int? unread,
     int? highPriority,
+    Map<int, int>? grouped,
   }) {
     return NotificationCountState(
       allUnread: allUnread ?? this.allUnread,
       unread: unread ?? this.unread,
       highPriority: highPriority ?? this.highPriority,
+      grouped: grouped ?? this.grouped,
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../services/browser_navigation.dart';
@@ -46,7 +46,9 @@ class BrowserToolbar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
-    final duration = MediaQuery.disableAnimationsOf(context)
+    final duration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
         ? Duration.zero
         : const Duration(milliseconds: 240);
     final host = browserDisplayHost(url);
@@ -320,7 +322,9 @@ class BrowserAnimatedSize extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => MediaQuery.disableAnimationsOf(context)
+  Widget build(BuildContext context) =>
+      (MediaQuery.disableAnimationsOf(context) ||
+          MediaQuery.reduceMotionOf(context))
       ? child
       : AnimatedSize(
           duration: const Duration(milliseconds: 240),

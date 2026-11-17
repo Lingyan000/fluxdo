@@ -9,6 +9,7 @@ environment:
 resolution: workspace
 
 dependencies:
+  material_ui: ^1.11.1
   flutter:
     sdk: flutter
   common_ui:

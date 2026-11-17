@@ -3,8 +3,7 @@
 // 销毁 State 后,initState 从 post 旧值 _syncFromPost,接受状态丢失。
 // 修复:成功后 updatePostPolicy 回写 provider(copyWith 新 post →
 // CurrentPostScope 广播),重建时 post 已是新值。
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -58,11 +57,7 @@ void main() {
       child: MaterialApp(
         locale: const Locale('zh'),
         navigatorKey: navigatorKey,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [Locale('zh'), Locale('en')],
         home: Scaffold(
           body: Builder(

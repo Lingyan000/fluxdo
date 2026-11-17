@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -43,6 +43,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           recentNotificationsProvider.overrideWith(_Notifications.new),
           systemUserAvatarTemplateProvider.overrideWith((ref) async => null),
+          siteNotificationTypesProvider.overrideWith((ref) async => const {}),
         ],
         child: TranslationProvider(
           child: MaterialApp(
