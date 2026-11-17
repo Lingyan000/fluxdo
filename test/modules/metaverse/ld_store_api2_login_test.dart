@@ -21,6 +21,8 @@ class _Delegate extends MetaversePluginHostDelegate {
   final MetaversePluginManifest manifest;
   final Dio client;
   @override
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) async => true;
+  @override
   int currentAccountId() => 42;
   @override
   String currentUsername() => 'tester';

@@ -35,6 +35,8 @@ import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_provi
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
 import 'package:fluxdo/modules/ldc_payment/ldc_payment_sheet.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_confirmation_sheet.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_connect_confirmation.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_component_examples.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/ldc_payment_service.dart';
@@ -332,6 +334,52 @@ void main() {
       await dir.create(recursive: true);
       await File('${dir.path}/$name.png')
           .writeAsBytes(bytes!.buffer.asUint8List());
+    });
+  }
+
+  for (final brightness in Brightness.values) {
+    testWidgets('服务协议默认未勾选、取消与重新打开 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(360,760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      bool? result;
+      await tester.pumpWidget(app(Builder(builder:(context)=>TextButton(
+        onPressed:() async {result=await showMetaverseConfirmation(context,'LD士多',{
+          'title':'登录 LD士多','message':'使用 Linux DO 账号登录后，可收藏商品、领取优惠券并查看订单。请先阅读士多服务条款。',
+          'confirmLabel':'使用 Linux DO 账号登录',
+          'agreement':{'label':'《LD士多服务条款》','url':'https://ldcstore.com/docs/terms'},
+        });},child:const Text('开始登录'))),brightness:brightness,scale:1.4));
+      await tester.tap(find.text('开始登录'));await tester.pumpAndSettle();
+      final button=find.widgetWithText(FilledButton,'使用 Linux DO 账号登录');
+      expect(tester.widget<FilledButton>(button).onPressed,isNull);
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,false);
+      await snapshot(tester,'consent-${brightness.name}');
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));await tester.pump();
+      await tester.ensureVisible(button);await tester.tap(button);await tester.pumpAndSettle();
+      expect(result,true);
+      await tester.tap(find.text('开始登录'));await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,false);
+      await tester.ensureVisible(find.text(S.current.common_cancel));
+      await tester.tap(find.text(S.current.common_cancel));await tester.pumpAndSettle();
+      expect(result,false);expect(tester.takeException(),isNull);
+    });
+    testWidgets('公共 Connect 必须单独确认 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(360,760);tester.view.devicePixelRatio=1;
+      addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
+      final manifest=MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()));
+      bool? approved;
+      await tester.pumpWidget(app(Builder(builder:(context)=>TextButton(onPressed:() async {
+        approved=await showMetaverseConnectConfirmation(context,manifest,'tester',callback:Uri.parse('https://api.ldspro.qzz.io/api/auth/callback'));
+      },child:const Text('授权'))),brightness:brightness,scale:1.4));
+      await tester.tap(find.text('授权'));await tester.pumpAndSettle();
+      expect(approved,isNull);expect(find.text('api.ldspro.qzz.io'),findsOneWidget);
+      await snapshot(tester,'connect-${brightness.name}');
+      await tester.tap(find.text(S.current.common_deny));await tester.pumpAndSettle();expect(approved,false);
+      await tester.tap(find.text('授权'));await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.common_allow));await tester.pumpAndSettle();expect(approved,true);
+      expect(tester.takeException(),isNull);
     });
   }
 
@@ -1475,7 +1523,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           'Product',
           'Review',
           'BuyerOrders',
-          'BuyerOrder',
+          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant',
         ]) {
           await tester.pumpWidget(
             app(
@@ -1489,7 +1537,24 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
                     metaversePluginLibraryName,
                     name,
                   ),
-                  data: DynamicContent(data),
+                  data: DynamicContent({ ...data,
+                    'favoriteLabel':'收藏商品','canComment':true,'buyerError':'','buyerBusy':false,
+                    'canApply':true,'refundState':'申请售后','refundAmount':'',
+                    'refundMessage':'如商品存在问题，可以申请退款。','deadline':'',
+                    'refundFields':[
+                      {'name':'reasonCode','label':'退款原因','type':'choice','required':true,'options':[{'value':'other','label':'其他问题'}]},
+                      {'name':'reasonDetail','label':'问题描述','hint':'请说明具体问题（10–500 字）','type':'multiline','required':true,'maxLength':500},
+                      {'name':'contacted','label':'已联系卖家协商','type':'toggle','value':false},
+                    ],
+                    'fields':[{'name':'content','label':'评论内容','hint':'分享使用体验或提出问题（5–500 字）','type':'multiline','maxLength':500}],
+                    'canClaim':true,'claimed':false,'claimLabel':'领取优惠券',
+                    'coupon':{'title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','starts':'2026-11-17 00:00（北京时间）','state':''},
+                    if(name=='Coupons') 'rows':[
+                      {'id':'c1','title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','state':'待支付订单占用','action':'查看订单'},
+                    ],
+                    'tabs':[{'value':'unused','label':'未使用','selected':true},{'value':'used','label':'已使用','selected':false},{'value':'expired','label':'已过期','selected':false}],
+                    'merchantTitle':'tester 的商品',
+                  }),
                 ),
               ),
               brightness: brightness,

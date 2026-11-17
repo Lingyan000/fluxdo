@@ -1,9 +1,9 @@
 {
-  "schema": 9,
+  "schema": 10,
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -13,7 +13,10 @@
   "script": "main.js",
   "permissions": {
     "network": [
-      "api2.ldspro.qzz.io", "api1.ldspro.qzz.io", "api.ldspro.qzz.io", "ldcstore.com"
+      "api2.ldspro.qzz.io",
+      "api1.ldspro.qzz.io",
+      "api.ldspro.qzz.io",
+      "ldcstore.com"
     ],
     "publicImages": true,
     "identity": true,
@@ -24,14 +27,28 @@
     ],
     "credentials": {
       "account": {
-        "requests": [{
-          "origin": "https://api2.ldspro.qzz.io",
-          "pathPrefix": "/api/shop",
-          "methods": ["GET", "POST"]
-        }]
+        "requests": [
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop",
+            "methods": [
+              "GET",
+              "POST"
+            ]
+          },
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop/products",
+            "methods": [
+              "DELETE"
+            ]
+          }
+        ]
       }
     },
-    "payments": ["linuxDoCredit"]
+    "payments": [
+      "linuxDoCredit"
+    ]
   },
   "card": {
     "widget": "Card"
@@ -68,6 +85,45 @@
       "scroll": false,
       "title": "商品详情",
       "presentation": "modal"
+    },
+    {
+      "id": "favorites",
+      "widget": "Favorites",
+      "scroll": false,
+      "title": "我的收藏"
+    },
+    {
+      "id": "coupons",
+      "widget": "Coupons",
+      "scroll": false,
+      "title": "我的优惠券"
+    },
+    {
+      "id": "coupon",
+      "widget": "Coupon",
+      "scroll": false,
+      "title": "领取优惠券",
+      "presentation": "modal"
+    },
+    {
+      "id": "refund",
+      "widget": "Refund",
+      "scroll": false,
+      "title": "退款与售后",
+      "presentation": "modal"
+    },
+    {
+      "id": "comment",
+      "widget": "CommentForm",
+      "scroll": false,
+      "title": "发表评论",
+      "presentation": "modal"
+    },
+    {
+      "id": "merchant",
+      "widget": "Merchant",
+      "scroll": false,
+      "title": "店铺商品"
     }
   ],
   "links": [
@@ -75,6 +131,16 @@
       "host": "ldcstore.com",
       "path": "/product/:id",
       "page": "product"
+    },
+    {
+      "host": "ldcstore.com",
+      "path": "/coupon/:token",
+      "page": "coupon"
     }
+  ],
+  "requiredFeatures": [
+    "confirmationDialog",
+    "virtualGrid",
+    "nativeExecutionLimits"
   ]
 }

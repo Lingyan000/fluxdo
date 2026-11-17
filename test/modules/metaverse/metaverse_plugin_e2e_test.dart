@@ -349,6 +349,10 @@ class _Delegate extends MetaversePluginHostDelegate {
   Object? paymentResult = const {'state': 'checking'};
 
   @override
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) async => await onConfirm?.call() ?? true;
+  Future<bool> Function()? onConfirm;
+
+  @override
   Future<String?> authorizeConnect(
     BuildContext context,
     Uri authorization,
@@ -1652,6 +1656,30 @@ Future<void> main() async {
       expect(delegate.opened, ['https://example.com/a']);
       expect(delegate.browserOpened, ['https://example.com/a']);
     });
+
+    for (final invalidation in ['none', 'cancel', 'account', 'background', 'close']) {
+      pluginTest('原生确认续接用户操作 $invalidation', (tester) async {
+        await tester.runAsync(() => install(script: ''));
+        final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+        await tester.pumpWidget(app(const SizedBox()));
+        host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+        const options = {'title':'确认','message':'请确认操作','confirmLabel':'继续'};
+        await expectLater(host.call('dialogs.confirm', options), throwsA(isA<MetaversePluginCallException>()));
+        delegate.onConfirm = () async {
+          if (invalidation == 'account') delegate.accountId = 999;
+          if (invalidation == 'background') host.setSurfaceForeground(surface, false, appForeground: false);
+          if (invalidation == 'close') host.close(surface);
+          return invalidation != 'cancel';
+        };
+        host.dispatchUserEvent(surface, 'refresh', const {});
+        await host.call('dialogs.confirm', options);
+        if (invalidation == 'none') {
+          await host.call('navigate', {'page':'order'});
+          expect(delegate.pages, ['order']);
+        }
+        await expectLater(host.call('navigate', {'page':'order'}), throwsA(isA<MetaversePluginCallException>()));
+      });
+    }
 
     pluginTest('导航预约在异步操作后只使用一次，并消耗本次点击', (tester) async {
       var now = DateTime.utc(2026, 11, 12);

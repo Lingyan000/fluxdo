@@ -108,6 +108,12 @@ const ldStore = (() => {
     try {
       const account = await client.user.get();
       if (!account?.id) throw Error('oauth_account_required');
+      if (!await client.dialogs.confirm({
+        title:'登录 LD士多',
+        message:'使用 Linux DO 账号登录后，可收藏商品、领取优惠券并查看订单。请先阅读士多服务条款。',
+        confirmLabel:'使用 Linux DO 账号登录',
+        agreement:{label:'《LD士多服务条款》',url:'https://ldcstore.com/docs/terms'},
+      })) return false;
       const pkce = await client.crypto.pkce();
       const initial = await jsonRequest(client,
         'https://api1.ldspro.qzz.io/api/auth/init?' + params({
@@ -388,6 +394,7 @@ function refreshView(ctx) {
   const s = market(ctx);
   if (!s || s.hidden || s.paymentBusy || s.orderBusy) return;
   s.dirty = false;
+  if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) return loadBuyerPage(ctx,false);
   if (ctx.page === 'order' || ctx.page === 'orders') return loadOrders(ctx,false);
   if (ctx.page === 'review' || ctx.page === 'product') return detail(ctx);
   return load(ctx,false);
@@ -412,7 +419,7 @@ async function load(ctx, more) {
   const page = more ? s.page + 1 : 1;
   if (!more) { s.rows = []; s.more = false; s.cursor = ''; s.page = 0; }
   s.loading = true;
-  write(ctx, {loading:true, more:false, message:'', webFallback:false, rows:s.rows});
+  write(ctx, {loading:!more, loadingMore:more, more:false, message:'', webFallback:false, rows:s.rows});
   try {
     const q = {pageSize:12, search:s.search, categoryId:s.cat, inStock:s.stock?'true':'',
       sortBy:s.sort, sortOrder:s.direction, priceMin:s.min, priceMax:s.max};
@@ -426,7 +433,7 @@ async function load(ctx, more) {
     const rows = products.filter(p => p && p.id != null && !seen.has(String(p.id))).map(p => ({
       id:String(p.id), title:display(p.name), image:display(p.image_url),
       price:money(p.final_price == null ? p.price : p.final_price),
-      category:display(p.category_name), stock:'库存 '+stockLabel(p),
+      category:display(p.category_name), stock:'库存 '+stockLabel({...p,stock_quantity:p.stockQuantity ?? p.stock_quantity}),
       info:money(p.final_price == null ? p.price : p.final_price) + ' · ' + display(p.category_name) +
         ' · 库存 ' + stockLabel(p)
     }));
@@ -435,12 +442,12 @@ async function load(ctx, more) {
     s.cursor = paging.nextCursor || '';
     s.more = typeof paging.hasMore === 'boolean' ? paging.hasMore :
       !!s.cursor || page < Number(paging.totalPages) || page * 12 < Number(paging.total);
-    write(ctx,{rows:s.rows, more:s.more, message:s.rows.length ? '' : '没有符合条件的商品'});
+    write(ctx,{rows:s.rows, more:s.more, message:''});
   } catch (e) {
     if (more && s.cursor && e.code === 'RANKING_CURSOR_STALE' && seq === s.seq) return load(ctx,false);
     if (seq === s.seq) write(ctx,{message:String(e.message),more:s.more,webFallback:true});
   } finally {
-    if (seq === s.seq) {s.loading = false; ctx.setData('loading',false);}
+    if (seq === s.seq) {s.loading = false; write(ctx,{loading:false,loadingMore:false});}
   }
 }
 async function categories(ctx) {
@@ -486,6 +493,8 @@ async function detail(ctx) {
     if (seq !== s.seq || market(ctx) !== s) return;
     if (!p || p.id == null || String(p.id) !== String(ctx.params.id)) throw Error('找不到这件商品');
     s.id = String(p.id);
+    s.favorited = p.isFavorited === true;
+    write(ctx,{favoriteLabel:s.favorited ? '已收藏' : '收藏商品',buyerError:''});
     s.linkProduct = (p.productType || p.product_type) === 'link';
     ctx.setData('linkProduct',s.linkProduct);
     if (s.linkProduct && !s.record?.productId) ctx.setData('nativeOrder',false);
@@ -534,6 +543,7 @@ async function loadComments(ctx,more) {
     s.commentsPage = page;
     const paging = data.pagination || {};
     write(ctx,{comments:s.comments,commentsMore:paging.hasMore === true || page < Number(paging.totalPages),
+      canComment:data.commentEnabled === true,
       commentsMessage:data.commentEnabled === false ? '该商品已关闭评论' : s.comments.length ? '' : '暂无评论'});
   } catch (e) {
     if (current()) ctx.setData('commentsError',String(e.message));
@@ -651,6 +661,7 @@ fluxdo.on('page.open',ctx => {
   const s = {seq:0,visibility:0,rows:[],cat:'',search:'',sort:'',direction:'',stock:false,min:'',max:''};
   views.set(ctx.surface,s);
   write(ctx,{externalBusy:false,externalError:''});
+  if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) return loadBuyerPage(ctx,false);
   if (ctx.page === 'product') write(ctx,{comments:[],commentsError:'',commentsMessage:'',commentsMore:false,commentsLoading:false});
   if (ctx.page === 'orders' || ctx.page === 'order') {
     ctx.setData('filterName','全部订单');
@@ -691,6 +702,7 @@ fluxdo.on('login',async ctx => {
     invalidateViews(s);
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
+    else if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) await loadBuyerPage(ctx,false);
     else if (ctx.page === 'product' || ctx.page === 'review') await detail(ctx);
     else ctx.setData('authorized',true);
   } catch (error) {ctx.setData('loginError',error.message || '登录未完成，请稍后重试。');}
@@ -947,3 +959,215 @@ fluxdo.on('select',(ctx,a) => {
   showFilters(ctx,s);
   return load(ctx,false);
 });
+
+
+// 买家业务仅属于士多插件，宿主不识别这些路由、字段和状态。
+async function buyerRequest(ctx, path, method = 'GET', body, authenticated = true) {
+  const response = await ctx.api.fetch(api + path, {
+    method, ...(authenticated ? {credential:'account'} : {}),
+    ...(body === undefined ? {} : {body}),
+  });
+  let result;
+  try { result = response.json(); } catch (_) { throw Error('士多返回了无法识别的数据，请稍后重试'); }
+  if (!response.ok || result.success !== true) {
+    const message = typeof result.error === 'string' ? result.error : result.error?.message;
+    const error = Error(response.status === 401 ? '登录已过期，请重新登录士多' : message || result.message || '请求失败（HTTP '+response.status+'）');
+    error.status = response.status;
+    throw error;
+  }
+  return normalizeOrderData(result.data);
+}
+function hasNextPage(paging, page, count) {
+  return count > 0 && (paging?.hasMore === true || page < Number(paging?.totalPages) || page * 20 < Number(paging?.total));
+}
+function buyerRow(p) {
+  return {id:String(p.id),title:display(p.name),image:display(p.imageUrl),
+    price:money(p.finalPrice ?? p.price),stock:'库存 '+stockLabel({...p,stock_quantity:p.stockQuantity ?? p.stock_quantity})};
+}
+function couponRule(c) {
+  if (c.discountType === 'fixed_amount') return '减 '+money(c.fixedAmount);
+  if (c.discountType === 'percentage') return (Number(c.percentageBps) / 1000).toFixed(1)+' 折 · 仅优惠 1 件';
+  return '优惠规则暂不可用';
+}
+function storeDate(value) {
+  if (!value) return '—';
+  let raw = value;
+  if (typeof raw === 'string' && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)) raw = raw.replace(' ','T')+'Z';
+  const date = new Date(raw), time = date.getTime();
+  return Number.isFinite(time) ? new Date(time+8*3600000).toISOString().slice(0,16).replace('T',' ')+'（北京时间）' : '—';
+}
+function couponRow(c, claim = {}) {
+  claim = claim || {};
+  const reserved = claim.claimStatus === 'reserved' || claim.status === 'reserved';
+  const used = claim.claimStatus === 'used' || claim.status === 'used';
+  return {id:String(claim.claimId ?? claim.id ?? c.id),title:display(c.name),rule:couponRule(c),
+    seller:'卖家：'+display(c.sellerUsername),
+    scope:c.scopeType === 'product' ? display(c.productName) || '指定商品' : '该卖家店铺内商品',
+    minimum:Number(c.minSpend)>0 ? '满 '+money(c.minSpend) : '无门槛',
+    starts:storeDate(c.startsAt),expires:storeDate(c.expiresAt),
+    state:reserved ? '待支付订单占用' : used ? '已使用' : display(claim.invalidReason) || '',
+    productId:c.scopeType === 'product' && c.productId != null ? String(c.productId) : '',
+    sellerId:display(c.sellerUserId), sellerUsername:display(c.sellerUsername), sellerSite:display(c.sellerSite),
+    orderNo:display(reserved ? claim.reservedOrderNo : used ? claim.usedOrderNo : ''),
+    action:reserved || used ? '查看订单' : '查看适用商品'};
+}
+const couponTabs = [{value:'unused',label:'未使用'},{value:'used',label:'已使用'},{value:'expired',label:'已过期'}];
+const refundReasons = [
+  {value:'not_received_or_unusable',label:'未收到或无法使用'},
+  {value:'not_as_described',label:'与物品描述不符'},
+  {value:'duplicate_or_mistaken_purchase',label:'重复购买或误购'},
+  {value:'seller_agreed',label:'卖家已同意退款'}, {value:'other',label:'其他问题'},
+];
+const refundLabels = {requested:'等待卖家处理',negotiating:'协商中',processing:'退款执行中',
+  failed:'退款执行失败',unknown:'退款结果待核对',refunded:'已退款',rejected:'申请已拒绝',external_dispute:'已转 Credit 处理'};
+const refundEvents = {requested:'提交退款申请',contacted:'卖家联系协商',contact_updated:'更新协商记录',
+  approved:'卖家同意退款',rejected:'卖家拒绝申请',refund_succeeded:'退款成功',refund_failed:'退款执行失败',
+  refund_unknown:'退款结果待核对',external_dispute_detected:'转 Credit 处理',response_timeout_approved:'超时自动同意退款',
+  admin_approved:'管理员同意退款',admin_rejected:'管理员拒绝申请',admin_overridden:'管理员改判退款',
+  automatic_refund_started:'超时保障退款',seller_refund_started:'卖家主动退款',response_policy_enrolled:'通知处理时限',
+  response_deadline_reminder:'提醒处理时限',admin_retry_started:'管理员核查后重试',refund_admin_confirmed:'登记核对结果',
+  admin_confirmed_refunded:'确认已退款',admin_confirmed_failed:'确认未完成退款',admin_confirmed_external_dispute:'确认转 Credit 处理'};
+async function loadBuyerPage(ctx, more) {
+  const s = market(ctx);
+  if (!s || s.buyerBusy || (more && (s.loading || !s.more))) return;
+  const revision = ++s.seq, current = () => market(ctx) === s && s.seq === revision;
+  const page = more ? (s.page || 1) + 1 : 1;
+  if (!more) {s.rows=[];s.more=false;}
+  s.loading = true;
+  write(ctx,{loading:!more,loadingMore:more,error:'',buyerError:'',needsSession:false,ready:false,more:false,rows:s.rows});
+  try {
+    const auth = await ldStore.status();
+    if (!current()) return;
+    write(ctx,{authorized:auth.authorized});
+    if (!auth.authorized && !['coupon','merchant'].includes(ctx.page)) {
+      write(ctx,{needsSession:true,error:'登录士多后继续',canApply:false}); return;
+    }
+    if (ctx.page === 'favorites' || ctx.page === 'coupons' || ctx.page === 'merchant') {
+      const coupons = ctx.page === 'coupons';
+      if (coupons) ctx.setData('tabs',couponTabs.map(t=>({...t,selected:t.value === (s.couponTab || 'unused')})));
+      const data = await buyerRequest(ctx, ctx.page === 'merchant'
+        ? '/merchants/'+encodeURIComponent(ctx.params.username)+'?'+params({page,site:ctx.params.site || '',userId:ctx.params.userId || ''})
+        : coupons
+        ? '/my-coupons?'+params({status:s.couponTab || 'unused',page,pageSize:20})
+        : '/favorites?'+params({search:s.search,page,pageSize:20}), 'GET', undefined, auth.authorized);
+      if(ctx.page==='merchant')ctx.setData('merchantTitle',display(data.merchant?.username)+' 的商品');
+      if (!current()) return;
+      const entries = coupons ? data.items : data.products;
+      if (!Array.isArray(entries)) throw Error('列表数据格式有误');
+      const rows = entries.map(row=>coupons ? couponRow(row.campaign || {},row) : buyerRow(row));
+      const ids = new Set(s.rows.map(row=>row.id));
+      s.rows=s.rows.concat(rows.filter(row=>!ids.has(row.id)));s.page=page;
+      s.more=hasNextPage(data.pagination,page,rows.length);
+      write(ctx,{ready:true,rows:s.rows,more:s.more});
+    } else if (ctx.page === 'coupon') {
+      const token = String(ctx.params.token || '');
+      if (!/^[A-Za-z0-9_-]{1,256}$/.test(token)) throw Error('优惠券链接无效');
+      const data = await buyerRequest(ctx, '/coupons/'+encodeURIComponent(token),'GET',undefined,auth.authorized);
+      if (!current()) return;
+      if (!data || data.id == null) throw Error('优惠券数据格式有误');
+      s.coupon=data;
+      const states = {scheduled:'尚未开始领取',expired:'优惠券已过期',paused:'卖家暂停领取',closed:'已停止领取',sold_out:'优惠券已领完',disabled:'优惠券已停用'};
+      write(ctx,{ready:true,coupon:couponRow(data,data.claim),description:display(data.description),
+        canClaim:data.claimable === true && !data.claimed,claimed:data.claimed === true,
+        claimLabel:data.claimed ? '已领取' : states[data.state] || '领取优惠券'});
+    } else if (ctx.page === 'comment') {
+      const data = await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments?page=1&pageSize=1');
+      if (!current()) return;
+      s.canComment=data.commentEnabled === true;
+      s.canRate=data.viewerHasPurchased === true && data.viewerRating?.hasRated !== true;
+      const fields=[{name:'content',label:'评论内容',hint:'分享使用体验或提出问题（5–500 字）',type:'multiline',required:true,maxLength:500}];
+      if (s.canRate) fields.push({name:'rating',label:'商品评分（选填）',type:'choice',options:[{value:'',label:'不评分'},...Array.from({length:5},(_,i)=>({value:String(i+1),label:String(i+1)+' 星'}))]});
+      write(ctx,{ready:true,canComment:s.canComment,fields,commentSubmitted:false,
+        error:s.canComment ? '' : '该商品已关闭评论'});
+    } else if (ctx.page === 'refund') {
+      const data = await buyerRequest(ctx, '/orders/'+encodeURIComponent(ctx.params.no)+'/refund');
+      if (!current()) return;
+      if (!data || data.role !== 'buyer' || !data.eligibility || typeof data.eligibility.canApply !== 'boolean') throw Error('退款状态格式有误');
+      const refund=data.refund;
+      if (refund && String(refund.orderNo) !== String(ctx.params.no)) throw Error('退款订单号与请求不一致');
+      s.refund=data;
+      write(ctx,{ready:true,canApply:data.eligibility.canApply === true,
+        refundState:refund ? refundLabels[refund.status] || '状态待核对' : '申请售后',
+        refundAmount:refund ? money(refund.refundAmount) : '',refundMessage:display(data.eligibility.message),
+        reason:display(refund?.reasonDetail),deadline:refund?.decisionDeadlineAt ? '处理时限：'+storeDate(refund.decisionDeadlineAt) : '',
+        events:(refund?.events || []).slice().reverse().map(e=>({
+          title:refundEvents[e.action] || '售后状态更新',message:display(e.message),time:storeDate(e.createdAt)})),
+        refundFields:[{name:'reasonCode',label:'退款原因',type:'choice',required:true,options:refundReasons},
+          {name:'reasonDetail',label:'问题描述',hint:'请说明具体问题（10–500 字）',type:'multiline',required:true,maxLength:500},
+          {name:'buyerContactedSeller',label:'已联系卖家协商',type:'toggle',value:false}],
+        hasGuide:typeof data.disputeGuideUrl === 'string' && data.disputeGuideUrl.startsWith('https://')});
+    }
+  } catch (error) {
+    if (current()) write(ctx,{error:error.message,needsSession:error.status===401,more:s.more,canApply:false,
+      ...(error.status===401 ? {authorized:false,rows:[]} : {})});
+  } finally {if (current()) {s.loading=false;write(ctx,{loading:false,loadingMore:false});}}
+}
+async function buyerAction(ctx, action) {
+  const s=market(ctx);
+  if (!s || s.buyerBusy || s.hidden) return;
+  s.buyerBusy=true;write(ctx,{buyerBusy:true,buyerError:''});
+  try { await action(s); }
+  catch(error) {if (market(ctx)===s) write(ctx,{buyerError:error.message,...(error.status===401 ? {authorized:false,needsSession:true} : {})});}
+  finally {s.buyerBusy=false;if(market(ctx)===s) ctx.setData('buyerBusy',false);}
+}
+fluxdo.on('favorites',()=>fluxdo.navigate('favorites'));
+fluxdo.on('coupons',()=>fluxdo.navigate('coupons'));
+fluxdo.on('buyerRefresh',ctx=>loadBuyerPage(ctx,false));
+fluxdo.on('buyerMore',ctx=>loadBuyerPage(ctx,true));
+fluxdo.on('favoriteSearch',(ctx,a)=>{const s=market(ctx);if(s)s.search=String(a.value || '').slice(0,200);});
+fluxdo.on('couponTab',(ctx,a)=>{const s=market(ctx);if(s && couponTabs.some(t=>t.value===a.value) && !s.loading) {s.couponTab=a.value;return loadBuyerPage(ctx,false);}});
+fluxdo.on('favorite',ctx=>buyerAction(ctx,async s=>{
+  if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error('请先登录士多');}
+  await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/favorite',s.favorited ? 'DELETE' : 'POST');
+  s.favorited=!s.favorited;invalidateViews(s);
+  write(ctx,{favoriteLabel:s.favorited ? '已收藏' : '收藏商品'});
+}));
+fluxdo.on('comment',ctx=>fluxdo.navigate('comment',{id:ctx.params.id}));
+fluxdo.on('postComment',(ctx,a)=>buyerAction(ctx,async s=>{
+  const content=String(a.values?.content || '').trim(),rating=Number(a.values?.rating);
+  if (!s.canComment || content.length<5 || content.length>500) throw Error('请填写 5–500 字的评论');
+  const body={content};
+  if(s.canRate && Number.isInteger(rating) && rating>=1 && rating<=5) body.rating=rating;
+  const result=await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments','POST',body);
+  invalidateViews(s);s.canComment=false;
+  write(ctx,{commentSubmitted:true,canComment:false,commentResult:result?.message || '评论已提交，以士多审核结果为准'});
+}));
+fluxdo.on('claimCoupon',ctx=>buyerAction(ctx,async s=>{
+  if (!s.coupon?.claimable || s.coupon.claimed) return;
+  const result=await buyerRequest(ctx, '/coupons/'+encodeURIComponent(ctx.params.token)+'/claim','POST');
+  if (!result?.claim || !result.campaign) throw Error('领取结果待确认，请刷新优惠券');
+  s.coupon={...result.campaign,claimed:true,claim:result.claim};invalidateViews(s);
+  write(ctx,{coupon:couponRow(result.campaign,result.claim),claimed:true,canClaim:false,claimLabel:'已领取'});
+}));
+fluxdo.on('couponUse',(ctx,a)=>{
+  const s=market(ctx),row=ctx.page==='coupon' ? couponRow(s.coupon,s.coupon.claim) : s.rows.find(r=>r.id===a.id);
+  if (!row) return;
+  if (row.orderNo) return fluxdo.navigate('order',{no:row.orderNo});
+  if (row.productId) return fluxdo.navigate('product',{id:row.productId});
+  if (!row.sellerUsername) return fluxdo.navigate('market');
+  return fluxdo.navigate('merchant',{username:row.sellerUsername,site:row.sellerSite,userId:row.sellerId});
+});
+fluxdo.on('refund',ctx=>fluxdo.navigate('refund',{no:ctx.params.no}));
+fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
+  const values=a.values || {},reason=String(values.reasonDetail || '').trim();
+  if (!s.refund?.eligibility?.canApply) throw Error('当前订单不可提交新的退款申请');
+  if (!refundReasons.some(r=>r.value===values.reasonCode) || reason.length<10 || reason.length>500) throw Error('请选择退款原因，并填写 10–500 字的问题描述');
+  if (!await ctx.api.dialogs.confirm({title:'提交退款申请',message:'订单 '+ctx.params.no+'\n'+refundReasons.find(r=>r.value===values.reasonCode).label+'\n提交后由士多和卖家处理，可在这里查看进度。',confirmLabel:'确认提交'})) return;
+  if (market(ctx)!==s) return;
+  let note;
+  try {
+    await buyerRequest(ctx, '/orders/'+encodeURIComponent(ctx.params.no)+'/refund','POST',{
+      reasonCode:values.reasonCode,reasonDetail:reason,buyerContactedSeller:values.buyerContactedSeller===true});
+    invalidateViews(s);
+  } catch(error) {
+    // 发送后只查询状态，不自动重复提交。
+    note=error.message+'。请核对最新售后状态后再操作。';
+  }
+  s.buyerBusy=false;
+  await loadBuyerPage(ctx,false);
+  if(note)ctx.setData('buyerError',note);
+}));
+fluxdo.on('refundGuide',ctx=>{const url=market(ctx)?.refund?.disputeGuideUrl;if(url)return fluxdo.browser.open(url,{mode:'inApp'});});
+
+fluxdo.on('marketRetry',ctx=>load(ctx,(market(ctx)?.rows.length || 0)>0));
+fluxdo.on('buyerRetry',ctx=>loadBuyerPage(ctx,(market(ctx)?.rows.length || 0)>0));
