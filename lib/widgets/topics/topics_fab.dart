@@ -91,7 +91,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     // isCurrentOf 会在 push/pop 时通知，普通重建和滚动不会重播入场。
     final routeVisible = ModalRoute.isCurrentOf(context) ?? true;
     final present = widget.isActive && routeVisible;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final reduceMotion =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     // IndexedStack 非活跃 tab 会禁用 ticker，反向动画无法推进。
     // 回来时从零入场，不能沿用冻结在 1 的旧进度而跳过 Appearing。
     if (!present && !TickerMode.valuesOf(context).enabled) {
@@ -169,7 +171,8 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     }
     _shortcutSurface.register(context, onClose: _scheduleClose);
     _portal.show();
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if ((MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context))) {
       _animation.value = 1;
     } else {
       _animation.forward();
@@ -195,7 +198,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     setState(() => _expanded = false);
     _shortcutSurface.clearDeferred();
     if (restoreFocus) _triggerFocus.requestFocus();
-    if (immediately || MediaQuery.disableAnimationsOf(context)) {
+    if (immediately ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))) {
       _animation.value = 0;
       _portal.hide();
     } else {

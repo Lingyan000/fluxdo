@@ -156,7 +156,8 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
       });
       // 只有首帧接入需要过渡；周期更新不能反复从透明开始，否则会脉冲闪烁。
       if (old == null) {
-        if (MediaQuery.disableAnimationsOf(context)) {
+        if ((MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))) {
           _frameFade.value = 1;
         } else {
           _frameFade.forward(from: 0);

@@ -100,7 +100,8 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
         child: Row(
           children: [
             if (status == DraftSaveStatus.saving &&
-                !MediaQuery.disableAnimationsOf(context))
+                !(MediaQuery.disableAnimationsOf(context) ||
+                    MediaQuery.reduceMotionOf(context)))
               SizedBox.square(
                 dimension: 20,
                 child: CircularProgressIndicator(

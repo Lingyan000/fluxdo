@@ -63,7 +63,8 @@ class _ElasticPressState extends State<M3eElasticPress>
     super.didChangeDependencies();
     _reduceMotion =
         !M3eFlags.of(context).enabled ||
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !TickerMode.valuesOf(context).enabled ||
         context.dependOnInheritedWidgetOfExactType<_PressScope>() != null;
     _resetIfDisabled();

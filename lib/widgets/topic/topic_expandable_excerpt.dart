@@ -215,7 +215,10 @@ class _TopicExpandableExcerptState
               ),
           ],
         );
-        if (MediaQuery.disableAnimationsOf(context)) return content;
+        if (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) {
+          return content;
+        }
         return AnimatedSize(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeInOut,

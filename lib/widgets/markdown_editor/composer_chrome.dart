@@ -294,7 +294,9 @@ class ComposerChromeVisibility extends StatelessWidget {
     final controller = ComposerChromeScope.maybeOf(context);
     if (controller == null) return child;
     final hidden = controller.hidden;
-    final duration = MediaQuery.disableAnimationsOf(context)
+    final duration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
         ? Duration.zero
         : const Duration(milliseconds: 180);
     return IgnorePointer(
@@ -342,7 +344,9 @@ class ComposerTopFade extends StatelessWidget {
     final hidden = ComposerChromeScope.maybeOf(context)?.hidden ?? false;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: height, end: hidden ? statusBarHeight + 24 : height),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,

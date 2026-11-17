@@ -169,7 +169,9 @@ class MiniAppModalFrame extends StatelessWidget {
             child: ExcludeSemantics(
               child: TweenAnimationBuilder<double>(
                 tween: Tween(begin: 0, end: 1),
-                duration: MediaQuery.maybeOf(context)?.disableAnimations == true
+                duration:
+                    (MediaQuery.maybeDisableAnimationsOf(context) == true ||
+                        MediaQuery.maybeReduceMotionOf(context) == true)
                     ? Duration.zero
                     : const Duration(milliseconds: 120),
                 builder: (_, readiness, child) => ClipRect(

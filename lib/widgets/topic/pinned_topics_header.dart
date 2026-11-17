@@ -103,7 +103,9 @@ class PinnedTopicsHeader extends StatelessWidget {
                             const SizedBox(width: 4),
                             AnimatedRotation(
                               turns: expanded ? 0.5 : 0,
-                              duration: MediaQuery.disableAnimationsOf(context)
+                              duration:
+                                  (MediaQuery.disableAnimationsOf(context) ||
+                                      MediaQuery.reduceMotionOf(context))
                                   ? Duration.zero
                                   : const Duration(milliseconds: 180),
                               child: Icon(

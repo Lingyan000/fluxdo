@@ -71,7 +71,9 @@ class _MiniAppCardSurfaceState extends State<MiniAppCardSurface> {
             Positioned.fill(
               child: TweenAnimationBuilder<Color?>(
                 tween: ColorTween(end: accent),
-                duration: MediaQuery.disableAnimationsOf(context)
+                duration:
+                    (MediaQuery.disableAnimationsOf(context) ||
+                        MediaQuery.reduceMotionOf(context))
                     ? Duration.zero
                     : const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,

@@ -49,7 +49,9 @@ Widget _buildAnimatedBlurBarrier({
     valueListenable: blurReady,
     builder: (context, ready, _) => TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: ready ? 1 : 0),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 120),
       curve: Curves.easeOut,

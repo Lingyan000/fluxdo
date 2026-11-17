@@ -611,7 +611,9 @@ class _ForumPreferencesPageState extends ConsumerState<ForumPreferencesPage> {
             return PaneFilmstrip(
               masterWidth: wide ? 280 : constraints.maxWidth,
               viewportPanes: wide ? 2 : 1,
-              animate: !MediaQuery.disableAnimationsOf(context),
+              animate:
+                  !(MediaQuery.disableAnimationsOf(context) ||
+                      MediaQuery.reduceMotionOf(context)),
               dividerColor: wide ? Theme.of(context).dividerColor : null,
               master: Scaffold(
                 appBar: AppBar(
@@ -631,7 +633,10 @@ class _ForumPreferencesPageState extends ConsumerState<ForumPreferencesPage> {
                   TweenAnimationBuilder<double>(
                     key: ValueKey(('forum-preferences-pane', _section!)),
                     tween: Tween(begin: wide ? 0 : 1, end: 1),
-                    duration: wide && !MediaQuery.disableAnimationsOf(context)
+                    duration:
+                        wide &&
+                            !(MediaQuery.disableAnimationsOf(context) ||
+                                MediaQuery.reduceMotionOf(context))
                         ? const Duration(milliseconds: 220)
                         : Duration.zero,
                     curve: M3eMotion.defaultEffects.curveFor(

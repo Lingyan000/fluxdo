@@ -234,7 +234,8 @@ class ReactionPickerController {
 
     _attachScrollListeners(context);
     _attachLifecycleObserver();
-    if (!MediaQuery.disableAnimationsOf(context)) {
+    if (!(MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context))) {
       prefetchReactionAnimations(_reactions);
     }
 

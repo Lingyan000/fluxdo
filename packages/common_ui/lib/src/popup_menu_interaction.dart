@@ -312,7 +312,9 @@ class _MenuDragRegionState extends State<_MenuDragRegion>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduced = MediaQuery.disableAnimationsOf(context);
+    _reduced =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     if (_reduced) {
       _lift.value = _x.value = _y.value = 0;
     }

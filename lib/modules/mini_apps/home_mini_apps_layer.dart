@@ -211,7 +211,9 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
           0.0,
           returnExtent,
         );
-    _sheet.reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _sheet.reduceMotion =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     _sheet.expressive = M3eFlags.of(context).enabled;
     _sheet.refreshExtent = topInset + feedbackExtent;
     return NotificationListener<RefreshRevealNotification>(

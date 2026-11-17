@@ -43,7 +43,7 @@ class MorphingDialogShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final media = MediaQuery.of(context);
-    final reducedMotion = media.disableAnimations;
+    final reducedMotion = (media.disableAnimations || media.reduceMotion);
     final insets = EdgeInsets.fromLTRB(
       media.padding.left + 16,
       media.padding.top + 16,

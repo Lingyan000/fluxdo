@@ -104,7 +104,9 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
     math.max(0, _area.width - _hitWidth - 2 * _edgeGap),
     math.max(0, _area.height - _height - 2 * _verticalGap),
   );
-  bool get _reduced => MediaQuery.disableAnimationsOf(context);
+  bool get _reduced =>
+      (MediaQuery.disableAnimationsOf(context) ||
+      MediaQuery.reduceMotionOf(context));
 
   void _rebuild() => setState(() {});
 
@@ -439,7 +441,8 @@ class _MiniAppFullscreenDockState extends State<MiniAppFullscreenDock>
                                         child: ImageFiltered(
                                           enabled:
                                               icons < .999 &&
-                                              !media.disableAnimations,
+                                              !(media.disableAnimations ||
+                                                  media.reduceMotion),
                                           imageFilter: ui.ImageFilter.blur(
                                             sigmaX: 2.5 * (1 - icons),
                                             sigmaY: 2.5 * (1 - icons),

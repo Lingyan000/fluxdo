@@ -45,7 +45,8 @@ class _ComposerSubmitButtonState extends State<ComposerSubmitButton>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _animate =
-        !MediaQuery.disableAnimationsOf(context) &&
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) &&
         M3eFlags.of(context).enabled;
     if (!_animate) _flight.value = widget.busy ? 1 : 0;
   }

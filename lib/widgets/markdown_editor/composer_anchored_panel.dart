@@ -37,7 +37,9 @@ Future<T?> showComposerAnchoredPanel<T>({
     requestFocus: requestFocus,
     builder: builder,
     themes: InheritedTheme.capture(from: context, to: navigator.context),
-    reduceMotion: MediaQuery.disableAnimationsOf(context),
+    reduceMotion:
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context)),
     barrierLabel: MaterialLocalizations.of(context).menuDismissLabel,
   );
   final value = await navigator.push<T>(route);

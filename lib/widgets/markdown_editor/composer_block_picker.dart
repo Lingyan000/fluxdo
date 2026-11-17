@@ -257,7 +257,9 @@ class _BlockPickerPopoverState extends State<_BlockPickerPopover>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduced = MediaQuery.disableAnimationsOf(context);
+    _reduced =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     if (!_started) {
       _started = true;
       if (_reduced) {

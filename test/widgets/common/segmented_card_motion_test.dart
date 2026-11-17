@@ -48,7 +48,7 @@ void main() {
     addTearDown(controller.dispose);
     Widget host(bool reduced) => MaterialApp(
       home: MediaQuery(
-        data: MediaQueryData(disableAnimations: reduced),
+        data: MediaQueryData(reduceMotion: reduced),
         child: Scaffold(
           body: ValueListenableBuilder<bool>(
             valueListenable: visible,

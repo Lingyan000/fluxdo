@@ -300,7 +300,9 @@ class _ConnectedButton extends StatelessWidget {
     );
     return TweenAnimationBuilder<double>(
       tween: Tween(end: selected ? 1 : 0),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,

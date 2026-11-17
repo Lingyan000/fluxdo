@@ -71,7 +71,8 @@ class _ComposerDesktopWorkbenchState extends State<ComposerDesktopWorkbench>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduced =
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !M3eFlags.of(context).enabled;
     if (_presenting && !TickerMode.valuesOf(context).enabled) {
       // 切换预览时编辑器会 Offstage。结束被暂停的退场，不能留下

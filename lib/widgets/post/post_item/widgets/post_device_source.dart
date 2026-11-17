@@ -53,7 +53,9 @@ class PostDeviceSource extends StatelessWidget {
               ).copyWith(
                 foregroundBuilder: (context, states, child) => AnimatedOpacity(
                   opacity: states.contains(WidgetState.pressed) ? 0.55 : 1,
-                  duration: MediaQuery.disableAnimationsOf(context)
+                  duration:
+                      (MediaQuery.disableAnimationsOf(context) ||
+                          MediaQuery.reduceMotionOf(context))
                       ? Duration.zero
                       : const Duration(milliseconds: 100),
                   child: child,

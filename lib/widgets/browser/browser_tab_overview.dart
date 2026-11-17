@@ -275,7 +275,9 @@ class BrowserTabOverview extends StatelessWidget {
     }
     return TweenAnimationBuilder<double>(
       tween: Tween(end: visible ? 1 : 0),
-      duration: MediaQuery.disableAnimationsOf(context)
+      duration:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
           ? Duration.zero
           : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,

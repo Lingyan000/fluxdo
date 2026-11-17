@@ -9,7 +9,9 @@ ButtonStyle composerToolButtonStyle(
 }) {
   final colors = Theme.of(context).colorScheme;
   final motion =
-      M3eFlags.of(context).enabled && !MediaQuery.disableAnimationsOf(context);
+      M3eFlags.of(context).enabled &&
+      !(MediaQuery.disableAnimationsOf(context) ||
+          MediaQuery.reduceMotionOf(context));
   return IconButton.styleFrom(
     minimumSize: const Size.square(48),
     maximumSize: const Size.square(48),

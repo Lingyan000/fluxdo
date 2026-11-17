@@ -34,7 +34,9 @@ class _MiniAppRefreshLogoState extends State<MiniAppRefreshLogo>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _reduceMotion =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     _syncMotion();
   }
 

@@ -204,7 +204,13 @@ class _GroupPageState extends ConsumerState<GroupPage>
     if (section == _section) return;
     _resetContentScroll();
     setState(() => _section = section);
-    _contentFade.forward(from: MediaQuery.disableAnimationsOf(context) ? 1 : 0);
+    _contentFade.forward(
+      from:
+          (MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.reduceMotionOf(context))
+          ? 1
+          : 0,
+    );
     if (!_loading && !_loaded.contains(section)) _loadSection();
   }
 

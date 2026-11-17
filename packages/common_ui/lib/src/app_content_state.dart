@@ -116,7 +116,8 @@ class _AppEmptyStateState extends State<AppEmptyState>
     final route = ModalRoute.of(context);
     final skip =
         !widget.animate ||
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !TickerMode.valuesOf(context).enabled ||
         PageMotionScope.of(context) ||
         (route?.animation?.isAnimating ?? false) ||

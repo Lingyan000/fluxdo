@@ -14,7 +14,9 @@ Future<void> showMorphingPreviewDialog(
   Color? anchorColor,
   double anchorRadius = 10,
 }) {
-  final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  final reducedMotion =
+      (MediaQuery.disableAnimationsOf(context) ||
+      MediaQuery.reduceMotionOf(context));
   final source = sourceContext == null || reducedMotion
       ? null
       : MorphingDialogAnchor.capture(sourceContext);
