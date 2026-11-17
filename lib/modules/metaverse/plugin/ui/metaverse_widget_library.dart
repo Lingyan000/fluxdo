@@ -6,6 +6,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 // rfw 的 Switch 是界面描述里的分支节点，与 Material 的开关组件重名。
@@ -19,6 +20,7 @@ import '../../../../widgets/common/paged_list_footer.dart';
 part 'metaverse_page_components.dart';
 part 'metaverse_form_component.dart';
 part 'metaverse_tile_grid.dart';
+part 'metaverse_grid_page.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -79,6 +81,10 @@ LocalWidgetLibrary createMetaverseWidgetLibrary({
     ..._hostWidgets(loadImage),
   });
 }
+
+/// 开发文档守卫由生产注册表推导组件集合。
+Set<String> get metaverseHostWidgetNames =>
+    _hostWidgets((_) async => Uint8List(0)).keys.toSet();
 
 /// 可在界面描述里按名字引用的图标（`Symbol(name: "wallet")`）。
 const metaverseIcons = <String, IconData>{
@@ -230,6 +236,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   Future<Uint8List> Function(Uri) loadImage,
 ) => {
   ..._pageWidgets(),
+  'GridPage': _buildGridPage,
   'PageLayout': (context, source) => _PluginPageLayout(
     loading: source.v<bool>(['loading']) == true,
     onRefresh: source.voidHandler(['onRefresh']),
@@ -468,6 +475,7 @@ class _PluginPageLayout extends StatefulWidget {
     this.onRefresh,
     required this.loading,
     this.lazy = false,
+    this.slivers,
     this.onLoadMore,
     this.hasMore = false,
     this.loadingMore = false,
@@ -478,6 +486,7 @@ class _PluginPageLayout extends StatefulWidget {
   final VoidCallback? onRefresh;
   final bool loading;
   final bool lazy;
+  final List<Widget>? slivers;
   final VoidCallback? onLoadMore;
   final bool hasMore;
   final bool loadingMore;
@@ -549,7 +558,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
           ),
         ),
       );
-      if (!constraints.hasBoundedHeight) {
+      if (!constraints.hasBoundedHeight && widget.slivers == null) {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [content, ?widget.footer],
@@ -573,6 +582,28 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             ),
           ),
         );
+      }
+      if (widget.slivers != null) {
+        scroll = Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: CustomScrollView(
+              shrinkWrap: !constraints.hasBoundedHeight,
+              primary: false,
+              physics: constraints.hasBoundedHeight
+                  ? const AlwaysScrollableScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              slivers: [SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverMainAxisGroup(slivers: widget.slivers!),
+              )],
+            ),
+          ),
+        );
+      }
+      if (!constraints.hasBoundedHeight) {
+        return Column(mainAxisSize: MainAxisSize.min, children: [scroll, ?widget.footer]);
       }
       if (widget.onRefresh != null) {
         scroll = M3eRefreshIndicator(

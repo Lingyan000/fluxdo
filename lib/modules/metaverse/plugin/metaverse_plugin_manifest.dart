@@ -106,7 +106,9 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 9;
+  static const schemaVersion = 10;
+  List<String> get requiredFeatures => PluginFeatures.parse(raw['requiredFeatures']);
+  List<String> get missingFeatures => PluginFeatures.missing(requiredFeatures);
   static const supportedApiVersions = {1, 2};
   int get apiVersion => raw['apiVersion'] as int? ?? 1;
 
@@ -216,6 +218,16 @@ class MetaversePluginManifest {
       );
     }
 
+    final List<String> requiredFeatures;
+    try { requiredFeatures = PluginFeatures.parse(json['requiredFeatures']); }
+    on FormatException catch (error) { throw MetaverseManifestException('requiredFeatures', error.message); }
+    if (requiredFeatures.isNotEmpty && schema < 10) {
+      throw const MetaverseManifestException('schema', '宿主能力声明需要 schema 10');
+    }
+    final missing = PluginFeatures.missing(requiredFeatures);
+    if (missing.isNotEmpty && !allowLegacyMetadata) {
+      throw MetaverseManifestException('requiredFeatures', '请更新应用，缺少能力 ${missing.join(', ')}');
+    }
     final id = _string(json, 'id', max: 64);
     if (id.length < 3 || !_id.hasMatch(id)) {
       throw const MetaverseManifestException(
@@ -391,7 +403,7 @@ class MetaversePluginManifest {
       auth: legacy
           ? const MetaversePluginAuthSpec()
           : _auth(json['auth'], networkHosts, reservedHosts),
-      runtimeSupported: !legacy,
+      runtimeSupported: !legacy && missing.isEmpty,
       capabilities: capabilities,
       webLogin: webLogin,
       cardWidget: cardWidget,

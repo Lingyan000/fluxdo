@@ -1,4 +1,10 @@
 {
+  "metaverse_apiHostFeatures": "Query host features and provide fallbacks for optional features",
+  "metaverse_apiConfirm": "Show a native confirmation with an unchecked agreement; approval permits one subsequent UI action",
+  "metaverse_apiLegacyAuth": "Legacy API 1 manual credentials; new plugins use credentials",
+  "metaverse_componentGridPage": "Lazy grid with natural height, equal row height and masonry layouts",
+  "metaverse_marketRequiresUpdate": "Update FluxDO to use this plugin",
+  "metaverse_confirmationAccept": "I have read and agree",
   "metaverse_apiSearch": "Search APIs by name or purpose",
   "metaverse_apiDemoHint": "Notifications, navigation and the browser use the actual UI. Network, authorization and payments use demo data.",
   "metaverse_apiArgumentsHint": "Enter arguments separated by commas",

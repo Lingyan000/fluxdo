@@ -25,6 +25,9 @@ abstract class MetaversePluginHostDelegate {
   void onShutdown() {}
   int? currentAccountId() => null;
 
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) =>
+      Future.error(const MetaversePluginCallException('confirmation_unavailable'));
+
   Future<String?> authorizeConnect(BuildContext context, Uri authorization) =>
       Future.error(const MetaversePluginCallException('connect_unavailable'));
   Future<bool> requestCredential(BuildContext context, String name) =>
@@ -278,7 +281,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
         ..update(
           metaverseWidgetLibraryName,
           createMetaverseWidgetLibrary(
-            loadImage: (uri) => _network.loadImage(manifest, uri),
+            loadImage: (uri) => PluginExecutionContext(
+              pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId,
+              emitter: 'framework',
+            ).run(() => _network.loadImage(manifest, uri)),
           ),
         )
         ..update(metaversePluginLibraryName, library);
@@ -470,6 +476,23 @@ class MetaversePluginHost implements MetaversePluginBridge {
           throw const MetaversePluginCallException('hash_input_invalid');
         }
         return sha256.convert(utf8.encode(input)).toString();
+      case 'host.features':
+        return PluginFeatures.supported.toList();
+      case 'dialogs.confirm':
+        for (final key in ['title', 'message', 'confirmLabel']) {
+          if (params[key] is! String || (params[key] as String).isEmpty || (params[key] as String).length > 4096) {
+            throw const MetaversePluginCallException('confirmation_invalid');
+          }
+        }
+        final agreement = params['agreement'];
+        if (agreement != null) {
+          final uri = agreement is Map && agreement['url'] is String ? Uri.tryParse(agreement['url']) : null;
+          if (agreement is! Map || agreement['label'] is! String || (agreement['label'] as String).length > 256 ||
+              uri == null || uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty || uri.toString().length > 2048) {
+            throw const MetaversePluginCallException('confirmation_invalid_agreement');
+          }
+        }
+        return _userInitiatedUi((context) => _delegate.confirm(context, params), renewOnAcceptance: true);
       case 'connect.authorize':
         final raw = params['url'];
         final uri = raw is String && raw.length <= 16384
@@ -687,8 +710,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 必须发生在用户操作之后的 [activationWindow] 内，一次操作只能换一次，
   /// 且同一时间只允许一个。提前预约的页面可在操作结束后打开一次。
   Future<T> _userInitiatedUi<T>(
-    Future<T> Function(BuildContext context) run,
-  ) async {
+    Future<T> Function(BuildContext context) run, {
+    bool renewOnAcceptance = false,
+  }) async {
     if (_uiBusy) {
       throw const MetaversePluginCallException('已有进行中的界面操作');
     }
@@ -701,7 +725,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
         _clock().difference(activatedAt) > activationWindow) {
       throw const MetaversePluginCallException('该操作须由用户点击触发');
     }
-    final context = _surfaceContexts[_activatedSurface];
+    final source = _activatedSurface;
+    final account = _delegate.currentAccountId();
+    final context = _surfaceContexts[source];
     _clearActivation();
     if (context == null || !context.mounted) {
       throw const MetaversePluginCallException('没有可见的界面');
@@ -709,7 +735,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
     final generation = _generation;
     _uiBusy = true;
     try {
-      return await run(context);
+      final result = await run(context);
+      if (renewOnAcceptance && result == true && generation == _generation &&
+          account == _delegate.currentAccountId() && source != null &&
+          _surfaceContexts.containsKey(source) && source.appForeground && context.mounted) {
+        _activatedSurface = source;
+        _activatedAt = _clock();
+      }
+      return result;
     } finally {
       if (generation == _generation) _uiBusy = false;
     }

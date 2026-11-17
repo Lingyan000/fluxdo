@@ -245,7 +245,9 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
         );
     if (package.manifest.id != entry.id ||
         package.manifest.version != entry.version ||
-        package.manifest.apiVersion != entry.apiVersion) {
+        package.manifest.apiVersion != entry.apiVersion ||
+        package.manifest.requiredFeatures.toSet().difference(entry.requiredFeatures.toSet()).isNotEmpty ||
+        entry.requiredFeatures.toSet().difference(package.manifest.requiredFeatures.toSet()).isNotEmpty) {
       throw const MetaversePluginInstallException('插件包身份或版本与市场记录不匹配');
     }
     return package;

@@ -43,6 +43,9 @@ class MetaverseApiExample {
     'credentials.remove' => l.metaverse_apiCredentialRemove,
     'credentials.request' => l.metaverse_apiCredentialRequest,
     'connect.authorize' => l.metaverse_apiConnect,
+    'host.features' => l.metaverse_apiHostFeatures,
+    'dialogs.confirm' => l.metaverse_apiConfirm,
+    'auth.status' || 'auth.request' || 'auth.signOut' => l.metaverse_apiLegacyAuth,
     'payments.request' => l.metaverse_apiPayment,
     'fetch' => l.metaverse_apiFetch,
     'user.get' => l.metaverse_apiUser,
@@ -59,6 +62,13 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('host.features', '', ['confirmationDialog', 'virtualGrid', 'nativeExecutionLimits']),
+  MetaverseApiExample('dialogs.confirm',
+    "{title: '确认操作', message: '请阅读说明后继续。', confirmLabel: '同意并继续', agreement: {label: '服务条款', url: 'https://example.org/terms'}}",
+    true, userAction: true),
+  MetaverseApiExample('auth.status', '', {'authorized': false}, permission: 'auth'),
+  MetaverseApiExample('auth.request', '', true, permission: 'auth', userAction: true),
+  MetaverseApiExample('auth.signOut', '', null, permission: 'auth'),
   MetaverseApiExample(
     'storage.setMany',
     "{current: {value: 1}, previous: null}",

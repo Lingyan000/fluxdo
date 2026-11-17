@@ -20,6 +20,7 @@ import '../../../utils/dialog_utils.dart';
 import '../../../utils/link_launcher.dart';
 import '../../ldc_payment/ldc_payment_sheet.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
+import '../plugin/ui/metaverse_confirmation_sheet.dart';
 import '../plugin/runtime/flutter_js_script_engine.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
 import 'metaverse_api_examples.dart';

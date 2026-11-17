@@ -1,0 +1,12 @@
+{
+  "name": "fluxdo-plugin-typescript-example",
+  "private": true,
+  "scripts": {
+    "check": "tsc --noEmit && node sdk-contract.mjs",
+    "build": "npm run check && esbuild src/main.ts --bundle --format=iife --platform=neutral --target=es2020 --outfile=main.js"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "esbuild": "0.28.2"
+  }
+}

@@ -360,7 +360,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             children: [
               ListTile(
                 title: Text(l.metaverse_marketCompatibility),
-                subtitle: Text('SDK ${entry.apiVersion}'),
+                subtitle: Text(entry.compatible ? 'SDK ${entry.apiVersion}' : l.metaverse_marketRequiresUpdate),
               ),
               ListTile(
                 title: Text(l.metaverse_pluginSource),

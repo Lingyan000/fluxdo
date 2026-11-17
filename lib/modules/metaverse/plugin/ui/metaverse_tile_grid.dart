@@ -74,19 +74,7 @@ class _RenderPluginTileGrid extends RenderBox
           );
     if (childCount == 0) return constraints.constrain(Size(width, 0));
     final gap = _settings.spacing.clamp(0.0, width);
-    var columns = _settings.columns;
-    if (columns <= 0) {
-      columns = _settings.minTileWidth > 0
-          ? ((width + gap) / (_settings.minTileWidth + gap)).floor()
-          : width >= 720
-          ? 3
-          : width >= 320
-          ? 2
-          : 1;
-    }
-    // 极窄容器中减少列数，确保间距不会挤出负宽度。
-    final maxColumns = math.max(1, ((width + gap) / (gap + 1)).floor());
-    columns = columns.clamp(1, maxColumns);
+    final columns = _gridColumns(_settings, width, gap);
     final tileWidth = (width - gap * (columns - 1)) / columns;
     final childConstraints = BoxConstraints.tightFor(width: tileWidth);
     final children = getChildrenAsList();
@@ -154,4 +142,15 @@ class _RenderPluginTileGrid extends RenderBox
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
       defaultHitTestChildren(result, position: position);
+}
+
+int _gridColumns(_TileGridSettings settings, double width, double gap) {
+  var columns = settings.columns;
+  if (columns <= 0) {
+    columns = settings.minTileWidth > 0
+        ? ((width + gap) / (settings.minTileWidth + gap)).floor()
+        : width >= 720 ? 3 : width >= 320 ? 2 : 1;
+  }
+  final maxColumns = math.max(1, ((width + gap) / (gap + 1)).floor());
+  return columns.clamp(1, maxColumns);
 }

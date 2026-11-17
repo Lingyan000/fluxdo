@@ -82,6 +82,16 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
       {...label, 'secondary': l.common_cancel, 'loading': false},
     ),
     MetaverseComponentExample(
+      'GridPage',
+      description: l.metaverse_componentGridPage,
+      'GridPage(layout: data.layout, columns: data.columns, minTileWidth: data.minTileWidth, spacing: data.spacing, runSpacing: data.runSpacing, loading: data.loading, hasMore: data.hasMore, loadingMore: data.loadingMore, error: data.error, onRefresh: event "refresh" {}, onRetry: event "retry" {}, onLoadMore: event "loadMore" {}, header: Label(text: data.label), items: [Surface(child: SizedBox(height: 60.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 100.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 80.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 40.0, child: Label(text: data.label)))])',
+      {...label, 'layout': 'equalHeight', 'columns': 2, 'minTileWidth': 0.0,
+        'spacing': 12.0, 'runSpacing': 12.0, 'loading': false,
+        'hasMore': true, 'loadingMore': false, 'error': ''},
+      previewHeight: 400,
+      options: {'layout': MetaverseTileGridLayout.values.map((v) => v.name).toList()},
+    ),
+    MetaverseComponentExample(
       'TileGrid',
       description: l.metaverse_componentTileGrid,
       'SingleChildScrollView(child: TileGrid(layout: data.layout, columns: data.columns, minTileWidth: data.minTileWidth, spacing: data.spacing, runSpacing: data.runSpacing, children: [Surface(color: "secondaryContainer", child: SizedBox(height: 48.0, child: Label(text: data.label))), Surface(color: "secondaryContainer", child: SizedBox(height: 96.0, child: Label(text: data.label))), Surface(color: "secondaryContainer", child: SizedBox(height: 64.0, child: Label(text: data.label))), Surface(color: "secondaryContainer", child: SizedBox(height: 40.0, child: Label(text: data.label)))]))',

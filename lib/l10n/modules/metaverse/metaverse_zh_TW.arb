@@ -1,4 +1,10 @@
 {
+  "metaverse_apiHostFeatures": "查詢目前宿主支援的能力，可為選用功能提供替代方案",
+  "metaverse_apiConfirm": "顯示原生確認彈框；協議預設不勾選，確認後可繼續一次介面操作",
+  "metaverse_apiLegacyAuth": "舊版 API 1 的手填憑證相容介面，新外掛使用 credentials",
+  "metaverse_componentGridPage": "依可見區域建立長網格，支援自然高度、同行等高與瀑布流",
+  "metaverse_marketRequiresUpdate": "請更新 FluxDO 後使用此外掛",
+  "metaverse_confirmationAccept": "我已閱讀並同意",
   "metaverse_apiSearch": "搜尋 API 名稱或用途",
   "metaverse_apiDemoHint": "提示、導覽和瀏覽器使用實際介面。網絡、授權與付款使用示範資料。",
   "metaverse_apiArgumentsHint": "填寫呼叫參數，多個參數以逗號分隔",

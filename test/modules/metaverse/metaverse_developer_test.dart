@@ -25,6 +25,7 @@ void main() {
     final library = createMetaverseWidgetLibrary(
       loadImage: (_) async => Uint8List(0),
     );
+    expect(examples.map((e) => e.name).toSet(), metaverseHostWidgetNames);
     for (final example in examples) {
       expect(
         library.widgets.containsKey(example.name),

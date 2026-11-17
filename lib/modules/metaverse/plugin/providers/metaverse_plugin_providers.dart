@@ -35,6 +35,7 @@ import '../ui/metaverse_plugin_dialogs.dart';
 import '../ui/metaverse_plugin_page.dart';
 import '../../../ldc_payment/ldc_payment_sheet.dart';
 import '../ui/metaverse_connect_confirmation.dart';
+import '../ui/metaverse_confirmation_sheet.dart';
 
 /// 插件数据的根目录：每个插件一个子目录。
 final metaversePluginDirectoryProvider = FutureProvider<Directory>((ref) async {
@@ -336,6 +337,10 @@ class _HostDelegate extends MetaversePluginHostDelegate {
               .byId(_manifest.id)
               ?.enabled ==
           true;
+
+  @override
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) =>
+      showMetaverseConfirmation(context, _manifest.name, options);
 
   @override
   Future<String?> authorizeConnect(BuildContext context, Uri authorization) async {

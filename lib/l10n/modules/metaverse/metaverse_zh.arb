@@ -1,4 +1,10 @@
 {
+  "metaverse_apiHostFeatures": "查询当前宿主支持的能力，可为可选功能提供降级",
+  "metaverse_apiConfirm": "显示原生确认弹框；协议默认不勾选，确认后可继续一次界面操作",
+  "metaverse_apiLegacyAuth": "旧版 API 1 的手填凭证兼容接口，新插件使用 credentials",
+  "metaverse_componentGridPage": "按可见区域构建长网格，支持自然高度、同行等高与瀑布流",
+  "metaverse_marketRequiresUpdate": "请更新 FluxDO 后使用此插件",
+  "metaverse_confirmationAccept": "我已阅读并同意",
   "metaverse_apiSearch": "搜索 API 名称或用途",
   "metaverse_apiDemoHint": "提示、导航和浏览器使用实际界面。网络、授权与支付使用演示数据。",
   "metaverse_apiArgumentsHint": "填写调用参数，多个参数以逗号分隔",

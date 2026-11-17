@@ -173,3 +173,20 @@ widget Settings = FormPage(
 `onSubmit` 的 `args.values` 包含所有当前字段。表单内部保留用户编辑，脚本更新 loading 或其他无关状态不会覆盖输入。脚本显式改变字段 value 会更新该字段，改变 resetKey 会按声明值重置整个表单。删除字段后，该字段也会从提交结果移除。
 
 password 字段用于插件自己的业务输入。LDC 支付调用 `payments.request`，支付密码与生物识别由应用收银台管理。详情、列表、表单与操作区的颜色和形状沿用应用主题。
+
+## `GridPage`
+
+面向长网格的页面组件。与 `TileGrid` 相同的参数：`layout`（natural/equalHeight/masonry，默认 natural）、`columns`（0 为响应式）、`minTileWidth`、`spacing`、`runSpacing`。列数与宽度来自当前可用空间，支持 RTL。
+
+`items` 是卡片组件列表；`header` 是随内容滚动的筛选或搜索区域；`actions` 是固定底部操作区。`loading`、`error`、`emptyTitle` 控制首次加载/错误/空态；`hasMore`、`loadingMore`、`moreLabel` 控制分页。事件：`onRefresh`、`onRetry`、`onLoadMore`。上滑接近底部时自动请求下一页，同一请求期间不会重复触发，分页失败停止自动加载并显示重试。
+
+自然高度和等高模式按可见行构建；瀑布流按可见卡片构建。默认视口预取可提前构建少量卡片。页面清单使用 `scroll:false`，避免与外层滚动嵌套。网格本身必须获得有限页面高度才能虚拟化。
+
+```rfw
+widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
+  loading: data.loading, hasMore: data.more, loadingMore: data.loadingMore,
+  error: data.error, onRefresh: event "refresh" {}, onRetry: event "retry" {},
+  onLoadMore: event "more" {},
+  items: [...for item in data.items: Surface(child: Label(text: item.title))],
+);
+```

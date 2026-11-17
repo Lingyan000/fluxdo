@@ -128,6 +128,8 @@ const metaversePluginPrelude = r'''
       },
       remove: function (name) { return call('credentials.remove', {name: String(name)}); }
     }),
+    host: Object.freeze({features: function () { return call('host.features'); }}),
+    dialogs: Object.freeze({confirm: function (options) { return call('dialogs.confirm', options); }}),
     connect: Object.freeze({
       authorize: function (url) { return call('connect.authorize', {url: String(url)}); }
     }),

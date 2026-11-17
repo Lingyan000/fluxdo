@@ -83,6 +83,7 @@ class MetaverseMarketEntry {
     required this.apiVersion,
     required this.source,
     this.icon,
+    this.requiredFeatures = const [],
   });
   final String id,
       name,
@@ -96,9 +97,10 @@ class MetaverseMarketEntry {
       changelog;
   final String? icon;
   final int apiVersion;
+  final List<String> requiredFeatures;
   final List<String> categories, screenshots;
   final MetaverseMarketSource source;
-  bool get compatible => MetaversePluginManifest.supportedApiVersions.contains(apiVersion);
+  bool get compatible => MetaversePluginManifest.supportedApiVersions.contains(apiVersion) && PluginFeatures.missing(requiredFeatures).isEmpty;
   bool newerThan(String installed) =>
       PluginVersion.parse(version).compareTo(PluginVersion.parse(installed)) >
       0;
@@ -154,6 +156,7 @@ class MetaverseMarketEntry {
       packageUrl: MetaverseMarketSource.httpsUri(text('packageUrl')).toString(),
       sha256: digest,
       apiVersion: api,
+      requiredFeatures: PluginFeatures.parse(value['requiredFeatures']),
       categories: strings('categories'),
       screenshots: screenshots,
       changelog: text('changelog', max: 32768, optional: true),

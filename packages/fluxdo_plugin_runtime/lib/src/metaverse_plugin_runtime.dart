@@ -49,6 +49,7 @@ class MetaversePluginSurface {
   bool _foreground = true;
   bool _appBackgrounded = false;
   bool get foreground => _foreground;
+  bool get appForeground => !_appBackgrounded;
 
   Map<String, Object?> get _info => {
     'surface': id,

@@ -197,6 +197,10 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     switch (method) {
+      case 'host.features':
+        return PluginFeatures.supported.toList();
+      case 'dialogs.confirm':
+        return showMetaverseConfirmation(context, context.l10n.metaverse_developerExample, params);
       case 'toast':
         showMetaversePluginToast(
           context.l10n.metaverse_developerExample,

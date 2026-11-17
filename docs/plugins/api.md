@@ -1,6 +1,6 @@
 # 脚本 API 参考
 
-当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9，提供通用凭证、Connect 和支付接口。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
+当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9 或 10，提供通用凭证、Connect 和支付接口。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
 
 ## API 2 通用能力
 
@@ -60,7 +60,7 @@ const response = await ctx.api.fetch('https://api.example.org/v2/me', {
 
 ### `connect.authorize(url)`
 
-用户点击后调用公共 Linux DO Connect，使用当前应用账号完成授权。返回服务回调 URL，取消返回 null。宿主检查授权地址、redirect_uri、回调地址和 state。插件随后请求回调并处理服务协议。服务初始化接口、PKCE 关联和凭证交换由插件实现。
+用户点击后由宿主再次显示公共 Linux DO Connect 确认框，展示当前账号、插件和回调网站；明确同意后才发起授权。返回服务回调 URL，取消返回 null。宿主检查授权地址、redirect_uri、回调地址和 state。插件随后请求回调并处理服务协议。服务初始化接口、PKCE 关联和凭证交换由插件实现。
 
 ### `crypto.pkce()`、`crypto.uuid()`
 
@@ -223,3 +223,29 @@ await ctx.api.browser.open("https://example.org", {mode: "inApp"});
 ## 界面调用归属
 
 事件处理器提供 `ctx.api`，其方法与 `fluxdo` 的调用方法相同。使用 `ctx.api.fetch`、`ctx.api.storage` 等会将界面身份带入调用日志。界面关闭后其绑定调用会被拒绝。
+
+## 能力发现与确认
+
+### `host.features()`
+
+返回能力名称数组。当前名称：`browserModes`、`automaticPagination`、`gridLayouts`、`virtualGrid`、`confirmationDialog`、`nativeExecutionLimits`。必需能力须在 schema 10 的 `requiredFeatures` 中声明；运行时查询用于可选功能。
+
+### `dialogs.confirm({title, message, confirmLabel, agreement?})`
+
+显示宿主原生确认弹框，返回 boolean。需要当前页面的用户操作。`agreement` 可含 `{label, url}`，url 必须是 HTTPS；宿主提供阅读入口和默认未勾选的同意项，未勾选无法确认。取消、关闭均返回 false。宿主不会替插件保存同意状态。
+
+确认成功后只续接一次用户操作资格，可调用 Connect 或导航；账号切换、页面销毁或应用仍在后台时不续接。Connect 仍显示自己的账号授权确认，服务条款不代替账号授权。
+
+```js
+fluxdo.on('login', async ctx => {
+  if (!await ctx.api.dialogs.confirm({
+    title: '登录服务', message: '请阅读并同意服务条款。', confirmLabel: '继续',
+    agreement: {label: '服务条款', url: 'https://service.example/terms'}
+  })) return;
+  // 服务自己的初始化、PKCE、回调交换由插件实现。
+  const callback = await ctx.api.connect.authorize(authorizationUrl);
+  if (!callback) return;
+});
+```
+
+完整 TypeScript 签名见 [fluxdo.d.ts](../../packages/fluxdo_plugin_runtime/sdk/fluxdo.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。

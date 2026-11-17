@@ -1,12 +1,12 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。通用能力清单使用 schema 9、apiVersion 2。士多 2.0 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+本目录面向 FluxDO 插件作者。通用能力清单使用 schema 10、apiVersion 2，兼容旧版 schema 9。士多 2.1 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
 
 ## 开发语言与运行方式
 
 插件业务使用 JavaScript，通过 `fluxdo` API 调用宿主能力。插件的 JS 引擎执行 `main.js`，`ui.rfwtxt` 将数据与事件绑定到 Flutter 原生组件。Dart 实现 Flutter 宿主、权限检查和能力桥接。仓库中的 Dart 打包命令负责读取文件并生成安装包。
 
-TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 `main.js` 打包。当前 SDK 尚未提供 `.d.ts` 类型声明和 TypeScript 构建模板。运行环境提供的全局对象与接口见 API 参考，构建产物需要自行打包依赖并避免依赖浏览器 DOM、Node.js 内置模块或运行时模块加载。
+TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 `main.js` 打包。SDK 提供 [类型声明](../../packages/fluxdo_plugin_runtime/sdk/fluxdo.d.ts) 和 [可直接编译的模板](../examples/metaverse-plugin-ts/README.md)。运行环境提供的全局对象与接口见 API 参考，构建产物需要自行打包依赖并避免依赖浏览器 DOM、Node.js 内置模块或运行时模块加载。
 
 ## 文档导航
 
@@ -80,8 +80,16 @@ sequenceDiagram
 
 应用内入口位于「元宇宙 → 插件管理」的更多菜单。组件示例使用生产组件库，API 示例通过隔离的演示桥运行。插件管理提供来源、权限、空间占用、日志和数据重置入口。
 
-当前提供 24 个宿主组件的交互预览和 21 个公共 API 示例。页面级组件包含列表、详情、表单及操作区，支持加载状态、事件回传和输入校验，参数说明见组件参考。
+开发中心覆盖全部宿主组件与公共异步 API；注册表与示例集合由自动化守卫保持一致。页面级组件包含列表、详情、表单及操作区，支持加载状态、事件回传和输入校验，参数说明见组件参考。
 
 ## GitHub 市场
 
 默认源为 [Lingyan000/fluxdo-plugins](https://github.com/Lingyan000/fluxdo-plugins)。客户端支持多个源、搜索分类、更新筛选、缓存与 ETag、下载摘要校验及跨来源确认。发布格式及校验命令见目录仓库。
+
+## 必需能力与资源边界
+
+schema 10 可声明 `requiredFeatures`，市场索引必须同步声明同一集合。缺少必需能力时宿主拒绝安装/运行；可选特性用 `await ctx.api.host.features()` 探测并提供降级。能力列表由运行时注册表维护。
+
+插件使用每实例独立的 QuickJS isolate。每次同步执行及其 Promise 微任务有 5 秒原生截止时间，JS 堆上限 64 MiB，JS 栈 512 KiB。停止运行会中断正在执行的原生代码并释放上下文。JS 堆上限不包括宿主 Flutter 图片、插件普通存储或 Dart 堆；这些分别有自己的限额。原生引擎不提供网络、文件系统、Node 或 DOM。
+
+长商品墙使用 `GridPage`，仅构建可见区域及预取范围；少量嵌套内容使用 `TileGrid`。二者提供 natural、equalHeight、masonry 三种布局。

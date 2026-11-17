@@ -199,9 +199,10 @@ class _PluginFormPageState extends State<_PluginFormPage> {
     final decoration = InputDecoration(
       labelText: field.label,
       hintText: field.hint,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
     if (field.type == _PluginFieldType.choice) {
-      return DropdownButtonFormField<String>(
+      return InputFieldShell(hasError: error != null, child: DropdownButtonFormField<String>(
         key: key,
         initialValue: _values[field.name] as String?,
         isExpanded: true,
@@ -213,9 +214,9 @@ class _PluginFormPageState extends State<_PluginFormPage> {
             DropdownMenuItem(value: option.value, child: Text(option.label)),
         ],
         onChanged: widget.loading ? null : (value) => _change(field, value),
-      );
+      ));
     }
-    return TextFormField(
+    return InputFieldShell(hasError: error != null, child: TextFormField(
       key: key,
       initialValue: _values[field.name] as String?,
       enabled: !widget.loading,
@@ -229,7 +230,7 @@ class _PluginFormPageState extends State<_PluginFormPage> {
       forceErrorText: error,
       validator: (value) => _validate(field, value),
       onChanged: (value) => _change(field, value),
-    );
+    ));
   }
 
   @override
@@ -237,7 +238,13 @@ class _PluginFormPageState extends State<_PluginFormPage> {
     key: _form,
     child: _PluginPageLayout(
       loading: widget.loading,
-      footer: OverflowBar(
+      footer: widget.actions.isEmpty
+          ? FilledButton.icon(
+              onPressed: widget.loading || widget.onSubmit == null ? null : _submit,
+              icon: widget.loading ? const LoadingSpinner(size: 18) : null,
+              label: Text(widget.submitLabel),
+            )
+          : OverflowBar(
         alignment: MainAxisAlignment.end,
         overflowAlignment: OverflowBarAlignment.end,
         spacing: 12,

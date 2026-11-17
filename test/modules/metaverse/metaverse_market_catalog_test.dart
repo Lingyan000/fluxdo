@@ -16,6 +16,15 @@ void main() {
     'sha256': 'a' * 64,
   };
 
+  test('必需能力影响市场兼容判断且无声明的旧插件仍兼容', () {
+    expect(MetaverseMarketEntry.parse(entry(), source).compatible, isTrue);
+    expect(MetaverseMarketEntry.parse({...entry(), 'requiredFeatures':['virtualGrid']}, source).compatible, isTrue);
+    expect(MetaverseMarketEntry.parse({...entry(), 'requiredFeatures':['futureFeature']}, source).compatible, isFalse);
+    for (final value in ['bad', [1], [''], ['a.b']]) {
+      expect(() => MetaverseMarketEntry.parse({...entry(), 'requiredFeatures':value}, source), throwsFormatException);
+    }
+  });
+
   test('仓库地址、分支目录和索引文件规范化到稳定来源', () {
     expect(
       MetaverseMarketSource.fromInput(

@@ -128,10 +128,12 @@ class LinuxDoConnectAuthDialog extends StatefulWidget {
     required this.title,
     required this.message,
     required this.onApprove,
+    this.details,
   });
 
   final String title;
   final String message;
+  final Widget? details;
   final Future<bool> Function() onApprove;
 
   @override
@@ -159,7 +161,13 @@ class _LinuxDoConnectAuthDialogState extends State<LinuxDoConnectAuthDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: Text(widget.message),
+      content: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [Text(widget.message), if (widget.details != null) ...[
+          const SizedBox(height: 16), widget.details!,
+        ]],
+      )),
       actions: [
         TextButton(
           onPressed: _isLoading ? null : () => Navigator.pop(context, false),

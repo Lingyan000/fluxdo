@@ -51,6 +51,14 @@ class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('必需能力在安装和恢复时强制校验，不能降级为静默忽略', () {
+    final source = {..._example(), 'apiVersion':1, 'schema':10, 'requiredFeatures':['virtualGrid']};
+    expect(_parse(source).runtimeSupported, isTrue);
+    final newer = {...source, 'requiredFeatures':['futureFeature']};
+    expect(() => _parse(newer), throwsA(isA<MetaverseManifestException>()));
+    expect(MetaversePluginManifest.parse(newer, allowLegacyMetadata:true).runtimeSupported, isFalse);
+    expect(() => _parse({...source,'schema':9}), throwsA(isA<MetaverseManifestException>()));
+  });
   test('历史业务清单只能作为升级元数据读取，新安装拒绝旧协议', () {
     final raw = jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync());
     expect(() => MetaversePluginManifest.parse(raw), throwsA(isA<MetaverseManifestException>()));
