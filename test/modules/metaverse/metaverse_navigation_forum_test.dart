@@ -498,6 +498,39 @@ void main() {
         throwsA(isA<MetaversePluginCallException>()),
       );
     });
+    test('脚本启动阶段切换账号也不能越过存储分区', () async {
+      final ready = Completer<MetaverseScriptEngine>();
+      final starting = MetaversePluginHost(
+        manifest: manifest(),
+        store: store,
+        network: MetaversePluginNetwork(
+          lookup: (_) async => throw StateError('no network'),
+        ),
+        engineFactory: () => ready.future,
+        delegate: delegate,
+        codeLoader: () async => (
+          ui: 'import fluxdo; widget Activity = Label(text: "Ready");',
+          script: '',
+        ),
+      );
+      addTearDown(starting.shutdown);
+      final opening = starting.open(kind: 'page', page: 'activity');
+      delegate.account = 2;
+      await expectLater(
+        starting.call('storage.get', {'key': 'cache'}),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      await expectLater(
+        starting.call('storage.set', {
+          'key': 'cache',
+          'value': 'wrong account',
+        }),
+        throwsA(isA<MetaversePluginCallException>()),
+      );
+      expect(await store.readStorage(starting.id), isEmpty);
+      ready.complete(engine);
+      await opening;
+    });
     test('真实 CLI 产物在 QuickJS 中调用论坛桥并生成原生页面数据', () async {
       final actual = MetaversePluginHost(
         manifest: manifest(),

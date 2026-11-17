@@ -416,11 +416,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
     if (manifest.capabilities.forum.isEmpty) return key;
     final account = _delegate.currentAccountId();
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');
-    return '@forum-account:${_runtime == null ? account : _accountAtStart}:$key';
+    return '@forum-account:$_accountAtStart:$key';
   }
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
-    if (_runtime != null && manifest.capabilities.forum.isNotEmpty && _accountAtStart != _delegate.currentAccountId()) {
+    if (manifest.capabilities.forum.isNotEmpty && _accountAtStart != _delegate.currentAccountId()) {
       throw const MetaversePluginCallException('forum_account_changed');
     }
     switch (method) {
