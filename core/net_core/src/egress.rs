@@ -460,7 +460,7 @@ impl EgressConnector {
                                             "direct", addr.to_string(),
                                             if addr.is_ipv4() { "ipv4" } else { "ipv6" }, *sticky,
                                         ),
-                                        EgressTarget::Proxy(_) => ("proxy", "unknown".into(), "unknown", false),
+                                        EgressTarget::Proxy(_) | EgressTarget::PinnedProxy(_, _) => ("proxy", "unknown".into(), "unknown", false),
                                     };
                                     warn!(
                                         event = "egress_tls_rejected", host, port,
