@@ -79,6 +79,38 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   bool? _cachedHasMention;
   ThemeData? _cachedAvatarTheme;
 
+  /// 父帖快照存放处(会话层),State 随 sliver 回收后靠它恢复
+  late final TopicSessionNotifier _session;
+
+  /// 快照键。异步加载完成时 State 可能已卸载,不再经 widget 取
+  late final int _postId = widget.post.id;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = ref.read(topicSessionProvider(widget.topicId).notifier);
+    final snapshot = widget.disableReplyHistory
+        ? null
+        : _session.inlinePosts(InlinePostsKind.parents, _postId);
+    if (snapshot != null) {
+      _replyHistory = snapshot.posts;
+      _showReplyHistoryNotifier.value =
+          snapshot.expanded && snapshot.posts.isNotEmpty;
+    }
+    _showReplyHistoryNotifier.addListener(_saveReplyHistorySnapshot);
+  }
+
+  void _saveReplyHistorySnapshot({bool? expanded}) {
+    final history = _replyHistory;
+    if (history == null) return;
+    _session.saveInlinePosts(
+      InlinePostsKind.parents,
+      _postId,
+      posts: history,
+      expanded: expanded ?? _showReplyHistoryNotifier.value,
+    );
+  }
+
   @override
   void dispose() {
     _isLoadingReplyHistoryNotifier.dispose();
@@ -138,8 +170,12 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
     _isLoadingReplyHistoryNotifier.value = true;
     try {
       final history = await _service.getPostReplyHistory(widget.post.id);
-      if (!mounted) return;
       _replyHistory = history;
+      if (!mounted) {
+        // 加载期间滑出屏幕:按用户意图记为已展开,回来时直接恢复
+        _saveReplyHistorySnapshot(expanded: history.isNotEmpty);
+        return;
+      }
       _isLoadingReplyHistoryNotifier.value = false;
       _showReplyHistoryNotifier.value = true;
     } on DioException catch (_) {
@@ -193,20 +229,37 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
         currentUser != null && currentUser.username == post.username;
     final isWhisper = post.postType == PostTypes.whisper;
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        if (widget.showStamp || post.canAcceptAnswer)
-          Positioned(
-            right: 20,
-            top: 10,
-            child: PostSolutionStamp(accepted: widget.showStamp),
+    // 印章锚定在当前帖头部(父帖展开在其上方时不跟着下移到父帖区域)
+    final padding = widget.padding.resolve(Directionality.of(context));
+
+    return Padding(
+      padding: widget.padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _showReplyHistoryNotifier,
+            builder: (context, showReplyHistory, _) {
+              if (!showReplyHistory) return const SizedBox.shrink();
+              return PostReplyHistory(
+                replyHistory: _replyHistory,
+                showReplyHistoryNotifier: _showReplyHistoryNotifier,
+                onJumpToPost: widget.onJumpToPost,
+                contentFontScale: ref
+                    .watch(preferencesProvider)
+                    .contentFontScale,
+              );
+            },
           ),
-        Padding(
-          padding: widget.padding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Stack(
+            clipBehavior: Clip.none,
             children: [
+              if (widget.showStamp || post.canAcceptAnswer)
+                Positioned(
+                  right: 20 - padding.right,
+                  top: 10 - padding.top,
+                  child: PostSolutionStamp(accepted: widget.showStamp),
+                ),
               PostHeader(
                 post: post,
                 topicId: widget.topicId,
@@ -320,24 +373,10 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                   ],
                 ),
               ),
-              ValueListenableBuilder<bool>(
-                valueListenable: _showReplyHistoryNotifier,
-                builder: (context, showReplyHistory, _) {
-                  if (!showReplyHistory) return const SizedBox.shrink();
-                  return PostReplyHistory(
-                    replyHistory: _replyHistory,
-                    showReplyHistoryNotifier: _showReplyHistoryNotifier,
-                    onJumpToPost: widget.onJumpToPost,
-                    contentFontScale: ref
-                        .watch(preferencesProvider)
-                        .contentFontScale,
-                  );
-                },
-              ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

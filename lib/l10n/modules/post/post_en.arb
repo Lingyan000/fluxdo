@@ -66,6 +66,7 @@
   "poll_voters": "{count} voters",
   "post_acceptSolution": "Accept as solution",
   "post_collapseReplies": "Collapse replies",
+  "post_collapseParentPosts": "Collapse parent posts",
   "post_contentRequired": "Please enter content",
   "post_deleteReplyConfirm": "Delete this reply? This can be undone.",
   "post_deleteReplyTitle": "Delete reply",
@@ -109,10 +110,8 @@
       }
     }
   },
-  "post_replyCount": "{count} replies",
   "post_replySent": "Reply sent",
   "post_replySentAction": "View",
-  "post_replyTo": "Reply to",
   "post_replyToTopic": "Reply to topic",
   "post_replyToUser": "Reply to @{username}",
   "post_returningUserNotice": "Welcome back {username} — their last post was {timeText}.",

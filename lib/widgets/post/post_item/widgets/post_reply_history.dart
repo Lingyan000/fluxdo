@@ -7,8 +7,22 @@ import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../common/smart_avatar.dart';
 
-/// 回复历史预览组件
+/// 父帖预览:按时间顺序列在当前帖头部上方,竖线串起各父帖头像,
+/// 经收起按钮连到当前帖头像
 class PostReplyHistory extends StatelessWidget {
+  static const double _avatarRadius = 14;
+
+  /// 当前帖头像半径(PostAvatar 默认值),竖线中心与之对齐
+  static const double _headerAvatarRadius = 20;
+  static const double _parentHorizontalPadding =
+      _headerAvatarRadius - _avatarRadius;
+  static const double _parentVerticalPadding = 8;
+  static const double _railWidth = 1.5;
+  static const double _collapseButtonSize = 32;
+
+  /// 收起按钮下沿到当前帖头像的竖线段
+  static const double _bottomGap = 8;
+
   final List<Post>? replyHistory;
   final ValueNotifier<bool> showReplyHistoryNotifier;
   final void Function(int postNumber)? onJumpToPost;
@@ -30,156 +44,168 @@ class PostReplyHistory extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      decoration: ShapeDecoration(
-        color: theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(12),
-          side: BorderSide(
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+    final railColor = theme.colorScheme.outlineVariant;
+    Widget rail({double? top, double? bottom, double? height}) {
+      return PositionedDirectional(
+        start: _headerAvatarRadius - _railWidth / 2,
+        top: top,
+        bottom: bottom,
+        height: height,
+        child: ColoredBox(
+          color: railColor,
+          child: const SizedBox(width: _railWidth),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // 从首个父帖头像中心到收起按钮,再从按钮下沿接到当前帖头像
+        rail(
+          top: _parentVerticalPadding + _avatarRadius,
+          bottom: _bottomGap + _collapseButtonSize,
+        ),
+        rail(bottom: 0, height: _bottomGap),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ...replyHistory!.map(
+              (parent) => _buildParent(context, theme, parent),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: _headerAvatarRadius - _collapseButtonSize / 2,
+                bottom: _bottomGap,
+              ),
+              child: _buildCollapseButton(context, theme, railColor),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCollapseButton(
+    BuildContext context,
+    ThemeData theme,
+    Color borderColor,
+  ) {
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(8),
+      side: BorderSide(color: borderColor),
+    );
+    return Tooltip(
+      message: context.l10n.post_collapseParentPosts,
+      child: Material(
+        color: Colors.transparent,
+        shape: shape,
+        child: InkWell(
+          onTap: () => showReplyHistoryNotifier.value = false,
+          customBorder: shape,
+          child: SizedBox.square(
+            dimension: _collapseButtonSize,
+            child: Icon(
+              Symbols.expand_less_rounded,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header Area
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: [
-                Icon(
-                  Symbols.format_quote_rounded,
-                  size: 16,
-                  color: context.emphasis.accent,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  context.l10n.post_replyTo,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: context.emphasis.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                InkWell(
-                  onTap: () {
-                    showReplyHistoryNotifier.value = false;
-                  },
-                  customBorder: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      Symbols.close_rounded,
-                      size: 16,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+    );
+  }
+
+  Widget _buildParent(BuildContext context, ThemeData theme, Post parent) {
+    final avatarUrl = parent.getAvatarUrl(size: 60);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onJumpToPost?.call(parent.postNumber),
+        customBorder: RoundedSuperellipseBorder(
+          borderRadius: context.shapes.borderRadius(8),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _parentHorizontalPadding,
+            vertical: _parentVerticalPadding,
           ),
-          Divider(
-            height: 1,
-            thickness: 0.5,
-            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-          ),
-          // Reply Items
-          ...replyHistory!.map((replyPost) {
-            final avatarUrl = replyPost.getAvatarUrl(size: 60);
-            return InkWell(
-              onTap: () => onJumpToPost?.call(replyPost.postNumber),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SmartAvatar(
+                imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
+                radius: _avatarRadius,
+                backgroundColor: theme.colorScheme.primaryContainer,
+                fallbackText: parent.username,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SmartAvatar(
-                      imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
-                      radius: 14,
-                      backgroundColor: theme.colorScheme.primaryContainer,
-                      fallbackText: replyPost.username,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                (replyPost.name != null &&
-                                        replyPost.name!.isNotEmpty)
-                                    ? replyPost.name!
-                                    : replyPost.username,
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '#${replyPost.postNumber}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const Spacer(),
-                              Icon(
-                                Symbols.arrow_outward_rounded,
-                                size: 12,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          IgnorePointer(
-                            child: ShaderMask(
-                              shaderCallback: (rect) {
-                                return const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.black, Colors.transparent],
-                                  stops: [0.6, 1.0],
-                                ).createShader(rect);
-                              },
-                              blendMode: BlendMode.dstIn,
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  maxHeight: 60,
-                                ),
-                                child: SingleChildScrollView(
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  // 回复历史预览:改用自研 FluxdoRender 只读渲染(关闭选区)
-                                  child:
-                                      FluxdoRenderCallbacks.generic(
-                                        heroTagNamespace:
-                                            'reply_history_${replyPost.postNumber}',
-                                      ).render(
-                                        cookedHtml: replyPost.cooked,
-                                        baseTextStyle: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              fontSize: 13 * contentFontScale,
-                                              height: 1.4,
-                                            ),
-                                        compact: true,
-                                        selectionEnabled: false,
-                                      ),
-                                ),
-                              ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (parent.name != null && parent.name!.isNotEmpty)
+                                ? parent.name!
+                                : parent.username,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ],
+                        ),
+                        Text(
+                          '#${parent.postNumber}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    IgnorePointer(
+                      // 父帖可能很长:只露开头并渐隐,完整内容点击跳楼层看
+                      child: ShaderMask(
+                        shaderCallback: (rect) {
+                          return const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.black, Colors.transparent],
+                            stops: [0.6, 1.0],
+                          ).createShader(rect);
+                        },
+                        blendMode: BlendMode.dstIn,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 60),
+                          child: SingleChildScrollView(
+                            physics: const NeverScrollableScrollPhysics(),
+                            // 父帖预览:改用自研 FluxdoRender 只读渲染(关闭选区)
+                            child:
+                                FluxdoRenderCallbacks.generic(
+                                  heroTagNamespace:
+                                      'reply_history_${parent.postNumber}',
+                                ).render(
+                                  cookedHtml: parent.cooked,
+                                  baseTextStyle: theme.textTheme.bodySmall
+                                      ?.copyWith(
+                                        fontSize: 13 * contentFontScale,
+                                        height: 1.4,
+                                      ),
+                                  compact: true,
+                                  selectionEnabled: false,
+                                ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            );
-          }),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

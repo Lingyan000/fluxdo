@@ -165,12 +165,29 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   bool _isTogglingAnswer = false;
   bool _isDeleting = false;
 
+  /// 内联回复快照存放处(会话层),State 随 sliver 回收后靠它恢复
+  late final TopicSessionNotifier _session;
+
+  /// 快照键。异步加载完成时 State 可能已卸载,不再经 widget 取
+  late final int _postId = widget.post.id;
+
   bool get _canLoadMoreReplies => _replies.length < widget.post.replyCount;
 
   @override
   void initState() {
     super.initState();
     _syncState();
+    _session = ref.read(topicSessionProvider(widget.topicId).notifier);
+    // 只有内联展开形态才恢复;弹层/嵌套视图里同一帖子不带出主列表的展开
+    final inlineReplies = !widget.hideRepliesButton && !widget.useReplyDialog;
+    final snapshot = inlineReplies
+        ? _session.inlinePosts(InlinePostsKind.replies, _postId)
+        : null;
+    if (snapshot != null) {
+      _replies.addAll(snapshot.posts);
+      _showRepliesNotifier.value = snapshot.expanded && _replies.isNotEmpty;
+    }
+    _showRepliesNotifier.addListener(_saveRepliesSnapshot);
   }
 
   @override
@@ -420,7 +437,6 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
               if (!showReplies) return const SizedBox.shrink();
               return PostRepliesList(
                 replies: _replies,
-                replyCount: widget.post.replyCount,
                 canLoadMore: _canLoadMoreReplies,
                 isLoadingRepliesNotifier: _isLoadingRepliesNotifier,
                 showRepliesNotifier: _showRepliesNotifier,
