@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+
 import '../../models/notification.dart';
 import '../../utils/url_helper.dart';
 import '../common/emoji_text.dart';
 import '../common/smart_avatar.dart';
 import '../common/relative_time_text.dart';
 import '../../theme/app_colors.dart';
+import '../user/activity_card_layout.dart';
 
 // discourse-follow 插件的自定义 SVG 图标
 const _followNewFollowerSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 30">'
@@ -22,7 +24,7 @@ const _followNewReplySvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
     '<path d="M15.2 29.3H3.1c-1.7 0-3.1-1.4-3.1-3.1v-1.8C0 20.3 3.3 17 7.4 17h.5c1.3.6 2.8 1 4.4 1 .2 0 .6 0 1.2-.2 0 0 .3 0 .1.3-.8 1.5-1.1 3.2-1.1 4.8 0 2.5 1 4.7 2.7 6.3 0 0 .2.1 0 .1zM12.3 14.3c4 0 7.2-3.2 7.2-7.2S16.3 0 12.3 0 5.1 3.2 5.1 7.2s3.2 7.1 7.2 7.1zM32.4 17.1 26 11.6c-.6-.5-1.5-.1-1.5.7V15.1c-4.8.5-8.4 2.2-8.4 7.6 0 2.6 1.5 5.1 3.2 6.4.5.4 1.3-.1 1.1-.8-1.4-5 .1-7 4.1-7.5v2.4c0 .7.9 1.1 1.5.7l6.4-5.5c.4-.3.4-1 0-1.3z"/>'
     '</svg>';
 
-/// 通知列表项 widget，快捷面板和历史列表页面共用
+/// 通知列表项：快捷面板和大屏通知弹窗的列表共用，内容与通知页卡片一致
 class NotificationItem extends StatelessWidget {
   final DiscourseNotification notification;
   final String? systemAvatarTemplate;
@@ -33,6 +35,171 @@ class NotificationItem extends StatelessWidget {
     required this.notification,
     this.systemAvatarTemplate,
     required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: NotificationContent(
+          notification: notification,
+          systemAvatarTemplate: systemAvatarTemplate,
+        ),
+      ),
+    );
+  }
+}
+
+/// 通知内容：首行是「谁做了什么」，次行是所在话题。
+/// 已读状态只有两档：未读时标题用正文色并带圆点，已读时标题退灰。
+class NotificationContent extends StatelessWidget {
+  const NotificationContent({
+    super.key,
+    required this.notification,
+    this.systemAvatarTemplate,
+  });
+
+  final DiscourseNotification notification;
+  final String? systemAvatarTemplate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final secondary = colorScheme.onSurfaceVariant;
+    final metaStyle = theme.textTheme.bodySmall?.copyWith(
+      color: secondary,
+      height: 1.4,
+    );
+    final unread = !notification.read;
+    final title = notification.title;
+    final description = notification.description;
+    // 描述只是类型名时（关注、徽章等），标题本身就是完整的一句话，
+    // 提为首行，不再拆成「类型名 + 句子」两行
+    final labelOnly = description == notification.notificationType.label;
+    final headline = labelOnly ? title : description;
+    final detail = labelOnly || title == description ? '' : title;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        NotificationAvatar(
+          notification: notification,
+          systemAvatarTemplate: systemAvatarTemplate,
+          radius: 18,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          // 头像顶部与首行顶部对齐，行数多少都不改变头像位置
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ActivityCardHeader(
+                metadata: _ActionLine(
+                  text: headline,
+                  actorName: notification.actorName,
+                ),
+                timestamp: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: RelativeTimeText(
+                        dateTime: notification.createdAt,
+                        style: metaStyle,
+                      ),
+                    ),
+                    if (unread) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (detail.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                EmojiText(
+                  detail,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: unread ? colorScheme.onSurface : secondary,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 描述里的动作者名字加粗，其余文字退为次要色
+class _ActionLine extends StatelessWidget {
+  const _ActionLine({required this.text, required this.actorName});
+
+  final String text;
+  final String actorName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      height: 1.45,
+    );
+    final nameStyle = base?.copyWith(
+      color: theme.colorScheme.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+    final start = actorName.isEmpty ? -1 : text.indexOf(actorName);
+    final spans = start < 0
+        ? EmojiText.buildEmojiSpans(context, text, base)
+        : [
+            ...EmojiText.buildEmojiSpans(
+              context,
+              text.substring(0, start),
+              base,
+            ),
+            TextSpan(text: actorName, style: nameStyle),
+            ...EmojiText.buildEmojiSpans(
+              context,
+              text.substring(start + actorName.length),
+              base,
+            ),
+          ];
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: base,
+    );
+  }
+}
+
+/// 通知头像：无动作用户时用系统用户头像，右下角挂通知类型小角标。
+/// 头像贴齐布局边缘，角标悬出头像轮廓，不遮挡面部。
+class NotificationAvatar extends StatelessWidget {
+  static const double _badgeIconSize = 12;
+
+  final DiscourseNotification notification;
+  final String? systemAvatarTemplate;
+  final double radius;
+
+  const NotificationAvatar({
+    super.key,
+    required this.notification,
+    this.systemAvatarTemplate,
+    this.radius = 18,
   });
 
   IconData _getNotificationIcon() {
@@ -134,19 +301,17 @@ class NotificationItem extends StatelessWidget {
         break;
     }
     if (svgData != null) {
-      final si = ScalableImage.fromSvgString(svgData, warnF: (_) {})
-          .modifyTint(newTintColor: color, newTintMode: BlendMode.srcIn);
+      final si = ScalableImage.fromSvgString(
+        svgData,
+        warnF: (_) {},
+      ).modifyTint(newTintColor: color, newTintMode: BlendMode.srcIn);
       return SizedBox(
-        width: 14,
-        height: 14,
+        width: _badgeIconSize,
+        height: _badgeIconSize,
         child: ScalableImageWidget(si: si),
       );
     }
-    return Icon(
-      _getNotificationIcon(),
-      size: 14,
-      color: color,
-    );
+    return Icon(_getNotificationIcon(), size: _badgeIconSize, color: color);
   }
 
   Color _getNotificationColor(BuildContext context) {
@@ -181,106 +346,38 @@ class NotificationItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final iconColor = _getNotificationColor(context);
-    final titleStyle = TextStyle(
-      fontWeight: notification.read ? FontWeight.normal : FontWeight.w500,
-    );
-
-    return ListTile(
-      leading: SizedBox(
-        width: 48,
-        height: 48,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Align(
-              alignment: Alignment.center,
-              child: SmartAvatar(
-                imageUrl: _getAvatarUrl(),
-                radius: 20,
-                backgroundColor: colorScheme.surfaceContainerHighest,
-              ),
-            ),
-            Positioned(
-              top: -2,
-              right: -2,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: notification.read
-                      ? colorScheme.surfaceContainerHighest
-                      : colorScheme.surface,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: colorScheme.surface,
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 2,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: _buildBadgeIcon(
-                  notification.read ? colorScheme.onSurfaceVariant : iconColor,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      title: Text.rich(
-        TextSpan(
-          children: EmojiText.buildEmojiSpans(
-            context,
-            notification.title,
-            titleStyle,
-          ),
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: titleStyle,
-      ),
-      subtitle: Row(
+    final extent = radius * 2;
+    return SizedBox(
+      width: extent,
+      height: extent,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: EmojiText.buildEmojiSpans(
-                  context,
-                  notification.description,
-                  TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Align(
+            alignment: Alignment.center,
+            child: SmartAvatar(
+              imageUrl: _getAvatarUrl(),
+              radius: radius,
+              backgroundColor: colorScheme.surfaceContainerHighest,
             ),
           ),
-          const SizedBox(width: 8),
-          RelativeTimeText(
-            dateTime: notification.createdAt,
-            style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
-              fontSize: 12,
+          Positioned(
+            bottom: -3,
+            right: -3,
+            child: Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                shape: BoxShape.circle,
+                border: Border.all(color: colorScheme.surface, width: 1.5),
+              ),
+              child: _buildBadgeIcon(
+                notification.read ? colorScheme.onSurfaceVariant : iconColor,
+              ),
             ),
           ),
         ],
       ),
-      onTap: onTap,
-      trailing: !notification.read
-          ? Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
-            )
-          : null,
     );
   }
 }

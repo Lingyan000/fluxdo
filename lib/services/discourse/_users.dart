@@ -203,6 +203,22 @@ mixin _UsersMixin on _DiscourseServiceBase {
     return UserReactionsResponse.fromJson(response.data);
   }
 
+  /// 获取用户收到的回应列表（discourse-reactions 插件，游标分页每页 20）
+  Future<UserReactionsResponse> getUserReactionsReceived(
+    String username, {
+    int? beforeReactionUserId,
+  }) async {
+    final queryParams = <String, dynamic>{'username': username};
+    if (beforeReactionUserId != null) {
+      queryParams['before_reaction_user_id'] = beforeReactionUserId;
+    }
+    final response = await _dio.get(
+      '/discourse-reactions/posts/reactions-received.json',
+      queryParameters: queryParams,
+    );
+    return UserReactionsResponse.fromJson(response.data);
+  }
+
   /// 获取用户发出的 Boost 列表（discourse-boosts 插件，游标分页每页 20）
   Future<UserBoostsResponse> getUserBoostsGiven(
     String username, {
@@ -215,6 +231,20 @@ mixin _UsersMixin on _DiscourseServiceBase {
           ? {'before_boost_id': beforeBoostId}
           : null,
       options: _userRequestOptions(isSilent),
+    );
+    return UserBoostsResponse.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 获取用户收到的 Boost 列表（discourse-boosts 插件，游标分页每页 20）
+  Future<UserBoostsResponse> getUserBoostsReceived(
+    String username, {
+    int? beforeBoostId,
+  }) async {
+    final response = await _dio.get(
+      '/discourse-boosts/users/$username/boosts-received.json',
+      queryParameters: beforeBoostId != null
+          ? {'before_boost_id': beforeBoostId}
+          : null,
     );
     return UserBoostsResponse.fromJson(response.data as Map<String, dynamic>);
   }

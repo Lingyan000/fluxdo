@@ -201,6 +201,17 @@ class PreloadedDataService {
     return null;
   }
 
+  /// 获取站点通知类型表（服务端类型名 → 类型 id，含已安装插件的类型）
+  Future<Map<String, int>> getNotificationTypes() async {
+    await _ensureLoaded();
+    final raw = _site?['notification_types'];
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        if (entry.value is int) '${entry.key}': entry.value as int,
+    };
+  }
+
   /// 获取帖子操作类型（举报类型等）
   Future<List<Map<String, dynamic>>?> getPostActionTypes() async {
     await _ensureLoaded();

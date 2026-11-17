@@ -145,8 +145,12 @@ class ActivityCardHeader extends StatelessWidget {
       final inlineTime =
           constraints.maxWidth >=
           MediaQuery.textScalerOf(context).scale(14) * 22;
+      // 只有头像加单行动作时，时间与该行一起在头像高度内居中
+      final centered = avatar != null && identity == null;
       return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: centered
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Row(

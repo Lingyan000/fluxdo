@@ -51,6 +51,17 @@ class UserProfileWideLayout {
   static const double maxWidth = 1120;
 }
 
+/// 通知页宽版排版契约：分类改为左侧导航，列表限宽居中。
+class NotificationsWideLayout {
+  NotificationsWideLayout._();
+
+  /// 左侧分类导航宽度
+  static const double sideNavWidth = 240;
+
+  /// 启用宽版的最小实际可用宽度：侧栏之外仍放得下卡片形态的列表
+  static const double minWidth = sideNavWidth + Breakpoints.mobile;
+}
+
 /// 设备类型枚举
 enum DeviceType { mobile, tablet, desktop }
 

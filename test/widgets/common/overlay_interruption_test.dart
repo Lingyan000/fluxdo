@@ -43,6 +43,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           recentNotificationsProvider.overrideWith(_Notifications.new),
           systemUserAvatarTemplateProvider.overrideWith((ref) async => null),
+          siteNotificationTypesProvider.overrideWith((ref) async => const {}),
         ],
         child: TranslationProvider(
           child: MaterialApp(
