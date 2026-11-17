@@ -8,7 +8,7 @@ void main() {
   test('插件服务域名留在插件资源，宿主能力不携带具体服务地址', () {
     final hosts = <String>{};
     for (final file in Directory(
-      'plugins',
+      'test/fixtures/metaverse',
     ).listSync(recursive: true).whereType<File>()) {
       if (path.basename(file.path) != 'plugin.json') continue;
       final raw = jsonDecode(file.readAsStringSync()) as Map;
@@ -16,6 +16,7 @@ void main() {
         ((raw['permissions'] as Map)['network'] as List).cast<String>(),
       );
     }
+    expect(hosts, isNotEmpty, reason: '必须从已跟踪的插件夹具读取服务域名');
     final violations = <String>[];
     for (final file in Directory(
       'lib/modules/metaverse/plugin',
