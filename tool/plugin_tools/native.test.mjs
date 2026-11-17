@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFile, writeFile, mkdtemp, rm} from 'node:fs/promises';
+import {readFile, writeFile, mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {resolve, dirname} from 'node:path';
 import {spawn} from 'node:child_process';
@@ -116,6 +116,7 @@ if(import.meta.hot){
 `;
 
 test('Vite 在真实 QuickJS 中更新 TS 模块并保持未改动模块状态', {timeout:120000}, async t=>{
+  await mkdir(resolve(project,'build'),{recursive:true});
   const root=await mkdtemp(resolve(project,'build/plugin-tools-native-'));
   const outside=resolve(root,'../outside-secret.ts');
   await writeFile(resolve(root,'package.json'),'{"private":true,"type":"module"}');
