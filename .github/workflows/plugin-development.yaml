@@ -1,0 +1,95 @@
+name: Plugin development
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/plugin-development.yaml'
+      - 'lib/modules/metaverse/**'
+      - 'lib/services/log/**'
+      - 'lib/l10n/modules/metaverse/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'test/modules/metaverse/**'
+      - 'test/fixtures/metaverse/**'
+      - 'test/services/log/**'
+      - 'test/architecture/**'
+      - 'tool/plugin_tools/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.fvmrc'
+  push:
+    branches: [dev, main, codex/ld-store-native-checkout]
+    paths:
+      - '.github/workflows/plugin-development.yaml'
+      - 'lib/modules/metaverse/**'
+      - 'lib/services/log/**'
+      - 'lib/l10n/modules/metaverse/**'
+      - 'packages/fluxdo_plugin_runtime/**'
+      - 'test/modules/metaverse/**'
+      - 'test/fixtures/metaverse/**'
+      - 'test/services/log/**'
+      - 'test/architecture/**'
+      - 'tool/plugin_tools/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.fvmrc'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-development-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-development:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - run: git config --global core.symlinks true
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Lingyan000/fluxdo-plugin-tools
+          ref: 4db1ef682f442a52b37a625b5aa8892f24573d14
+          path: tools
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - run: npm install --global pnpm@12.21.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: tools
+      - run: pnpm build
+        working-directory: tools
+      - name: Prepare application
+        working-directory: app
+        run: dart tool/project_prep.dart test
+      - name: Prepare test assets and tool path
+        run: |
+          New-Item -ItemType Directory -Force app/assets/certs | Out-Null
+          "FLUXDO_PLUGIN_TOOLS=$((Resolve-Path tools).Path)" >> $env:GITHUB_ENV
+      - name: Check SDK against real host APIs
+        working-directory: app
+        run: node tool/plugin_tools/check_sdk_contract.mjs
+      - name: Check generated component contract
+        working-directory: app
+        run: dart run tool/plugin_tools/export_components.dart test/fixtures/metaverse/sdk/components.json --check
+      - name: Analyze development integration
+        working-directory: app
+        run: flutter analyze lib/modules/metaverse/developer lib/modules/metaverse/plugin/metaverse_component_contract.dart lib/modules/metaverse/plugin/metaverse_ui_validator.dart lib/modules/metaverse/plugin/metaverse_plugin_host.dart lib/modules/metaverse/plugin/metaverse_plugin_store.dart lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart lib/services/log/log_writer.dart packages/fluxdo_plugin_runtime tool/plugin_tools test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart
+      - name: Run real QuickJS HMR regression
+        working-directory: app
+        run: node --test tool/plugin_tools/native.test.mjs
+      - name: Run pairing, isolation, plugin and architecture regression
+        working-directory: app
+        run: flutter test test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
