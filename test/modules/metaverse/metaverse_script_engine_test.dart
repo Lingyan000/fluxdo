@@ -6,18 +6,9 @@ import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine
 
 /// 真实 JS 引擎的契约测试。
 ///
-/// 宿主测试环境默认加载不到 `quickjs_c_bridge.dll`，那时整组跳过；本机验证
-/// 时把构建产物目录加进 PATH 再跑：
-/// `PATH="build/windows/x64/runner/Debug:$PATH" flutter test <本文件>`
+/// 原生库通过 Dart native assets 构建，缺失应使测试失败，不能静默跳过。
 Future<void> main() async {
-  String? skip;
-  try {
-    (await IsolateScriptEngine.spawn()).dispose();
-  } on MetaverseScriptException catch (error) {
-    skip = '脚本引擎原生库不可用: $error';
-  }
-
-  group('IsolateScriptEngine', skip: skip, () {
+  group('IsolateScriptEngine', () {
     late IsolateScriptEngine engine;
     late List<Object?> messages;
     late StreamController<Object?> arrivals;
@@ -42,9 +33,10 @@ Future<void> main() async {
       await engine.evaluate(metaversePluginPrelude, name: 'prelude');
     });
 
-    tearDown(() {
+    tearDown(() async {
       engine.dispose();
-      arrivals.close();
+      await engine.terminated.timeout(const Duration(seconds: 3));
+      await arrivals.close();
     });
 
     test('脚本经通道投递的消息以解码后的对象到达宿主', () async {
@@ -142,6 +134,51 @@ Future<void> main() async {
         engine.evaluate('1'),
         throwsA(isA<MetaverseScriptException>()),
       );
+    });
+
+    test('持续排入的 Promise 微任务由原生截止时间中断', () async {
+      await expectLater(engine.evaluate('function again(){Promise.resolve().then(again)};again()'),
+        throwsA(isA<MetaverseScriptException>()));
+      await engine.terminated.timeout(const Duration(seconds: 3));
+    });
+    test('堆增长命中内存上限并释放运行时', () async {
+      final limited = await IsolateScriptEngine.spawn(memoryLimit: 8 * 1024 * 1024);
+      addTearDown(limited.dispose);
+      await expectLater(limited.evaluate('var a=[];while(true){a.push(new Array(10000).fill(123));}'),
+        throwsA(isA<MetaverseScriptException>().having((e)=>e.message,'reason',contains('内存'))));
+      await limited.terminated.timeout(const Duration(seconds: 3));
+    });
+    test('释放直接中断长任务，无须等到任务截止时间', () async {
+      final running = await IsolateScriptEngine.spawn(timeout: const Duration(seconds: 30));
+      final result = expectLater(running.evaluate('while(true){}'), throwsA(isA<MetaverseScriptException>()));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      running.dispose();
+      await result;
+      await running.terminated.timeout(const Duration(seconds: 2));
+    });
+
+    test('递归耗尽栈预算后仍可处理下一条命令', () async {
+      await expectLater(engine.evaluate('function recurse(){return recurse()};recurse()'),
+        throwsA(isA<MetaverseScriptException>().having((e) => e.message, 'reason', contains('stack'))));
+      await engine.evaluate("console.log('recovered')");
+      await received(1);
+      expect((messages.single as Map)['message'], 'recovered');
+    });
+
+    test('重建引擎与多次跨事件执行保持独立的栈预算', () async {
+      for (var index = 0; index < 16; index++) {
+        final restarted = await IsolateScriptEngine.spawn();
+        try {
+          await restarted.evaluate(metaversePluginPrelude);
+          for (var event = 0; event < 3; event++) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+            await restarted.evaluate('Promise.resolve(42).then(value => value + 1)');
+          }
+        } finally {
+          restarted.dispose();
+          await restarted.terminated.timeout(const Duration(seconds: 3));
+        }
+      }
     });
 
     test('空闲再久也不会被看门狗误杀', () async {

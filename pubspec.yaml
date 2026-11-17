@@ -51,8 +51,12 @@ dependencies:
   # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
   # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
   flutter_js: ^0.8.7
+  # 第三方插件使用可原生中断且限制内存的独立 QuickJS 运行时。
+  qjs:
+    path: packages/qjs
+  flutter_staggered_grid_view: ^0.7.0
   # 元宇宙第三方插件的原生界面:插件下发声明式界面描述,由宿主预置的
-  # Flutter 组件渲染(区别于 WebView 小程序);插件逻辑跑在上面的 flutter_js 里
+  # Flutter 组件渲染(区别于 WebView 小程序);插件逻辑跑在独立 QuickJS 运行时里
   rfw: ^2.0.0
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
