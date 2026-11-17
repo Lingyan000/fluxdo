@@ -7,6 +7,7 @@ import '../../../utils/emoji_shortcodes.dart';
 import '../../../utils/markdown_block_format.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/emoji_text.dart';
+import '../../../widgets/markdown_editor/composer_shortcuts.dart';
 import '../../../widgets/markdown_editor/emoji_picker.dart';
 import '../../../utils/responsive.dart';
 import '../controllers/topic_reply_session.dart';
@@ -152,6 +153,11 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     recordRecentEmoji(name);
   }
 
+  /// 守卫与发送按钮一致：有内容且不在发送中
+  void _submitFromShortcut() {
+    if (_session.hasContent && !_session.submitting) widget.onSend();
+  }
+
   void _expand() {
     final panel = _panelKey.currentContext?.findRenderObject() as RenderBox?;
     if (panel == null || !panel.hasSize) return;
@@ -241,9 +247,16 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                       opacity: contentOpacity,
                       // 面板内的点按不算「点到输入框外」，不会先把焦点收走
                       child: TextFieldTapRegion(
-                        child: KeyedSubtree(
-                          key: _panelKey,
-                          child: _buildPanel(context, theme, floating),
+                        // 发送快捷键与完整编辑器同一套（Cmd/Ctrl+Enter）
+                        child: CallbackShortcuts(
+                          bindings: {
+                            for (final activator in composerSubmitActivators())
+                              activator: _submitFromShortcut,
+                          },
+                          child: KeyedSubtree(
+                            key: _panelKey,
+                            child: _buildPanel(context, theme, floating),
+                          ),
                         ),
                       ),
                     ),
