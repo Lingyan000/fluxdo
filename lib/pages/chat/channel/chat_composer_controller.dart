@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../services/discourse_cache_manager.dart';
 import '../../../services/emoji_handler.dart';
 import '../../../utils/emoji_shortcodes.dart';
+import '../../../widgets/common/emoji_text.dart';
 
 /// 聊天输入框控制器:把 :shortcode: 内联渲染成 emoji 图
 ///
@@ -71,7 +72,7 @@ class ChatComposerController extends TextEditingController {
         children.add(
           TextSpan(
             text: '⁠' * (match.end - match.start - 1),
-            style: style?.copyWith(color: Colors.transparent),
+            style: EmojiText.sourceLengthFillerStyle(style),
           ),
         );
       }

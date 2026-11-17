@@ -59,6 +59,18 @@ class EmojiText extends StatelessWidget {
     return buildEmojiSpans(context, text, style, inline: inline);
   }
 
+  /// 输入框里表情图之后的等长补位字符样式（字符数与短代码对齐，光标与
+  /// 删除不错位）。补位字符本应零宽，但字体缺这个字形时会按缺字占宽，
+  /// 主题的字间距也会逐字叠加——字号压到近零、间距归零，任何字体下都
+  /// 不占宽度，否则表情之间会空出一大截
+  static TextStyle sourceLengthFillerStyle(TextStyle? style) =>
+      (style ?? const TextStyle()).copyWith(
+        color: Colors.transparent,
+        fontSize: 0.01,
+        letterSpacing: 0,
+        wordSpacing: 0,
+      );
+
   /// 静态方法：构建包含 emoji 的 spans 列表
   /// 可被其他组件复用
   static List<InlineSpan> buildEmojiSpans(
@@ -88,7 +100,7 @@ class EmojiText extends StatelessWidget {
         spans.add(
           TextSpan(
             text: '\u2060' * (match.end - match.start - 1),
-            style: style?.copyWith(color: Colors.transparent),
+            style: sourceLengthFillerStyle(style),
           ),
         );
       }
