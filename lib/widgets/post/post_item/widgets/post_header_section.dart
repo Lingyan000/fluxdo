@@ -74,6 +74,8 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   final ValueNotifier<bool> _showReplyHistoryNotifier = ValueNotifier<bool>(
     false,
   );
+  final ValueNotifier<Set<int>> _unfoldedParentIdsNotifier =
+      ValueNotifier<Set<int>>(const {});
   Widget? _cachedAvatarWidget;
   int? _cachedPostId;
   bool? _cachedHasMention;
@@ -96,8 +98,10 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
       _replyHistory = snapshot.posts;
       _showReplyHistoryNotifier.value =
           snapshot.expanded && snapshot.posts.isNotEmpty;
+      _unfoldedParentIdsNotifier.value = snapshot.unfoldedPostIds;
     }
     _showReplyHistoryNotifier.addListener(_saveReplyHistorySnapshot);
+    _unfoldedParentIdsNotifier.addListener(_saveReplyHistorySnapshot);
   }
 
   void _saveReplyHistorySnapshot({bool? expanded}) {
@@ -108,6 +112,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
       _postId,
       posts: history,
       expanded: expanded ?? _showReplyHistoryNotifier.value,
+      unfoldedPostIds: _unfoldedParentIdsNotifier.value,
     );
   }
 
@@ -115,6 +120,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   void dispose() {
     _isLoadingReplyHistoryNotifier.dispose();
     _showReplyHistoryNotifier.dispose();
+    _unfoldedParentIdsNotifier.dispose();
     super.dispose();
   }
 
@@ -229,37 +235,20 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
         currentUser != null && currentUser.username == post.username;
     final isWhisper = post.postType == PostTypes.whisper;
 
-    // 印章锚定在当前帖头部(父帖展开在其上方时不跟着下移到父帖区域)
-    final padding = widget.padding.resolve(Directionality.of(context));
-
-    return Padding(
-      padding: widget.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ValueListenableBuilder<bool>(
-            valueListenable: _showReplyHistoryNotifier,
-            builder: (context, showReplyHistory, _) {
-              if (!showReplyHistory) return const SizedBox.shrink();
-              return PostReplyHistory(
-                replyHistory: _replyHistory,
-                showReplyHistoryNotifier: _showReplyHistoryNotifier,
-                onJumpToPost: widget.onJumpToPost,
-                contentFontScale: ref
-                    .watch(preferencesProvider)
-                    .contentFontScale,
-              );
-            },
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        if (widget.showStamp || post.canAcceptAnswer)
+          Positioned(
+            right: 20,
+            top: 10,
+            child: PostSolutionStamp(accepted: widget.showStamp),
           ),
-          Stack(
-            clipBehavior: Clip.none,
+        Padding(
+          padding: widget.padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (widget.showStamp || post.canAcceptAnswer)
-                Positioned(
-                  right: 20 - padding.right,
-                  top: 10 - padding.top,
-                  child: PostSolutionStamp(accepted: widget.showStamp),
-                ),
               PostHeader(
                 post: post,
                 topicId: widget.topicId,
@@ -373,10 +362,24 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                   ],
                 ),
               ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _showReplyHistoryNotifier,
+                builder: (context, showReplyHistory, _) {
+                  if (!showReplyHistory) return const SizedBox.shrink();
+                  return PostReplyHistory(
+                    replyHistory: _replyHistory,
+                    unfoldedPostIdsNotifier: _unfoldedParentIdsNotifier,
+                    onJumpToPost: widget.onJumpToPost,
+                    contentFontScale: ref
+                        .watch(preferencesProvider)
+                        .contentFontScale,
+                  );
+                },
+              ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

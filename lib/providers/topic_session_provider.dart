@@ -44,12 +44,17 @@ enum InlinePostsKind {
   parents,
 }
 
-/// 帖子内联展开快照:展开状态与已加载的帖子
+/// 帖子内联展开快照:展开状态、已加载的帖子与其中已展开全文的帖子
 class InlinePostsSnapshot {
   final List<Post> posts;
   final bool expanded;
+  final Set<int> unfoldedPostIds;
 
-  const InlinePostsSnapshot({required this.posts, required this.expanded});
+  const InlinePostsSnapshot({
+    required this.posts,
+    required this.expanded,
+    this.unfoldedPostIds = const {},
+  });
 }
 
 class TopicSessionNotifier extends Notifier<TopicSessionState> {
@@ -70,6 +75,7 @@ class TopicSessionNotifier extends Notifier<TopicSessionState> {
     int postId, {
     required List<Post> posts,
     required bool expanded,
+    Set<int> unfoldedPostIds = const {},
   }) {
     if (posts.isEmpty && !expanded) {
       _inlinePosts.remove((kind, postId));
@@ -78,6 +84,7 @@ class TopicSessionNotifier extends Notifier<TopicSessionState> {
     _inlinePosts[(kind, postId)] = InlinePostsSnapshot(
       posts: List.unmodifiable(posts),
       expanded: expanded,
+      unfoldedPostIds: Set.unmodifiable(unfoldedPostIds),
     );
   }
 
