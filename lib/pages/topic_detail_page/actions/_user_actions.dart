@@ -39,7 +39,46 @@ extension _UserActions on _TopicDetailPageState {
     }
   }
 
-  Future<void> _handleReply(Post? replyToPost, {String? initialContent}) async {
+  /// 回复入口汇合点(带 [initialContent] 时作为引用插入):手机 / 中屏走
+  /// 底栏快捷回复,宽屏阅读栏形态走停靠编辑器;[forceFullEditor] 时打开
+  /// 完整编辑器弹层。
+  Future<void> _handleReply(
+    Post? replyToPost, {
+    String? initialContent,
+    bool forceFullEditor = false,
+    bool initialContentIsComplete = false,
+    Rect? morphFrom,
+    double morphFromRadius = 0,
+    Color? morphFromColor,
+  }) async {
+    if (!forceFullEditor && _quickReplyEnabled) {
+      // 快捷回复已打开时一律在其中继续(引用插入其中,需要时手动展开)
+      if (_replySession.active ||
+          !await _prefersFullEditor(
+            target: replyToPost,
+            quote: initialContent,
+          )) {
+        if (initialContent != null) {
+          await _replySession.insertQuote(initialContent, target: replyToPost);
+        } else {
+          await _replySession.open(target: replyToPost);
+        }
+        return;
+      }
+      // 直接打开完整编辑器:从底栏回复胶囊长出
+      await _replySession.releaseForFullEditor();
+      if (!mounted) return;
+      final source = _replyEntryMorphSource();
+      morphFrom ??= source?.rect;
+      if (source != null) {
+        morphFromRadius = source.radius;
+        morphFromColor ??= source.color;
+      }
+    }
+    if (!forceFullEditor && _dockedComposerEnabled) {
+      await _dockedComposer.open(target: replyToPost, quote: initialContent);
+      return;
+    }
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
     final detail = ref.read(topicDetailProvider(params)).value;
@@ -58,6 +97,10 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: replyToPost,
       initialContent: initialContent,
+      initialContentIsComplete: initialContentIsComplete,
+      morphFrom: morphFrom,
+      morphFromRadius: morphFromRadius,
+      morphFromColor: morphFromColor,
       topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
@@ -234,7 +277,11 @@ extension _UserActions on _TopicDetailPageState {
     }
     if (!mounted) return;
     // 原文带回回复编辑器,重新提交后会再次进入审核队列
-    await _handleReply(replyToPost, initialContent: pending.raw);
+    await _handleReply(
+      replyToPost,
+      initialContent: pending.raw,
+      forceFullEditor: true,
+    );
   }
 
   Future<void> _handleEdit(Post post) async {
@@ -739,6 +786,24 @@ extension _UserActions on _TopicDetailPageState {
     return post;
   }
 
+  /// 回复发出后:并入帖子流并滚到新帖,不在当前窗口时给可跳转的提示
+  void _afterReplyPosted(Post newPost, bool wasAtBottom) {
+    _updateNestedViewAfterReply(newPost);
+    final addedToView = ref
+        .read(topicDetailProvider(_params).notifier)
+        .addPost(newPost, wasAtBottom: wasAtBottom);
+    if (addedToView) {
+      _scrollAfterKeyboardDismiss(newPost.postNumber);
+    } else {
+      ToastService.show(
+        S.current.post_replySent,
+        type: ToastType.success,
+        actionLabel: S.current.post_replySentAction,
+        onAction: () => _scrollToPost(newPost.postNumber),
+      );
+    }
+  }
+
   Future<void> _handleQuotePost(Post post) async {
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
@@ -764,6 +829,23 @@ extension _UserActions on _TopicDetailPageState {
       topicId: widget.topicId,
     );
 
+    ({Rect rect, double radius, Color color})? morph;
+    if (_quickReplyEnabled) {
+      if (_replySession.active ||
+          !await _prefersFullEditor(target: post, quote: quote)) {
+        await _replySession.insertQuote(quote, target: post);
+        return;
+      }
+      // 直接打开完整编辑器:从底栏回复胶囊长出
+      await _replySession.releaseForFullEditor();
+      if (!mounted) return;
+      morph = _replyEntryMorphSource();
+    }
+    if (_dockedComposerEnabled) {
+      await _dockedComposer.open(target: post, quote: quote);
+      return;
+    }
+
     final draftKey = Draft.replyKey(
       widget.topicId,
       replyToPostNumber: post.postNumber,
@@ -776,6 +858,9 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      morphFrom: morph?.rect,
+      morphFromRadius: morph?.radius ?? 0,
+      morphFromColor: morph?.color,
       topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
@@ -1338,6 +1423,23 @@ extension _UserActions on _TopicDetailPageState {
     );
 
     // 预加载草稿
+    ({Rect rect, double radius, Color color})? morph;
+    if (_quickReplyEnabled) {
+      if (_replySession.active ||
+          !await _prefersFullEditor(target: post, quote: quote)) {
+        await _replySession.insertQuote(quote, target: post);
+        return;
+      }
+      // 直接打开完整编辑器:从底栏回复胶囊长出
+      await _replySession.releaseForFullEditor();
+      if (!mounted) return;
+      morph = _replyEntryMorphSource();
+    }
+    if (_dockedComposerEnabled) {
+      await _dockedComposer.open(target: post, quote: quote);
+      return;
+    }
+
     final draftKey = Draft.replyKey(
       widget.topicId,
       replyToPostNumber: post.postNumber,
@@ -1351,6 +1453,9 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      morphFrom: morph?.rect,
+      morphFromRadius: morph?.radius ?? 0,
+      morphFromColor: morph?.color,
       topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
@@ -1391,6 +1496,23 @@ extension _UserActions on _TopicDetailPageState {
     final wasAtBottom = !notifier.hasMoreAfter;
 
     // 预加载草稿
+    ({Rect rect, double radius, Color color})? morph;
+    if (_quickReplyEnabled) {
+      if (_replySession.active ||
+          !await _prefersFullEditor(target: post, quote: quote)) {
+        await _replySession.insertQuote(quote, target: post);
+        return;
+      }
+      // 直接打开完整编辑器:从底栏回复胶囊长出
+      await _replySession.releaseForFullEditor();
+      if (!mounted) return;
+      morph = _replyEntryMorphSource();
+    }
+    if (_dockedComposerEnabled) {
+      await _dockedComposer.open(target: post, quote: quote);
+      return;
+    }
+
     final draftKey = Draft.replyKey(
       widget.topicId,
       replyToPostNumber: post.postNumber,
@@ -1404,6 +1526,9 @@ extension _UserActions on _TopicDetailPageState {
       categoryId: detail?.categoryId,
       replyToPost: post,
       initialContent: quote,
+      morphFrom: morph?.rect,
+      morphFromRadius: morph?.radius ?? 0,
+      morphFromColor: morph?.color,
       topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,
