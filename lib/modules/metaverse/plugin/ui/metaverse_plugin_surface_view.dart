@@ -3,8 +3,10 @@ import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:rfw/rfw.dart';
+import '../../../../navigation/nav_action_bus.dart';
 
 import '../../../../l10n/s.dart';
+import '../../../../navigation/navigation_activity_scope.dart';
 import '../../../../services/navigation/app_route_observer.dart';
 import '../metaverse_plugin_host.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
@@ -34,12 +36,14 @@ class MetaversePluginSurfaceView extends StatefulWidget {
     required this.host,
     required this.kind,
     this.page,
+    this.navigationId,
     this.params = const {},
   });
 
   final MetaversePluginHost host;
   final MetaversePluginSurfaceKind kind;
   final String? page;
+  final String? navigationId;
   final Map<String, Object?> params;
 
   @override
@@ -55,14 +59,19 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
   var _attempt = 0;
   bool _appForeground = true;
   bool _routeCurrent = true;
+  bool _tabActive = true;
+  bool _opening = false;
+  int? _navigationNonce;
   ModalRoute<dynamic>? _ancestorRoute;
 
   void _syncForeground() {
+    final visible = _tabActive && _appForeground && _routeCurrent && (_ancestorRoute?.isCurrent ?? true);
     final surface = _surface;
+    if (surface == null && visible && !_opening && _error == null) _open();
     if (surface != null) {
       widget.host.setSurfaceForeground(
         surface,
-        _appForeground && _routeCurrent && (_ancestorRoute?.isCurrent ?? true),
+        visible,
         appForeground: _appForeground,
       );
     }
@@ -73,13 +82,30 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final state = WidgetsBinding.instance.lifecycleState;
-    if (state != null) didChangeAppLifecycleState(state);
-    _open();
+    _appForeground = state == null || state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _tabActive = NavigationActivityScope.isActive(context);
+    final event = NavigationActivityScope.actionOf(context);
+    if (_surface case final surface?) {
+      if (event != null && event.nonce != _navigationNonce && event.targetId == widget.navigationId && _tabActive && surface.foreground) {
+        _navigationNonce = event.nonce;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !identical(surface, _surface) || !surface.foreground) return;
+          if (event.action == NavAction.refresh) {
+            widget.host.dispatchUserEvent(surface, 'page.refresh', const {});
+          } else {
+            for (final position in PrimaryScrollController.maybeOf(context)?.positions.toList() ?? <ScrollPosition>[]) {
+              position.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+            }
+          }
+        });
+      }
+    }
+    _navigationNonce = event?.nonce;
     final route = ModalRoute.of(context);
     _routeCurrent = route?.isCurrent ?? true;
     // 内层 Navigator 的栈顶不反映根层弹框；同时订阅承载它的根路由。
@@ -119,8 +145,12 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
         )) {
       final previous = _surface;
       if (previous != null) oldWidget.host.close(previous);
+      _attempt++;
       _surface = null;
-      _open();
+      _widgets = null;
+      _error = null;
+      _opening = false;
+      _syncForeground();
     }
   }
 
@@ -135,6 +165,7 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
   }
 
   Future<void> _open() async {
+    _opening = true;
     final attempt = ++_attempt;
     final host = widget.host;
     final previous = _surface;
@@ -151,6 +182,7 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
         kind: widget.kind.name,
         page: widget.page,
         params: widget.params,
+        isVisible: () => mounted && attempt == _attempt && _tabActive && _appForeground && _routeCurrent && (_ancestorRoute?.isCurrent ?? true),
       );
       if (!mounted || attempt != _attempt) {
         host.close(surface);
@@ -163,7 +195,15 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
       _syncForeground();
     } catch (error) {
       if (!mounted || attempt != _attempt) return;
-      setState(() => _error = error);
+      if (error is! MetaversePluginCallException || error.message != 'surface_not_visible') {
+        setState(() => _error = error);
+      }
+    } finally {
+      if (attempt == _attempt) {
+        _opening = false;
+        // 启动被隐藏取消后，标签可能已再次可见；不能一直停留在加载状态。
+        if (mounted && _surface == null && _error == null) _syncForeground();
+      }
     }
   }
 

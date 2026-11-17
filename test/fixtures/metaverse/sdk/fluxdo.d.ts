@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead';
   interface FetchOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
     headers?: { [key: string]: string };
@@ -26,10 +26,36 @@ declare namespace FluxDO {
     api: Api;
     setData(key: string, value: Json): void;
   }
+  type ForumResource = 'user' | 'actions' | 'reactions' | 'boosts' | 'following';
+  type ForumAction = 'likes' | 'topics' | 'replies';
+  type ForumRequest =
+    | { resource: 'user'; username: string }
+    | { resource: 'actions'; username: string; offset?: number; actions?: ForumAction[] }
+    | { resource: 'reactions' | 'boosts'; username: string; before?: number }
+    | { resource: 'following'; username: string; offset?: number };
+  interface ForumUser { id: number; username: string; name: string | null; avatarUrl: string }
+  interface ForumProfile extends ForumUser { trustLevel: number; lastSeenAt: string | null; lastPostedAt: string | null }
+  interface ForumActivity {
+    id: string | number; topicId: number; postNumber: number | null; title: string | null;
+    excerpt: string | null; createdAt: string | null; categoryId: number | null;
+    actor: ForumUser | null; author: ForumUser | null;
+    action?: ForumAction; reaction?: string | null; cooked?: string; postId?: number;
+  }
+  type ForumResult<R extends ForumResource> = R extends 'user' ? ForumProfile :
+    R extends 'following' ? {items: ForumUser[]; nextOffset: number | null} :
+    R extends 'actions' ? {items: ForumActivity[]; nextOffset: number | null} :
+    {items: ForumActivity[]; nextBefore: number | null};
+  type ForumDestination = {type: 'topic'; topicId: number; postNumber?: number} | {type: 'user'; username: string};
   interface Api {
     on(name: string, handler: (ctx: Context, args: Record) => void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
     host: { features(): Promise<string[]> };
+    forum: {
+      /** 仅 ctx.api 可在可见页面调用；permissions.forum 授权。 */
+      read<T extends ForumRequest>(options: T): Promise<ForumResult<T['resource']>>;
+      /** 用户点击后打开原生页面，无需读取权限。 */
+      open(destination: ForumDestination): Promise<null>;
+    };
     dialogs: { confirm(options: Confirmation): Promise<boolean> };
     storage: {
       get<T = Json>(key: string): Promise<T | null>;

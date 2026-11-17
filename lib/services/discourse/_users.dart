@@ -274,8 +274,8 @@ mixin _UsersMixin on _DiscourseServiceBase {
   }
 
   /// 获取用户关注列表
-  Future<List<FollowUser>> getFollowing(String username) async {
-    final response = await _dio.get('/u/$username/follow/following');
+  Future<List<FollowUser>> getFollowing(String username, {bool isSilent = false}) async {
+    final response = await _dio.get('/u/$username/follow/following', options: _userRequestOptions(isSilent));
     return (response.data as List)
         .map((json) => FollowUser.fromJson(json))
         .toList();

@@ -6,6 +6,11 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/navigation/**'
+      - 'lib/main.dart'
+      - 'lib/pages/metaverse_page.dart'
+      - 'lib/pages/bottom_nav_settings_page.dart'
+      - 'lib/services/discourse/_users.dart'
       - 'lib/services/log/**'
       - 'lib/l10n/modules/metaverse/**'
       - 'packages/fluxdo_plugin_runtime/**'
@@ -22,6 +27,11 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/navigation/**'
+      - 'lib/main.dart'
+      - 'lib/pages/metaverse_page.dart'
+      - 'lib/pages/bottom_nav_settings_page.dart'
+      - 'lib/services/discourse/_users.dart'
       - 'lib/services/log/**'
       - 'lib/l10n/modules/metaverse/**'
       - 'packages/fluxdo_plugin_runtime/**'
@@ -87,10 +97,10 @@ jobs:
         run: dart run tool/plugin_tools/export_components.dart test/fixtures/metaverse/sdk/components.json --check
       - name: Analyze development integration
         working-directory: app
-        run: flutter analyze lib/modules/metaverse/developer lib/modules/metaverse/plugin/metaverse_component_contract.dart lib/modules/metaverse/plugin/metaverse_ui_validator.dart lib/modules/metaverse/plugin/metaverse_plugin_host.dart lib/modules/metaverse/plugin/metaverse_plugin_store.dart lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart lib/services/log/log_writer.dart packages/fluxdo_plugin_runtime tool/plugin_tools test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart
+        run: flutter analyze lib/navigation lib/modules/metaverse/host lib/modules/metaverse/plugin/metaverse_forum_request.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_page.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart lib/pages/metaverse_page.dart lib/pages/bottom_nav_settings_page.dart lib/main.dart lib/services/discourse/_users.dart test/modules/metaverse/metaverse_navigation_forum_test.dart lib/modules/metaverse/developer lib/modules/metaverse/plugin/metaverse_component_contract.dart lib/modules/metaverse/plugin/metaverse_ui_validator.dart lib/modules/metaverse/plugin/metaverse_plugin_host.dart lib/modules/metaverse/plugin/metaverse_plugin_store.dart lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart lib/services/log/log_writer.dart packages/fluxdo_plugin_runtime tool/plugin_tools test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart
       - name: Run real QuickJS HMR regression
         working-directory: app
         run: node --test tool/plugin_tools/native.test.mjs
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
-        run: flutter test test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
+        run: flutter test test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture

@@ -1,6 +1,6 @@
 # 脚本 API 参考
 
-当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9 或 10，提供通用凭证、Connect 和支付接口。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
+当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9、10 或 11，提供通用凭证、Connect 和支付接口。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
 
 ## API 2 通用能力
 
@@ -94,14 +94,17 @@ API 2 的 `user.get()` 返回当前账号的 `{id, username}`，需要 identity 
 
 ### `fluxdo.on(name, handler)`
 
-注册 `(ctx, args) => void | Promise<void>`。同名事件再次注册会替换之前的处理函数。返回 `undefined`。处理函数抛错或返回 rejected Promise 时，运行时向日志桥报告错误。
+注册 `(ctx, args) => void | Promise<void>`。同名事件再次注册会替换之前的处理函数。返回注销函数 `() => void`。处理函数抛错或返回 rejected Promise 时，运行时向日志桥报告错误。
 
 | 事件 | 触发时机 | 参数 |
 | --- | --- | --- |
 | `card.load` | 卡片实例创建 | 对象，可为空 |
 | `page.open` | 页面实例首次打开 | 对象，可为空 |
-| `page.hide` | 页面被路由覆盖或应用进入后台 | `reason` 为 `route` 或 `app` |
+| `page.hide` | 页面被路由覆盖、切换导航标签或应用进入后台 | `reason` 为 `route` 或 `app` |
 | `page.resume` | 页面恢复前台可见 | `reason` 为 `route` 或 `app` |
+| `card.refresh` | 用户刷新元宇宙服务页，不授予弹窗或导航的点击授权 | 空对象 |
+| `card.hide` / `card.resume` | 卡片所在标签隐藏或恢复 | 同页面的 `reason` |
+| `page.refresh` | 用户按底栏配置的刷新手势重复点击当前入口 | 空对象 |
 | `surface.close` | 界面实例关闭 | 对象，可为空 |
 | 自定义事件 | rfw 的 `event` 被用户操作触发 | rfw 中声明的参数与组件事件值 |
 
@@ -168,7 +171,7 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 | `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
 | `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
 
-键长度为 1–128，每个插件编码后的数据总量最多 256 KiB。卡片与所有页面共享数据。数据保存在插件目录下的 `storage.json`。每个插件的写入按队列串行执行，多个键的并发写入保留各自结果。账号变化不会自动分隔这些普通键值。
+键长度为 1–128（保留前缀除外），每个插件编码后的数据总量最多 256 KiB。卡片与所有页面共享数据。数据保存在插件目录下的 `storage.json`。每个插件的写入按队列串行执行，多个键的并发写入保留各自结果。普通第三方服务的数据仍按插件隔离；声明了 `permissions.forum` 的插件额外按论坛账号隔离。账号变化会停止旧运行实例并丢弃旧请求结果，切回原账号仍保留其数据。所有账号分区共用每插件 256 KiB 配额；「清空插件数据」一次清除所有分区。保留前缀 `@forum-account:` 不允许作为插件键。
 
 用户可从插件管理重置本地数据和服务会话。重置会停止实例，拒绝旧代次排队写入，并等待正在写入的数据落盘后清理。批量修改通过 `setMany` 原子提交。
 
@@ -228,7 +231,7 @@ await ctx.api.browser.open("https://example.org", {mode: "inApp"});
 
 ### `host.features()`
 
-返回能力名称数组。当前名称：`browserModes`、`automaticPagination`、`gridLayouts`、`virtualGrid`、`confirmationDialog`、`nativeExecutionLimits`。必需能力须在 schema 10 的 `requiredFeatures` 中声明；运行时查询用于可选功能。
+返回能力名称数组。当前名称：`browserModes`、`automaticPagination`、`gridLayouts`、`virtualGrid`、`confirmationDialog`、`nativeExecutionLimits`、`navigationEntries`、`forumRead`。必需能力须在 schema 10 或更高版本的 `requiredFeatures` 中声明；运行时查询用于可选功能。
 
 ### `dialogs.confirm({title, message, confirmLabel, agreement?})`
 
@@ -256,3 +259,65 @@ fluxdo.on('login', async ctx => {
 fluxdo.on(name, handler) 返回撤销函数，只移除本次注册，不影响之后替换的同名处理器。开发运行器在模块成功替换后自动撤销旧事件和模块定时器；自建资源仍应放进 import.meta.hot.dispose。正式脚本不携带开发运行器。
 
 开发连接、热更新、模拟宿主与 CLI 命令见 [开发工具](development-tooling.md)。CLI 错误会包含 RFW/TS 文件位置；未提供模拟的外部 API 在测试中直接失败。开发协议错误 development_invalid_pairing 表示配对地址不符合回环协议，development_project_invalid 表示项目快照或容量无效，development_requires_api2 表示旧 API 版本不能作为开发实例，module_disposed 表示旧模块异步回调已失效。
+
+
+## 导航页面贡献
+
+schema 11 支持在普通页面中声明 `navigation: {label, icon?}`，`label` 为 1–12 字符，图标使用现有组件库图标名，省略时继承插件图标。弹层页面不能作为底栏入口。
+
+```json
+{
+  "schema": 11,
+  "apiVersion": 2,
+  "requiredFeatures": ["navigationEntries", "forumRead"],
+  "permissions": {"network": [], "identity": true, "forum": ["activity"]},
+  "pages": [{
+    "id": "activity", "title": "用户动态", "widget": "Activity", "scroll": false,
+    "navigation": {"label": "动态", "icon": "person"}
+  }]
+}
+```
+
+这是清单片段，仍需填写插件身份与资源字段。用户选择后才加入导航，脚本不能自行添加或重排。稳定标识由插件 ID 和页面 ID 组成，修改标题或图标不会改变配置。卸载、禁用、挂起、升级移除页面时，实际导航隐藏入口并回到可用页面；设置保留原位置供用户移除或日后恢复。恢复后不会强行切换当前页面。
+
+第一次选中才启动该页面，切换标签保留 RFW 数据与滚动位置，返回仅发 `page.resume`。每个插件所有界面都不可见时，宿主冻结其定时器；恢复后继续剩余延时，不补发隐藏期间的调用。卡片与页面共享同一运行时，任一界面可见时定时器可以运行；业务仍应在 `page.hide`/`surface.close` 中取消该页面自己的调度。没有系统后台常驻任务、推送或定时唤醒承诺。
+
+底栏重复点击的回顶动作滚动宿主页面容器；刷新动作发 `page.refresh`，由插件注册处理器。推荐使用 `scroll:false` 配合 `PageLayout`、`ListPage` 或 `GridPage`，避免自行嵌套滚动容器。
+
+## 论坛只读接口与原生导航
+
+论坛的会话、请求队列、代理和网络日志仍由宿主维护。插件不能把论坛域名加入 `permissions.network`，也不能获得 Cookie、CSRF、私信接口或原始用户对象。API 2 + schema 11 的 `permissions.forum` 支持三种权限，安装和权限更新时展示：
+
+| 权限 | `resource` | 返回内容 |
+| --- | --- | --- |
+| `profiles` | `user` | id、用户名、昵称、头像、信任级别、最近在线和发帖时间 |
+| `activity` | `actions` | 用户的发帖、回复、点赞 |
+| `activity` | `reactions` / `boosts` | 发出的回应与 Boost |
+| `following` | `following` | 关注列表的基本用户字段 |
+
+### `ctx.api.forum.read(options)`
+
+必须从仍可见的 `ctx.api` 调用；模块顶层的 `fluxdo.forum.read` 会被拒绝。需要登录，并只能读取服务端允许当前账号看到的内容。它不要求每次点击确认，也不提供写入能力。
+
+```ts
+const page = await ctx.api.forum.read({
+  resource: 'actions', username: 'demo',
+  actions: ['topics', 'replies'], offset: 0
+});
+// page.items、page.nextOffset；实际字段有完整 TypeScript 声明。
+await ctx.api.forum.open({type: 'topic', topicId: 42, postNumber: 1});
+```
+
+`actions` 可选 `topics`、`replies`、`likes`，默认三种；不能传 Discourse 的任意过滤编号。`actions` 和 `following` 使用 `offset`（0–10000），后者每页最多 100 条；`reactions`、`boosts` 使用 `before` 游标。响应分别提供 `nextOffset` 或 `nextBefore`，空页时为 null。时间均为 UTC ISO 字符串。支持的返回字段以 SDK 类型为准，页面标题、摘要等可为 null。
+
+请求受全局与每插件预算控制：每插件每分钟最多 120 次、同时 2 次；所有插件每分钟最多 240 次、同时 6 次。服务端 429 按 Retry-After 秒数冷却 60–3600 秒，403 冷却至少 60 秒。插件应指数退避，不要不断重试。关闭页面、隐藏标签、停止插件或切换账号后，迟到响应不会交给插件。单次结果上限 512 KiB。
+
+错误码：`forum_permission_denied`、`forum_auth_required`、`forum_not_visible`、`forum_account_changed`、`forum_rate_limited`、`forum_forbidden`、`forum_not_found`、`forum_network_error`、`forum_response_too_large`，以及无效参数对应的 `forum_invalid_*`/`forum_unknown_resource`。
+
+论坛响应提供的 `avatarUrl` 可直接用于图片组件，无需额外论坛网络权限。宿主只登记响应中实际返回的头像 URL，并匿名下载；它不是脚本读取站点任意资源的通道。
+
+### `ctx.api.forum.open(destination)`
+
+用户点击后打开宿主原生页面：`{type:'topic', topicId, postNumber?}` 或 `{type:'user', username}`。不需要论坛读取权限，也不会向插件返回原生页面内的数据。每次调用消耗用户激活；页面加载或定时器不能触发导航。Promise 在发起导航后结束，无需等用户返回。
+
+开发中心的 API 列表提供两项接口的参数与响应演示，论坛数据使用模拟值，导航演示展示原生页面外壳，避免演示读取真实账号。独立工具仓的 `examples/forum-activity` 可用于真实 App 联调。

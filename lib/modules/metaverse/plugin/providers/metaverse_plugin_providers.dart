@@ -1,4 +1,10 @@
 import 'dart:io';
+import 'dart:async';
+import 'package:common_ui/common_ui.dart';
+import '../../host/metaverse_forum_adapter.dart';
+import '../metaverse_forum_request.dart';
+import '../../../../pages/topic_detail_page/topic_detail_page.dart';
+import '../../../../pages/user_profile_page.dart';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,7 +111,12 @@ final metaversePluginsProvider =
     >(MetaversePluginsController.new);
 
 /// 插件运行实例：按需启动脚本引擎，界面全部关闭后自动释放。
+final metaverseForumBudgetProvider = Provider((ref) => MetaverseForumBudget());
+final metaverseForumAdapterProvider = Provider((ref) => MetaverseForumAdapter(
+  ref.watch(discourseServiceProvider), ref.watch(metaverseForumBudgetProvider)));
+
 final metaversePluginHostsProvider = Provider<MetaversePluginHosts>((ref) {
+  ref.watch(currentUserProvider.select((value) => value.value?.id));
   final hosts = MetaversePluginHosts(ref);
   ref.onDispose(hosts.shutdownAll);
   return hosts;
@@ -305,6 +316,10 @@ class MetaversePluginHosts {
 
   void shutdown(String pluginId) => _hosts.remove(pluginId)?.shutdown();
 
+  void refreshVisibleCards() {
+    for (final host in _hosts.values) { host.refreshVisibleCards(); }
+  }
+
   void shutdownAll() {
     for (final host in _hosts.values) {
       host.shutdown();
@@ -326,6 +341,19 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void onShutdown() => _generation++;
+
+  @override
+  Future<Object?> readForum(MetaverseForumRequest request, {required void Function() checkActive}) =>
+      _ref.read(metaverseForumAdapterProvider).read(_manifest.id, request, checkActive: checkActive);
+
+  @override
+  Future<void> openForum(BuildContext context, MetaverseForumDestination destination) async {
+    unawaited(Navigator.of(context).push<void>(InteractionPageRoute(builder: (_) =>
+      destination.username != null
+          ? UserProfilePage(username: destination.username!)
+          : TopicDetailPage(topicId: destination.topicId!, scrollToPostNumber: destination.postNumber),
+    )));
+  }
 
   @override
   String? currentUsername() => _ref.read(currentUserProvider).value?.username;

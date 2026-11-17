@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'metaverse_forum_request.dart';
 
 import '../core/metaverse_link_rule.dart';
 
@@ -68,15 +69,18 @@ class MetaversePluginCapabilities {
     this.credentials = const {},
     this.connectCallbacks = const [],
     this.payments = const {},
+    this.forum = const {},
   });
   final Map<String, MetaverseCredentialSpec> credentials;
   final List<Uri> connectCallbacks;
   final Set<MetaversePaymentProvider> payments;
+  final Set<MetaverseForumScope> forum;
 
   Map<String, Object> get approval => {
     'credentials': credentials.map((key, spec) => MapEntry(key, spec.approval)),
     'connectCallbacks': connectCallbacks.map((uri) => uri.toString()).toSet(),
     'payments': payments,
+    'forum': forum,
   };
 
   bool allowsCallback(Uri uri) => connectCallbacks.any(
@@ -189,10 +193,21 @@ class MetaversePluginCapabilities {
       if (matches.isEmpty) throw const FormatException('支付提供方不可用');
       providers.add(matches.single);
     }
+    final rawForum = permissions['forum'] ?? const [];
+    if (rawForum is! List || rawForum.length > MetaverseForumScope.values.length) {
+      throw const FormatException('forum 须为只读权限数组');
+    }
+    final forum = <MetaverseForumScope>{};
+    for (final scope in rawForum) {
+      final value = MetaverseForumScope.values.where((v) => v.name == scope).firstOrNull;
+      if (value == null) throw const FormatException('未知论坛权限');
+      forum.add(value);
+    }
     return MetaversePluginCapabilities(
       credentials: Map.unmodifiable(credentials),
       connectCallbacks: List.unmodifiable(callbacks.map(endpoint)),
       payments: Set.unmodifiable(providers),
+      forum: Set.unmodifiable(forum),
     );
   }
 }

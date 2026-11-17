@@ -20,7 +20,8 @@ import 'metaverse_market_catalog.dart';
 import 'metaverse_market_provider.dart';
 
 class MetaverseMarketPage extends ConsumerStatefulWidget {
-  const MetaverseMarketPage({super.key});
+  const MetaverseMarketPage({super.key, this.scrollController});
+  final ScrollController? scrollController;
   @override
   ConsumerState<MetaverseMarketPage> createState() => _MarketPageState();
 }
@@ -163,6 +164,7 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                 ref.read(metaverseMarketProvider.notifier).refresh(force: true),
             child: entries.isEmpty
                 ? ListView(
+                    controller: widget.scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
                       Padding(
@@ -175,6 +177,7 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                     ],
                   )
                 : ListView.builder(
+                    controller: widget.scrollController,
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(16),
                     itemCount: entries.length,

@@ -1,4 +1,5 @@
 import 'package:app_icons/app_icons.dart';
+import '../metaverse_forum_request.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -273,6 +274,17 @@ class _InstallReview extends StatelessWidget {
                 title: l.metaverse_permissionLinks,
                 description: l.metaverse_pluginPermLinks,
                 details: manifest.linkHosts,
+              ),
+            if (manifest.capabilities.forum.isNotEmpty)
+              _PermissionRow(
+                icon: Symbols.forum_rounded,
+                title: l.metaverse_permissionForum,
+                description: l.metaverse_permissionForumNote,
+                details: [for (final scope in manifest.capabilities.forum) switch (scope) {
+                  MetaverseForumScope.profiles => l.metaverse_forumProfiles,
+                  MetaverseForumScope.activity => l.metaverse_forumActivity,
+                  MetaverseForumScope.following => l.metaverse_forumFollowing,
+                }],
               ),
             if (manifest.identity)
               _PermissionRow(

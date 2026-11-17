@@ -145,7 +145,7 @@ class MetaversePluginCard extends ConsumerWidget {
           orElse: () => service.plugin,
         );
     final pluginHost = ref
-        .read(metaversePluginHostsProvider)
+        .watch(metaversePluginHostsProvider)
         .hostFor(plugin);
 
     return IgnorePointer(

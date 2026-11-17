@@ -65,6 +65,7 @@ class MetaversePluginPageSpec {
     required this.title,
     this.modal = false,
     this.scroll = true,
+    this.navigation,
   });
 
   final String id;
@@ -74,6 +75,14 @@ class MetaversePluginPageSpec {
   final String title;
   final bool modal;
   final bool scroll;
+  final MetaverseNavigationSpec? navigation;
+}
+
+@immutable
+class MetaverseNavigationSpec {
+  const MetaverseNavigationSpec({required this.label, this.icon});
+  final String label;
+  final String? icon;
 }
 
 /// 第三方插件清单，保持对旧版本插件的支持。
@@ -106,7 +115,7 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 10;
+  static const schemaVersion = 11;
   List<String> get requiredFeatures => PluginFeatures.parse(raw['requiredFeatures']);
   List<String> get missingFeatures => PluginFeatures.missing(requiredFeatures);
   static const supportedApiVersions = {1, 2};
@@ -282,6 +291,9 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('apiVersion', '公共能力声明需要 API 2');
     }
 
+    if (permissions.containsKey('forum') && (schema < 11 || apiVersion != 2)) {
+      throw const MetaverseManifestException('permissions.forum', '论坛只读能力需要 schema 11 和 API 2');
+    }
     final pages = <MetaversePluginPageSpec>[];
     final rawPages = json['pages'];
     if (rawPages != null && rawPages is! List) {
@@ -310,6 +322,16 @@ class MetaversePluginManifest {
           (schema < 6 || item['scroll'] is! bool)) {
         throw MetaverseManifestException('$field.scroll', '需要 schema 6 和布尔值');
       }
+      MetaverseNavigationSpec? navigation;
+      if (item['navigation'] case final raw?) {
+        if (schema < 11 || raw is! Map<String, dynamic> || presentation == 'modal') {
+          throw MetaverseManifestException('$field.navigation', '导航入口需要 schema 11 的普通页面');
+        }
+        navigation = MetaverseNavigationSpec(
+          label: _string(raw, 'label', max: 12, prefix: '$field.navigation'),
+          icon: raw.containsKey('icon') ? _string(raw, 'icon', max: 40, prefix: '$field.navigation') : null,
+        );
+      }
       pages.add(
         MetaversePluginPageSpec(
           id: pageId,
@@ -317,6 +339,7 @@ class MetaversePluginManifest {
           title: _string(item, 'title', max: 40, prefix: field),
           modal: presentation == 'modal',
           scroll: item['scroll'] != false,
+          navigation: navigation,
         ),
       );
     }
@@ -324,6 +347,12 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('pages', '最多 16 个页面');
     }
 
+    if (capabilities.forum.isNotEmpty && !requiredFeatures.contains(PluginFeature.forumRead.name)) {
+      throw const MetaverseManifestException('requiredFeatures', '论坛读取须声明 forumRead');
+    }
+    if (pages.any((page) => page.navigation != null) && !requiredFeatures.contains(PluginFeature.navigationEntries.name)) {
+      throw const MetaverseManifestException('requiredFeatures', '导航入口须声明 navigationEntries');
+    }
     final card = json['card'];
     String? cardWidget;
     if (card != null) {

@@ -132,6 +132,10 @@ const metaversePluginPrelude = r'''
       },
       remove: function (name) { return call('credentials.remove', {name: String(name)}); }
     }),
+    forum: Object.freeze({
+      read: function (options) { return call('forum.read', options); },
+      open: function (destination) { return call('forum.open', destination); }
+    }),
     host: Object.freeze({features: function () { return call('host.features'); }}),
     dialogs: Object.freeze({confirm: function (options) { return call('dialogs.confirm', options); }}),
     connect: Object.freeze({

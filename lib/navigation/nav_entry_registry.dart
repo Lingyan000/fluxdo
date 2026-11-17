@@ -6,6 +6,7 @@ import '../l10n/s.dart';
 import '../models/user.dart';
 import '../modules/mini_apps/mini_app_gallery_page.dart';
 import '../pages/bookmarks_page.dart';
+import '../pages/metaverse_page.dart';
 import '../pages/browsing_history_page.dart';
 import '../pages/chat/chat_list_page.dart';
 import '../pages/drafts_page.dart';
@@ -48,6 +49,15 @@ class NavEntryRegistry {
         label: (ctx) => ctx.l10n.miniApp_title,
         pageBuilder: (ctx, isActive) =>
             MiniAppGalleryPage(active: isActive, workspace: true),
+      ),
+      NavEntry(
+        id: NavEntryIds.metaverse,
+        kind: NavEntryKind.page,
+        iconData: Symbols.public_rounded,
+        selectedIconData: Symbols.public_rounded,
+        label: (ctx) => ctx.l10n.metaverse_title,
+        lazy: true,
+        pageBuilder: (ctx, active) => const MetaversePage(workspace: true),
       ),
       NavEntry(
         id: NavEntryIds.profile,
@@ -144,6 +154,7 @@ class NavEntryRegistry {
 
   /// 根据用户登录状态过滤可用 entry
   static bool isAvailable(NavEntry entry, User? user) {
+    if (!entry.available) return false;
     if (!entry.requiresLogin) return true;
     return user != null;
   }

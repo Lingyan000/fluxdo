@@ -183,6 +183,7 @@ class NavEntryIds {
 
   static const String home = 'home';
   static const String miniApps = 'mini_apps';
+  static const String metaverse = 'metaverse';
   static const String profile = 'profile';
   static const String bookmarks = 'bookmarks';
   static const String history = 'history';

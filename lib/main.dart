@@ -143,6 +143,8 @@ import 'pages/webview_page.dart';
 import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
 import 'navigation/nav_entry_registry.dart';
+import 'navigation/nav_entries_provider.dart';
+import 'navigation/navigation_activity_scope.dart';
 import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
 import 'widgets/keyboard_shortcut_handler.dart';
@@ -1660,7 +1662,7 @@ class _MainPageState extends ConsumerState<MainPage>
     final bottomNavIds = ref.watch(
       preferencesProvider.select((p) => p.bottomNavIds),
     );
-    final entries = _resolveEntries(bottomNavIds, user);
+    final entries = _resolveEntries(bottomNavIds, user, ref.watch(navEntriesProvider));
     _lastResolvedEntries = entries;
 
     // page kind 的子集用于 IndexedStack
@@ -1671,7 +1673,10 @@ class _MainPageState extends ConsumerState<MainPage>
     // 按稳定 id 定位当前页；当前页被过滤（如退出登录后 requiresLogin
     // entry 消失）时回退到第一个 page，下标绝不残留旧语义
     var safePageIndex = pageEntries.indexWhere((e) => e.id == _currentEntryId);
-    if (safePageIndex < 0) safePageIndex = 0;
+    if (safePageIndex < 0) {
+      safePageIndex = 0;
+      _currentEntryId = pageEntries.first.id;
+    }
 
     // 底栏 selectedIndex 是当前激活 page 在 entries（含 panel/action）中的位置
     final selectedBottomIndex = pageEntries.isEmpty
@@ -1797,9 +1802,15 @@ class _MainPageState extends ConsumerState<MainPage>
                             excluding: safePageIndex != i,
                             child: KeyboardInsetIsolation(
                               active: safePageIndex == i,
-                              child: pageEntries[i].pageBuilder!(
-                                context,
-                                safePageIndex == i,
+                              child: NavigationActivityScope(
+                                active: safePageIndex == i,
+                                action: ref.watch(navActionBusProvider),
+                                child: pageEntries[i].lazy
+                                    ? LazyNavigationPage(
+                                        active: safePageIndex == i,
+                                        builder: (context) => pageEntries[i].pageBuilder!(context, safePageIndex == i),
+                                      )
+                                    : pageEntries[i].pageBuilder!(context, safePageIndex == i),
                               ),
                             ),
                           ),
@@ -1826,31 +1837,8 @@ class _MainPageState extends ConsumerState<MainPage>
   /// - 未登录时过滤掉 requiresLogin 的 entry
   /// - 去重
   /// - 补齐 locked entry（防御；正常情况编辑器已保证包含）
-  List<NavEntry> _resolveEntries(List<String> ids, User? user) {
-    final all = NavEntryRegistry.buildAll();
-    final byId = {for (final e in all) e.id: e};
-    final resolved = <NavEntry>[];
-    final seen = <String>{};
-
-    for (final id in ids) {
-      final e = byId[id];
-      if (e == null) continue;
-      if (e.requiresLogin && user == null) continue;
-      if (seen.contains(id)) continue;
-      resolved.add(e);
-      seen.add(id);
-    }
-
-    // 补 locked（防御偏好被外部写坏）
-    for (final id in NavEntryRegistry.lockedIds()) {
-      if (seen.contains(id)) continue;
-      final e = byId[id];
-      if (e == null) continue;
-      if (e.requiresLogin && user == null) continue;
-      resolved.add(e);
-      seen.add(id);
-    }
-
+  List<NavEntry> _resolveEntries(List<String> ids, User? user, List<NavEntry> all) {
+    final resolved = resolveNavigationEntries(all, ids, loggedIn: user != null);
     return PlatformUtils.isDesktop
         ? NavEntryRegistry.desktopEntries(resolved)
         : resolved;

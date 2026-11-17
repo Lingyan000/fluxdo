@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../l10n/s.dart';
+import '../../../../navigation/nav_entry.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../providers/metaverse_plugin_providers.dart';
@@ -13,18 +14,20 @@ import 'metaverse_plugin_surface_view.dart';
 ///
 /// 页面外壳（标题栏、返回）由宿主提供，插件只负责内容：导航行为和应用其它
 /// 页面一致，插件出问题时也总能返回。
-class MetaversePluginPage extends ConsumerWidget {
+class MetaversePluginPage extends ConsumerStatefulWidget {
   const MetaversePluginPage({
     super.key,
     required this.pluginId,
     required this.page,
     this.params = const {},
     this.modal = false,
+    this.workspace = false,
   });
 
   final String pluginId;
   final String page;
   final bool modal;
+  final bool workspace;
   final Map<String, Object?> params;
 
   static Future<void> open(
@@ -78,7 +81,21 @@ class MetaversePluginPage extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MetaversePluginPage> createState() => _MetaversePluginPageState();
+}
+
+class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
+  final _scroll = ScrollController();
+  String get pluginId => widget.pluginId;
+  String get page => widget.page;
+  bool get modal => widget.modal;
+  bool get workspace => widget.workspace;
+  Map<String, Object?> get params => widget.params;
+  @override
+  void dispose() { _scroll.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final plugin = ref.watch(
       metaversePluginsProvider.select((plugins) {
@@ -98,7 +115,7 @@ class MetaversePluginPage extends ConsumerWidget {
     } else if (plugin.suspendedReason case final String reason) {
       body = MetaversePluginErrorView(message: reason);
     } else {
-      final host = ref.read(metaversePluginHostsProvider).hostFor(plugin);
+      final host = ref.watch(metaversePluginHostsProvider).hostFor(plugin);
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -118,6 +135,7 @@ class MetaversePluginPage extends ConsumerWidget {
                 kind: MetaversePluginSurfaceKind.page,
                 page: page,
                 params: params,
+                navigationId: workspace ? pluginNavigationId(pluginId, page) : null,
               ),
             )
           else
@@ -126,6 +144,7 @@ class MetaversePluginPage extends ConsumerWidget {
               kind: MetaversePluginSurfaceKind.page,
               page: page,
               params: params,
+              navigationId: workspace ? pluginNavigationId(pluginId, page) : null,
             ),
         ],
       );
@@ -157,20 +176,23 @@ class MetaversePluginPage extends ConsumerWidget {
     ];
     final content = spec?.scroll == false
         ? body
-        : SingleChildScrollView(padding: const EdgeInsets.all(16), child: body);
+        : SingleChildScrollView(controller: _scroll, padding: const EdgeInsets.all(16), child: body);
     if (modal) {
-      return AppSheetScaffold(
+      return PrimaryScrollController(controller: _scroll, child: AppSheetScaffold(
         titleWidget: title,
         actions: actions,
         showDragHandle: MediaQuery.sizeOf(context).width < 600,
         expandToFill: true,
         contentPadding: EdgeInsets.zero,
         child: content,
-      );
+      ));
     }
-    return Scaffold(
-      appBar: AppBar(title: title, actions: actions),
-      body: SafeArea(child: content),
+    return PrimaryScrollController(
+      controller: _scroll,
+      child: Scaffold(
+        appBar: AppBar(title: title, actions: actions, automaticallyImplyLeading: !workspace),
+        body: SafeArea(child: content),
+      ),
     );
   }
 }

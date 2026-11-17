@@ -5,7 +5,6 @@ import 'package:flutter/gestures.dart'
         ImmediateMultiDragGestureRecognizer,
         PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import '../l10n/s.dart';
 import '../navigation/nav_action_bus.dart';
 import '../navigation/nav_entry.dart';
 import '../navigation/nav_entry_registry.dart';
+import '../navigation/nav_entries_provider.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/preferences_provider.dart';
 import '../services/toast_service.dart';
@@ -64,7 +64,7 @@ class _BottomNavSettingsPageState extends ConsumerState<BottomNavSettingsPage> {
       case DeviceType.tablet:
         return 7;
       case DeviceType.desktop:
-        return NavEntryRegistry.buildAll().length;
+        return ref.read(navEntriesProvider).length;
     }
   }
 
@@ -98,7 +98,7 @@ class _BottomNavSettingsPageState extends ConsumerState<BottomNavSettingsPage> {
 
   /// 校验 + 首页锁 0 位
   void _sanitize() {
-    final all = NavEntryRegistry.buildAll();
+    final all = ref.read(navEntriesProvider);
     final byId = {for (final e in all) e.id: e};
     final locked = NavEntryRegistry.lockedIds();
 
@@ -114,7 +114,7 @@ class _BottomNavSettingsPageState extends ConsumerState<BottomNavSettingsPage> {
 
     for (final id in _enabledIds) {
       if (id == homeId) continue;
-      if (!byId.containsKey(id)) continue;
+      if (!byId.containsKey(id) && !isPluginNavigationId(id)) continue;
       if (seen.contains(id)) continue;
       cleaned.add(id);
       seen.add(id);
@@ -197,7 +197,16 @@ class _BottomNavSettingsPageState extends ConsumerState<BottomNavSettingsPage> {
     final theme = Theme.of(context);
     final user = ref.watch(currentUserProvider).value;
 
-    final all = NavEntryRegistry.buildAll();
+    final registered = ref.watch(navEntriesProvider);
+    final all = [
+      ...registered,
+      for (final id in _enabledIds)
+        if (isPluginNavigationId(id) && !registered.any((entry) => entry.id == id))
+          NavEntry(id: id, kind: NavEntryKind.page,
+            iconData: Symbols.extension_rounded, selectedIconData: Symbols.extension_rounded,
+            label: (_) => l10n.metaverse_navigationUnavailable,
+            description: (_) => id, available: false),
+    ];
     final byId = {for (final e in all) e.id: e};
     final enabled = _enabledIds
         .map((id) => byId[id])
@@ -582,7 +591,7 @@ class _AvailableTile extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             )
-          : null,
+          : entry.description == null ? null : Text(entry.description!(context)),
       trailing: IconButton(
         icon: Icon(
           Symbols.add_circle_rounded,

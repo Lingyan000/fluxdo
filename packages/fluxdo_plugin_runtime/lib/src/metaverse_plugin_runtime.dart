@@ -112,7 +112,7 @@ class MetaversePluginRuntime {
   final PluginExecutionContext? _executionContext;
 
   final _surfaces = <String, MetaversePluginSurface>{};
-  final _timers = <int, Timer>{};
+  final _timers = <int, _PluginTimer>{};
   int _surfaceSeq = 0;
   int _pendingCalls = 0;
   bool _disposed = false;
@@ -135,11 +135,10 @@ class MetaversePluginRuntime {
     surface._appBackgrounded |= !appForeground;
     if (surface._foreground == foreground) return;
     surface._foreground = foreground;
-    if (surface.kind == 'page') {
-      dispatch(surface, foreground ? 'page.resume' : 'page.hide', {
-        'reason': surface._appBackgrounded ? 'app' : 'route',
-      });
-    }
+    _syncTimers();
+    dispatch(surface, '${surface.kind}.${foreground ? 'resume' : 'hide'}', {
+      'reason': surface._appBackgrounded ? 'app' : 'route',
+    });
     if (foreground) surface._appBackgrounded = false;
   }
 
@@ -159,6 +158,7 @@ class MetaversePluginRuntime {
       params,
     );
     _surfaces[surface.id] = surface;
+    _syncTimers();
     dispatch(surface, kind == 'card' ? 'card.load' : 'page.open', const {});
     return surface;
   }
@@ -167,6 +167,7 @@ class MetaversePluginRuntime {
     if (!identical(_surfaces[surface.id], surface)) return;
     if (_surfaces.remove(surface.id) == null) return;
     surface.onData = null;
+    _syncTimers();
     _dispatchRaw(surface, 'surface.close', const {});
   }
 
@@ -357,6 +358,13 @@ class MetaversePluginRuntime {
     return value;
   }
 
+  void _syncTimers() {
+    final visible = _surfaces.values.any((s) => s.foreground);
+    for (final timer in _timers.values) {
+      if (visible) { timer.resume(); } else { timer.pause(); }
+    }
+  }
+
   void _handleTimer(Map<dynamic, dynamic> message) {
     final id = message['id'];
     if (id is! int) return;
@@ -370,10 +378,11 @@ class MetaversePluginRuntime {
     final delay = requested.isNegative
         ? Duration.zero
         : (requested > _maxTimerDelay ? _maxTimerDelay : requested);
-    _timers[id] = Timer(delay, () {
+    _timers[id] = _PluginTimer(delay, () {
       _timers.remove(id);
       _run('__fluxdoMetaverse.timer($id)');
     });
+    _syncTimers();
   }
 }
 
@@ -392,4 +401,27 @@ class _NodeBudget {
     _remaining--;
     return true;
   }
+}
+
+/// 保留剩余时间；不让常驻的隐藏标签继续轮询网络。
+class _PluginTimer {
+  _PluginTimer(this.remaining, this.callback);
+  Duration remaining;
+  final void Function() callback;
+  Timer? _timer;
+  final _elapsed = Stopwatch();
+  void resume() {
+    if (_timer != null) return;
+    _elapsed..reset()..start();
+    _timer = Timer(remaining, callback);
+  }
+  void pause() {
+    if (_timer == null) return;
+    _elapsed.stop();
+    remaining -= _elapsed.elapsed;
+    if (remaining.isNegative) remaining = Duration.zero;
+    _timer!.cancel();
+    _timer = null;
+  }
+  void cancel() { _timer?.cancel(); _elapsed.stop(); }
 }

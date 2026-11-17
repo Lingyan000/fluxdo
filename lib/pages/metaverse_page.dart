@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
+import '../navigation/navigation_activity_scope.dart';
+import '../navigation/nav_action_bus.dart';
+import '../modules/metaverse/market/metaverse_market_provider.dart';
 import '../modules/metaverse/core/metaverse_service.dart';
 import '../modules/metaverse/metaverse_registry.dart';
 import '../modules/metaverse/plugin/metaverse_plugin_installer.dart';
@@ -20,7 +23,8 @@ import '../services/toast_service.dart';
 /// 页面本身不认识任何具体服务，只遍历 [metaverseServicesProvider]；新增官方
 /// 服务或安装第三方插件都不需要改这里。
 class MetaversePage extends ConsumerStatefulWidget {
-  const MetaversePage({super.key});
+  const MetaversePage({super.key, this.workspace = false});
+  final bool workspace;
 
   @override
   ConsumerState<MetaversePage> createState() => _MetaversePageState();
@@ -30,6 +34,30 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
   /// 正在开启/停用/授权的服务。
   final _processing = <String>{};
   bool _installing = false;
+  bool _refreshing = false;
+  int _tabIndex = 0;
+  final _servicesScroll = ScrollController();
+  final _marketScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _servicesScroll.dispose();
+    _marketScroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshServices() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    try {
+      ref.read(metaversePluginHostsProvider).refreshVisibleCards();
+      final container = _container;
+      await Future.wait([
+        for (final service in ref.read(metaverseServicesProvider))
+          service.refresh(container, isActive: () => mounted && _tabIndex == 0 && NavigationActivityScope.isActive(context)),
+      ]);
+    } finally { _refreshing = false; }
+  }
 
   ProviderContainer get _container =>
       ProviderScope.containerOf(context, listen: false);
@@ -133,6 +161,24 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
 
   @override
   Widget build(BuildContext context) {
+    final active = NavigationActivityScope.isActive(context);
+    ref.listen(navActionBusProvider, (_, event) {
+      if (!widget.workspace || !active || event?.targetId != NavEntryIds.metaverse ||
+          ModalRoute.of(context)?.isCurrent == false) {
+        return;
+      }
+      final scroll = _tabIndex == 0 ? _servicesScroll : _marketScroll;
+      if (scroll.hasClients) {
+        scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      }
+      if (event!.action == NavAction.refresh) {
+        if (_tabIndex == 0) {
+          _refreshServices();
+        } else {
+          ref.read(metaverseMarketProvider.notifier).refresh(force: true);
+        }
+      }
+    });
     final theme = Theme.of(context);
     final services = ref.watch(metaverseServicesProvider);
     final container = _container;
@@ -143,6 +189,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
           appBar: AppBar(
             title: Text(context.l10n.metaverse_title),
             centerTitle: false,
+            automaticallyImplyLeading: !widget.workspace,
             actions: [
               IconButton(
                 icon: const Icon(Symbols.extension_rounded),
@@ -157,9 +204,15 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
               Tab(text: context.l10n.metaverse_market),
             ]),
           ),
-      body: TabBarView(children: [
-        CustomScrollView(
+      body: Builder(builder: (context) {
+        final tabs = DefaultTabController.of(context);
+        final active = NavigationActivityScope.isActive(context);
+        return AnimatedBuilder(animation: tabs, builder: (context, _) {
+        _tabIndex = tabs.index;
+        return TabBarView(children: [
+        NavigationActivityScope(active: active && tabs.index == 0, child: CustomScrollView(
         key: const PageStorageKey('metaverse-services'),
+        controller: _servicesScroll,
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -193,8 +246,10 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
           ),
         ],
       ),
-      const MetaverseMarketPage(),
-      ]),
+      ),
+      MetaverseMarketPage(scrollController: _marketScroll),
+      ]); });
+      }),
       ),
     );
   }

@@ -224,18 +224,19 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
               : LinkOpenMode.preference,
         );
         return null;
+      case 'forum.open':
       case 'navigate':
         unawaited(
           Navigator.of(context).push(
             InteractionPageRoute<void>(
               builder: (ctx) => Scaffold(
-                appBar: AppBar(title: Text('${params['page']}')),
+                appBar: AppBar(title: Text('${params['page'] ?? params['type']}')),
                 body: Padding(
                   padding: const EdgeInsets.all(16),
                   child: _CodeBlock(
                     title: ctx.l10n.metaverse_developerParameters,
                     code: const JsonEncoder.withIndent('  ')
-                        .convert(params['params']),
+                        .convert(params['params'] ?? params),
                   ),
                 ),
               ),

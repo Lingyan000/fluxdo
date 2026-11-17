@@ -20,11 +20,16 @@ import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
 import 'metaverse_credential_manager.dart';
 import 'metaverse_plugin_capabilities.dart';
+import 'metaverse_forum_request.dart';
 import 'ui/metaverse_widget_library.dart';
 
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
   void onShutdown() {}
+  Future<Object?> readForum(MetaverseForumRequest request, {required void Function() checkActive}) =>
+      Future.error(const MetaversePluginCallException('forum_unavailable'));
+  Future<void> openForum(BuildContext context, MetaverseForumDestination destination) =>
+      Future.error(const MetaversePluginCallException('forum_unavailable'));
   int? currentAccountId() => null;
 
   Future<bool> confirm(BuildContext context, Map<String, Object?> options) =>
@@ -158,6 +163,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
   int _suppressedLogs = 0;
   Timer? _idleTimer;
   int _generation = 0;
+  int? _accountAtStart;
+  final _forumAvatars = <Uri>{};
   bool _uiBusy = false;
   DateTime? _activatedAt;
   MetaversePluginSurface? _activatedSurface;
@@ -190,12 +197,20 @@ class MetaversePluginHost implements MetaversePluginBridge {
     required String kind,
     String? page,
     Map<String, Object?> params = const {},
+    bool Function()? isVisible,
   }) async {
     _idleTimer?.cancel();
     _idleTimer = null;
     await (_starting ??= _start(_generation));
     final runtime = _runtime;
     if (runtime == null) throw StateError('插件已停止');
+    if (isVisible != null && !isVisible()) {
+      if (runtime.surfaces.isEmpty) _idleTimer = Timer(idleTimeout, shutdown);
+      throw const MetaversePluginCallException('surface_not_visible');
+    }
+    // 并发打开时，另一个已隐藏的启动请求可能刚设置过空闲回收。
+    _idleTimer?.cancel();
+    _idleTimer = null;
     return runtime.openSurface(kind: kind, page: page, params: params);
   }
 
@@ -251,9 +266,20 @@ class MetaversePluginHost implements MetaversePluginBridge {
     runtime.dispatch(surface, name, args);
   }
 
+  /// 元宇宙入口由用户刷新时，只通知当前可见卡片，不启动隐藏界面。
+  void refreshVisibleCards() {
+    for (final surface in _runtime?.surfaces.toList() ?? <MetaversePluginSurface>[]) {
+      if (surface.kind == 'card' && surface.foreground) {
+        // 批量刷新不把一次底栏点击授权给多个插件弹出界面。
+        _runtime!.dispatch(surface, 'card.refresh', const {});
+      }
+    }
+  }
+
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
+    _forumAvatars.clear();
     _delegate.onShutdown();
     _dohHost = null;
     dnsRetryHost.value = null;
@@ -271,6 +297,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   Future<void> _start(int generation) async {
+    _accountAtStart = _delegate.currentAccountId();
     try {
       if (!manifest.runtimeSupported) {
         throw const MetaversePluginCallException('plugin_api_upgrade_required');
@@ -301,7 +328,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
             loadImage: (uri) => PluginExecutionContext(
               pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId,
               emitter: 'framework',
-            ).run(() => _network.loadImage(manifest, uri)),
+            ).run(() => _network.loadImage(manifest, uri, forumAvatar: _forumAvatars.contains(uri))),
           ),
         )
         ..update(metaversePluginLibraryName, library);
@@ -370,8 +397,59 @@ class MetaversePluginHost implements MetaversePluginBridge {
         }
       });
 
+  /// 只允许类型化论坛响应返回的头像，不能由脚本任意指定站点地址。
+  void _rememberForumAvatars(Object? value) {
+    if (value is Map) {
+      final avatar = value['avatarUrl'];
+      final uri = avatar is String ? Uri.tryParse(avatar) : null;
+      if (uri != null && uri.scheme == 'https' && uri.userInfo.isEmpty && uri.host.isNotEmpty) {
+        if (_forumAvatars.length >= 512) _forumAvatars.remove(_forumAvatars.first);
+        _forumAvatars.add(uri);
+      }
+      for (final child in value.values) { _rememberForumAvatars(child); }
+    } else if (value is List) {
+      for (final child in value) { _rememberForumAvatars(child); }
+    }
+  }
+
+  String _accountStorageKey(String key) {
+    if (manifest.capabilities.forum.isEmpty) return key;
+    final account = _delegate.currentAccountId();
+    if (account == null) throw const MetaversePluginCallException('forum_auth_required');
+    return '@forum-account:${_runtime == null ? account : _accountAtStart}:$key';
+  }
+
   Future<Object?> _call(String method, Map<String, Object?> params) async {
+    if (_runtime != null && manifest.capabilities.forum.isNotEmpty && _accountAtStart != _delegate.currentAccountId()) {
+      throw const MetaversePluginCallException('forum_account_changed');
+    }
     switch (method) {
+      case 'forum.read':
+        final request = MetaverseForumRequest.parse(params);
+        if (!manifest.capabilities.forum.contains(request.resource.scope)) {
+          throw const MetaversePluginCallException('forum_permission_denied');
+        }
+        final account = _delegate.currentAccountId();
+        if (account == null) throw const MetaversePluginCallException('forum_auth_required');
+        final generation = _generation;
+        final sourceId = PluginExecutionContext.current?.surfaceId;
+        final source = _runtime?.surfaces.where((s) => s.id == sourceId).firstOrNull;
+        void checkActive() {
+          if (generation != _generation || account != _delegate.currentAccountId()) {
+            throw const MetaversePluginCallException('forum_account_changed');
+          }
+          if (source == null || _runtime?.owns(source) != true || !source.foreground) {
+            throw const MetaversePluginCallException('forum_not_visible');
+          }
+        }
+        checkActive();
+        final result = await _delegate.readForum(request, checkActive: checkActive);
+        checkActive();
+        _rememberForumAvatars(result);
+        return result;
+      case 'forum.open':
+        final destination = MetaverseForumDestination.parse(params);
+        return _userInitiatedUi((context) => _delegate.openForum(context, destination));
       case 'fetch':
         final host = Uri.tryParse('${params['url']}')?.host;
         final publicRead =
@@ -433,7 +511,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
         }
 
       case 'storage.get':
-        return (await _store.readStorage(id))[_storageKey(params)];
+        final key = _accountStorageKey(_storageKey(params));
+        final generation = _generation;
+        final account = _delegate.currentAccountId();
+        final data = await _store.readStorage(id);
+        if (generation != _generation || (manifest.capabilities.forum.isNotEmpty && account != _delegate.currentAccountId())) {
+          throw const MetaversePluginCallException('forum_account_changed');
+        }
+        return data[key];
       case 'storage.set':
         return _writeStorage(_storageKey(params), params['value']);
       case 'storage.remove':
@@ -447,7 +532,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           _storageKey({'key': key});
         }
         try {
-          await _store.updateStorageEntries(id, entries);
+          await _store.updateStorageEntries(id, entries.map((key, value) => MapEntry(_accountStorageKey(key), value)));
         } on StateError {
           throw const MetaversePluginCallException('存储空间已满');
         }
@@ -707,7 +792,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   String _storageKey(Map<String, Object?> params) {
     final key = params['key'];
-    if (key is! String || key.isEmpty || key.length > _maxStorageKey) {
+    if (key is! String || key.isEmpty || key.length > _maxStorageKey || key.startsWith('@forum-account:')) {
       throw const MetaversePluginCallException('存储键不合法');
     }
     return key;
@@ -715,7 +800,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   Future<Object?> _writeStorage(String key, Object? value) async {
     try {
-      await _store.updateStorage(id, key, value);
+      await _store.updateStorage(id, _accountStorageKey(key), value);
     } on StateError {
       throw const MetaversePluginCallException('存储空间已满');
     }

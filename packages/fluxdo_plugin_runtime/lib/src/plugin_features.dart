@@ -6,6 +6,8 @@ enum PluginFeature {
   virtualGrid,
   confirmationDialog,
   nativeExecutionLimits,
+  navigationEntries,
+  forumRead,
 }
 
 class PluginFeatures {

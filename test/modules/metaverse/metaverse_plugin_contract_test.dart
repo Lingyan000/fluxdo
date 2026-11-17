@@ -51,6 +51,22 @@ class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('宿主登记的论坛头像可匿名加载，但不能转向任意站内接口', () async {
+    final adapter = _Adapter()..bytes = Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0]);
+    final network = MetaversePluginNetwork(dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')]);
+    addTearDown(network.dispose);
+    final source = Uri.parse('https://linux.do/user_avatar/linux.do/demo/96/1.png');
+    final manifest = _parse(_example());
+    await expectLater(network.loadImage(manifest, source), throwsA(isA<MetaversePluginCallException>()));
+    expect(await network.loadImage(manifest, source, forumAvatar: true), isNotEmpty);
+    expect(adapter.requests.single.headers.containsKey('Cookie'), isFalse);
+    expect(adapter.requests.single.headers.containsKey('Authorization'), isFalse);
+    adapter.responseFor = (_) => ResponseBody.fromString('', 302, headers: {'location': ['https://linux.do/session/current.json']});
+    await expectLater(network.loadImage(manifest, source, forumAvatar: true), throwsA(isA<MetaversePluginCallException>()));
+    expect(adapter.requests.length, 2);
+  });
+
   test('必需能力在安装和恢复时强制校验，不能降级为静默忽略', () {
     final source = {..._example(), 'apiVersion':1, 'schema':10, 'requiredFeatures':['virtualGrid']};
     expect(_parse(source).runtimeSupported, isTrue);

@@ -565,6 +565,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
         );
       }
       Widget scroll = SingleChildScrollView(
+        controller: PrimaryScrollController.maybeOf(context),
         physics: const AlwaysScrollableScrollPhysics(),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         child: content,
@@ -574,6 +575,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 960),
             child: ListView.builder(
+              controller: PrimaryScrollController.maybeOf(context),
               padding: const EdgeInsets.all(16),
               physics: const AlwaysScrollableScrollPhysics(),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -590,6 +592,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             child: CustomScrollView(
               shrinkWrap: !constraints.hasBoundedHeight,
               primary: false,
+              controller: constraints.hasBoundedHeight ? PrimaryScrollController.maybeOf(context) : null,
               physics: constraints.hasBoundedHeight
                   ? const AlwaysScrollableScrollPhysics()
                   : const NeverScrollableScrollPhysics(),

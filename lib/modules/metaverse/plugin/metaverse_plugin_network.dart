@@ -103,11 +103,12 @@ class MetaversePluginNetwork {
   }
 
   /// 图片匿名下载，每一跳重新检查权限、宿主保留域名与公网地址。
-  Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri) async {
+  Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri, {bool forumAvatar = false}) async {
     final response = await downloadResource(
       uri,
       maxBytes: maxImageBytes,
       imageManifest: manifest,
+      forumAvatar: forumAvatar,
     );
     final contentType = (response.headers['content-type'] ?? '')
         .split(';')
@@ -247,6 +248,7 @@ class MetaversePluginNetwork {
     required int maxBytes,
     String? etag,
     MetaversePluginManifest? imageManifest,
+    bool forumAvatar = false,
   }) async {
     var current = uri;
     final homepage = Uri.tryParse(imageManifest?.homepage ?? '');
@@ -257,9 +259,9 @@ class MetaversePluginNetwork {
       }
       final target = await _checkTarget(
         current,
-        imageManifest?.publicImages == false ? imageManifest!.networkHosts : null,
+        !forumAvatar && imageManifest?.publicImages == false ? imageManifest!.networkHosts : null,
         image: imageManifest != null,
-        reservedHosts: imageManifest?.reservedHosts ?? const [],
+        reservedHosts: forumAvatar && current == uri ? const [] : imageManifest?.reservedHosts ?? const [],
       );
       final response = await _send(
         current,

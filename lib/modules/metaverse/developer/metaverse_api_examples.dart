@@ -43,6 +43,8 @@ class MetaverseApiExample {
     'credentials.remove' => l.metaverse_apiCredentialRemove,
     'credentials.request' => l.metaverse_apiCredentialRequest,
     'connect.authorize' => l.metaverse_apiConnect,
+    'forum.read' => l.metaverse_apiForumRead,
+    'forum.open' => l.metaverse_apiForumOpen,
     'host.features' => l.metaverse_apiHostFeatures,
     'dialogs.confirm' => l.metaverse_apiConfirm,
     'auth.status' || 'auth.request' || 'auth.signOut' => l.metaverse_apiLegacyAuth,
@@ -62,6 +64,11 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('forum.read', "{resource: 'actions', username: 'demo', actions: ['topics', 'replies'], offset: 0}",
+    {'items': [{'topicId': 42, 'title': '示例话题', 'action': 'topics', 'postNumber': 1}], 'nextOffset': null},
+    permission: 'forum.activity', apiVersion: 2),
+  MetaverseApiExample('forum.open', "{type: 'topic', topicId: 42, postNumber: 1}", null,
+    apiVersion: 2, userAction: true),
   MetaverseApiExample('host.features', '', ['confirmationDialog', 'virtualGrid', 'nativeExecutionLimits']),
   MetaverseApiExample('dialogs.confirm',
     "{title: '确认操作', message: '请阅读说明后继续。', confirmLabel: '同意并继续', agreement: {label: '服务条款', url: 'https://example.org/terms'}}",

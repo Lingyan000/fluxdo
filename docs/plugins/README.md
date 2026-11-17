@@ -1,6 +1,6 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。通用能力清单使用 schema 10、apiVersion 2，兼容旧版 schema 9。士多 2.1 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+本目录面向 FluxDO 插件作者。通用能力清单使用 schema 11、apiVersion 2，兼容旧版 schema 9、10。士多 2.1 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
 
 开发工具的选型、热更新验证及当前接入范围见 [开发工具与热更新](development-tooling.md)。
 
@@ -9,6 +9,12 @@
 插件业务使用 JavaScript，通过 `fluxdo` API 调用宿主能力。插件的 JS 引擎执行 `main.js`，`ui.rfwtxt` 将数据与事件绑定到 Flutter 原生组件。Dart 实现 Flutter 宿主、权限检查和能力桥接。仓库中的 Dart 打包命令负责读取文件并生成安装包。
 
 TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 `main.js` 打包。[独立工具仓库](https://github.com/Lingyan000/fluxdo-plugin-tools)提供 CLI、脚手架和 SDK；新项目不需要 Flutter 或本仓库的相对路径。运行环境提供的全局对象与接口见 API 参考，构建产物需要自行打包依赖并避免依赖浏览器 DOM、Node.js 内置模块或运行时模块加载。
+
+## 常驻导航与论坛功能
+
+元宇宙首页及插件声明的普通页面都可由用户添加到底栏，宽屏沿用同一配置显示在侧栏。清单的 `pages[].navigation` 声明候选入口，不会自动改动用户布局。开发实例与正式安装仍隔离，开发会话不会注册底栏入口。
+
+[论坛动态示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/forum-activity)展示声明入口、读取用户动态和点击打开原生话题。安装、启用后，在「设置 → 外观 → 底栏」中添加页面。宿主提供导航、生命周期、只读数据与权限；名单管理、聚合、轮询策略和缓存由插件维护。详情见 [API 参考](api.md#论坛只读接口与原生导航)。
 
 ## 文档导航
 
