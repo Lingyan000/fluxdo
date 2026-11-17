@@ -14,7 +14,7 @@ class LogPolicy {
   static final _url = RegExp(r'https?://[^\s<>"\x27]+');
   // 自定义解析地址可能把密钥放在路径中；设备名称与代理地址也不属于公开诊断信息。
   static final _privateField = RegExp(
-    r'^(computer_?name|proxy_?(host|address|url)|doh_?(server(_?ech)?|url))$',
+    r'^(computer_?name|user_?name|proxy_?(host|address|url)|doh_?(server(_?ech)?|url))$',
     caseSensitive: false,
   );
   static String cleanText(String text) {
@@ -44,6 +44,14 @@ class LogPolicy {
       if (uri == null) return '[invalid-url]';
       return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
     });
+    // 同时覆盖完整 URL、相对路径及历史消息；保留接口后缀便于定位请求。
+    value = value.replaceAllMapped(
+      RegExp(r'(/u/)[^/\s?#<>"\x27]+', caseSensitive: false),
+      (m) => '${m[1]}[user]${m[0]!.endsWith('.json') ? '.json' : ''}',
+    ).replaceAllMapped(
+      RegExp(r'(/user_avatar/[^/\s]+/)[^/\s?#<>"\x27]+', caseSensitive: false),
+      (m) => '${m[1]}[user]',
+    );
     value = value.replaceAll(
       RegExp(r'Bearer\s+[^\s,;]+', caseSensitive: false),
       'Bearer [redacted]',

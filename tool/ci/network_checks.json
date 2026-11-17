@@ -9,6 +9,7 @@
     "test/services/network/per_device_cert_service_test.dart",
     "test/services/network/proxy_certificate_test.dart",
     "test/services/log/log_policy_test.dart",
+    "test/services/webview_session_diagnostics_test.dart",
     "test/architecture"
   ],
   "dart_analyze": [
@@ -20,7 +21,9 @@
     "lib/services/network/doh_proxy/proxy_certificate.dart",
     "lib/services/network/fingerprint",
     "lib/services/network/doh/network_settings_service.dart",
-    "lib/services/log/logger_utils.dart"
+    "lib/services/log/logger_utils.dart",
+    "lib/services/log/log_policy.dart",
+    "lib/services/webview_session_cookie_refresh_service.dart"
   ],
   "python_suites": ["tool", "tool/apple_fingerprint", "tool/native_fingerprint", "tool/ci"],
   "platforms": [

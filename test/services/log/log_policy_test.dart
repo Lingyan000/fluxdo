@@ -4,6 +4,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/log/log_policy.dart';
 
 void main() {
+  test('用户接口、头像路径与历史消息脱敏，保留接口形状', () {
+    final source = {
+      'sessionId': 'old',
+      'username': 'private-person',
+      'url': 'https://linux.do/u/private-person/summary.json?key=secret',
+      'message': 'GET /u/private-person.json',
+      'nested': {
+        'avatar': 'https://cdn.example/user_avatar/linux.do/private-person/48/1.png',
+        'encoded': '/u/private%2Dperson.json',
+        'unicode': '/u/私人名字/activity.json',
+      },
+    };
+    final normalized = LogPolicy.normalize(source);
+    expect(normalized['url'], 'https://linux.do/u/[user]/summary.json');
+    expect(normalized['message'], 'GET /u/[user].json');
+    final content = '${jsonEncode(source)}\n${jsonEncode(normalized)}';
+    for (final fullHistory in [true, false]) {
+      final exported = LogPolicy.export(content, fullHistory: fullHistory);
+      for (final secret in ['private-person', 'private%2Dperson', '私人名字', 'key=secret']) {
+        expect(exported, isNot(contains(secret)));
+      }
+      expect(exported, contains('/u/[user]/summary.json'));
+      expect(exported, contains('/user_avatar/linux.do/[user]/48/1.png'));
+    }
+    expect(LogPolicy.cleanText('POST /uploads/complete-multipart.json'),
+        'POST /uploads/complete-multipart.json');
+  });
+
   test('历史 Core 请求路径和非法 DoH 输入不会在导出时暴露密钥', () {
     for (final message in [
       '[Core/fluxdo_net::client] Request GET /private-key?dns=encoded',
