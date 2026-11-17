@@ -7,6 +7,7 @@ import '../utils/url_helper.dart';
 import '../utils/bookmark_name_utils.dart';
 import 'pending_post.dart';
 import 'user.dart';
+import 'topic_timeline_lookup.dart';
 
 /// 标签模型
 class Tag {
@@ -1930,6 +1931,12 @@ class TopicDetail {
   final DateTime? createdAt;
   final bool visible;
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
+
+  /// 最后阅读的帖子 id，用于在 stream 中定位上次阅读位置（未登录时为 null）
+  final int? lastReadPostId;
+
+  /// stream 位置 → 日期的稀疏查找表，进度与时间线据此显示任意位置的日期
+  final TopicTimelineLookup timelineLookup;
   final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
   final int slowModeSeconds;
   final TopicTimer? topicTimer;
@@ -1974,6 +1981,10 @@ class TopicDetail {
 
   // 话题权限（来自 details）
   final bool canEdit; // 是否可以编辑话题元数据（标题、分类、标签）
+
+  /// 当前用户能否在本话题发帖回复（details.can_create_post）。
+  /// 话题关闭、归档或权限不足时为 false；管理员在关闭话题里仍为 true。
+  final bool canCreatePost;
 
   /// 该私信是否已被当前用户归档（顶层 `message_archived`，非 details；
   /// 服务端只在私信下发，见 TopicViewSerializer#include_message_archived?）。
@@ -2057,6 +2068,8 @@ class TopicDetail {
     this.createdAt,
     this.visible = true,
     this.lastReadPostNumber,
+    this.lastReadPostId,
+    this.timelineLookup = TopicTimelineLookup.empty,
     this.highestPostNumber = 0,
     this.slowModeSeconds = 0,
     this.topicTimer,
@@ -2083,6 +2096,7 @@ class TopicDetail {
     this.pmWithNonHumanUser = false,
     this.isPostVoting = false,
     this.canEdit = false,
+    this.canCreatePost = true,
     this.messageArchived = false,
     this.allowedUsers = const [],
     this.allowedGroups = const [],
@@ -2264,6 +2278,13 @@ class TopicDetail {
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       visible: json['visible'] as bool? ?? true,
       lastReadPostNumber: json['last_read_post_number'] as int?,
+      lastReadPostId: json['last_read_post_id'] as int?,
+      // 位于话题 JSON 顶层（PostStreamSerializerMixin 混入话题视图），
+      // 不在 post_stream 内
+      timelineLookup: TopicTimelineLookup.fromJson(
+        json['timeline_lookup'],
+        DateTime.now(),
+      ),
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
       slowModeSeconds: json['slow_mode_seconds'] as int? ?? 0,
       visibilityReasonId: json['visibility_reason_id'] as int? ?? 99,
@@ -2306,6 +2327,12 @@ class TopicDetail {
         details['notification_level'] as int?,
       ),
       canEdit: details['can_edit'] as bool? ?? false,
+      // 服务端只在为 true 时下发该键（TopicViewDetailsSerializer 的
+      // include_can_create_post?），缺省即无权回复；整个 details 缺失时
+      // 无从判断，按可回复处理，由发帖接口兜底报错
+      canCreatePost: detailsJson is Map
+          ? details['can_create_post'] == true
+          : true,
       messageArchived: json['message_archived'] as bool? ?? false,
       allowedUsers: (details['allowed_users'] as List<dynamic>? ?? const [])
           .whereType<Map>()
@@ -2416,6 +2443,8 @@ class TopicDetail {
     DateTime? createdAt,
     bool? visible,
     int? lastReadPostNumber,
+    int? lastReadPostId,
+    TopicTimelineLookup? timelineLookup,
     int? highestPostNumber,
     int? slowModeSeconds,
     TopicTimer? topicTimer,
@@ -2443,6 +2472,7 @@ class TopicDetail {
     bool? pmWithNonHumanUser,
     bool? isPostVoting,
     bool? canEdit,
+    bool? canCreatePost,
     bool? messageArchived,
     List<TopicUser>? allowedUsers,
     List<TopicGroup>? allowedGroups,
@@ -2477,6 +2507,8 @@ class TopicDetail {
       createdAt: createdAt ?? this.createdAt,
       visible: visible ?? this.visible,
       lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
+      lastReadPostId: lastReadPostId ?? this.lastReadPostId,
+      timelineLookup: timelineLookup ?? this.timelineLookup,
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       slowModeSeconds: slowModeSeconds ?? this.slowModeSeconds,
       topicTimer: clearTopicTimer ? null : (topicTimer ?? this.topicTimer),
@@ -2504,6 +2536,7 @@ class TopicDetail {
       pmWithNonHumanUser: pmWithNonHumanUser ?? this.pmWithNonHumanUser,
       isPostVoting: isPostVoting ?? this.isPostVoting,
       canEdit: canEdit ?? this.canEdit,
+      canCreatePost: canCreatePost ?? this.canCreatePost,
       messageArchived: messageArchived ?? this.messageArchived,
       allowedUsers: allowedUsers ?? this.allowedUsers,
       allowedGroups: allowedGroups ?? this.allowedGroups,

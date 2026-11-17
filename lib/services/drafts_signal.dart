@@ -15,4 +15,13 @@ class DraftsSignal {
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   static void notifyChanged() => revision.value++;
+
+  /// 本地草稿快照被写入或删除时自增（含编辑中的自动保存）。
+  ///
+  /// 与 [revision] 分开：草稿页监听 [revision] 会请求服务端刷新列表，
+  /// 不能被每次自动保存触发。本信号只供读本地快照的轻量场景（如话题
+  /// 底栏回复入口的草稿预览）。出口统一在 LocalDraftStore。
+  static final ValueNotifier<int> localRevision = ValueNotifier<int>(0);
+
+  static void notifyLocalChanged() => localRevision.value++;
 }
