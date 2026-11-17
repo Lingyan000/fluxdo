@@ -81,7 +81,11 @@ const metaversePluginPrelude = r'''
     function call(method, params) { return request(method, params, surface); }
     return Object.freeze({
     /** 注册事件处理器：card.load / page.open / page.hide / page.resume / surface.close，或界面声明的事件。 */
-    on: function (name, handler) { handlers[String(name)] = handler; },
+    on: function (name, handler) {
+      name = String(name);
+      handlers[name] = handler;
+      return function () { if (handlers[name] === handler) delete handlers[name]; };
+    },
 
     /** 发起网络请求，目标域名须在清单 permissions.network 内。 */
     fetch: function (url, options) {
@@ -189,13 +193,17 @@ const metaversePluginPrelude = r'''
       dispatch: function (name, infoJson, argsJson) {
         var handler = handlers[name];
         if (typeof handler !== 'function') return false;
+        var eventId = ++seq;
+        post({t: 'event', phase: 'start', id: eventId});
+        function done() { post({t: 'event', phase: 'end', id: eventId}); }
         try {
           var result = handler(makeContext(JSON.parse(infoJson)), JSON.parse(argsJson));
           if (result && typeof result.then === 'function') {
-            result.then(null, function (error) { report(name, error); });
-          }
+            result.then(done, function (error) { report(name, error); done(); });
+          } else { done(); }
         } catch (error) {
           report(name, error);
+          done();
         }
         return true;
       },

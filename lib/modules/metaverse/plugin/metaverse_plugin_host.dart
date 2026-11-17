@@ -1,3 +1,5 @@
+import 'metaverse_ui_validator.dart';
+import 'metaverse_component_contract.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -92,6 +94,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     required this._delegate,
     this.idleTimeout = const Duration(seconds: 30),
     this._clock = DateTime.now,
+    this.codeLoader,
   });
 
   static const _maxStorageKey = 128;
@@ -167,6 +170,20 @@ class MetaversePluginHost implements MetaversePluginBridge {
   Runtime get widgets => _widgets!;
 
   bool get isRunning => _runtime != null;
+  bool get hasActiveUi => _uiBusy;
+  String get runtimeId => _runtimeId;
+  final Future<MetaversePluginCode> Function()? codeLoader;
+
+  /// 仅开发协调器使用；等本轮事件及宿主调用结束后再替换模块。
+  bool get canApplyDevelopmentUpdate => !_uiBusy && (_runtime?.isIdle ?? false);
+
+  void updateDevelopmentUi(String source) {
+    if (codeLoader == null) throw StateError('当前不是开发实例');
+    final checked = validatePluginUiContract(source, metaverseComponentContract);
+    if ((checked['diagnostics'] as List).isNotEmpty) throw FormatException((checked['diagnostics'] as List).join('\n'));
+    final library = MetaversePluginInstaller.validateUi(manifest, source);
+    _widgets?.update(metaversePluginLibraryName, library);
+  }
 
   /// 打开一块界面，必要时先启动脚本。
   Future<MetaversePluginSurface> open({
@@ -258,7 +275,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
       if (!manifest.runtimeSupported) {
         throw const MetaversePluginCallException('plugin_api_upgrade_required');
       }
-      final code = await _store.readCode(id);
+      final code = await (codeLoader?.call() ?? _store.readCode(id));
       final library = MetaversePluginInstaller.validateUi(manifest, code.ui);
       final runtime = await MetaversePluginRuntime.start(
         engineFactory: _engineFactory,

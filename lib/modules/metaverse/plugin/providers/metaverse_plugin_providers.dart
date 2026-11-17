@@ -314,7 +314,11 @@ class MetaversePluginHosts {
 }
 
 class _HostDelegate extends MetaversePluginHostDelegate {
-  _HostDelegate(this._ref, this._manifest);
+  _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentSuspended});
+  final MetaversePluginStore? developmentStore;
+  final bool Function()? developmentActive;
+  final void Function(BuildContext, String, Map<String, Object?>)? developmentNavigate;
+  final void Function(String)? developmentSuspended;
 
   final Ref _ref;
   final MetaversePluginManifest _manifest;
@@ -332,11 +336,11 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   bool _accountActive(int id) =>
       _ref.mounted &&
       currentAccountId() == id &&
-      _ref
+      (developmentActive?.call() ?? (_ref
               .read(metaversePluginsProvider.notifier)
               .byId(_manifest.id)
               ?.enabled ==
-          true;
+          true));
 
   @override
   Future<bool> confirm(BuildContext context, Map<String, Object?> options) =>
@@ -387,7 +391,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     }
     final generation = _generation;
     final accountId = currentAccountId();
-    final store = _ref.read(metaversePluginStoreProvider);
+    final MetaversePluginStore store = developmentStore ?? _ref.read(metaversePluginStoreProvider);
     final revision = store.credentialRevision(_manifest.id, name);
     final secret = await showMetaversePluginTokenDialog(
       context,
@@ -497,7 +501,11 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     String page,
     Map<String, Object?> params,
   ) {
-    MetaversePluginPage.open(context, manifest.id, page, params: params);
+    if (developmentNavigate != null) {
+      developmentNavigate!(context, page, params);
+    } else {
+      MetaversePluginPage.open(context, manifest.id, page, params: params);
+    }
   }
 
   @override
@@ -518,6 +526,27 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void onSuspended(String pluginId, String reason) {
-    _ref.read(metaversePluginsProvider.notifier).suspend(pluginId, reason);
+    if (developmentSuspended != null) {
+      developmentSuspended!(reason);
+    } else {
+      _ref.read(metaversePluginsProvider.notifier).suspend(pluginId, reason);
+    }
   }
 }
+
+/// 开发实例复用正式能力代理，存储、导航和存活条件由会话提供。
+MetaversePluginHost createDevelopmentPluginHost(Ref ref, {
+  required MetaversePluginManifest manifest,
+  required MetaversePluginStore store,
+  required MetaverseScriptEngineFactory engineFactory,
+  required Future<MetaversePluginCode> Function() codeLoader,
+  required bool Function() active,
+  required void Function(BuildContext, String, Map<String, Object?>) navigate,
+  required void Function(String) suspended,
+}) => MetaversePluginHost(
+  manifest: manifest, store: store,
+  network: ref.read(metaversePluginNetworkProvider),
+  engineFactory: engineFactory, codeLoader: codeLoader,
+  delegate: _HostDelegate(ref, manifest, developmentStore: store,
+    developmentActive: active, developmentNavigate: navigate, developmentSuspended: suspended),
+);

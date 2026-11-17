@@ -39,6 +39,9 @@ class NativePeer {
       if(message.t==='dev'&&message.kind==='transport'){
         try{this.connection.receive(message.payload);}catch(error){this.failures.push(error);}
       }
+      if(message.t==='dev'&&message.kind==='evaluate'){
+        this.evaluate(message.code,message.file).catch(error=>this.failures.push(error));
+      }
       if(message.t==='timer'){
         if(message.op==='clear'){clearTimeout(this.timers.get(message.id));this.timers.delete(message.id);}
         else this.timers.set(message.id,setTimeout(()=>{
@@ -47,9 +50,9 @@ class NativePeer {
       }
     });
   }
-  evaluate(code){
+  evaluate(code,name){
     const id=++this.seq;
-    return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});this.child.stdin.write(JSON.stringify({id,code})+'\n');});
+    return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});this.child.stdin.write(JSON.stringify({id,code,name})+'\n');});
   }
   wait(predicate,timeout=10000){
     const existing=this.messages.find(predicate);if(existing)return Promise.resolve(existing);
@@ -65,6 +68,8 @@ class NativePeer {
       this.messages.push({t:'hot-payload',payload,index:this.messages.length});
       this.evaluate('__devReceive('+JSON.stringify(payload)+')').catch(error=>this.failures.push(error));
     });
+    const engineSource=await readFile(resolve(project,'lib/modules/metaverse/developer/session/development_engine.dart'),'utf8');
+    await this.evaluate(engineSource.split("const nativeEvaluator = r'''")[1].split("''';")[0]);
     await this.evaluate(await readFile(resolve(cliRoot,'dist/dev/runner.js'),'utf8'));
     await this.evaluate(`
       const post=message=>sendMessage('fluxdoMetaverse',JSON.stringify({t:'dev',...message}));
@@ -99,6 +104,7 @@ class NativePeer {
 
 const initial=`import {counter} from './counter';
 const previous=import.meta.hot.data.reloads??0;
+fluxdo.on('stack',()=>{throw new Error('source-map-fixture');});
 fluxdo.on('increment',ctx=>{
  counter.value+=1;
  ctx.setData('result',{count:counter.value,caption:'v1',initializations:globalThis.counterInitializations,reloads:previous});
@@ -122,6 +128,10 @@ test('Vite 在真实 QuickJS 中更新 TS 模块并保持未改动模块状态',
   const service=await server;
   t.after(async()=>{await peer.close();await service.close();await rm(root,{recursive:true,force:true});await rm(outside,{force:true});});
   await peer.start(service);
+  await peer.evaluate('__fluxdoMetaverse.dispatch("stack",'+JSON.stringify(JSON.stringify({surface:'s1',kind:'card'}))+',"{}")');
+  const error=await peer.wait(m=>m.t==='error'&&m.message==='source-map-fixture');
+  t.diagnostic('堆栈：'+service.mapStack(error.stack));
+  assert.match(service.mapStack(error.stack),/main.ts:3:/);
   let data=await peer.dispatch();
   assert.deepEqual(data.v,{count:1,caption:'v1',initializations:1,reloads:0});
   await peer.dispatch();
@@ -156,6 +166,17 @@ test('Vite 在真实 QuickJS 中更新 TS 模块并保持未改动模块状态',
   assert.equal(capabilities.message,'capabilities undefined undefined undefined undefined undefined');
   assert.deepEqual(peer.failures,[]);
 
+  const cleanupStart=peer.messages.length;
+  await writeFile(resolve(root,'main.ts'),initial.replace("caption:'v1'","caption:'v4'")+`
+setTimeout(()=>console.log('old-module-timer-fired'),800);
+fluxdo.on('removed',ctx=>ctx.setData('removed',true));`);
+  for(let attempt=0;attempt<100;attempt++) {await delay(25);if((await peer.dispatch()).v.caption==='v4')break;}
+  await writeFile(resolve(root,'main.ts'),initial.replace("caption:'v1'","caption:'v5'"));
+  for(let attempt=0;attempt<100;attempt++) {await delay(25);if((await peer.dispatch()).v.caption==='v5')break;}
+  await peer.evaluate('__fluxdoMetaverse.dispatch("removed",'+JSON.stringify(JSON.stringify({surface:'s1',kind:'card'}))+',"{}")');
+  await delay(900);
+  assert.equal(peer.messages.some(m=>m.index>=cleanupStart&&m.t==='log'&&m.message==='old-module-timer-fired'),false,'旧模块定时器必须撤销');
+  assert.equal(peer.messages.some(m=>m.index>=cleanupStart&&m.t==='data'&&m.k==='removed'),false,'删除事件后旧处理器不能继续执行');
   const reloadStart=peer.messages.length;
   await peer.evaluate('__devReceive({type:"full-reload",path:"*"})');
   await peer.wait(m=>m.index>=reloadStart&&m.kind==='reload-required');

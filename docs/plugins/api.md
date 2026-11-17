@@ -249,3 +249,10 @@ fluxdo.on('login', async ctx => {
 ```
 
 完整 TypeScript 签名见 [独立 SDK 类型声明](https://github.com/Lingyan000/fluxdo-plugin-tools/blob/main/packages/sdk/types/global.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。
+
+
+## 开发与事件释放
+
+fluxdo.on(name, handler) 返回撤销函数，只移除本次注册，不影响之后替换的同名处理器。开发运行器在模块成功替换后自动撤销旧事件和模块定时器；自建资源仍应放进 import.meta.hot.dispose。正式脚本不携带开发运行器。
+
+开发连接、热更新、模拟宿主与 CLI 命令见 [开发工具](development-tooling.md)。CLI 错误会包含 RFW/TS 文件位置；未提供模拟的外部 API 在测试中直接失败。开发协议错误 development_invalid_pairing 表示配对地址不符合回环协议，development_project_invalid 表示项目快照或容量无效，development_requires_api2 表示旧 API 版本不能作为开发实例，module_disposed 表示旧模块异步回调已失效。

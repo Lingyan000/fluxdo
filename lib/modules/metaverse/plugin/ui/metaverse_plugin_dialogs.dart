@@ -139,6 +139,7 @@ Future<bool> showMetaversePluginInstallSheet(
   BuildContext context,
   MetaversePluginManifest manifest, {
   required bool isUpdate,
+  String? confirmLabel,
 }) async {
   final confirmed = await AppBottomSheet.showDraggable<bool>(
     context: context,
@@ -167,9 +168,9 @@ Future<bool> showMetaversePluginInstallSheet(
                         : Symbols.download_rounded,
                   ),
                   label: Text(
-                    isUpdate
+                    confirmLabel ?? (isUpdate
                         ? ctx.l10n.metaverse_pluginUpdate
-                        : ctx.l10n.metaverse_pluginInstall,
+                        : ctx.l10n.metaverse_pluginInstall),
                   ),
                 ),
               ),

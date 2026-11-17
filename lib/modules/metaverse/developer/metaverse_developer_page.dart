@@ -23,7 +23,9 @@ import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_confirmation_sheet.dart';
 import '../plugin/runtime/flutter_js_script_engine.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
+import '../plugin/metaverse_component_contract.dart';
 import 'metaverse_api_examples.dart';
+import 'metaverse_development_page.dart';
 import 'metaverse_component_examples.dart';
 
 part 'metaverse_api_playground.dart';
@@ -39,6 +41,11 @@ class MetaverseDeveloperPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: Text(l.metaverse_developerCenter),
+          actions: [IconButton(tooltip: l.metaverse_devTitle,
+            icon: const Icon(Symbols.developer_mode_rounded),
+            onPressed: () => Navigator.of(context).push<void>(InteractionPageRoute(
+              builder: (_) => const MetaverseDevelopmentPage())),
+          )],
           bottom: TabBar(
             tabs: [
               Tab(text: l.metaverse_developerComponents),
@@ -287,6 +294,14 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
             ),
           for (final entry in _values.entries)
             _parameter(entry.key, entry.value),
+          const SizedBox(height: 12),
+          SegmentedCardGroup(children: [ExpansionTile(
+            title: Text(l.metaverse_developerAllParameters),
+            subtitle: Text(l.metaverse_developerContractHint),
+            children: [Padding(padding: const EdgeInsets.all(16),
+              child: SelectableText((metaverseComponentContract[widget.example.name]?['parameters'] ?? const <String>[]).join(', ')),
+            )],
+          )]),
           const SizedBox(height: 20),
           _CodeBlock(
             title: l.metaverse_developerCode,

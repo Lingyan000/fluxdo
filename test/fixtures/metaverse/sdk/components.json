@@ -1,0 +1,544 @@
+{
+  "ActionBar": {
+    "parameters": [
+      "actions"
+    ]
+  },
+  "Align": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "heightFactor",
+      "onEnd",
+      "widthFactor"
+    ]
+  },
+  "AspectRatio": {
+    "parameters": [
+      "aspectRatio",
+      "child"
+    ]
+  },
+  "Button": {
+    "parameters": [
+      "enabled",
+      "icon",
+      "label",
+      "loading",
+      "onPressed",
+      "variant"
+    ]
+  },
+  "Center": {
+    "parameters": [
+      "child",
+      "heightFactor",
+      "widthFactor"
+    ]
+  },
+  "Chip": {
+    "parameters": [
+      "color",
+      "label",
+      "textColor"
+    ]
+  },
+  "Choice": {
+    "parameters": [
+      "label",
+      "onSelected",
+      "selected"
+    ]
+  },
+  "ClipRRect": {
+    "parameters": [
+      "borderRadius",
+      "child",
+      "clipBehavior"
+    ]
+  },
+  "ColoredBox": {
+    "parameters": [
+      "child",
+      "color"
+    ]
+  },
+  "Column": {
+    "parameters": [
+      "children",
+      "crossAxisAlignment",
+      "mainAxisAlignment",
+      "mainAxisSize",
+      "textBaseline",
+      "textDirection",
+      "verticalDirection"
+    ]
+  },
+  "DefaultTextStyle": {
+    "parameters": [
+      "child",
+      "curve",
+      "duration",
+      "maxLines",
+      "onEnd",
+      "overflow",
+      "softWrap",
+      "style",
+      "textAlign",
+      "textHeightBehavior",
+      "textWidthBasis"
+    ]
+  },
+  "DetailPage": {
+    "parameters": [
+      "actions",
+      "emptyTitle",
+      "error",
+      "header",
+      "loading",
+      "onRefresh",
+      "onRetry",
+      "sections"
+    ]
+  },
+  "Directionality": {
+    "parameters": [
+      "child",
+      "textDirection"
+    ]
+  },
+  "Divider": {
+    "parameters": []
+  },
+  "EmptyState": {
+    "parameters": [
+      "action",
+      "icon",
+      "message",
+      "title"
+    ]
+  },
+  "Expanded": {
+    "parameters": [
+      "child",
+      "flex"
+    ]
+  },
+  "FittedBox": {
+    "parameters": [
+      "alignment",
+      "child",
+      "clipBehavior",
+      "fit"
+    ]
+  },
+  "Flexible": {
+    "parameters": [
+      "child",
+      "fit",
+      "flex"
+    ]
+  },
+  "FormPage": {
+    "parameters": [
+      "actions",
+      "fields",
+      "header",
+      "loading",
+      "onChanged",
+      "onSubmit",
+      "resetKey",
+      "submitLabel"
+    ]
+  },
+  "FractionallySizedBox": {
+    "parameters": [
+      "alignment",
+      "child",
+      "heightFactor",
+      "widthFactor"
+    ]
+  },
+  "Gap": {
+    "parameters": [
+      "size"
+    ]
+  },
+  "GestureDetector": {
+    "parameters": [
+      "behavior",
+      "child",
+      "onDoubleTap",
+      "onLongPress",
+      "onTap",
+      "onTapCancel",
+      "onTapDown",
+      "onTapUp"
+    ]
+  },
+  "GridPage": {
+    "parameters": [
+      "actions",
+      "columns",
+      "emptyTitle",
+      "error",
+      "hasMore",
+      "header",
+      "items",
+      "layout",
+      "loading",
+      "loadingMore",
+      "minTileWidth",
+      "moreLabel",
+      "onLoadMore",
+      "onRefresh",
+      "onRetry",
+      "runSpacing",
+      "spacing"
+    ]
+  },
+  "GridView": {
+    "parameters": [
+      "addAutomaticKeepAlives",
+      "addRepaintBoundaries",
+      "addSemanticIndexes",
+      "cacheExtent",
+      "children",
+      "clipBehavior",
+      "dragStartBehavior",
+      "gridDelegate",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "restorationId",
+      "reverse",
+      "scrollDirection",
+      "semanticChildCount",
+      "shrinkWrap"
+    ]
+  },
+  "IconButton": {
+    "parameters": [
+      "icon",
+      "onPressed",
+      "tooltip"
+    ]
+  },
+  "Image": {
+    "parameters": [
+      "fit",
+      "height",
+      "radius",
+      "url",
+      "width"
+    ]
+  },
+  "IntrinsicHeight": {
+    "parameters": [
+      "child"
+    ]
+  },
+  "IntrinsicWidth": {
+    "parameters": [
+      "child",
+      "height",
+      "width"
+    ]
+  },
+  "Label": {
+    "parameters": [
+      "align",
+      "bold",
+      "color",
+      "maxLines",
+      "style",
+      "text"
+    ]
+  },
+  "ListBody": {
+    "parameters": [
+      "children",
+      "mainAxis",
+      "reverse"
+    ]
+  },
+  "ListItem": {
+    "parameters": [
+      "leading",
+      "onTap",
+      "subtitle",
+      "title",
+      "trailing"
+    ]
+  },
+  "ListPage": {
+    "parameters": [
+      "actions",
+      "emptyTitle",
+      "error",
+      "hasMore",
+      "header",
+      "items",
+      "loading",
+      "loadingMore",
+      "moreLabel",
+      "onLoadMore",
+      "onRefresh",
+      "onRetry",
+      "search"
+    ]
+  },
+  "ListView": {
+    "parameters": [
+      "addAutomaticKeepAlives",
+      "addRepaintBoundaries",
+      "addSemanticIndexes",
+      "cacheExtent",
+      "children",
+      "clipBehavior",
+      "dragStartBehavior",
+      "itemExtent",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "prototypeItem",
+      "restorationId",
+      "reverse",
+      "scrollDirection",
+      "semanticChildCount",
+      "shrinkWrap"
+    ]
+  },
+  "Opacity": {
+    "parameters": [
+      "alwaysIncludeSemantics",
+      "child",
+      "curve",
+      "duration",
+      "onEnd",
+      "opacity"
+    ]
+  },
+  "Padding": {
+    "parameters": [
+      "child",
+      "curve",
+      "duration",
+      "onEnd",
+      "padding"
+    ]
+  },
+  "PageLayout": {
+    "parameters": [
+      "children",
+      "footer",
+      "hasMore",
+      "loadMoreError",
+      "loading",
+      "loadingMore",
+      "onLoadMore",
+      "onRefresh"
+    ]
+  },
+  "Positioned": {
+    "parameters": [
+      "bottom",
+      "child",
+      "curve",
+      "duration",
+      "end",
+      "height",
+      "onEnd",
+      "start",
+      "top",
+      "width"
+    ]
+  },
+  "ProgressBar": {
+    "parameters": [
+      "value"
+    ]
+  },
+  "Rotation": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "filterQuality",
+      "onEnd",
+      "turns"
+    ]
+  },
+  "Row": {
+    "parameters": [
+      "children",
+      "crossAxisAlignment",
+      "mainAxisAlignment",
+      "mainAxisSize",
+      "textBaseline",
+      "textDirection",
+      "verticalDirection"
+    ]
+  },
+  "SafeArea": {
+    "parameters": [
+      "bottom",
+      "child",
+      "left",
+      "maintainBottomViewPadding",
+      "minimum",
+      "right",
+      "top"
+    ]
+  },
+  "Scale": {
+    "parameters": [
+      "alignment",
+      "child",
+      "curve",
+      "duration",
+      "filterQuality",
+      "onEnd",
+      "scale"
+    ]
+  },
+  "SearchInput": {
+    "parameters": [
+      "hint",
+      "onChanged",
+      "onSubmitted",
+      "value"
+    ]
+  },
+  "SelectableLabel": {
+    "parameters": [
+      "text"
+    ]
+  },
+  "SingleChildScrollView": {
+    "parameters": [
+      "child",
+      "clipBehavior",
+      "dragStartBehavior",
+      "keyboardDismissBehavior",
+      "padding",
+      "primary",
+      "restorationId",
+      "reverse",
+      "scrollDirection"
+    ]
+  },
+  "SizedBox": {
+    "parameters": [
+      "child",
+      "height",
+      "width"
+    ]
+  },
+  "SizedBoxExpand": {
+    "parameters": [
+      "child"
+    ]
+  },
+  "SizedBoxShrink": {
+    "parameters": [
+      "child"
+    ]
+  },
+  "Spacer": {
+    "parameters": [
+      "flex"
+    ]
+  },
+  "Spinner": {
+    "parameters": [
+      "size"
+    ]
+  },
+  "Stack": {
+    "parameters": [
+      "alignment",
+      "children",
+      "clipBehavior",
+      "fit",
+      "textDirection"
+    ]
+  },
+  "Surface": {
+    "parameters": [
+      "child",
+      "color",
+      "onTap",
+      "padding",
+      "radius"
+    ]
+  },
+  "Symbol": {
+    "parameters": [
+      "color",
+      "name",
+      "size"
+    ]
+  },
+  "Text": {
+    "parameters": [
+      "locale",
+      "maxLines",
+      "overflow",
+      "semanticsLabel",
+      "softWrap",
+      "strutStyle",
+      "style",
+      "text",
+      "textAlign",
+      "textDirection",
+      "textHeightBehavior",
+      "textScaleFactor",
+      "textWidthBasis"
+    ]
+  },
+  "TextInput": {
+    "parameters": [
+      "hint",
+      "label",
+      "maxLines",
+      "obscure",
+      "onChanged",
+      "onSubmitted",
+      "value"
+    ]
+  },
+  "TileGrid": {
+    "parameters": [
+      "children",
+      "columns",
+      "layout",
+      "minTileWidth",
+      "runSpacing",
+      "spacing"
+    ]
+  },
+  "Toggle": {
+    "parameters": [
+      "onChanged",
+      "value"
+    ]
+  },
+  "Wrap": {
+    "parameters": [
+      "alignment",
+      "children",
+      "clipBehavior",
+      "crossAxisAlignment",
+      "direction",
+      "runAlignment",
+      "runSpacing",
+      "spacing",
+      "textDirection",
+      "verticalDirection"
+    ]
+  }
+}

@@ -118,6 +118,8 @@ class MetaversePluginRuntime {
   bool _disposed = false;
 
   bool get isDisposed => _disposed;
+  final _activeEvents = <int>{};
+  bool get isIdle => _pendingCalls == 0 && _activeEvents.isEmpty;
 
   Iterable<MetaversePluginSurface> get surfaces => _surfaces.values;
   bool owns(MetaversePluginSurface surface) =>
@@ -246,6 +248,15 @@ class MetaversePluginRuntime {
 
   void _processMessage(Map message) {
     switch (message['t']) {
+      case 'event':
+        final id = message['id'];
+        if (id is! int) return;
+        if (message['phase'] == 'start') {
+          if (_activeEvents.length >= 256) return _handleFatal('插件事件过多');
+          _activeEvents.add(id);
+        } else {
+          _activeEvents.remove(id);
+        }
       case 'call':
         _handleCall(message);
       case 'data':

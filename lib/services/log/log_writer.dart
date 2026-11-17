@@ -272,6 +272,10 @@ class LogWriter {
 
   /// 写入一条日志条目，自动注入 appVersion。
   /// 同步 fire-and-forget：只追加内存缓冲，落盘由 flush 策略决定。
+  final _entries = StreamController<Map<String, dynamic>>.broadcast();
+  /// 只订阅经过同一脱敏边界的记录；开发连接还需按运行实例筛选。
+  Stream<Map<String, dynamic>> get entries => _entries.stream;
+
   void write(Map<String, dynamic> entry, {bool inheritPluginContext = true}) {
     final level = entry['level'];
     // debug 级日志仅在开发者模式下落盘
@@ -282,6 +286,7 @@ class LogWriter {
       if (inheritPluginContext) ...?PluginExecutionContext.current?.fields,
       if (_appVersion != null) 'appVersion': _appVersion,
     });
+    if (_entries.hasListener) _entries.add(Map.unmodifiable(entry));
     // 仅合并没有请求身份的完全相同事件；请求/重试记录始终保留。
     if (entry['traceId'] == null &&
         entry['coreRequestId'] == null &&

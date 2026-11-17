@@ -39,7 +39,7 @@ function members(text,prefix=''){
 }
 members(block(declarations,declarations.indexOf('{',declarations.indexOf('interface Api'))).text);
 const quotes=String.fromCharCode(39).repeat(3);
-const prelude=readFileSync(new URL('packages/fluxdo_plugin_runtime/lib/src/metaverse_plugin_prelude.dart',root),'utf8').split('r'+quotes,2)[1].split(quotes+';',1)[0];
+const prelude=readFileSync(new URL('packages/fluxdo_plugin_runtime/lib/src/metaverse_plugin_prelude.dart',root),'utf8').replaceAll('\r\n','\n').split('r'+quotes,2)[1].split(quotes+';',1)[0];
 const context=vm.createContext({sendMessage:()=>{}});vm.runInContext(prelude,context);
 const actual=Object.entries(context.fluxdo).flatMap(([name,value])=>typeof value==='function'?[name]:Object.keys(value).map(method=>name+'.'+method));
 assert.deepEqual(signatures.sort(),actual.sort(),'SDK 声明必须覆盖真实桥接方法');
@@ -47,3 +47,9 @@ const examples=readFileSync(new URL('lib/modules/metaverse/developer/metaverse_a
 const documented=[...examples.matchAll(/MetaverseApiExample\(\s*'([^']+)'/g)].map(match=>match[1]);
 assert.deepEqual(documented.sort(),actual.filter(name=>name!=='on').sort(),'开发中心必须覆盖全部公开异步 API');
 console.log('SDK 类型与开发中心覆盖全部 '+actual.length+' 个公开方法');
+
+if(process.env.FLUXDO_PLUGIN_TOOLS){
+ const tools=process.env.FLUXDO_PLUGIN_TOOLS;
+ assert.equal(readFileSync(resolve(tools,'packages/sdk/testing/prelude.js'),'utf8').replaceAll('\r\n','\n'),prelude,'模拟宿主必须使用同版生产前导脚本');
+ assert.deepEqual(JSON.parse(readFileSync(resolve(tools,'packages/sdk/schema/components.json'),'utf8')),JSON.parse(readFileSync(new URL('test/fixtures/metaverse/sdk/components.json',root),'utf8')),'组件契约必须同步');
+}

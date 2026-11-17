@@ -27,7 +27,7 @@ declare namespace FluxDO {
     setData(key: string, value: Json): void;
   }
   interface Api {
-    on(name: string, handler: (ctx: Context, args: Record) => void | Promise<void>): void;
+    on(name: string, handler: (ctx: Context, args: Record) => void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
     host: { features(): Promise<string[]> };
     dialogs: { confirm(options: Confirmation): Promise<boolean> };

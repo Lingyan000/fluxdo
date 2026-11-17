@@ -234,6 +234,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  analyzer: ^14.7.0 # 从实际组件实现生成插件参数契约
   melos: ^7.5.1
   dart_console: ^4.1.4
 

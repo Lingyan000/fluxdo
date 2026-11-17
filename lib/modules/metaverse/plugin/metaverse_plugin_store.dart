@@ -77,12 +77,15 @@ class MetaversePluginStore {
     required this._secretStore,
     required this._rootDirectory,
     this.reservedHosts = const [],
+    this.isolated = false,
   });
 
   static const indexKey = 'metaverse_plugins_v1';
   static const maxStorageBytes = 256 * 1024;
   static const _secretNamespace = 'metaverse_plugin';
 
+  /// 开发会话不读取或写入正式安装索引，凭证由独立 SecretStore 提供。
+  final bool isolated;
   final SharedPreferences _preferences;
   final SecretStore _secretStore;
   final Future<Directory> Function() _rootDirectory;
@@ -96,6 +99,7 @@ class MetaversePluginStore {
 
   /// 读取已安装插件；清单已不合法的条目直接跳过。
   List<InstalledMetaversePlugin> loadIndex() {
+    if (isolated) return const [];
     final encoded = _preferences.getString(indexKey);
     if (encoded == null) return const [];
     final Object? decoded;
@@ -138,6 +142,7 @@ class MetaversePluginStore {
   }
 
   Future<void> saveIndex(List<InstalledMetaversePlugin> plugins) async {
+    if (isolated) throw StateError('开发会话不能修改安装索引');
     final saved = await _preferences.setString(
       indexKey,
       jsonEncode([for (final plugin in plugins) plugin.toJson()]),
