@@ -6,9 +6,8 @@ import 'modules/mini_apps/mini_app_window_app.dart';
 import 'package:catcher_2/catcher_2.dart';
 import 'package:chinese_font_library/chinese_font_library.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
@@ -734,11 +733,7 @@ class MainApp extends ConsumerWidget {
               ],
               title: windowTitle,
               locale: TranslationProvider.of(context).flutterLocale,
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               supportedLocales: AppLocaleUtils.supportedLocales,
               themeMode: resolvedTheme.mode,
               // 仅注入 fontFamilyFallback，不替换 textTheme，避免覆盖 Android OEM
@@ -769,8 +764,8 @@ class MainApp extends ConsumerWidget {
               builder: (context, child) {
                 final brightness = Theme.of(context).brightness;
                 // 页面背景：用户背景图优先，其次是节日底纹、主题的纸张纹理
-                final WidgetBuilder? pageBackground = themeState
-                        .isTransparentActive
+                final WidgetBuilder? pageBackground =
+                    themeState.isTransparentActive
                     ? _userBackgroundBuilder(themeState.background)
                     : themeState.isFestivalPatternActive
                     ? _festivalBackgroundBuilder(
@@ -951,7 +946,11 @@ class MainApp extends ConsumerWidget {
                   }
                 }
 
-                return AppGlassSettings(child: result);
+                // 第三方组件迁移期间同步旧 Material 的主题和本地化。
+                // ignore: deprecated_member_use
+                return MaterialUiCompatibilityBridge(
+                  child: AppGlassSettings(child: result),
+                );
               },
               home:
                   windowHome ??

@@ -4,7 +4,7 @@
 /// 支持 ENC1（自动识别内嵌算法）/ OpenSSL Salted / 裸 base64 / 编码文本。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

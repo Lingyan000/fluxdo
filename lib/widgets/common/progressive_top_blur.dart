@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 顶栏渐变模糊(progressive blur):模糊与遮罩从顶部向下渐次消散到
 /// 完全透明,内容从其下滚过时自然"溶解",没有均匀毛玻璃的硬下边。

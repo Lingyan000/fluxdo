@@ -2,10 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -74,11 +73,7 @@ Widget _app(ProviderContainer container, {ThemeMode mode = ThemeMode.light}) {
           return MaterialApp(
             locale: const Locale('zh'),
             supportedLocales: AppLocaleUtils.supportedLocales,
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             themeMode: mode,
             theme: data(resolved.light, resolved.lightColors),
             darkTheme: data(resolved.dark, resolved.darkColors),

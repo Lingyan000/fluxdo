@@ -2,7 +2,7 @@
 /// 可选标题 + 折叠三态(静态 / `+` 默认展开 / `-` 默认折叠)。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../utils/dialog_utils.dart';

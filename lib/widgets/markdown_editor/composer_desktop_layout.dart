@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 使用编辑区域的约束，而不是整台设备的屏幕尺寸。
 class ComposerDesktopViewport extends InheritedWidget {

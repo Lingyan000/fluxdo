@@ -1,5 +1,5 @@
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../../services/avif_image_provider.dart';
 import '../../../../services/discourse_cache_manager.dart';

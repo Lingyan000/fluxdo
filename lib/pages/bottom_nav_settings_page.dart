@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart'
         DelayedMultiDragGestureRecognizer,
         ImmediateMultiDragGestureRecognizer,
         PointerDeviceKind;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';

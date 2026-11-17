@@ -178,75 +178,74 @@ void main() {
   // 最大折射带，更不能被夹到胶囊边缘后横向或纵向复制。
   if (signedDistance > 0.0) {
     frag_color = texture(u_texture, toUv(pos));
-    return;
+  } else {
+    // 距边缘的内向深度;带内侧 lensProgress→0,最边缘→1
+    float innerDepth = max(-signedDistance, 0.0);
+    float lensProgress = 1.0 - innerDepth / max(u_refract_h, 0.001);
+    float lens = circularLens(lensProgress);
+
+    // 法线 = SDF 梯度 + 径向分量。径向让平直长边也有轻微弯折,
+    // 否则胶囊中段会是一条"没有厚度"的直线。
+    // ⚠️ 正中心像素 centered==(0,0):径向除零会产生 NaN,而 NaN
+    // 会穿过后面的 mix() 把该像素渲染成黑点。用长度阀值无分支地
+    // 把径向分量淡出(中心处 lens 本来就为 0,不影响观感)。
+    // 法线与距离场使用同一个圆角。放大半径会让非胶囊表面的光学转角
+    // 提前进入直边区；厚度感由下面的径向分量提供，不改变轮廓半径。
+    vec2 normal = field.yz;
+    float centerDist = length(centered);
+    vec2 radial = centered / max(centerDist, 0.001);
+    radial *= smoothstep(0.0, 1.0, centerDist);
+    normal = normalize(normal + radial * u_depth + vec2(0.0001));
+
+    // 折射位移在输入纹理坐标系中应用。只按纹理范围限幅，不能按
+    // 玻璃矩形限幅，否则形状范围与纹理不一致时会重复采样同一行/列。
+    // 输入范围由外层主模糊的局部背景层建立，不再假设输入是整屏。
+    vec2 sampleMin = vec2(0.5);
+    vec2 sampleMax = u_size - vec2(0.5);
+    vec2 refracted = clamp(
+      pos - normal * u_refract_amt * lens,
+      sampleMin,
+      sampleMax
+    );
+
+    vec4 color = texture(u_texture, toUv(refracted));
+
+    // 色散:R/B 沿法线错开,只在边缘可见(乘了 lens)
+    if (u_chroma > 0.001) {
+      vec2 dispersion = normal * u_chroma * lens;
+      vec4 redSample = texture(u_texture, toUv(clamp(refracted - dispersion, sampleMin, sampleMax)));
+      vec4 blueSample = texture(u_texture, toUv(clamp(refracted + dispersion, sampleMin, sampleMax)));
+      color.r = redSample.r;
+      color.b = blueSample.b;
+    }
+
+    // 色彩处理在折射采样之后、边缘光之前。参考实现把 colorControls
+    // 放在效果链最前(作用于未模糊的原图),但饱和度与模糊可交换
+    // (都是逐通道线性运算),放这里可以复用已采样的像素不额外开销。
+    color.rgb = applyColorControls(color.rgb);
+
+    // 方向性边缘高光:假定光源在左上方。纯上下渐变描边是"平"的,
+    // 而按法线与光向夹角取幂,左上边缘亮、右下边缘暗,才有立体感。
+    //
+    // ⚠️ 不能用 abs(dot(...)):绝对值会让背光面与迎光面一样亮
+    // (上/下边缘高光会算出同一值),等于没有光源方向。改用
+    // 单侧 max(dot,0):迎光的左上亮,背光的右下只剩保底值。
+    float edgeWidth = max(1.0, u_refract_h * 0.12);
+    float rim = 1.0 - smoothstep(0.0, edgeWidth, innerDepth);
+    vec2 lightDirection = normalize(vec2(-0.58, -0.82));
+    float directional = pow(max(dot(normal, lightDirection), 0.0), 3.0);
+    // 0.22 保底:整条边都有基础亮度勾出轮廓,背光侧不至于消失
+    float edgeLight = u_hl_alpha * rim * (0.22 + directional * 0.78);
+    color.rgb = mix(color.rgb, vec3(u_hl_gray), edgeLight);
+
+    // 去带噪:模糊后的大面积平缓渐变在 8bit 输出上会有色带,
+    // 加极轻三通道独立噪声打散
+    if (u_noise > 0.0) {
+      color.r += (random(pos, 0.0) - 0.5) * u_noise;
+      color.g += (random(pos, 1.0) - 0.5) * u_noise;
+      color.b += (random(pos, 2.0) - 0.5) * u_noise;
+    }
+
+    frag_color = color;
   }
-
-  // 距边缘的内向深度;带内侧 lensProgress→0,最边缘→1
-  float innerDepth = max(-signedDistance, 0.0);
-  float lensProgress = 1.0 - innerDepth / max(u_refract_h, 0.001);
-  float lens = circularLens(lensProgress);
-
-  // 法线 = SDF 梯度 + 径向分量。径向让平直长边也有轻微弯折,
-  // 否则胶囊中段会是一条"没有厚度"的直线。
-  // ⚠️ 正中心像素 centered==(0,0):径向除零会产生 NaN,而 NaN
-  // 会穿过后面的 mix() 把该像素渲染成黑点。用长度阀值无分支地
-  // 把径向分量淡出(中心处 lens 本来就为 0,不影响观感)。
-  // 法线与距离场使用同一个圆角。放大半径会让非胶囊表面的光学转角
-  // 提前进入直边区；厚度感由下面的径向分量提供，不改变轮廓半径。
-  vec2 normal = field.yz;
-  float centerDist = length(centered);
-  vec2 radial = centered / max(centerDist, 0.001);
-  radial *= smoothstep(0.0, 1.0, centerDist);
-  normal = normalize(normal + radial * u_depth + vec2(0.0001));
-
-  // 折射位移在输入纹理坐标系中应用。只按纹理范围限幅，不能按
-  // 玻璃矩形限幅，否则形状范围与纹理不一致时会重复采样同一行/列。
-  // 输入范围由外层主模糊的局部背景层建立，不再假设输入是整屏。
-  vec2 sampleMin = vec2(0.5);
-  vec2 sampleMax = u_size - vec2(0.5);
-  vec2 refracted = clamp(
-    pos - normal * u_refract_amt * lens,
-    sampleMin,
-    sampleMax
-  );
-
-  vec4 color = texture(u_texture, toUv(refracted));
-
-  // 色散:R/B 沿法线错开,只在边缘可见(乘了 lens)
-  if (u_chroma > 0.001) {
-    vec2 dispersion = normal * u_chroma * lens;
-    vec4 redSample = texture(u_texture, toUv(clamp(refracted - dispersion, sampleMin, sampleMax)));
-    vec4 blueSample = texture(u_texture, toUv(clamp(refracted + dispersion, sampleMin, sampleMax)));
-    color.r = redSample.r;
-    color.b = blueSample.b;
-  }
-
-  // 色彩处理在折射采样之后、边缘光之前。参考实现把 colorControls
-  // 放在效果链最前(作用于未模糊的原图),但饱和度与模糊可交换
-  // (都是逐通道线性运算),放这里可以复用已采样的像素不额外开销。
-  color.rgb = applyColorControls(color.rgb);
-
-  // 方向性边缘高光:假定光源在左上方。纯上下渐变描边是"平"的,
-  // 而按法线与光向夹角取幂,左上边缘亮、右下边缘暗,才有立体感。
-  //
-  // ⚠️ 不能用 abs(dot(...)):绝对值会让背光面与迎光面一样亮
-  // (上/下边缘高光会算出同一值),等于没有光源方向。改用
-  // 单侧 max(dot,0):迎光的左上亮,背光的右下只剩保底值。
-  float edgeWidth = max(1.0, u_refract_h * 0.12);
-  float rim = 1.0 - smoothstep(0.0, edgeWidth, innerDepth);
-  vec2 lightDirection = normalize(vec2(-0.58, -0.82));
-  float directional = pow(max(dot(normal, lightDirection), 0.0), 3.0);
-  // 0.22 保底:整条边都有基础亮度勾出轮廓,背光侧不至于消失
-  float edgeLight = u_hl_alpha * rim * (0.22 + directional * 0.78);
-  color.rgb = mix(color.rgb, vec3(u_hl_gray), edgeLight);
-
-  // 去带噪:模糊后的大面积平缓渐变在 8bit 输出上会有色带,
-  // 加极轻三通道独立噪声打散
-  if (u_noise > 0.0) {
-    color.r += (random(pos, 0.0) - 0.5) * u_noise;
-    color.g += (random(pos, 1.0) - 0.5) * u_noise;
-    color.b += (random(pos, 2.0) - 0.5) * u_noise;
-  }
-
-  frag_color = color;
 }

@@ -26,6 +26,7 @@ publish_to: none
 environment:
   sdk: ^3.8.0
 dependencies:
+  material_ui: ^1.11.1
   flutter:
     sdk: flutter
   flutter_inappwebview: 6.2.0-beta.3

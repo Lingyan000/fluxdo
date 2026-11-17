@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../utils/idle_task.dart';

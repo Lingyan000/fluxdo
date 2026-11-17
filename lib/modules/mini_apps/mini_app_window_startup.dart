@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
@@ -59,14 +58,14 @@ class _MiniAppWindowStartupState extends State<MiniAppWindowStartup> {
     return TranslationProvider(
       child: Builder(
         builder: (context) => MaterialApp(
+          // 第三方组件迁移期间同步旧 Material 的主题和本地化。
+          // ignore: deprecated_member_use
+          builder: (context, child) =>
+              MaterialUiCompatibilityBridge(child: child!),
           // 启动页使用自己的 Navigator，不能把加载路由迁入完整 MainApp。
           locale: TranslationProvider.of(context).flutterLocale,
           supportedLocales: AppLocaleUtils.supportedLocales,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           theme: ThemeData(colorSchemeSeed: AccentColors.defaultSeed),
           darkTheme: ThemeData(
             brightness: Brightness.dark,

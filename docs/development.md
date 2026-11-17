@@ -49,6 +49,20 @@ dart run tool/project_prep.dart app
 dart run tool/flutterw.dart run -d windows
 ```
 
+## Flutter SDK 与 UI 包
+
+项目通过 `.fvmrc` 固定 Flutter 3.50.0（Dart 3.14）。本机全局 SDK 与项目版本不同时，
+使用 `fvm exec just sync`、`fvm exec just run -- -d macos` 等命令，确保 `just` 内部调用的
+Dart 和 Flutter 来自同一个 SDK；不需要修改其他项目的全局 SDK。
+
+应用、公共 UI 包与 `fluxdo_render` 使用独立的 `material_ui` / `cupertino_ui`。
+主窗口和小程序启动窗口通过官方兼容桥为尚未迁移的第三方组件提供旧主题和本地化。
+独立的 `devtools_extension` 仍跟随 `devtools_extensions` 宿主使用旧 Material，
+待宿主支持独立 UI 包后一起迁移，避免新旧主题上下文不匹配。
+
+Apple 工程继续使用现有 CocoaPods 配置，Android 继续使用现有 AGP 配置；
+SDK 升级不同时启用 HCPP 或改动平台构建方式。
+
 ## 常用命令
 
 - `just sync`：显式同步依赖、l10n 生成物和代理证书资源；适合首次拉代码、切分支、修改 ARB 后或 IDE 调试前预热

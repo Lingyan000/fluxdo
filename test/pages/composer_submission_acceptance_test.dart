@@ -9,11 +9,10 @@ import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
 import 'package:fluxdo/widgets/markdown_editor/uploads/upload_task_panel.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -142,11 +141,7 @@ Future<void> _pumpPage(
         child: MaterialApp(
           navigatorKey: navigatorKey,
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: page,
         ),

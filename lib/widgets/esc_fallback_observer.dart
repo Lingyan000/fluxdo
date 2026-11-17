@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// ESC「路由级自动兜底」登记表 + NavigatorObserver。
 ///

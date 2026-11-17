@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import 'first_paint_probe.dart';

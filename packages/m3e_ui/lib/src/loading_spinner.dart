@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart' hide MaterialShapes, RoundedPolygon;
 import 'package:material_new_shapes/material_new_shapes.dart';
 
 import 'm3e_flags.dart';

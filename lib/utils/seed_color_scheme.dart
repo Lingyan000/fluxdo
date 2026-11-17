@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 带进程级缓存的 [ColorScheme.fromSeed]。
 ///

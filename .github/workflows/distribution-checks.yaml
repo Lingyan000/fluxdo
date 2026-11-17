@@ -45,7 +45,7 @@ jobs:
           python3 scripts/ci/macos/test_package_auth.py
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.9'
+          flutter-version: '3.50.0'
           cache: true
       - name: Prepare isolated signing keychain
         env:

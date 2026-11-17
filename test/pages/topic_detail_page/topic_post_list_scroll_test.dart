@@ -1,6 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -137,11 +136,7 @@ void main() {
               .copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: Scaffold(
           body: ValueListenableBuilder<TopicDetail>(
             valueListenable: details,

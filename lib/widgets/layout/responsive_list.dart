@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../utils/responsive.dart';
 
 /// 响应式列表/网格组件

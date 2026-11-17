@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/utils/hero_visibility_controller.dart';
 import 'package:fluxdo/widgets/content/discourse_html_content/builders/image_carousel_builder.dart';

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../constants.dart';
 import '../models/topic.dart';
 import '../models/category.dart';

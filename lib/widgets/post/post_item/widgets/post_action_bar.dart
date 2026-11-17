@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 

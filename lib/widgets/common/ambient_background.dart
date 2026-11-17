@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 极光环境背景。
 ///

@@ -9,7 +9,7 @@
 // 或者更省事 —— [AppIcon] 的构造函数同时接受 `IconData`/`AppIconSpec`，自动适配）。
 //
 // 全局默认参数由 [IconTheme] 决定（main.dart 注入 fill=0、weight=400、size=24）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_icons.dart';
 

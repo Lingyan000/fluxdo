@@ -7,7 +7,7 @@ import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:fluxdo/utils/seed_color_scheme.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 重构前的 ThemeResolver.resolve 原样拷贝，作为零视觉变化的参照。

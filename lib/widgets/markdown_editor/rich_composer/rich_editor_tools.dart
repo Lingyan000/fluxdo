@@ -14,7 +14,7 @@ library;
 export '../../../constants/composer_tool_defaults.dart'
     show kDefaultRichVisibleTools;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 

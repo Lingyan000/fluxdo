@@ -1,7 +1,7 @@
 import 'dart:async' show unawaited;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';

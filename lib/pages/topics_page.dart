@@ -4,7 +4,7 @@ import 'dart:ui' as ui show lerpDouble;
 
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/scheduler.dart' show Ticker;

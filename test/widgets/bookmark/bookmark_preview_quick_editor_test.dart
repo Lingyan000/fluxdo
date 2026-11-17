@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/slang/strings.g.dart';
 import 'package:fluxdo/widgets/bookmark/bookmark_preview_quick_editor.dart';
@@ -12,11 +11,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: Scaffold(
             body: BookmarkPreviewQuickEditor(
@@ -47,11 +42,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
@@ -92,11 +83,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: Builder(
             builder: (context) => Scaffold(
@@ -138,11 +125,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: Scaffold(
             body: BookmarkPreviewQuickEditor(

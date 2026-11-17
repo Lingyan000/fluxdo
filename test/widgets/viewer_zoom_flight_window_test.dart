@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
 import 'package:fluxdo/utils/hero_visibility_controller.dart';

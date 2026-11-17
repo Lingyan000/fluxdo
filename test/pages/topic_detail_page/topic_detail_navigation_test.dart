@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -150,11 +149,7 @@ void main() {
         navigatorKey: navigatorKey,
         locale: const Locale('zh'),
         supportedLocales: AppLocaleUtils.supportedLocales,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: const TopicDetailPage(
           topicId: 42,
           scrollToPostNumber: 60,

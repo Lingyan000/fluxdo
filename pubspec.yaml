@@ -4,8 +4,8 @@ publish_to: 'none'
 version: 0.2.31-beta.7+2026111622
 
 environment:
-  sdk: ^3.13.0
-  flutter: ">=3.47.9"
+  sdk: ^3.14.0
+  flutter: ">=3.50.0"
 
 # sqlite3(经 sqflite_common_ffi 引入)的 build hook 默认在构建期从 GitHub
 # 下载预编译库,Flatpak 离线沙箱内必然失败;指向 vendored amalgamation
@@ -28,6 +28,8 @@ workspace:
   - packages/paper_shaders
 
 dependencies:
+  cupertino_ui: ^1.1.7
+  material_ui: ^1.11.1
   desktop_multi_window: ^0.3.1
   flutter:
     sdk: flutter

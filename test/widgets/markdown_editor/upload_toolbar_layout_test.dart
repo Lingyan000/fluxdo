@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/uploads/upload_task_panel.dart';
 import 'package:fluxdo/widgets/markdown_editor/uploads/task_controller.dart';

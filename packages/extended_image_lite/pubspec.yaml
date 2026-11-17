@@ -9,6 +9,7 @@ environment:
 resolution: workspace
 
 dependencies:
+  material_ui: ^1.11.1
   extended_image_library: ^5.0.0
   flutter:
     sdk: flutter

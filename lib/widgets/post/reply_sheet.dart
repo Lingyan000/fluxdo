@@ -7,7 +7,7 @@ import 'package:fluxdo/widgets/markdown_editor/composer_draft_status.dart';
 
 import '../../utils/platform_utils.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

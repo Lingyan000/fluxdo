@@ -31,8 +31,7 @@ import 'package:fluxdo/widgets/common/cached_image.dart';
 import 'package:fluxdo/widgets/common/tag_selection_sheet.dart';
 import 'package:fluxdo/widgets/common/topic_badges.dart';
 import 'package:fluxdo/widgets/common/flair_badge.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -255,11 +254,7 @@ void main() {
               ),
               locale: const Locale('zh'),
               supportedLocales: AppLocaleUtils.supportedLocales,
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               home: const ForumPreferencesPage(username: 'tester'),
             ),
           ),

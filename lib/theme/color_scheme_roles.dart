@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 按 role 名覆盖 ColorScheme（主题 JSON 里的 `roles` 字段）。
 class ColorSchemeRoles {

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 强调色的两种用途 token：调用方声明意图，取值由主题决定。
 ///

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 
 /// 双击缩放控制器

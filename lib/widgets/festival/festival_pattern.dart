@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 节日底纹：极淡的平铺纹样，叠在页面底色上。
 ///

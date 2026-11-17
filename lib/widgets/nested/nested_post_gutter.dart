@@ -1,5 +1,5 @@
 import 'package:fluxdo/utils/avatar_url.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../models/topic.dart';
 import '../../utils/url_helper.dart';
 import '../common/radial_long_press_menu.dart';

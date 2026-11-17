@@ -4,8 +4,7 @@
 // 跳过 → 重建时 userVotes 读空 → 回到未投票界面(票数却涨了)。
 // 修复:Post.applyPollUpdate 集中落地,??= 初始化 pollsVotes。
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -64,11 +63,7 @@ void main() {
       child: MaterialApp(
         locale: const Locale('zh'),
         navigatorKey: navigatorKey,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [Locale('zh'), Locale('en')],
         home: Scaffold(
           body: Builder(

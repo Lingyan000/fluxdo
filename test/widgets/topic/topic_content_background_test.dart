@@ -1,9 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -113,11 +112,7 @@ void main() {
             navigatorKey: navigatorKey,
             theme: theme,
             locale: const Locale('zh'),
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             builder: (_, child) => ValueListenableBuilder(
               valueListenable: background,
               builder: (_, enabled, _) => PageBackgroundScope(

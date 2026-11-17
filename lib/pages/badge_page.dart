@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart' hide Badge;
+import 'package:material_ui/material_ui.dart' hide Badge;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
