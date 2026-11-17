@@ -729,9 +729,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
             _prefs.getString(_bottomDoubleTapActionKey),
             fallback: NavTapAction.refresh,
           ),
-          bottomNavIds:
-              _prefs.getStringList(_bottomNavIdsKey) ??
-              const [NavEntryIds.home, NavEntryIds.profile],
+          bottomNavIds: NavEntryIds.migrateLegacyIds(
+            _prefs.getStringList(_bottomNavIdsKey) ??
+                const [NavEntryIds.home, NavEntryIds.profile],
+          ),
           bottomNavLabelless: _prefs.getBool(_bottomNavLabellessKey) ?? false,
           bottomNavFloating: _prefs.getBool(_bottomNavFloatingKey) ?? false,
           // 新全局策略默认自动开启；不继承废弃的底栏局部开关。

@@ -57,6 +57,7 @@ import '../models/badge.dart' as badge_model;
 import 'topic_detail_page/topic_detail_page.dart';
 import 'search_page.dart';
 import 'follow_list_page.dart';
+import '../providers/following_feed_provider.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
 import 'group_page.dart';
@@ -563,6 +564,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       } else {
         await service.followUser(_user!.username);
       }
+      ref.invalidate(followingFeedProvider);
 
       if (mounted) {
         setState(() {

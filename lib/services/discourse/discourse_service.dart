@@ -14,6 +14,7 @@ import '../../models/user.dart';
 import '../../models/user_group.dart';
 import '../../models/forum_preferences.dart';
 import '../../models/user_action.dart';
+import '../../models/following_feed.dart';
 import '../../models/notification.dart';
 import '../../models/category.dart';
 import '../../models/search_result.dart';

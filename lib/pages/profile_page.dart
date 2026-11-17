@@ -39,6 +39,7 @@ import 'package:ai_model_manager/ai_model_manager.dart';
 
 import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
+import 'following_feed_page.dart';
 import 'pending_posts_page.dart';
 import 'private_messages_page.dart';
 import 'chat/chat_list_page.dart';
@@ -541,6 +542,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           if (isLoggedIn) ...[
             _buildContentCard(theme),
             const SizedBox(height: 20),
+            FollowingFeedMigrationCard(
+              onOpen: () => Navigator.of(context).push(
+                InteractionPageRoute(
+                  builder: (_) => const FollowingFeedMigrationPage(),
+                ),
+              ),
+            ),
             _buildCommunityCard(
               theme,
               canAccessInviteLinks: (user?.trustLevel ?? 0) >= 3,
@@ -620,6 +628,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
           if (isLoggedIn) ...[
+            FollowingFeedMigrationCard(
+              onOpen: () => Navigator.of(context).push(
+                InteractionPageRoute(
+                  builder: (_) => const FollowingFeedMigrationPage(),
+                ),
+              ),
+            ),
             _buildCommunityCard(
               theme,
               canAccessInviteLinks: (user?.trustLevel ?? 0) >= 3,
@@ -867,6 +882,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           onTap: () => Navigator.push(
             context,
             InteractionPageRoute(builder: (_) => const ChatListPage()),
+          ),
+        ),
+        _buildOptionTile(
+          icon: Symbols.rss_feed_rounded,
+          title: context.l10n.followingFeed_profileEntry,
+          onTap: () => Navigator.push(
+            context,
+            InteractionPageRoute(builder: (_) => const FollowingFeedPage()),
           ),
         ),
         _buildOptionTile(
