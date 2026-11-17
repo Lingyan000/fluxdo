@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
+import '../../services/image_decode_spec_memo.dart';
 import '../../utils/svg_utils.dart';
 import 'first_paint_probe.dart';
 
@@ -167,14 +168,17 @@ class _SmartAvatarState extends State<SmartAvatar> {
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
     return Image(
-      image: ResizeImage(
-        BlobImageProvider(
-          widget.imageUrl!,
-          bucket: BlobImageCache.avatarBucket,
+      image: ImageDecodeSpecMemo.remember(
+        widget.imageUrl!,
+        ResizeImage(
+          BlobImageProvider(
+            widget.imageUrl!,
+            bucket: BlobImageCache.avatarBucket,
+          ),
+          width: decodeSide,
+          height: decodeSide,
+          policy: ResizeImagePolicy.fit,
         ),
-        width: decodeSide,
-        height: decodeSide,
-        policy: ResizeImagePolicy.fit,
       ),
       width: innerSize,
       height: innerSize,
@@ -231,9 +235,12 @@ class _SmartAvatarState extends State<SmartAvatar> {
       // 避免列表中多个动图头像同时连累整个 list item 重绘。
       child = RepaintBoundary(
         child: Image(
-          image: discourseImageProvider(
+          image: ImageDecodeSpecMemo.remember(
             widget.imageUrl!,
-            bucket: BlobImageCache.avatarBucket,
+            discourseImageProvider(
+              widget.imageUrl!,
+              bucket: BlobImageCache.avatarBucket,
+            ),
           ),
           width: innerSize,
           height: innerSize,
