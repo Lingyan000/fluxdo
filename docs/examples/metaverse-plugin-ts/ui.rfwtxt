@@ -1,5 +1,0 @@
-import fluxdo;
-widget Card = Column(crossAxisAlignment: "stretch", children: [
-  Label(text: ["计数：", data.count], style: "titleLarge"), Gap(),
-  Button(label: "增加计数", onPressed: event "increment" {}),
-]);

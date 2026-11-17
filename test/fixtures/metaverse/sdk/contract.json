@@ -1,0 +1,28 @@
+{
+  "contractVersion": 1,
+  "sdkVersion": "0.1.0",
+  "apiVersion": 2,
+  "manifestSchemas": [
+    9,
+    10
+  ],
+  "features": [
+    "browserModes",
+    "automaticPagination",
+    "gridLayouts",
+    "virtualGrid",
+    "confirmationDialog",
+    "nativeExecutionLimits"
+  ],
+  "limits": {
+    "manifestBytes": 32768,
+    "uiBytes": 262144,
+    "scriptBytes": 524288,
+    "bundleBytes": 2097152
+  },
+  "hostReference": {
+    "repository": "Lingyan000/fluxdo",
+    "commit": "c915dcd1"
+  },
+  "typesSha256": "3324d526c3a7162cebb703112625a5c8c717118885c9a2ac090baac6f301f8ea"
+}

@@ -248,4 +248,4 @@ fluxdo.on('login', async ctx => {
 });
 ```
 
-完整 TypeScript 签名见 [fluxdo.d.ts](../../packages/fluxdo_plugin_runtime/sdk/fluxdo.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。
+完整 TypeScript 签名见 [独立 SDK 类型声明](https://github.com/Lingyan000/fluxdo-plugin-tools/blob/main/packages/sdk/types/global.d.ts)。开发中心可直接体验确认框、协议勾选和取消结果，不会向服务发起真实授权。

@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const root=new URL('../../../',import.meta.url);
-const dts=readFileSync(new URL('packages/fluxdo_plugin_runtime/sdk/fluxdo.d.ts',root),'utf8');
+import {createHash} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+const root=new URL('../../',import.meta.url);
+const dts=readFileSync(new URL('test/fixtures/metaverse/sdk/fluxdo.d.ts',root),'utf8').replaceAll('\r\n','\n');
+const contract=JSON.parse(readFileSync(new URL('test/fixtures/metaverse/sdk/contract.json',root),'utf8'));
+assert.equal(createHash('sha256').update(dts).digest('hex'),contract.typesSha256);
+if(process.env.FLUXDO_PLUGIN_TOOLS){
+ const sdk=pathToFileURL(resolve(process.env.FLUXDO_PLUGIN_TOOLS,'packages/sdk/types/global.d.ts'));
+ assert.equal(readFileSync(sdk,'utf8').replaceAll('\r\n','\n'),dts,'工具 SDK 与宿主兼容夹具不同步');
+}
+const featureSource=readFileSync(new URL('packages/fluxdo_plugin_runtime/lib/src/plugin_features.dart',root),'utf8');
+const featureBody=/enum PluginFeature\s*{([^}]+)}/.exec(featureSource)[1];
+assert.deepEqual([...featureBody.matchAll(/\b(\w+)\s*,/g)].map(m=>m[1]).sort(),[...contract.features].sort());
 // tsc 负责语法和类型检查；此处只提取 Api 的成员层级，与实际 JS 导出核对。
 const declarations=dts.replace(/\/\*[\s\S]*?\*\//g,'');
 function block(text,open){let depth=1,end=open+1;for(;depth&&end<text.length;end++){if(text[end]==='{')depth++;if(text[end]==='}')depth--;}return {text:text.slice(open+1,end-1),end};}
