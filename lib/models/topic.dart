@@ -1766,15 +1766,16 @@ class PostStream {
 /// 单个被采纳答案的展示数据(对齐 Discourse 的 accepted_answers 数组元素)
 ///
 /// 字段来源:
-/// - postNumber/username/name/avatarTemplate/excerpt/accepterUsername/accepterName:
-///   discourse-solved 的 `accepted_answers_post_info` 数组元素
-/// - createdAt: 通过 postNumber 反查 PostStream 后填充(后端 payload 不带)
+/// - 新版 `accepted_answers` 数组元素下发完整 `cooked` 与 `created_at`,
+///   由展示端按 `solved_quote_length` 截高
+/// - 旧版 `accepted_answer` 单对象只有截断后的 `excerpt`、不带时间,
+///   createdAt 通过 postNumber 反查 PostStream 补齐
 class AcceptedAnswer {
   final int postNumber;
   final String username;
   final String? name;
   final String? avatarTemplate;
-  final String? excerpt; // cooked HTML;solved_quote_length=0 时为 null
+  final String? cooked; // 答案 HTML;solved_quote_length=0 时为 null
   final DateTime? createdAt;
   final String? accepterUsername;
   final String? accepterName;
@@ -1784,7 +1785,7 @@ class AcceptedAnswer {
     required this.username,
     this.name,
     this.avatarTemplate,
-    this.excerpt,
+    this.cooked,
     this.createdAt,
     this.accepterUsername,
     this.accepterName,
@@ -1802,21 +1803,21 @@ class AcceptedAnswer {
       username: post.username,
       name: post.name,
       avatarTemplate: post.avatarTemplate,
-      excerpt: post.cooked,
+      cooked: post.cooked,
       createdAt: post.createdAt,
       accepterUsername: accepterUsername,
       accepterName: accepterName,
     );
   }
 
-  /// 从 json 解析,可选地用 postStream 反查 createdAt
+  /// 从 json 解析,缺 created_at 时可选地用 postStream 反查
   factory AcceptedAnswer.fromJson(
     Map<String, dynamic> json, {
     PostStream? postStream,
   }) {
     final pn = json['post_number'] as int;
-    DateTime? createdAt;
-    if (postStream != null) {
+    var createdAt = TimeUtils.parseUtcTime(json['created_at'] as String?);
+    if (createdAt == null && postStream != null) {
       final post = postStream.posts
           .where((p) => p.postNumber == pn)
           .firstOrNull;
@@ -1827,7 +1828,7 @@ class AcceptedAnswer {
       username: json['username'] as String? ?? '',
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
-      excerpt: json['excerpt'] as String?,
+      cooked: json['cooked'] as String? ?? json['excerpt'] as String?,
       createdAt: createdAt,
       accepterUsername: json['accepter_username'] as String?,
       accepterName: json['accepter_name'] as String?,
