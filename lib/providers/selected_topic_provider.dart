@@ -430,9 +430,9 @@ final selectedSearchProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 
-/// 追觅（视奸）面板自己的平行视界栈。不能复用首页或搜索栈，否则切换
+/// 关注动态页自己的平行视界栈。不能复用首页或搜索栈，否则切换
 /// 导航项时两个页面会互相继承对方正在查看的话题/资料。
-final selectedSeekingProvider = SelectedTopicProvider((ref) {
+final selectedFollowingFeedProvider = SelectedTopicProvider((ref) {
   return SelectedTopicNotifier();
 });
 

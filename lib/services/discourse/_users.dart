@@ -13,7 +13,7 @@ mixin _UsersMixin on _DiscourseServiceBase {
         'isSilent': true,
         // 通道标注只需进网络日志(_networkLogFields 是日志拦截器的读取口);
         // 顶层同名键无人消费,不再重复写。
-        '_networkLogFields': {'requestLane': 'userBackground'},
+        '_networkLogFields': {'requestLane': 'background-user'},
       },
     );
   }
@@ -271,6 +271,23 @@ mixin _UsersMixin on _DiscourseServiceBase {
       queryParameters: {'username': username, 'offset': offset},
     );
     return SolvedPostsResponse.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// 服务端聚合的关注用户帖子流。
+  Future<FollowingFeedResponse> getFollowingFeed(
+    String username, {
+    String? before,
+  }) async {
+    final response = await _dio.get(
+      '/follow/posts/${Uri.encodeComponent(username)}.json',
+      queryParameters: {
+        'limit': 20,
+        'created_before': ?before,
+      },
+    );
+    return FollowingFeedResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   /// 获取用户关注列表

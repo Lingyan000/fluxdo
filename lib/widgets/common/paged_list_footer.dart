@@ -48,7 +48,7 @@ class PagedListFooter extends StatelessWidget {
         ),
       );
     } else if (isLoadingMore) {
-      child = const LoadingSpinner(size: 24);
+      child = const LoadingSpinner.standard();
     } else if (!hasMore) {
       child = Text(
         context.l10n.common_noMore,

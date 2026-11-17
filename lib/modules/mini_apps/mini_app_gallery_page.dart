@@ -546,7 +546,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                                   child:
                                       _directory.loadingMore ||
                                           _directory.loading
-                                      ? const LoadingSpinner(size: 28)
+                                      ? const LoadingSpinner.standard()
                                       : _directory.error != null
                                       ? TextButton.icon(
                                           onPressed: () => _directory.hasMore

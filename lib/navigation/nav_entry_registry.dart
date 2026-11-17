@@ -12,7 +12,7 @@ import '../pages/chat/chat_list_page.dart';
 import '../pages/drafts_page.dart';
 import '../pages/private_messages_page.dart';
 import '../pages/profile_page.dart';
-import '../pages/seeking_page.dart';
+import '../pages/following_feed_page.dart';
 import '../pages/topics_screen.dart';
 import '../providers/discourse_providers.dart';
 import '../providers/chat/chat_channels_provider.dart';
@@ -124,12 +124,12 @@ class NavEntryRegistry {
         customSelectedIconBuilder: (ctx, ref) => _chatIcon(ref, selected: true),
       ),
       NavEntry(
-        id: NavEntryIds.seeking,
+        id: NavEntryIds.followingFeed,
         kind: NavEntryKind.page,
-        iconData: Symbols.visibility_rounded,
-        selectedIconData: Symbols.visibility_rounded,
-        label: (ctx) => ctx.l10n.seeking_title,
-        pageBuilder: (ctx, isActive) => SeekingPage(isActive: isActive),
+        iconData: Symbols.rss_feed_rounded,
+        selectedIconData: Symbols.rss_feed_rounded,
+        label: (ctx) => ctx.l10n.followingFeed_title,
+        pageBuilder: (ctx, isActive) => FollowingFeedPage(isActive: isActive),
         requiresLogin: true,
       ),
       NavEntry(
