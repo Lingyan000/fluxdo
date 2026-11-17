@@ -392,6 +392,7 @@ Future<void> main() async {
 
   // 阶段 2：依赖 prefs 的步骤并行
   final crashlyticsEnabled = prefs.getBool('pref_crashlytics') ?? true;
+  var crashContextEnabled = false;
   final developerMode = prefs.getBool('developer_mode') ?? false;
   CfChallengeLogger.setEnabled(developerMode);
   // 开发者模式下 debug 级日志落盘（高频追踪信息）
@@ -400,12 +401,19 @@ Future<void> main() async {
     CoreFallbackService.instance.initialize(prefs),
     ProxySettingsService.instance.initialize(prefs),
     if (Platform.isAndroid)
-      MethodChannel(
+      const MethodChannel(
         'com.github.lingyan000.fluxdo/crashlytics',
-      ).invokeMethod('setCrashlyticsEnabled', {'enabled': crashlyticsEnabled}),
+      ).invokeMethod<void>('setCrashlyticsEnabled', {
+        'enabled': crashlyticsEnabled,
+      }).then<void>((_) {
+        crashContextEnabled = crashlyticsEnabled;
+      }).catchError((Object error) {
+        // 崩溃上报不可用时仍要绘制首屏。
+        debugPrint('[Main] Crashlytics 初始化失败: $error');
+      }),
   ]);
   // 跟随同一开关:关闭时导航上下文也不再上报
-  CrashContextReporter.setEnabled(Platform.isAndroid && crashlyticsEnabled);
+  CrashContextReporter.setEnabled(crashContextEnabled);
   // WebView 适配器设置
   await WebViewAdapterSettingsService.instance.initialize(prefs);
   // Eruda 调试控制台开关 (默认关)
