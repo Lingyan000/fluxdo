@@ -1,0 +1,12 @@
+name: fluxdo_js_runtime
+description: FluxDO 原生端共用的后台 JavaScript 执行层。
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  qjs:
+    path: ../qjs

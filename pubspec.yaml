@@ -22,6 +22,7 @@ workspace:
   - packages/common_ui
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
+  - packages/fluxdo_js_runtime
   - packages/fluxdo_render
   - packages/m3e_ui
   - packages/pangutext
@@ -46,9 +47,8 @@ dependencies:
   cookie_jar: ^4.0.8
   flutter_secure_storage: ^10.3.1
   flutter_inappwebview: ^6.2.0-beta.3
-  # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
-  # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
-  flutter_js: ^0.8.7
+  fluxdo_js_runtime:
+    path: packages/fluxdo_js_runtime
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
@@ -228,7 +228,7 @@ melos:
   useRootAsPackage: true
 
 flutter:
-  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、
+  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、
   # super_native_extensions 等插件未支持 SwiftPM，不能只升级 SDK 就切换。
   # Apple 最低版本已同步 iOS 15 / macOS 12；待插件链路验证后独立迁移。
   config:

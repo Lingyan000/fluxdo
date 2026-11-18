@@ -11,7 +11,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
   flutter_avif_windows
   flutter_inappwebview_windows
-  flutter_js
   flutter_secure_storage_windows
   flutter_timezone
   gal

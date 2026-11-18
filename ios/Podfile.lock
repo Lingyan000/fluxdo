@@ -62,8 +62,6 @@ PODS:
   - flutter_inappwebview_ios/Core (0.0.1):
     - Flutter
     - swift-collections (~> 1.1.1)
-  - flutter_js (0.1.0):
-    - Flutter
   - flutter_local_notifications (0.0.1):
     - Flutter
   - flutter_mailer (0.0.1):
@@ -177,7 +175,6 @@ DEPENDENCIES:
   - flutter_foreground_task (from `.symlinks/plugins/flutter_foreground_task/ios`)
   - flutter_image_compress_common (from `.symlinks/plugins/flutter_image_compress_common/ios`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
-  - flutter_js (from `.symlinks/plugins/flutter_js/ios`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_mailer (from `.symlinks/plugins/flutter_mailer/ios`)
   - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
@@ -243,8 +240,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_image_compress_common/ios"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
-  flutter_js:
-    :path: ".symlinks/plugins/flutter_js/ios"
   flutter_local_notifications:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
   flutter_mailer:
@@ -321,7 +316,6 @@ SPEC CHECKSUMS:
   flutter_foreground_task: a159d2c2173b33699ddb3e6c2a067045d7cebb89
   flutter_image_compress_common: 1697a328fd72bfb335507c6bca1a65fa5ad87df1
   flutter_inappwebview_ios: 9cde7869829d54b4110df350f3eedd192c5a4aea
-  flutter_js: 867813c1830e1d9b2c5d547cdb6f61801e2f2145
   flutter_local_notifications: 643a3eda1ce1c0599413ca31672536d423dee214
   flutter_mailer: 3a8cd4f36c960fb04528d5471097270c19fec1c4
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23

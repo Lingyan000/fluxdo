@@ -10,7 +10,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
   flutter_avif_linux
   flutter_inappwebview_linux
-  flutter_js
   flutter_secure_storage_linux
   flutter_timezone
   gtk
