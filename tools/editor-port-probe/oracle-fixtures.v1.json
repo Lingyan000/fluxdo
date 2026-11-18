@@ -27,19 +27,19 @@
     },
     "tokenizer": {
       "path": "assets/cook/discourse-cook.js",
-      "sha256": "49647ea0b381f235adee2f4350a5caedecbaa4e65ab5e4ce487846ab6c75ef3a"
+      "sha256": "a96b01e1b6baad10e781901bb6b8b9df01083493d6575e93529a45439d7e5464"
     },
-    "testLockSha256": "ad167dbf01e90fb539f23c8f8df3be6700eb05628f121bedae8a33d168a60fa6",
+    "testLockSha256": "41a20ebba4de82e0d11f1640f916e77f67367482da68a496e503df9245414a2b",
     "dependencies": {
-      "esbuild": "0.28.0",
+      "esbuild": "0.28.2",
+      "jsdom": "31.0.1",
       "orderedmap": "2.1.1",
+      "prosemirror-inputrules": "1.5.1",
       "prosemirror-markdown": "1.13.4",
       "prosemirror-model": "1.25.4",
-      "prosemirror-transform": "1.12.0",
-      "prosemirror-inputrules": "1.5.1",
       "prosemirror-state": "1.4.4",
-      "prosemirror-view": "1.41.8",
-      "jsdom": "25.0.1"
+      "prosemirror-transform": "1.12.0",
+      "prosemirror-view": "1.41.8"
     }
   },
   "cases": [

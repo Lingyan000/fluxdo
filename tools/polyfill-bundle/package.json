@@ -8,16 +8,17 @@
     "build": "node build.mjs"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
-    "@babel/preset-env": "^7.29.7",
-    "core-js": "^3.49.0",
-    "esbuild": "^0.28.0"
+    "@babel/core": "^8.1.2",
+    "@babel/preset-env": "^8.0.7",
+    "babel-plugin-polyfill-corejs3": "^1.0.0",
+    "core-js": "^3.51.0",
+    "esbuild": "^0.28.2"
   },
   "browserslist": [
     "iOS >= 15.0"
   ],
   "dependencies": {
     "eruda": "^3.4.3",
-    "es-module-shims": "^2.8.1"
+    "es-module-shims": "^2.8.4"
   }
 }
