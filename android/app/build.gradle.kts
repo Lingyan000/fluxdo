@@ -55,7 +55,7 @@ println(
 
 android {
     namespace = "com.github.lingyan000.fluxdo"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

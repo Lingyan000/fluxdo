@@ -85,7 +85,7 @@ internal object MiniAppWindows {
         activities.clear()
         val manager = activity.getSystemService(Activity.ACTIVITY_SERVICE) as ActivityManager
         manager.appTasks.filter {
-            it.taskInfo.baseIntent.component?.className == MiniAppWindowActivity::class.java.name
+            it.taskInfo?.baseIntent?.component?.className == MiniAppWindowActivity::class.java.name
         }.forEach { it.finishAndRemoveTask() }
     }
 
