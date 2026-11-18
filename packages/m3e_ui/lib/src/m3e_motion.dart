@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/animation.dart';
+import 'package:flutter/physics.dart';
 
 /// 一档弹簧规格(阻尼比 + 刚度,质量恒为 1)。
 ///
@@ -24,6 +25,17 @@ class M3eSpring {
         mass: 1.0,
         stiffness: stiffness,
         ratio: dampingRatio,
+      );
+
+  TickerFuture animateTo(AnimationController controller, double target) =>
+      controller.animateWith(
+        SpringSimulation(
+          description,
+          controller.value,
+          target,
+          controller.velocity,
+          snapToEnd: true,
+        ),
       );
 
   /// 解析解曲线形态,见 [M3eSpringCurve]。
