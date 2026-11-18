@@ -12,6 +12,8 @@ import '../../developer/metaverse_developer_page.dart';
 import '../providers/metaverse_plugin_providers.dart';
 import 'metaverse_plugin_dialogs.dart';
 import 'metaverse_plugin_tile.dart';
+import 'metaverse_permission_list.dart';
+import '../metaverse_plugin_permission.dart';
 
 class MetaversePluginManagementPage extends ConsumerWidget {
   const MetaversePluginManagementPage({super.key});
@@ -199,10 +201,11 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                     ),
                     ListTile(
                       leading: const Icon(Symbols.shield_rounded),
-                      title: Text(l.metaverse_marketPermissions),
+                      title: Text(l.metaverse_permissionSettings),
                       trailing: const Icon(Symbols.chevron_right_rounded),
-                      onTap: () =>
-                          showMetaversePluginDetails(context, plugin.manifest),
+                      onTap: () => Navigator.of(context).push(InteractionPageRoute(
+                        builder: (_) => MetaversePluginPermissionsPage(pluginId: plugin.id),
+                      )),
                     ),
                     ListTile(
                       leading: const Icon(Symbols.receipt_long_rounded),
@@ -225,8 +228,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                     valueListenable: driver.badges,
                     builder: (context, _, _) {
                       final jobs = driver.control.tasks(driver.account!, plugin.id);
-                      final allowed = driver.control.notificationsAllowed(driver.account!, plugin.id);
-                      if (jobs.isEmpty && !allowed) return const SizedBox.shrink();
+                      if (jobs.isEmpty) return const SizedBox.shrink();
                       return Padding(padding: const EdgeInsets.only(bottom: 24), child: SegmentedCardGroup(children: [
                         for (final job in jobs) ListTile(
                           title: Text(plugin.manifest.tasks.where((spec) => spec.id == job['id']).firstOrNull?.title ?? job['id']),
@@ -234,8 +236,6 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                           trailing: IconButton(icon: const Icon(Symbols.stop_rounded), tooltip: l.metaverse_stopTask,
                             onPressed: _busy ? null : () => _run(() => driver.stopTask(plugin.id, job['id']))),
                         ),
-                        if (allowed) M3eSwitchListTile(title: Text(l.metaverse_pluginNotifications), value: true,
-                          onChanged: _busy ? null : (_) => _run(() => driver.mute(plugin.id))),
                       ]));
                     },
                   ),
@@ -293,6 +293,46 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                 if (_busy) const LinearProgressIndicator(),
               ],
             ),
+    );
+  }
+}
+
+class MetaversePluginPermissionsPage extends ConsumerStatefulWidget {
+  const MetaversePluginPermissionsPage({super.key, required this.pluginId});
+  final String pluginId;
+
+  @override
+  ConsumerState<MetaversePluginPermissionsPage> createState() => _PluginPermissionsState();
+}
+
+class _PluginPermissionsState extends ConsumerState<MetaversePluginPermissionsPage> {
+  bool _saving = false;
+
+  Future<void> _change(MetaversePluginPermission permission, bool allowed) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(metaversePluginsProvider.notifier).setPermission(widget.pluginId, permission, allowed);
+    } catch (_) {
+      if (mounted) ToastService.showError(context.l10n.metaverse_permissionSaveFailed);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final plugin = ref.watch(metaversePluginsProvider).where((p) => p.id == widget.pluginId).firstOrNull;
+    return Scaffold(
+      appBar: AppBar(title: Text(context.l10n.metaverse_permissionSettings)),
+      body: plugin == null
+          ? AppEmptyState(icon: const Icon(Symbols.extension_rounded), title: context.l10n.metaverse_marketEmpty)
+          : ListView(padding: const EdgeInsets.all(16), children: [
+              Text(plugin.manifest.name, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 16),
+              MetaversePermissionList(manifest: plugin.manifest, blocked: plugin.blockedPermissions,
+                busy: _saving, onChanged: _change),
+            ]),
     );
   }
 }

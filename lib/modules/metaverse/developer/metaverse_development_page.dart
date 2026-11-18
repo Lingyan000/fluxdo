@@ -51,14 +51,15 @@ class _DevelopmentPageState extends ConsumerState<MetaverseDevelopmentPage>
     }
     setState(() => _reviewing = true);
     try {
-      if (await showMetaversePluginInstallSheet(
-            context,
-            next.manifest,
-            isUpdate: false,
-            confirmLabel: context.l10n.metaverse_devStart,
-          ) &&
-          mounted) {
-        await session.start(next);
+      final choices = await showMetaversePluginInstallSheet(
+        context,
+        next.manifest,
+        isUpdate: false,
+        confirmLabel: context.l10n.metaverse_devStart,
+        initialBlocked: session.reviewPermissions(next),
+      );
+      if (choices != null && mounted) {
+        await session.start(next, choices: choices);
       }
     } catch (error) {
       session.diagnostic('$error');

@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
+import 'package:collection/collection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../plugin/metaverse_plugin_store.dart';
+import '../plugin/metaverse_plugin_permission.dart';
 import '../plugin/metaverse_task.dart';
 
 /// 宿主控制记录独立于插件数据。短事务提供跨引擎调度租约与撤销边界。
@@ -82,7 +84,7 @@ class MetaverseTaskStore {
             (p.manifest.tasks.isNotEmpty ||
                 p.manifest.capabilities.notifications ||
                 p.manifest.requiredFeatures.contains('navigationBadge')))
-          p.id: {'revision': p.codeRevision, 'source': p.source},
+          p.id: _registration(p),
     };
     final previous = map(s, 'plugins');
     for (final id in previous.keys.toList()) {
@@ -97,9 +99,46 @@ class MetaverseTaskStore {
         _removePlugin(s, id);
       }
     }
+    for (final plugin in plugins.where((p) => approved.containsKey(p.id))) {
+      dismissed.addAll(_applyPermissions(s, plugin));
+    }
     s['plugins'] = approved;
     return dismissed;
   });
+
+  static Map<String, Object?> _registration(InstalledMetaversePlugin plugin) => {
+    'revision': plugin.codeRevision,
+    'source': plugin.source,
+    'blocked': plugin.blockedPermissionNames,
+  };
+
+  /// 单插件策略在与租约、通知目标相同的事务里生效。
+  List<int> applyPermissions(InstalledMetaversePlugin plugin) => transaction((s) {
+    final installed = map(s, 'plugins');
+    if (installed[plugin.id]?['source'] != plugin.source) return <int>[];
+    final dismissed = _applyPermissions(s, plugin);
+    installed[plugin.id] = _registration(plugin);
+    return dismissed;
+  });
+
+  List<int> _applyPermissions(Map<String, dynamic> s, InstalledMetaversePlugin plugin) {
+    final previous = map(s, 'plugins')[plugin.id]?['blocked'] as List? ?? const [];
+    if (const ListEquality().equals(previous, plugin.blockedPermissionNames)) return [];
+    for (final job in map(s, 'jobs').values.where((v) => v['plugin'] == plugin.id)) {
+      job.remove('lease');
+      job.remove('leaseUntil');
+      if (!plugin.allows(MetaversePluginPermission.background)) job['background'] = false;
+    }
+    if (plugin.allows(MetaversePluginPermission.notifications)) return [];
+    map(s, 'grants').removeWhere((_, row) => row['plugin'] == plugin.id);
+    final rows = map(s, 'notifications');
+    final ids = [for (final row in rows.values) if (row['plugin'] == plugin.id) row['id'] as int];
+    rows.removeWhere((_, row) => row['plugin'] == plugin.id);
+    return ids;
+  }
+
+  static bool _blocked(Map<String, dynamic> s, String plugin, MetaversePluginPermission permission) =>
+      (map(s, 'plugins')[plugin]?['blocked'] as List?)?.contains(permission.name) == true;
 
   void _removePlugin(Map<String, dynamic> s, String id) {
     (s['events'] as List?)?.removeWhere((event) => event['pluginId'] == id);
@@ -131,6 +170,9 @@ class MetaverseTaskStore {
       throw const MetaversePluginCallException('task_account_changed');
     }
     final key = _key(account, plugin, request.id);
+    if (background && _blocked(s, plugin, MetaversePluginPermission.background)) {
+      throw const MetaversePluginCallException('permission_denied:background');
+    }
     final job = <String, dynamic>{
       'id': request.id,
       'plugin': plugin,
@@ -284,6 +326,9 @@ class MetaverseTaskStore {
   void allowNotifications(int account, String plugin, bool value) =>
       transaction((s) {
         _requireOwner(s, account, plugin);
+        if (value && _blocked(s, plugin, MetaversePluginPermission.notifications)) {
+          throw const MetaversePluginCallException('permission_denied:notifications');
+        }
         map(s, 'grants')[_key(account, plugin, 'notifications')] = {
           'plugin': plugin,
           'account': account,

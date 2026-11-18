@@ -37,6 +37,7 @@ import '../metaverse_connect_capability.dart';
 import '../metaverse_credential.dart';
 import '../metaverse_plugin_installer.dart';
 import '../metaverse_plugin_manifest.dart';
+import '../metaverse_plugin_permission.dart';
 import '../metaverse_plugin_capabilities.dart';
 import '../metaverse_plugin_network.dart';
 import '../metaverse_plugin_store.dart';
@@ -134,8 +135,30 @@ class MetaversePluginsController
   static const maxPlugins = 32;
   final _mutations = PluginOperationQueue();
 
-  Future<InstalledMetaversePlugin> install(MetaversePluginPackage package) =>
-      _mutations.run('index', () => _install(package));
+  Set<MetaversePluginPermission> reviewPermissions(MetaversePluginPackage package) {
+    final previous = byId(package.manifest.id);
+    return InstalledMetaversePlugin.reviewPermissions(
+      package.manifest,
+      previous?.source == package.source ? previous : null,
+    );
+  }
+
+  Future<InstalledMetaversePlugin> install(MetaversePluginPackage package, {
+    Map<MetaversePluginPermission, bool> choices = const {},
+  }) => _mutations.run('index', () => _install(package, choices));
+  Future<void> setPermission(
+    String id,
+    MetaversePluginPermission permission,
+    bool allowed,
+  ) => _mutations.run('index', () async {
+    final plugin = byId(id);
+    if (plugin == null) throw ArgumentError.value(id, 'id');
+    final blocked = plugin.manifest.applyPermissionChoices(
+      plugin.blockedPermissions, {permission: allowed},
+    );
+    if (plugin.allows(permission) == allowed) return;
+    await _replacePermissions(plugin, plugin.copyWith(blockedPermissions: blocked));
+  });
   Future<void> setEnabled(String id, {required bool enabled}) =>
       _mutations.run('index', () => _setEnabled(id, enabled: enabled));
   Future<void> saveToken(String id, String token, {bool Function()? isActive}) =>
@@ -169,6 +192,7 @@ class MetaversePluginsController
   /// 避免新清单继承旧插件的授权。
   Future<InstalledMetaversePlugin> _install(
     MetaversePluginPackage package,
+    Map<MetaversePluginPermission, bool> choices,
   ) async {
     final manifest = package.manifest;
     if (!manifest.runtimeSupported) {
@@ -181,6 +205,7 @@ class MetaversePluginsController
       throw const MetaversePluginInstallException('已达到插件数量上限');
     }
     final changedSource = previous != null && previous.source != package.source;
+    final blocked = manifest.applyPermissionChoices(reviewPermissions(package), choices);
     final changedPermissions =
         previous != null && !manifest.sameApprovalAs(previous.manifest);
     if (previous != null) {
@@ -198,14 +223,18 @@ class MetaversePluginsController
       }
     }
     await _store.writeCode(manifest.id, package.code);
-    await _replace(
-      InstalledMetaversePlugin(
-        manifest: manifest,
-        source: package.source,
-        codeRevision: MetaversePluginStore.revisionOf(package.code),
-        enabled: !changedSource && (previous?.enabled ?? false),
-      ),
+    final next = InstalledMetaversePlugin(
+      manifest: manifest,
+      source: package.source,
+      codeRevision: MetaversePluginStore.revisionOf(package.code),
+      enabled: !changedSource && (previous?.enabled ?? false),
+      blockedPermissions: blocked,
     );
+    if (previous != null && !changedSource && !changedPermissions) {
+      await _replacePermissions(previous, next);
+    } else {
+      await _replace(next);
+    }
     return byId(manifest.id)!;
   }
 
@@ -228,6 +257,9 @@ class MetaversePluginsController
     if (token.isEmpty) {
       await _store.deleteToken(id);
       return;
+    }
+    if (!byId(id)!.allows(MetaversePluginPermission.serviceAccount)) {
+      throw const MetaversePluginCallException('permission_denied:serviceAccount');
     }
     await _store.writeToken(id, token);
   }
@@ -288,6 +320,33 @@ class MetaversePluginsController
     await _dismissTaskNotifications(dismissed);
   }
 
+  Future<void> _replacePermissions(
+    InstalledMetaversePlugin previous,
+    InstalledMetaversePlugin next,
+  ) async {
+    const account = MetaversePluginPermission.serviceAccount;
+    if (previous.blockedPermissions.contains(account) && next.allows(account)) {
+      await _store.deleteToken(next.id);
+    }
+    final control = _usesTaskControl(next)
+        ? await ref.read(metaverseTaskStoreProvider.future)
+        : null;
+    // 后台只接受索引和租约中策略一致的任务。先撤销旧租约，再公布新索引。
+    final dismissed = control?.applyPermissions(next) ?? const <int>[];
+    try {
+      await _replace(next);
+    } catch (_) {
+      control?.applyPermissions(previous);
+      rethrow;
+    } finally {
+      await _dismissTaskNotifications(dismissed);
+    }
+    // 如果安全存储暂不可用，访问仍然被禁止，再次开启前也要完成清理。
+    if (previous.allows(account) && !next.allows(account)) {
+      await _store.deleteToken(next.id);
+    }
+  }
+
   Future<void> _replace(
     InstalledMetaversePlugin plugin, {
     bool remove = false,
@@ -302,6 +361,10 @@ class MetaversePluginsController
       next.add(plugin);
     }
     await _store.saveIndex(next);
+    // 持久化期间旧页面仍可能打开实例。公布新策略前统一收回它的授权。
+    if (ref.read(metaversePluginHostsProvider.exists)) {
+      ref.read(metaversePluginHostsProvider).shutdown(plugin.id);
+    }
     state = next;
   }
 }
@@ -317,18 +380,25 @@ class MetaversePluginHosts {
   final _hosts = <String, MetaversePluginHost>{};
 
   /// 取（必要时创建）某个插件的运行实例。
-  MetaversePluginHost hostFor(InstalledMetaversePlugin plugin) {
+  MetaversePluginHost hostFor(InstalledMetaversePlugin requested) {
+    final plugin = _ref.read(metaversePluginsProvider.notifier).byId(requested.id);
+    if (plugin == null || !plugin.enabled || plugin.suspendedReason != null) {
+      throw const PluginOperationCancelled();
+    }
     final existing = _hosts[plugin.id];
-    if (existing != null && identical(existing.manifest, plugin.manifest)) {
+    if (existing != null &&
+        identical(existing.manifest, plugin.manifest) &&
+        identical(existing.blockedPermissions, plugin.blockedPermissions)) {
       return existing;
     }
     // 清单在本次运行中被更新过：丢掉旧实例，按新清单重建。
-    existing?.shutdown();
+    existing?.retire();
     return _hosts[plugin.id] = newHost(plugin);
   }
 
   MetaversePluginHost newHost(InstalledMetaversePlugin plugin, {bool worker = false}) => MetaversePluginHost(
       manifest: plugin.manifest,
+      blockedPermissions: plugin.blockedPermissions,
       store: _ref.read(metaversePluginStoreProvider),
       codeLoader: plugin.codeRevision == null ? null : () => _ref.read(metaversePluginStoreProvider).readCodeRevision(plugin.id, plugin.codeRevision!),
       network: _ref.read(metaversePluginNetworkProvider),
@@ -340,7 +410,7 @@ class MetaversePluginHosts {
 
   void notifyTaskUpdated(String id) => _hosts[id]?.notifyTaskUpdated();
 
-  void shutdown(String pluginId) => _hosts.remove(pluginId)?.shutdown();
+  void shutdown(String pluginId) => _hosts.remove(pluginId)?.retire();
 
   void refreshVisibleCards() {
     for (final host in _hosts.values) { host.refreshVisibleCards(); }
@@ -348,7 +418,7 @@ class MetaversePluginHosts {
 
   void shutdownAll() {
     for (final host in _hosts.values) {
-      host.shutdown();
+      host.retire();
     }
     _hosts.clear();
   }
@@ -568,7 +638,10 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     MetaversePluginManifest manifest,
   ) async {
     final generation = _generation;
-    bool active() => context.mounted && generation == _generation;
+    final store = _ref.read(metaversePluginStoreProvider);
+    final revision = store.tokenRevision(manifest.id);
+    bool active() => context.mounted && generation == _generation &&
+        store.tokenRevision(manifest.id) == revision;
     final token = await showMetaversePluginTokenDialog(context, manifest);
     if (token == null || token.isEmpty || !active()) return false;
     await _ref
@@ -622,6 +695,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 /// 开发实例复用正式能力代理，存储、导航和存活条件由会话提供。
 MetaversePluginHost createDevelopmentPluginHost(Ref ref, {
   required MetaversePluginManifest manifest,
+  Set<MetaversePluginPermission> blockedPermissions = const {},
   required MetaversePluginStore store,
   required MetaverseScriptEngineFactory engineFactory,
   required Future<MetaversePluginCode> Function() codeLoader,
@@ -629,7 +703,7 @@ MetaversePluginHost createDevelopmentPluginHost(Ref ref, {
   required void Function(BuildContext, String, Map<String, Object?>) navigate,
   required void Function(String) suspended,
 }) => MetaversePluginHost(
-  manifest: manifest, store: store,
+  manifest: manifest, store: store, blockedPermissions: blockedPermissions,
   network: ref.read(metaversePluginNetworkProvider),
   engineFactory: engineFactory, codeLoader: codeLoader,
   delegate: _HostDelegate(ref, manifest, developmentStore: store,

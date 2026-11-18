@@ -275,14 +275,16 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
         );
         if (approved != true || !mounted) return;
       }
-      if (!await showMetaversePluginInstallSheet(
+      final choices = await showMetaversePluginInstallSheet(
         context,
         package.manifest,
         isUpdate: previous != null,
-      )) {
+        initialBlocked: controller.reviewPermissions(package),
+      );
+      if (choices == null) {
         return;
       }
-      await controller.install(package);
+      await controller.install(package, choices: choices);
       if (mounted) {
         ToastService.showSuccess(
           context.l10n.metaverse_pluginInstalled(package.manifest.name),

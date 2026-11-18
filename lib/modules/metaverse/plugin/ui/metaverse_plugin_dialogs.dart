@@ -1,5 +1,7 @@
 import 'package:app_icons/app_icons.dart';
-import '../metaverse_forum_request.dart';
+import '../metaverse_plugin_permission.dart';
+import '../metaverse_plugin_store.dart';
+import 'metaverse_permission_list.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -14,20 +16,6 @@ import 'metaverse_widget_library.dart';
 
 /// 输入清单地址。
 typedef PluginInstallChoice = ({String? url});
-
-Future<void> showMetaversePluginDetails(
-  BuildContext context,
-  MetaversePluginManifest manifest,
-) => AppBottomSheet.showDraggable<void>(
-  context: context,
-  title: manifest.name,
-  showCloseButton: true,
-  initialSize: .7,
-  minSize: .4,
-  maxSize: .95,
-  bodyBuilder: (ctx, controller) =>
-      _InstallReview(manifest: manifest, controller: controller),
-);
 
 Future<PluginInstallChoice?> showMetaversePluginPicker(
   BuildContext context,
@@ -133,16 +121,17 @@ class _PluginUrlInputState extends State<_PluginUrlInput> {
   );
 }
 
-/// 安装确认：把清单声明的权限逐条摆给用户看。
-///
-/// 这里展示的域名与权限来自清单本身，是"运行期无法扩权"这个承诺的对外呈现。
-Future<bool> showMetaversePluginInstallSheet(
+/// 返回用户本次调整的开关；取消返回 null。
+Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
   BuildContext context,
   MetaversePluginManifest manifest, {
   required bool isUpdate,
   String? confirmLabel,
-}) async {
-  final confirmed = await AppBottomSheet.showDraggable<bool>(
+  Set<MetaversePluginPermission>? initialBlocked,
+}) {
+  final initial = initialBlocked ?? InstalledMetaversePlugin.reviewPermissions(manifest, null);
+  final choices = <MetaversePluginPermission, bool>{};
+  return AppBottomSheet.showDraggable<Map<MetaversePluginPermission, bool>>(
     context: context,
     title: manifest.name,
     showCloseButton: true,
@@ -156,13 +145,13 @@ Future<bool> showMetaversePluginInstallSheet(
           child: Row(
             children: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
+                onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(ctx.l10n.common_cancel),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => Navigator.of(ctx).pop(true),
+                  onPressed: () => Navigator.of(ctx).pop(Map.of(choices)),
                   icon: Icon(
                     isUpdate
                         ? Symbols.update_rounded
@@ -180,14 +169,33 @@ Future<bool> showMetaversePluginInstallSheet(
         ),
       ),
     ),
-    bodyBuilder: (ctx, controller) =>
-        _InstallReview(manifest: manifest, controller: controller),
+    bodyBuilder: (ctx, controller) => StatefulBuilder(
+      builder: (_, update) => _InstallReview(
+        manifest: manifest,
+        controller: controller,
+        blocked: manifest.applyPermissionChoices(initial, choices),
+        onChanged: (permission, allowed) => update(() {
+          final initiallyAllowed = !initial.contains(permission);
+          if (allowed == initiallyAllowed) {
+            choices.remove(permission);
+          } else {
+            choices[permission] = allowed;
+          }
+        }),
+      ),
+    ),
   );
-  return confirmed ?? false;
 }
 
 class _InstallReview extends StatelessWidget {
-  const _InstallReview({required this.manifest, required this.controller});
+  const _InstallReview({
+    required this.manifest,
+    required this.controller,
+    required this.blocked,
+    required this.onChanged,
+  });
+  final Set<MetaversePluginPermission> blocked;
+  final void Function(MetaversePluginPermission, bool) onChanged;
 
   final MetaversePluginManifest manifest;
   final ScrollController controller;
@@ -227,80 +235,7 @@ class _InstallReview extends StatelessWidget {
           Text(manifest.description, style: theme.textTheme.bodyMedium),
         ],
         const SizedBox(height: 24),
-        Text(l.metaverse_pluginPermissions, style: theme.textTheme.titleSmall),
-        const SizedBox(height: 12),
-        SegmentedCardGroup(
-          children: [
-            _PermissionRow(
-              icon: Symbols.public_rounded,
-              title: l.metaverse_permissionNetwork,
-              description: manifest.networkHosts.isEmpty
-                  ? l.metaverse_pluginPermNetworkNone
-                  : manifest.networkHosts.join(' · '),
-              details: [
-                ...manifest.networkHosts,
-                if (manifest.publicImages) l.metaverse_pluginPublicImages,
-              ],
-            ),
-            if (manifest.auth.canAttachCredential || manifest.webLogin != null ||
-                manifest.capabilities.credentials.isNotEmpty || manifest.capabilities.connectCallbacks.isNotEmpty)
-              _PermissionRow(
-                icon: Symbols.account_circle_rounded,
-                title: l.metaverse_permissionAccount,
-                description: manifest.capabilities.connectCallbacks.isNotEmpty
-                    ? l.metaverse_permissionNativeLogin
-                    : manifest.auth.required
-                    ? l.metaverse_pluginPermToken
-                    : l.metaverse_permissionServiceSession,
-                details: [
-                  for (final callback in manifest.capabilities.connectCallbacks) callback.toString(),
-                  for (final credential in manifest.capabilities.credentials.values)
-                    for (final scope in credential.scopes)
-                      '${scope.methods.join(" / ")} ${scope.origin.origin}${scope.pathPrefix}',
-                  ...manifest.auth.hosts,
-                  if (manifest.webLogin case final login?)
-                    '${l.metaverse_permissionWebSession} · ${login.host}',
-                ],
-              ),
-            if (manifest.capabilities.payments.isNotEmpty)
-              _PermissionRow(
-                icon: Symbols.payments_rounded,
-                title: l.metaverse_nativePayTitle,
-                description: l.metaverse_permissionPaymentNote,
-              ),
-            if (manifest.linkHosts.isNotEmpty)
-              _PermissionRow(
-                icon: Symbols.link_rounded,
-                title: l.metaverse_permissionLinks,
-                description: l.metaverse_pluginPermLinks,
-                details: manifest.linkHosts,
-              ),
-            if (manifest.capabilities.forum.isNotEmpty)
-              _PermissionRow(
-                icon: Symbols.forum_rounded,
-                title: l.metaverse_permissionForum,
-                description: l.metaverse_permissionForumNote,
-                details: [for (final scope in manifest.capabilities.forum) switch (scope) {
-                  MetaverseForumScope.profiles => l.metaverse_forumProfiles,
-                  MetaverseForumScope.activity => l.metaverse_forumActivity,
-                  MetaverseForumScope.following => l.metaverse_forumFollowing,
-                }],
-              ),
-            if (manifest.tasks.isNotEmpty)
-              _PermissionRow(icon: Symbols.schedule_rounded,
-                title: manifest.capabilities.background ? l.metaverse_backgroundTasks : l.metaverse_foregroundTasks,
-                description: manifest.capabilities.background ? l.metaverse_backgroundTaskNote : null,
-                details: [for (final task in manifest.tasks) task.title]),
-            if (manifest.capabilities.notifications)
-              _PermissionRow(icon: Symbols.notifications_rounded, title: l.metaverse_pluginNotifications,
-                description: l.metaverse_pluginNotificationsNote),
-            if (manifest.identity)
-              _PermissionRow(
-                icon: Symbols.person_rounded,
-                title: l.metaverse_pluginPermIdentity,
-              ),
-          ],
-        ),
+        MetaversePermissionList(manifest: manifest, blocked: blocked, onChanged: onChanged),
         const SizedBox(height: 20),
         Text(
           l.metaverse_pluginWarning,
@@ -308,61 +243,6 @@ class _InstallReview extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-      ],
-    );
-  }
-}
-
-class _PermissionRow extends StatelessWidget {
-  const _PermissionRow({
-    required this.icon,
-    required this.title,
-    this.description,
-    this.details = const [],
-  });
-  final IconData icon;
-  final String title;
-  final String? description;
-  final List<String> details;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final leading = Icon(icon, size: 22, color: context.emphasis.accent);
-    final subtitle = description == null
-        ? null
-        : Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              description!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          );
-    if (details.isEmpty) {
-      return ListTile(
-        leading: leading,
-        title: Text(title),
-        subtitle: subtitle,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      );
-    }
-    return ExpansionTile(
-      leading: leading,
-      title: Text(title),
-      subtitle: subtitle,
-      shape: const Border(),
-      collapsedShape: const Border(),
-      tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final detail in details)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: SelectableText(detail, style: theme.textTheme.bodySmall),
-          ),
       ],
     );
   }

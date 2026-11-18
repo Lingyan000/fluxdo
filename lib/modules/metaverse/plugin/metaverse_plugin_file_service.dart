@@ -134,13 +134,14 @@ class MetaversePluginFileService {
     );
     if (!context.mounted) return false;
     final controller = container.read(metaversePluginsProvider.notifier);
-    final confirmed = await showMetaversePluginInstallSheet(
+    final choices = await showMetaversePluginInstallSheet(
       context,
       package.manifest,
       isUpdate: controller.byId(package.manifest.id) != null,
+      initialBlocked: controller.reviewPermissions(package),
     );
-    if (!confirmed) return true;
-    await controller.install(package);
+    if (choices == null) return true;
+    await controller.install(package, choices: choices);
     ToastService.showSuccess(
       S.current.metaverse_pluginInstalled(package.manifest.name),
     );

@@ -132,13 +132,14 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
       }
       if (!mounted) return;
       final controller = ref.read(metaversePluginsProvider.notifier);
-      final confirmed = await showMetaversePluginInstallSheet(
+      final choices = await showMetaversePluginInstallSheet(
         context,
         package.manifest,
         isUpdate: controller.byId(package.manifest.id) != null,
+        initialBlocked: controller.reviewPermissions(package),
       );
-      if (!confirmed) return;
-      await controller.install(package);
+      if (choices == null) return;
+      await controller.install(package, choices: choices);
       if (mounted) {
         ToastService.showSuccess(
           S.current.metaverse_pluginInstalled(package.manifest.name),

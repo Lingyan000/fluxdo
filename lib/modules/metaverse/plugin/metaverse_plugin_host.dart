@@ -17,6 +17,7 @@ import '../../../utils/link_launcher.dart' show LinkOpenMode;
 
 import 'metaverse_plugin_installer.dart';
 import 'metaverse_plugin_manifest.dart';
+import 'metaverse_plugin_permission.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
 import 'metaverse_credential_manager.dart';
@@ -106,6 +107,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     this.idleTimeout = const Duration(seconds: 30),
     this._clock = DateTime.now,
     this.codeLoader,
+    this.blockedPermissions = const {},
   });
 
   static const _maxStorageKey = 128;
@@ -120,6 +122,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
   static const activationWindow = Duration(seconds: 10);
 
   final MetaversePluginManifest manifest;
+  final Set<MetaversePluginPermission> blockedPermissions;
+  bool _retired = false;
+
+  void _requirePermission(MetaversePluginPermission permission) {
+    if (blockedPermissions.contains(permission)) {
+      throw MetaversePluginCallException('permission_denied:${permission.name}');
+    }
+  }
   final MetaversePluginStore _store;
   final MetaversePluginNetwork _network;
   late final _credentials = MetaverseCredentialManager(manifest, _store, _network);
@@ -206,6 +216,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     Map<String, Object?> params = const {},
     bool Function()? isVisible,
   }) async {
+    if (_retired) throw const PluginOperationCancelled();
     _idleTimer?.cancel();
     _idleTimer = null;
     await (_starting ??= _start(_generation));
@@ -223,6 +234,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   /// 独立实例执行任务，结束即销毁；不能与可见页面共用脚本内存。
   Future<void> runTask(String id, {required bool background, required bool Function() isActive}) async {
+    if (_retired) throw const PluginOperationCancelled();
+    if (background) _requirePermission(MetaversePluginPermission.background);
     if (_runtime != null || _starting != null || !manifest.tasks.any((t) => t.id == id)) {
       throw const MetaversePluginCallException('task_not_declared');
     }
@@ -325,6 +338,12 @@ class MetaversePluginHost implements MetaversePluginBridge {
     _clearActivation();
   }
 
+  /// 撤销实例持有的授权，旧页面即使再次可见也不能重启这个实例。
+  void retire() {
+    _retired = true;
+    shutdown();
+  }
+
   Future<void> _start(int generation) async {
     _accountAtStart = _delegate.currentAccountId();
     try {
@@ -332,6 +351,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         throw const MetaversePluginCallException('plugin_api_upgrade_required');
       }
       final code = await (codeLoader?.call() ?? _store.readCode(id));
+      if (generation != _generation) throw const PluginOperationCancelled();
       final library = _taskActive == null ? MetaversePluginInstaller.validateUi(manifest, code.ui) : null;
       final runtime = await MetaversePluginRuntime.start(
         engineFactory: _engineFactory,
@@ -358,7 +378,13 @@ class MetaversePluginHost implements MetaversePluginBridge {
             loadImage: (uri) => PluginExecutionContext(
               pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId,
               emitter: 'framework',
-            ).run(() => _network.loadImage(manifest, uri, forumAvatar: _forumAvatars.contains(uri))),
+            ).run(() => _network.loadImage(manifest, uri,
+              forumAvatar: _forumAvatars.contains(uri),
+              allowPublicImages: !blockedPermissions.contains(MetaversePluginPermission.publicImages),
+              checkActive: () {
+                if (generation != _generation) throw const PluginOperationCancelled();
+              },
+            )),
           ),
         )
         ..update(metaversePluginLibraryName, library);
@@ -450,6 +476,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
+    if (_retired) throw const PluginOperationCancelled();
     if (manifest.accountScoped && _accountAtStart != _delegate.currentAccountId()) {
       throw const MetaversePluginCallException('forum_account_changed');
     }
@@ -472,6 +499,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     switch (method) {
       case 'tasks.schedule':
         final request = MetaverseTaskSchedule.parse(params);
+        if (request.background) _requirePermission(MetaversePluginPermission.background);
         if (!manifest.tasks.any((t) => t.id == request.id)) throw const MetaversePluginCallException('task_not_declared');
         if (request.background && !manifest.capabilities.background) throw const MetaversePluginCallException('task_permission_denied');
         return _userInitiatedUi((context) async {
@@ -485,6 +513,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return _delegate.taskOperation(method, params, checkActive: checkActive);
       case 'notifications.requestPermission':
         if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        if (blockedPermissions.contains(MetaversePluginPermission.notifications)) return false;
         return _userInitiatedUi((context) async {
           if (!await _delegate.confirmNotifications(context)) return false;
           checkActive();
@@ -495,6 +524,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
       case 'notifications.isAllowed':
       case 'notifications.revoke':
         if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        if (method == 'notifications.isAllowed' && blockedPermissions.contains(MetaversePluginPermission.notifications)) return false;
+        if (method == 'notifications.show') _requirePermission(MetaversePluginPermission.notifications);
         return _delegate.taskOperation(method, params, checkActive: checkActive);
       case 'navigation.setBadge':
         final page = params['page'], count = params['count'];
@@ -507,6 +538,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         if (!manifest.capabilities.forum.contains(request.resource.scope)) {
           throw const MetaversePluginCallException('forum_permission_denied');
         }
+        _requirePermission(MetaversePluginPermission.forForum(request.resource.scope));
         final account = _delegate.currentAccountId();
         if (account == null) throw const MetaversePluginCallException('forum_auth_required');
         final generation = _generation;
@@ -550,6 +582,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         final generation = _generation;
         final accountId = _delegate.currentAccountId();
         final credentialName = params['credential'];
+        if (credentialName != null || params['auth'] == true) _requirePermission(MetaversePluginPermission.serviceAccount);
         final credentialRevision = credentialName is String
             ? _store.credentialRevision(id, credentialName)
             : null;
@@ -628,8 +661,15 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return null;
 
       case 'credentials.status':
-        return _credentials.status(params['name'], _delegate.currentAccountId());
+        _credentials.spec(params['name']);
+        if (blockedPermissions.contains(MetaversePluginPermission.serviceAccount)) {
+          return {'authorized': false, 'expiresAt': null};
+        }
+        final status = await _credentials.status(params['name'], _delegate.currentAccountId());
+        checkActive();
+        return status;
       case 'credentials.capture':
+        _requirePermission(MetaversePluginPermission.serviceAccount);
         if (_taskActive != null) throw const MetaversePluginCallException('task_read_only');
         final generation = _generation;
         final accountId = _delegate.currentAccountId();
@@ -644,6 +684,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         await _store.removeCredential(id, name);
         return null;
       case 'credentials.request':
+        _requirePermission(MetaversePluginPermission.serviceAccount);
         final name = _credentials.spec(params['name']).name;
         return _userInitiatedUi(
           (context) => _delegate.requestCredential(context, name),
@@ -686,6 +727,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         }
         return _userInitiatedUi((context) => _delegate.confirm(context, params), renewOnAcceptance: true);
       case 'connect.authorize':
+        _requirePermission(MetaversePluginPermission.serviceAccount);
         final raw = params['url'];
         final uri = raw is String && raw.length <= 16384
             ? Uri.tryParse(raw)
@@ -697,6 +739,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           (context) => _delegate.authorizeConnect(context, uri),
         );
       case 'payments.request':
+        _requirePermission(MetaversePluginPermission.payments);
         final provider = manifest.capabilities.payments
             .where((value) => value.name == params['provider'])
             .firstOrNull;
@@ -726,12 +769,12 @@ class MetaversePluginHost implements MetaversePluginBridge {
         );
 
       case 'auth.status':
-        return {
-          'required': manifest.auth.required,
-          'authorized': manifest.auth.required &&
-              ((await _store.readToken(id))?.isNotEmpty ?? false),
-        };
+        final authorized = manifest.auth.required && !blockedPermissions.contains(MetaversePluginPermission.serviceAccount) &&
+            ((await _store.readToken(id))?.isNotEmpty ?? false);
+        checkActive();
+        return {'required': manifest.auth.required, 'authorized': authorized};
       case 'auth.request':
+        _requirePermission(MetaversePluginPermission.serviceAccount);
         if (!manifest.auth.required) {
           throw const MetaversePluginCallException('清单未声明授权方式');
         }
@@ -748,6 +791,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
             '清单未声明 permissions.identity',
           );
         }
+        if (blockedPermissions.contains(MetaversePluginPermission.identity)) return null;
         final username = _delegate.currentUsername();
         return username == null ? null : {
           'username': username,
@@ -820,6 +864,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
       case 'session.login':
       case 'session.open':
+        _requirePermission(MetaversePluginPermission.serviceAccount);
         final path = params['path'];
         final target = method == 'session.login'
             ? manifest.webLogin

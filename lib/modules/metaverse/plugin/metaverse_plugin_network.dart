@@ -103,12 +103,16 @@ class MetaversePluginNetwork {
   }
 
   /// 图片匿名下载，每一跳重新检查权限、宿主保留域名与公网地址。
-  Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri, {bool forumAvatar = false}) async {
+  Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri, {
+    bool forumAvatar = false, bool allowPublicImages = true, void Function()? checkActive,
+  }) async {
     final response = await downloadResource(
       uri,
       maxBytes: maxImageBytes,
       imageManifest: manifest,
       forumAvatar: forumAvatar,
+      allowPublicImages: allowPublicImages,
+      checkActive: checkActive,
     );
     final contentType = (response.headers['content-type'] ?? '')
         .split(';')
@@ -249,26 +253,32 @@ class MetaversePluginNetwork {
     String? etag,
     MetaversePluginManifest? imageManifest,
     bool forumAvatar = false,
+    bool allowPublicImages = true,
+    void Function()? checkActive,
   }) async {
     var current = uri;
     final homepage = Uri.tryParse(imageManifest?.homepage ?? '');
     for (var hop = 0; hop < 6; hop++) {
+      checkActive?.call();
       // 与 HTTPS 网页的图片升级行为一致，每次连接仍要求 TLS 校验。
       if (imageManifest != null && current.scheme == 'http') {
         current = current.replace(scheme: 'https');
       }
       final target = await _checkTarget(
         current,
-        !forumAvatar && imageManifest?.publicImages == false ? imageManifest!.networkHosts : null,
+        imageManifest != null && !(forumAvatar && hop == 0) && !(imageManifest.publicImages && allowPublicImages)
+            ? imageManifest.networkHosts : null,
         image: imageManifest != null,
         reservedHosts: forumAvatar && current == uri ? const [] : imageManifest?.reservedHosts ?? const [],
       );
+      final agent = await AppConstants.getUserAgent();
+      checkActive?.call();
       final response = await _send(
         current,
         target: target,
         method: 'GET',
         headers: {
-          'User-Agent': await AppConstants.getUserAgent(),
+          'User-Agent': agent,
           if (imageManifest != null) 'Accept': 'image/*',
           // 与网站跨域图片请求一致，只发送清单公开主页的 origin。
           if (imageManifest != null &&
@@ -281,6 +291,7 @@ class MetaversePluginNetwork {
         body: null,
         maxBytes: maxBytes,
       );
+      checkActive?.call();
       if (response.status >= 300 && response.status < 400 && response.status != 304) {
         final location = response.headers['location'];
         if (location == null) throw const MetaversePluginCallException('下载重定向缺少地址');

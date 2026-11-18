@@ -88,8 +88,7 @@ class MetaverseNavigationSpec {
 
 /// 第三方插件清单，保持对旧版本插件的支持。
 ///
-/// 清单是插件能力的唯一来源：能访问哪些域名、接管哪些链接、有哪些页面、
-/// 怎么授权，全部在这里静态声明并在安装时展示给用户；脚本运行期不能扩权。
+/// 清单给出能力上限。已安装插件的授权还受用户对该插件的权限设置约束。
 @immutable
 class MetaversePluginManifest {
   const MetaversePluginManifest._({

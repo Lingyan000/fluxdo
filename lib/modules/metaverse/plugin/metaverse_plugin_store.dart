@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../services/storage/secret_store.dart';
 import 'metaverse_plugin_manifest.dart';
+import 'metaverse_plugin_permission.dart';
 import 'metaverse_credential.dart';
 import 'migrations/metaverse_legacy_storage.dart';
 
@@ -23,6 +24,7 @@ class InstalledMetaversePlugin {
     this.enabled = false,
     this.suspendedReason,
     this.codeRevision,
+    this.blockedPermissions = const {},
   });
 
   final MetaversePluginManifest manifest;
@@ -30,6 +32,21 @@ class InstalledMetaversePlugin {
   /// 清单地址，也是更新来源。
   final String source;
   final String? codeRevision;
+  final Set<MetaversePluginPermission> blockedPermissions;
+  List<String> get blockedPermissionNames => blockedPermissions.map((p) => p.name).toList()..sort();
+
+  bool allows(MetaversePluginPermission permission) =>
+      permission.declaredBy(manifest) && !blockedPermissions.contains(permission);
+
+  /// 老版本已审阅的能力沿用原选择。新安装、换源或新增声明按宿主默认值开始。
+  static Set<MetaversePluginPermission> reviewPermissions(
+    MetaversePluginManifest manifest, InstalledMetaversePlugin? sameSource,
+  ) => {
+    ...?sameSource?.blockedPermissions,
+    for (final permission in manifest.declaredPermissions)
+      if (permission.manageable && !permission.initiallyAllowed &&
+          (sameSource == null || !permission.declaredBy(sameSource.manifest))) permission,
+  };
 
   /// 用户是否已开启（并完成授权）。
   final bool enabled;
@@ -43,11 +60,13 @@ class InstalledMetaversePlugin {
     bool? enabled,
     String? suspendedReason,
     bool clearSuspended = false,
+    Set<MetaversePluginPermission>? blockedPermissions,
   }) => InstalledMetaversePlugin(
     manifest: manifest,
     source: source,
     codeRevision: codeRevision,
     enabled: enabled ?? this.enabled,
+    blockedPermissions: blockedPermissions ?? this.blockedPermissions,
     suspendedReason: clearSuspended
         ? null
         : (suspendedReason ?? this.suspendedReason),
@@ -57,6 +76,7 @@ class InstalledMetaversePlugin {
     'source': source,
     'codeRevision': ?codeRevision,
     'enabled': enabled,
+    'blockedPermissions': blockedPermissionNames,
     'suspended': ?suspendedReason,
     'manifest': manifest.raw,
   };
@@ -96,8 +116,10 @@ class MetaversePluginStore {
   final _stagedCode = <String, String>{};
   final _credentialGenerations = <String, int>{};
 
+  int tokenRevision(String id) => _operations.generation(id);
+
   (int, int) credentialRevision(String id, String name) =>
-      (_operations.generation(id), _credentialGenerations['$id/$name'] ?? 0);
+      (tokenRevision(id), _credentialGenerations['$id/$name'] ?? 0);
 
   /// 读取已安装插件；清单已不合法的条目直接跳过。
   List<InstalledMetaversePlugin> loadIndex() {
@@ -123,6 +145,9 @@ class MetaversePluginStore {
           allowLegacyMetadata: true,
         );
         if (plugins.any((plugin) => plugin.id == manifest.id)) continue;
+        final blocks = item['blockedPermissions'];
+        // 缺字段是旧索引；新字段损坏时不得恢复敏感权限。
+        final valid = blocks is List && blocks.every((entry) => entry is String);
         plugins.add(
           InstalledMetaversePlugin(
             manifest: manifest,
@@ -131,6 +156,11 @@ class MetaversePluginStore {
                 ? item['codeRevision'] as String
                 : null,
             enabled: item['enabled'] == true,
+            blockedPermissions: Set.unmodifiable({
+              for (final p in MetaversePluginPermission.values)
+                if (p.manageable && item.containsKey('blockedPermissions') &&
+                    (!valid || blocks.contains(p.name))) p,
+            }),
             suspendedReason: item['suspended'] is String
                 ? item['suspended'] as String
                 : null,

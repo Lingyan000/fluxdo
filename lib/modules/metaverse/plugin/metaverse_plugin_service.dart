@@ -2,6 +2,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart' show PluginOperationCancelled;
 
 import '../core/metaverse_link_rule.dart';
 import '../core/metaverse_service.dart';
@@ -9,6 +10,7 @@ import '../../../l10n/s.dart';
 import 'providers/metaverse_plugin_providers.dart';
 import 'metaverse_plugin_host.dart';
 import 'metaverse_plugin_manifest.dart';
+import 'metaverse_plugin_permission.dart';
 import 'metaverse_plugin_store.dart';
 import 'ui/metaverse_plugin_dialogs.dart';
 import 'ui/metaverse_plugin_management_page.dart';
@@ -60,13 +62,13 @@ class MetaversePluginService extends MetaverseService {
 
   @override
   List<MetaverseLinkRule> get linkRules =>
-      plugin.suspendedReason != null || !manifest.runtimeSupported
+      plugin.suspendedReason != null || !manifest.runtimeSupported || !plugin.allows(MetaversePluginPermission.links)
           ? const [] : manifest.links;
 
   @override
   Future<bool> enable(BuildContext context, ProviderContainer container) async {
     final controller = container.read(metaversePluginsProvider.notifier);
-    if (manifest.auth.required &&
+    if (manifest.auth.required && plugin.allows(MetaversePluginPermission.serviceAccount) &&
         !await _ensureAuth(context, container)) {
       return false;
     }
@@ -84,7 +86,7 @@ class MetaversePluginService extends MetaverseService {
     BuildContext context,
     ProviderContainer container,
   ) async {
-    if (!manifest.auth.required) return false;
+    if (!manifest.auth.required || !plugin.allows(MetaversePluginPermission.serviceAccount)) return false;
     return _ensureAuth(context, container);
   }
 
@@ -114,12 +116,25 @@ class MetaversePluginService extends MetaverseService {
     BuildContext context,
     ProviderContainer container,
   ) async {
-    final token = await showMetaversePluginTokenDialog(context, manifest);
-    if (token == null || token.isEmpty) return false;
-    await container
-        .read(metaversePluginsProvider.notifier)
-        .saveToken(id, token);
-    return true;
+    final controller = container.read(metaversePluginsProvider.notifier);
+    final installed = controller.byId(id);
+    if (installed == null || installed.source != plugin.source ||
+        !installed.manifest.auth.required ||
+        !installed.allows(MetaversePluginPermission.serviceAccount)) {
+      return false;
+    }
+    final store = container.read(metaversePluginStoreProvider);
+    final revision = store.tokenRevision(id);
+    bool active() => context.mounted && identical(controller.byId(id), installed) &&
+        store.tokenRevision(id) == revision;
+    final token = await showMetaversePluginTokenDialog(context, installed.manifest);
+    if (token == null || token.isEmpty || !active()) return false;
+    try {
+      await controller.saveToken(id, token, isActive: active);
+      return true;
+    } on PluginOperationCancelled {
+      return false;
+    }
   }
 }
 
@@ -140,13 +155,8 @@ class MetaversePluginCard extends ConsumerWidget {
     final manifest = service.manifest;
     final plugin = ref
         .watch(metaversePluginsProvider)
-        .firstWhere(
-          (item) => item.id == service.id,
-          orElse: () => service.plugin,
-        );
-    final pluginHost = ref
-        .watch(metaversePluginHostsProvider)
-        .hostFor(plugin);
+        .where((item) => item.id == service.id).firstOrNull;
+    if (plugin == null || !plugin.enabled) return const SizedBox.shrink();
 
     return IgnorePointer(
       ignoring: host.isProcessing,
@@ -175,7 +185,7 @@ class MetaversePluginCard extends ConsumerWidget {
             else if (plugin.suspendedReason != null)
               _suspended(context, ref, plugin)
             else
-              _content(context, pluginHost, manifest),
+              _content(context, ref.watch(metaversePluginHostsProvider).hostFor(plugin), manifest),
           ],
         ),
       ),
@@ -256,8 +266,10 @@ class MetaversePluginCard extends ConsumerWidget {
             await Navigator.of(context).push(InteractionPageRoute(
               builder: (_) => MetaversePluginSettingsPage(pluginId: manifest.id),
             ));
-          case 'details':
-            await showMetaversePluginDetails(context, manifest);
+          case 'permissions':
+            await Navigator.of(context).push(InteractionPageRoute(
+              builder: (_) => MetaversePluginPermissionsPage(pluginId: manifest.id),
+            ));
           case 'reauthorize':
             host.onReauthorize();
           case 'disable':
@@ -271,10 +283,10 @@ class MetaversePluginCard extends ConsumerWidget {
       itemBuilder: (_) => [
         PopupMenuItem(value: 'manage', child: Text(context.l10n.metaverse_pluginManage)),
         PopupMenuItem(
-          value: 'details',
-          child: Text(context.l10n.common_details),
+          value: 'permissions',
+          child: Text(context.l10n.metaverse_permissionSettings),
         ),
-        if (manifest.auth.required)
+        if (manifest.auth.required && service.plugin.allows(MetaversePluginPermission.serviceAccount))
           PopupMenuItem(
             value: 'reauthorize',
             child: Text(context.l10n.common_reAuth),

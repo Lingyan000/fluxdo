@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
+import 'package:collection/collection.dart';
+import '../plugin/metaverse_plugin_permission.dart';
 
 import '../../../services/log/log_writer.dart';
 import '../plugin/metaverse_plugin_host.dart';
@@ -32,7 +34,8 @@ Future<String?> dispatchMetaverseTask({
         plugin.suspendedReason != null ||
         plugin.codeRevision != lease['installed']['revision'] ||
         plugin.source != lease['installed']['source'] ||
-        (background && !plugin.manifest.capabilities.background) ||
+        !const ListEquality().equals(plugin.blockedPermissionNames, lease['installed']['blocked'] as List? ?? const []) ||
+        (background && !plugin.allows(MetaversePluginPermission.background)) ||
         !active()) {
       throw const MetaversePluginCallException('task_cancelled');
     }

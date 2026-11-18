@@ -17,6 +17,7 @@ import '../../../../services/storage/secret_store.dart';
 import '../../plugin/metaverse_plugin_host.dart';
 import '../../plugin/metaverse_plugin_installer.dart';
 import '../../plugin/metaverse_plugin_manifest.dart';
+import '../../plugin/metaverse_plugin_permission.dart';
 import '../../plugin/metaverse_plugin_store.dart';
 import '../../plugin/providers/metaverse_plugin_providers.dart';
 import 'development_connection.dart';
@@ -333,7 +334,14 @@ class DevelopmentSession extends ChangeNotifier {
     }
   }
 
-  Future<void> start(DevelopmentProject next) async {
+  Set<MetaversePluginPermission> reviewPermissions(DevelopmentProject next) =>
+      InstalledMetaversePlugin.reviewPermissions(next.manifest,
+        project?.session == next.session && project?.manifest.id == next.manifest.id && host != null
+            ? InstalledMetaversePlugin(manifest: project!.manifest, source: next.session,
+                blockedPermissions: host!.blockedPermissions)
+            : null);
+
+  Future<void> start(DevelopmentProject next, {Map<MetaversePluginPermission, bool> choices = const {}}) async {
     if (_closed ||
         !connection.connected ||
         busy ||
@@ -342,7 +350,10 @@ class DevelopmentSession extends ChangeNotifier {
     }
     final generation = ++_generation;
     final epoch = _projectEpoch;
-    host?.shutdown();
+    final blocked = next.manifest.applyPermissionChoices(reviewPermissions(next), choices);
+    const account = MetaversePluginPermission.serviceAccount;
+    final dropSecrets = host?.blockedPermissions.contains(account) == false && blocked.contains(account);
+    host?.retire();
     host = null;
     _engine = null;
     _updates.clear();
@@ -367,6 +378,8 @@ class DevelopmentSession extends ChangeNotifier {
         rootDirectory: () async => temporary,
         isolated: true,
       );
+    } else if (dropSecrets) {
+      await _store!.deleteToken(next.manifest.id);
     }
     if (_closed || generation != _generation) {
       return;
@@ -384,6 +397,7 @@ class DevelopmentSession extends ChangeNotifier {
     created = createDevelopmentPluginHost(
       _ref,
       manifest: next.manifest,
+      blockedPermissions: blocked,
       store: _store!,
       engineFactory: () async {
         final engine = await _ref.read(metaverseScriptEngineFactoryProvider)();
@@ -435,7 +449,7 @@ class DevelopmentSession extends ChangeNotifier {
     _pairing = null;
     _reconnect?.cancel();
     connection.close();
-    host?.shutdown();
+    host?.retire();
     host = null;
     _engine = null;
     unawaited(_discardStorage());
