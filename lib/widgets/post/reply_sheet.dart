@@ -110,6 +110,8 @@ Future<Post?> showReplySheet({
   Rect? morphFrom,
   double morphFromRadius = 0,
   Color? morphFromColor,
+  MorphSheetAnchor? Function()? returnAnchor,
+  VoidCallback? onHandoffComplete,
 }) async {
   final suspension = DynamicContentSuspensionService.instance.acquire(
     reason: 'reply_sheet',
@@ -139,6 +141,8 @@ Future<Post?> showReplySheet({
         fromRect: morphFrom,
         fromRadius: morphFromRadius,
         fromColor: morphFromColor,
+        returnAnchor: returnAnchor,
+        onHandoffComplete: onHandoffComplete,
         shortcutSurface: shortcutSurface,
         builder: buildSheet,
       );

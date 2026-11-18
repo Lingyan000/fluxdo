@@ -2291,8 +2291,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   /// 底栏回复胶囊当前的外形:直接打开完整编辑器时从它长出;底栏收起或
   /// 不在屏上时为 null(退回从屏幕底部滑入)
-  ({Rect rect, double radius, Color color})? _replyEntryMorphSource() {
-    if (!_controller.showBottomBarNotifier.value) return null;
+  MorphSheetAnchor? _replyEntryMorphSource() {
+    if (!mounted || !_controller.showBottomBarNotifier.value) return null;
     final box = _replyEntryKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.attached || !box.hasSize) return null;
     final rect = box.localToGlobal(Offset.zero) & box.size;
@@ -2409,11 +2409,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 交接期间快捷回复的输入框保持焦点,完整编辑器挂载后直接接过焦点,
   /// 键盘不会先收起再弹出;面板被盖住后再静默撤掉
   Future<void> _expandQuickReply(Rect rect, double radius, Color color) async {
+    if (_replySession.handingOff) return;
     final handed = await _replySession.prepareHandOff();
     if (!mounted) return;
     // 草稿在后台交接:不等保存往返,编辑器立即展开
     final released = _replySession.releaseDraftInBackground();
-    final editor = _handleReply(
+    await _handleReply(
       handed.target,
       initialContent: handed.content.trim().isEmpty ? null : handed.content,
       forceFullEditor: true,
@@ -2421,12 +2422,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       morphFrom: rect,
       morphFromRadius: radius,
       morphFromColor: color,
+      onHandoffComplete: () {
+        if (mounted) _replySession.finishHandOff();
+      },
       draftReleased: released,
     );
-    // 展开动画(380ms)结束时面板已完全被编辑器盖住
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (mounted) _replySession.finishHandOff();
-    await editor;
   }
 
 
