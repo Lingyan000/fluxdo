@@ -273,16 +273,20 @@ void main() {
         'profile',
         'metaverse',
       ]);
+      final pluginEntry = find.ancestor(
+        of: find.text(m.name),
+        matching: find.widgetWithText(ListTile, '动态'),
+      );
       await tester.scrollUntilVisible(
-        find.text('动态'),
+        pluginEntry,
         250,
         scrollable: find.byType(Scrollable).first,
       );
-      while (find.text('动态').hitTestable().evaluate().isEmpty) {
+      while (pluginEntry.hitTestable().evaluate().isEmpty) {
         await tester.drag(find.byType(ListView).first, const Offset(0, -200));
         await tester.pumpAndSettle();
       }
-      await tester.tap(find.text('动态').hitTestable());
+      await tester.tap(pluginEntry.hitTestable());
       await tester.pumpAndSettle();
       expect(
         container.read(preferencesProvider).bottomNavIds.last,
