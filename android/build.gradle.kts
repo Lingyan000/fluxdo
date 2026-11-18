@@ -1,3 +1,11 @@
+plugins {
+    id("org.jetbrains.kotlin.android") apply false
+}
+
+apply(from = "gradle/cargokit_compat.gradle")
+apply(from = "gradle/kotlin_compat.gradle")
+apply(from = "gradle/compile_sdk_compat.gradle")
+
 allprojects {
     apply(from = rootProject.file("gradle/legacy-process.gradle"))
     repositories {

@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -284,6 +286,172 @@ Widget _buildMaterialDialogTransitions(
 final Curve _kDialogEnterCurve = M3eMotion.defaultSpatial.curveFor(
   const Duration(milliseconds: 250),
 );
+
+/// 从页面上某个元素「长大」成底部弹层（容器变形）：弹层的外形从
+/// [fromRect]（全局坐标、圆角 [fromRadius]、底色 [fromColor]）连续变形到
+/// 屏幕底部 [heightFactor] 高度、顶部圆角 [toRadius] 的弹层，内容随后淡入；
+/// 返回时原路缩回。用于输入框展开成完整编辑器等「一镜到底」的场景。
+///
+/// [builder] 的内容按全屏约束布局（与 isScrollControlled 的底部弹层一致），
+/// 弹层自己负责只占底部 [heightFactor]。
+Future<T?> showAppMorphSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  required Rect fromRect,
+  double fromRadius = 0,
+  Color? fromColor,
+  double toRadius = 16,
+  double heightFactor = 0.95,
+  ShortcutSurfaceConfig? shortcutSurface,
+  bool suspendDynamicContent = true,
+}) {
+  final navigator = Navigator.of(context);
+  final theme = Theme.of(context);
+  final sheetConstraints =
+      theme.bottomSheetTheme.constraints ?? const BoxConstraints(maxWidth: 640);
+  // 路由内容按导航器自身坐标布局（嵌套导航器原点不在屏幕原点）
+  final navigatorBox = navigator.context.findRenderObject() as RenderBox?;
+  final localFrom = navigatorBox == null
+      ? fromRect
+      : fromRect.shift(-navigatorBox.localToGlobal(Offset.zero));
+  final route = InteractionPageRouteBuilder<T>(
+    opaque: false,
+    barrierDismissible: true,
+    barrierColor: theme.bottomSheetTheme.modalBarrierColor ?? Colors.black54,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    transitionDuration: const Duration(milliseconds: 380),
+    reverseTransitionDuration: const Duration(milliseconds: 280),
+    // 与底部弹层同样的宽度上限（M3 默认 640）：桌面上不铺满整宽
+    pageBuilder: (context, _, _) => Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: sheetConstraints,
+        child: builder(context),
+      ),
+    ),
+    transitionsBuilder: (context, animation, _, child) => _MorphSheetTransition(
+      animation: animation,
+      fromRect: localFrom,
+      fromRadius: fromRadius,
+      fromColor: fromColor ?? theme.colorScheme.surfaceContainerHighest,
+      toColor: theme.colorScheme.surface,
+      toRadius: toRadius,
+      heightFactor: heightFactor,
+      maxWidth: sheetConstraints.maxWidth,
+      child: child,
+    ),
+  );
+  return _pushOverlayRoute(
+    context: context,
+    navigator: navigator,
+    route: route,
+    suspendDynamicContent: suspendDynamicContent,
+    shortcutSurface: shortcutSurface,
+  );
+}
+
+class _MorphSheetTransition extends StatelessWidget {
+  const _MorphSheetTransition({
+    required this.animation,
+    required this.fromRect,
+    required this.fromRadius,
+    required this.fromColor,
+    required this.toColor,
+    required this.toRadius,
+    required this.heightFactor,
+    required this.maxWidth,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final Rect fromRect;
+  final double fromRadius;
+  final Color fromColor;
+  final Color toColor;
+  final double toRadius;
+  final double heightFactor;
+  final double maxWidth;
+  final Widget child;
+
+  static const Curve _geometry = Curves.easeInOutCubicEmphasized;
+  static const Curve _content = Interval(0.35, 1, curve: Curves.easeOut);
+  static const Curve _fill = Interval(0.5, 1, curve: Curves.easeIn);
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.biggest;
+        // 与 ReplySheet 的几何一致：顶部安全区之下、底部对齐的 heightFactor 高
+        final width = size.width < maxWidth ? size.width : maxWidth;
+        final left = (size.width - width) / 2;
+        final toRect = Rect.fromLTRB(
+          left,
+          top + (size.height - top) * (1 - heightFactor),
+          left + width,
+          size.height,
+        );
+        return AnimatedBuilder(
+          animation: animation,
+          child: child,
+          builder: (context, child) {
+            final t = _geometry.transform(animation.value);
+            final rect = Rect.lerp(fromRect, toRect, t)!;
+            final topRadius = Radius.circular(
+              lerpDouble(fromRadius, toRadius, t)!,
+            );
+            final bottomRadius = Radius.circular(lerpDouble(fromRadius, 0, t)!);
+            final shape = RRect.fromRectAndCorners(
+              rect,
+              topLeft: topRadius,
+              topRight: topRadius,
+              bottomLeft: bottomRadius,
+              bottomRight: bottomRadius,
+            );
+            final fillOpacity = 1 - _fill.transform(animation.value);
+            return ClipPath(
+              clipper: _RRectClipper(shape),
+              child: Stack(
+                children: [
+                  if (fillOpacity > 0)
+                    Positioned.fromRect(
+                      rect: rect,
+                      child: ColoredBox(
+                        color: Color.lerp(
+                          fromColor,
+                          toColor,
+                          t,
+                        )!.withValues(alpha: fillOpacity),
+                      ),
+                    ),
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: _content.transform(animation.value),
+                      child: child,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _RRectClipper extends CustomClipper<Path> {
+  const _RRectClipper(this.shape);
+
+  final RRect shape;
+
+  @override
+  Path getClip(Size size) => Path()..addRRect(shape);
+
+  @override
+  bool shouldReclip(_RRectClipper oldClipper) => oldClipper.shape != shape;
+}
 
 /// 替代 [showModalBottomSheet]，自动根据用户偏好添加背景高斯模糊。
 Future<T?> showAppBottomSheet<T>({

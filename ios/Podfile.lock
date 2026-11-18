@@ -9,39 +9,10 @@ PODS:
     - Flutter
   - device_info_plus (0.0.1):
     - Flutter
-  - DKImagePickerController/Core (4.3.9):
-    - DKImagePickerController/ImageDataManager
-    - DKImagePickerController/Resource
-  - DKImagePickerController/ImageDataManager (4.3.9)
-  - DKImagePickerController/PhotoGallery (4.3.9):
-    - DKImagePickerController/Core
-    - DKPhotoGallery
-  - DKImagePickerController/Resource (4.3.9)
-  - DKPhotoGallery (0.0.19):
-    - DKPhotoGallery/Core (= 0.0.19)
-    - DKPhotoGallery/Model (= 0.0.19)
-    - DKPhotoGallery/Preview (= 0.0.19)
-    - DKPhotoGallery/Resource (= 0.0.19)
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Core (0.0.19):
-    - DKPhotoGallery/Model
-    - DKPhotoGallery/Preview
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Model (0.0.19):
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Preview (0.0.19):
-    - DKPhotoGallery/Model
-    - DKPhotoGallery/Resource
-    - SDWebImage
-    - SwiftyGif
-  - DKPhotoGallery/Resource (0.0.19):
-    - SDWebImage
-    - SwiftyGif
-  - file_picker (0.0.1):
-    - DKImagePickerController/PhotoGallery
+  - file_picker_darwin (1.0.0):
+    - Flutter
+    - FlutterMacOS
+  - file_selector_ios (0.0.1):
     - Flutter
   - Flutter (1.0.0)
   - flutter_avif_ios (0.0.1):
@@ -52,7 +23,6 @@ PODS:
     - Flutter
   - flutter_image_compress_common (1.0.0):
     - Flutter
-    - Mantle
     - SDWebImage
     - SDWebImageWebPCoder
   - flutter_inappwebview_ios (0.0.1):
@@ -62,8 +32,6 @@ PODS:
   - flutter_inappwebview_ios/Core (0.0.1):
     - Flutter
     - swift-collections (~> 1.1.1)
-  - flutter_js (0.1.0):
-    - Flutter
   - flutter_local_notifications (0.0.1):
     - Flutter
   - flutter_mailer (0.0.1):
@@ -75,7 +43,7 @@ PODS:
     - Flutter
   - fluttertoast (0.0.2):
     - Flutter
-  - gal (1.0.0):
+  - gal (3.0.1):
     - Flutter
     - FlutterMacOS
   - image_picker_ios (0.0.1):
@@ -98,9 +66,6 @@ PODS:
   - libwebp/sharpyuv (1.5.0)
   - libwebp/webp (1.5.0):
     - libwebp/sharpyuv
-  - Mantle (2.2.0):
-    - Mantle/extobjc (= 2.2.0)
-  - Mantle/extobjc (2.2.0)
   - media_kit_video (0.0.1):
     - Flutter
   - mobile_scanner (7.0.0):
@@ -112,10 +77,14 @@ PODS:
     - Flutter
   - package_info_plus (0.4.5):
     - Flutter
+  - pro_image_editor (12.0.8):
+    - Flutter
+    - FlutterMacOS
   - quickjs_engine (0.1.0):
     - Flutter
-  - record_ios (2.0.0):
+  - record_darwin (2.0.0):
     - Flutter
+    - FlutterMacOS
   - screen_brightness_ios (2.1.3):
     - Flutter
   - SDWebImage (5.21.7):
@@ -151,13 +120,12 @@ PODS:
   - swift-collections/OrderedCollections (1.1.1):
     - InternalCollectionsUtilities (= 1.1.1)
   - SwiftTryCatch (1.0.0)
-  - SwiftyGif (5.4.5)
   - url_launcher_ios (0.0.1):
     - Flutter
   - video_player_avfoundation (0.0.1):
     - Flutter
     - FlutterMacOS
-  - volume_controller (0.0.1):
+  - volume_controller (3.7.0):
     - Flutter
   - wakelock_plus (0.0.1):
     - Flutter
@@ -170,14 +138,14 @@ DEPENDENCIES:
   - chat_bottom_container (from `.symlinks/plugins/chat_bottom_container/ios`)
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
-  - file_picker (from `.symlinks/plugins/file_picker/ios`)
+  - file_picker_darwin (from `.symlinks/plugins/file_picker_darwin/darwin`)
+  - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
   - Flutter (from `Flutter`)
   - flutter_avif_ios (from `.symlinks/plugins/flutter_avif_ios/ios`)
   - flutter_dynamic_icon_plus (from `.symlinks/plugins/flutter_dynamic_icon_plus/ios`)
   - flutter_foreground_task (from `.symlinks/plugins/flutter_foreground_task/ios`)
   - flutter_image_compress_common (from `.symlinks/plugins/flutter_image_compress_common/ios`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
-  - flutter_js (from `.symlinks/plugins/flutter_js/ios`)
   - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
   - flutter_mailer (from `.symlinks/plugins/flutter_mailer/ios`)
   - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
@@ -192,8 +160,9 @@ DEPENDENCIES:
   - native_animated_image_ios (from `.symlinks/plugins/native_animated_image_ios/ios`)
   - open_filex (from `.symlinks/plugins/open_filex/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - pro_image_editor (from `.symlinks/plugins/pro_image_editor/darwin`)
   - quickjs_engine (from `.symlinks/plugins/quickjs_engine/ios`)
-  - record_ios (from `.symlinks/plugins/record_ios/ios`)
+  - record_darwin (from `.symlinks/plugins/record_darwin/darwin`)
   - screen_brightness_ios (from `.symlinks/plugins/screen_brightness_ios/ios`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -208,15 +177,11 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
-    - DKImagePickerController
-    - DKPhotoGallery
     - InternalCollectionsUtilities
     - libwebp
-    - Mantle
     - SDWebImage
     - SDWebImageWebPCoder
     - swift-collections
-    - SwiftyGif
 
 EXTERNAL SOURCES:
   app_links:
@@ -229,8 +194,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/connectivity_plus/ios"
   device_info_plus:
     :path: ".symlinks/plugins/device_info_plus/ios"
-  file_picker:
-    :path: ".symlinks/plugins/file_picker/ios"
+  file_picker_darwin:
+    :path: ".symlinks/plugins/file_picker_darwin/darwin"
+  file_selector_ios:
+    :path: ".symlinks/plugins/file_selector_ios/ios"
   Flutter:
     :path: Flutter
   flutter_avif_ios:
@@ -243,8 +210,6 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/flutter_image_compress_common/ios"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
-  flutter_js:
-    :path: ".symlinks/plugins/flutter_js/ios"
   flutter_local_notifications:
     :path: ".symlinks/plugins/flutter_local_notifications/ios"
   flutter_mailer:
@@ -273,10 +238,12 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/open_filex/ios"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
+  pro_image_editor:
+    :path: ".symlinks/plugins/pro_image_editor/darwin"
   quickjs_engine:
     :path: ".symlinks/plugins/quickjs_engine/ios"
-  record_ios:
-    :path: ".symlinks/plugins/record_ios/ios"
+  record_darwin:
+    :path: ".symlinks/plugins/record_darwin/darwin"
   screen_brightness_ios:
     :path: ".symlinks/plugins/screen_brightness_ios/ios"
   share_plus:
@@ -309,53 +276,50 @@ CHECKOUT OPTIONS:
 SPEC CHECKSUMS:
   app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
   audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
-  chat_bottom_container: f1eb8323db77a87db50f361142c679f11e892d1b
+  chat_bottom_container: 30109d16bbfde931b1ff4e3dc4d35a6612827bb8
   connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
   device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
-  DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
-  DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
-  file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
+  file_picker_darwin: 4c2b9a50ea44cb3b071381ea0cf48591bdd80251
+  file_selector_ios: fb1dd93b450e9c1ac595c0c8cf29cc855ea24d61
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   flutter_avif_ios: 2553d2aafda56339cf924e943da89ad3f40af2dd
-  flutter_dynamic_icon_plus: a7c81df360708aa1c9538f89cd96958fdda608ea
-  flutter_foreground_task: a159d2c2173b33699ddb3e6c2a067045d7cebb89
-  flutter_image_compress_common: 1697a328fd72bfb335507c6bca1a65fa5ad87df1
+  flutter_dynamic_icon_plus: e549440b34e458c2798189d7f1722811037a9119
+  flutter_foreground_task: ff24d2fb1aefdcde8ed192e8b0574348aab3a30e
+  flutter_image_compress_common: 11d5dcfb36f4ded92320bfa896261813a073240e
   flutter_inappwebview_ios: 9cde7869829d54b4110df350f3eedd192c5a4aea
-  flutter_js: 867813c1830e1d9b2c5d547cdb6f61801e2f2145
   flutter_local_notifications: 643a3eda1ce1c0599413ca31672536d423dee214
-  flutter_mailer: 3a8cd4f36c960fb04528d5471097270c19fec1c4
+  flutter_mailer: 5c481fe3462e71e805db32a8cb024135f5aa2586
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   flutter_timezone: 7c838e17ffd4645d261e87037e5bebf6d38fe544
-  fluttertoast: fe6790210fdba20801685be946e3a2124b72eef5
-  gal: baecd024ebfd13c441269ca7404792a7152fde89
-  image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
+  fluttertoast: 1a1c71b9fbdf68f5fef34d2c548d5038ac51c0ea
+  gal: 49b4e48d0ffca13a414561eff9716a990c6260b6
+  image_picker_ios: 872ad7b7cb44bf470e7324191b51ee0e26f45cb9
   InternalCollectionsUtilities: af3f471602c4a67cbcb0bee0a80f6f55a33ae453
   irondash_engine_context: 8e58ca8e0212ee9d1c7dc6a42121849986c88486
   just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
-  Mantle: c5aa8794a29a022dfbbfc9799af95f477a69b62d
   media_kit_video: f3b0d035d89def15cfbbcf7dc2ae278f201e2f83
   mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
   native_animated_image_ios: 87dc5ce774f71e44033b0e9ca83b56fd81fa1c8a
-  open_filex: 432f3cd11432da3e39f47fcc0df2b1603854eff1
+  open_filex: 525447cf3ea460135263a2634042c08479b34502
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
-  quickjs_engine: 5549178d16b51c5ec5188363f9c3adaaccea8f50
-  record_ios: 390a30c7caaf8b5d0fb1cb1d2fd5064b48b4520c
+  pro_image_editor: e57a76b305fd8c2e06d57f92aec82b9c6a6e8d9f
+  quickjs_engine: 5403c50326ed088c76951b441e277b65faa77319
+  record_darwin: 4af4f79edec94b4b8356a7a43b0def39d807d3ea
   screen_brightness_ios: 212d950bb99c915eee971c884f4a6c87c92cd13d
   SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageWebPCoder: 0e06e365080397465cc73a7a9b472d8a3bd0f377
-  share_plus: 50da8cb520a8f0f65671c6c6a99b3617ed10a58a
-  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  share_plus: eccd7beb7cea61271aeed1800e8ccb2b952c0c7f
+  shared_preferences_foundation: a7c3904f2dedb3701dd1903cb152ef5e7df92422
   sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
   super_native_extensions: b763c02dc3a8fd078389f410bf15149179020cb4
   swift-collections: ba248ecaf44ef500b27d5cf94d304218c89892ff
   SwiftTryCatch: 2f4ef36cf5396bdb450006b70633dbce5260d3b3
-  SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
-  video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
-  volume_controller: 3657a1f65bedb98fa41ff7dc5793537919f31b12
-  wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
-  workmanager_apple: 904529ae31e97fc5be632cf628507652294a0778
+  video_player_avfoundation: bc5f800d1e1c4f389bc5d51778a4f89dd1bf4a77
+  volume_controller: b2f529b1dc3496fe900df1baef358aadce59a827
+  wakelock_plus: d4ca1e4e4bc9de42cb55d57b5bdc158af318e3c6
+  workmanager_apple: 1fc2a64e6a63ed3540fbb91b65f0c0d501881248
 
 PODFILE CHECKSUM: 3fea897be3e65a7d2c4a04ae9cdca0c18faf7588
 

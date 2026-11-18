@@ -48,6 +48,7 @@ import 'topic_status_notices.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
 import 'private_message_participants.dart';
+import 'topic_bottom_bar.dart';
 
 /// 话题帖子列表
 /// 负责构建 CustomScrollView 及其 Slivers
@@ -122,6 +123,13 @@ class TopicPostList extends StatefulWidget {
   final void Function(PendingPost pending)? onWithdrawPendingPost;
   final void Function(PendingPost pending)? onWithdrawAndEditPendingPost;
 
+  /// 帖子流读到底后的内联回复入口（宽屏阅读栏形态下提供）
+  final Widget? trailingReplyEntry;
+
+  /// 额外的末尾留白（宽屏停靠编辑器打开时的高度），编辑器开着也能把
+  /// 最后的帖子滚到它上方
+  final ValueListenable<double>? extraBottomInset;
+
   /// 高亮指定用户的 boost（从 boost 通知跳转时使用）
   final String? highlightBoostUsername;
   final bool hideHeaderTitle;
@@ -193,6 +201,8 @@ class TopicPostList extends StatefulWidget {
     this.onShowPostDetail,
     this.onWithdrawPendingPost,
     this.onWithdrawAndEditPendingPost,
+    this.trailingReplyEntry,
+    this.extraBottomInset,
     this.isActivitySort = false,
     this.onAnswerSortChanged,
     this.headingAnchorRegistry,
@@ -1099,7 +1109,15 @@ class _TopicPostListState extends State<TopicPostList> {
 
   Widget _buildTrailingRow(BuildContext context, int index) {
     if (index == 6) {
-      return SizedBox(height: 80 + MediaQuery.paddingOf(context).bottom);
+      // 末尾留出底栏展开态的高度，读到底时最后的内容不被栏遮住
+      final base = TopicBottomBarMetrics.occupiedHeight(context);
+      final extra = widget.extraBottomInset;
+      if (extra == null) return SizedBox(height: base);
+      return ValueListenableBuilder<double>(
+        valueListenable: extra,
+        builder: (context, inset, _) =>
+            SizedBox(height: inset > base ? inset : base),
+      );
     }
     if (hasMoreAfter) {
       return index == 2
@@ -1143,7 +1161,22 @@ class _TopicPostListState extends State<TopicPostList> {
           ),
         );
       case 3:
-        return _wrapContent(context, TopicStatusNotices(detail: detail));
+        final replyEntry = widget.trailingReplyEntry;
+        return _wrapContent(
+          context,
+          replyEntry == null
+              ? TopicStatusNotices(detail: detail)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TopicStatusNotices(detail: detail),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: replyEntry,
+                    ),
+                  ],
+                ),
+        );
       case 4:
         return _wrapContent(context, MoreTopicsSection(detail: detail));
       case 5:

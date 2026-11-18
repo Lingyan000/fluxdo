@@ -22,7 +22,8 @@ class TopicScrollState {
 
   const TopicScrollState({
     this.showBackToTop = false,
-    this.showBottomBar = false,
+    // 底栏承载回复入口，进入话题即显示，下滑阅读时再收起
+    this.showBottomBar = true,
     this.hasInitialScrolled = false,
     this.isPositioned = false,
     this.jumpTargetPostNumber,
@@ -95,7 +96,11 @@ class TopicDetailController extends ChangeNotifier {
   double _accumulatedScrollDelta = 0;
 
   /// 底部栏显示状态
-  final ValueNotifier<bool> showBottomBarNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> showBottomBarNotifier = ValueNotifier<bool>(true);
+
+  /// 已加载内容离顶超过阈值（回顶按钮显隐用）；与底栏显隐同理走独立
+  /// ValueNotifier，翻转时只重建按钮定位包装
+  final ValueNotifier<bool> showBackToTopNotifier = ValueNotifier<bool>(false);
 
   /// 定位完成状态
   final ValueNotifier<bool> isPositionedNotifier = ValueNotifier<bool>(false);
@@ -216,6 +221,9 @@ class TopicDetailController extends ChangeNotifier {
       if (_scrollState.showBottomBar != newState.showBottomBar) {
         showBottomBarNotifier.value = newState.showBottomBar;
       }
+      if (_scrollState.showBackToTop != newState.showBackToTop) {
+        showBackToTopNotifier.value = newState.showBackToTop;
+      }
       if (_scrollState.isPositioned != newState.isPositioned) {
         isPositionedNotifier.value = newState.isPositioned;
       }
@@ -267,8 +275,32 @@ class TopicDetailController extends ChangeNotifier {
     _handleBottomBarScrollDelta(delta);
   }
 
+  /// 底栏是否随滚动自动隐藏（偏好开关）；关闭时立即恢复显示并常驻
+  bool _autoHideBottomBar = true;
+  set autoHideBottomBar(bool value) {
+    if (_autoHideBottomBar == value) return;
+    _autoHideBottomBar = value;
+    _accumulatedScrollDelta = 0;
+    if (!value && !_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
+  }
+
+  /// 快捷回复展开期间底栏必须常驻：滚动帖子不能把输入框收走
+  bool _holdBottomBar = false;
+  set holdBottomBar(bool value) {
+    if (_holdBottomBar == value) return;
+    _holdBottomBar = value;
+    _accumulatedScrollDelta = 0;
+    if (value && !_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
+  }
+
   void _handleBottomBarScrollDelta(double delta) {
-    if (delta == 0) return;
+    if (delta == 0 || !_autoHideBottomBar || _holdBottomBar) return;
 
     if ((_accumulatedScrollDelta > 0 && delta < 0) ||
         (_accumulatedScrollDelta < 0 && delta > 0)) {
@@ -650,6 +682,7 @@ class TopicDetailController extends ChangeNotifier {
     _cancelPostScroll();
     // 滚动相关
     showBottomBarNotifier.dispose();
+    showBackToTopNotifier.dispose();
     isPositionedNotifier.dispose();
     postListController.dispose();
     scrollController.dispose();

@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import '../../models/topic.dart';
+import '../../models/topic_post_excerpt.dart';
 import '../../models/assignment.dart';
 import '../../models/nested_topic.dart';
 import '../../models/topic_vote.dart';

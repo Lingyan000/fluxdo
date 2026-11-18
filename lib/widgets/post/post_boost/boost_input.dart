@@ -8,7 +8,7 @@ import '../../../models/emoji.dart';
 import '../../../utils/emoji_shortcodes.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/platform_utils.dart';
-import '../../common/emoji_text.dart';
+import '../../common/emoji_text_editing_controller.dart';
 import '../../markdown_editor/emoji_picker.dart';
 
 /// Boost 输入框的提交结果。
@@ -45,41 +45,8 @@ class _BoostInputSheet extends ConsumerStatefulWidget {
   ConsumerState<_BoostInputSheet> createState() => _BoostInputSheetState();
 }
 
-class _BoostTextEditingController extends TextEditingController {
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    final hasEmojiShortcode = emojiShortcodeRegex.hasMatch(text);
-    final hasComposingRegion =
-        withComposing &&
-        value.composing.isValid &&
-        !value.composing.isCollapsed;
-
-    if (!hasEmojiShortcode || hasComposingRegion) {
-      return super.buildTextSpan(
-        context: context,
-        style: style,
-        withComposing: withComposing,
-      );
-    }
-
-    return TextSpan(
-      style: style,
-      children: EmojiText.buildEmojiSpans(
-        context,
-        text,
-        style,
-        preserveSourceLength: true,
-      ),
-    );
-  }
-}
-
 class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
-  final _controller = _BoostTextEditingController();
+  final _controller = EmojiTextEditingController();
   final _focusNode = FocusNode();
   // 默认展开表情面板，避免浮层过小
   bool _showEmojiPanel = true;

@@ -112,7 +112,7 @@ const result = await esbuild.build({
   bundle: true,
   format: 'iife',
   minify: true,
-  // QuickJS(flutter_js Android/Win/Linux) 支持 ES2020+；不要降级
+  // QuickJS 支持 ES2020+；不要降级
   // class field 等语法，保守取 es2020 足够
   target: ['es2020'],
   outfile: outFile,

@@ -48,11 +48,11 @@ class SystemProxyDetector {
   static SystemProxyConfig read() {
     if (!Platform.isWindows) return const SystemProxyConfig();
     try {
-      final key = Registry.openPath(RegistryHive.currentUser, path: _keyPath);
+      final key = CURRENT_USER.open(_keyPath);
       try {
-        final enabled = key.getIntValue('ProxyEnable') ?? 0;
-        final server = key.getStringValue('ProxyServer')?.trim() ?? '';
-        final pacUrl = key.getStringValue('AutoConfigURL')?.trim() ?? '';
+        final enabled = key.getInt('ProxyEnable') ?? 0;
+        final server = key.getString('ProxyServer')?.trim() ?? '';
+        final pacUrl = key.getString('AutoConfigURL')?.trim() ?? '';
         return SystemProxyConfig(
           proxyUrl: enabled != 0 && server.isNotEmpty
               ? parseProxyServer(server)

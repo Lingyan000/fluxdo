@@ -69,10 +69,114 @@ fn optional_revocation_checker_distinguishes_unsupported_from_rejection() {
                     };
                     assert!(!checker.is_null());
                     assert!(!env.exception_check());
+                    check_available_provider_policy(env)?;
                 }
             }
         }
         Ok(())
     }).unwrap();
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn check_available_provider_policy(env: &mut jni::Env<'_>) -> jni::errors::Result<()> {
+    use jni::{
+        jni_sig, jni_str,
+        objects::{JObject, JString, JValue},
+    };
+    use production::{RevocationChecker, configure_revocation_checker, revocation_checker};
+    let f = crate::ocsp_tests::fixtures();
+    // 第一项复现旧选项的同名异常，其余项执行修复后的生产 JNI 配置。
+    for (name, has_ocsp, staple, crl, age, expected) in [
+        (
+            "旧策略复现",
+            true,
+            None,
+            None,
+            0,
+            "UNSPECIFIED: Certificate does not specify OCSP responder",
+        ),
+        ("无撤销入口", false, None, None, 0, "OK"),
+        ("有效 CRL", false, None, Some("valid"), 0, "OK"),
+        ("CRL 已吊销", false, None, Some("revoked"), 0, "REVOKED:"),
+        ("有效 staple", false, Some("good"), None, 0, "OK"),
+        (
+            "staple 已吊销",
+            false,
+            Some("revoked"),
+            Some("valid"),
+            0,
+            "REVOKED:",
+        ),
+        (
+            "staple 签名错误",
+            false,
+            Some("bad_signature"),
+            Some("valid"),
+            0,
+            "!OK",
+        ),
+        (
+            "staple 状态未知",
+            false,
+            Some("unknown"),
+            Some("valid"),
+            0,
+            "!OK",
+        ),
+        (
+            "staple 编码损坏",
+            false,
+            Some("truncated"),
+            Some("valid"),
+            0,
+            "!OK",
+        ),
+        ("过期证书", false, None, None, 40 * 86400, "EXPIRED:"),
+    ] {
+        let validator = env
+            .call_static_method(
+                jni_str!("RevocationFixture"),
+                jni_str!("validator"),
+                jni_sig!("(I)Ljava/security/cert/CertPathValidator;"),
+                &[JValue::Int(2)],
+            )?
+            .l()?;
+        let RevocationChecker::Available(checker) = revocation_checker(env, &validator)? else {
+            panic!("需要真实可用校验器");
+        };
+        configure_revocation_checker(env, &checker, staple.is_some(), has_ocsp)?;
+        let leaf = env.byte_array_from_slice(&f.leaf)?;
+        let issuer = env.byte_array_from_slice(&f.issuer)?;
+        let response: JObject = match staple {
+            Some(key) => env.byte_array_from_slice(&f.responses[key])?.into(),
+            None => JObject::null(),
+        };
+        let crl: JObject = match crl {
+            Some(key) => env.byte_array_from_slice(&f.crls[key])?.into(),
+            None => JObject::null(),
+        };
+        let result = env
+            .call_static_method(
+                jni_str!("RevocationFixture"),
+                jni_str!("validate"),
+                jni_sig!("([B[BLjava/security/cert/PKIXRevocationChecker;[B[BJ)Ljava/lang/String;"),
+                &[
+                    JValue::Object(&leaf),
+                    JValue::Object(&issuer),
+                    JValue::Object(&checker),
+                    JValue::Object(&response),
+                    JValue::Object(&crl),
+                    JValue::Long(f.now + age),
+                ],
+            )?
+            .l()?;
+        let result = env.cast_local::<JString>(result)?.try_to_string(env)?;
+        eprintln!("PKIX {name}: {result}");
+        if expected == "!OK" {
+            assert_ne!(result, "OK", "{name}");
+        } else {
+            assert!(result.starts_with(expected), "{name}: {result}");
+        }
+    }
+    Ok(())
 }

@@ -37,10 +37,27 @@ Android 官方 BouncyCastle 提供者映射到 `PKIXCertPathValidatorSpi`，没�
   校验 CertID 的序列号与签发者摘要、响应者身份/授权、签名算法参数、响应时间和状态；
   受委托响应者必须由可信链中的直接签发者签发，并具有 OCSPSigning 用途。
   自带证书不能充当信任锚点；revoked、unknown、未知关键扩展和无法验证的数据均拒绝。
-  支持 Java 检查器的提供者沿用原路径；非 BoringSSL 构建保持无法验证即拒绝。
+  支持 Java 检查器的提供者继续校验 staple；非 BoringSSL 构建保持无法验证即拒绝。
 - `android_ocsp.rs` 只把平台已验证的证书链材料转入本地验证，不改变系统信任结论。
 - 名称、期限、用途、信任链、应用证书策略、ECH 和失败重试策略不变。
 - 其他平台源码不变。
+
+## 无 OCSP 地址的补充校验（2026-11-17）
+
+beta.7 用户历史日志明确出现 `Certificate does not specify OCSP responder`。
+这不同于可选 API 不支持：真实 Java PKIX 校验器把缺少地址归为 UNSPECIFIED，
+仅配置 SOFT_FAIL 不能容忍它，因为 SOFT_FAIL 只处理 UNDETERMINED_REVOCATION_STATUS。
+
+平台信任链、域名、期限、用途校验仍先执行。随后读取叶子证书 AIA 中真正的
+id-ad-ocsp URI，不把 caIssuers/CRL 地址当作 OCSP 入口，损坏或重复 AIA 拒绝。
+无 staple 且无 OCSP 地址时使用 ONLY_END_ENTITY + PREFER_CRLS + NO_FALLBACK + SOFT_FAIL：
+保留 CRL 吊销校验，仅在无法获取撤销状态时软失败，不再尝试不存在的 OCSP 地址。
+有 OCSP 地址沿用原网络查询策略；有 staple 仍强制验证，不允许 CRL 或软失败覆盖响应拒绝。
+增加 tls_revocation_crl_only 与 tls_revocation_rejected（含 stapled/阶段），不记录证书原文或查询地址。
+
+本地真实 JVM 对照可复现上述同名错误；生产 JNI 选项修复后无入口/有效 CRL 通过，
+吊销 CRL、吊销/未知/错误签名/损坏 staple、过期证书仍被拒绝。CRL 由本地 CertStore 注入，
+证书/CRL/OCSP 由 OpenSSL 生成，测试不依赖网络。它不等同于用户设备/ROM 的现场复测。
 
 ## 可执行验证
 

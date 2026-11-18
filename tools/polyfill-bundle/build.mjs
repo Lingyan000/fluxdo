@@ -1,5 +1,5 @@
 // 两步打包：
-// 1) @babel/preset-env (useBuiltIns: 'entry') 把 `import 'core-js/stable'` 按 browserslist
+// 1) Babel 的 core-js 入口插件 把 `import 'core-js/stable'` 按 browserslist
 //    展开成精确的 `import 'core-js/modules/<feature>'` 列表 (只挑 iOS 15+ 缺的)
 // 2) esbuild bundle 成 IIFE，作为 Flutter asset 注入 InAppWebView.initialUserScripts
 import { transformAsync } from '@babel/core';
@@ -15,7 +15,7 @@ const entryFile = path.join(__dirname, 'src/index.js');
 // 必须放在 src/ 下，否则相对 import './error-reporter.js' 解析不到
 const tmpEntry = path.join(__dirname, 'src/.tmp-entry.js');
 
-// 跟 package.json 的 core-js devDep 对齐，preset-env 用它判断 polyfill 元数据版本
+// 跟 package.json 的 core-js devDep 对齐，入口插件用它判断 polyfill 元数据版本
 const corejsVersion = JSON.parse(
   await readFile(path.join(__dirname, 'package.json'), 'utf8'),
 ).devDependencies['core-js'].replace(/^[\^~]/, '');
@@ -29,16 +29,10 @@ try {
     filename: entryFile,
     babelrc: false,
     configFile: false,
-    presets: [
-      [
-        '@babel/preset-env',
-        {
-          useBuiltIns: 'entry',
-          corejs: { version: corejsVersion, proposals: false },
-          modules: false, // 保留 ES Modules 让 esbuild 处理
-        },
-      ],
-    ],
+    presets: [['@babel/preset-env', { modules: false }]],
+    plugins: [['babel-plugin-polyfill-corejs3', {
+      method: 'entry-global', version: corejsVersion, proposals: false,
+    }]],
   });
   await writeFile(tmpEntry, code);
 

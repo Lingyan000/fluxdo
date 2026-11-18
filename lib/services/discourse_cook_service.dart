@@ -3,11 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:fluxdo_js_runtime/fluxdo_js_runtime.dart';
 
 import 'preloaded_data_service.dart';
 import 'discourse/discourse_service.dart';
-import 'cook/cook_js_engine_stub.dart'
-    if (dart.library.io) 'cook/cook_js_engine_io.dart';
 
 /// Discourse 1:1 cook 服务。
 ///
@@ -24,7 +23,7 @@ class DiscourseCookService {
   factory DiscourseCookService() => _instance;
   DiscourseCookService._internal();
 
-  CookJsEngine? _engine;
+  JsWorker? _engine;
   Future<bool>? _initFuture;
   bool _unavailable = false;
 
@@ -45,7 +44,7 @@ class DiscourseCookService {
   }
 
   Future<bool> _initialize() async {
-    if (!cookJsSupported) {
+    if (!JsWorker.isSupported) {
       _unavailable = true;
       return false;
     }
@@ -67,19 +66,16 @@ class DiscourseCookService {
       return false;
     }
 
-    // 2. eval bundle（一次性大开销，放 warmUp 阶段做）
+    JsWorker? engine;
     try {
       final bundleJs = await rootBundle.loadString(
         'assets/cook/discourse-cook.js',
       );
-      final engine = CookJsEngine();
-      String? evalError;
-      engine.evaluate(bundleJs, onError: (e) => evalError = e);
-      if (evalError != null) {
-        debugPrint('[DiscourseCook] bundle eval 失败: $evalError');
-        _unavailable = true;
-        return false;
-      }
+      engine = await JsWorker.spawn(
+        debugName: 'discourse-cook',
+        stackLimit: 1024 * 1024,
+      );
+      await engine.evaluate(bundleJs, name: 'discourse-cook.js');
 
       // 3. 注入站点数据建 engine
       final initJson = jsonEncode({
@@ -99,21 +95,23 @@ class DiscourseCookService {
         'customEmoji': preloaded.customEmoji,
         'tagNames': _extractTagNames(site),
       });
-      String? initError;
-      final initResult = engine.evaluate(
+      final initResult = await engine.evaluateString(
         '__fluxdoCook.init(${jsonEncode(initJson)})',
-        onError: (e) => initError = e,
+        name: 'cook.init',
       );
-      if (initResult != 'ok') {
-        debugPrint('[DiscourseCook] init 失败: ${initError ?? initResult}');
-        _unavailable = true;
-        return false;
-      }
+      if (initResult != 'ok') throw StateError('cook.init 未就绪');
 
       _engine = engine;
+      engine.onFatal = (_) {
+        _engine = null;
+        _initFuture = null;
+        _oneboxAttempted.clear();
+        _inlineOneboxAttempted.clear();
+      };
       debugPrint('[DiscourseCook] 初始化完成');
       return true;
     } catch (e) {
+      engine?.dispose();
       debugPrint('[DiscourseCook] 初始化异常: $e');
       _unavailable = true;
       return false;
@@ -137,16 +135,16 @@ class DiscourseCookService {
     final engine = _engine;
     if (engine == null) return null;
 
-    String? cookError;
-    final cooked = engine.evaluate(
-      '__fluxdoCook.cook(${jsonEncode(raw)})',
-      onError: (e) => cookError = e,
-    );
-    if (cooked == null) {
-      debugPrint('[DiscourseCook] cook 失败: $cookError');
+    try {
+      final cooked = await engine.evaluateString(
+        '__fluxdoCook.cook(${jsonEncode(raw)})',
+        name: 'cook',
+      );
+      return postProcessCooked(cooked, baseUri: PreloadedDataService().baseUri);
+    } on JsWorkerException {
+      debugPrint('[DiscourseCook] cook 失败');
       return null;
     }
-    return postProcessCooked(cooked, baseUri: PreloadedDataService().baseUri);
   }
 
   /// 编辑器原文导入：官方独立引擎的版本化 token DTO，不经过 HTML。
@@ -154,12 +152,11 @@ class DiscourseCookService {
   Future<Map<String, dynamic>?> parseForEditor(String raw) async {
     try {
       if (!await ensureInitialized()) return null;
-      var failed = false;
-      final result = _engine?.evaluate(
+      final result = await _engine?.evaluateString(
         '__fluxdoCook.parseForEditor(${jsonEncode(raw)})',
-        onError: (_) => failed = true,
+        name: 'cook.parseForEditor',
       );
-      if (failed || result == null) return null;
+      if (result == null) return null;
       final data = jsonDecode(result);
       if (data is! Map<String, dynamic> ||
           data['version'] != 1 ||
@@ -250,43 +247,44 @@ class DiscourseCookService {
 
     // 块级：串行
     for (final url in targets.blockUrls) {
+      if (!identical(engine, _engine)) return false;
       if (!_oneboxAttempted.add(url)) continue;
       final html = await service.fetchOneboxPreview(url);
       if (html == null) continue;
-      String? err;
-      engine.evaluate(
-        '__fluxdoCook.seedOnebox(${jsonEncode(url)}, ${jsonEncode(html)})',
-        onError: (e) => err = e,
-      );
-      if (err == null) {
+      try {
+        await engine.evaluate(
+          '__fluxdoCook.seedOnebox(${jsonEncode(url)}, ${jsonEncode(html)})',
+          name: 'cook.seedOnebox',
+        );
         seeded = true;
-      } else {
-        debugPrint('[DiscourseCook] seedOnebox 失败: $err');
+      } on JsWorkerException {
+        debugPrint('[DiscourseCook] seedOnebox 失败');
       }
     }
 
     // 行内：分批
+    if (!identical(engine, _engine)) return false;
     final pendingInline = targets.inlineUrls
         .where(_inlineOneboxAttempted.add)
         .toList();
     for (var i = 0; i < pendingInline.length; i += 10) {
+      if (!identical(engine, _engine)) return false;
       final batch = pendingInline.sublist(
         i,
         i + 10 > pendingInline.length ? pendingInline.length : i + 10,
       );
       final boxes = await service.fetchInlineOneboxes(batch);
       for (final entry in boxes.entries) {
-        String? err;
-        engine.evaluate(
-          '__fluxdoCook.seedInlineOnebox(${jsonEncode(entry.key)}, '
-          '${jsonEncode(entry.value.title)}, '
-          '${jsonEncode(entry.value.cssClass)})',
-          onError: (e) => err = e,
-        );
-        if (err == null) {
+        try {
+          await engine.evaluate(
+            '__fluxdoCook.seedInlineOnebox(${jsonEncode(entry.key)}, '
+            '${jsonEncode(entry.value.title)}, '
+            '${jsonEncode(entry.value.cssClass)})',
+            name: 'cook.seedInlineOnebox',
+          );
           seeded = true;
-        } else {
-          debugPrint('[DiscourseCook] seedInlineOnebox 失败: $err');
+        } on JsWorkerException {
+          debugPrint('[DiscourseCook] seedInlineOnebox 失败');
         }
       }
     }

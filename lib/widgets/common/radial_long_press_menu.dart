@@ -268,15 +268,21 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
   static const Duration _enterDuration = Duration(milliseconds: 220);
   static const Duration _exitDuration = Duration(milliseconds: 180);
 
-  // tooltip 与半圆弧顶之间的间隙（顶部项放大时直径 ~58dp）
-  static const double _tooltipGap = 64.0;
-
   // 背景模糊与暗化稳态强度
   static const double _maxBlur = 8.0;
   static const double _maxDim = 0.22;
 
   // 菜单项尺寸
   static const double _itemSize = 48.0;
+
+  // 弧形底盘在菜单项内外两侧各留出的宽度
+  static const double _dialPadding = 8.0;
+
+  // 高亮标签与扇形最外一项外沿之间的间距
+  static const double _labelGap = 8.0;
+
+  // 展开起点的半径比例：底盘与菜单项从这里同步长到目标半径
+  static const double _collapsedRadiusFactor = 0.55;
 
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -304,13 +310,6 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     super.dispose();
   }
 
-  /// 按压区域中心：项的衍生起点
-  Offset get _emitterCenter {
-    final rect = widget.pressArea;
-    if (rect != null) return rect.center;
-    return widget.center;
-  }
-
   @override
   Widget build(BuildContext context) {
     final items = widget.items;
@@ -326,13 +325,13 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          // 入场用 easeOutBack 让项"弹"出来一点；出场用 easeInCubic 让回缩干脆
+          // 底盘与菜单项共用同一个展开进度 p，几何上严格同步：扇形从角
+          // 中线向两侧展开、半径同时长大，菜单项始终落在底盘上。
+          // 不用带过冲的曲线——两者一起过冲会让整组「晃」一下。
           final raw = _controller.value;
-          final t = widget.closing
-              ? Curves.easeInCubic.transform(raw)
-              : Curves.easeOutBack.transform(raw).clamp(0.0, 1.0);
-          // tooltip / 背景使用线性 t（避免 easeOutBack 的过冲让它跳动）
+          final p = Curves.easeOutCubic.transform(raw);
           final fadeT = raw;
+          final revealRadius = _revealRadius(p);
           return Stack(
             children: [
               Positioned.fill(
@@ -346,10 +345,29 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
                   ),
                 ),
               ),
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _RadialDialPainter(
+                    center: widget.center,
+                    radius: revealRadius,
+                    sweepStart: widget.sweepStart,
+                    sweepEnd: widget.sweepEnd,
+                    up: widget.direction == RadialMenuDirection.up,
+                    progress: p,
+                    bandWidth: (_itemSize + _dialPadding * 2) * _revealScale(p),
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  ),
+                ),
+              ),
               for (int i = 0; i < items.length; i++)
-                _buildItem(context, i, items[i], t, fadeT),
+                _buildItem(context, i, items[i], p, revealRadius),
               if (widget.pressArea != null)
-                _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
+                _buildPressAreaIndicator(
+                  context,
+                  widget.pressArea!,
+                  fadeT,
+                  highlightedItem,
+                ),
               if (highlightedItem != null && !widget.closing)
                 _buildHeaderTooltip(context, highlightedItem, fadeT),
             ],
@@ -359,24 +377,30 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     );
   }
 
-  /// 扇形目标位置：第 index 项最终落点
-  Offset _itemTargetPosition(int index) {
+  /// 展开过程中的半径：从 [_collapsedRadiusFactor] 倍长到目标半径
+  double _revealRadius(double p) =>
+      widget.radius *
+      (_collapsedRadiusFactor + (1 - _collapsedRadiusFactor) * p);
+
+  /// 展开过程中菜单项（与底盘宽度）的缩放
+  double _revealScale(double p) => 0.4 + 0.6 * p;
+
+  /// 第 index 项的目标偏角（极轴偏角 φ）：单项放窗口中点，多项沿窗口均匀分布
+  double _itemPhi(int index) {
     final n = widget.items.length;
+    if (n == 1) return (widget.sweepStart + widget.sweepEnd) / 2;
+    final step = (widget.sweepEnd - widget.sweepStart) / (n - 1);
+    return widget.sweepStart + index * step;
+  }
+
+  /// 偏角 φ、半径 → 屏幕坐标（与 updatePointer 的映射互逆）：
+  /// up: angle = φ - π/2；down: angle = π/2 - φ
+  Offset _arcPoint(double phi, double radius) {
     final up = widget.direction == RadialMenuDirection.up;
-    // 极轴偏角 φ：单项放窗口中点，多项沿窗口均匀分布
-    final double phi;
-    if (n == 1) {
-      phi = (widget.sweepStart + widget.sweepEnd) / 2;
-    } else {
-      final step = (widget.sweepEnd - widget.sweepStart) / (n - 1);
-      phi = widget.sweepStart + index * step;
-    }
-    // 换回屏幕角（与 updatePointer 的映射互逆）：
-    // up: angle = φ - π/2；down: angle = π/2 - φ
     final angle = up ? phi - math.pi / 2 : math.pi / 2 - phi;
     return Offset(
-      widget.center.dx + widget.radius * math.cos(angle),
-      widget.center.dy + widget.radius * math.sin(angle),
+      widget.center.dx + radius * math.cos(angle),
+      widget.center.dy + radius * math.sin(angle),
     );
   }
 
@@ -384,24 +408,17 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     BuildContext context,
     int index,
     RadialMenuItem item,
-    double t,
-    double fadeT,
+    double p,
+    double revealRadius,
   ) {
     final theme = Theme.of(context);
     final isHighlighted = widget.highlightedIndex == index;
-    final emitter = _emitterCenter;
-    final target = _itemTargetPosition(index);
-    // 衍生：项的中心从按压区域 emitter 沿直线 lerp 到目标半圆位置
-    final pos = Offset.lerp(emitter, target, t)!;
-    // 衍生过程中，项尺寸从 0 长到正常；高亮再额外乘 1.2
-    final emergeScale = t.clamp(0.0, 1.0);
+    // 与底盘同一套几何：偏角从角中线按 p 展开，半径同步长大
+    final mid = (widget.sweepStart + widget.sweepEnd) / 2;
+    final phi = mid + (_itemPhi(index) - mid) * p;
+    final pos = _arcPoint(phi, revealRadius);
     final highlightScale = isHighlighted ? 1.2 : 1.0;
-    final scale = emergeScale * highlightScale;
-    final renderSize = _itemSize * scale;
-    if (renderSize < 0.5) {
-      // 尺寸接近 0 时直接不渲染，避免一帧闪烁
-      return const SizedBox.shrink();
-    }
+    final renderSize = _itemSize * _revealScale(p) * highlightScale;
 
     return Positioned(
       key: ValueKey('radial_menu_item_$index'),
@@ -410,21 +427,17 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       width: renderSize,
       height: renderSize,
       child: Opacity(
-        // fadeT 让收回时图标也淡出，避免到最后才"啪"一下消失
-        opacity: fadeT.clamp(0.0, 1.0) * (item.enabled ? 1 : 0.38),
+        opacity: p.clamp(0.0, 1.0) * (item.enabled ? 1 : 0.38),
+        // 非高亮项平铺在弧形底盘上，不再各自带阴影
         child: Material(
-          color: isHighlighted
-              ? theme.colorScheme.primary
-              : theme.colorScheme.surfaceContainerHighest,
+          color: isHighlighted ? theme.colorScheme.primary : Colors.transparent,
           shape: context.shapes.circle(),
-          elevation: isHighlighted ? 6 : 2,
-          shadowColor: isHighlighted
-              ? theme.colorScheme.primary.withValues(alpha: 0.4)
-              : Colors.black26,
+          elevation: isHighlighted ? 4 : 0,
+          shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
           child: Center(
             child: Icon(
               item.icon,
-              size: 24 * highlightScale,
+              size: 24 * highlightScale * _revealScale(p),
               color: isHighlighted
                   ? theme.colorScheme.onPrimary
                   : theme.colorScheme.onSurface,
@@ -444,19 +457,26 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     final mq = MediaQuery.of(context);
     final up = widget.direction == RadialMenuDirection.up;
 
-    // 水平锚定在扇形窗口的角中线上（而非圆心正上方）：
-    // 贴边旋转窗口时 tooltip 跟着弧走，与菜单项视觉成组
-    final mid = (widget.sweepStart + widget.sweepEnd) / 2;
-    final anchorX = widget.center.dx + widget.radius * math.sin(mid);
-    // up: 药丸底边贴弧顶上方 gap 处；down: 药丸顶边贴弧底下方 gap 处
-    final anchorY = up
-        ? widget.center.dy - widget.radius - _tooltipGap
-        : widget.center.dy + widget.radius + _tooltipGap;
+    // 固定在整个扇形的外侧（向上展开时在最高一项的上方）、水平对齐全部
+    // 菜单项的中间：不被手指挡住、不压任何一项、贴边时也不会被挤回扇形里，
+    // 切换高亮项时位置也不跳动
+    final positions = [
+      for (var i = 0; i < widget.items.length; i++)
+        _arcPoint(_itemPhi(i), widget.radius),
+    ];
+    final xs = positions.map((p) => p.dx);
+    final ys = positions.map((p) => p.dy);
+    final centerX = (xs.reduce(math.min) + xs.reduce(math.max)) / 2;
+    final itemReach = _itemSize * 1.2 / 2 + _labelGap;
+    final anchor = Offset(
+      centerX,
+      up ? ys.reduce(math.min) - itemReach : ys.reduce(math.max) + itemReach,
+    );
 
     return Positioned.fill(
       child: CustomSingleChildLayout(
         delegate: _TooltipLayoutDelegate(
-          anchor: Offset(anchorX, anchorY),
+          anchor: anchor,
           growsDown: !up,
           safeInsets: mq.padding,
         ),
@@ -467,10 +487,10 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
             shape: RoundedSuperellipseBorder(
               borderRadius: context.shapes.borderRadius(24),
             ),
-            elevation: 6,
+            elevation: 4,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -504,6 +524,7 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     BuildContext context,
     Rect rect,
     double opacity,
+    RadialMenuItem? highlighted,
   ) {
     final custom = widget.pressAreaIndicatorBuilder;
     if (custom != null) {
@@ -513,23 +534,27 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       );
     }
     final theme = Theme.of(context);
+    final size = math.min(rect.shortestSide, _itemSize);
     return Positioned.fromRect(
-      rect: rect,
+      rect: Rect.fromCenter(center: rect.center, width: size, height: size),
       child: IgnorePointer(
         child: Opacity(
           opacity: opacity,
           child: Material(
             color: theme.colorScheme.primary,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: BorderRadius.all(context.shapes.radius(9999)),
-            ),
-            elevation: 6,
+            shape: context.shapes.circle(),
+            elevation: 4,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
             child: Center(
-              child: Icon(
-                Symbols.touch_app_rounded,
-                size: 20,
-                color: theme.colorScheme.onPrimary,
+              // 显示当前高亮项的图标，按压点与选择结果视觉上连成一体
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 120),
+                child: Icon(
+                  highlighted?.icon ?? Symbols.touch_app_rounded,
+                  key: ValueKey(highlighted?.icon),
+                  size: 20,
+                  color: theme.colorScheme.onPrimary,
+                ),
               ),
             ),
           ),
@@ -537,6 +562,74 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       ),
     );
   }
+}
+
+/// 弧形底盘：沿菜单项所在圆弧画一条圆头宽带，把散落的菜单项归成一组。
+/// 随 [progress] 从角中线向两侧展开。
+class _RadialDialPainter extends CustomPainter {
+  const _RadialDialPainter({
+    required this.center,
+    required this.radius,
+    required this.sweepStart,
+    required this.sweepEnd,
+    required this.up,
+    required this.progress,
+    required this.bandWidth,
+    required this.color,
+  });
+
+  final Offset center;
+  final double radius;
+  final double sweepStart;
+  final double sweepEnd;
+  final bool up;
+  final double progress;
+  final double bandWidth;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final mid = (sweepStart + sweepEnd) / 2;
+    final half = (sweepEnd - sweepStart) / 2 * progress;
+    // 极轴偏角 φ → 画布角：up 为 φ - π/2，down 为 π/2 - φ（镜像）
+    final start = up ? mid - half - math.pi / 2 : math.pi / 2 - mid - half;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final band = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = bandWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      rect.translate(0, 2),
+      start,
+      half * 2,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = bandWidth
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.black.withValues(alpha: 0.18 * progress)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawArc(
+      rect,
+      start,
+      half * 2,
+      false,
+      band..color = color.withValues(alpha: color.a * progress),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RadialDialPainter old) =>
+      old.center != center ||
+      old.radius != radius ||
+      old.sweepStart != sweepStart ||
+      old.sweepEnd != sweepEnd ||
+      old.up != up ||
+      old.progress != progress ||
+      old.bandWidth != bandWidth ||
+      old.color != color;
 }
 
 /// tooltip 药丸定位：以 [anchor] 为水平中心 / 垂直端点摆放，
@@ -586,6 +679,108 @@ class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
       safeInsets != oldDelegate.safeInsets;
 }
 
+/// 项放大态的最大半径（48 * 1.2 / 2），加边距用于越界判断
+const double _kRadialItemHalf = 29.0;
+const double _kRadialEdgeMargin = 8.0;
+
+/// 相邻项圆心间的最小弧长（48 项径 + 8 间隙）
+const double _kRadialMinArcPerItem = 56.0;
+
+/// 扇形单侧最大偏角（弧度，~115°）：允许窗口越过水平线一点，
+/// 让贴边时的扇子有足够展开空间，但不至于绕到锚点背面
+const double _kRadialMaxTilt = 2.0;
+
+/// 半径补偿上限：角落里项多时靠加大半径排开，但不至于离手指太远
+const double _kRadialMaxRadius = 260.0;
+
+/// 圆心钉在锚点上时求扇形窗口（极轴偏角 φ，0 = 展开方向正前方，左负右正），
+/// 保证所有项完整落在屏幕安全区内：
+/// 1) 由屏幕左右边界反解 φ 允许区间 [lo, hi]（项水平偏移 = R·sin φ），
+///    再由背侧屏幕边界（向上展开时为底边）收紧越过水平线的倾角
+/// 2) 优先只用水平线以内的部分 [loPref, hiPref]（屏幕中部即完整半圆）
+/// 3) 不够排下所有项时向水平线外延伸到刚好够（旋转+收窄，不挪圆心）
+/// 4) 仍不够才加大半径重算（半径越大约束越松、所需角度越小），半径
+///    上限取展开方向上到屏幕边缘的余量
+({double radius, double sweepStart, double sweepEnd}) solveRadialFanWindow({
+  required int itemCount,
+  required double anchorX,
+  required double screenWidth,
+  double? anchorY,
+  double? screenHeight,
+  EdgeInsets safePadding = EdgeInsets.zero,
+  RadialMenuDirection direction = RadialMenuDirection.up,
+}) {
+  final cx = anchorX;
+  final xMin = safePadding.left + _kRadialEdgeMargin + _kRadialItemHalf;
+  final xMax =
+      screenWidth - safePadding.right - _kRadialEdgeMargin - _kRadialItemHalf;
+  final up = direction == RadialMenuDirection.up;
+
+  // 展开方向（正前方）到屏幕边缘的余量 → 半径上限；
+  // 背侧余量 → 越过水平线的倾角上限
+  double frontRoom = double.infinity;
+  double backRoom = double.infinity;
+  if (anchorY != null && screenHeight != null) {
+    final yMin = safePadding.top + _kRadialEdgeMargin + _kRadialItemHalf;
+    final yMax =
+        screenHeight -
+        safePadding.bottom -
+        _kRadialEdgeMargin -
+        _kRadialItemHalf;
+    frontRoom = up ? anchorY - yMin : yMax - anchorY;
+    backRoom = up ? yMax - anchorY : anchorY - yMin;
+  }
+  final radiusCap = math.max(
+    RadialMenuSession.radiusForCount(itemCount),
+    math.min(_kRadialMaxRadius, frontRoom),
+  );
+
+  double radius = RadialMenuSession.radiusForCount(itemCount);
+  double sweepStart = -math.pi / 2;
+  double sweepEnd = math.pi / 2;
+  for (var i = 0; i < 6; i++) {
+    // 背侧：项的纵向偏移 = -R·cos φ（越过水平线后为正），不得超出 backRoom
+    final backCos = -backRoom / radius;
+    final tilt = backCos <= -1
+        ? _kRadialMaxTilt
+        : math.min(_kRadialMaxTilt, math.acos(backCos.clamp(-1.0, 1.0)));
+    final sMin = (xMin - cx) / radius;
+    final sMax = (xMax - cx) / radius;
+    final lo = math.max(
+      -tilt,
+      sMin <= -1 ? -_kRadialMaxTilt : math.asin(sMin.clamp(-1.0, 1.0)),
+    );
+    final hi = math.min(
+      tilt,
+      sMax >= 1 ? _kRadialMaxTilt : math.asin(sMax.clamp(-1.0, 1.0)),
+    );
+    final loPref = math.max(lo, -math.pi / 2);
+    final hiPref = math.min(hi, math.pi / 2);
+    final needed = itemCount > 1
+        ? _kRadialMinArcPerItem * (itemCount - 1) / radius
+        : 0.0;
+    if (hiPref - loPref >= needed) {
+      sweepStart = loPref;
+      sweepEnd = hiPref;
+      break;
+    }
+    if (hi - lo >= needed) {
+      sweepStart = (-needed / 2).clamp(lo, hi - needed);
+      sweepEnd = sweepStart + needed;
+      break;
+    }
+    // 整个允许区间都排不下：加大半径（或已到上限时用满区间兜底）
+    sweepStart = lo;
+    sweepEnd = hi;
+    if (radius >= radiusCap) break;
+    radius = math.min(
+      _kRadialMinArcPerItem * (itemCount - 1) / math.max(hi - lo, 0.3),
+      radiusCap,
+    );
+  }
+  return (radius: radius, sweepStart: sweepStart, sweepEnd: sweepEnd);
+}
+
 /// 长按弹出径向菜单的便捷包装：内置 tap + 长按手势与 [RadialMenuSession]。
 ///
 /// 自动处理锚点越界（与进度悬浮条不同，锚点可能在列表任意位置）：
@@ -626,20 +821,6 @@ class RadialLongPressMenu extends StatefulWidget {
 class _RadialLongPressMenuState extends State<RadialLongPressMenu> {
   final RadialMenuSession _session = RadialMenuSession();
 
-  /// 项放大态的最大半径（48 * 1.2 / 2），加边距用于越界判断
-  static const double _itemHalf = 29.0;
-  static const double _edgeMargin = 8.0;
-
-  /// 相邻项圆心间的最小弧长（48 项径 + 8 间隙）
-  static const double _minArcPerItem = 56.0;
-
-  /// 扇形单侧最大偏角（弧度，~115°）：允许窗口越过水平线一点，
-  /// 让贴边时的扇子有足够展开空间，但不至于绕到锚点背面
-  static const double _maxTilt = 2.0;
-
-  /// 半径补偿上限（仅在窗口收窄仍不够时启用）
-  static const double _maxRadius = 150.0;
-
   @override
   void dispose() {
     _session.dispose();
@@ -657,53 +838,33 @@ class _RadialLongPressMenuState extends State<RadialLongPressMenu> {
 
     final mq = MediaQuery.of(context);
     final cx = rect.center.dx;
-    final xMin = _edgeMargin + _itemHalf;
-    final xMax = mq.size.width - _edgeMargin - _itemHalf;
-
-    // 求扇形窗口（极轴偏角 φ，0 = 正前方，左负右正），圆心钉死在锚点：
-    // 1) 由屏幕左右边界反解 φ 允许区间 [lo, hi]（项水平偏移 = R·sin φ）
-    // 2) 优先只用水平线以内的部分 [loPref, hiPref]（屏幕中部即完整半圆）
-    // 3) 不够排下所有项时向水平线外延伸到刚好够（旋转+收窄，不挪圆心）
-    // 4) 仍不够才加大半径重算（半径越大约束越松、所需角度越小）
-    double radius = RadialMenuSession.radiusForCount(items.length);
-    double sweepStart = -math.pi / 2;
-    double sweepEnd = math.pi / 2;
-    for (var i = 0; i < 3; i++) {
-      final sMin = (xMin - cx) / radius;
-      final sMax = (xMax - cx) / radius;
-      final lo = sMin <= -1 ? -_maxTilt : math.asin(sMin.clamp(-1.0, 1.0));
-      final hi = sMax >= 1 ? _maxTilt : math.asin(sMax.clamp(-1.0, 1.0));
-      final loPref = math.max(lo, -math.pi / 2);
-      final hiPref = math.min(hi, math.pi / 2);
-      final needed = items.length > 1
-          ? _minArcPerItem * (items.length - 1) / radius
-          : 0.0;
-      if (hiPref - loPref >= needed) {
-        sweepStart = loPref;
-        sweepEnd = hiPref;
-        break;
-      }
-      if (hi - lo >= needed) {
-        sweepStart = (-needed / 2).clamp(lo, hi - needed);
-        sweepEnd = sweepStart + needed;
-        break;
-      }
-      // 整个允许区间都排不下：加大半径（或已到上限时用满区间兜底）
-      sweepStart = lo;
-      sweepEnd = hi;
-      if (radius >= _maxRadius) break;
-      radius = math.min(
-        _minArcPerItem * (items.length - 1) / math.max(hi - lo, 0.3),
-        _maxRadius,
-      );
-    }
-
     // 垂直：优先向上展开；上方放不下（贴近屏幕顶部）则翻转向下。
     // 不做圆心下移 clamp——那会让按压点落到圆心上方，长按瞬间误高亮某一项。
-    final fitExtent = radius + _itemHalf + _edgeMargin;
-    final up = rect.top - fitExtent >= mq.padding.top;
-    final direction = up ? RadialMenuDirection.up : RadialMenuDirection.down;
-    final anchorY = up ? rect.top : rect.bottom;
+    var direction = RadialMenuDirection.up;
+    var anchorY = rect.top;
+    var window = solveRadialFanWindow(
+      itemCount: items.length,
+      anchorX: cx,
+      screenWidth: mq.size.width,
+      anchorY: anchorY,
+      screenHeight: mq.size.height,
+      safePadding: mq.padding,
+    );
+    final fitExtent = window.radius + _kRadialItemHalf + _kRadialEdgeMargin;
+    if (rect.top - fitExtent < mq.padding.top) {
+      direction = RadialMenuDirection.down;
+      anchorY = rect.bottom;
+      window = solveRadialFanWindow(
+        itemCount: items.length,
+        anchorX: cx,
+        screenWidth: mq.size.width,
+        anchorY: anchorY,
+        screenHeight: mq.size.height,
+        safePadding: mq.padding,
+        direction: direction,
+      );
+    }
+    final (:radius, :sweepStart, :sweepEnd) = window;
 
     _session.open(
       context: context,

@@ -271,11 +271,11 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result == null || !mounted) return;
+    final result = await FilePicker.pickFiles();
+    if (result.isEmpty || !mounted) return;
     final imagePaths = <String>[];
     final imageNames = <String>[];
-    for (final file in result.files) {
+    for (final file in result) {
       final path = file.path;
       if (path == null) continue;
       final ext = file.extension?.toLowerCase() ?? '';

@@ -99,9 +99,7 @@ I18n buildImageEditorI18nZh() => I18n(
     exposure: S.current.imageEditor_exposure,
     hue: S.current.imageEditor_hue,
     temperature: S.current.imageEditor_temperature,
-    sharpness: S.current.imageEditor_sharpness,
     fade: S.current.imageEditor_fade,
-    luminance: S.current.imageEditor_luminance,
   ),
   blurEditor: I18nBlurEditor(
     bottomNavigationBarText: S.current.imageEditor_blur,

@@ -11,7 +11,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
   flutter_avif_windows
   flutter_inappwebview_windows
-  flutter_js
   flutter_secure_storage_windows
   flutter_timezone
   gal
@@ -21,13 +20,11 @@ list(APPEND FLUTTER_PLUGIN_LIST
   quickjs_engine
   record_windows
   screen_brightness_windows
-  screen_retriever_windows
   super_native_extensions
   url_launcher_windows
   share_plus
   volume_controller
   media_kit_video
-  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

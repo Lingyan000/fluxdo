@@ -133,7 +133,15 @@ impl Verifier {
                 &valid_chain,
                 ocsp_response,
                 now_millis,
-            )?;
+            ).map_err(|err| {
+                rama_core::telemetry::tracing::warn!(
+                    event = "tls_revocation_rejected",
+                    stage = "supplementary_revocation",
+                    stapled = ocsp_response.is_some(),
+                    "Platform trust verification passed but supplementary revocation verification failed"
+                );
+                err
+            })?;
             encoded_chain(env, &valid_chain)
         })
     }
@@ -743,39 +751,18 @@ fn check_revocation(
         }
     };
 
-    let option_class = jni_str!("java/security/cert/PKIXRevocationChecker$Option");
-    let option_sig = jni_sig!("Ljava/security/cert/PKIXRevocationChecker$Option;");
-    // A supplied staple must validate. Soft-failing a malformed or mismatched
-    // staple would silently accept it; do not fall back to network retrieval.
-    let policy_option = if ocsp_response.is_some() {
-        jni_str!("NO_FALLBACK")
-    } else {
-        jni_str!("SOFT_FAIL")
-    };
-    let revocation_policy = env
-        .get_static_field(option_class, policy_option, &option_sig)?
-        .l()?;
-    let end_entity_only = env
-        .get_static_field(option_class, jni_str!("ONLY_END_ENTITY"), &option_sig)?
-        .l()?;
-    let options = env
-        .call_static_method(
-            jni_str!("java/util/EnumSet"),
-            jni_str!("of"),
-            jni_sig!("(Ljava/lang/Enum;Ljava/lang/Enum;)Ljava/util/EnumSet;"),
-            &[
-                JValue::Object(&revocation_policy),
-                JValue::Object(&end_entity_only),
-            ],
-        )?
-        .l()?;
-    env.call_method(
-        &checker,
-        jni_str!("setOptions"),
-        jni_sig!("(Ljava/util/Set;)V"),
-        &[JValue::Object(&options)],
-    )?
-    .v()?;
+    let leaf_der = env.call_method(leaf, jni_str!("getEncoded"), jni_sig!("()[B"), &[])?.l()?;
+    let leaf_der = env.cast_local::<JByteArray<'_>>(leaf_der)?;
+    let has_ocsp_responder = crate::ocsp::certificate_has_ocsp_responder(
+        &env.convert_byte_array(&leaf_der)?,
+    ).map_err(|err| PlatformVerifyError::with_source(PlatformVerifyErrorKind::BadEncoding, err))?;
+    revocation::configure_revocation_checker(env, &checker, ocsp_response.is_some(), has_ocsp_responder)?;
+    if ocsp_response.is_none() && !has_ocsp_responder {
+        rama_core::telemetry::tracing::info!(
+            event = "tls_revocation_crl_only",
+            "Platform trust verification passed; no OCSP responder advertised, checking CRLs with soft-fail for unavailable status"
+        );
+    }
 
     if let Some(response) = ocsp_response {
         let response: JByteArray<'_> = env.byte_array_from_slice(response)?;

@@ -53,13 +53,13 @@ def children(items):
     return tlv(0x30, b''.join(item[2] for item in items))
 
 
-def issue(name, serial, eku, key_usage='digitalSignature', days='30', ca='issuer', rsa=False):
+def issue(name, serial, eku, key_usage='digitalSignature', days='30', ca='issuer', rsa=False, extra=''):
     openssl('req', '-new', '-newkey', 'rsa:2048' if rsa else 'ec',
             *([] if rsa else ['-pkeyopt', 'ec_paramgen_curve:prime256v1']),
             '-nodes', '-subj', f'/CN={name}', '-keyout', f'{name}.key', '-out', f'{name}.csr')
     (ROOT / f'{name}.ext').write_text(
         f'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,{key_usage}\n'
-        f'extendedKeyUsage={eku}\nsubjectAltName=DNS:ocsp.example\n')
+        f'extendedKeyUsage={eku}\nsubjectAltName=DNS:ocsp.example\n{extra}')
     openssl('x509', '-req', '-in', f'{name}.csr', '-CA', f'{ca}.pem', '-CAkey', f'{ca}.key',
             '-set_serial', serial, '-days', days, '-extfile', f'{name}.ext', '-out', f'{name}.pem')
     openssl('x509', '-in', f'{name}.pem', '-outform', 'DER', '-out', f'{name}.der')
@@ -107,6 +107,12 @@ def change_single(data, change):
 root('issuer')
 root('foreign', subject='issuer')
 issue('leaf', '1', 'serverAuth')
+# 入口差异不依赖公网：CRL 由 Java CertStore 注入；空 OCSP 地址不能屏蔽 CRL 吊销。
+issue('aia_issuer', '11', 'serverAuth', extra='authorityInfoAccess=caIssuers;URI:http://issuer.invalid/ca\n')
+issue('aia_ocsp', '12', 'serverAuth', extra='authorityInfoAccess=OCSP;URI:http://ocsp.invalid/status\n')
+issue('crl_only', '13', 'serverAuth', extra='crlDistributionPoints=URI:http://crl.invalid/list\n')
+issue('aia_both', '14', 'serverAuth', extra='authorityInfoAccess=caIssuers;URI:http://issuer.invalid/ca,OCSP;URI:http://ocsp.invalid/status\n')
+issue('aia_invalid', '15', 'serverAuth', extra='1.3.6.1.5.5.7.1.1=DER:05:00\n')
 issue('other', '2', 'serverAuth')
 issue('delegate', '3', 'OCSPSigning')
 issue('unauthorized', '4', 'clientAuth')
@@ -129,6 +135,13 @@ revoked = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hou
 (ROOT / 'valid.index').write_text(f'V\t{expiry}\t\t01\tunknown\t/CN=leaf\nV\t{expiry}\t\t02\tunknown\t/CN=other\n')
 (ROOT / 'revoked.index').write_text(f'R\t{expiry}\t{revoked}\t01\tunknown\t/CN=leaf\n')
 (ROOT / 'unknown.index').write_text('')
+for status in ['valid', 'revoked']:
+    (ROOT / 'crl.cnf').write_text(
+        '[ca]\ndefault_ca=issuer\n[issuer]\n'
+        f'database={status}.index\ncertificate=issuer.pem\nprivate_key=issuer.key\n'
+        'default_md=sha256\ndefault_crl_days=1\n')
+    openssl('ca', '-gencrl', '-config', 'crl.cnf', '-out', f'{status}.crl.pem')
+    openssl('crl', '-in', f'{status}.crl.pem', '-outform', 'DER', '-out', f'{status}.crl')
 response('good', 'issuer', 'valid', 'leaf', '-resp_no_certs')
 response('by_key', 'issuer', 'valid', 'leaf', '-resp_key_id', '-resp_no_certs')
 response('sha256_id', 'issuer')

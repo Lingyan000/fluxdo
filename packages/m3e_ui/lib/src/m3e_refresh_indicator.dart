@@ -39,7 +39,7 @@ abstract interface class RefreshRevealHandle {
   bool get canResumeDrag;
   double get resumeExtent;
   void beginResumedDrag(double visibleOffset);
-  void updateResumedDrag(double delta);
+  double updateResumedDrag(double delta);
   void endResumedDrag(double velocity);
   void cancelResumedDrag();
 }
@@ -360,9 +360,9 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
   bool _resettingMode = false;
   bool get _ownsLeadingEdge =>
       widget.externalReveal &&
-      ((_dragOffset ?? 0) > 0 ||
-          _secondaryOpening ||
-          (widget.revealOffset?.call() ?? 0) > 0);
+      (widget.revealOffset != null
+          ? widget.revealOffset!() > 0
+          : (_dragOffset ?? 0) > 0 || _secondaryOpening);
   RefreshRevealGeometry? get _revealGeometry => widget.externalReveal
       ? RefreshRevealGeometry(
           viewportExtent: MediaQuery.sizeOf(context).height,
@@ -424,9 +424,11 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
   }
 
   @override
-  void updateResumedDrag(double delta) {
-    if (!canResumeDrag || !_resumedDrag) return;
-    _updateTwoStageOffset(((_dragOffset ?? 0) + delta).clamp(0.0, 1000.0));
+  double updateResumedDrag(double delta) {
+    if (!canResumeDrag || !_resumedDrag) return 0;
+    final next = (_dragOffset ?? 0) + delta;
+    _updateTwoStageOffset(next.clamp(0.0, 1000.0));
+    return math.min(0, next);
   }
 
   @override

@@ -150,9 +150,11 @@ class MiniAppSheetController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateCloseDrag(double delta) {
-    if (!_directDrag) return;
-    _animation.value = (offset + delta).clamp(0, extent);
+  double updateCloseDrag(double delta) {
+    if (!_directDrag) return 0;
+    final next = offset + delta;
+    _animation.value = next.clamp(0, extent);
+    return next < 0 ? next : 0;
   }
 
   void endCloseDrag(double velocity) {
@@ -185,7 +187,7 @@ class MiniAppSheetController extends ChangeNotifier {
     _holding = false;
     _directDrag = false;
     try {
-      if (reduceMotion) {
+      if (reduceMotion || (target == 0 && offset == 0)) {
         _animation.value = target;
       } else if (!expressive) {
         final animation = _animation.animateTo(

@@ -214,10 +214,9 @@ Future<String?> pickAndUploadMediaTag(
   BuildContext context, {
   required bool isAudio,
 }) async {
-  final picked = await FilePicker.platform.pickFiles(
+  final file = await FilePicker.pickFile(
     type: isAudio ? FileType.audio : FileType.video,
   );
-  final file = picked?.files.single;
   final path = file?.path;
   if (file == null || path == null || !context.mounted) return null;
   return uploadMediaFileAsTag(
