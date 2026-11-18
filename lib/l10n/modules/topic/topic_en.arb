@@ -140,6 +140,7 @@
   "topicDetail_quickReplyExpand": "Open full editor",
   "topicDetail_quickReplyCollapse": "Collapse",
   "topicDetail_quickReplyEmoji": "Emoji",
+  "topicDetail_quickReplyKeyboard": "Keyboard",
   "topicDetail_quickReplySwitchTitle": "Switch reply target",
   "topicDetail_quickReplySwitchBody": "Your current reply hasn't been sent yet. What would you like to do?",
   "topicDetail_quickReplyKeepContent": "Keep text, reply to this post instead",

@@ -1,5 +1,6 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../l10n/s.dart';
@@ -9,6 +10,9 @@ import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../../../widgets/markdown_editor/composer_shortcuts.dart';
 import '../../../widgets/markdown_editor/emoji_picker.dart';
+import '../../../widgets/markdown_editor/emoji_sticker_panel.dart';
+import '../../../widgets/common/character_counts_overlay.dart';
+import '../../../utils/platform_utils.dart';
 import '../../../utils/responsive.dart';
 import '../controllers/topic_reply_session.dart';
 import 'topic_bottom_bar.dart';
@@ -27,9 +31,14 @@ class TopicQuickReplyLayer extends StatefulWidget {
     required this.onSend,
     required this.onExpand,
     this.richEditorAvailable = false,
+    this.resolveMinLength,
   });
 
   final TopicReplySession session;
+
+  /// 解析最小正文字数（与完整编辑器同一口径，含站点插件按分类的改写）；
+  /// 展开时解析一次，驱动字数计数
+  final Future<int> Function()? resolveMinLength;
 
   /// 富文本编辑器可用：正文出现块级格式（快捷回复里会露出源码）时提示展开
   final bool richEditorAvailable;
@@ -56,7 +65,7 @@ typedef _SourceGeometry = ({
 });
 
 class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const double _panelRadius = 24;
   static const Curve _geometryCurve = Curves.easeInOutCubicEmphasized;
   static const Curve _contentCurve = Interval(0.35, 1, curve: Curves.easeOut);
@@ -70,12 +79,26 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
   final GlobalKey _panelKey = GlobalKey();
   _SourceGeometry? _source;
   List<String> _recentEmojis = const [];
+  int? _minLength;
+
+  /// 移动端表情面板：占据键盘的位置（键盘收起、面板顶上来，输入区不动）
+  bool _emojiMode = false;
+
+  /// 从表情面板切回键盘的过渡期：键盘升起前继续占位，输入区不下坠
+  bool _returningToKeyboard = false;
+
+  /// 最近一次键盘完全展开的高度；表情面板按它定高
+  double _keyboardHeight = 0;
+  static const double _fallbackPanelHeight = 300;
+
+  bool get _inlineEmoji => !PlatformUtils.isDesktop;
 
   TopicReplySession get _session => widget.session;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _session.activeNotifier.addListener(_onActiveChanged);
     if (_session.active) _onActiveChanged();
   }
@@ -91,6 +114,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _session.activeNotifier.removeListener(_onActiveChanged);
     _controller.dispose();
     super.dispose();
@@ -104,6 +128,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     if (_session.active) {
       _captureSource();
       _loadRecentEmojis();
+      _loadMinLength();
       _controller.forward();
     } else if (_session.handingOff) {
       // 已被完整编辑器盖住：直接消失，不播收起动画
@@ -112,6 +137,83 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
       _captureSource();
       _controller.reverse();
     }
+    if (!_session.active && (_emojiMode || _returningToKeyboard)) {
+      setState(() {
+        _emojiMode = false;
+        _returningToKeyboard = false;
+      });
+    }
+  }
+
+  Future<void> _loadMinLength() async {
+    final resolve = widget.resolveMinLength;
+    if (resolve == null) return;
+    try {
+      final min = await resolve();
+      if (mounted) setState(() => _minLength = min);
+    } catch (_) {
+      // 解析失败不显示计数；发送时仍会按完整规则校验
+    }
+  }
+
+  /// 系统键盘的实际高度（不受 Scaffold 调整 body 影响）
+  double get _viewInsetBottom {
+    final view = View.of(context);
+    return view.viewInsets.bottom / view.devicePixelRatio;
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+    final inset = _viewInsetBottom;
+    var changed = false;
+    // 只记录键盘完全展开后的高度（升降过程中的中间值不算）
+    if (inset > _keyboardHeight && !_emojiMode) {
+      _keyboardHeight = inset;
+      changed = true;
+    }
+    if (_returningToKeyboard && inset >= _panelHeight - 1) {
+      _returningToKeyboard = false;
+      changed = true;
+    }
+    if (changed || _emojiMode || _returningToKeyboard) setState(() {});
+  }
+
+  double get _panelHeight =>
+      _keyboardHeight > 0 ? _keyboardHeight : _fallbackPanelHeight;
+
+  /// 表情面板区当前要占的高度：面板高减去仍在屏上的键盘部分。键盘收起
+  /// 的过程中它随之长高、切回键盘时随之缩回，输入区始终不动
+  double get _emojiAreaHeight {
+    if (!_emojiMode && !_returningToKeyboard) return 0;
+    return (_panelHeight - _viewInsetBottom).clamp(0.0, _panelHeight);
+  }
+
+  void _toggleEmojiPanel() {
+    if (!_inlineEmoji) {
+      _pickEmoji();
+      return;
+    }
+    if (_emojiMode) {
+      _switchToKeyboard();
+    } else {
+      setState(() {
+        _emojiMode = true;
+        _returningToKeyboard = false;
+      });
+      // readOnly 让系统键盘收起、焦点与光标保留
+      _session.focusNode.requestFocus();
+    }
+  }
+
+  void _switchToKeyboard() {
+    if (!_emojiMode) return;
+    setState(() {
+      _emojiMode = false;
+      _returningToKeyboard = true;
+    });
+    _session.focusNode.requestFocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
   }
 
   void _captureSource() {
@@ -280,13 +382,17 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
         final suggestExpand =
             widget.richEditorAvailable &&
             markdownHasBlockFormatting(_session.text.text);
-        return Padding(
+        final emojiArea = _emojiAreaHeight;
+        final content = Padding(
           padding: EdgeInsets.fromLTRB(
             16,
             target == null ? 16 : 8,
             12,
-            // 贴底形态自己让出底部安全区；悬浮卡片已离开底边
-            floating ? 8 : 8 + MediaQuery.paddingOf(context).bottom,
+            // 表情面板占位时由面板贴底；否则贴底形态自己让出底部安全区，
+            // 悬浮卡片已离开底边
+            emojiArea > 0 || floating
+                ? 8
+                : 8 + MediaQuery.paddingOf(context).bottom,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -334,6 +440,10 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                 child: TextField(
                   controller: _session.text,
                   focusNode: _session.focusNode,
+                  // 表情面板打开时只读：系统键盘收起，焦点与光标保留
+                  readOnly: _emojiMode,
+                  showCursor: true,
+                  onTap: _switchToKeyboard,
                   minLines: 3,
                   maxLines: 8,
                   keyboardType: TextInputType.multiline,
@@ -348,6 +458,15 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                   ).withoutBorder(),
                 ),
               ),
+              // 最小字数计数（与完整编辑器同一组件与口径）
+              if (_minLength != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, right: 4),
+                  child: CharacterCountsOverlay(
+                    length: _session.text.text.length,
+                    minimumLength: _minLength,
+                  ),
+                ),
               if (suggestExpand)
                 Padding(
                   padding: const EdgeInsets.only(top: 6, left: 4),
@@ -362,11 +481,20 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
               // 工具条：表情、展开 …… 发送
               Row(
                 children: [
+                  // 表情面板打开时变为键盘按钮，点按切回键盘
                   IconButton(
-                    onPressed: _pickEmoji,
-                    tooltip: l10n.topicDetail_quickReplyEmoji,
-                    icon: const Icon(Symbols.mood_rounded),
-                    color: theme.colorScheme.onSurfaceVariant,
+                    onPressed: _toggleEmojiPanel,
+                    tooltip: _emojiMode
+                        ? l10n.topicDetail_quickReplyKeyboard
+                        : l10n.topicDetail_quickReplyEmoji,
+                    icon: Icon(
+                      _emojiMode
+                          ? Symbols.keyboard_rounded
+                          : Symbols.mood_rounded,
+                    ),
+                    color: _emojiMode
+                        ? context.emphasis.selected
+                        : theme.colorScheme.onSurfaceVariant,
                   ),
                   // 内容含格式时突出展开按钮
                   suggestExpand
@@ -400,8 +528,8 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                   ),
                 ],
               ),
-              // 最近用过的表情，点按直接插入
-              if (_recentEmojis.isNotEmpty)
+              // 最近用过的表情，点按直接插入（表情面板打开时由面板承担）
+              if (_recentEmojis.isNotEmpty && emojiArea == 0)
                 SizedBox(
                   height: 44,
                   child: ListView.builder(
@@ -424,6 +552,31 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                 ),
             ],
           ),
+        );
+        if (emojiArea == 0) return content;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            content,
+            // 面板按完整高度布局、外框随键盘升降裁切，过渡中不逐帧重排
+            SizedBox(
+              height: emojiArea,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minHeight: _panelHeight,
+                  maxHeight: _panelHeight,
+                  child: EmojiStickerPanel(
+                    onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
+                    onStickerSelected: _session.insertText,
+                    onBackspace: () =>
+                        deleteBackwardWithEmojiShortcodes(_session.text),
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

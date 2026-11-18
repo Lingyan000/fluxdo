@@ -172,6 +172,7 @@
   "topicDetail_quickReplyExpand": "展开编辑器",
   "topicDetail_quickReplyCollapse": "收起",
   "topicDetail_quickReplyEmoji": "表情",
+  "topicDetail_quickReplyKeyboard": "键盘",
   "topicDetail_quickReplySwitchTitle": "切换回复对象",
   "topicDetail_quickReplySwitchBody": "当前回复还有未发送的内容，要怎么处理？",
   "topicDetail_quickReplyKeepContent": "保留内容，改回复这一楼",

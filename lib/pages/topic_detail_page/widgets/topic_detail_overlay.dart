@@ -62,6 +62,9 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
 
   /// 富文本编辑器可用：快捷回复里出现块级格式时提示展开
   final bool richEditorAvailable;
+
+  /// 解析回复的最小字数（快捷回复的字数计数用）
+  final Future<int> Function()? resolveReplyMinLength;
   final VoidCallback? onQuickReplySend;
 
   /// 快捷回复展开到完整编辑器：参数为面板当前的全局外形
@@ -92,6 +95,7 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     this.replySession,
     required this.replyEntryKey,
     this.richEditorAvailable = false,
+    this.resolveReplyMinLength,
     this.onQuickReplySend,
     this.onQuickReplyExpand,
   });
@@ -367,6 +371,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                   ? context.l10n.topicDetail_replyEntryPrivateHint
                   : context.l10n.topicDetail_replyEntryHint,
               richEditorAvailable: widget.richEditorAvailable,
+              resolveMinLength: widget.resolveReplyMinLength,
               onSend: widget.onQuickReplySend ?? () {},
               onExpand: widget.onQuickReplyExpand ?? (_, _, _) {},
             ),

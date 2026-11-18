@@ -148,6 +148,7 @@
   "topicDetail_quickReplyExpand": "展開編輯器",
   "topicDetail_quickReplyCollapse": "收起",
   "topicDetail_quickReplyEmoji": "表情符號",
+  "topicDetail_quickReplyKeyboard": "鍵盤",
   "topicDetail_quickReplySwitchTitle": "切換回覆對象",
   "topicDetail_quickReplySwitchBody": "目前的回覆還有未送出的內容，要如何處理？",
   "topicDetail_quickReplyKeepContent": "保留內容，改回覆這一樓",

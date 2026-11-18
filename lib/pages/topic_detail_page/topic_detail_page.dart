@@ -2491,6 +2491,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           : null,
       replyEntryKey: _replyEntryKey,
       richEditorAvailable: richEditorAvailable,
+      resolveReplyMinLength: () => ReplySubmission.resolveMinLength(
+        ref,
+        categoryId: detail.categoryId,
+        isPrivateMessageContext: detail.isPrivateMessage,
+        isPmWithNonHumanUser: detail.pmWithNonHumanUser,
+      ),
       onQuickReplySend: _sendQuickReply,
       onQuickReplyExpand: _expandQuickReply,
       tocVisibleListenable: _tocFabVisible,
