@@ -407,7 +407,6 @@ class _NotificationPagerListState extends State<_NotificationPagerList> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final systemAvatarTemplate = widget.container
         .read(systemUserAvatarTemplateProvider)
         .value;
@@ -422,18 +421,12 @@ class _NotificationPagerListState extends State<_NotificationPagerList> {
             widget.locallyRead.contains(notification.id)) {
           notification = notification.copyWith(read: true);
         }
-        final selected = index == widget.currentIndex;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: selected
-                ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.45)
-                : Colors.transparent,
-          ),
-          child: NotificationItem(
-            notification: notification,
-            systemAvatarTemplate: systemAvatarTemplate,
-            onTap: () => widget.onSelect(index),
-          ),
+        return NotificationItem(
+          notification: notification,
+          systemAvatarTemplate: systemAvatarTemplate,
+          showTopDivider: index > 0,
+          selected: index == widget.currentIndex,
+          onTap: () => widget.onSelect(index),
         );
       },
     );

@@ -52,11 +52,10 @@ class _NotificationContentSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lineHeight =
-        MediaQuery.textScalerOf(
-          context,
-        ).scale(theme.textTheme.bodyMedium!.fontSize!) *
-        1.45;
+    final scaler = MediaQuery.textScalerOf(context);
+    final baseFontSize = theme.textTheme.bodyMedium!.fontSize!;
+    final metaHeight = scaler.scale(baseFontSize - 1) * 1.4;
+    final titleHeight = scaler.scale(baseFontSize) * 1.45;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -68,13 +67,13 @@ class _NotificationContentSkeleton extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Flexible(child: SkeletonBox(width: 180, height: lineHeight)),
+                  Flexible(child: SkeletonBox(width: 168, height: metaHeight)),
                   const Spacer(),
-                  SkeletonBox(width: 40, height: lineHeight),
+                  SkeletonBox(width: 40, height: metaHeight),
                 ],
               ),
               const SizedBox(height: 4),
-              SkeletonBox(width: double.infinity, height: lineHeight),
+              SkeletonBox(width: double.infinity, height: titleHeight),
             ],
           ),
         ),

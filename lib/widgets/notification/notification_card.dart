@@ -23,6 +23,7 @@ class NotificationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return ActivityCardFrame(
       position: position,
+      highlighted: !notification.read,
       onTap: onTap,
       child: NotificationContent(
         notification: notification,

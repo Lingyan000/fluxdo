@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
@@ -7,7 +8,6 @@ import '../../utils/url_helper.dart';
 import '../common/emoji_text.dart';
 import '../common/smart_avatar.dart';
 import '../common/relative_time_text.dart';
-import '../../theme/app_colors.dart';
 import '../user/activity_card_layout.dart';
 
 // discourse-follow 插件的自定义 SVG 图标
@@ -29,31 +29,63 @@ class NotificationItem extends StatelessWidget {
   final DiscourseNotification notification;
   final String? systemAvatarTemplate;
   final VoidCallback onTap;
+  final bool showTopDivider;
+  final bool selected;
 
   const NotificationItem({
     super.key,
     required this.notification,
     this.systemAvatarTemplate,
     required this.onTap,
+    this.showTopDivider = false,
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: NotificationContent(
-          notification: notification,
-          systemAvatarTemplate: systemAvatarTemplate,
+    final colorScheme = Theme.of(context).colorScheme;
+    final selectedAccent = context.emphasis.selected;
+    final unread = !notification.read;
+    final backgroundColor = selected
+        ? selectedAccent.withValues(alpha: 0.12)
+        : unread
+        ? selectedAccent.withValues(alpha: 0.055)
+        : Colors.transparent;
+
+    return Ink(
+      color: backgroundColor,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showTopDivider)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 64, end: 16),
+                child: SizedBox(
+                  height: 0.6,
+                  width: double.infinity,
+                  child: ColoredBox(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.65),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: NotificationContent(
+                notification: notification,
+                systemAvatarTemplate: systemAvatarTemplate,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// 通知内容：首行是「谁做了什么」，次行是所在话题。
-/// 已读状态只有两档：未读时标题用正文色并带圆点，已读时标题退灰。
+/// 通知内容：有次行话题时首行为紧凑元信息、次行话题为主视觉；
+/// 单行通知则首行直接承载正文尺度。未读突出对比度与字重，已读退后。
 class NotificationContent extends StatelessWidget {
   const NotificationContent({
     super.key,
@@ -81,6 +113,7 @@ class NotificationContent extends StatelessWidget {
     final labelOnly = description == notification.notificationType.label;
     final headline = labelOnly ? title : description;
     final detail = labelOnly || title == description ? '' : title;
+    final hasDetail = detail.isNotEmpty;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -99,6 +132,8 @@ class NotificationContent extends StatelessWidget {
                 metadata: _ActionLine(
                   text: headline,
                   actorName: notification.actorName,
+                  unread: unread,
+                  compact: hasDetail,
                 ),
                 timestamp: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -112,10 +147,10 @@ class NotificationContent extends StatelessWidget {
                     if (unread) ...[
                       const SizedBox(width: 6),
                       Container(
-                        width: 8,
-                        height: 8,
+                        width: 7,
+                        height: 7,
                         decoration: BoxDecoration(
-                          color: colorScheme.primary,
+                          color: context.emphasis.selected,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -123,7 +158,7 @@ class NotificationContent extends StatelessWidget {
                   ],
                 ),
               ),
-              if (detail.isNotEmpty) ...[
+              if (hasDetail) ...[
                 const SizedBox(height: 4),
                 EmojiText(
                   detail,
@@ -131,6 +166,7 @@ class NotificationContent extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: unread ? colorScheme.onSurface : secondary,
+                    fontWeight: unread ? FontWeight.w500 : FontWeight.w400,
                     height: 1.45,
                   ),
                 ),
@@ -143,23 +179,38 @@ class NotificationContent extends StatelessWidget {
   }
 }
 
-/// 描述里的动作者名字加粗，其余文字退为次要色
+/// 动作行：有次行话题时收为 13sp 辅助层，已读时收弱动作者字重与对比度，
+/// 避免满屏已读时重复用户名抢走话题标题的视觉重心。
 class _ActionLine extends StatelessWidget {
-  const _ActionLine({required this.text, required this.actorName});
+  const _ActionLine({
+    required this.text,
+    required this.actorName,
+    required this.unread,
+    required this.compact,
+  });
 
   final String text;
   final String actorName;
+  final bool unread;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final base = theme.textTheme.bodyMedium?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
-      height: 1.45,
+    final cs = theme.colorScheme;
+    final bodyMedium = theme.textTheme.bodyMedium;
+    final fontSize = compact
+        ? (bodyMedium?.fontSize ?? 14) - 1
+        : (bodyMedium?.fontSize ?? 14);
+    final base = bodyMedium?.copyWith(
+      fontSize: fontSize,
+      color: !compact && unread ? cs.onSurface : cs.onSurfaceVariant,
+      fontWeight: !compact && unread ? FontWeight.w500 : FontWeight.w400,
+      height: compact ? 1.4 : 1.45,
     );
     final nameStyle = base?.copyWith(
-      color: theme.colorScheme.onSurface,
-      fontWeight: FontWeight.w600,
+      color: unread ? cs.onSurface : cs.onSurface.withValues(alpha: 0.78),
+      fontWeight: unread ? FontWeight.w600 : FontWeight.w500,
     );
     final start = actorName.isEmpty ? -1 : text.indexOf(actorName);
     final spans = start < 0
@@ -214,7 +265,7 @@ class NotificationAvatar extends StatelessWidget {
       case NotificationType.likedConsolidated:
         return Symbols.favorite_rounded;
       case NotificationType.reaction:
-        return Symbols.thumb_up_rounded;
+        return Symbols.add_reaction_rounded;
       case NotificationType.privateMessage:
       case NotificationType.invitedToPrivateMessage:
         return Symbols.mail_rounded;
@@ -314,38 +365,22 @@ class NotificationAvatar extends StatelessWidget {
     return Icon(_getNotificationIcon(), size: _badgeIconSize, color: color);
   }
 
-  Color _getNotificationColor(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    switch (notification.notificationType) {
-      case NotificationType.liked:
-      case NotificationType.likedConsolidated:
-      case NotificationType.reaction:
-        return context.appColors.red;
-      case NotificationType.privateMessage:
-      case NotificationType.invitedToPrivateMessage:
-        return context.appColors.blue;
-      case NotificationType.grantedBadge:
-        return context.appColors.amber;
-      case NotificationType.boost:
-        return context.appColors.deepPurple;
-      case NotificationType.mentioned:
-      case NotificationType.groupMentioned:
-        return colorScheme.primary;
-      case NotificationType.following:
-        return context.appColors.green;
-      case NotificationType.adminProblems:
-        return context.appColors.red;
-      case NotificationType.newFeatures:
-        return context.appColors.purple;
-      default:
-        return colorScheme.onSurfaceVariant;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final iconColor = _getNotificationColor(context);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final selected = context.emphasis.selected;
+    // 统一走主题单色体系（未读用柔和强调底，已读退回中性容器色），避免杂色角标干扰视线
+    final badgeBackground = notification.read
+        ? colorScheme.surfaceContainerHigh
+        : Color.alphaBlend(
+            selected.withValues(alpha: isDark ? 0.22 : 0.14),
+            colorScheme.surfaceContainerLow,
+          );
+    final badgeForeground = notification.read
+        ? colorScheme.onSurfaceVariant
+        : selected;
     final extent = radius * 2;
     return SizedBox(
       width: extent,
@@ -367,13 +402,11 @@ class NotificationAvatar extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
+                color: badgeBackground,
                 shape: BoxShape.circle,
                 border: Border.all(color: colorScheme.surface, width: 1.5),
               ),
-              child: _buildBadgeIcon(
-                notification.read ? colorScheme.onSurfaceVariant : iconColor,
-              ),
+              child: _buildBadgeIcon(badgeForeground),
             ),
           ),
         ],

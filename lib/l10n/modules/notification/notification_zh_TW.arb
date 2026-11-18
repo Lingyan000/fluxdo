@@ -98,6 +98,7 @@
   "notification_filterUnread": "未讀",
   "notification_groupEarlier": "更早",
   "notification_groupThisWeek": "本週",
+  "notification_tabBookmarks": "書籤",
   "notification_tabEdits": "編輯",
   "notification_tabLikes": "獲讚",
   "notification_tabLinks": "連結",
@@ -323,7 +324,7 @@
       }
     }
   },
-  "notification_reaction": "{username} 對你的帖子做出了反應",
+  "notification_reaction": "{username} 回應了你的貼文",
   "@notification_reaction": {
     "placeholders": {
       "username": {

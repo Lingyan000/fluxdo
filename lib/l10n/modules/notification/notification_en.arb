@@ -46,6 +46,7 @@
   "notification_filterUnread": "Unread",
   "notification_groupEarlier": "Earlier",
   "notification_groupThisWeek": "This week",
+  "notification_tabBookmarks": "Bookmarks",
   "notification_tabEdits": "Edits",
   "notification_tabLikes": "Likes",
   "notification_tabLinks": "Links",

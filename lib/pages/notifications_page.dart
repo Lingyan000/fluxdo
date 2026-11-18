@@ -253,9 +253,16 @@ class _SideNav extends StatelessWidget {
       required VoidCallback onTap,
     }) => ListTile(
       key: ValueKey(label),
-      leading: Icon(icon, color: context.emphasis.accent),
-      title: Text(label),
+      leading: Icon(
+        icon,
+        color: selected ? context.emphasis.selected : context.emphasis.accent,
+      ),
+      title: Text(
+        label,
+        style: selected ? const TextStyle(fontWeight: FontWeight.w600) : null,
+      ),
       selected: selected,
+      selectedColor: context.emphasis.selected,
       selectedTileColor: context.emphasis.selected.withValues(alpha: 0.1),
       onTap: onTap,
     );

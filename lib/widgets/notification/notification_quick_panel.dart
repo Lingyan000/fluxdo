@@ -16,12 +16,12 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../common/error_view.dart';
 import '../common/predictive_back_overlay_handler.dart';
 import '../layout/master_detail_layout.dart';
 import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
-import '../../theme/app_colors.dart';
 
 /// 通知快捷面板控制器
 /// 侧栏模式：在 widget 树中渲染（低于路由层，新页面自然覆盖）
@@ -56,7 +56,6 @@ class NotificationQuickPanel {
         context: context,
         useRootNavigator: true,
         isScrollControlled: true,
-        showDragHandle: true,
         shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),
@@ -275,7 +274,7 @@ class _SidebarNotificationPanelState
       child: Column(
         children: [
           _NotificationHeader(
-            padding: EdgeInsets.fromLTRB(20, showRail ? 16 : 12, 12, 4),
+            padding: EdgeInsets.fromLTRB(16, showRail ? 12 : 0, 8, 4),
             onViewAll: () {
               NotificationQuickPanel.dismiss();
               Navigator.of(context, rootNavigator: true).push(
@@ -324,7 +323,6 @@ class _SidebarNotificationPanelState
                   ),
                   child: const SizedBox(
                     width: double.infinity,
-                    height: 28,
                     child: _DragHandle(),
                   ),
                 ),
@@ -493,22 +491,24 @@ class _ExcludeRRectClipper extends CustomClipper<Path> {
 }
 
 /// 手机模式 BottomSheet 面板
-/// 拖拽手柄
+/// 拖拽手柄（与 AppSheetScaffold 保持同一尺度）
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.only(top: 12),
-        width: 32,
-        height: 4,
-        decoration: ShapeDecoration(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(2),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          width: 32,
+          height: 4,
+          decoration: ShapeDecoration(
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(2),
+            ),
           ),
         ),
       ),
@@ -566,8 +566,9 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
         height: height,
         child: Column(
           children: [
+            const _DragHandle(),
             _NotificationHeader(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
               onViewAll: _openAllNotifications,
             ),
             const _NotificationBody(),
@@ -594,6 +595,22 @@ class _NotificationHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final tab = ref.watch(notificationPanelTabProvider);
+    final countState = ref.watch(notificationCountStateProvider);
+    final siteTypes =
+        ref.watch(siteNotificationTypesProvider).value ?? const {};
+    final listAsync = ref.watch(
+      tab == NotificationPanelTab.all
+          ? recentNotificationsProvider
+          : categorizedNotificationsProvider(tab),
+    );
+    final listUnread = listAsync.value?.where((n) => !n.read).length ?? 0;
+    final badgeUnread = tab == NotificationPanelTab.all
+        ? countState.allUnread
+        : (tab.unreadCount(siteTypes, countState.grouped) ?? 0);
+    final unreadCount = badgeUnread > 0 ? badgeUnread : listUnread;
+    final canMarkRead = unreadCount > 0;
+    final selectedColor = context.emphasis.selected;
 
     return Padding(
       padding: padding,
@@ -601,23 +618,51 @@ class _NotificationHeader extends ConsumerWidget {
         children: [
           Text(
             context.l10n.common_notification,
-            style: theme.textTheme.titleLarge,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+          if (unreadCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: ShapeDecoration(
+                color: selectedColor.withValues(alpha: 0.12),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(9999),
+                ),
+              ),
+              child: Text(
+                unreadCount > 99 ? '99+' : '$unreadCount',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: selectedColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const Spacer(),
           IconButton(
-            onPressed: () async {
-              // 分类下只标记本分类，与网页通知面板一致
-              final tab = ref.read(notificationPanelTabProvider);
-              if (tab == NotificationPanelTab.all) {
-                await ref
-                    .read(recentNotificationsProvider.notifier)
-                    .markAllAsRead();
-              } else {
-                await ref
-                    .read(categorizedNotificationsProvider(tab).notifier)
-                    .markAllAsRead();
-              }
-            },
+            onPressed: canMarkRead
+                ? () async {
+                    // 分类下只标记本分类，与网页通知面板一致
+                    final currentTab = ref.read(notificationPanelTabProvider);
+                    if (currentTab == NotificationPanelTab.all) {
+                      await ref
+                          .read(recentNotificationsProvider.notifier)
+                          .markAllAsRead();
+                    } else {
+                      await ref
+                          .read(
+                            categorizedNotificationsProvider(
+                              currentTab,
+                            ).notifier,
+                          )
+                          .markAllAsRead();
+                    }
+                  }
+                : null,
             icon: const Icon(Symbols.done_all_rounded, size: 20),
             tooltip: context.l10n.notification_markAllRead,
             style: IconButton.styleFrom(
@@ -681,8 +726,7 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody>
     NotificationPanelTab.likes => context.l10n.notification_tabLikes,
     NotificationPanelTab.messages =>
       context.l10n.notification_typePrivateMessage,
-    NotificationPanelTab.bookmarks =>
-      context.l10n.notification_typeBookmarkReminder,
+    NotificationPanelTab.bookmarks => context.l10n.notification_tabBookmarks,
     NotificationPanelTab.other => context.l10n.notification_tabOther,
   };
 
@@ -753,7 +797,6 @@ class _PanelNotificationListState extends ConsumerState<_PanelNotificationList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final colorScheme = Theme.of(context).colorScheme;
     final provider = widget.tab == NotificationPanelTab.all
         ? recentNotificationsProvider
         : categorizedNotificationsProvider(widget.tab);
@@ -774,28 +817,15 @@ class _PanelNotificationListState extends ConsumerState<_PanelNotificationList>
             )
             .toList(growable: false);
         if (visibleNotifications.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Symbols.notifications_rounded,
-                  size: 48,
-                  color: context.appColors.grey,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  context.l10n.notification_empty,
-                  style: TextStyle(color: context.appColors.grey),
-                ),
-              ],
-            ),
+          return AppEmptyState(
+            icon: const Icon(Symbols.notifications_rounded),
+            title: context.l10n.notification_empty,
           );
         }
         return ListView.builder(
           padding: EdgeInsets.only(
             top: 4,
-            bottom: MediaQuery.of(context).padding.bottom,
+            bottom: MediaQuery.viewPaddingOf(context).bottom + 8,
           ),
           itemCount: visibleNotifications.length,
           itemBuilder: (context, index) {
@@ -803,6 +833,7 @@ class _PanelNotificationListState extends ConsumerState<_PanelNotificationList>
             return NotificationItem(
               notification: notification,
               systemAvatarTemplate: systemAvatarTemplate,
+              showTopDivider: index > 0,
               onTap: () {
                 // 先派发跳转再处理面板:跳转在本帧同步读取
                 // context/provider。siblings = 当前可见列表,大屏弹窗
@@ -825,23 +856,10 @@ class _PanelNotificationListState extends ConsumerState<_PanelNotificationList>
         );
       },
       loading: () => const NotificationListSkeleton(),
-      error: (error, _) => Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Symbols.error_rounded, size: 48, color: context.appColors.grey),
-            const SizedBox(height: 12),
-            Text(
-              context.l10n.common_loadFailed,
-              style: TextStyle(color: colorScheme.error),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => ref.invalidate(provider),
-              child: Text(context.l10n.common_retry),
-            ),
-          ],
-        ),
+      error: (error, stack) => ErrorView(
+        error: error,
+        stackTrace: stack,
+        onRetry: () => ref.invalidate(provider),
       ),
     );
   }
