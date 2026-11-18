@@ -21,6 +21,7 @@ Widget _buildGridPage(BuildContext context, DataSource source) {
     direction: Directionality.of(context),
   );
   return _PluginPageLayout(
+    itemCount: items.length,
     loading: loading,
     loadingMore: loadingMore,
     hasMore: hasMore,

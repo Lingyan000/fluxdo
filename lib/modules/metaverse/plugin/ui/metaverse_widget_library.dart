@@ -16,6 +16,9 @@ import '../../../../l10n/s.dart';
 import '../../../../utils/svg_utils.dart';
 import '../../../../widgets/common/image_placeholder.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
+import '../../../../utils/time_utils.dart';
+import '../../../../widgets/common/relative_time_text.dart';
+import '../../../../widgets/layout/master_detail_layout.dart';
 
 part 'metaverse_page_components.dart';
 part 'metaverse_form_component.dart';
@@ -237,6 +240,60 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
 ) => {
   ..._pageWidgets(),
   'GridPage': _buildGridPage,
+  'AdaptivePane': (context, source) {
+    final masterWidth = _gridDimension(source, 'masterWidth', 260).clamp(160.0, 500.0).toDouble();
+    final detailWidth = _gridDimension(source, 'minDetailWidth', 440).clamp(240.0, 800.0).toDouble();
+    final sidebar = source.child(['sidebar']);
+    final compact = source.optionalChild(['compactHeader']);
+    final body = source.child(['body']);
+    return LayoutBuilder(builder: (context, constraints) {
+    if (constraints.hasBoundedHeight && constraints.maxWidth >= masterWidth + detailWidth &&
+        MasterDetailLayout.canShowBothPanesFor(context, masterWidth: masterWidth, minDetailWidth: detailWidth)) {
+      return MasterDetailLayout(masterWidth: masterWidth, minDetailWidth: detailWidth,
+        master: PrimaryScrollController.none(child: sidebar), detail: body);
+    }
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [?compact, constraints.hasBoundedHeight ? Expanded(child: body) : body]);
+    });
+  },
+  'ContentRow': (context, source) {
+    final theme = Theme.of(context);
+    final meta = _text(source, ['meta']);
+    final summary = _text(source, ['summary']);
+    final leading = source.optionalChild(['leading']);
+    final detail = source.optionalChild(['detail']);
+    return InkWell(onTap: source.voidHandler(['onTap']), child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (leading != null) ...[leading, const SizedBox(width: 12)],
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (meta.isNotEmpty || detail != null) Padding(padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (meta.isNotEmpty) Text(meta, style: theme.textTheme.labelMedium?.copyWith(color: context.emphasis.accent)), ?detail,
+            ])),
+          Text(_text(source, ['title']), maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall),
+          if (summary.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(summary,
+            maxLines: (source.v<int>(['summaryLines']) ?? 2).clamp(1, 6), overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
+        ])),
+      ]),
+    ));
+  },
+  'Avatar': (context, source) {
+    final name = _text(source, ['label']).trim();
+    final size = _gridDimension(source, 'size', 36).clamp(16.0, 96.0).toDouble();
+    final fallback = CircleAvatar(radius: size / 2, child: ExcludeSemantics(child: name.isEmpty
+        ? Icon(Symbols.person_rounded, size: size * .6)
+        : Text(name.characters.first.toUpperCase(), style: Theme.of(context).textTheme.labelLarge)));
+    final count = source.v<int>(['count']) ?? 0;
+    final avatar = Semantics(label: name, image: true, child: ClipOval(child: _PluginImage(
+      url: source.v<String>(['url']) ?? '', width: size, height: size, fit: BoxFit.cover,
+      radius: BorderRadius.zero, load: loadImage, fallback: fallback)));
+    return count > 0 ? Badge.count(count: count, maxCount: 99, child: avatar) : avatar;
+  },
+  'RelativeTime': (context, source) => RelativeTimeText(
+    dateTime: TimeUtils.parseUtcTime(source.v<String>(['value'])),
+    style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
   'PageLayout': (context, source) => _PluginPageLayout(
     loading: source.v<bool>(['loading']) == true,
     onRefresh: source.voidHandler(['onRefresh']),
@@ -260,11 +317,31 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     ),
     children: source.childList(['children']),
   ),
-  'Choice': (context, source) => ChoiceChip(
-    label: Text(_text(source, ['label'])),
-    selected: source.v<bool>(['selected']) == true,
-    onSelected: (_) => source.voidHandler(['onSelected'])?.call(),
-  ),
+  'Choice': (context, source) {
+    final label = _text(source, ['label']);
+    final selected = source.v<bool>(['selected']) == true;
+    final select = source.voidHandler(['onSelected']);
+    final leading = source.optionalChild(['leading']);
+    if (source.v<String>(['layout']) != 'stacked') {
+      return ChoiceChip(avatar: leading, label: Text(label), selected: selected,
+        onSelected: select == null ? null : (_) => select());
+    }
+    final theme = Theme.of(context);
+    final radius = context.shapes.borderRadius(14);
+    return Semantics(button: true, selected: selected, child: Tooltip(message: label, child: Material(
+      color: selected ? theme.colorScheme.secondaryContainer : Colors.transparent,
+      borderRadius: radius,
+      child: InkWell(borderRadius: radius, onTap: select, child: Container(
+        width: 76, constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (leading != null) ...[leading, const SizedBox(height: 4)],
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.labelMedium?.copyWith(
+            color: selected ? theme.colorScheme.onSecondaryContainer : theme.colorScheme.onSurfaceVariant)),
+        ]),
+      )),
+    )));
+  },
   'EmptyState': (context, source) => AppEmptyState(
     icon:
         _icon(context, source, ['icon']) ??
@@ -476,6 +553,7 @@ class _PluginPageLayout extends StatefulWidget {
     required this.loading,
     this.lazy = false,
     this.slivers,
+    this.itemCount,
     this.onLoadMore,
     this.hasMore = false,
     this.loadingMore = false,
@@ -487,6 +565,8 @@ class _PluginPageLayout extends StatefulWidget {
   final bool loading;
   final bool lazy;
   final List<Widget>? slivers;
+  final int? itemCount;
+  int get paginationCount => itemCount ?? children.length;
   final VoidCallback? onLoadMore;
   final bool hasMore;
   final bool loadingMore;
@@ -525,7 +605,9 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
   @override
   void didUpdateWidget(_PluginPageLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if ((oldWidget.loading && !widget.loading) ||
+    // 本地缓存分页可在一帧内追加结果，不一定经过可见的 loadingMore 状态。
+    if (widget.paginationCount != oldWidget.paginationCount ||
+        (oldWidget.loading && !widget.loading) ||
         (oldWidget.loadingMore && !widget.loadingMore) ||
         !widget.hasMore ||
         widget.loadMoreError.isNotEmpty) {
@@ -648,7 +730,9 @@ class _PluginImage extends StatefulWidget {
     required this.fit,
     required this.radius,
     required this.load,
+    this.fallback,
   });
+  final Widget? fallback;
   final String url;
   final double? width, height;
   final BoxFit fit;
@@ -683,8 +767,8 @@ class _PluginImageState extends State<_PluginImage> {
 
   @override
   Widget build(BuildContext context) {
-    final placeholder = ImagePlaceholder(loading: _request != null);
-    final retry = ImagePlaceholder(onRetry: () => setState(_update));
+    final placeholder = widget.fallback ?? ImagePlaceholder(loading: _request != null);
+    final retry = widget.fallback ?? ImagePlaceholder(onRetry: () => setState(_update));
     return ClipRRect(
       borderRadius: widget.radius,
       child: SizedBox(

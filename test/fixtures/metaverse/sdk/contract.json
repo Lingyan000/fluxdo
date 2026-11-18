@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.4.0",
+  "sdkVersion": "0.5.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
@@ -20,7 +20,10 @@
     "scheduledTasks",
     "localNotifications",
     "navigationBadge",
-    "atomicStorage"
+    "atomicStorage",
+    "runtimePermissions",
+    "adaptiveCollections",
+    "modalDismiss"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -29,8 +32,7 @@
     "bundleBytes": 2097152
   },
   "hostReference": {
-    "repository": "Lingyan000/fluxdo",
-    "commit": "a30050cd3e31ff81954cbee0d38fabb587210b6e"
+    "repository": "Lingyan000/fluxdo"
   },
-  "typesSha256": "8929e52d221e2fe2d4ff083e3e27d71c3cd3b37890e26293ee87c878bb42ddcf"
+  "typesSha256": "b1bbf1de41984b1ed10d1360e0e1b3d12c06af2e706d7b48f2d192139d31679e"
 }

@@ -146,6 +146,7 @@ const metaversePluginPrelude = r'''
       cancel: function (key) { return call('notifications.cancel', {key: String(key)}); }
     }),
     navigation: Object.freeze({
+      dismiss: function () { return call('navigation.dismiss'); },
       setBadge: function (page, count) { return call('navigation.setBadge', {page: String(page), count: count}); }
     }),
     forum: Object.freeze({
@@ -153,6 +154,10 @@ const metaversePluginPrelude = r'''
       open: function (destination) { return call('forum.open', destination); }
     }),
     host: Object.freeze({features: function () { return call('host.features'); }}),
+    permissions: Object.freeze({
+      status: function () { return call('permissions.status'); },
+      request: function (names) { return call('permissions.request', {names: names}); }
+    }),
     dialogs: Object.freeze({confirm: function (options) { return call('dialogs.confirm', options); }}),
     connect: Object.freeze({
       authorize: function (url) { return call('connect.authorize', {url: String(url)}); }

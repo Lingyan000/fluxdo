@@ -117,6 +117,30 @@ void main() {
     } catch (_) {}
   });
 
+  test('界面内同意权限持久化且保留原实例，旧安装记录无法再次授权', () async {
+    final controller = container.read(metaversePluginsProvider.notifier);
+    final installed = await controller.install(await package({'permissions': {'network': ['api.example.com'], 'identity': true}}));
+    final id = installed.id;
+    await controller.setEnabled(id, enabled: true);
+    final reviewed = controller.byId(id)!;
+    final hosts = container.read(metaversePluginHostsProvider);
+    final original = hosts.hostFor(reviewed);
+    const permission = MetaversePluginPermission.identity;
+    expect(original.blockedPermissions, contains(permission));
+    await controller.grantRequested(reviewed, {permission}, () {});
+    expect(hosts.hostFor(controller.byId(id)!), same(original));
+    expect(original.blockedPermissions, isNot(contains(permission)));
+    expect(container.read(metaversePluginStoreProvider).loadIndex().single.allows(permission), isTrue);
+    await controller.setPermission(id, permission, false);
+    await expectLater(controller.grantRequested(reviewed, {permission}, () {}), throwsA(isA<PluginOperationCancelled>()));
+    expect(controller.byId(id)!.allows(permission), isFalse);
+    var checks = 0;
+    await expectLater(controller.grantRequested(controller.byId(id)!, {permission}, () {
+      if (++checks == 3) throw const PluginOperationCancelled();
+    }), throwsA(isA<PluginOperationCancelled>()));
+    expect(container.read(metaversePluginStoreProvider).loadIndex().single.allows(permission), isFalse);
+  });
+
   test('安装后注册表里多出一个未开启的第三方服务', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
     await controller.install(await package(const {}));

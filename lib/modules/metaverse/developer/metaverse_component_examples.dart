@@ -27,6 +27,16 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
   final label = {'label': text};
   final title = {'title': text, 'message': l.metaverse_developerPreview};
   return [
+    MetaverseComponentExample('ContentRow',
+      'ContentRow(title: data.title, meta: data.label, summary: data.message, summaryLines: data.lines, leading: Avatar(label: data.label), detail: Symbol(name: "bookmark"), onTap: event "open" {})',
+      {...title, ...label, 'lines': 2}, description: l.metaverse_componentContentRow),
+    MetaverseComponentExample('AdaptivePane',
+      'AdaptivePane(masterWidth: data.masterWidth, minDetailWidth: data.minDetailWidth, compactHeader: Chip(label: data.title), sidebar: ListItem(title: data.title), body: Center(child: Label(text: data.message)))',
+      {...title, 'masterWidth': 240, 'minDetailWidth': 400}, description: l.metaverse_componentAdaptivePane),
+    MetaverseComponentExample('Avatar', 'Avatar(label: data.label, url: data.url, size: data.size)',
+      {'label': 'Lin', 'url': '', 'size': 48}, description: l.metaverse_componentAvatar),
+    MetaverseComponentExample('RelativeTime', 'RelativeTime(value: data.value)',
+      {'value': DateTime.now().toUtc().subtract(const Duration(minutes: 15)).toIso8601String()}, description: l.metaverse_componentRelativeTime),
     MetaverseComponentExample(
       'PageLayout',
       description: l.metaverse_componentPageLayout,
@@ -113,8 +123,9 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'Choice',
       description: l.metaverse_componentChoice,
-      'Choice(label: data.label, selected: data.selected, onSelected: event "select" {})',
-      {...label, 'selected': false},
+        'Choice(label: data.label, layout: data.layout, leading: Avatar(label: data.label, count: data.count), selected: data.selected, onSelected: event "select" {})',
+        {...label, 'selected': false, 'count': 2, 'layout': 'inline'},
+        options: {'layout': ['inline', 'stacked']},
     ),
     MetaverseComponentExample(
       'EmptyState',

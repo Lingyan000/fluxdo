@@ -3,7 +3,9 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss';
+  type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
+  type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
     headers?: { [key: string]: string };
@@ -50,6 +52,7 @@ declare namespace FluxDO {
     on(name: string, handler: (ctx: Context, args: Record) => void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
     host: { features(): Promise<string[]> };
+    permissions: { status(): Promise<PermissionState>; request(names: ManagedPermission[]): Promise<boolean> };
     forum: {
       /** 页面可见或有有效任务租约时可读；permissions.forum 授权。 */
       read<T extends ForumRequest>(options: T): Promise<ForumResult<T['resource']>>;
@@ -76,7 +79,7 @@ declare namespace FluxDO {
       show(options: {key: string; title: string; body: string; page: string; params?: Record}): Promise<boolean>;
       cancel(key: string): Promise<null>;
     };
-    navigation: {setBadge(page: string, count: number): Promise<null>};
+    navigation: {dismiss(): Promise<boolean>; setBadge(page: string, count: number): Promise<null>};
     credentials: {
       status(name: string): Promise<CredentialStatus>;
       request(name: string): Promise<boolean>;

@@ -5,6 +5,15 @@ const metaverseComponentContract = {
       "actions"
     ]
   },
+  "AdaptivePane": {
+    "parameters": [
+      "body",
+      "compactHeader",
+      "masterWidth",
+      "minDetailWidth",
+      "sidebar"
+    ]
+  },
   "Align": {
     "parameters": [
       "alignment",
@@ -20,6 +29,14 @@ const metaverseComponentContract = {
     "parameters": [
       "aspectRatio",
       "child"
+    ]
+  },
+  "Avatar": {
+    "parameters": [
+      "count",
+      "label",
+      "size",
+      "url"
     ]
   },
   "Button": {
@@ -49,6 +66,8 @@ const metaverseComponentContract = {
   "Choice": {
     "parameters": [
       "label",
+      "layout",
+      "leading",
       "onSelected",
       "selected"
     ]
@@ -75,6 +94,17 @@ const metaverseComponentContract = {
       "textBaseline",
       "textDirection",
       "verticalDirection"
+    ]
+  },
+  "ContentRow": {
+    "parameters": [
+      "detail",
+      "leading",
+      "meta",
+      "onTap",
+      "summary",
+      "summaryLines",
+      "title"
     ]
   },
   "DefaultTextStyle": {
@@ -277,6 +307,7 @@ const metaverseComponentContract = {
   "ListPage": {
     "parameters": [
       "actions",
+      "empty",
       "emptyTitle",
       "error",
       "hasMore",
@@ -358,6 +389,11 @@ const metaverseComponentContract = {
     ]
   },
   "ProgressBar": {
+    "parameters": [
+      "value"
+    ]
+  },
+  "RelativeTime": {
     "parameters": [
       "value"
     ]

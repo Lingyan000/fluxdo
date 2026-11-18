@@ -4,6 +4,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../l10n/s.dart';
+import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
 import '../metaverse_plugin_permission.dart';
 
@@ -94,74 +95,7 @@ class MetaversePermissionList extends StatelessWidget {
       ListTile(title: Text(label), subtitle: SelectableText(items.join('\n')));
 
   Widget _row(BuildContext context, MetaversePluginPermission permission) {
-    final l = context.l10n;
-    final (icon, title, note) = switch (permission) {
-      MetaversePluginPermission.sandbox => (
-        Symbols.extension_rounded,
-        l.metaverse_permissionSandbox,
-        l.metaverse_permissionSandboxNote,
-      ),
-      MetaversePluginPermission.network => (
-        Symbols.public_rounded,
-        l.metaverse_permissionNetwork,
-        l.metaverse_permissionNetworkNote,
-      ),
-      MetaversePluginPermission.foregroundTasks => (
-        Symbols.schedule_rounded,
-        l.metaverse_foregroundTasks,
-        manifest.tasks.map((task) => task.title).join(' · '),
-      ),
-      MetaversePluginPermission.identity => (
-        Symbols.person_rounded,
-        l.metaverse_permissionIdentity,
-        l.metaverse_permissionIdentityNote,
-      ),
-      MetaversePluginPermission.serviceAccount => (
-        Symbols.account_circle_rounded,
-        l.metaverse_permissionAccount,
-        l.metaverse_permissionAccountNote,
-      ),
-      MetaversePluginPermission.payments => (
-        Symbols.payments_rounded,
-        l.metaverse_nativePayTitle,
-        l.metaverse_permissionPaymentNote,
-      ),
-      MetaversePluginPermission.forumProfiles => (
-        Symbols.person_rounded,
-        l.metaverse_forumProfiles,
-        null,
-      ),
-      MetaversePluginPermission.forumActivity => (
-        Symbols.forum_rounded,
-        l.metaverse_permissionForumActivity,
-        l.metaverse_forumActivity,
-      ),
-      MetaversePluginPermission.forumFollowing => (
-        Symbols.group_rounded,
-        l.metaverse_forumFollowing,
-        null,
-      ),
-      MetaversePluginPermission.background => (
-        Symbols.schedule_rounded,
-        l.metaverse_backgroundTasks,
-        l.metaverse_permissionBackgroundNote,
-      ),
-      MetaversePluginPermission.notifications => (
-        Symbols.notifications_rounded,
-        l.metaverse_pluginNotifications,
-        l.metaverse_permissionNotificationNote,
-      ),
-      MetaversePluginPermission.links => (
-        Symbols.link_rounded,
-        l.metaverse_permissionLinks,
-        manifest.linkHosts.join(' · '),
-      ),
-      MetaversePluginPermission.publicImages => (
-        Symbols.image_rounded,
-        l.metaverse_permissionImages,
-        l.metaverse_pluginPublicImages,
-      ),
-    };
+    final (icon, title, note) = _presentation(context, manifest, permission);
     final leading = Icon(icon, color: context.emphasis.accent);
     final subtitle = note == null ? null : Text(note);
     if (permission.manageable) {
@@ -182,3 +116,126 @@ class MetaversePermissionList extends StatelessWidget {
     );
   }
 }
+
+(IconData, String, String?) _presentation(
+  BuildContext context,
+  MetaversePluginManifest manifest,
+  MetaversePluginPermission permission,
+) {
+  final l = context.l10n;
+  return switch (permission) {
+    MetaversePluginPermission.sandbox => (
+      Symbols.extension_rounded,
+      l.metaverse_permissionSandbox,
+      l.metaverse_permissionSandboxNote,
+    ),
+    MetaversePluginPermission.network => (
+      Symbols.public_rounded,
+      l.metaverse_permissionNetwork,
+      l.metaverse_permissionNetworkNote,
+    ),
+    MetaversePluginPermission.foregroundTasks => (
+      Symbols.schedule_rounded,
+      l.metaverse_foregroundTasks,
+      manifest.tasks.map((task) => task.title).join(' · '),
+    ),
+    MetaversePluginPermission.identity => (
+      Symbols.person_rounded,
+      l.metaverse_permissionIdentity,
+      l.metaverse_permissionIdentityNote,
+    ),
+    MetaversePluginPermission.serviceAccount => (
+      Symbols.account_circle_rounded,
+      l.metaverse_permissionAccount,
+      l.metaverse_permissionAccountNote,
+    ),
+    MetaversePluginPermission.payments => (
+      Symbols.payments_rounded,
+      l.metaverse_nativePayTitle,
+      l.metaverse_permissionPaymentNote,
+    ),
+    MetaversePluginPermission.forumProfiles => (
+      Symbols.person_rounded,
+      l.metaverse_forumProfiles,
+      null,
+    ),
+    MetaversePluginPermission.forumActivity => (
+      Symbols.forum_rounded,
+      l.metaverse_permissionForumActivity,
+      l.metaverse_forumActivity,
+    ),
+    MetaversePluginPermission.forumFollowing => (
+      Symbols.group_rounded,
+      l.metaverse_forumFollowing,
+      null,
+    ),
+    MetaversePluginPermission.background => (
+      Symbols.schedule_rounded,
+      l.metaverse_backgroundTasks,
+      l.metaverse_permissionBackgroundNote,
+    ),
+    MetaversePluginPermission.notifications => (
+      Symbols.notifications_rounded,
+      l.metaverse_pluginNotifications,
+      l.metaverse_permissionNotificationNote,
+    ),
+    MetaversePluginPermission.links => (
+      Symbols.link_rounded,
+      l.metaverse_permissionLinks,
+      manifest.linkHosts.join(' · '),
+    ),
+    MetaversePluginPermission.publicImages => (
+      Symbols.image_rounded,
+      l.metaverse_permissionImages,
+      l.metaverse_pluginPublicImages,
+    ),
+  };
+}
+
+Future<bool> showMetaversePermissionRequest(
+  BuildContext context,
+  MetaversePluginManifest manifest,
+  Set<MetaversePluginPermission> missing,
+) async =>
+    await AppBottomSheet.show<bool>(
+      context: context,
+      title: context.l10n.metaverse_requestAccess(manifest.name),
+      showDragHandle: true,
+      builder: (sheet) => SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedCardGroup(
+              children: [
+                for (final p in missing)
+                  Builder(
+                    builder: (context) {
+                      final (icon, title, note) = _presentation(
+                        context,
+                        manifest,
+                        p,
+                      );
+                      return ListTile(
+                        leading: Icon(icon, color: context.emphasis.accent),
+                        title: Text(title),
+                        subtitle: note == null ? null : Text(note),
+                      );
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => Navigator.of(sheet).pop(true),
+              child: Text(sheet.l10n.common_allow),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(sheet).pop(false),
+              child: Text(sheet.l10n.common_cancel),
+            ),
+          ],
+        ),
+      ),
+    ) ??
+    false;

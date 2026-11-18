@@ -352,14 +352,22 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
       );
     }
     if (value is num) {
+      final (low, high) = switch (key) {
+        'masterWidth' => (160.0, 500.0),
+        'minDetailWidth' => (240.0, 800.0),
+        'maxLines' => (1.0, 8.0),
+        'columns' => (0.0, 6.0),
+        'value' => (0.0, 1.0),
+        _ => (0.0, max(160.0, value.toDouble())),
+      };
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('$key · ${value is int ? value : value.toStringAsFixed(2)}'),
           Slider(
             value: value.toDouble(),
-            min: key == 'maxLines' ? 1 : 0,
-            max: key == 'maxLines' ? 8 : key == 'columns' ? 6 : key == 'value' ? 1 : 160,
+            min: low,
+            max: high,
             divisions: key == 'maxLines' ? 7 : key == 'columns' ? 6 : null,
             onChanged: (next) =>
                 _change(key, value is int ? next.round() : next),

@@ -8,6 +8,8 @@ import '../../../../navigation/nav_entry.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../providers/metaverse_plugin_providers.dart';
+import '../metaverse_plugin_permission.dart';
+import 'metaverse_plugin_management_page.dart';
 import 'metaverse_plugin_surface_view.dart';
 
 /// 插件声明的一个独立页面。
@@ -29,6 +31,18 @@ class MetaversePluginPage extends ConsumerStatefulWidget {
   final bool modal;
   final bool workspace;
   final Map<String, Object?> params;
+
+  /// 只关闭发起调用的插件弹层。确认对话框和普通导航页有独立的路由。
+  static bool dismissModal(BuildContext source, String pluginId, String page) {
+    final owner = source.findAncestorWidgetOfExactType<MetaversePluginPage>();
+    final route = ModalRoute.of(source);
+    if (owner == null || !owner.modal || owner.pluginId != pluginId || owner.page != page ||
+        route is! PopupRoute || !route.isCurrent) {
+      return false;
+    }
+    route.navigator!.pop();
+    return true;
+  }
 
   static Future<void> open(
     BuildContext context,
@@ -167,6 +181,14 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
       ],
     );
     final actions = <Widget>[
+      if (plugin != null && plugin.manifest.declaredPermissions.any((p) => p.manageable))
+        IconButton(
+          tooltip: context.l10n.metaverse_permissionSettings,
+          icon: const Icon(Symbols.shield_rounded),
+          onPressed: () => Navigator.of(context).push<void>(InteractionPageRoute(
+            builder: (_) => MetaversePluginPermissionsPage(pluginId: pluginId),
+          )),
+        ),
       if (sourceUrl is String)
         IconButton(
           tooltip: context.l10n.metaverse_pluginOpen,

@@ -4,6 +4,15 @@
       "actions"
     ]
   },
+  "AdaptivePane": {
+    "parameters": [
+      "body",
+      "compactHeader",
+      "masterWidth",
+      "minDetailWidth",
+      "sidebar"
+    ]
+  },
   "Align": {
     "parameters": [
       "alignment",
@@ -19,6 +28,14 @@
     "parameters": [
       "aspectRatio",
       "child"
+    ]
+  },
+  "Avatar": {
+    "parameters": [
+      "count",
+      "label",
+      "size",
+      "url"
     ]
   },
   "Button": {
@@ -48,6 +65,8 @@
   "Choice": {
     "parameters": [
       "label",
+      "layout",
+      "leading",
       "onSelected",
       "selected"
     ]
@@ -74,6 +93,17 @@
       "textBaseline",
       "textDirection",
       "verticalDirection"
+    ]
+  },
+  "ContentRow": {
+    "parameters": [
+      "detail",
+      "leading",
+      "meta",
+      "onTap",
+      "summary",
+      "summaryLines",
+      "title"
     ]
   },
   "DefaultTextStyle": {
@@ -276,6 +306,7 @@
   "ListPage": {
     "parameters": [
       "actions",
+      "empty",
       "emptyTitle",
       "error",
       "hasMore",
@@ -357,6 +388,11 @@
     ]
   },
   "ProgressBar": {
+    "parameters": [
+      "value"
+    ]
+  },
+  "RelativeTime": {
     "parameters": [
       "value"
     ]

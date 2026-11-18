@@ -41,6 +41,13 @@ class _Delegate extends MetaversePluginHostDelegate {
   final InstalledMetaversePlugin plugin;
   final _Notifications notifications;
   int account = 7, edition = 1, confirmations = 0;
+  final requests = <Set<MetaversePluginPermission>>[];
+  @override
+  Future<bool> requestPermissions(BuildContext context, Set<MetaversePluginPermission> missing, {required void Function() checkActive}) async {
+    requests.add({...missing});
+    checkActive();
+    return accept;
+  }
   bool accept = false;
   Completer<void>? started, release;
   @override
@@ -55,6 +62,8 @@ class _Delegate extends MetaversePluginHostDelegate {
 
   @override
   Future<bool> confirmNotifications(BuildContext context) async => accept;
+  @override
+  void toast(String message, String type) {}
   @override
   Future<Object?> taskOperation(
     String method,
@@ -166,7 +175,7 @@ void main() {
       lookup: (_) async => throw StateError('测试禁止网络'),
     );
     package = await MetaversePluginInstaller(network: network).importBundle(
-      File('test/fixtures/metaverse/activity-feed-1.0.0.fluxplugin').openRead(),
+      File('test/fixtures/metaverse/activity-feed-1.1.0.fluxplugin').openRead(),
     );
     installed = InstalledMetaversePlugin(
       manifest: package.manifest,
@@ -255,6 +264,33 @@ void main() {
       expect(control.notificationTarget(id), isNull);
       expect(delegate.notifications.delivered, isEmpty);
       reopened.shutdown();
+    });
+  });
+
+  testWidgets('按需授权只接受当前点击；拒绝后保留输入，批准后在原页面完成订阅', (tester) async {
+    installed = installed.copyWith(blockedPermissions: {MetaversePluginPermission.forumActivity});
+    final pageHost = host();
+    addTearDown(pageHost.retire);
+    late BuildContext context;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (c) {context = c;return const SizedBox();})));
+    await tester.runAsync(() async {
+      final surface = await pageHost.open(kind: 'page', page: 'add');
+      pageHost.attachSurface(surface, context);
+      await _until(() => surface.data['title'] != null, '首次打开');
+      expect(delegate.requests, isEmpty);
+      for (final names in [['sandbox'], ['payments'], ['forumActivity']]) {
+        await expectLater(pageHost.call('permissions.request', {'names': names}), throwsA(isA<MetaversePluginCallException>()));
+      }
+      pageHost.dispatchUserEvent(surface, 'input', {'value':'alex'});
+      pageHost.dispatchUserEvent(surface, 'add', {});
+      await _until(() => '${surface.data['error']}'.contains('未允许'), '拒绝授权');
+      expect(surface.data['users'], isEmpty);
+      expect(surface.data['input'], 'alex');
+      delegate.accept = true;
+      pageHost.dispatchUserEvent(surface, 'add', {});
+      await _until(() => surface.data['title'] == '1 位订阅 · 0 条未读', '授权后继续原操作');
+      expect(delegate.requests, [{MetaversePluginPermission.forumActivity}, {MetaversePluginPermission.forumActivity}]);
+      expect((await pageHost.call('permissions.status', {}) as Map)['forumActivity'], isTrue);
     });
   });
 
@@ -385,7 +421,7 @@ void main() {
     ms += 10000;
     expect(
       await tick(
-        script: '''fluxdo.on('task.run',async ctx=>{for(const action of [()=>ctx.api.payments.request({}),()=>ctx.api.connect.authorize(''),()=>ctx.api.notifications.requestPermission()]){let blocked=false;try{await action();}catch(e){blocked=e.message==='task_has_no_ui';}if(!blocked)throw Error('unexpected');}});''',
+        script: '''fluxdo.on('task.run',async ctx=>{for(const action of [()=>ctx.api.permissions.request(['forumActivity']),()=>ctx.api.navigation.dismiss(),()=>ctx.api.payments.request({}),()=>ctx.api.connect.authorize(''),()=>ctx.api.notifications.requestPermission()]){let blocked=false;try{await action();}catch(e){blocked=e.message==='task_has_no_ui';}if(!blocked)throw Error('unexpected');}});''',
       ),
       plugin,
     );

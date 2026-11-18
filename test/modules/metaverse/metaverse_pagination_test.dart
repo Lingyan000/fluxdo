@@ -8,7 +8,7 @@ import 'package:rfw/formats.dart';
 import 'package:rfw/rfw.dart';
 
 void main() {
-  for (final component in ['PageLayout', 'ListPage']) {
+  for (final component in ['PageLayout', 'ListPage', 'GridPage']) {
     for (final count in [2, 20]) {
       testWidgets('$component 上滑分页、去重、错误与末页 count=$count', (tester) async {
         tester.view.physicalSize = const Size(360, 500);
@@ -17,12 +17,11 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         final data = DynamicContent()
           ..updateAll({'more': true, 'loading': false, 'error': ''});
-        final children = List.generate(
-          count,
-          (i) => 'SizedBox(height: 100.0, child: Label(text: "row $i"))',
-        ).join(',');
-        final errorName = component == 'ListPage' ? 'error' : 'loadMoreError';
-        final slot = component == 'ListPage' ? 'items' : 'children';
+        final rows = List.generate(count, (i) => 'row $i');
+        data.update('rows', rows);
+        const children = '...for row in data.rows: SizedBox(height: 100.0, child: Label(text: row))';
+        final errorName = component == 'PageLayout' ? 'loadMoreError' : 'error';
+        final slot = component == 'PageLayout' ? 'children' : 'items';
         final runtime = Runtime()
           ..update(
             metaverseWidgetLibraryName,
@@ -61,26 +60,32 @@ void main() {
         await tester.drag(scroll, const Offset(0, -150));
         await tester.pumpAndSettle();
         expect(requests, 1);
+        // 本地缓存直接追加一页；下一次上滑仍应能请求后面的内容。
+        data.update('rows', [...rows, 'extra']);
+        await tester.pump();
+        await tester.drag(scroll, const Offset(0, -300));
+        await tester.pumpAndSettle();
+        expect(requests, 2);
         data.update('loading', true);
         await tester.pump();
         await tester.drag(scroll, const Offset(0, -150));
         await tester.pump();
-        expect(requests, 1);
+        expect(requests, 2);
         data.updateAll({'loading': false, 'error': 'offline'});
         await tester.pump();
         await tester.drag(scroll, const Offset(0, -150));
         await tester.pumpAndSettle();
-        expect(requests, 1);
+        expect(requests, 2);
         data.update('error', '');
         await tester.pump();
         await tester.drag(scroll, const Offset(0, -150));
         await tester.pumpAndSettle();
-        expect(requests, 2);
+        expect(requests, 3);
         data.update('more', false);
         await tester.pump();
         await tester.drag(scroll, const Offset(0, -150));
         await tester.pumpAndSettle();
-        expect(requests, 2);
+        expect(requests, 3);
         expect(tester.takeException(), isNull);
       });
     }

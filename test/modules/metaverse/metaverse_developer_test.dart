@@ -72,13 +72,10 @@ void main() {
     await tester.tap(find.byType(ChoiceChip));
     await tester.pump();
     expect(tester.widget<ChoiceChip>(find.byType(ChoiceChip)).selected, isTrue);
-    await tester.drag(find.byType(ListView), const Offset(0, -500));
-    await tester.pump();
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is SelectableText && widget.data == 'select {}',
-      ),
-      findsOneWidget,
+    final recorded = find.byWidgetPredicate(
+      (widget) => widget is SelectableText && widget.data == 'select {}',
     );
+    await tester.scrollUntilVisible(recorded, 250, scrollable: find.byType(Scrollable).first);
+    expect(recorded, findsOneWidget);
   });
 }

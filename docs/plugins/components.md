@@ -1,6 +1,6 @@
 # 原生组件参考
 
-注册表位于 [metaverse_widget_library.dart](../../lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart)。当前提供 24 个宿主组件和 33 个 rfw 基础组件。界面文件使用 `import fluxdo;`。应用内开发中心提供每个宿主组件的真实预览、参数调整与事件记录。
+界面文件使用 `import fluxdo;`。可用组件由[生产注册表](../../lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart)导出。应用内开发中心提供每个宿主组件的真实预览、参数调整与事件记录。
 
 ## 参数和事件
 
@@ -46,7 +46,7 @@ widget SearchPage = PageLayout(
 | `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
 | `ActionBar` | `actions` 组件列表 | 操作靠右排列，窄屏自动换为纵向；事件由内部按钮声明 |
 | `TileGrid` | `children`、`layout: natural`、`columns: 0`、`minTileWidth: 0`、`spacing: 12`、`runSpacing: 12` | 自然高度、同排等高、瀑布流，详见下方网格布局 |
-| `Choice` | `label`、`selected: false` | `onSelected`，事件沿用声明参数，选择值由脚本管理 |
+| `Choice` | `label`、`selected: false`、`leading`、`layout: inline / stacked` | `onSelected`，值由脚本管理。`stacked` 将头像或图标放在标签上方，适合横向名单 |
 | `EmptyState` | `title`、可选 `message`、`icon`、`action` | 空内容或错误状态，默认购物袋图标，通用场景建议指定 icon |
 | `SelectableLabel` | `text` | 可选择复制的 bodyMedium 文本 |
 | `Label` | `text`、`style: bodyMedium`、`color`、`bold: false`、`maxLines`、`align` | bold 使用 w600，指定 maxLines 后溢出显示省略号 |
@@ -190,3 +190,8 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
   items: [...for item in data.items: Surface(child: Label(text: item.title))],
 );
 ```
+## 自适应集合视图
+
+声明 `adaptiveCollections` 后，可用 `AdaptivePane` 布置名单与内容。页面设置 `scroll: false`，用 `compactHeader` 放窄屏筛选栏，`sidebar` 放宽屏名单，`body` 放 `ListPage`。`masterWidth` 和 `minDetailWidth` 按当前可用空间决定何时并排。`ListPage.empty` 可放带操作按钮的空态，首次打开就能引导用户添加内容。
+
+`ContentRow` 可组合 `leading`、`meta`、`title`、`summary` 和 `detail`。`Avatar` 按宿主图片权限加载，加载失败显示名称首字。传入正整数 `count` 会显示角标，零会隐藏角标。`RelativeTime` 接受 UTC 时间并跟随应用的相对时间显示，`Choice.leading` 可放头像或图标。

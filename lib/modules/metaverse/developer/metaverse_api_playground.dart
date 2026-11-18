@@ -106,6 +106,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   final _message = TextEditingController(text: 'Hello, FluxDO!');
   final _url = TextEditingController(text: 'https://example.org');
   LinkOpenMode _browserMode = LinkOpenMode.ask;
+  bool _previewGranted = false;
   final _storage = <String, Object?>{
     'example': {'value': 1},
   };
@@ -199,6 +200,16 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
     switch (method) {
       case 'host.features':
         return PluginFeatures.supported.toList();
+      case 'permissions.status':
+        return {'forumActivity': _previewGranted};
+      case 'permissions.request':
+        final names = params['names'];
+        if (names is! List || names.isEmpty || names.any((p) => p != 'forumActivity')) {
+          throw const MetaversePluginCallException('permission_not_requestable');
+        }
+        return _previewGranted = _previewGranted || await showMetaverseConfirmation(context, context.l10n.metaverse_developerExample,
+          {'title': context.l10n.metaverse_requestAccess(context.l10n.metaverse_developerExample),
+           'message': context.l10n.metaverse_forumActivity, 'confirmLabel': context.l10n.common_allow});
       case 'dialogs.confirm':
         return showMetaverseConfirmation(context, context.l10n.metaverse_developerExample, params);
       case 'toast':

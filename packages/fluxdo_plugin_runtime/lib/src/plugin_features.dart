@@ -12,6 +12,9 @@ enum PluginFeature {
   localNotifications,
   navigationBadge,
   atomicStorage,
+  runtimePermissions,
+  adaptiveCollections,
+  modalDismiss,
 }
 
 class PluginFeatures {

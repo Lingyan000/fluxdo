@@ -45,6 +45,7 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     final hasMore = source.v<bool>(['hasMore']) == true;
     return _PluginPageLayout(
       lazy: true,
+      itemCount: items.length,
       loading: loading,
       onLoadMore: items.isEmpty ? null : loadMore,
       hasMore: hasMore,
@@ -62,7 +63,7 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
           const SizedBox(height: 16),
         ],
         if (items.isEmpty)
-          _PluginPageStatus(
+          (loading || error.isNotEmpty ? null : source.optionalChild(['empty'])) ?? _PluginPageStatus(
             loading: loading,
             error: error,
             emptyTitle: source.v<String>(['emptyTitle']),

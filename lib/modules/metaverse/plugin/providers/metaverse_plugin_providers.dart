@@ -48,6 +48,7 @@ import '../ui/metaverse_plugin_page.dart';
 import '../../../ldc_payment/ldc_payment_sheet.dart';
 import '../ui/metaverse_connect_confirmation.dart';
 import '../ui/metaverse_confirmation_sheet.dart';
+import '../ui/metaverse_permission_list.dart';
 
 part 'metaverse_task_providers.dart';
 
@@ -161,6 +162,18 @@ class MetaversePluginsController
   });
   Future<void> setEnabled(String id, {required bool enabled}) =>
       _mutations.run('index', () => _setEnabled(id, enabled: enabled));
+  Future<void> grantRequested(InstalledMetaversePlugin reviewed, Set<MetaversePluginPermission> permissions,
+      void Function() checkActive) => _mutations.run('index', () async {
+    void check() {
+      checkActive();
+      if (!identical(byId(reviewed.id), reviewed) || !reviewed.enabled || reviewed.suspendedReason != null) {
+        throw const PluginOperationCancelled();
+      }
+    }
+    check();
+    final blocked = reviewed.manifest.applyPermissionChoices(reviewed.blockedPermissions, {for (final p in permissions) p: true});
+    await _replacePermissions(reviewed, reviewed.copyWith(blockedPermissions: blocked), grantGuard: check);
+  });
   Future<void> saveToken(String id, String token, {bool Function()? isActive}) =>
       _mutations.run('index', () {
         if (isActive != null && !isActive()) throw const PluginOperationCancelled();
@@ -322,7 +335,7 @@ class MetaversePluginsController
 
   Future<void> _replacePermissions(
     InstalledMetaversePlugin previous,
-    InstalledMetaversePlugin next,
+    InstalledMetaversePlugin next, {void Function()? grantGuard}
   ) async {
     const account = MetaversePluginPermission.serviceAccount;
     if (previous.blockedPermissions.contains(account) && next.allows(account)) {
@@ -332,9 +345,10 @@ class MetaversePluginsController
         ? await ref.read(metaverseTaskStoreProvider.future)
         : null;
     // 后台只接受索引和租约中策略一致的任务。先撤销旧租约，再公布新索引。
+    grantGuard?.call();
     final dismissed = control?.applyPermissions(next) ?? const <int>[];
     try {
-      await _replace(next);
+      await _replace(next, grantGuard: grantGuard);
     } catch (_) {
       control?.applyPermissions(previous);
       rethrow;
@@ -350,6 +364,7 @@ class MetaversePluginsController
   Future<void> _replace(
     InstalledMetaversePlugin plugin, {
     bool remove = false,
+    void Function()? grantGuard,
   }) async {
     final next = [...state];
     final index = next.indexWhere((item) => item.id == plugin.id);
@@ -361,6 +376,17 @@ class MetaversePluginsController
       next.add(plugin);
     }
     await _store.saveIndex(next);
+    if (grantGuard != null) {
+      try {
+        grantGuard();
+      } catch (_) {
+        await _store.saveIndex(state);
+        rethrow;
+      }
+      ref.read(metaversePluginHostsProvider).applyGrant(plugin);
+      state = next;
+      return;
+    }
     // 持久化期间旧页面仍可能打开实例。公布新策略前统一收回它的授权。
     if (ref.read(metaversePluginHostsProvider.exists)) {
       ref.read(metaversePluginHostsProvider).shutdown(plugin.id);
@@ -409,6 +435,7 @@ class MetaversePluginHosts {
     );
 
   void notifyTaskUpdated(String id) => _hosts[id]?.notifyTaskUpdated();
+  void applyGrant(InstalledMetaversePlugin plugin) => _hosts[plugin.id]?.applyGrantedPermissions(plugin.blockedPermissions);
 
   void shutdown(String pluginId) => _hosts.remove(pluginId)?.retire();
 
@@ -438,6 +465,25 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void onShutdown() => _generation++;
+
+  @override
+  Future<bool> requestPermissions(BuildContext context, Set<MetaversePluginPermission> missing, {required void Function() checkActive}) async {
+    if (worker) return false;
+    final controller = _ref.read(metaversePluginsProvider.notifier);
+    final reviewed = developmentStore == null ? controller.byId(_manifest.id) : null;
+    if (developmentStore == null && !identical(reviewed?.manifest, _manifest)) return false;
+    final approved = await showMetaversePermissionRequest(context, _manifest, missing);
+    if (!approved) return false;
+    // 确认弹层出栈后，可见性由页面在下一帧更新，随后允许原点击继续读取。
+    await WidgetsBinding.instance.endOfFrame;
+    checkActive();
+    if (reviewed != null) await controller.grantRequested(reviewed, missing, checkActive);
+    return true;
+  }
+
+  @override
+  bool dismissModal(BuildContext context, String page) =>
+      MetaversePluginPage.dismissModal(context, _manifest.id, page);
 
   @override
   Future<bool> confirmBackground(BuildContext context, String id) => showMetaverseConfirmation(context, _manifest.name, {

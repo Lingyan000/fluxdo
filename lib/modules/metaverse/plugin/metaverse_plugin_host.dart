@@ -28,6 +28,9 @@ import 'ui/metaverse_widget_library.dart';
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
   void onShutdown() {}
+  bool dismissModal(BuildContext context, String page) => false;
+  Future<bool> requestPermissions(BuildContext context, Set<MetaversePluginPermission> missing,
+      {required void Function() checkActive}) async => false;
   Future<bool> confirmBackground(BuildContext context, String task) async => false;
   Future<bool> confirmNotifications(BuildContext context) async => false;
   Future<Object?> taskOperation(String method, Map<String, Object?> params, {required void Function() checkActive}) =>
@@ -107,7 +110,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     this.idleTimeout = const Duration(seconds: 30),
     this._clock = DateTime.now,
     this.codeLoader,
-    this.blockedPermissions = const {},
+    this._blockedPermissions = const {},
   });
 
   static const _maxStorageKey = 128;
@@ -122,7 +125,36 @@ class MetaversePluginHost implements MetaversePluginBridge {
   static const activationWindow = Duration(seconds: 10);
 
   final MetaversePluginManifest manifest;
-  final Set<MetaversePluginPermission> blockedPermissions;
+  Set<MetaversePluginPermission> _blockedPermissions;
+  Set<MetaversePluginPermission> get blockedPermissions => _blockedPermissions;
+
+  Future<bool> _askPermissions(Set<MetaversePluginPermission> missing,
+      void Function() checkActive) {
+    final source = _activatedSurface;
+    void checkRequest() {
+      checkActive();
+      if (_retired || source == null || !source.foreground || !source.appForeground ||
+          _runtime?.owns(source) != true || _surfaceContexts[source]?.mounted != true) {
+        throw const PluginOperationCancelled();
+      }
+    }
+    return _userInitiatedUi((context) async {
+      checkRequest();
+      final accepted = await _delegate.requestPermissions(context, missing, checkActive: checkRequest);
+      if (!accepted) return false;
+      checkRequest();
+      if (missing.any(blockedPermissions.contains)) {
+        applyGrantedPermissions(Set.unmodifiable(blockedPermissions.difference(missing)));
+      }
+      return accepted;
+    }, renewOnAcceptance: true);
+  }
+
+  /// 仅在宿主已确认并持久化新增授权时保留正在等待结果的界面。撤销仍回收实例。
+  void applyGrantedPermissions(Set<MetaversePluginPermission> next) {
+    if (!blockedPermissions.containsAll(next)) throw StateError('撤销权限须回收实例');
+    _blockedPermissions = next;
+  }
   bool _retired = false;
 
   void _requirePermission(MetaversePluginPermission permission) {
@@ -497,6 +529,31 @@ class MetaversePluginHost implements MetaversePluginBridge {
       }
     }
     switch (method) {
+      case 'navigation.dismiss':
+        final id = PluginExecutionContext.current?.surfaceId;
+        final source = _runtime?.surfaces.where((surface) => surface.id == id).firstOrNull;
+        final page = source?.page;
+        final context = _surfaceContexts[source];
+        if (_uiBusy || source == null || !source.foreground || !source.appForeground || page == null ||
+            manifest.page(page)?.modal != true || context == null || !context.mounted) {
+          return false;
+        }
+        return _delegate.dismissModal(context, page);
+      case 'permissions.status':
+        return {for (final p in manifest.declaredPermissions) p.name: !blockedPermissions.contains(p)};
+      case 'permissions.request':
+        final names = params['names'];
+        if (names is! List || names.isEmpty || names.length > MetaversePluginPermission.values.length) {
+          throw const MetaversePluginCallException('permission_invalid_request');
+        }
+        final missing = <MetaversePluginPermission>{};
+        for (final name in names) {
+          final p = manifest.declaredPermissions.where((p) => p.name == name && p.manageable).firstOrNull;
+          if (p == null) throw const MetaversePluginCallException('permission_not_requestable');
+          if (blockedPermissions.contains(p)) missing.add(p);
+        }
+        if (missing.isEmpty) return true;
+        return _askPermissions(missing, checkActive);
       case 'tasks.schedule':
         final request = MetaverseTaskSchedule.parse(params);
         if (request.background) _requirePermission(MetaversePluginPermission.background);
@@ -513,9 +570,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return _delegate.taskOperation(method, params, checkActive: checkActive);
       case 'notifications.requestPermission':
         if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
-        if (blockedPermissions.contains(MetaversePluginPermission.notifications)) return false;
+        final needsGrant = blockedPermissions.contains(MetaversePluginPermission.notifications);
+        if (needsGrant && !await _askPermissions({MetaversePluginPermission.notifications}, checkActive)) return false;
         return _userInitiatedUi((context) async {
-          if (!await _delegate.confirmNotifications(context)) return false;
+          if (!needsGrant && !await _delegate.confirmNotifications(context)) return false;
           checkActive();
           return _delegate.taskOperation(method, params, checkActive: checkActive);
         });

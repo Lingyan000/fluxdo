@@ -35,6 +35,7 @@ class MetaverseApiExample {
     'tasks.cancel' => l.metaverse_stopTask,
     'tasks.list' => l.metaverse_apiListTasks,
     'navigation.setBadge' => l.metaverse_apiBadge,
+    'navigation.dismiss' => l.metaverse_apiDismiss,
     'notifications.requestPermission' || 'notifications.show' || 'notifications.cancel' || 'notifications.isAllowed' || 'notifications.revoke' => l.metaverse_pluginNotificationsNote,
     'storage.get' => l.metaverse_apiStorageGet,
     'storage.set' => l.metaverse_apiStorageSet,
@@ -52,6 +53,7 @@ class MetaverseApiExample {
     'forum.read' => l.metaverse_apiForumRead,
     'forum.open' => l.metaverse_apiForumOpen,
     'host.features' => l.metaverse_apiHostFeatures,
+    'permissions.status' || 'permissions.request' => l.metaverse_apiRuntimePermissions,
     'dialogs.confirm' => l.metaverse_apiConfirm,
     'auth.status' || 'auth.request' || 'auth.signOut' => l.metaverse_apiLegacyAuth,
     'payments.request' => l.metaverse_apiPayment,
@@ -70,12 +72,15 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('permissions.status', '', {'forumActivity': false}, apiVersion: 2),
+  MetaverseApiExample('permissions.request', "['forumActivity']", true, userAction: true, apiVersion: 2),
   MetaverseApiExample('tasks.schedule', "{id: 'refresh', intervalSeconds: 30, background: false}", true, permission: 'tasks', apiVersion: 2, userAction: true),
   MetaverseApiExample('tasks.cancel', "'refresh'", null, permission: 'tasks', apiVersion: 2),
   MetaverseApiExample('notifications.isAllowed', '', false, permission: 'notifications', apiVersion: 2),
   MetaverseApiExample('notifications.revoke', '', null, permission: 'notifications', apiVersion: 2),
   MetaverseApiExample('tasks.list', '', [{'id': 'refresh', 'intervalSeconds': 30, 'background': false}], permission: 'tasks', apiVersion: 2),
   MetaverseApiExample('navigation.setBadge', "'feed', 3", null, permission: 'navigationBadge', apiVersion: 2),
+  MetaverseApiExample('navigation.dismiss', '', false, apiVersion: 2),
   MetaverseApiExample('notifications.requestPermission', '', true, permission: 'notifications', apiVersion: 2, userAction: true),
   MetaverseApiExample('notifications.show', "{key: 'updates', title: '新动态', body: '有 3 条新动态', page: 'feed'}", true, permission: 'notifications', apiVersion: 2),
   MetaverseApiExample('notifications.cancel', "'updates'", null, permission: 'notifications', apiVersion: 2),

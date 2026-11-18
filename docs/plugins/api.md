@@ -8,6 +8,10 @@
 
 ### 用户关闭权限时
 
+声明 `requiredFeatures: ["runtimePermissions"]` 后，页面可通过 `await ctx.api.permissions.status()` 获取本插件声明的权限及其开关状态。返回对象中，`false` 表示已关闭，缺少的键表示未声明。状态查询不会弹框。
+
+在用户点击具体功能时，可以调用 `await ctx.api.permissions.request(['forumActivity'])`。宿主只展示本次操作缺少的可管理权限。允许后返回 `true`，脚本可继续当前操作。取消返回 `false`，适合保留输入、显示已有内容和重新申请入口。已允许的权限直接返回 `true`。弹框需要当前前台界面有效的用户操作，任务不能申请，基础能力和清单外的权限不能申请。插件开关与 Connect 确认、逐笔支付、系统通知授权各自生效。
+
 作者在清单中声明访问范围。宿主负责分类，用户可以在安装页选择，也可以稍后到插件的「权限管理」修改。同源更新沿用已有开关，新增的敏感权限类别默认关闭。已有类别的访问范围扩大时，用户需要重新审阅清单。`host.features()` 表示宿主支持某项 API，调用时仍要检查权限。
 
 | 权限 | 关闭后的行为 |
@@ -249,7 +253,7 @@ await ctx.api.browser.open("https://example.org", {mode: "inApp"});
 
 ### `host.features()`
 
-返回能力名称数组。当前名称：`browserModes`、`automaticPagination`、`gridLayouts`、`virtualGrid`、`confirmationDialog`、`nativeExecutionLimits`、`navigationEntries`、`forumRead`。必需能力须在 schema 10 或更高版本的 `requiredFeatures` 中声明；运行时查询用于可选功能。
+返回当前宿主支持的能力名称数组。必需能力在 schema 10 或更高版本的 `requiredFeatures` 中声明。可选功能用运行时查询决定是否展示。完整名称见[宿主能力注册表](../../packages/fluxdo_plugin_runtime/lib/src/plugin_features.dart)。
 
 ### `dialogs.confirm({title, message, confirmLabel, agreement?})`
 
@@ -351,6 +355,7 @@ await ctx.api.forum.open({type: 'topic', topicId: 42, postNumber: 1});
 | `fluxdo.on('task.run', async (ctx, {id,background}) => …)` | 在独立 JS 实例中运行，无页面与点击资格。返回的 Promise 决定执行结果；支持已批准的只读请求、存储、角标及通知，不能导航、授权或付款。每次仅执行一个到期任务，不补跑积压周期。 |
 | `task.updated` / `page.resume` | 前台任务完成后通知可见页面重新读取存储。系统后台执行时没有页面事件，恢复前台时从存储读取。 |
 | `ctx.api.navigation.setBadge(page, count)` | 需要 `navigationBadge` 及该页的 `navigation` 入口，`0` 清除，最大 99999。不会自行添加底栏入口。 |
+| `ctx.api.navigation.dismiss()` | `modalDismiss`。完成表单后从当前插件弹层调用，成功关闭返回 `true`。普通页面、卡片或被其他路由覆盖时返回 `false`。 |
 | `ctx.api.notifications.requestPermission()` / `isAllowed()` / `revoke()` | 声明 `permissions.notifications: true` 和 `localNotifications`。申请须由可见界面的点击触发；用户可从宿主管理页撤销。`isAllowed()` 返回该账号对该插件的授权，系统也可独立静音。撤销同时取消已发通知。 |
 | `ctx.api.notifications.show({key,title,body,page,params?})` / `cancel(key)` | 只打开本插件声明的页面；系统通知只携带宿主编号。同键一分钟内合并，每插件每分钟最多三条。停用、换源、退出账号后不能再由旧通知打开原页面。 |
 
