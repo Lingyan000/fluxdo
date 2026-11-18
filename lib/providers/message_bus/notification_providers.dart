@@ -69,6 +69,31 @@ class NotificationCountNotifier extends Notifier<NotificationCountState> {
     );
   }
 
+  /// 服务端确认后，同步已打开的历史列表、快捷面板及其分类。
+  Future<void> markAllNotificationsRead() async {
+    final requestRef = ref;
+    await requestRef.read(discourseServiceProvider).markAllNotificationsRead();
+    if (!requestRef.mounted) return;
+
+    markAllRead();
+    if (ref.read(recentNotificationsProvider.exists)) {
+      ref.read(recentNotificationsProvider.notifier).markLocalRead();
+    }
+    for (final tab in NotificationPanelTab.values) {
+      if (tab == NotificationPanelTab.all) continue;
+      final provider = categorizedNotificationsProvider(tab);
+      if (ref.read(provider.exists)) {
+        ref.read(provider.notifier).markAllLocalRead();
+      }
+    }
+    for (final filter in NotificationReadFilter.values) {
+      final provider = notificationListProvider(filter);
+      if (ref.read(provider.exists)) {
+        ref.read(provider.notifier).markAllLocalRead();
+      }
+    }
+  }
+
   /// 标记所有已读后重置计数(视为实时事实,服务端旧值不得复活徽章)
   void markAllRead() {
     _liveUpdateReceived = true;
@@ -184,7 +209,7 @@ class NotificationChannelNotifier extends Notifier<void> {
 
         // 仅在通知列表已加载（面板已打开过）时做增量更新，
         // 避免 ref.read() 意外触发 build() 发起 API 请求
-        if (ref.exists(recentNotificationsProvider)) {
+        if (ref.read(recentNotificationsProvider.exists)) {
           final recentState = ref.read(recentNotificationsProvider);
           if (recentState.hasValue) {
             final recentNotifier = ref.read(recentNotificationsProvider.notifier);
@@ -204,7 +229,7 @@ class NotificationChannelNotifier extends Notifier<void> {
         for (final tab in NotificationPanelTab.values) {
           if (tab == NotificationPanelTab.all) continue;
           final provider = categorizedNotificationsProvider(tab);
-          if (!ref.exists(provider)) continue;
+          if (!ref.read(provider.exists)) continue;
           final notifier = ref.read(provider.notifier);
           if (newNotification != null) notifier.addIfMatches(newNotification);
           if (readStatusMap.isNotEmpty) notifier.applyReadStatus(readStatusMap);

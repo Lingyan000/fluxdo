@@ -52,6 +52,7 @@ class ActivityCardFrame extends StatelessWidget {
     super.key,
     required this.position,
     required this.child,
+    this.highlighted = false,
     this.onTap,
     this.onLongPress,
     this.onPreviewIntent,
@@ -59,6 +60,7 @@ class ActivityCardFrame extends StatelessWidget {
 
   final ({int index, int count}) position;
   final Widget child;
+  final bool highlighted;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onPreviewIntent;
@@ -90,18 +92,27 @@ class ActivityCardFrame extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: child,
             );
+            final baseColor = compact
+                ? Colors.transparent
+                : PageBackgroundScope.contentColor(
+                    context,
+                    theme.cardTheme.color ??
+                        theme.colorScheme.surfaceContainerLow,
+                  );
+            final cardColor = highlighted
+                ? Color.alphaBlend(
+                    context.emphasis.selected.withValues(
+                      alpha: compact ? 0.055 : 0.07,
+                    ),
+                    baseColor,
+                  )
+                : baseColor;
             return SegmentedCardItem(
               index: position.index,
               count: position.count,
               gap: 4,
               outerRadius: compact ? 0 : 20,
-              color: compact
-                  ? Colors.transparent
-                  : PageBackgroundScope.contentColor(
-                      context,
-                      theme.cardTheme.color ??
-                          theme.colorScheme.surfaceContainerLow,
-                    ),
+              color: cardColor,
               child: onTap == null
                   ? content
                   : TopicCardInteractiveSurface(

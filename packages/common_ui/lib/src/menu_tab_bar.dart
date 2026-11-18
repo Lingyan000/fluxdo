@@ -1,10 +1,13 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui show lerpDouble;
 
 import 'package:app_icons/app_icons.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'dismissible_popup_menu.dart';
 import 'ui_emphasis.dart';
+import 'ui_shapes.dart';
 
 /// 栏目首次点击切换，再次点击选中栏目可打开其筛选菜单。
 class MenuTabItem<T> {
@@ -62,6 +65,8 @@ class MenuTabBar<T> extends StatefulWidget implements PreferredSizeWidget {
 
 class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
   late int _selected;
+  bool _fadeStart = false;
+  bool _fadeEnd = false;
 
   @override
   void initState() {
@@ -86,6 +91,19 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     }
   }
 
+  bool _updateScrollFade(ScrollMetrics metrics, int depth) {
+    if (depth != 0 || metrics.axis != Axis.horizontal) return false;
+    final nextStart = metrics.pixels > 1;
+    final nextEnd = metrics.pixels < metrics.maxScrollExtent - 1;
+    if (nextStart != _fadeStart || nextEnd != _fadeEnd) {
+      setState(() {
+        _fadeStart = nextStart;
+        _fadeEnd = nextEnd;
+      });
+    }
+    return false;
+  }
+
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
@@ -97,19 +115,25 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
     assert(widget.items.length == widget.controller.length);
     if (widget.items.isEmpty) return const SizedBox(height: 48);
     final theme = Theme.of(context);
+    final selectedColor = context.emphasis.selected;
+    final shapes = context.shapes;
+    final direction = Directionality.of(context);
     final labelMode = widget.mode == MenuTabMode.label;
-    // 常驻文字时未选中项也显示文字，字重降一档避免整排过重
+    // M3E 激活态强化字重，常驻文字的未选中项退回 w500 拉开主次
     final style = theme.textTheme.titleSmall!.copyWith(
       fontWeight: labelMode ? FontWeight.w600 : FontWeight.w700,
     );
+    final unselectedStyle = labelMode
+        ? theme.textTheme.titleSmall!.copyWith(fontWeight: FontWeight.w500)
+        : null;
     final countStyle = theme.textTheme.labelSmall!.copyWith(
-      color: context.emphasis.selected,
+      color: selectedColor,
       fontWeight: FontWeight.w600,
     );
     double measure(String text, TextStyle style) {
       final painter = TextPainter(
         text: TextSpan(text: text, style: style),
-        textDirection: Directionality.of(context),
+        textDirection: direction,
         textScaler: MediaQuery.textScalerOf(context),
         maxLines: 1,
       )..layout();
@@ -129,6 +153,10 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
             (item.menuBuilder == null ? 0 : 22),
       );
     }
+    // 激活态内容宽度（22 图标 + 6 间距 + 文字区），遵守 M3 最小指示条宽度 24dp
+    final activeWidths = [
+      for (final width in widths) math.max(24.0, width - 16),
+    ];
 
     return AnimatedBuilder(
       animation: widget.controller.animation!,
@@ -154,18 +182,30 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
             final equalSlots =
                 !widget.showAllLabels &&
                 widths.every((width) => width <= slotWidth);
-            return TabBar(
+            Widget bar = TabBar(
               controller: widget.controller,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               labelPadding: EdgeInsets.zero,
-              labelColor: theme.colorScheme.onSurface,
+              labelColor: selectedColor,
               unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
               labelStyle: style,
+              unselectedLabelStyle: unselectedStyle,
+              splashBorderRadius: BorderRadius.vertical(
+                top: shapes.radius(12),
+              ),
               indicatorSize: TabBarIndicatorSize.tab,
-              indicatorColor: context.emphasis.selected,
-              indicatorWeight: 3,
-              dividerColor: theme.colorScheme.outlineVariant,
+              indicator:
+                  theme.tabBarTheme.indicator ??
+                  _MenuTabIndicator(
+                    animation: widget.controller.animation,
+                    fallbackIndex: _selected,
+                    activeWidths: activeWidths,
+                    color: selectedColor,
+                    radius: shapes.radius(3),
+                  ),
+              dividerColor: Colors.transparent,
+              dividerHeight: 0,
               tabs: [
                 for (var index = 0; index < widget.items.length; index++)
                   _tab(
@@ -178,6 +218,49 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
                     countStyle,
                   ),
               ],
+            );
+
+            if (_fadeStart || _fadeEnd) {
+              bar = ShaderMask(
+                blendMode: BlendMode.dstIn,
+                shaderCallback: (bounds) {
+                  final fade = bounds.width > 0
+                      ? (24.0 / bounds.width).clamp(0.0, 0.25)
+                      : 0.0;
+                  return LinearGradient(
+                    begin: AlignmentDirectional.centerStart.resolve(direction),
+                    end: AlignmentDirectional.centerEnd.resolve(direction),
+                    colors: [
+                      if (_fadeStart) Colors.transparent,
+                      Colors.white,
+                      Colors.white,
+                      if (_fadeEnd) Colors.transparent,
+                    ],
+                    stops: [
+                      if (_fadeStart) 0.0,
+                      _fadeStart ? fade : 0.0,
+                      _fadeEnd ? 1.0 - fade : 1.0,
+                      if (_fadeEnd) 1.0,
+                    ],
+                  ).createShader(bounds);
+                },
+                child: bar,
+              );
+            }
+
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+                ),
+              ),
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (n) => _updateScrollFade(n.metrics, n.depth),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) => _updateScrollFade(n.metrics, n.depth),
+                  child: bar,
+                ),
+              ),
             );
           },
         );
@@ -313,6 +396,87 @@ class _MenuTabBarState<T> extends State<MenuTabBar<T>> {
                 child: content,
               ),
             ),
+    );
+  }
+}
+
+/// M3E 栏目选中指示条：静止时与当前栏目内容（图标 + 文字）等宽并顶角导圆，
+/// 切换途中随进度轻微横向延展，避免满槽直角粗线顶死容器边缘。
+class _MenuTabIndicator extends Decoration {
+  const _MenuTabIndicator({
+    required this.animation,
+    required this.fallbackIndex,
+    required this.activeWidths,
+    required this.color,
+    required this.radius,
+  });
+
+  final Animation<double>? animation;
+  final int fallbackIndex;
+  final List<double> activeWidths;
+  final Color color;
+  final Radius radius;
+
+  static const double _thickness = 3.0;
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
+      _MenuTabIndicatorPainter(this, onChanged);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MenuTabIndicator &&
+      other.animation == animation &&
+      other.fallbackIndex == fallbackIndex &&
+      listEquals(other.activeWidths, activeWidths) &&
+      other.color == color &&
+      other.radius == radius;
+
+  @override
+  int get hashCode => Object.hash(
+    animation,
+    fallbackIndex,
+    Object.hashAll(activeWidths),
+    color,
+    radius,
+  );
+}
+
+class _MenuTabIndicatorPainter extends BoxPainter {
+  _MenuTabIndicatorPainter(this.decoration, super.onChanged);
+
+  final _MenuTabIndicator decoration;
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final size = configuration.size;
+    final widths = decoration.activeWidths;
+    if (size == null || widths.isEmpty) return;
+
+    final maxIndex = (widths.length - 1).toDouble();
+    final pos = (decoration.animation?.value ?? decoration.fallbackIndex)
+        .toDouble()
+        .clamp(0.0, maxIndex);
+    final i0 = pos.floor();
+    final i1 = pos.ceil();
+    final t = pos - i0;
+    final baseWidth = ui.lerpDouble(widths[i0], widths[i1], t)!;
+    final stretch = 10.0 * math.sin(math.pi * t);
+    final width = (baseWidth + stretch).clamp(0.0, size.width);
+
+    final rect = Rect.fromLTWH(
+      offset.dx + (size.width - width) / 2,
+      offset.dy + size.height - _MenuTabIndicator._thickness,
+      width,
+      _MenuTabIndicator._thickness,
+    );
+    canvas.drawRSuperellipse(
+      RSuperellipse.fromRectAndCorners(
+        rect,
+        topLeft: decoration.radius,
+        topRight: decoration.radius,
+      ),
+      Paint()..color = decoration.color,
     );
   }
 }

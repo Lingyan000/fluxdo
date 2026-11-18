@@ -214,6 +214,11 @@ class NotificationCountState {
     this.grouped = const {},
   });
 
+  /// 包含已看过但尚未点开的通知；旧站点缺少分类统计时使用新通知数。
+  int get totalUnread => grouped.isEmpty
+      ? allUnread
+      : grouped.values.fold(0, (sum, count) => sum + count);
+
   NotificationCountState copyWith({
     int? allUnread,
     int? unread,

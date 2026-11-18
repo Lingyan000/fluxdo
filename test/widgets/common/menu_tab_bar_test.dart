@@ -167,9 +167,14 @@ void main() {
       expect(tester.takeException(), isNull);
     }
 
-    // 选中后图标在文字前，间隔固定
+    // 选中后保持原有线框图标并在文字前，间隔固定，激活前景跟随主题选中强调色
     controller.index = 1;
     await tester.pumpAndSettle();
+    final replyIcon = tester.widget<Icon>(find.byIcon(Icons.reply));
+    expect(replyIcon.fill, isNull);
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+    final hostContext = tester.element(find.byType(TabBar));
+    expect(tabBar.labelColor, hostContext.emphasis.selected);
     expect(
       tester.getRect(find.text('回复')).left -
           tester.getRect(find.byIcon(Icons.reply)).right,
