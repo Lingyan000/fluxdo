@@ -145,7 +145,7 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
                   return Column(
                     children: [
                       if (migration.showGuide)
-                        FollowingFeedMigrationCard(
+                        _FollowingFeedMigrationCard(
                           onOpen: () => _showMigration(context),
                         ),
                       if (state.loading)
@@ -231,15 +231,12 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
   );
 }
 
-/// 在“我的”与动态页都可发现的迁移提示，确认后不再重复出现。
-class FollowingFeedMigrationCard extends ConsumerWidget {
-  const FollowingFeedMigrationCard({super.key, required this.onOpen});
+/// 动态页内的追觅迁移入口。
+class _FollowingFeedMigrationCard extends StatelessWidget {
+  const _FollowingFeedMigrationCard({required this.onOpen});
   final VoidCallback onOpen;
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(followingFeedMigrationProvider).showGuide) {
-      return const SizedBox.shrink();
-    }
+  Widget build(BuildContext context) {
     return Card(
       child: ListTile(
         leading: const Icon(Symbols.info_rounded),

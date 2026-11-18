@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../modules/mini_apps/mini_app_navigation.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/following_feed_migration_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../widgets/desktop_refresh_indicator.dart';
@@ -542,13 +543,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           if (isLoggedIn) ...[
             _buildContentCard(theme),
             const SizedBox(height: 20),
-            FollowingFeedMigrationCard(
-              onOpen: () => Navigator.of(context).push(
-                InteractionPageRoute(
-                  builder: (_) => const FollowingFeedMigrationPage(),
-                ),
-              ),
-            ),
             _buildCommunityCard(
               theme,
               canAccessInviteLinks: (user?.trustLevel ?? 0) >= 3,
@@ -628,13 +622,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
           if (isLoggedIn) ...[
-            FollowingFeedMigrationCard(
-              onOpen: () => Navigator.of(context).push(
-                InteractionPageRoute(
-                  builder: (_) => const FollowingFeedMigrationPage(),
-                ),
-              ),
-            ),
             _buildCommunityCard(
               theme,
               canAccessInviteLinks: (user?.trustLevel ?? 0) >= 3,
@@ -887,6 +874,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         _buildOptionTile(
           icon: Symbols.rss_feed_rounded,
           title: context.l10n.followingFeed_profileEntry,
+          subtitle:
+              ref.watch(
+                followingFeedMigrationProvider.select((s) => s.showGuide),
+              )
+              ? context.l10n.followingFeed_migrationHint
+              : null,
           onTap: () => Navigator.push(
             context,
             InteractionPageRoute(builder: (_) => const FollowingFeedPage()),
@@ -1018,6 +1011,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     required IconData icon,
     Color? iconColor,
     required String title,
+    String? subtitle,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
@@ -1042,12 +1036,24 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
             ),
             Icon(
