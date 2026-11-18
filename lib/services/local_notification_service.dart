@@ -60,16 +60,22 @@ class LocalNotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _permissionGranted = false;
+  Future<void>? _platformInit, _appInit;
+  final pluginTap = ValueNotifier<int?>(null);
 
   /// 初始化通知服务
-  Future<void> initialize() async {
-    if (_initialized) return;
+  Future<void> initialize({bool requestPermission = true}) async {
+    await (_platformInit ??= _initializePlatform().catchError((Object error) { _platformInit = null; throw error; }));
+    if (requestPermission) await (_appInit ??= _initializeApp().catchError((Object error) { _appInit = null; throw error; }));
+  }
+
+  Future<void> _initializePlatform() async {
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwinSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
     const linuxSettings = LinuxInitializationSettings(defaultActionName: 'Open');
     const windowsSettings = WindowsInitializationSettings(
@@ -94,7 +100,14 @@ class LocalNotificationService {
     debugPrint('[LocalNotification] 初始化完成');
     
     // 请求通知权限 (Android 13+)
-    await _requestPermission();
+  }
+
+  Future<void> _initializeApp() async {
+      await _requestPermission();
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp == true && launch?.notificationResponse?.payload?.startsWith('plugin:') == true) {
+        _onNotificationTapped(launch!.notificationResponse!);
+      }
   }
 
   /// 通知点击回调
@@ -103,6 +116,10 @@ class LocalNotificationService {
 
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
+    if (payload.startsWith('plugin:')) {
+      pluginTap.value = int.tryParse(payload.substring(7));
+      return;
+    }
 
     // payload 格式: "topic:{topicId}[:{postNumber}]" 或
     // "message:{topicId}[:{postNumber}]"(私信,走私信平行视界栈)或
@@ -159,9 +176,36 @@ class LocalNotificationService {
       _permissionGranted = granted ?? false;
       debugPrint('[LocalNotification] Android 权限: $_permissionGranted');
     } else {
-      // 非 Android 平台默认已授权
-      _permissionGranted = true;
+      if (Platform.isIOS || Platform.isMacOS) {
+        _permissionGranted = await requestPluginPermission();
+      } else {
+        _permissionGranted = true;
+      }
     }
+  }
+
+  Future<bool> requestPluginPermission() async {
+    await initialize(requestPermission: false);
+    if (Platform.isIOS) {
+      return await _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()?.requestPermissions(alert: true, badge: true, sound: true) ?? false;
+    }
+    if (Platform.isMacOS) {
+      return await _plugin.resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()?.requestPermissions(alert: true, badge: true, sound: true) ?? false;
+    }
+    if (Platform.isAndroid) {
+      return await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission() ?? false;
+    }
+    return true;
+  }
+
+  Future<void> showPlugin({required int id, required String pluginName, required String title, required String body}) async {
+    await initialize(requestPermission: false);
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails('metaverse_plugins', t.metaverse_pluginNotifications, importance: Importance.defaultImportance, priority: Priority.defaultPriority),
+      iOS: const DarwinNotificationDetails(), macOS: const DarwinNotificationDetails(),
+      linux: const LinuxNotificationDetails(), windows: const WindowsNotificationDetails(),
+    );
+    await _plugin.show(id: id, title: '$pluginName · $title', body: body, notificationDetails: details, payload: 'plugin:$id');
   }
 
   /// 显示通知

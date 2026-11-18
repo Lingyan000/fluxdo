@@ -280,6 +280,11 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
           throw const MetaversePluginCallException('cancelled');
         }
         return widget.example.result;
+      case 'storage.compareAndSet':
+        final key = params['key'] as String;
+        if (!const DeepCollectionEquality().equals(_storage[key], params['expected'])) return false;
+        if (params['value'] == null) { _storage.remove(key); } else { _storage[key] = params['value']; }
+        return true;
       case 'storage.get':
         return _storage['${params['key']}'];
       case 'storage.set':

@@ -148,6 +148,8 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
     final installed = ref.watch(metaversePluginsProvider);
     final matches = installed.where((plugin) => plugin.id == widget.pluginId);
     final plugin = matches.firstOrNull;
+    final driver = plugin != null && (plugin.manifest.tasks.isNotEmpty || plugin.manifest.capabilities.notifications)
+        ? ref.watch(metaverseTaskDriverProvider) : null;
     final l = context.l10n;
     return Scaffold(
       appBar: AppBar(
@@ -218,6 +220,25 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                   ],
                 ),
                 const SizedBox(height: 24),
+                if (driver != null && driver.account != null && plugin.enabled)
+                  ValueListenableBuilder<Map<String, int>>(
+                    valueListenable: driver.badges,
+                    builder: (context, _, _) {
+                      final jobs = driver.control.tasks(driver.account!, plugin.id);
+                      final allowed = driver.control.notificationsAllowed(driver.account!, plugin.id);
+                      if (jobs.isEmpty && !allowed) return const SizedBox.shrink();
+                      return Padding(padding: const EdgeInsets.only(bottom: 24), child: SegmentedCardGroup(children: [
+                        for (final job in jobs) ListTile(
+                          title: Text(plugin.manifest.tasks.where((spec) => spec.id == job['id']).firstOrNull?.title ?? job['id']),
+                          subtitle: Text(job['error'] != null ? l.metaverse_taskRetrying : job['background'] == true ? l.metaverse_backgroundTasks : l.metaverse_foregroundTasks),
+                          trailing: IconButton(icon: const Icon(Symbols.stop_rounded), tooltip: l.metaverse_stopTask,
+                            onPressed: _busy ? null : () => _run(() => driver.stopTask(plugin.id, job['id']))),
+                        ),
+                        if (allowed) M3eSwitchListTile(title: Text(l.metaverse_pluginNotifications), value: true,
+                          onChanged: _busy ? null : (_) => _run(() => driver.mute(plugin.id))),
+                      ]));
+                    },
+                  ),
                 SegmentedCardGroup(
                   color: PageBackgroundScope.contentColor(
                     context,

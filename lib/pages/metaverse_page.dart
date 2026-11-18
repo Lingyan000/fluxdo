@@ -126,13 +126,9 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
       if (choice.url case final String address) {
         package = await installer.fetch(address);
       } else {
-        final result = await FilePicker.platform.pickFiles(withReadStream: true);
-        if (result == null) return;
-        final stream = result.files.single.readStream;
-        if (stream == null) {
-          throw const MetaversePluginInstallException('无法读取插件文件');
-        }
-        package = await installer.importBundle(stream);
+        final file = await FilePicker.pickFile();
+        if (file == null) return;
+        package = await installer.importBundle(file.readAsByteStream());
       }
       if (!mounted) return;
       final controller = ref.read(metaversePluginsProvider.notifier);

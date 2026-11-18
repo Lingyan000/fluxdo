@@ -1,3 +1,4 @@
+import 'metaverse_task.dart';
 import 'metaverse_ui_validator.dart';
 import 'metaverse_component_contract.dart';
 import 'dart:async';
@@ -26,6 +27,11 @@ import 'ui/metaverse_widget_library.dart';
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
   void onShutdown() {}
+  Future<bool> confirmBackground(BuildContext context, String task) async => false;
+  Future<bool> confirmNotifications(BuildContext context) async => false;
+  Future<Object?> taskOperation(String method, Map<String, Object?> params, {required void Function() checkActive}) =>
+      Future.error(const MetaversePluginCallException('task_unavailable'));
+
   Future<Object?> readForum(MetaverseForumRequest request, {required void Function() checkActive}) =>
       Future.error(const MetaversePluginCallException('forum_unavailable'));
   Future<void> openForum(BuildContext context, MetaverseForumDestination destination) =>
@@ -164,6 +170,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   Timer? _idleTimer;
   int _generation = 0;
   int? _accountAtStart;
+  bool Function()? _taskActive;
   final _forumAvatars = <Uri>{};
   bool _uiBusy = false;
   DateTime? _activatedAt;
@@ -212,6 +219,20 @@ class MetaversePluginHost implements MetaversePluginBridge {
     _idleTimer?.cancel();
     _idleTimer = null;
     return runtime.openSurface(kind: kind, page: page, params: params);
+  }
+
+  /// 独立实例执行任务，结束即销毁；不能与可见页面共用脚本内存。
+  Future<void> runTask(String id, {required bool background, required bool Function() isActive}) async {
+    if (_runtime != null || _starting != null || !manifest.tasks.any((t) => t.id == id)) {
+      throw const MetaversePluginCallException('task_not_declared');
+    }
+    _taskActive = isActive;
+    try {
+      if (!isActive()) throw const MetaversePluginCallException('task_cancelled');
+      await (_starting ??= _start(_generation));
+      if (!isActive()) throw const MetaversePluginCallException('task_cancelled');
+      await _runtime!.runTask(id, background: background);
+    } finally { shutdown(); }
   }
 
   void close(MetaversePluginSurface surface) {
@@ -276,6 +297,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
     }
   }
 
+  void notifyTaskUpdated() {
+    final runtime = _runtime;
+    if (runtime == null) return;
+    for (final surface in runtime.surfaces.where((surface) => surface.foreground)) {
+      runtime.dispatch(surface, 'task.updated', const {});
+    }
+  }
+
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
@@ -303,7 +332,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         throw const MetaversePluginCallException('plugin_api_upgrade_required');
       }
       final code = await (codeLoader?.call() ?? _store.readCode(id));
-      final library = MetaversePluginInstaller.validateUi(manifest, code.ui);
+      final library = _taskActive == null ? MetaversePluginInstaller.validateUi(manifest, code.ui) : null;
       final runtime = await MetaversePluginRuntime.start(
         engineFactory: _engineFactory,
         script: code.script,
@@ -321,6 +350,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         throw StateError('插件已停止');
       }
       _runtime = runtime;
+      if (library == null) return;
       _widgets = Runtime()
         ..update(
           metaverseWidgetLibraryName,
@@ -413,17 +443,65 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   String _accountStorageKey(String key) {
-    if (manifest.capabilities.forum.isEmpty) return key;
+    if (!manifest.accountScoped) return key;
     final account = _delegate.currentAccountId();
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');
     return '@forum-account:$_accountAtStart:$key';
   }
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
-    if (manifest.capabilities.forum.isNotEmpty && _accountAtStart != _delegate.currentAccountId()) {
+    if (manifest.accountScoped && _accountAtStart != _delegate.currentAccountId()) {
       throw const MetaversePluginCallException('forum_account_changed');
     }
+    if (_taskActive != null && !_taskActive!()) throw const MetaversePluginCallException('task_cancelled');
+    if (_taskActive != null && !const {
+      'forum.read', 'storage.get', 'storage.set', 'storage.setMany', 'storage.remove', 'storage.compareAndSet',
+      'host.features', 'user.get', 'tasks.list', 'navigation.setBadge',
+      'notifications.show', 'notifications.cancel', 'notifications.isAllowed', 'crypto.uuid', 'crypto.sha256', 'fetch',
+    }.contains(method)) {
+      throw const MetaversePluginCallException('task_has_no_ui');
+    }
+    final callGeneration = _generation;
+    final callAccount = _delegate.currentAccountId();
+    void checkActive() {
+      if (callGeneration != _generation || callAccount != _delegate.currentAccountId() ||
+          (_taskActive != null && !_taskActive!())) {
+        throw const MetaversePluginCallException('task_cancelled');
+      }
+    }
     switch (method) {
+      case 'tasks.schedule':
+        final request = MetaverseTaskSchedule.parse(params);
+        if (!manifest.tasks.any((t) => t.id == request.id)) throw const MetaversePluginCallException('task_not_declared');
+        if (request.background && !manifest.capabilities.background) throw const MetaversePluginCallException('task_permission_denied');
+        return _userInitiatedUi((context) async {
+          if (request.background && !await _delegate.confirmBackground(context, request.id)) return false;
+          checkActive();
+          return _delegate.taskOperation(method, params, checkActive: checkActive);
+        });
+      case 'tasks.cancel':
+      case 'tasks.list':
+        if (manifest.tasks.isEmpty) throw const MetaversePluginCallException('task_not_declared');
+        return _delegate.taskOperation(method, params, checkActive: checkActive);
+      case 'notifications.requestPermission':
+        if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        return _userInitiatedUi((context) async {
+          if (!await _delegate.confirmNotifications(context)) return false;
+          checkActive();
+          return _delegate.taskOperation(method, params, checkActive: checkActive);
+        });
+      case 'notifications.show':
+      case 'notifications.cancel':
+      case 'notifications.isAllowed':
+      case 'notifications.revoke':
+        if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        return _delegate.taskOperation(method, params, checkActive: checkActive);
+      case 'navigation.setBadge':
+        final page = params['page'], count = params['count'];
+        if (page is! String || manifest.page(page)?.navigation == null || count is! int || count < 0 || count > 99999) {
+          throw const MetaversePluginCallException('badge_invalid');
+        }
+        return _delegate.taskOperation(method, params, checkActive: checkActive);
       case 'forum.read':
         final request = MetaverseForumRequest.parse(params);
         if (!manifest.capabilities.forum.contains(request.resource.scope)) {
@@ -438,7 +516,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
           if (generation != _generation || account != _delegate.currentAccountId()) {
             throw const MetaversePluginCallException('forum_account_changed');
           }
-          if (source == null || _runtime?.owns(source) != true || !source.foreground) {
+          if (_taskActive != null && !_taskActive!()) throw const MetaversePluginCallException('task_cancelled');
+          if (_taskActive == null && (source == null || _runtime?.owns(source) != true || !source.foreground)) {
             throw const MetaversePluginCallException('forum_not_visible');
           }
         }
@@ -451,6 +530,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
         final destination = MetaverseForumDestination.parse(params);
         return _userInitiatedUi((context) => _delegate.openForum(context, destination));
       case 'fetch':
+        if (_taskActive != null && !{'GET', 'HEAD'}.contains((params['method'] ?? 'GET').toString().toUpperCase())) {
+          throw const MetaversePluginCallException('task_read_only');
+        }
         final host = Uri.tryParse('${params['url']}')?.host;
         final publicRead =
             '${params['method'] ?? 'GET'}'.toUpperCase() == 'GET' &&
@@ -476,6 +558,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
             : await _credentials.read(credentialName, accountId);
         void checkActive() {
           if (generation != _generation ||
+              (_taskActive != null && !_taskActive!()) ||
               accountId != _delegate.currentAccountId() ||
               (credentialName is String &&
                   credentialRevision != _store.credentialRevision(id, credentialName))) {
@@ -515,12 +598,18 @@ class MetaversePluginHost implements MetaversePluginBridge {
         final generation = _generation;
         final account = _delegate.currentAccountId();
         final data = await _store.readStorage(id);
-        if (generation != _generation || (manifest.capabilities.forum.isNotEmpty && account != _delegate.currentAccountId())) {
+        if (generation != _generation || (manifest.accountScoped && account != _delegate.currentAccountId())) {
           throw const MetaversePluginCallException('forum_account_changed');
         }
+        checkActive();
         return data[key];
       case 'storage.set':
         return _writeStorage(_storageKey(params), params['value']);
+      case 'storage.compareAndSet':
+        if (!params.containsKey('expected') || !params.containsKey('value')) {
+          throw const MetaversePluginCallException('storage_invalid_arguments');
+        }
+        return _store.compareAndSet(id, _accountStorageKey(_storageKey(params)), params['expected'], params['value'], checkActive: checkActive);
       case 'storage.remove':
         return _writeStorage(_storageKey(params), null);
       case 'storage.setMany':
@@ -532,7 +621,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           _storageKey({'key': key});
         }
         try {
-          await _store.updateStorageEntries(id, entries.map((key, value) => MapEntry(_accountStorageKey(key), value)));
+          await _store.updateStorageEntries(id, entries.map((key, value) => MapEntry(_accountStorageKey(key), value)), isActive: () { checkActive(); return true; });
         } on StateError {
           throw const MetaversePluginCallException('存储空间已满');
         }
@@ -541,6 +630,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
       case 'credentials.status':
         return _credentials.status(params['name'], _delegate.currentAccountId());
       case 'credentials.capture':
+        if (_taskActive != null) throw const MetaversePluginCallException('task_read_only');
         final generation = _generation;
         final accountId = _delegate.currentAccountId();
         return _credentials.capture(
@@ -800,7 +890,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   Future<Object?> _writeStorage(String key, Object? value) async {
     try {
-      await _store.updateStorage(id, _accountStorageKey(key), value);
+      final generation = _generation, account = _delegate.currentAccountId();
+      await _store.updateStorage(id, _accountStorageKey(key), value, isActive: () => generation == _generation && account == _delegate.currentAccountId() && (_taskActive?.call() ?? true));
     } on StateError {
       throw const MetaversePluginCallException('存储空间已满');
     }
@@ -815,6 +906,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     Future<T> Function(BuildContext context) run, {
     bool renewOnAcceptance = false,
   }) async {
+    if (_taskActive != null) throw const MetaversePluginCallException('task_has_no_ui');
     if (_uiBusy) {
       throw const MetaversePluginCallException('已有进行中的界面操作');
     }

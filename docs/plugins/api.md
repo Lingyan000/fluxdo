@@ -171,7 +171,9 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 | `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
 | `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
 
-键长度为 1–128（保留前缀除外），每个插件编码后的数据总量最多 256 KiB。卡片与所有页面共享数据。数据保存在插件目录下的 `storage.json`。每个插件的写入按队列串行执行，多个键的并发写入保留各自结果。普通第三方服务的数据仍按插件隔离；声明了 `permissions.forum` 的插件额外按论坛账号隔离。账号变化会停止旧运行实例并丢弃旧请求结果，切回原账号仍保留其数据。所有账号分区共用每插件 256 KiB 配额；「清空插件数据」一次清除所有分区。保留前缀 `@forum-account:` 不允许作为插件键。
+键长度为 1–128，不能使用 `@forum-account:` 前缀。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有账号分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。声明论坛、任务、通知或底栏角标能力的插件使用账号分区，切换账号后旧实例不能读取或写入新账号。
+
+`storage.compareAndSet(key, expected, value)` 在同一事务内比较 JSON 值、写入并返回布尔值。`null` 表示缺少键，写入 `null` 会删除键。页面和任务同时修改同一数据时，失败的一方应重新读取后再合并。需要此能力的插件声明 `atomicStorage`。
 
 用户可从插件管理重置本地数据和服务会话。重置会停止实例，拒绝旧代次排队写入，并等待正在写入的数据落盘后清理。批量修改通过 `setMany` 原子提交。
 
@@ -219,7 +221,7 @@ await ctx.api.browser.open("https://example.org", {mode: "inApp"});
 | `setTimeout(fn, ms, ...args)` | 返回本运行实例内的计时器 ID，非函数返回 0 |
 | `clearTimeout(id)` | 取消计时器，返回 undefined |
 
-日志写入应用的结构化日志，包含 `pluginId`、`pluginVersion`、`runtimeId` 和 `emitter`。事件里的 `ctx.api` 调用同时关联 `surfaceId` 与调用链。插件设置的日志页面支持按等级、类型、框架或插件来源筛选，以及当前插件的导出和清空。日志正文有长度限制，每个运行实例每分钟最多记录 120 条 console 日志。调试时记录事件和错误码，授权材料与支付信息通过宿主的专用能力处理。网络核心异步日志的完整调用归属仍待补齐。
+插件设置可按等级、类型和来源筛选日志，并单独清空或导出。`pluginId` 标识插件，`runtimeId` 标识运行实例，`emitter` 区分宿主和插件；界面调用还带 `surfaceId`。网络核心按 `coreRequestId` 关联异步记录，未关联请求的共享连接事件只归宿主。系统任务的已脱敏日志限量暂存，下次在前台归档。每实例每分钟最多记录 120 条 console 日志。
 
 每个运行时最多 64 个计时器，延时最大 10 分钟，负值按 0 处理。计时器超额时当前桥会忽略设置请求。并发宿主调用最多 32 个，surface 最多 16 个。最后一块界面关闭后，宿主默认 30 秒释放运行实例。单条引擎指令默认 5 秒看门狗，具体资源隔离局限见架构审计。
 
@@ -280,7 +282,7 @@ schema 11 支持在普通页面中声明 `navigation: {label, icon?}`，`label` 
 
 这是清单片段，仍需填写插件身份与资源字段。用户选择后才加入导航，脚本不能自行添加或重排。稳定标识由插件 ID 和页面 ID 组成，修改标题或图标不会改变配置。卸载、禁用、挂起、升级移除页面时，实际导航隐藏入口并回到可用页面；设置保留原位置供用户移除或日后恢复。恢复后不会强行切换当前页面。
 
-第一次选中才启动该页面，切换标签保留 RFW 数据与滚动位置，返回仅发 `page.resume`。每个插件所有界面都不可见时，宿主冻结其定时器；恢复后继续剩余延时，不补发隐藏期间的调用。卡片与页面共享同一运行时，任一界面可见时定时器可以运行；业务仍应在 `page.hide`/`surface.close` 中取消该页面自己的调度。没有系统后台常驻任务、推送或定时唤醒承诺。
+第一次选中才启动页面，切换标签保留 RFW 数据与滚动位置，返回仅发 `page.resume`。插件所有界面都不可见时，宿主冻结页面定时器；恢复后继续剩余延时。需要关闭页面后更新的插件应声明独立任务。
 
 底栏重复点击的回顶动作滚动宿主页面容器；刷新动作发 `page.refresh`，由插件注册处理器。推荐使用 `scroll:false` 配合 `PageLayout`、`ListPage` 或 `GridPage`，避免自行嵌套滚动容器。
 
@@ -297,7 +299,7 @@ schema 11 支持在普通页面中声明 `navigation: {label, icon?}`，`label` 
 
 ### `ctx.api.forum.read(options)`
 
-必须从仍可见的 `ctx.api` 调用；模块顶层的 `fluxdo.forum.read` 会被拒绝。需要登录，并只能读取服务端允许当前账号看到的内容。它不要求每次点击确认，也不提供写入能力。
+从可见页面或有效调度任务的 `ctx.api` 调用。需要登录，并只能读取服务端允许当前账号看到的内容。页面模块顶层调用不会获得界面权限。
 
 ```ts
 const page = await ctx.api.forum.read({
@@ -321,3 +323,28 @@ await ctx.api.forum.open({type: 'topic', topicId: 42, postNumber: 1});
 用户点击后打开宿主原生页面：`{type:'topic', topicId, postNumber?}` 或 `{type:'user', username}`。不需要论坛读取权限，也不会向插件返回原生页面内的数据。每次调用消耗用户激活；页面加载或定时器不能触发导航。Promise 在发起导航后结束，无需等用户返回。
 
 开发中心的 API 列表提供两项接口的参数与响应演示，论坛数据使用模拟值，导航演示展示原生页面外壳，避免演示读取真实账号。独立工具仓的 `examples/forum-activity` 可用于真实 App 联调。
+
+## 定时任务、通知与角标
+
+使用 API 2、schema 12。清单可声明最多 4 个 `tasks: [{id, title}]`，并列出 `requiredFeatures: ["scheduledTasks"]`。需要系统后台调度时再声明 `permissions.background: true`。进程前台运行时不要求页面打开。Android 使用 WorkManager，iOS 使用 BGTaskScheduler，两者按系统条件调度；不能保证 15 分钟唤醒一次。桌面仅在应用进程存活时运行。无远程推送或常驻服务。
+
+| 接口或事件 | 行为 |
+| --- | --- |
+| `ctx.api.tasks.schedule({id, intervalSeconds, background?})` | 需要用户点击；前台间隔 10–86400 秒，默认不在后台运行。开启后台另有宿主确认，取消返回 `false`。同 ID 重新设置取代旧计划。 |
+| `ctx.api.tasks.list()` / `cancel(id)` | 列出或停止本插件当前账号的任务；列表含 `nextAt`、`lastAt`（毫秒时间戳）和最近错误码。任务失败会退避。 |
+| `fluxdo.on('task.run', async (ctx, {id,background}) => …)` | 在独立 JS 实例中运行，无页面与点击资格。返回的 Promise 决定执行结果；支持已批准的只读请求、存储、角标及通知，不能导航、授权或付款。每次仅执行一个到期任务，不补跑积压周期。 |
+| `task.updated` / `page.resume` | 前台任务完成后通知可见页面重新读取存储。系统后台执行时没有页面事件，恢复前台时从存储读取。 |
+| `ctx.api.navigation.setBadge(page, count)` | 需要 `navigationBadge` 及该页的 `navigation` 入口，`0` 清除，最大 99999。不会自行添加底栏入口。 |
+| `ctx.api.notifications.requestPermission()` / `isAllowed()` / `revoke()` | 声明 `permissions.notifications: true` 和 `localNotifications`。申请须由可见界面的点击触发；用户可从宿主管理页撤销。`isAllowed()` 返回该账号对该插件的授权，系统也可独立静音。撤销同时取消已发通知。 |
+| `ctx.api.notifications.show({key,title,body,page,params?})` / `cancel(key)` | 只打开本插件声明的页面；系统通知只携带宿主编号。同键一分钟内合并，每插件每分钟最多三条。停用、换源、退出账号后不能再由旧通知打开原页面。 |
+
+```js
+fluxdo.on('enable', ctx => ctx.api.tasks.schedule({ id: 'refresh', intervalSeconds: 30 }));
+fluxdo.on('task.run', async (ctx, {id}) => {
+  if (id !== 'refresh') return;
+  // 在这里读取已获准的数据源；只持久化下一次打开页面需要的字段。
+  await ctx.api.storage.set('lastRefresh', Date.now());
+});
+```
+
+打包安装后可测试完整的系统授权、冷启动和撤销。临时开发会话不注册正式任务或通知。

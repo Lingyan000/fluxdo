@@ -286,6 +286,14 @@ class _InstallReview extends StatelessWidget {
                   MetaverseForumScope.following => l.metaverse_forumFollowing,
                 }],
               ),
+            if (manifest.tasks.isNotEmpty)
+              _PermissionRow(icon: Symbols.schedule_rounded,
+                title: manifest.capabilities.background ? l.metaverse_backgroundTasks : l.metaverse_foregroundTasks,
+                description: manifest.capabilities.background ? l.metaverse_backgroundTaskNote : null,
+                details: [for (final task in manifest.tasks) task.title]),
+            if (manifest.capabilities.notifications)
+              _PermissionRow(icon: Symbols.notifications_rounded, title: l.metaverse_pluginNotifications,
+                description: l.metaverse_pluginNotificationsNote),
             if (manifest.identity)
               _PermissionRow(
                 icon: Symbols.person_rounded,

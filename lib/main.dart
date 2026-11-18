@@ -144,6 +144,7 @@ import 'navigation/nav_action_bus.dart';
 import 'navigation/nav_entry.dart';
 import 'navigation/nav_entry_registry.dart';
 import 'navigation/nav_entries_provider.dart';
+import 'modules/metaverse/plugin/providers/metaverse_plugin_providers.dart' show metaverseTaskDriverProvider;
 import 'navigation/navigation_activity_scope.dart';
 import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
@@ -187,6 +188,10 @@ Future<void> _applyAndroidDisplayMode(SharedPreferences prefs) async {
 Future<void> androidMiniAppWindowMain() async {
   await miniAppWindowMain();
 }
+
+// 桌面窗口恢复仍与 WindowStateService 共用 window_manager 的兼容接口。
+// ignore: deprecated_member_use
+final _desktopWindowManager = windowManager;
 
 Future<void> main(List<String> arguments) async {
   // 自定义 binding:接管标准图片解码入口,全局限制解码并发(= 限制
@@ -319,7 +324,7 @@ Future<void> main(List<String> arguments) async {
   ];
   // 桌面平台初始化 window_manager 和 flutter_acrylic
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-    futures.add(windowManager.ensureInitialized());
+    futures.add(_desktopWindowManager.ensureInitialized());
     futures.add(acrylic.Window.initialize());
   }
   final results = await Future.wait(futures);
@@ -354,8 +359,8 @@ Future<void> main(List<String> arguments) async {
           ? acrylic.WindowEffect.mica
           : acrylic.WindowEffect.disabled,
     );
-    final isVisible = await windowManager.isVisible();
-    await windowManager.setPreventClose(true);
+    final isVisible = await _desktopWindowManager.isVisible();
+    await _desktopWindowManager.setPreventClose(true);
     // 立即开始监听窗口事件，确保在 OnboardingPage/PreheatGate 等
     // MainPage 尚未挂载的阶段也能正常响应窗口关闭
     WindowStateService.instance.startListening();
@@ -370,7 +375,7 @@ Future<void> main(List<String> arguments) async {
         await WindowStateService.instance.attach(prefs);
       }
       if (Platform.isLinux) {
-        await windowManager.focus();
+        await _desktopWindowManager.focus();
       }
     } else {
       // 冷启动：窗口保持隐藏，推迟到 Flutter 首帧光栅化后再恢复位置并显示，
@@ -381,10 +386,10 @@ Future<void> main(List<String> arguments) async {
           WidgetsBinding.instance.waitUntilFirstFrameRasterized,
           Future.delayed(const Duration(seconds: 3)),
         ]);
-        await windowManager.waitUntilReadyToShow(null, () async {
+        await _desktopWindowManager.waitUntilReadyToShow(null, () async {
           await WindowStateService.instance.restore(prefs);
           if (Platform.isLinux) {
-            await windowManager.focus();
+            await _desktopWindowManager.focus();
           }
         });
       }());
@@ -1665,6 +1670,8 @@ class _MainPageState extends ConsumerState<MainPage>
     // 监听当前用户状态
     final currentUserAsync = ref.watch(currentUserProvider);
     final user = currentUserAsync.value;
+
+    ref.watch(metaverseTaskDriverProvider);
 
     // 从偏好读取底栏布局，按注册表解析为 entry 列表（含所有 kind）
     final bottomNavIds = ref.watch(

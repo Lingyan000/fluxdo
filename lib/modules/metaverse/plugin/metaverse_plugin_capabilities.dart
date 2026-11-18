@@ -70,17 +70,22 @@ class MetaversePluginCapabilities {
     this.connectCallbacks = const [],
     this.payments = const {},
     this.forum = const {},
+    this.background = false,
+    this.notifications = false,
   });
   final Map<String, MetaverseCredentialSpec> credentials;
   final List<Uri> connectCallbacks;
   final Set<MetaversePaymentProvider> payments;
   final Set<MetaverseForumScope> forum;
+  final bool background, notifications;
 
   Map<String, Object> get approval => {
     'credentials': credentials.map((key, spec) => MapEntry(key, spec.approval)),
     'connectCallbacks': connectCallbacks.map((uri) => uri.toString()).toSet(),
     'payments': payments,
     'forum': forum,
+    'background': background,
+    'notifications': notifications,
   };
 
   bool allowsCallback(Uri uri) => connectCallbacks.any(
@@ -203,11 +208,18 @@ class MetaversePluginCapabilities {
       if (value == null) throw const FormatException('未知论坛权限');
       forum.add(value);
     }
+    for (final key in ['background', 'notifications']) {
+      if (permissions.containsKey(key) && permissions[key] is! bool) {
+        throw FormatException('$key 须为布尔值');
+      }
+    }
     return MetaversePluginCapabilities(
       credentials: Map.unmodifiable(credentials),
       connectCallbacks: List.unmodifiable(callbacks.map(endpoint)),
       payments: Set.unmodifiable(providers),
       forum: Set.unmodifiable(forum),
+      background: permissions['background'] == true,
+      notifications: permissions['notifications'] == true,
     );
   }
 }

@@ -8,6 +8,10 @@ enum PluginFeature {
   nativeExecutionLimits,
   navigationEntries,
   forumRead,
+  scheduledTasks,
+  localNotifications,
+  navigationBadge,
+  atomicStorage,
 }
 
 class PluginFeatures {

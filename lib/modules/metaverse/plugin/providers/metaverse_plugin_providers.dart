@@ -2,6 +2,11 @@ import 'dart:io';
 import 'dart:async';
 import 'package:common_ui/common_ui.dart';
 import '../../host/metaverse_forum_adapter.dart';
+import '../../host/metaverse_task_actions.dart';
+import '../../host/metaverse_task_store.dart';
+import '../../host/metaverse_task_dispatcher.dart';
+import '../../../../services/background/background_notification_service.dart';
+import '../../../../services/local_notification_service.dart';
 import '../metaverse_forum_request.dart';
 import '../../../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../../../pages/user_profile_page.dart';
@@ -42,6 +47,8 @@ import '../ui/metaverse_plugin_page.dart';
 import '../../../ldc_payment/ldc_payment_sheet.dart';
 import '../ui/metaverse_connect_confirmation.dart';
 import '../ui/metaverse_confirmation_sheet.dart';
+
+part 'metaverse_task_providers.dart';
 
 /// 插件数据的根目录：每个插件一个子目录。
 final metaversePluginDirectoryProvider = FutureProvider<Directory>((ref) async {
@@ -183,6 +190,7 @@ class MetaversePluginsController
       await _store.importLegacyStorage(manifest.id);
     }
     if (changedSource || changedPermissions) {
+      await _revokeTasks(previous);
       await _store.deleteToken(manifest.id);
       if (changedSource) {
         await _store.clearStorage(manifest.id);
@@ -207,6 +215,7 @@ class MetaversePluginsController
     if (!enabled) {
       // 停用即撤销授权：凭证不留在设备上。
       ref.read(metaversePluginHostsProvider).shutdown(id);
+      await _revokeTasks(plugin);
       await _store.deleteToken(id);
     }
     await _replace(plugin.copyWith(enabled: enabled));
@@ -228,6 +237,7 @@ class MetaversePluginsController
     final plugin = byId(id);
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
+    await _revokeTasks(plugin);
     await _replace(plugin.copyWith(suspendedReason: reason));
   }
 
@@ -241,6 +251,7 @@ class MetaversePluginsController
     final plugin = byId(id);
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
+    await _revokeTasks(plugin);
     await _store.deleteFiles(id);
     await _store.clearLegacyRecords(id);
     await _store.deleteToken(id);
@@ -252,6 +263,7 @@ class MetaversePluginsController
     final plugin = byId(id);
     if (plugin == null) return;
     ref.read(metaversePluginHostsProvider).shutdown(id);
+    await _revokeTasks(plugin);
     await _store.resetData(id);
     await _replace(plugin.copyWith(enabled: false, clearSuspended: true));
   }
@@ -260,11 +272,20 @@ class MetaversePluginsController
   Future<void> _signOutAll() async {
     ref.read(metaversePluginHostsProvider).shutdownAll();
     for (final plugin in [...state]) {
+      await _revokeTasks(plugin);
       await _store.deleteToken(plugin.id);
       if (plugin.enabled) {
         await _replace(plugin.copyWith(enabled: false, clearSuspended: true));
       }
     }
+  }
+
+  Future<void> _revokeTasks(InstalledMetaversePlugin plugin) async {
+    if (!_usesTaskControl(plugin)) return;
+    final control = await ref.read(metaverseTaskStoreProvider.future);
+    final dismissed = control.notificationIds(plugin.id);
+    control.revoke(plugin.id);
+    await _dismissTaskNotifications(dismissed);
   }
 
   Future<void> _replace(
@@ -303,16 +324,21 @@ class MetaversePluginHosts {
     }
     // 清单在本次运行中被更新过：丢掉旧实例，按新清单重建。
     existing?.shutdown();
-    return _hosts[plugin.id] = MetaversePluginHost(
+    return _hosts[plugin.id] = newHost(plugin);
+  }
+
+  MetaversePluginHost newHost(InstalledMetaversePlugin plugin, {bool worker = false}) => MetaversePluginHost(
       manifest: plugin.manifest,
       store: _ref.read(metaversePluginStoreProvider),
+      codeLoader: plugin.codeRevision == null ? null : () => _ref.read(metaversePluginStoreProvider).readCodeRevision(plugin.id, plugin.codeRevision!),
       network: _ref.read(metaversePluginNetworkProvider),
       dohNetwork: _ref.read(_pluginDohNetworkProvider),
       canSuggestDoh: () => !NetworkSettingsService.instance.current.dohEnabled,
       engineFactory: _ref.read(metaverseScriptEngineFactoryProvider),
-      delegate: _HostDelegate(_ref, plugin.manifest),
+      delegate: _HostDelegate(_ref, plugin.manifest, worker: worker),
     );
-  }
+
+  void notifyTaskUpdated(String id) => _hosts[id]?.notifyTaskUpdated();
 
   void shutdown(String pluginId) => _hosts.remove(pluginId)?.shutdown();
 
@@ -329,7 +355,8 @@ class MetaversePluginHosts {
 }
 
 class _HostDelegate extends MetaversePluginHostDelegate {
-  _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentSuspended});
+  _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentSuspended, this.worker = false});
+  final bool worker;
   final MetaversePluginStore? developmentStore;
   final bool Function()? developmentActive;
   final void Function(BuildContext, String, Map<String, Object?>)? developmentNavigate;
@@ -341,6 +368,34 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void onShutdown() => _generation++;
+
+  @override
+  Future<bool> confirmBackground(BuildContext context, String id) => showMetaverseConfirmation(context, _manifest.name, {
+    'title': context.l10n.metaverse_backgroundTasks,
+    'message': '${_manifest.tasks.firstWhere((task) => task.id == id).title}\n${context.l10n.metaverse_backgroundTaskNote}',
+    'confirmLabel': context.l10n.common_enable,
+  });
+
+  @override
+  Future<bool> confirmNotifications(BuildContext context) => showMetaverseConfirmation(context, _manifest.name, {
+    'title': context.l10n.metaverse_pluginNotifications, 'message': context.l10n.metaverse_pluginNotificationsNote,
+    'confirmLabel': context.l10n.common_enable,
+  });
+
+  @override
+  Future<Object?> taskOperation(String method, Map<String, Object?> params, {required void Function() checkActive}) async {
+    if (developmentStore != null) throw const MetaversePluginCallException('task_development_preview_only');
+    final account = currentAccountId();
+    if (account == null) throw const MetaversePluginCallException('forum_auth_required');
+    final control = await _ref.read(metaverseTaskStoreProvider.future);
+    checkActive();
+    return MetaverseTaskActions(control, _manifest, account, checkActive: () {
+      checkActive();
+      if (!_accountActive(account)) throw const MetaversePluginCallException('task_cancelled');
+    }, changed: () async {
+      if (!worker) await _ref.read(metaverseTaskDriverProvider)?.changed();
+    }).call(method, params);
+  }
 
   @override
   Future<Object?> readForum(MetaverseForumRequest request, {required void Function() checkActive}) =>
@@ -554,6 +609,8 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void onSuspended(String pluginId, String reason) {
+    // 工作引擎回收和退避由持久化调度器负责，不能用过期索引改写前台安装记录。
+    if (worker) return;
     if (developmentSuspended != null) {
       developmentSuspended!(reason);
     } else {

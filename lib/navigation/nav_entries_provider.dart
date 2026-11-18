@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/s.dart';
 import '../modules/metaverse/plugin/metaverse_plugin_store.dart';
@@ -31,6 +32,10 @@ List<NavEntry> pluginNavigationEntries(
           selectedIconData: metaversePluginIcon(
             navigation.icon ?? plugin.manifest.icon,
           ),
+          customIconBuilder: plugin.manifest.requiredFeatures.contains('navigationBadge')
+              ? (_, ref) => _badgeIcon(ref, plugin, page.id, navigation.icon) : null,
+          customSelectedIconBuilder: plugin.manifest.requiredFeatures.contains('navigationBadge')
+              ? (_, ref) => _badgeIcon(ref, plugin, page.id, navigation.icon) : null,
           label: (_) => navigation.label,
           description: (context) =>
               plugin.enabled &&
@@ -42,7 +47,7 @@ List<NavEntry> pluginNavigationEntries(
               plugin.enabled &&
               plugin.suspendedReason == null &&
               plugin.manifest.runtimeSupported,
-          requiresLogin: plugin.manifest.capabilities.forum.isNotEmpty,
+          requiresLogin: plugin.manifest.accountScoped,
           lazy: true,
           pageBuilder: (_, active) => MetaversePluginPage(
             pluginId: plugin.id,
@@ -51,3 +56,14 @@ List<NavEntry> pluginNavigationEntries(
           ),
         ),
 ];
+
+Widget _badgeIcon(WidgetRef ref, InstalledMetaversePlugin plugin, String page, String? name) {
+  final driver = ref.watch(metaverseTaskDriverProvider);
+  final icon = Icon(metaversePluginIcon(name ?? plugin.manifest.icon));
+  if (driver == null) return icon;
+  return ValueListenableBuilder<Map<String, int>>(valueListenable: driver.badges, child: icon,
+    builder: (_, counts, child) {
+      final count = counts[pluginNavigationId(plugin.id, page)] ?? 0;
+      return Badge.count(count: count, isLabelVisible: count > 0, child: child);
+    });
+}

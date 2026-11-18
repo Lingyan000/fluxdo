@@ -1,3 +1,4 @@
+import 'metaverse_task.dart';
 import 'package:flutter/foundation.dart';
 import 'package:collection/collection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
@@ -115,7 +116,9 @@ class MetaversePluginManifest {
     required this.raw,
   });
 
-  static const schemaVersion = 11;
+  static const schemaVersion = 12;
+  List<MetaverseTaskSpec> get tasks => MetaverseTaskSpec.parse(raw['tasks']);
+  bool get accountScoped => capabilities.forum.isNotEmpty || tasks.isNotEmpty || capabilities.notifications || requiredFeatures.contains('navigationBadge');
   List<String> get requiredFeatures => PluginFeatures.parse(raw['requiredFeatures']);
   List<String> get missingFeatures => PluginFeatures.missing(requiredFeatures);
   static const supportedApiVersions = {1, 2};
@@ -188,6 +191,7 @@ class MetaversePluginManifest {
     auth.scheme,
     runtimeSupported,
     capabilities.approval,
+    tasks.map((t) => t.id).toSet(),
     links.map((r) => (r.host, r.path, r.page)).toList(),
   ];
   bool sameApprovalAs(MetaversePluginManifest other) =>
@@ -237,6 +241,8 @@ class MetaversePluginManifest {
     if (missing.isNotEmpty && !allowLegacyMetadata) {
       throw MetaverseManifestException('requiredFeatures', '请更新应用，缺少能力 ${missing.join(', ')}');
     }
+    try { MetaverseTaskSpec.parse(json['tasks']); }
+    on FormatException catch (error) { throw MetaverseManifestException('tasks', error.message); }
     final id = _string(json, 'id', max: 64);
     if (id.length < 3 || !_id.hasMatch(id)) {
       throw const MetaverseManifestException(
@@ -347,6 +353,23 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('pages', '最多 16 个页面');
     }
 
+    if (json.containsKey('tasks') || permissions.containsKey('background') || permissions.containsKey('notifications') || requiredFeatures.contains('navigationBadge')) {
+      if (schema < 12 || apiVersion != 2) {
+        throw const MetaverseManifestException('schema', '任务与通知需要 schema 12 和 API 2');
+      }
+      if ((MetaverseTaskSpec.parse(json['tasks']).isNotEmpty || capabilities.background) && !requiredFeatures.contains('scheduledTasks')) {
+        throw const MetaverseManifestException('requiredFeatures', '任务须声明 scheduledTasks');
+      }
+      if (capabilities.notifications && !requiredFeatures.contains('localNotifications')) {
+        throw const MetaverseManifestException('requiredFeatures', '通知须声明 localNotifications');
+      }
+      if (capabilities.background && MetaverseTaskSpec.parse(json['tasks']).isEmpty) {
+        throw const MetaverseManifestException('tasks', '后台权限需要至少一个任务');
+      }
+      if (requiredFeatures.contains('navigationBadge') && !pages.any((page) => page.navigation != null)) {
+        throw const MetaverseManifestException('pages', '角标需要声明导航页面');
+      }
+    }
     if (capabilities.forum.isNotEmpty && !requiredFeatures.contains(PluginFeature.forumRead.name)) {
       throw const MetaverseManifestException('requiredFeatures', '论坛读取须声明 forumRead');
     }

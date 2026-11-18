@@ -112,6 +112,7 @@ class MetaversePluginRuntime {
   final PluginExecutionContext? _executionContext;
 
   final _surfaces = <String, MetaversePluginSurface>{};
+  final _tasks = <String, Completer<void>>{};
   final _timers = <int, _PluginTimer>{};
   int _surfaceSeq = 0;
   int _pendingCalls = 0;
@@ -163,6 +164,22 @@ class MetaversePluginRuntime {
     return surface;
   }
 
+  /// 任务拥有受限上下文，无界面与用户点击激活，超时由宿主中断实例。
+  Future<void> runTask(String id, {required bool background, Duration timeout = const Duration(seconds: 20)}) async {
+    if (_tasks.isNotEmpty) throw StateError('已有执行中的任务');
+    final surface = MetaversePluginSurface._('t${++_surfaceSeq}', 'task', null, {'id': id, 'background': background});
+    final done = Completer<void>();
+    _surfaces[surface.id] = surface;
+    _tasks[surface.id] = done;
+    try {
+      _dispatchRaw(surface, 'task.run', {'id': id, 'background': background});
+      await done.future.timeout(timeout);
+    } finally {
+      _tasks.remove(surface.id);
+      _surfaces.remove(surface.id);
+    }
+  }
+
   void closeSurface(MetaversePluginSurface surface) {
     if (!identical(_surfaces[surface.id], surface)) return;
     if (_surfaces.remove(surface.id) == null) return;
@@ -203,6 +220,10 @@ class MetaversePluginRuntime {
       surface.onData = null;
     }
     _surfaces.clear();
+    for (final pending in _tasks.values) {
+      if (!pending.isCompleted) pending.completeError(const MetaversePluginCallException('task_cancelled'));
+    }
+    _tasks.clear();
     _engine.dispose();
   }
 
@@ -257,6 +278,12 @@ class MetaversePluginRuntime {
           _activeEvents.add(id);
         } else {
           _activeEvents.remove(id);
+        }
+      case 'task.done':
+        final done = _tasks[message['s']];
+        if (done != null && !done.isCompleted) {
+          if (message['ok'] == true) { done.complete(); }
+          else { done.completeError(MetaversePluginCallException(_text(message['error'], 200))); }
         }
       case 'call':
         _handleCall(message);
@@ -315,7 +342,7 @@ class MetaversePluginRuntime {
   void _handleData(Map<dynamic, dynamic> message) {
     final surface = _surfaces[message['s']];
     final key = message['k'];
-    if (surface == null || key is! String || key.isEmpty || key.length > 64) {
+    if (surface == null || surface.kind == 'task' || key is! String || key.isEmpty || key.length > 64) {
       return;
     }
     final budget = _NodeBudget(_maxDataNodes);
@@ -359,7 +386,7 @@ class MetaversePluginRuntime {
   }
 
   void _syncTimers() {
-    final visible = _surfaces.values.any((s) => s.foreground);
+    final visible = _surfaces.values.any((s) => s.kind != 'task' && s.foreground);
     for (final timer in _timers.values) {
       if (visible) { timer.resume(); } else { timer.pause(); }
     }

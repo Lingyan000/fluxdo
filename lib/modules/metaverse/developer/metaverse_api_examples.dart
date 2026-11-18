@@ -31,9 +31,15 @@ class MetaverseApiExample {
 });''';
 
   String description(AppLocalizations l) => switch (name) {
+    'tasks.schedule' => l.metaverse_apiSchedule,
+    'tasks.cancel' => l.metaverse_stopTask,
+    'tasks.list' => l.metaverse_apiListTasks,
+    'navigation.setBadge' => l.metaverse_apiBadge,
+    'notifications.requestPermission' || 'notifications.show' || 'notifications.cancel' || 'notifications.isAllowed' || 'notifications.revoke' => l.metaverse_pluginNotificationsNote,
     'storage.get' => l.metaverse_apiStorageGet,
     'storage.set' => l.metaverse_apiStorageSet,
     'storage.setMany' => l.metaverse_apiStorageSetMany,
+    'storage.compareAndSet' => l.metaverse_apiStorageCompare,
     'storage.remove' => l.metaverse_apiStorageRemove,
     'crypto.sha256' => l.metaverse_apiSha256,
     'crypto.pkce' => l.metaverse_apiPkce,
@@ -64,6 +70,15 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('tasks.schedule', "{id: 'refresh', intervalSeconds: 30, background: false}", true, permission: 'tasks', apiVersion: 2, userAction: true),
+  MetaverseApiExample('tasks.cancel', "'refresh'", null, permission: 'tasks', apiVersion: 2),
+  MetaverseApiExample('notifications.isAllowed', '', false, permission: 'notifications', apiVersion: 2),
+  MetaverseApiExample('notifications.revoke', '', null, permission: 'notifications', apiVersion: 2),
+  MetaverseApiExample('tasks.list', '', [{'id': 'refresh', 'intervalSeconds': 30, 'background': false}], permission: 'tasks', apiVersion: 2),
+  MetaverseApiExample('navigation.setBadge', "'feed', 3", null, permission: 'navigationBadge', apiVersion: 2),
+  MetaverseApiExample('notifications.requestPermission', '', true, permission: 'notifications', apiVersion: 2, userAction: true),
+  MetaverseApiExample('notifications.show', "{key: 'updates', title: '新动态', body: '有 3 条新动态', page: 'feed'}", true, permission: 'notifications', apiVersion: 2),
+  MetaverseApiExample('notifications.cancel', "'updates'", null, permission: 'notifications', apiVersion: 2),
   MetaverseApiExample('forum.read', "{resource: 'actions', username: 'demo', actions: ['topics', 'replies'], offset: 0}",
     {'items': [{'topicId': 42, 'title': '示例话题', 'action': 'topics', 'postNumber': 1}], 'nextOffset': null},
     permission: 'forum.activity', apiVersion: 2),
@@ -150,6 +165,7 @@ const metaverseApiExamples = [
     'body': '{"items":[]}',
   }, permission: 'network'),
   MetaverseApiExample('storage.get', "'example'", {'value': 1}),
+  MetaverseApiExample('storage.compareAndSet', "'example', {value: 1}, {value: 2}", true, apiVersion: 2),
   MetaverseApiExample('storage.set', "'example', {value: 1}", null),
   MetaverseApiExample('storage.remove', "'example'", null),
   MetaverseApiExample('user.get', '', {

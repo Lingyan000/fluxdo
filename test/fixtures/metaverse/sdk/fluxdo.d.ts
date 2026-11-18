@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage';
   interface FetchOptions {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD';
     headers?: { [key: string]: string };
@@ -22,7 +22,7 @@ declare namespace FluxDO {
     agreement?: { label: string; url: string };
   }
   interface Context {
-    surface: string; kind: 'card' | 'page'; page: string | null; params: Record;
+    surface: string; kind: 'card' | 'page' | 'task'; page: string | null; params: Record;
     api: Api;
     setData(key: string, value: Json): void;
   }
@@ -51,7 +51,7 @@ declare namespace FluxDO {
     fetch(url: string, options?: FetchOptions): Promise<Response>;
     host: { features(): Promise<string[]> };
     forum: {
-      /** 仅 ctx.api 可在可见页面调用；permissions.forum 授权。 */
+      /** 页面可见或有有效任务租约时可读；permissions.forum 授权。 */
       read<T extends ForumRequest>(options: T): Promise<ForumResult<T['resource']>>;
       /** 用户点击后打开原生页面，无需读取权限。 */
       open(destination: ForumDestination): Promise<null>;
@@ -61,8 +61,22 @@ declare namespace FluxDO {
       get<T = Json>(key: string): Promise<T | null>;
       set(key: string, value: Json): Promise<null>;
       setMany(entries: Record): Promise<null>;
+      compareAndSet<T>(key: string, expected: T | null, value: T | null): Promise<boolean>;
       remove(key: string): Promise<null>;
     };
+    tasks: {
+      schedule(options: {id: string; intervalSeconds: number; background?: boolean}): Promise<boolean>;
+      list(): Promise<{id: string; intervalSeconds: number; background: boolean; nextAt: number; lastAt: number | null; error: string | null}[]>;
+      cancel(id: string): Promise<null>;
+    };
+    notifications: {
+      isAllowed(): Promise<boolean>;
+      revoke(): Promise<null>;
+      requestPermission(): Promise<boolean>;
+      show(options: {key: string; title: string; body: string; page: string; params?: Record}): Promise<boolean>;
+      cancel(key: string): Promise<null>;
+    };
+    navigation: {setBadge(page: string, count: number): Promise<null>};
     credentials: {
       status(name: string): Promise<CredentialStatus>;
       request(name: string): Promise<boolean>;

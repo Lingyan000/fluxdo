@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
+import 'package:collection/collection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../services/storage/secret_store.dart';
@@ -81,7 +83,7 @@ class MetaversePluginStore {
   });
 
   static const indexKey = 'metaverse_plugins_v1';
-  static const maxStorageBytes = 256 * 1024;
+  static const maxStorageBytes = 2 * 1024 * 1024;
   static const _secretNamespace = 'metaverse_plugin';
 
   /// 开发会话不读取或写入正式安装索引，凭证由独立 SecretStore 提供。
@@ -181,15 +183,7 @@ class MetaversePluginStore {
     }
     revision ??= _stagedCode[id];
     if (revision != null) {
-      if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(revision)) {
-        throw const FormatException('插件代码版本无效');
-      }
-      final decoded = jsonDecode(
-        await File(p.join(dir.path, 'code-$revision.json')).readAsString(),
-      ) as Map<String, dynamic>;
-      final code = (ui: decoded['ui'] as String, script: decoded['script'] as String);
-      if (revisionOf(code) != revision) throw const FormatException('插件代码摘要不匹配');
-      return code;
+      return readCodeRevision(id, revision);
     }
     return (
       ui: await File(p.join(dir.path, 'ui.rfwtxt')).readAsString(),
@@ -197,38 +191,78 @@ class MetaversePluginStore {
     );
   }
 
-  /// 文件缺失时返回空，损坏时报告错误并保留原文件。
-  Future<Map<String, Object?>> readStorage(String id) async {
-    final file = File(p.join((await _directory(id)).path, 'storage.json'));
-    if (!await file.exists()) return {};
-    final decoded = jsonDecode(await file.readAsString());
-    if (decoded is! Map<String, dynamic>) throw const FormatException('插件数据损坏');
-    return decoded;
+  Future<MetaversePluginCode> readCodeRevision(String id, String revision) async {
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(revision)) {
+      throw const FormatException('插件代码版本无效');
+    }
+    final dir = await _directory(id);
+    final decoded = jsonDecode(await File(p.join(dir.path, 'code-$revision.json')).readAsString()) as Map<String, dynamic>;
+    final code = (ui: decoded['ui'] as String, script: decoded['script'] as String);
+    if (revisionOf(code) != revision) throw const FormatException('插件代码摘要不匹配');
+    return code;
   }
 
-  /// 写入键值数据。超出容量上限时抛 [StateError]，不落盘。
+  /// 事务在一个同步区间完成，前台与系统后台 isolate 不能覆盖彼此的键。
+  Future<T> _dataTransaction<T>(String id, T Function(Database db) run) async {
+    final directory = await _directory(id);
+    await directory.create(recursive: true);
+    final db = sqlite3.open(p.join(directory.path, 'data.sqlite'));
+    try {
+      db.execute('PRAGMA busy_timeout = 3000');
+      db.execute('BEGIN IMMEDIATE');
+      try {
+        db.execute('CREATE TABLE IF NOT EXISTS data (id INTEGER PRIMARY KEY, value TEXT NOT NULL)');
+        if (db.select('SELECT id FROM data WHERE id = 1').isEmpty) {
+          final legacy = File(p.join(directory.path, 'storage.json'));
+          final raw = legacy.existsSync() ? legacy.readAsStringSync() : '{}';
+          if (jsonDecode(raw) is! Map<String, dynamic>) throw const FormatException('插件数据损坏');
+          db.execute('INSERT INTO data VALUES (1, ?)', [raw]);
+        }
+        final result = run(db);
+        db.execute('COMMIT');
+        return result;
+      } catch (_) { db.execute('ROLLBACK'); rethrow; }
+    } finally { db.close(); }
+  }
+
+  Map<String, Object?> _readData(Database db) =>
+      (jsonDecode(db.select('SELECT value FROM data WHERE id = 1').single['value'] as String) as Map).cast<String, Object?>();
+
+  void _saveData(Database db, Map<String, Object?> data) {
+    final encoded = jsonEncode(data);
+    if (utf8.encode(encoded).length > maxStorageBytes) throw StateError('插件存储超出容量上限');
+    db.execute('UPDATE data SET value = ? WHERE id = 1', [encoded]);
+  }
+
+  Future<Map<String, Object?>> readStorage(String id) => _dataTransaction(id, _readData);
+
+  /// 比较和替换在同一写事务中完成，可协调页面和系统唤醒。
+  Future<bool> compareAndSet(String id, String key, Object? expected, Object? next,
+      {required void Function() checkActive}) => _operations.run(id, () => _dataTransaction(id, (db) {
+    checkActive();
+    final data = _readData(db);
+    if (!const DeepCollectionEquality().equals(data[key], expected)) return false;
+    if (next == null) { data.remove(key); } else { data[key] = next; }
+    _saveData(db, data);
+    return true;
+  }));
+
   Future<void> writeStorage(String id, Map<String, Object?> data) =>
       _operations.run(id, () => _writeStorage(id, data));
 
-  Future<Map<String, Object?>> updateStorage(String id, String key, Object? value) =>
-      updateStorageEntries(id, {key: value});
+  Future<Map<String, Object?>> updateStorage(String id, String key, Object? value, {bool Function()? isActive}) =>
+      updateStorageEntries(id, {key: value}, isActive: isActive);
 
-  Future<Map<String, Object?>> updateStorageEntries(
-    String id,
-    Map<String, Object?> entries,
-  ) =>
-      _operations.run(id, () async {
-        final data = await readStorage(id);
+  Future<Map<String, Object?>> updateStorageEntries(String id, Map<String, Object?> entries, {bool Function()? isActive}) =>
+      _operations.run(id, () => _dataTransaction(id, (db) {
+        if (isActive != null && !isActive()) throw const PluginOperationCancelled();
+        final data = _readData(db);
         for (final entry in entries.entries) {
-          if (entry.value == null) {
-            data.remove(entry.key);
-          } else {
-            data[entry.key] = entry.value;
-          }
+          if (entry.value == null) { data.remove(entry.key); } else { data[entry.key] = entry.value; }
         }
-        await _writeStorage(id, data);
+        _saveData(db, data);
         return data;
-      });
+      }));
 
   Future<void> importLegacyStorage(String id) => _operations.run(id, () async {
     final previous = await readStorage(id);
@@ -236,15 +270,8 @@ class MetaversePluginStore {
     if (!identical(previous, migrated)) await _writeStorage(id, migrated);
   });
 
-  Future<void> _writeStorage(String id, Map<String, Object?> data) async {
-    final encoded = jsonEncode(data);
-    if (utf8.encode(encoded).length > maxStorageBytes) {
-      throw StateError('插件存储超出容量上限');
-    }
-    final dir = await _directory(id);
-    await dir.create(recursive: true);
-    await _atomicWrite(File(p.join(dir.path, 'storage.json')), encoded);
-  }
+  Future<void> _writeStorage(String id, Map<String, Object?> data) =>
+      _dataTransaction(id, (db) => _saveData(db, data));
 
   Future<void> _atomicWrite(File file, String content) async {
     final temporary = File('${file.path}.tmp');
@@ -255,11 +282,13 @@ class MetaversePluginStore {
   Future<void> clearStorage(String id) => _operations.reset(id, () async {
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
     if (await file.exists()) await file.delete();
+    await _writeStorage(id, {});
   });
 
   Future<void> resetData(String id) => _operations.reset(id, () async {
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
     if (await file.exists()) await file.delete();
+    await _writeStorage(id, {});
     await _deleteToken(id);
     await clearLegacyPluginRecords(_secretStore, id);
   });

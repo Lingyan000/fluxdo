@@ -1,11 +1,12 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.3.0",
+  "sdkVersion": "0.4.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
     10,
-    11
+    11,
+    12
   ],
   "features": [
     "browserModes",
@@ -15,7 +16,11 @@
     "confirmationDialog",
     "nativeExecutionLimits",
     "navigationEntries",
-    "forumRead"
+    "forumRead",
+    "scheduledTasks",
+    "localNotifications",
+    "navigationBadge",
+    "atomicStorage"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -27,5 +32,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "de13651c52821385c05fbc27c800578a4a142599"
   },
-  "typesSha256": "7d164f912a71fa408afc6f0c01facc49f32df293a12f057dfef31d76596ed4eb"
+  "typesSha256": "8929e52d221e2fe2d4ff083e3e27d71c3cd3b37890e26293ee87c878bb42ddcf"
 }

@@ -116,6 +116,7 @@ const metaversePluginPrelude = r'''
       get: function (key) { return call('storage.get', { key: String(key) }); },
       set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },
       setMany: function (entries) { return call('storage.setMany', {entries: entries}); },
+      compareAndSet: function (key, expected, value) { return call('storage.compareAndSet', {key: String(key), expected: expected, value: value}); },
       remove: function (key) { return call('storage.remove', { key: String(key) }); }
     }),
 
@@ -131,6 +132,21 @@ const metaversePluginPrelude = r'''
         return call('credentials.capture', Object.assign({}, options || {}, {name: String(name), request: request}));
       },
       remove: function (name) { return call('credentials.remove', {name: String(name)}); }
+    }),
+    tasks: Object.freeze({
+      schedule: function (options) { return call('tasks.schedule', options); },
+      cancel: function (id) { return call('tasks.cancel', {id: String(id)}); },
+      list: function () { return call('tasks.list'); }
+    }),
+    notifications: Object.freeze({
+      isAllowed: function () { return call('notifications.isAllowed'); },
+      revoke: function () { return call('notifications.revoke'); },
+      requestPermission: function () { return call('notifications.requestPermission'); },
+      show: function (options) { return call('notifications.show', options); },
+      cancel: function (key) { return call('notifications.cancel', {key: String(key)}); }
+    }),
+    navigation: Object.freeze({
+      setBadge: function (page, count) { return call('navigation.setBadge', {page: String(page), count: count}); }
     }),
     forum: Object.freeze({
       read: function (options) { return call('forum.read', options); },
@@ -196,18 +212,26 @@ const metaversePluginPrelude = r'''
       },
       dispatch: function (name, infoJson, argsJson) {
         var handler = handlers[name];
-        if (typeof handler !== 'function') return false;
+        var task = JSON.parse(infoJson).kind === 'task';
+        var taskSurface = JSON.parse(infoJson).surface;
+        if (typeof handler !== 'function') {
+          if (task) post({t: 'task.done', s: taskSurface, ok: false, error: 'task_handler_missing'});
+          return false;
+        }
         var eventId = ++seq;
         post({t: 'event', phase: 'start', id: eventId});
-        function done() { post({t: 'event', phase: 'end', id: eventId}); }
+        function done(error) {
+          post({t: 'event', phase: 'end', id: eventId});
+          if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : ''});
+        }
         try {
           var result = handler(makeContext(JSON.parse(infoJson)), JSON.parse(argsJson));
           if (result && typeof result.then === 'function') {
-            result.then(done, function (error) { report(name, error); done(); });
+            result.then(function () { done(); }, function (error) { report(name, error); done(error); });
           } else { done(); }
         } catch (error) {
           report(name, error);
-          done();
+          done(error);
         }
         return true;
       },

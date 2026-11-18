@@ -10,9 +10,11 @@ import '../network/cookie/cookie_jar_service.dart';
 import '../network/cookie/csrf_token_service.dart';
 import '../network/discourse_dio.dart';
 import '../../models/notification.dart';
+import '../../modules/metaverse/host/metaverse_system_wake.dart';
 
 /// iOS 后台任务标识符
 const String kNotificationPollTask = 'com.fluxdo.notificationPoll';
+const String kMetaverseWakeTask = 'com.fluxdo.pluginRefresh';
 
 /// SharedPreferences 键名
 const String _kUserId = 'bg_notification_user_id';
@@ -25,6 +27,7 @@ const String _kSharedSessionKey = 'bg_shared_session_key';
 void callbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
     try {
+      if (taskName == kMetaverseWakeTask) return await runMetaverseSystemWake();
       debugPrint('[iOSBgFetch] 开始执行后台任务: $taskName');
 
       // 1. 初始化 Cookie 相关服务
