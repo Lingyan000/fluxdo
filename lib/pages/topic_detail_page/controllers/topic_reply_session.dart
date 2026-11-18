@@ -158,25 +158,38 @@ class TopicReplySession extends ChangeNotifier {
   bool get handingOff => _handingOff;
   bool _handingOff = false;
 
-  /// 交接第一步：落盘并释放草稿控制器（完整编辑器会以同一 key 接手，避免
-  /// 两个控制器同时写一份草稿），返回回复对象与正文。输入框保持焦点，
-  /// 让完整编辑器直接接过焦点，键盘不会先收起再弹出。
+  /// 交接第一步：返回回复对象与正文（草稿控制器另由
+  /// [releaseDraftInBackground] 交出）。输入框保持焦点，让完整编辑器直接
+  /// 接过焦点，键盘不会先收起再弹出。
   Future<({Post? target, String content})> prepareHandOff() async {
     final result = (target: _target, content: text.text);
     _handingOff = true;
     _leavePresence();
-    await _releaseDraft();
     return result;
   }
 
-  /// 直接打开完整编辑器（不经快捷回复）前调用：交出草稿控制器，完整
-  /// 编辑器以同一 key 加载，避免两个控制器同时写一份草稿
-  Future<void> releaseForFullEditor() async {
-    if (active) return;
-    await _releaseDraft();
+  /// 交出草稿控制器，让完整编辑器以同一 key 接手。不等保存完成（要等
+  /// 服务端往返，会拖慢编辑器展开）：返回的 Future 在旧控制器保存落定后
+  /// 完成，完整编辑器的草稿核对应先等它，草稿序号才接得上
+  Future<void> releaseDraftInBackground() {
+    final draft = _draft;
+    if (draft == null) return Future<void>.value();
+    _draft = null;
+    final persisted = _persistNow(draft).catchError((Object e) {
+      debugPrint('[TopicReplySession] 交接前保存草稿失败: $e');
+    });
+    return persisted.whenComplete(draft.dispose);
+  }
+
+  /// 直接打开完整编辑器（不经快捷回复）前调用：交出草稿控制器（见
+  /// [releaseDraftInBackground]），返回保存落定的 Future
+  Future<void> releaseForFullEditor() {
+    if (active) return Future<void>.value();
+    final released = releaseDraftInBackground();
     _replaceText('');
     _target = null;
     notifyListeners();
+    return released;
   }
 
   /// 交接第二步：完整编辑器已接手，快捷回复退回空闲

@@ -188,9 +188,34 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
     EmojiHandler().init();
     // 预热 1:1 cook 引擎(eval bundle + 注入站点数据),
     // 让首次切预览时 JS cook 已就绪
-    DiscourseCookService().warmUp();
+    _scheduleCookWarmUp();
     _previousText = widget.controller.text;
     widget.controller.addListener(_handleTextChange);
+  }
+
+  /// cook 引擎首次初始化要在 UI 线程同步执行一个约 550KB 的 JS 包
+  /// (FFI 同步调用),放在编辑器入场动画中途会卡住动画、让它看起来被
+  /// 跳过——等所在路由的入场动画结束后再预热。预览等需要它时会自行
+  /// 等初始化完成,推迟不影响功能
+  void _scheduleCookWarmUp() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation == null || animation.isCompleted) {
+        DiscourseCookService().warmUp();
+        return;
+      }
+      void onStatus(AnimationStatus status) {
+        if (status == AnimationStatus.completed) {
+          animation.removeStatusListener(onStatus);
+          if (mounted) DiscourseCookService().warmUp();
+        } else if (status == AnimationStatus.dismissed) {
+          animation.removeStatusListener(onStatus);
+        }
+      }
+
+      animation.addStatusListener(onStatus);
+    });
   }
 
   @override

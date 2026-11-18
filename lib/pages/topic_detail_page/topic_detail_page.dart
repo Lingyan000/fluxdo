@@ -2366,6 +2366,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   Future<void> _expandQuickReply(Rect rect, double radius, Color color) async {
     final handed = await _replySession.prepareHandOff();
     if (!mounted) return;
+    // 草稿在后台交接:不等保存往返,编辑器立即展开
+    final released = _replySession.releaseDraftInBackground();
     final editor = _handleReply(
       handed.target,
       initialContent: handed.content.trim().isEmpty ? null : handed.content,
@@ -2374,6 +2376,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       morphFrom: rect,
       morphFromRadius: radius,
       morphFromColor: color,
+      draftReleased: released,
     );
     // 展开动画(380ms)结束时面板已完全被编辑器盖住
     await Future<void>.delayed(const Duration(milliseconds: 400));

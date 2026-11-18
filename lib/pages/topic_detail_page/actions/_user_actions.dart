@@ -50,6 +50,9 @@ extension _UserActions on _TopicDetailPageState {
     Rect? morphFrom,
     double morphFromRadius = 0,
     Color? morphFromColor,
+
+    /// 快捷回复交出的草稿保存落定后完成：编辑器的草稿核对先等它
+    Future<void>? draftReleased,
   }) async {
     if (!forceFullEditor && _quickReplyEnabled) {
       // 快捷回复已打开时一律在其中继续(引用插入其中,需要时手动展开)
@@ -65,9 +68,9 @@ extension _UserActions on _TopicDetailPageState {
         }
         return;
       }
-      // 直接打开完整编辑器:从底栏回复胶囊长出
-      await _replySession.releaseForFullEditor();
       if (!mounted) return;
+      // 直接打开完整编辑器:从底栏回复胶囊长出;草稿在后台交接,不等保存
+      draftReleased ??= _replySession.releaseForFullEditor();
       final source = _replyEntryMorphSource();
       morphFrom ??= source?.rect;
       if (source != null) {
@@ -89,7 +92,7 @@ extension _UserActions on _TopicDetailPageState {
       widget.topicId,
       replyToPostNumber: replyToPost?.postNumber,
     );
-    final preloadedDraftFuture = DiscourseService().getDraft(draftKey);
+    final preloadedDraftFuture = _preloadDraftAfter(draftReleased, draftKey);
 
     final newPost = await showReplySheet(
       context: context,
@@ -786,6 +789,13 @@ extension _UserActions on _TopicDetailPageState {
     return post;
   }
 
+  /// 预取草稿(利用弹层动画时间并行加载);[released] 非空时先等快捷回复
+  /// 交出的草稿保存落定,取到的才是最新序号
+  Future<Draft?> _preloadDraftAfter(Future<void>? released, String draftKey) {
+    if (released == null) return DiscourseService().getDraft(draftKey);
+    return released.then((_) => DiscourseService().getDraft(draftKey));
+  }
+
   /// 回复发出后:并入帖子流并滚到新帖,不在当前窗口时给可跳转的提示
   void _afterReplyPosted(Post newPost, bool wasAtBottom) {
     _updateNestedViewAfterReply(newPost);
@@ -830,15 +840,16 @@ extension _UserActions on _TopicDetailPageState {
     );
 
     ({Rect rect, double radius, Color color})? morph;
+    Future<void>? draftReleased;
     if (_quickReplyEnabled) {
       if (_replySession.active ||
           !await _prefersFullEditor(target: post, quote: quote)) {
         await _replySession.insertQuote(quote, target: post);
         return;
       }
-      // 直接打开完整编辑器:从底栏回复胶囊长出
-      await _replySession.releaseForFullEditor();
       if (!mounted) return;
+      // 直接打开完整编辑器:从底栏回复胶囊长出;草稿在后台交接,不等保存
+      draftReleased = _replySession.releaseForFullEditor();
       morph = _replyEntryMorphSource();
     }
     if (_dockedComposerEnabled) {
@@ -850,7 +861,7 @@ extension _UserActions on _TopicDetailPageState {
       widget.topicId,
       replyToPostNumber: post.postNumber,
     );
-    final preloadedDraftFuture = DiscourseService().getDraft(draftKey);
+    final preloadedDraftFuture = _preloadDraftAfter(draftReleased, draftKey);
 
     final newPost = await showReplySheet(
       context: context,
@@ -1424,15 +1435,16 @@ extension _UserActions on _TopicDetailPageState {
 
     // 预加载草稿
     ({Rect rect, double radius, Color color})? morph;
+    Future<void>? draftReleased;
     if (_quickReplyEnabled) {
       if (_replySession.active ||
           !await _prefersFullEditor(target: post, quote: quote)) {
         await _replySession.insertQuote(quote, target: post);
         return;
       }
-      // 直接打开完整编辑器:从底栏回复胶囊长出
-      await _replySession.releaseForFullEditor();
       if (!mounted) return;
+      // 直接打开完整编辑器:从底栏回复胶囊长出;草稿在后台交接,不等保存
+      draftReleased = _replySession.releaseForFullEditor();
       morph = _replyEntryMorphSource();
     }
     if (_dockedComposerEnabled) {
@@ -1444,7 +1456,7 @@ extension _UserActions on _TopicDetailPageState {
       widget.topicId,
       replyToPostNumber: post.postNumber,
     );
-    final preloadedDraftFuture = DiscourseService().getDraft(draftKey);
+    final preloadedDraftFuture = _preloadDraftAfter(draftReleased, draftKey);
 
     // 打开回复框，预填引用内容（回复给被引用的帖子）
     final newPost = await showReplySheet(
@@ -1497,15 +1509,16 @@ extension _UserActions on _TopicDetailPageState {
 
     // 预加载草稿
     ({Rect rect, double radius, Color color})? morph;
+    Future<void>? draftReleased;
     if (_quickReplyEnabled) {
       if (_replySession.active ||
           !await _prefersFullEditor(target: post, quote: quote)) {
         await _replySession.insertQuote(quote, target: post);
         return;
       }
-      // 直接打开完整编辑器:从底栏回复胶囊长出
-      await _replySession.releaseForFullEditor();
       if (!mounted) return;
+      // 直接打开完整编辑器:从底栏回复胶囊长出;草稿在后台交接,不等保存
+      draftReleased = _replySession.releaseForFullEditor();
       morph = _replyEntryMorphSource();
     }
     if (_dockedComposerEnabled) {
@@ -1517,7 +1530,7 @@ extension _UserActions on _TopicDetailPageState {
       widget.topicId,
       replyToPostNumber: post.postNumber,
     );
-    final preloadedDraftFuture = DiscourseService().getDraft(draftKey);
+    final preloadedDraftFuture = _preloadDraftAfter(draftReleased, draftKey);
 
     // 打开回复框，预填引用内容
     final newPost = await showReplySheet(
