@@ -68,8 +68,7 @@ class DevelopmentEngine extends MetaverseScriptEngine {
           updating = false;
           reloadRequired();
         case 'update':
-          updating = message['phase'] == 'before';
-          changed();
+          _setUpdating(message['phase'] == 'before');
       }
     };
   }
@@ -97,10 +96,24 @@ class DevelopmentEngine extends MetaverseScriptEngine {
     if (_closed) {
       return;
     }
-    await inner.evaluate(
-      '__devReceive(${jsonEncode(payload)})',
-      name: 'fluxdo-dev-transport.js',
-    );
+    final isUpdate = payload is Map && payload['type'] == 'update';
+    // 从送入 isolate 到 Vite 替换完事件处理器，预览应持续锁定。
+    if (isUpdate) _setUpdating(true);
+    try {
+      await inner.evaluate(
+        '__devReceive(${jsonEncode(payload)})',
+        name: 'fluxdo-dev-transport.js',
+      );
+    } catch (_) {
+      if (isUpdate) _setUpdating(false);
+      rethrow;
+    }
+  }
+
+  void _setUpdating(bool value) {
+    if (_closed || updating == value) return;
+    updating = value;
+    changed();
   }
 
   static String bootstrap(String runner, String entry) =>

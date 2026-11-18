@@ -15,6 +15,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_ui_validator.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_development_page.dart';
 import 'package:fluxdo/modules/metaverse/developer/session/development_connection.dart';
+import 'package:fluxdo/modules/metaverse/developer/session/development_engine.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
@@ -48,6 +49,44 @@ Map<String, Object?> get manifest => {
   'permissions': {'network': <String>[]},
 };
 void main() {
+  test('更新交给 QuickJS 时即锁定预览，完成或投递失败后恢复', () async {
+    final inner = await IsolateScriptEngine.spawn();
+    final states = <bool>[];
+    late final DevelopmentEngine engine;
+    engine = DevelopmentEngine(
+      inner,
+      send: (_) {},
+      reloadRequired: () {},
+      diagnostic: fail,
+      changed: () => states.add(engine.updating),
+    )..onMessage = (_) {};
+    addTearDown(() async {
+      engine.dispose();
+      await inner.terminated;
+    });
+    await inner.evaluate('''
+globalThis.__devReceive = payload => {
+  if (payload.fail) throw new Error('delivery failed');
+  if (payload.phase) sendMessage('fluxdoMetaverse', JSON.stringify({
+    t: 'dev', kind: 'update', phase: payload.phase
+  }));
+};
+''');
+    final delivery = engine.receive({'type': 'update', 'phase': 'before'});
+    final lockedAtDispatch = engine.updating;
+    await delivery;
+    expect(lockedAtDispatch, isTrue, reason: '跨 isolate 投递时预览已经锁定');
+    expect(states, [true]);
+    await engine.receive({'type': 'custom', 'phase': 'after'});
+    expect(states, [true, false]);
+
+    await expectLater(
+      engine.receive({'type': 'update', 'fail': true}),
+      throwsA(isA<Exception>()),
+    );
+    expect(states, [true, false, true, false]);
+  });
+
   test('组件参数契约与生产注册组件完全一致，验证士多界面', () {
     final registered = createMetaverseWidgetLibrary(
       loadImage: (_) async => throw StateError('unused'),
