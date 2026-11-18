@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: fe3fab959690e9ee812758f5205ae835b4fc0220
+          ref: ecb31d9b92eacbd2eecd45b8091b56404be5b66c
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -107,7 +107,7 @@ jobs:
         run: node --test tool/plugin_tools/native.test.mjs
       - name: Verify installed activity plugin with the native task dispatcher
         working-directory: app
-        run: flutter test --reporter expanded test/modules/metaverse/metaverse_scheduled_tasks_test.dart
+        run: flutter test --reporter expanded test/modules/metaverse/metaverse_scheduled_tasks_test.dart test/modules/metaverse/metaverse_activity_ui_test.dart test/modules/metaverse/metaverse_pagination_test.dart
       - name: Verify per-plugin permissions, installation and revocation
         working-directory: app
         run: >-

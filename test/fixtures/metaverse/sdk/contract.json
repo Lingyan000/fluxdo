@@ -32,7 +32,8 @@
     "bundleBytes": 2097152
   },
   "hostReference": {
-    "repository": "Lingyan000/fluxdo"
+    "repository": "Lingyan000/fluxdo",
+    "commit": "838cfd458eb4c4a3d91474c463f449726fabe081"
   },
   "typesSha256": "b1bbf1de41984b1ed10d1360e0e1b3d12c06af2e706d7b48f2d192139d31679e"
 }
