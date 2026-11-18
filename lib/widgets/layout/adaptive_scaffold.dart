@@ -191,10 +191,13 @@ class AdaptiveScaffold extends ConsumerWidget {
                       padding: EdgeInsets.only(bottom: dockInset),
                       child: Builder(
                         builder: (bodyContext) => MediaQuery(
-                          // 在 Scaffold 的 body 内读取，保留 extendBody 注入的底栏高度。
-                          // 系统安全区来自外层，避免 body 的 removePadding 将其清零。
                           data: browserDockContentMedia(
                             MediaQuery.of(bodyContext).copyWith(
+                              // 投影详情时导航已移出屏幕，只需避让系统安全区。
+                              // 列表仍使用 extendBody 注入的导航栏高度。
+                              padding: hideBottomNavigation
+                                  ? MediaQuery.paddingOf(context)
+                                  : null,
                               viewPadding: MediaQuery.viewPaddingOf(context),
                             ),
                             dockInset,

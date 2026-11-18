@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     id("org.jetbrains.kotlin.android") apply false
 }
@@ -25,15 +27,13 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 
-    // 兼容 AGP 9 过渡期：部分插件仅检查 AGP 主版本，就假定内置 Kotlin 已启用。
-    // 项目暂时关闭内置 Kotlin 时，按实际源码为这些 Android 库补充编译插件。
-    // 仅处理包含 Kotlin 源码的库；不依赖具体第三方插件名称。
-    pluginManager.withPlugin("com.android.library") {
-        val legacyKotlin = providers.gradleProperty("android.builtInKotlin").orNull == "false"
-        val kotlinSources = fileTree("src") { include("**/*.kt") }
-        if (legacyKotlin && !kotlinSources.isEmpty &&
-            !pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
-            pluginManager.apply("org.jetbrains.kotlin.android")
+    // 跨盘插件源码无法相对 Android 工程写入 Kotlin 增量缓存。
+    // 等各插件注册完编译任务，再覆盖 KGP 给任务设置的默认值。
+    if (projectDir.toPath().root != rootDir.toPath().root) {
+        gradle.projectsEvaluated {
+            tasks.withType<KotlinCompile>().configureEach {
+                incremental = false
+            }
         }
     }
 
