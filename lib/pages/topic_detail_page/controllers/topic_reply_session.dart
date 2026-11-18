@@ -271,6 +271,7 @@ class TopicReplySession extends ChangeNotifier {
     final controller = DraftController(draftKey: key, localStore: localStore);
     _draft = controller;
     _clearedByUser = false;
+    _lastText = text.text;
     text.removeListener(_onTextChanged);
     text.addListener(_onTextChanged);
     if (!load) return;
@@ -297,14 +298,25 @@ class TopicReplySession extends ChangeNotifier {
     draft.dispose();
   }
 
-  /// 用户在本次编辑中把已有内容删光了：草稿应随之删除。只认用户的
-  /// 编辑——打开时草稿仍在加载、用户还没输入的空白不算，免得误删服务端
-  /// 上尚未加载回来的草稿
+  /// 用户在本次编辑中把已有内容删光了：草稿应随之删除。只认「有内容 →
+  /// 变空」的编辑——打开时点一下输入框（只动了光标）、草稿仍在加载时的
+  /// 空白都不算，免得误删服务端上的草稿
   bool _clearedByUser = false;
 
+  /// 上次看到的正文：控制器在只移动光标 / 选区时也会通知，那不是编辑
+  String _lastText = '';
+
   void _onTextChanged() {
+    final current = text.text;
+    if (current == _lastText) return;
+    final hadContent = _lastText.trim().isNotEmpty;
+    _lastText = current;
     if (_restoring) return;
-    _clearedByUser = !hasContent;
+    if (hasContent) {
+      _clearedByUser = false;
+    } else if (hadContent) {
+      _clearedByUser = true;
+    }
     _scheduleSave();
     notifyListeners();
   }

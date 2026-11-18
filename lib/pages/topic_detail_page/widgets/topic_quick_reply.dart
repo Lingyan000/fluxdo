@@ -17,7 +17,8 @@ import '../../../utils/responsive.dart';
 import '../controllers/topic_reply_session.dart';
 import 'topic_bottom_bar.dart';
 
-/// 快捷回复层：页面压暗，底部升起回复面板，随键盘上移。
+/// 快捷回复层：整页（含顶栏）压暗，底部升起回复面板，随键盘上移。须挂在
+/// 话题页 Scaffold 之外的最上层，遮罩才能盖住整个页面。
 ///
 /// 面板从底栏的回复入口胶囊原地「长」出来（外形、圆角、底色连续变形），
 /// 收起时缩回胶囊；展开到完整编辑器时由完整编辑器从面板当前外形继续长大，
@@ -309,9 +310,11 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
   ) {
     final floating = TopicBottomBarMetrics.isFloating(context);
     final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final panelBottom = floating
-        ? safeBottom + TopicBottomBarMetrics.floatingMargin
-        : 0.0;
+    // 本层盖在整页（含顶栏）之上，不在 Scaffold body 里，键盘让位要自己算
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final panelBottom =
+        keyboardInset +
+        (floating ? safeBottom + TopicBottomBarMetrics.floatingMargin : 0.0);
     final panelRadius = context.shapes.resolve(_panelRadius);
     return Positioned.fill(
       child: LayoutBuilder(
@@ -339,7 +342,9 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                     topRadius: panelRadius,
                     bottomRadius: floating ? panelRadius : 0,
                   ),
-                  child: ColoredBox(
+                  // 本层挂在 Scaffold 之外，面板自己提供 Material：输入框、
+                  // 水波纹与图标按钮都要求有 Material 祖先
+                  child: Material(
                     color: Color.lerp(
                       theme.colorScheme.surfaceContainerHighest,
                       theme.colorScheme.surfaceContainerLow,
@@ -458,15 +463,6 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                   ).withoutBorder(),
                 ),
               ),
-              // 最小字数计数（与完整编辑器同一组件与口径）
-              if (_minLength != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6, right: 4),
-                  child: CharacterCountsOverlay(
-                    length: _session.text.text.length,
-                    minimumLength: _minLength,
-                  ),
-                ),
               if (suggestExpand)
                 Padding(
                   padding: const EdgeInsets.only(top: 6, left: 4),
@@ -509,7 +505,18 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                           icon: const Icon(Symbols.open_in_full_rounded),
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
-                  const Spacer(),
+                  // 最小字数计数（与完整编辑器同一组件与口径），放在发送按钮
+                  // 左侧，不独占一行；够字数后组件自身隐藏
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: CharacterCountsOverlay(
+                        length: _session.text.text.length,
+                        minimumLength: _minLength,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ),
                   FilledButton(
                     onPressed: canSend ? widget.onSend : null,
                     style: FilledButton.styleFrom(

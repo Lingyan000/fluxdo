@@ -9,6 +9,7 @@ import '../../../utils/responsive.dart';
 import 'package:common_ui/common_ui.dart';
 
 import '../../../utils/time_utils.dart';
+import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bar_gestures.dart';
 import 'topic_filter_controls.dart';
@@ -403,9 +404,10 @@ class TopicReplyEntry extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                // 草稿是用户原文，短代码按站点规则判定（不用 inline）
                 TextSpan(
-                  text: draft,
                   style: TextStyle(color: theme.colorScheme.onSurface),
+                  children: EmojiText.buildEmojiSpans(context, draft, style),
                 ),
               ],
             ),

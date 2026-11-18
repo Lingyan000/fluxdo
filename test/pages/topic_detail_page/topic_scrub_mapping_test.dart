@@ -2,75 +2,81 @@ import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_mapping.dart'
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  int target({
-    int start = 100,
-    int total = 1000,
-    double startX = 180,
-    required double currentX,
-    double left = 16,
-    double right = 344,
-  }) => topicScrubTargetIndex(
-    startIndex: start,
-    totalCount: total,
-    startX: startX,
-    currentX: currentX,
-    surfaceLeft: left,
-    surfaceRight: right,
-  );
+  TopicScrubTracker tracker({int start = 100, int total = 1000}) =>
+      TopicScrubTracker(
+        startIndex: start,
+        totalCount: total,
+        surfaceWidth: 320,
+      );
 
-  group('步进段', () {
-    test('未越过一个步宽不移动', () {
-      expect(target(currentX: 180 + 23), 100);
-      expect(target(currentX: 180 - 23), 100);
+  /// 以恒定速度移动 [distance]，每 8ms 一个事件（120Hz 左右）
+  int move(TopicScrubTracker t, double distance, {required double speed}) {
+    const dt = 0.008;
+    final step = speed * dt * distance.sign;
+    var moved = 0.0;
+    var index = t.index;
+    while (moved < distance.abs() - 1e-9) {
+      final dx = (distance.abs() - moved) < step.abs()
+          ? (distance.abs() - moved) * distance.sign
+          : step;
+      index = t.update(dx, dt);
+      moved += dx.abs();
+    }
+    return index;
+  }
+
+  group('慢速：逐楼精确定位', () {
+    test('每 24px 一楼，向右往后、向左往前', () {
+      final t = tracker();
+      expect(move(t, 24, speed: 80), 101);
+      expect(move(t, 48, speed: 80), 103);
+      expect(move(t, -72, speed: 80), 100);
     });
 
-    test('每个步宽移动一楼，向右往后、向左往前', () {
-      expect(target(currentX: 180 + 24), 101);
-      expect(target(currentX: 180 + 48), 102);
-      expect(target(currentX: 180 - 24), 99);
-      expect(target(currentX: 180 - 72), 97);
+    test('长话题慢速时同样逐楼，不会飞出去', () {
+      final t = tracker(total: 5000);
+      expect(move(t, 96, speed: 100), 104);
     });
   });
 
-  group('加速段', () {
-    test('拖到手势面右边缘恰好到末楼', () {
-      expect(target(currentX: 344), 1000);
-      expect(target(currentX: 400), 1000);
+  group('快速：增益平滑放大', () {
+    test('同样距离，快划比慢挪走得远', () {
+      final slow = move(tracker(), 120, speed: 100);
+      final fast = move(tracker(), 120, speed: 2000);
+      expect(fast, greaterThan(slow + 50));
     });
 
-    test('拖到手势面左边缘恰好到首楼', () {
-      expect(target(currentX: 16), 1);
-      expect(target(currentX: -20), 1);
+    test('全宽快划一次约覆盖整个话题', () {
+      final t = tracker(start: 1, total: 1000);
+      expect(move(t, 320, speed: 3000), greaterThan(900));
     });
 
-    test('加速段内随距离单调推进', () {
-      var last = target(currentX: 180 + 72);
-      for (var x = 180.0 + 73; x <= 344; x += 4) {
-        final t = target(currentX: x);
-        expect(t, greaterThanOrEqualTo(last));
-        last = t;
+    test('增益随速度单调不减，且起止平滑', () {
+      final t = tracker();
+      var last = 0.0;
+      for (var v = 0.0; v <= 2000; v += 50) {
+        final gain = t.gainFor(v);
+        expect(gain, greaterThanOrEqualTo(last));
+        last = gain;
       }
-    });
-
-    test('起手贴近边缘时，越过步进段直接到端点', () {
-      expect(target(startX: 330, currentX: 330 + 80), 1000);
+      expect(t.gainFor(0), 1);
+      expect(t.gainFor(TopicScrubTracker.fastSpeed), t.maxGain);
     });
   });
 
   group('边界', () {
-    test('短话题不越界', () {
-      expect(target(start: 2, total: 3, currentX: 344), 3);
-      expect(target(start: 2, total: 3, currentX: 16), 1);
-      expect(target(start: 1, total: 3, currentX: 180 + 72), 3);
+    test('楼数少时增益上限为 1（不需要加速）', () {
+      expect(tracker(start: 1, total: 8).maxGain, 1);
+    });
+
+    test('不越过首末楼', () {
+      final t = tracker(start: 2, total: 3);
+      expect(move(t, 400, speed: 3000), 3);
+      expect(move(t, -800, speed: 3000), 1);
     });
 
     test('单楼话题恒为 1', () {
-      expect(target(start: 1, total: 1, currentX: 344), 1);
-    });
-
-    test('剩余楼数不足步进段时只做步进', () {
-      expect(target(start: 998, total: 1000, currentX: 180 + 200), 1000);
-      expect(target(start: 3, total: 1000, currentX: 180 - 200), 1);
+      expect(move(tracker(start: 1, total: 1), 200, speed: 100), 1);
     });
   });
 }

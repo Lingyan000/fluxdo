@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../providers/preferences_provider.dart';
 import '../../../utils/time_utils.dart';
+import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'progress_gesture_action_meta.dart';
 import 'topic_bottom_bar.dart';
@@ -193,6 +194,10 @@ class _PositionCard extends StatelessWidget {
         final index = preview ?? streamIndexListenable.value;
         // 跟随阅读位置时不拉摘要：只有拖动预览才需要
         final info = infoSource.infoAt(index, loadExcerpt: preview != null);
+        final excerptStyle = theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.4,
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -251,16 +256,19 @@ class _PositionCard extends StatelessWidget {
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                          // 摘要由 cooked 还原，短代码已是 cook 判定过的表情
                           if (info.excerpt != null)
-                            TextSpan(text: info.excerpt),
+                            ...EmojiText.buildEmojiSpans(
+                              context,
+                              info.excerpt!,
+                              excerptStyle,
+                              inline: true,
+                            ),
                         ],
                       ),
                       maxLines: 4,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        height: 1.4,
-                      ),
+                      style: excerptStyle,
                     ),
                   ),
                 ),

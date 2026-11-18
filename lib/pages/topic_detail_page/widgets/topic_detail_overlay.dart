@@ -13,7 +13,6 @@ import '../../../utils/responsive.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
 import 'topic_filter_controls.dart';
-import 'topic_quick_reply.dart';
 import '../controllers/topic_reply_session.dart';
 
 /// 话题详情页浮层
@@ -60,17 +59,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   /// 底栏回复入口胶囊的 key
   final GlobalKey replyEntryKey;
 
-  /// 富文本编辑器可用：快捷回复里出现块级格式时提示展开
-  final bool richEditorAvailable;
-
-  /// 解析回复的最小字数（快捷回复的字数计数用）
-  final Future<int> Function()? resolveReplyMinLength;
-  final VoidCallback? onQuickReplySend;
-
-  /// 快捷回复展开到完整编辑器：参数为面板当前的全局外形
-  final void Function(Rect rect, double radius, Color color)?
-  onQuickReplyExpand;
-
   const TopicDetailOverlay({
     super.key,
     required this.showBottomBarListenable,
@@ -94,10 +82,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     required this.filter,
     this.replySession,
     required this.replyEntryKey,
-    this.richEditorAvailable = false,
-    this.resolveReplyMinLength,
-    this.onQuickReplySend,
-    this.onQuickReplyExpand,
   });
 
   /// 回顶按钮显隐：随底栏一起出现（往回滑表示想回去），且不在顶部
@@ -358,23 +342,6 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                 ),
               );
             },
-          ),
-        // 快捷回复：压暗页面、从回复入口胶囊长出的回复面板
-        if (widget.replySession != null)
-          Positioned.fill(
-            child: TopicQuickReplyLayer(
-              session: widget.replySession!,
-              sourceKey: _replyEntryKey,
-              hint:
-                  widget.replyEntryState ==
-                      TopicReplyEntryState.replyPrivateMessage
-                  ? context.l10n.topicDetail_replyEntryPrivateHint
-                  : context.l10n.topicDetail_replyEntryHint,
-              richEditorAvailable: widget.richEditorAvailable,
-              resolveMinLength: widget.resolveReplyMinLength,
-              onSend: widget.onQuickReplySend ?? () {},
-              onExpand: widget.onQuickReplyExpand ?? (_, _, _) {},
-            ),
           ),
       ],
     );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
@@ -8,10 +9,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/preferences_provider.dart';
+import '../../../widgets/common/emoji_text.dart';
 import '../../../widgets/common/radial_long_press_menu.dart';
 import 'progress_gesture_action_meta.dart';
 import '../../../utils/time_utils.dart';
 import '../controllers/topic_position_info.dart';
+import 'topic_bottom_bar.dart';
 import 'topic_scrub_mapping.dart';
 
 /// 上滑触发阈值（手指相对起点的距离 ≥ 此值即视为可触发）
@@ -23,7 +26,7 @@ const double _kEdgeGuardMin = 20.0;
 
 /// 话题底栏手势层：整条栏都是手势面，不绑定某个具体控件，布局不受约束。
 ///
-/// - 横向拖动：拖动定位楼层（映射见 [topicScrubTargetIndex]），跟手气泡
+/// - 横向拖动：拖动定位楼层（映射见 [TopicScrubTracker]），跟手气泡
 ///   预览目标楼层，松手跳转；起手落在屏幕边缘手势区时让给系统
 /// - 上滑：可配置动作（[AppPreferences.progressGestureSwipeUp]）
 /// - 长按：在手指位置展开半圆菜单，贴边时扇形自动旋转朝向屏幕内侧
@@ -83,9 +86,20 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   OverlayEntry? _scrubEntry;
   Rect? _barRect;
   int _scrubStartIndex = 1;
-  double _scrubStartX = 0;
-  double _scrubFingerX = 0;
   int _scrubTarget = 1;
+  TopicScrubTracker? _tracker;
+  final Stopwatch _scrubClock = Stopwatch();
+  Duration _lastScrubTime = Duration.zero;
+  Duration _lastHapticTime = Duration.zero;
+
+  /// 逐楼触觉的最小间隔：快速划动时不连成持续震动
+  static const Duration _hapticInterval = Duration(milliseconds: 35);
+
+  /// 气泡里显示摘要的楼层：目标停留一小段时间才跟上，快速划动时摘要
+  /// 不逐楼闪烁，也不为途经的每一楼拉取摘要
+  int _excerptIndex = 1;
+  Timer? _excerptTimer;
+  static const Duration _excerptSettle = Duration(milliseconds: 160);
 
   // ===== 上滑状态 =====
   OverlayEntry? _swipeEntry;
@@ -101,6 +115,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
     widget.infoSource?.removeListener(_refreshScrubOverlay);
     _scrubEntry?.remove();
     _scrubEntry = null;
+    _excerptTimer?.cancel();
     _removeSwipeOverlay();
     super.dispose();
   }
@@ -178,8 +193,19 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
       widget.totalCount,
     );
     _scrubTarget = _scrubStartIndex;
-    _scrubStartX = details.globalPosition.dx;
-    _scrubFingerX = _scrubStartX;
+    _excerptIndex = _scrubStartIndex;
+    _tracker = TopicScrubTracker(
+      startIndex: _scrubStartIndex,
+      totalCount: widget.totalCount,
+      surfaceWidth:
+          math.min(rect.right, _screenWidth - _edgeRight) -
+          math.max(rect.left, _edgeLeft),
+    );
+    _scrubClock
+      ..reset()
+      ..start();
+    _lastScrubTime = Duration.zero;
+    _lastHapticTime = Duration.zero;
     widget.scrubIndexNotifier.value = _scrubTarget;
     widget.onScrubStart?.call();
 
@@ -190,27 +216,28 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   }
 
   void _handleScrubUpdate(DragUpdateDetails details) {
-    final rect = _barRect;
-    if (rect == null) return;
-    _scrubFingerX = details.globalPosition.dx;
-    final target = topicScrubTargetIndex(
-      startIndex: _scrubStartIndex,
-      totalCount: widget.totalCount,
-      startX: _scrubStartX,
-      currentX: _scrubFingerX,
-      surfaceLeft: math.max(rect.left, _edgeLeft),
-      surfaceRight: math.min(rect.right, _screenWidth - _edgeRight),
-    );
+    final tracker = _tracker;
+    if (_barRect == null || tracker == null) return;
+    final now = _scrubClock.elapsed;
+    final dt = (now - _lastScrubTime).inMicroseconds / 1e6;
+    _lastScrubTime = now;
+    final target = tracker.update(details.delta.dx, dt);
     if (target != _scrubTarget) {
-      final stepped = (target - _scrubStartIndex).abs() <= 3;
       if (target == 1 || target == widget.totalCount) {
         HapticFeedback.lightImpact();
-      } else if (stepped) {
-        // 步进段每跨一楼轻震；加速段楼层变化太密，不逐楼震动
+        _lastHapticTime = now;
+      } else if (now - _lastHapticTime >= _hapticInterval) {
+        // 每过一楼轻震一下；快速划动时按间隔节流
         HapticFeedback.selectionClick();
+        _lastHapticTime = now;
       }
       _scrubTarget = target;
       widget.scrubIndexNotifier.value = target;
+      _excerptTimer?.cancel();
+      _excerptTimer = Timer(_excerptSettle, () {
+        _excerptIndex = _scrubTarget;
+        _scrubEntry?.markNeedsBuild();
+      });
     }
     _scrubEntry?.markNeedsBuild();
   }
@@ -228,6 +255,10 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   void _refreshScrubOverlay() => _scrubEntry?.markNeedsBuild();
 
   void _removeScrubOverlay() {
+    _excerptTimer?.cancel();
+    _excerptTimer = null;
+    _tracker = null;
+    _scrubClock.stop();
     widget.infoSource?.removeListener(_refreshScrubOverlay);
     _scrubEntry?.remove();
     _scrubEntry = null;
@@ -240,12 +271,20 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   Widget _buildScrubOverlay() {
     final rect = _barRect;
     if (rect == null) return const SizedBox.shrink();
-    return _ScrubBubbleOverlay(
-      fingerX: _scrubFingerX,
-      barTop: rect.top,
+    final source = widget.infoSource;
+    // 悬浮卡片形态的顶角是圆的，进度轨道避开圆角
+    final railInset = TopicBottomBarMetrics.isFloating(context)
+        ? context.shapes.resolve(24)
+        : 0.0;
+    return _ScrubIndicatorOverlay(
+      barRect: rect,
+      railInset: railInset,
       index: _scrubTarget,
       totalCount: widget.totalCount,
-      info: widget.infoSource?.infoAt(_scrubTarget),
+      date: source?.dateAt(_scrubTarget),
+      excerptIndex: _excerptIndex,
+      excerpt: source?.infoAt(_excerptIndex),
+      excerptSettled: _excerptIndex == _scrubTarget,
     );
   }
 
@@ -372,154 +411,317 @@ class _EdgeGuardedHorizontalDragRecognizer
       _allowPosition(event.position) && super.isPointerAllowed(event);
 }
 
-// ============================== 拖动定位气泡 ==============================
+// ============================== 拖动定位指示 ==============================
 
-class _ScrubBubbleOverlay extends StatelessWidget {
-  const _ScrubBubbleOverlay({
-    required this.fingerX,
-    required this.barTop,
+/// 拖动定位时叠在底栏上方的指示：底栏顶边的加粗进度轨道 + 圆形滑块，
+/// 上方是指向滑块的固定尺寸气泡（楼层、日期、作者与摘要）。
+///
+/// 位置跟随目标楼层在话题中的比例（不是手指），三者共用一个短动画平滑
+/// 过渡；气泡宽高固定、摘要区常驻，内容变化时不跳动。
+class _ScrubIndicatorOverlay extends StatelessWidget {
+  const _ScrubIndicatorOverlay({
+    required this.barRect,
+    required this.railInset,
     required this.index,
     required this.totalCount,
-    required this.info,
+    required this.date,
+    required this.excerptIndex,
+    required this.excerpt,
+    required this.excerptSettled,
   });
 
-  final double fingerX;
-
-  /// 栏顶边的全局 y，气泡底边悬在其上方
-  final double barTop;
+  final Rect barRect;
+  final double railInset;
   final int index;
   final int totalCount;
-  final TopicPositionInfo? info;
+  final DateTime? date;
+  final int excerptIndex;
+  final TopicPositionInfo? excerpt;
 
-  static const double _gap = 12;
-  static const double _maxWidth = 260;
+  /// 摘要对应的就是当前目标楼层（快速划动途中为 false，显示占位）
+  final bool excerptSettled;
+
+  static const double _railHeight = 4;
+  static const double _knobSize = 16;
+  static const double _bubbleGap = 14;
+  static const double _tailSize = 7;
+  static const double _bubbleMaxWidth = 300;
+  static const double _bubbleRadius = 14;
+  static const double _margin = 12;
+  static const Duration _follow = Duration(milliseconds: 90);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    // 两端至少让出半个滑块：首末楼时滑块完整落在栏内，不被裁掉半边
+    final inset = math.max(railInset, _knobSize / 2 + 2);
+    final railLeft = barRect.left + inset;
+    final railWidth = math.max(0.0, barRect.width - inset * 2);
+    final fraction = totalCount > 1 ? (index - 1) / (totalCount - 1) : 0.0;
+    final targetX = railLeft + railWidth * fraction;
+    // 气泡限制在底栏的水平范围内（宽屏 / 侧边导航时不跑到栏外）
+    final minLeft = math.max(_margin, barRect.left);
+    final maxRight = math.min(screenWidth - _margin, barRect.right);
+    final bubbleWidth = math.min(_bubbleMaxWidth, maxRight - minLeft);
+    final bubbleColor = theme.colorScheme.inverseSurface;
+    final bubbleRadius = context.shapes.resolve(_bubbleRadius);
+
+    return IgnorePointer(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: targetX),
+        duration: _follow,
+        curve: Curves.easeOutCubic,
+        builder: (context, x, _) {
+          final double bubbleLeft = (x - bubbleWidth / 2)
+              .clamp(minLeft, math.max(minLeft, maxRight - bubbleWidth))
+              .toDouble();
+          // 尖角必须连在气泡下沿的直边上：滑块靠边、气泡贴边停住时，
+          // 尖角收在圆角以内，斜指向滑块，而不是悬空在气泡外
+          final double tailX = x
+              .clamp(
+                bubbleLeft + bubbleRadius + _tailSize,
+                math.max(
+                  bubbleLeft + bubbleRadius + _tailSize,
+                  bubbleLeft + bubbleWidth - bubbleRadius - _tailSize,
+                ),
+              )
+              .toDouble();
+          return Stack(
+            children: [
+              // 加粗的进度轨道（盖在底栏自身的细进度线上）
+              Positioned(
+                left: railLeft,
+                top: barRect.top - _railHeight / 2,
+                width: railWidth,
+                height: _railHeight,
+                child: CustomPaint(
+                  painter: _RailPainter(
+                    fill: (x - railLeft).clamp(0.0, railWidth),
+                    track: theme.colorScheme.outlineVariant,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+              // 滑块
+              Positioned(
+                left: x - _knobSize / 2,
+                top: barRect.top - _knobSize / 2,
+                width: _knobSize,
+                height: _knobSize,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: theme.colorScheme.surface,
+                      width: 2.5,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black26, blurRadius: 4),
+                    ],
+                  ),
+                ),
+              ),
+              // 指向滑块的尖角
+              Positioned(
+                left: tailX - _tailSize,
+                top: barRect.top - _bubbleGap - 0.5,
+                width: _tailSize * 2,
+                height: _tailSize,
+                child: CustomPaint(painter: _TailPainter(color: bubbleColor)),
+              ),
+              // 气泡
+              Positioned(
+                left: bubbleLeft,
+                width: bubbleWidth,
+                bottom:
+                    MediaQuery.sizeOf(context).height -
+                    barRect.top +
+                    _bubbleGap,
+                child: _buildBubble(context, theme, bubbleColor),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBubble(BuildContext context, ThemeData theme, Color color) {
     final foreground = theme.colorScheme.onInverseSurface;
     final secondary = foreground.withValues(alpha: 0.7);
     const tabular = [FontFeature.tabularFigures()];
-    final date = info?.date;
-    final username = info?.username;
-    final excerpt = info?.excerpt;
-    return IgnorePointer(
-      child: CustomSingleChildLayout(
-        delegate: _BubbleLayoutDelegate(
-          anchor: Offset(fingerX, barTop - _gap),
-          safeInsets: MediaQuery.paddingOf(context),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _maxWidth),
-          child: Material(
-            color: theme.colorScheme.inverseSurface,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: context.shapes.borderRadius(16),
-            ),
-            elevation: 6,
-            shadowColor: Colors.black26,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        '$index',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: foreground,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: tabular,
-                        ),
-                      ),
-                      Text(
-                        ' / $totalCount',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: secondary,
-                          fontFeatures: tabular,
-                        ),
-                      ),
-                      if (date != null) ...[
-                        const SizedBox(width: 10),
-                        Text(
-                          TimeUtils.formatSmartDate(date),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: secondary,
-                          ),
-                        ),
-                      ],
-                    ],
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+      color: secondary,
+      height: 1.35,
+    );
+    final lineHeight =
+        (bodyStyle?.fontSize ?? 12) * (bodyStyle?.height ?? 1.35);
+    return Material(
+      color: color,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(_bubbleRadius),
+      ),
+      elevation: 6,
+      shadowColor: Colors.black26,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  '$index',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: tabular,
                   ),
-                  if (username != null || excerpt != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text.rich(
-                        TextSpan(
-                          children: [
-                            if (username != null)
-                              TextSpan(
-                                // 用字重区分作者与正文，不拼标点（各语言通用）
-                                text: excerpt == null
-                                    ? username
-                                    : '$username  ',
-                                style: TextStyle(
-                                  color: foreground,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            if (excerpt != null) TextSpan(text: excerpt),
-                          ],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: secondary,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                ],
+                ),
+                Text(
+                  ' / $totalCount',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: secondary,
+                    fontFeatures: tabular,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  date == null ? '' : TimeUtils.formatSmartDate(date),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: secondary,
+                    fontFeatures: tabular,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // 摘要区高度固定两行：没取到时显示静态占位，取到后淡入
+            SizedBox(
+              height: lineHeight * 2,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 140),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topLeft,
+                  children: [...previous, ?current],
+                ),
+                child: _buildExcerpt(context, foreground, secondary, bodyStyle),
               ),
             ),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcerpt(
+    BuildContext context,
+    Color foreground,
+    Color secondary,
+    TextStyle? style,
+  ) {
+    final info = excerpt;
+    final username = info?.username;
+    final text = info?.excerpt;
+    if (!excerptSettled || (username == null && text == null)) {
+      return Column(
+        key: const ValueKey('placeholder'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _placeholderBar(secondary, 0.9),
+          const SizedBox(height: 6),
+          _placeholderBar(secondary, 0.55),
+        ],
+      );
+    }
+    return Text.rich(
+      key: ValueKey(excerptIndex),
+      TextSpan(
+        children: [
+          if (username != null)
+            TextSpan(
+              // 用字重区分作者与正文，不拼标点（各语言通用）
+              text: text == null ? username : '$username  ',
+              style: TextStyle(color: foreground, fontWeight: FontWeight.w600),
+            ),
+          // 摘要由 cooked 还原，短代码已是 cook 判定过的表情：inline
+          if (text != null)
+            ...EmojiText.buildEmojiSpans(context, text, style, inline: true),
+        ],
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+  }
+
+  Widget _placeholderBar(Color color, double widthFactor) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      child: Container(
+        height: 8,
+        decoration: ShapeDecoration(
+          color: color.withValues(alpha: 0.18),
+          shape: const StadiumBorder(),
         ),
       ),
     );
   }
 }
 
-/// 气泡以 [anchor] 为底边中点摆放，测得实际尺寸后整体 clamp 在屏幕内
-class _BubbleLayoutDelegate extends SingleChildLayoutDelegate {
-  const _BubbleLayoutDelegate({required this.anchor, required this.safeInsets});
+class _RailPainter extends CustomPainter {
+  const _RailPainter({
+    required this.fill,
+    required this.track,
+    required this.color,
+  });
 
-  final Offset anchor;
-  final EdgeInsets safeInsets;
-
-  static const double _margin = 12;
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      constraints.loosen();
+  final double fill;
+  final Color track;
+  final Color color;
 
   @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final minX = safeInsets.left + _margin;
-    final maxX = size.width - safeInsets.right - _margin - childSize.width;
-    final double x = (anchor.dx - childSize.width / 2)
-        .clamp(minX, math.max(minX, maxX))
-        .toDouble();
-    final double y = math.max(safeInsets.top, anchor.dy - childSize.height);
-    return Offset(x, y);
+  void paint(Canvas canvas, Size size) {
+    final radius = Radius.circular(size.height / 2);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, radius),
+      Paint()..color = track,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, fill, size.height), radius),
+      Paint()..color = color,
+    );
   }
 
   @override
-  bool shouldRelayout(_BubbleLayoutDelegate old) =>
-      anchor != old.anchor || safeInsets != old.safeInsets;
+  bool shouldRepaint(_RailPainter old) =>
+      old.fill != fill || old.track != track || old.color != color;
+}
+
+class _TailPainter extends CustomPainter {
+  const _TailPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, 0)
+        ..lineTo(size.width, 0)
+        ..lineTo(size.width / 2, size.height)
+        ..close(),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TailPainter old) => old.color != color;
 }
 
 // ============================== 上滑预览 ==============================

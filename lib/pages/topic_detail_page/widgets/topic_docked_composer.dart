@@ -117,6 +117,9 @@ class TopicDockedComposerController extends ChangeNotifier {
 
   void toggleMinimized() {
     _minimized = !_minimized;
+    // 最小化后编辑器仍挂载（只是不显示），焦点要收走，免得继续打字落进
+    // 看不见的编辑器
+    if (_minimized) FocusManager.instance.primaryFocus?.unfocus();
     notifyListeners();
   }
 

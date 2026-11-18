@@ -85,6 +85,7 @@ import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_bottom_bar.dart';
 import 'widgets/topic_filter_controls.dart';
 import 'widgets/topic_reading_rail.dart';
+import 'widgets/topic_quick_reply.dart';
 import 'widgets/topic_docked_composer.dart';
 import 'widgets/topic_timeline.dart';
 import 'widgets/topic_post_list.dart';
@@ -786,6 +787,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _handleCloseShortcut() {
     if (!mounted) return;
+    // 回复编辑器优先:Esc 先收起它(未发内容留作草稿),不能直接退出话题页
+    if (_replySession.active) {
+      _replySession.close();
+      return;
+    }
+    if (_dockedComposer.isOpen && !_dockedComposer.minimized) {
+      _dockedComposer.toggleMinimized();
+      return;
+    }
     if (ref.read(topicSearchProvider(widget.topicId)).isSearchMode) {
       _exitSearchMode();
       return;
@@ -940,6 +950,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (!mounted) return;
     setState(() => _routeTransitionDone = true);
   }
+
 
   @override
   void dispose() {
@@ -2324,6 +2335,40 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
+  /// 快捷回复层(整页压暗 + 从底栏回复入口长出的面板);不可回复时不挂
+  Widget _buildQuickReplyLayer(TopicDetailParams params) {
+    return Consumer(
+      builder: (context, ref, _) {
+        final detail = ref.watch(topicDetailProvider(params)).value;
+        final isLoggedIn = ref.watch(currentUserProvider).value != null;
+        if (detail == null) return const SizedBox.shrink();
+        final state = _replyEntryState(detail, isLoggedIn);
+        if (state != TopicReplyEntryState.reply &&
+            state != TopicReplyEntryState.replyPrivateMessage) {
+          return const SizedBox.shrink();
+        }
+        return TopicQuickReplyLayer(
+          session: _replySession,
+          sourceKey: _replyEntryKey,
+          hint: state == TopicReplyEntryState.replyPrivateMessage
+              ? context.l10n.topicDetail_replyEntryPrivateHint
+              : context.l10n.topicDetail_replyEntryHint,
+          richEditorAvailable: ref.watch(
+            preferencesProvider.select((p) => p.useRichComposer),
+          ),
+          resolveMinLength: () => ReplySubmission.resolveMinLength(
+            ref,
+            categoryId: detail.categoryId,
+            isPrivateMessageContext: detail.isPrivateMessage,
+            isPmWithNonHumanUser: detail.pmWithNonHumanUser,
+          ),
+          onSend: _sendQuickReply,
+          onExpand: _expandQuickReply,
+        );
+      },
+    );
+  }
+
   /// 快捷回复发送:与完整编辑器共用 ReplySubmission 的校验与发送
   void _sendQuickReply() {
     unawaited(
@@ -2450,14 +2495,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final replyEntryState = _replyEntryState(detail, isLoggedIn);
     final bookmarked = _bookmarkEditTarget(detail) != null || detail.bookmarked;
     final lastReadIndex = _positionInfo.lastReadIndex;
-    final richEditorAvailable = ref.read(preferencesProvider).useRichComposer;
     // Overlay 及其子树实际消费的全部低频输入;detail 对象本身不入签名
     // (它每次更新都是新实例),只取 Overlay 用到的字段。
     final signature = (
       replyEntryState: replyEntryState,
       bookmarked: bookmarked,
       lastReadIndex: lastReadIndex,
-      richEditorAvailable: richEditorAvailable,
       totalCount: detail.postStream.stream.length,
       hasMoreBefore: notifier.hasMoreBefore,
       hasSummary: detail.hasSummary,
@@ -2490,15 +2533,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           ? _replySession
           : null,
       replyEntryKey: _replyEntryKey,
-      richEditorAvailable: richEditorAvailable,
-      resolveReplyMinLength: () => ReplySubmission.resolveMinLength(
-        ref,
-        categoryId: detail.categoryId,
-        isPrivateMessageContext: detail.isPrivateMessage,
-        isPmWithNonHumanUser: detail.pmWithNonHumanUser,
-      ),
-      onQuickReplySend: _sendQuickReply,
-      onQuickReplyExpand: _expandQuickReply,
       tocVisibleListenable: _tocFabVisible,
       onOpenTimeline: _showTimelineSheetForCurrent,
       bookmarked: bookmarked,
@@ -3142,6 +3176,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       ),
     );
 
+    // 快捷回复层挂在 Scaffold 之外：遮罩盖住整页（含顶栏），而不只是 body
+    final topicPage = Stack(
+      children: [
+        topicScaffold,
+        Positioned.fill(child: _buildQuickReplyLayer(params)),
+      ],
+    );
+
     // 无 AI 模型或非滑动入口模式：普通布局
     //
     // 平行视界：这是绝大多数话题（尤其私信——基本不会挂 AI 模型）走的
@@ -3159,7 +3201,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 _exitSearchMode();
               }
             },
-            child: topicScaffold,
+            child: topicPage,
           ),
         ),
       );
@@ -3195,7 +3237,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 }
               },
               children: [
-                _KeepAlivePage(child: topicScaffold),
+                _KeepAlivePage(child: topicPage),
                 _KeepAlivePage(
                   child: Consumer(
                     builder: (context, ref, _) {

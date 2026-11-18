@@ -684,8 +684,10 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(12),
-                          child: Text(
+                          // 摘要由 cooked 还原，短代码已是 cook 判定过的表情
+                          child: EmojiText(
                             excerpt,
+                            inline: true,
                             maxLines: 6,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
