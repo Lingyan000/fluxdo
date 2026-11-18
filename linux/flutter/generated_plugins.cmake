@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links_linux
   audioplayers_linux
   desktop_multi_window
   dynamic_color
@@ -12,17 +13,14 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_inappwebview_linux
   flutter_secure_storage_linux
   flutter_timezone
-  gtk
   irondash_engine_context
   media_kit_libs_linux
   quickjs_engine
   record_linux
-  screen_retriever_linux
   super_native_extensions
   url_launcher_linux
   volume_controller
   media_kit_video
-  window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

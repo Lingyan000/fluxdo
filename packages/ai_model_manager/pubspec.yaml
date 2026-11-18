@@ -28,9 +28,9 @@ dependencies:
   app_icons:
     path: ../app_icons
   # 直接用各 LLM provider 的官方 SDK，不经过 langchain_dart 抽象层
-  openai_dart: ^4.3.0           # 同时覆盖 Chat Completions + Responses API
-  googleai_dart: ^3.6.0         # Gemini
-  anthropic_sdk_dart: ^0.3.1    # Anthropic + Extended Thinking
+  openai_dart: ^12.0.0           # 同时覆盖 Chat Completions + Responses API
+  googleai_dart: ^13.1.0         # Gemini
+  anthropic_sdk_dart: ^11.0.0    # Anthropic + Extended Thinking
 
 dev_dependencies:
   flutter_test:

@@ -131,7 +131,7 @@ just release -- patch --dry-run
 
 ```bash
 sudo pacman -S --needed base-devel clang cmake ninja pkgconf python git curl xz \
-  gtk3 libepoxy libsecret wayland wpewebkit alsa-lib mpv \
+  gtk3 libx11 libxi libepoxy libsecret wayland wpewebkit alsa-lib mpv \
   gst-plugins-base gst-plugins-good gst-libav just
 flutter doctor -v
 just run -- -d linux

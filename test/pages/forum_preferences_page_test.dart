@@ -97,14 +97,11 @@ void main() {
         fullscreenSwipeBack: false,
         pageBackground: false,
       );
-      FilePicker? previousPicker;
-      try {
-        previousPicker = FilePicker.platform;
-      } catch (_) {}
+      final previousPicker = FilePickerPlatform.instance;
       final picker = _ImagePicker();
-      FilePicker.platform = picker;
+      FilePickerPlatform.instance = picker;
       addTearDown(() {
-        if (previousPicker != null) FilePicker.platform = previousPicker;
+        FilePickerPlatform.instance = previousPicker;
       });
       const backgroundUrl = 'https://example.com/preference-background.png';
       await tester.runAsync(() async {
@@ -763,33 +760,38 @@ Future<void> _capture(WidgetTester tester, String dir, String name) async {
   });
 }
 
-class _ImagePicker extends FilePicker {
+final class _PickedImage extends PlatformFile {
+  _PickedImage(String path) : uri = Uri.file(path);
+  @override
+  final Uri uri;
+  @override
+  String get name => 'avatar.png';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ImagePicker extends FilePickerPlatform {
   int calls = 0;
   Object? error;
   String? path;
 
   @override
-  Future<FilePickerResult?> pickFiles({
+  Future<PlatformFile?> pickFile({
     String? dialogTitle,
     String? initialDirectory,
     FileType type = FileType.any,
     List<String>? allowedExtensions,
-    void Function(FilePickerStatus)? onFileLoading,
-    bool allowCompression = false,
+    Function(FilePickerStatus)? onFileLoading,
     int compressionQuality = 0,
-    bool allowMultiple = false,
-    bool withData = false,
-    bool withReadStream = false,
-    bool lockParentWindow = false,
-    bool readSequential = false,
+    AndroidOptions androidOptions = const AndroidOptions(),
+    DarwinOptions darwinOptions = const DarwinOptions(),
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
   }) async {
     calls++;
     expect(type, FileType.image);
     if (error != null) throw error!;
-    return path == null
-        ? null
-        : FilePickerResult([
-            PlatformFile(name: 'avatar.png', size: 0, path: path),
-          ]);
+    return path == null ? null : _PickedImage(path!);
   }
 }

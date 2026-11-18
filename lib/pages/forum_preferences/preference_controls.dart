@@ -457,10 +457,10 @@ class _PreferenceControlState extends State<PreferenceControl> {
     });
     widget.onBusy(true);
     try {
-      final selected = await FilePicker.platform.pickFiles(
+      final selected = await FilePicker.pickFile(
         type: FileType.image,
       );
-      final path = selected?.files.single.path;
+      final path = selected?.path;
       if (path == null || !mounted) return;
       final result = await DiscourseService().uploadFile(
         path,

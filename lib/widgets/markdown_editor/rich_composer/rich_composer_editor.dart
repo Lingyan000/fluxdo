@@ -2414,10 +2414,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null) return;
     final bookmark = InsertionBookmark(editor);
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: isAudio ? FileType.audio : FileType.video,
       );
-      final file = picked?.files.single;
       final path = file?.path;
       if (file == null || path == null || !mounted) return;
       setState(() => _uploadingCount++);
@@ -2457,11 +2456,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       // 白名单从站点配置动态派生(staff 名单叠加);null = 站点通配或
       // 配置未加载,不设限让服务端裁决。
       final allowed = attachmentAllowedExtensions();
-      final picked = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: allowed == null ? FileType.any : FileType.custom,
         allowedExtensions: allowed,
       );
-      final file = picked?.files.single;
       final path = file?.path;
       if (file == null || path == null || !mounted) return;
       if (!bookmark.valid || !identical(editor, _editor)) return;

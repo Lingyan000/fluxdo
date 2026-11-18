@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 
 import 'pages/topics_page.dart';

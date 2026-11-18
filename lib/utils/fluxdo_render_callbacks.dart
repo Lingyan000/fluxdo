@@ -708,18 +708,21 @@ class FluxdoRenderCallbacks {
           );
         },
         direction: PopoverDirection.bottom,
-        arrowHeight: 8,
-        arrowWidth: 12,
-        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainerHigh,
-        barrierColor: Colors.transparent,
-        radius: 8,
-        shadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        style: PopoverStyle(
+          arrowStyle: PopoverArrowStyle.triangle,
+          arrowHeight: 8,
+          arrowWidth: 12,
+          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainerHigh,
+          barrierColor: Colors.transparent,
+          radius: 8,
+          shadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
       );
     };
   }

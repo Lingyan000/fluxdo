@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 import '../../navigation/nav_action_bus.dart';
 import '../../providers/preferences_provider.dart';
