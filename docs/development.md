@@ -61,6 +61,7 @@ Dart 和 Flutter 来自同一个 SDK；不需要修改其他项目的全局 SDK�
 待宿主支持独立 UI 包后一起迁移，避免新旧主题上下文不匹配。
 
 Android 构建链与 Flutter 3.50 模板对齐：Gradle 9.5.0、AGP 9.3.1、Kotlin 2.4.20，Java/JVM 目标仍为 17。
+首次构建请在 SDK Manager 安装 Android SDK Platform 37，通知插件所用的 AndroidX 库要求至少用 API 37 编译。
 部分第三方插件仍使用旧 Kotlin 插件与 AGP DSL，因此保留 `android.builtInKotlin=false` 和
 `android.newDsl=false`；待这些插件迁移后再统一启用内置 Kotlin。Android 库按实际 Kotlin 源码补齐旧编译插件，
 编译 SDK 不低于宿主；这些处理不改变应用的 minSdk/targetSdk。旧 CargoKit 的 `Project.exec` 调用

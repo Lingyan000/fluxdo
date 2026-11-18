@@ -11,6 +11,20 @@ abstract class FluxdoCargoKitExec {
 // 仅为实际应用了 CargoKitPlugin 的子项目转接到官方 ExecOperations，
 // 保留原命令、环境变量和非零退出失败语义，不修改共享的 pub 缓存。
 if (GradleVersion.current() >= GradleVersion.version('9.0')) {
+    // CargoKit 通过 Groovy 读取宿主的旧版字符串属性，再将 android- 后的部分转成整数。
+    // AGP 对基础 API 37 返回 android-37.0。只规范化零次版本的旧属性，
+    // AGP 的整型 compileSdk、新 DSL 和真正的次版本保持原值。
+    def app = rootProject.findProject(':app')
+    app?.plugins?.withId('com.android.application') {
+        def android = app.extensions.getByName('android')
+        def getter = android.metaClass.getMetaMethod('getCompileSdkVersion', [] as Class[])
+        if (getter != null) {
+            android.metaClass.getCompileSdkVersion = { ->
+                def version = getter.invoke(android, [] as Object[])
+                version instanceof String ? version.replaceFirst(/^(android-\d+)\.0$/, '$1') : version
+            }
+        }
+    }
     subprojects { child ->
         child.plugins.all { plugin ->
             if (plugin.class.name == 'CargoKitPlugin') {
