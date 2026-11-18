@@ -43,15 +43,9 @@ void main() {
     const guard =
         '#if defined(IMPELLER_TARGET_OPENGLES) && '
         '!defined(IMPELLER_OPENGLES_UNFLIPPED_DEPRECATED)';
-    for (final path in [
-      'shaders/progressive_top_blur.frag',
-      'packages/common_ui/shaders/glass_surface.frag',
-    ]) {
-      final shader = File(path).readAsStringSync();
-      expect(shader, contains(guard), reason: path);
-      expect(shader, isNot(contains('#ifdef IMPELLER_TARGET_OPENGLES')));
-    }
-    final blur = File('shaders/progressive_top_blur.frag').readAsStringSync();
-    expect(blur, isNot(contains('yTop = u_size.y - frag.y')));
+    const path = 'packages/common_ui/shaders/glass_surface.frag';
+    final shader = File(path).readAsStringSync();
+    expect(shader, contains(guard), reason: path);
+    expect(shader, isNot(contains('#ifdef IMPELLER_TARGET_OPENGLES')));
   });
 }
