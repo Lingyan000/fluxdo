@@ -12,6 +12,7 @@ import '../../../../services/app_error_handler.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../utils/frame_jank_monitor.dart';
 import '../../../common/relative_time_text.dart';
+import '../../inline_posts_scope.dart';
 import '../../post_revision/edits_indicator.dart';
 import '../../post_revision/revision_modal.dart';
 import '../../small_action_item.dart';
@@ -81,8 +82,9 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   bool? _cachedHasMention;
   ThemeData? _cachedAvatarTheme;
 
-  /// 父帖快照存放处(会话层),State 随 sliver 回收后靠它恢复
-  late final TopicSessionNotifier _session;
+  /// 父帖快照存放处(页面级),State 随 sliver 回收后靠它恢复;
+  /// 不在话题页内为 null,不保留
+  InlinePostsStore? _inlineStore;
 
   /// 快照键。异步加载完成时 State 可能已卸载,不再经 widget 取
   late final int _postId = widget.post.id;
@@ -90,10 +92,10 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   @override
   void initState() {
     super.initState();
-    _session = ref.read(topicSessionProvider(widget.topicId).notifier);
-    final snapshot = widget.disableReplyHistory
-        ? null
-        : _session.inlinePosts(InlinePostsKind.parents, _postId);
+    if (!widget.disableReplyHistory) {
+      _inlineStore = InlinePostsScope.maybeOf(context);
+    }
+    final snapshot = _inlineStore?.read(InlinePostsKind.parents, _postId);
     if (snapshot != null) {
       _replyHistory = snapshot.posts;
       _showReplyHistoryNotifier.value =
@@ -107,7 +109,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   void _saveReplyHistorySnapshot({bool? expanded}) {
     final history = _replyHistory;
     if (history == null) return;
-    _session.saveInlinePosts(
+    _inlineStore?.save(
       InlinePostsKind.parents,
       _postId,
       posts: history,

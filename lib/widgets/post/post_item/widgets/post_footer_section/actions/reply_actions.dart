@@ -2,7 +2,7 @@ part of '../post_footer_section.dart';
 
 extension _PostFooterReplyActions on _PostFooterSectionState {
   void _saveRepliesSnapshot({bool? expanded}) {
-    _session.saveInlinePosts(
+    _inlineStore?.save(
       InlinePostsKind.replies,
       _postId,
       posts: _replies,

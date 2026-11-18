@@ -1,7 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/topic.dart';
-
 /// 话题会话状态（仅在当前会话有效）
 /// 用于记录本次阅读过程中哪些帖子被标记为已读（通过 Timings 上报）
 class TopicSessionState {
@@ -35,58 +33,10 @@ class TopicSessionState {
   }
 }
 
-/// 帖子内联展开的帖子列表种类
-enum InlinePostsKind {
-  /// 底部展开的直接回复
-  replies,
-
-  /// 头部上方展开的父帖链
-  parents,
-}
-
-/// 帖子内联展开快照:展开状态、已加载的帖子与其中已展开全文的帖子
-class InlinePostsSnapshot {
-  final List<Post> posts;
-  final bool expanded;
-  final Set<int> unfoldedPostIds;
-
-  const InlinePostsSnapshot({
-    required this.posts,
-    required this.expanded,
-    this.unfoldedPostIds = const {},
-  });
-}
-
 class TopicSessionNotifier extends Notifier<TopicSessionState> {
   final int topicId;
 
   TopicSessionNotifier(this.topicId);
-
-  /// 帖子内联展开快照((种类, postId) → 快照)。帖子 header/footer 随
-  /// sliver 回收重建时读回,恢复展开状态与原高度。不进 state:只在挂载
-  /// 时读一次,写入不该触发会话监听者重建。
-  final Map<(InlinePostsKind, int), InlinePostsSnapshot> _inlinePosts = {};
-
-  InlinePostsSnapshot? inlinePosts(InlinePostsKind kind, int postId) =>
-      _inlinePosts[(kind, postId)];
-
-  void saveInlinePosts(
-    InlinePostsKind kind,
-    int postId, {
-    required List<Post> posts,
-    required bool expanded,
-    Set<int> unfoldedPostIds = const {},
-  }) {
-    if (posts.isEmpty && !expanded) {
-      _inlinePosts.remove((kind, postId));
-      return;
-    }
-    _inlinePosts[(kind, postId)] = InlinePostsSnapshot(
-      posts: List.unmodifiable(posts),
-      expanded: expanded,
-      unfoldedPostIds: Set.unmodifiable(unfoldedPostIds),
-    );
-  }
 
   @override
   TopicSessionState build() {

@@ -51,6 +51,7 @@ import '../../providers/pinned_categories_provider.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/drafts_signal.dart';
 import '../../providers/draft_store_provider.dart';
+import '../../widgets/post/inline_posts_scope.dart';
 import '../../widgets/post/reply_submission.dart';
 import '../../utils/markdown_block_format.dart';
 import '../../services/preloaded_data_service.dart';
@@ -208,6 +209,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 唯一实例 ID，确保每次打开页面都创建新的 provider 实例
   /// 支持外部传入以在布局切换时复用同一个 provider
   late final String _instanceId = widget.instanceId ?? const Uuid().v4();
+
+  /// 帖子内联展开(父帖/回复)的快照,按实例 id 登记:布局切换重建本页时
+  /// 续用,关掉页面后释放
+  late final InlinePostsStore _inlinePostsStore;
+
   late final int? _providerPostNumber;
 
   /// Provider 参数只携带首次构建所需的定位信息，运行时浏览位置由 controller 单独维护。
@@ -384,6 +390,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void initState() {
     super.initState();
+    _inlinePostsStore = InlinePostsStore.acquire(_instanceId);
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
@@ -936,6 +943,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   @override
   void dispose() {
+    InlinePostsStore.release(_instanceId);
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
     // 按 identity 注销:叠栈的详情页可能已覆盖注册,只清自己那份
@@ -3236,6 +3244,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 分栏本身没问题，但链接点击时 stackProvider 始终为 null——根因就是
   /// 这个分支漏包）。
   Widget _wrapEmbeddedStack(Widget child) {
+    child = InlinePostsScope(store: _inlinePostsStore, child: child);
     if (widget.embeddedMode) {
       return EmbeddedStackScope(
         stackProvider: widget.stackProvider ?? selectedTopicProvider,

@@ -35,6 +35,7 @@ import '../post_flag_sheet.dart';
 import '../post_reaction_users_sheet.dart';
 import '../post_replies_list.dart';
 import '../post_solution_banner.dart';
+import '../../../inline_posts_scope.dart';
 import '../../../../post/post_replies_sheet.dart';
 import '../../../../../utils/dialog_utils.dart';
 import '../../../../ai/ai_translation_sheet.dart';
@@ -165,8 +166,9 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   bool _isTogglingAnswer = false;
   bool _isDeleting = false;
 
-  /// 内联回复快照存放处(会话层),State 随 sliver 回收后靠它恢复
-  late final TopicSessionNotifier _session;
+  /// 内联回复快照存放处(页面级),State 随 sliver 回收后靠它恢复;
+  /// 不在话题页内为 null,不保留
+  InlinePostsStore? _inlineStore;
 
   /// 快照键。异步加载完成时 State 可能已卸载,不再经 widget 取
   late final int _postId = widget.post.id;
@@ -177,12 +179,11 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   void initState() {
     super.initState();
     _syncState();
-    _session = ref.read(topicSessionProvider(widget.topicId).notifier);
-    // 只有内联展开形态才恢复;弹层/嵌套视图里同一帖子不带出主列表的展开
-    final inlineReplies = !widget.hideRepliesButton && !widget.useReplyDialog;
-    final snapshot = inlineReplies
-        ? _session.inlinePosts(InlinePostsKind.replies, _postId)
-        : null;
+    // 只有内联展开形态才保留;弹层/嵌套视图里同一帖子不带出主列表的展开
+    if (!widget.hideRepliesButton && !widget.useReplyDialog) {
+      _inlineStore = InlinePostsScope.maybeOf(context);
+    }
+    final snapshot = _inlineStore?.read(InlinePostsKind.replies, _postId);
     if (snapshot != null) {
       _replies.addAll(snapshot.posts);
       _showRepliesNotifier.value = snapshot.expanded && _replies.isNotEmpty;
