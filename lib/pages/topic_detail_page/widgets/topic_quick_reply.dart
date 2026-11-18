@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../l10n/s.dart';
@@ -9,6 +10,7 @@ import '../../../utils/markdown_block_format.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../../../widgets/markdown_editor/composer_shortcuts.dart';
+import '../../../widgets/markdown_editor/composer_panel_height.dart';
 import '../../../widgets/markdown_editor/emoji_picker.dart';
 import '../../../widgets/markdown_editor/emoji_sticker_panel.dart';
 import '../../../widgets/common/character_counts_overlay.dart';
@@ -87,10 +89,16 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
 
   /// 从表情面板切回键盘的过渡期：键盘升起前继续占位，输入区不下坠
   bool _returningToKeyboard = false;
+  Timer? _keyboardReturnTimeout;
 
-  /// 最近一次键盘完全展开的高度；表情面板按它定高
-  double _keyboardHeight = 0;
-  static const double _fallbackPanelHeight = 300;
+  double _panelHeight = 300;
+  bool get _holdsPanel => _emojiMode || _returningToKeyboard;
+
+  late final _emojiPanel = EmojiStickerPanel(
+    onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
+    onStickerSelected: (text) => _session.insertText(text),
+    onBackspace: () => deleteBackwardWithEmojiShortcodes(_session.text),
+  );
 
   bool get _inlineEmoji => !PlatformUtils.isDesktop;
 
@@ -115,6 +123,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
 
   @override
   void dispose() {
+    _keyboardReturnTimeout?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _session.activeNotifier.removeListener(_onActiveChanged);
     _controller.dispose();
@@ -138,7 +147,8 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
       _captureSource();
       _controller.reverse();
     }
-    if (!_session.active && (_emojiMode || _returningToKeyboard)) {
+    if (!_session.active && _holdsPanel) {
+      _keyboardReturnTimeout?.cancel();
       setState(() {
         _emojiMode = false;
         _returningToKeyboard = false;
@@ -165,29 +175,14 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
 
   @override
   void didChangeMetrics() {
-    if (!mounted) return;
-    final inset = _viewInsetBottom;
-    var changed = false;
-    // 只记录键盘完全展开后的高度（升降过程中的中间值不算）
-    if (inset > _keyboardHeight && !_emojiMode) {
-      _keyboardHeight = inset;
-      changed = true;
+    if (_returningToKeyboard && _viewInsetBottom >= _panelHeight - 1) {
+      _finishKeyboardReturn();
     }
-    if (_returningToKeyboard && inset >= _panelHeight - 1) {
-      _returningToKeyboard = false;
-      changed = true;
-    }
-    if (changed || _emojiMode || _returningToKeyboard) setState(() {});
   }
 
-  double get _panelHeight =>
-      _keyboardHeight > 0 ? _keyboardHeight : _fallbackPanelHeight;
-
-  /// 表情面板区当前要占的高度：面板高减去仍在屏上的键盘部分。键盘收起
-  /// 的过程中它随之长高、切回键盘时随之缩回，输入区始终不动
-  double get _emojiAreaHeight {
-    if (!_emojiMode && !_returningToKeyboard) return 0;
-    return (_panelHeight - _viewInsetBottom).clamp(0.0, _panelHeight);
+  void _finishKeyboardReturn() {
+    _keyboardReturnTimeout?.cancel();
+    setState(() => _returningToKeyboard = false);
   }
 
   void _toggleEmojiPanel() {
@@ -198,7 +193,15 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     if (_emojiMode) {
       _switchToKeyboard();
     } else {
+      _keyboardReturnTimeout?.cancel();
       setState(() {
+        if (!_returningToKeyboard) {
+          _panelHeight = resolveComposerPanelHeight(
+            keyboardHeight: _viewInsetBottom,
+            fallbackHeight: 300,
+            safeBottom: MediaQuery.viewPaddingOf(context).bottom,
+          );
+        }
         _emojiMode = true;
         _returningToKeyboard = false;
       });
@@ -211,10 +214,17 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     if (!_emojiMode) return;
     setState(() {
       _emojiMode = false;
-      _returningToKeyboard = true;
+      _returningToKeyboard = _viewInsetBottom < _panelHeight - 1;
     });
     _session.focusNode.requestFocus();
-    SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+    // 已聚焦的输入框解除只读后会自行恢复输入连接。外接键盘或较矮的
+    // 输入法可能始终达不到原高度，届时释放剩余占位。
+    if (_returningToKeyboard) {
+      _keyboardReturnTimeout = Timer(
+        const Duration(milliseconds: 900),
+        _finishKeyboardReturn,
+      );
+    }
   }
 
   void _captureSource() {
@@ -274,9 +284,11 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final floating = TopicBottomBarMetrics.isFloating(context);
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, _) {
+      child: _buildPanel(context, theme, floating),
+      builder: (context, panel) {
         final raw = _controller.value;
         if (raw == 0) return const SizedBox.shrink();
         final t = _geometryCurve.transform(raw);
@@ -293,7 +305,14 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                 ),
               ),
             ),
-            _buildMorphingPanel(context, theme, t, contentOpacity),
+            _buildMorphingPanel(
+              context,
+              theme,
+              t,
+              contentOpacity,
+              floating,
+              panel!,
+            ),
           ],
         );
       },
@@ -307,14 +326,19 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     ThemeData theme,
     double t,
     double contentOpacity,
+    bool floating,
+    Widget panel,
   ) {
-    final floating = TopicBottomBarMetrics.isFloating(context);
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    // 本层盖在整页（含顶栏）之上，不在 Scaffold body 里，键盘让位要自己算
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    // 表情面板先在键盘背后按终态高度布局，系统键盘收起时自然露出。
+    final keyboardInset = _holdsPanel
+        ? 0.0
+        : MediaQuery.viewInsetsOf(context).bottom;
     final panelBottom =
         keyboardInset +
-        (floating ? safeBottom + TopicBottomBarMetrics.floatingMargin : 0.0);
+        (floating
+            ? MediaQuery.paddingOf(context).bottom +
+                  TopicBottomBarMetrics.floatingMargin
+            : 0.0);
     final panelRadius = context.shapes.resolve(_panelRadius);
     return Positioned.fill(
       child: LayoutBuilder(
@@ -360,10 +384,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                             for (final activator in composerSubmitActivators())
                               activator: _submitFromShortcut,
                           },
-                          child: KeyedSubtree(
-                            key: _panelKey,
-                            child: _buildPanel(context, theme, floating),
-                          ),
+                          child: KeyedSubtree(key: _panelKey, child: panel),
                         ),
                       ),
                     ),
@@ -387,7 +408,6 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
         final suggestExpand =
             widget.richEditorAvailable &&
             markdownHasBlockFormatting(_session.text.text);
-        final emojiArea = _emojiAreaHeight;
         final content = Padding(
           padding: EdgeInsets.fromLTRB(
             16,
@@ -395,7 +415,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
             12,
             // 表情面板占位时由面板贴底；否则贴底形态自己让出底部安全区，
             // 悬浮卡片已离开底边
-            emojiArea > 0 || floating
+            _holdsPanel || floating
                 ? 8
                 : 8 + MediaQuery.paddingOf(context).bottom,
           ),
@@ -535,55 +555,82 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                   ),
                 ],
               ),
-              // 最近用过的表情，点按直接插入（表情面板打开时由面板承担）
-              if (_recentEmojis.isNotEmpty && emojiArea == 0)
-                SizedBox(
-                  height: 44,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _recentEmojis.length,
-                    itemBuilder: (context, index) {
-                      final name = _recentEmojis[index];
-                      return InkWell(
-                        onTap: () => _insertEmoji(name),
-                        customBorder: RoundedSuperellipseBorder(
-                          borderRadius: context.shapes.borderRadius(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: EmojiImage(name, size: 28),
-                        ),
-                      );
-                    },
-                  ),
+              if (_recentEmojis.isNotEmpty)
+                _RecentEmojiStrip(
+                  visible: !_emojiMode,
+                  names: _recentEmojis,
+                  onSelected: _insertEmoji,
                 ),
             ],
           ),
         );
-        if (emojiArea == 0) return content;
+        // 输入框在两种模式下使用同一个父节点，交接时保留 EditableText 的输入连接。
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             content,
-            // 面板按完整高度布局、外框随键盘升降裁切，过渡中不逐帧重排
-            SizedBox(
-              height: emojiArea,
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.topCenter,
-                  minHeight: _panelHeight,
-                  maxHeight: _panelHeight,
-                  child: EmojiStickerPanel(
-                    onEmojiSelected: (emoji) => _insertEmoji(emoji.name),
-                    onStickerSelected: _session.insertText,
-                    onBackspace: () =>
-                        deleteBackwardWithEmojiShortcodes(_session.text),
-                  ),
-                ),
-              ),
-            ),
+            if (_holdsPanel) SizedBox(height: _panelHeight, child: _emojiPanel),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _RecentEmojiStrip extends StatelessWidget {
+  const _RecentEmojiStrip({
+    required this.visible,
+    required this.names,
+    required this.onSelected,
+  });
+
+  final bool visible;
+  final List<String> names;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: visible ? 1.0 : 0.0),
+      duration: reduceMotion
+          ? Duration.zero
+          : TopicBottomBarMetrics.motionDuration,
+      curve: TopicBottomBarMetrics.motionCurve,
+      child: SizedBox(
+        height: 44,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: names.length,
+          itemBuilder: (context, index) {
+            final name = names[index];
+            return InkWell(
+              onTap: () => onSelected(name),
+              customBorder: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: EmojiImage(name, size: 28),
+              ),
+            );
+          },
+        ),
+      ),
+      builder: (context, factor, child) {
+        if (factor == 0) return const SizedBox.shrink();
+        return IgnorePointer(
+          ignoring: !visible,
+          child: ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: factor,
+              child: Opacity(opacity: factor, child: child),
+            ),
+          ),
         );
       },
     );

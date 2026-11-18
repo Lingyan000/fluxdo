@@ -3179,7 +3179,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 快捷回复层挂在 Scaffold 之外：遮罩盖住整页（含顶栏），而不只是 body
     final topicPage = Stack(
       children: [
-        topicScaffold,
+        ValueListenableBuilder<bool>(
+          valueListenable: _replySession.presentedNotifier,
+          child: topicScaffold,
+          builder: (context, presented, child) => KeyboardInsetIsolation(
+            active: !presented,
+            child: child!,
+          ),
+        ),
         Positioned.fill(child: _buildQuickReplyLayer(params)),
       ],
     );
