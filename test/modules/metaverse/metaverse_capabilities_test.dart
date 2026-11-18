@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_connect_capability.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential_manager.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
@@ -128,6 +129,31 @@ Future<void> main() async {
   tearDown(() async {
     network.dispose();
     await directory.delete(recursive: true);
+  });
+
+  test('关闭账号与支付后状态可读，凭证请求和付款在触达服务或弹窗前受限', () async {
+    final raw = _manifest();
+    (raw['permissions'] as Map)['identity'] = true;
+    final host = MetaversePluginHost(manifest: MetaversePluginManifest.parse(raw), store: store,
+      network: network, engineFactory: createMetaverseScriptEngine, delegate: _Delegate(),
+      blockedPermissions: {MetaversePluginPermission.identity, MetaversePluginPermission.serviceAccount,
+        MetaversePluginPermission.payments});
+    addTearDown(host.retire);
+    expect(await host.call('user.get', {}), isNull);
+    expect(await host.call('credentials.status', {'name': 'account'}), {'authorized': false, 'expiresAt': null});
+    for (final (method, params, permission) in [
+      ('credentials.capture', request, 'serviceAccount'),
+      ('credentials.request', {'name': 'account'}, 'serviceAccount'),
+      ('connect.authorize', {'url': 'https://connect.linux.do/oauth2/authorize'}, 'serviceAccount'),
+      ('fetch', {'url': 'https://service.example/v2/tasks', 'credential': 'account'}, 'serviceAccount'),
+      ('payments.request', {'provider': 'linuxDoCredit'}, 'payments'),
+    ]) {
+      await expectLater(host.call(method, params), throwsA(isA<MetaversePluginCallException>()
+          .having((e) => e.message, 'reason', 'permission_denied:$permission')));
+    }
+    expect(adapter.requests, isEmpty);
+    expect((await host.call('fetch', {'url': 'https://service.example/public'}) as Map)['status'], 200);
+    expect(adapter.requests.single.headers.containsKey('Authorization'), isFalse);
   });
 
   test('API 2 插件从真实脚本入口捕获凭证并按声明发送请求', () async {

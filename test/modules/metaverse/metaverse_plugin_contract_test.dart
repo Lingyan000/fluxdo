@@ -67,6 +67,24 @@ void main() {
     expect(adapter.requests.length, 2);
   });
 
+  test('关闭外部图片仍可显示服务内图片并约束重定向', () async {
+    final declaration = _example()
+      ..remove('auth')
+      ..['schema'] = 2;
+    declaration['permissions'] = {'network': ['shop.example.org'], 'publicImages': true};
+    final manifest = _parse(declaration);
+    final adapter = _Adapter()..bytes = Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0]);
+    final network = MetaversePluginNetwork(dio: Dio()..httpClientAdapter = adapter,
+      lookup: (_) async => [InternetAddress('198.18.0.6')]);
+    addTearDown(network.dispose);
+    final local = Uri.parse('https://shop.example.org/photo'), external = Uri.parse('https://images.example.org/photo');
+    expect(await network.loadImage(manifest, local, allowPublicImages: false), isNotEmpty);
+    await expectLater(network.loadImage(manifest, external, allowPublicImages: false), throwsA(isA<MetaversePluginCallException>()));
+    adapter.responseFor = (_) => ResponseBody.fromString('', 302, headers: {'location': [external.toString()]});
+    await expectLater(network.loadImage(manifest, local, allowPublicImages: false), throwsA(isA<MetaversePluginCallException>()));
+    expect(adapter.requests.map((r) => r.uri.host), ['shop.example.org', 'shop.example.org']);
+  });
+
   test('必需能力在安装和恢复时强制校验，不能降级为静默忽略', () {
     final source = {..._example(), 'apiVersion':1, 'schema':10, 'requiredFeatures':['virtualGrid']};
     expect(_parse(source).runtimeSupported, isTrue);

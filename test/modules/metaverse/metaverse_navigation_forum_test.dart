@@ -15,6 +15,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_forum_request.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart';
 import 'package:fluxdo/navigation/nav_entries_provider.dart';
@@ -365,6 +366,18 @@ void main() {
     late Delegate delegate;
     late Engine engine;
     late MetaversePluginHost host;
+    MetaversePluginHost createHost({Set<MetaversePluginPermission> blocked = const {}}) =>
+        MetaversePluginHost(
+          manifest: manifest(),
+          blockedPermissions: blocked,
+          store: store,
+          network: MetaversePluginNetwork(lookup: (_) async => throw StateError('no network')),
+          engineFactory: () async => engine,
+          delegate: delegate,
+          codeLoader: () async => (
+            ui: 'import fluxdo; widget Activity = Label(text: "Ready");', script: '',
+          ),
+        );
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       directory = await Directory.systemTemp.createTemp('forum-plugin-test-');
@@ -375,19 +388,7 @@ void main() {
       );
       delegate = Delegate();
       engine = Engine();
-      host = MetaversePluginHost(
-        manifest: manifest(),
-        store: store,
-        network: MetaversePluginNetwork(
-          lookup: (_) async => throw StateError('no network'),
-        ),
-        engineFactory: () async => engine,
-        delegate: delegate,
-        codeLoader: () async => (
-          ui: 'import fluxdo; widget Activity = Label(text: "Ready");',
-          script: '',
-        ),
-      );
+      host = createHost();
     });
     tearDown(() async {
       host.shutdown();
@@ -476,6 +477,21 @@ void main() {
         throwsA(isA<MetaversePluginCallException>()),
       );
       expect(delegate.reads, 0);
+    });
+    test('用户关闭关注列表仍能单独读取资料和动态', () async {
+      host = createHost(blocked: {MetaversePluginPermission.forumFollowing});
+      final surface = await host.open(kind: 'page', page: 'activity');
+      await expectLater(
+        read(surface, {'resource': 'following', 'username': 'demo'}),
+        throwsA(isA<MetaversePluginCallException>().having(
+          (e) => e.message, 'message', 'permission_denied:forumFollowing',
+        )),
+      );
+      expect(delegate.reads, 0);
+      for (final resource in ['user', 'actions']) {
+        expect(await read(surface, {'resource': resource, 'username': 'demo'}), isA<Map>());
+      }
+      expect(delegate.reads, 2);
     });
     test('论坛插件存储按账号分区，旧运行实例不能读取新账号的数据', () async {
       await host.open(kind: 'page', page: 'activity');

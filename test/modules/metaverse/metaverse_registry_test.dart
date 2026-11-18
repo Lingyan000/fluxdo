@@ -12,6 +12,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart'
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/providers/secret_store_provider.dart';
@@ -296,9 +297,59 @@ void main() {
     );
   });
 
+  test('按插件保存权限，基础能力不可改，链接路由与旧实例立即失效，同源更新保留选择', () async {
+    const account = MetaversePluginPermission.serviceAccount;
+    const links = MetaversePluginPermission.links;
+    final controller = container.read(metaversePluginsProvider.notifier);
+    final store = container.read(metaversePluginStoreProvider);
+    final a = await controller.install(await package({}), choices: {account: true});
+    final b = await controller.install(await package({'id': 'com.example.second'}), choices: {account: true});
+    await controller.setEnabled(a.id, enabled: true);
+    final oldRecord = controller.byId(a.id)!;
+    final hosts = container.read(metaversePluginHostsProvider), oldHost = hosts.hostFor(oldRecord);
+    await controller.saveToken(a.id, 'a');
+    await controller.saveToken(b.id, 'b');
+    await controller.setPermission(a.id, account, false);
+    expect(await store.readToken(a.id), isNull);
+    expect(await store.readToken(b.id), 'b');
+    await expectLater(oldHost.open(kind: 'card'), throwsA(isA<PluginOperationCancelled>()));
+    expect(hosts.hostFor(oldRecord).blockedPermissions, contains(account));
+    await expectLater(controller.saveToken(a.id, 'no'), throwsA(isA<MetaversePluginCallException>()));
+    await expectLater(controller.setPermission(a.id, MetaversePluginPermission.network, false), throwsArgumentError);
+    await expectLater(controller.setPermission(a.id, MetaversePluginPermission.payments, true), throwsArgumentError);
+    await controller.setPermission(a.id, links, false);
+    final uri = Uri.parse('https://example.com/orders/1');
+    expect(matchMetaverseLink(container, uri), isNull);
+    await controller.install(await package({'version': '1.2.0', 'permissions': {
+      'network': ['api.example.com'], 'identity': true,
+    }}));
+    expect(store.loadIndex().first.blockedPermissions, containsAll([account, links, MetaversePluginPermission.identity]));
+    await controller.setEnabled(a.id, enabled: false);
+    await controller.setEnabled(a.id, enabled: true);
+    expect(matchMetaverseLink(container, uri), isNull);
+    await controller.setPermission(a.id, links, true);
+    expect(matchMetaverseLink(container, uri)?.service.id, a.id);
+    await controller.setPermission(a.id, account, true);
+    expect(await store.readToken(a.id), isNull);
+    await controller.install(await package({}, source: 'https://other.example.org/plugin.json'));
+    expect(store.loadIndex().first.allows(account), isFalse);
+  });
+
+  test('旧索引保留已审阅权限，损坏的新策略不会恢复敏感数据访问', () async {
+    final manifest = (await package({})).manifest;
+    final item = {'manifest': manifest.raw, 'source': 'file', 'enabled': true};
+    final prefs = await SharedPreferences.getInstance();
+    final store = container.read(metaversePluginStoreProvider);
+    await prefs.setString(MetaversePluginStore.indexKey, jsonEncode([item]));
+    expect(store.loadIndex().single.allows(MetaversePluginPermission.serviceAccount), isTrue);
+    await prefs.setString(MetaversePluginStore.indexKey, jsonEncode([{...item, 'blockedPermissions': false}]));
+    expect(store.loadIndex().single.allows(MetaversePluginPermission.serviceAccount), isFalse);
+    expect(store.loadIndex().single.allows(MetaversePluginPermission.network), isTrue);
+  });
+
   test('停用即撤销凭证', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
-    await controller.install(await package(const {}));
+    await controller.install(await package(const {}), choices: {MetaversePluginPermission.serviceAccount: true});
     await controller.saveToken('com.example.points', 'secret');
     final store = container.read(metaversePluginStoreProvider);
     expect(await store.readToken('com.example.points'), 'secret');
@@ -311,7 +362,7 @@ void main() {
   test('同一来源的重复安装保留开关；换来源视为另一个插件并清凭证与本地数据', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
     final store = container.read(metaversePluginStoreProvider);
-    await controller.install(await package(const {}));
+    await controller.install(await package(const {}), choices: {MetaversePluginPermission.serviceAccount: true});
     await controller.setEnabled('com.example.points', enabled: true);
     await controller.saveToken('com.example.points', 'secret');
     await store.writeStorage('com.example.points', {'k': 1});
@@ -336,7 +387,7 @@ void main() {
     const source = 'asset:plugins/example/plugin.json';
     final controller = container.read(metaversePluginsProvider.notifier);
     final store = container.read(metaversePluginStoreProvider);
-    final plugin = await controller.install(await package({}, source: source));
+    final plugin = await controller.install(await package({}, source: source), choices: {MetaversePluginPermission.serviceAccount: true});
     await controller.setEnabled(plugin.id, enabled: true);
     await controller.saveToken(plugin.id, 'example');
     await container.read(secretStoreProvider).writeLegacyRecord(plugin.id, 'fixture-buyer-scope', 'last-submission');
@@ -381,7 +432,7 @@ void main() {
   test('退出登录清空所有插件凭证', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
     final store = container.read(metaversePluginStoreProvider);
-    await controller.install(await package(const {}));
+    await controller.install(await package(const {}), choices: {MetaversePluginPermission.serviceAccount: true});
     await controller.saveToken('com.example.points', 'secret');
 
     await controller.signOutAll();

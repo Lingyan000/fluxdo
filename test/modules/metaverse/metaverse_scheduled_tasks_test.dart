@@ -11,6 +11,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_forum_request.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_task.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
@@ -122,6 +123,7 @@ void main() {
   var ms = 1000000;
   MetaversePluginHost host({String? script}) => MetaversePluginHost(
     manifest: installed.manifest,
+    blockedPermissions: installed.blockedPermissions,
     store: data,
     network: network,
     engineFactory: createMetaverseScriptEngine,
@@ -254,6 +256,37 @@ void main() {
       expect(delegate.notifications.delivered, isEmpty);
       reopened.shutdown();
     });
+  });
+
+  test('单项撤销使其他引擎的旧租约失效，只降级后台计划并移除被撤销的通知', () async {
+    final other = MetaverseTaskStore(root, clock: () => DateTime.fromMillisecondsSinceEpoch(ms));
+    final request = MetaverseTaskSchedule('refresh', 10);
+    control.schedule(7, installed.id, request, background: true);
+    control.allowNotifications(7, installed.id, true);
+    final notice = control.notification(7, installed.id, 'notice', page: 'feed', params: {})['id'];
+    ms += 10000;
+    final active = other.claim(background: true)!;
+    final partial = installed.copyWith(blockedPermissions: {MetaversePluginPermission.forumFollowing});
+    expect(control.applyPermissions(partial), isEmpty);
+    expect(other.active(active), isFalse);
+    expect(other.notificationTarget(notice), isNotNull);
+    expect(other.tasks(7, installed.id).single['background'], isTrue);
+    ms += 10000;
+    var ran = false;
+    await dispatchMetaverseTask(control: other, background: false, available: (_) => true,
+      installed: () => [installed], newHost: (_) {ran = true; return host();});
+    expect(ran, isFalse, reason: '持有旧安装索引的引擎必须重新读取策略');
+    final limited = partial.copyWith(blockedPermissions: {...partial.blockedPermissions,
+      MetaversePluginPermission.background, MetaversePluginPermission.notifications});
+    expect(control.applyPermissions(limited), [notice]);
+    expect(other.notificationTarget(notice), isNull);
+    expect(other.notificationsAllowed(7, installed.id), isFalse);
+    expect(other.tasks(7, installed.id).single['background'], isFalse);
+    expect(() => other.allowNotifications(7, installed.id, true), throwsA(isA<MetaversePluginCallException>()));
+    expect(() => other.schedule(7, installed.id, request, background: true), throwsA(isA<MetaversePluginCallException>()));
+    control.applyPermissions(installed);
+    expect(other.notificationsAllowed(7, installed.id), isFalse);
+    expect(other.tasks(7, installed.id).single['background'], isFalse);
   });
 
   test('独立连接抢占、后台长短间隔、冷启动账号与来源失效', () {

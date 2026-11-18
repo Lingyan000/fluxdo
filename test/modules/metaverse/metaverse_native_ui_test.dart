@@ -31,6 +31,8 @@ import 'package:fluxdo/modules/ldc_reward/widgets/ldc_reward_config_tile.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_file_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
@@ -943,22 +945,57 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     final manifest = MetaversePluginManifest.parse(
       jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
-    await tester.pumpWidget(app(
-      Builder(builder: (context) => TextButton(
-        onPressed: () => showMetaversePluginDetails(context, manifest),
-        child: const Text('权限入口'),
-      )),
-      scale: 1.4,
-    ));
-    await tester.tap(find.text('权限入口'));
+    final store = _MemoryCodeStore(preferences);
+    await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file')]);
+    await tester.pumpWidget(app(MetaversePluginPermissionsPage(pluginId: manifest.id),
+      pluginStore: store, scale: 1.4));
     await tester.pumpAndSettle();
     final l = tester.element(find.byType(Scaffold).first).l10n;
-    expect(find.text(l.metaverse_pluginPermissions), findsOneWidget);
-    expect(find.text(l.metaverse_permissionNetwork), findsOneWidget);
+    expect(find.text(l.metaverse_managedPermissions), findsOneWidget);
+    final identity = find.byKey(const ValueKey(MetaversePluginPermission.identity));
+    await tester.tap(identity);
+    await tester.pumpAndSettle();
+    expect(tester.widget<M3eSwitchListTile>(identity).value, isFalse);
+    expect(store.loadIndex().single.allows(MetaversePluginPermission.identity), isFalse);
+    final network = find.byKey(const ValueKey(MetaversePluginPermission.network));
+    await tester.ensureVisible(network);
+    expect(tester.widget(network), isA<ListTile>());
     expect(find.text(l.metaverse_pluginInstall), findsNothing);
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('凭证输入期间撤销再开放服务账号，旧的确认不写入凭证', (tester) async {
+    final manifest = MetaversePluginManifest.parse(
+      jsonDecode(File('test/fixtures/metaverse/api1_token.json').readAsStringSync()),
+    );
+    final store = _MemoryCodeStore(preferences);
+    await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file', enabled: true)]);
+    bool? result;
+    late MetaversePluginsController controller;
+    await tester.pumpWidget(app(Builder(builder: (context) {
+      final container = ProviderScope.containerOf(context);
+      controller = container.read(metaversePluginsProvider.notifier);
+      return TextButton(
+        onPressed: () async {
+          final service = MetaversePluginService(controller.byId(manifest.id)!);
+          result = await service.reauthorize(context, container);
+        },
+        child: const Text('授权入口'),
+      );
+    }), pluginStore: store));
+    await tester.tap(find.text('授权入口'));
+    await tester.pumpAndSettle();
+    final input = find.byType(TextField);
+    await tester.enterText(input, 'fixture-token');
+    const account = MetaversePluginPermission.serviceAccount;
+    await controller.setPermission(manifest.id, account, false);
+    await controller.setPermission(manifest.id, account, true);
+    await tester.tap(find.widgetWithText(FilledButton, tester.element(input).l10n.common_confirm));
+    await tester.pumpAndSettle();
+    expect(result, isFalse);
+    expect(await store.readToken(manifest.id), isNull);
   });
 
   for (final width in [320.0, 390.0, 800.0]) {
@@ -970,7 +1007,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       final manifest = MetaversePluginManifest.parse(
         jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
       );
-      bool? result;
+      Map<MetaversePluginPermission, bool>? result;
       await tester.pumpWidget(
         app(
           Builder(
@@ -995,6 +1032,15 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         l.metaverse_pluginUpdate,
       );
       expect(update.hitTestable(), findsOneWidget);
+      const identity = MetaversePluginPermission.identity;
+      if (width == 390) {
+        final toggle = find.byKey(const ValueKey(identity));
+        await tester.ensureVisible(toggle);
+        expect(tester.widget<M3eSwitchListTile>(toggle).value, isFalse);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(tester.widget<M3eSwitchListTile>(toggle).value, isTrue);
+      }
       final list = find.byType(ListView);
       final controller = tester.widget<ListView>(list).controller!;
       await tester.drag(list, const Offset(0, -900));
@@ -1010,7 +1056,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       }
       await tester.tap(update);
       await tester.pumpAndSettle();
-      expect(result, isTrue);
+      expect(result, width == 390 ? {identity: true} : isEmpty);
       expect(find.text('安装入口'), findsOneWidget);
     });
   }

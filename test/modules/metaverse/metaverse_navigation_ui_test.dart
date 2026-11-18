@@ -316,7 +316,7 @@ void main() {
       );
       await tester.tap(find.text('Review'));
       await tester.pumpAndSettle();
-      expect(find.text(l.metaverse_permissionForum), findsOneWidget);
+      expect(find.text(l.metaverse_forumProfiles), findsOneWidget);
       expect(tester.takeException(), isNull);
       await screenshot('permission-${dark ? 'dark-large' : 'light'}');
       await tester.tap(find.text(l.common_cancel));

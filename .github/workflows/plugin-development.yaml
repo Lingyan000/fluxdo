@@ -108,6 +108,14 @@ jobs:
       - name: Verify installed activity plugin with the native task dispatcher
         working-directory: app
         run: flutter test --reporter expanded test/modules/metaverse/metaverse_scheduled_tasks_test.dart
+      - name: Verify per-plugin permissions, installation and revocation
+        working-directory: app
+        run: >-
+          flutter test --reporter expanded
+          test/modules/metaverse/metaverse_registry_test.dart
+          test/modules/metaverse/metaverse_capabilities_test.dart
+          test/modules/metaverse/metaverse_plugin_contract_test.dart
+          test/modules/metaverse/metaverse_native_ui_test.dart
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
         run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
