@@ -278,8 +278,8 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
   // 弧形底盘在菜单项内外两侧各留出的宽度
   static const double _dialPadding = 8.0;
 
-  // 高亮标签与按压点之间至少留出的距离
-  static const double _labelMinDistance = 44.0;
+  // 高亮标签与扇形最外一项外沿之间的间距
+  static const double _labelGap = 8.0;
 
   // 展开起点的半径比例：底盘与菜单项从这里同步长到目标半径
   static const double _collapsedRadiusFactor = 0.55;
@@ -457,16 +457,20 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     final mq = MediaQuery.of(context);
     final up = widget.direction == RadialMenuDirection.up;
 
-    // 放在扇形内侧的空白处：沿窗口角中线、底盘内沿与按压点之间，
-    // 紧挨手指且不遮挡菜单项
-    final mid = (widget.sweepStart + widget.sweepEnd) / 2;
-    final dialInner = widget.radius - _itemSize / 2 - _dialPadding;
-    final distance = math.max(_labelMinDistance, dialInner / 2 + 8);
-    final dirX = math.sin(mid);
-    final dirY = up ? -math.cos(mid) : math.cos(mid);
+    // 固定在整个扇形的外侧（向上展开时在最高一项的上方）、水平对齐全部
+    // 菜单项的中间：不被手指挡住、不压任何一项、贴边时也不会被挤回扇形里，
+    // 切换高亮项时位置也不跳动
+    final positions = [
+      for (var i = 0; i < widget.items.length; i++)
+        _arcPoint(_itemPhi(i), widget.radius),
+    ];
+    final xs = positions.map((p) => p.dx);
+    final ys = positions.map((p) => p.dy);
+    final centerX = (xs.reduce(math.min) + xs.reduce(math.max)) / 2;
+    final itemReach = _itemSize * 1.2 / 2 + _labelGap;
     final anchor = Offset(
-      widget.center.dx + dirX * distance,
-      widget.center.dy + dirY * distance,
+      centerX,
+      up ? ys.reduce(math.min) - itemReach : ys.reduce(math.max) + itemReach,
     );
 
     return Positioned.fill(
@@ -474,7 +478,6 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
         delegate: _TooltipLayoutDelegate(
           anchor: anchor,
           growsDown: !up,
-          centered: true,
           safeInsets: mq.padding,
         ),
         child: Opacity(
@@ -636,16 +639,12 @@ class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
     required this.anchor,
     required this.growsDown,
     required this.safeInsets,
-    this.centered = false,
   });
 
   /// 锚点：up 方向为药丸底边中点，down 方向（[growsDown]）为顶边中点
   final Offset anchor;
   final bool growsDown;
   final EdgeInsets safeInsets;
-
-  /// 以 [anchor] 为药丸中心摆放（忽略 [growsDown]）
-  final bool centered;
 
   static const double _margin = 12.0;
 
@@ -662,11 +661,7 @@ class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
       _margin,
       math.max(_margin, size.width - _margin - childSize.width),
     );
-    final rawY = centered
-        ? anchor.dy - childSize.height / 2
-        : growsDown
-        ? anchor.dy
-        : anchor.dy - childSize.height;
+    final rawY = growsDown ? anchor.dy : anchor.dy - childSize.height;
     final double y = rawY.clamp(
       safeInsets.top + _margin,
       math.max(
@@ -681,7 +676,6 @@ class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
   bool shouldRelayout(_TooltipLayoutDelegate oldDelegate) =>
       anchor != oldDelegate.anchor ||
       growsDown != oldDelegate.growsDown ||
-      centered != oldDelegate.centered ||
       safeInsets != oldDelegate.safeInsets;
 }
 
