@@ -34,6 +34,8 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
   LocalHistoryEntry? _history;
   bool _disposing = false, _closing = false;
   RefreshRevealHandle? _refreshHandle, _resumedDrag;
+  ScrollController? _homeScroll;
+  Drag? _homeDrag;
 
   @override
   void initState() {
@@ -51,6 +53,8 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
   void didUpdateWidget(HomeMiniAppsLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.enabled && !widget.enabled) {
+      _homeDrag?.cancel();
+      _homeScroll = null;
       _resumedDrag?.cancelResumedDrag();
       _resumedDrag = _refreshHandle = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -96,7 +100,12 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
 
   bool get isOpen => _sheet.isOpen;
   double get offset => _sheet.offset;
-  Future<void> open() => widget.enabled ? _sheet.open() : Future<void>.value();
+  Future<void> open({ScrollController? scrollController}) {
+    if (!widget.enabled) return Future<void>.value();
+    _homeScroll = scrollController;
+    return _sheet.open();
+  }
+
   void close() {
     FocusScope.of(context).unfocus();
     _closing = true;
@@ -117,18 +126,51 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
     return true;
   }
 
-  void _updateSurfaceDrag(double delta) {
+  void _updateSurfaceDrag(DragUpdateDetails details) {
+    final drag = _homeDrag;
+    if (drag != null) {
+      drag.update(details);
+      return;
+    }
+    final delta = details.delta.dy;
     // 从全开的广场向上收起时只关闭。回到刷新区再向下，才转换为刷新意图。
     if (_resumedDrag == null && delta > 0) _resumeRefreshDrag();
     final handle = _resumedDrag;
-    if (handle != null) {
-      handle.updateResumedDrag(delta);
-    } else {
-      _sheet.updateCloseDrag(delta);
+    final remaining =
+        handle?.updateResumedDrag(delta) ?? _sheet.updateCloseDrag(delta);
+    final scroll = _homeScroll;
+    if (remaining >= 0 || scroll == null || scroll.positions.length != 1) {
+      return;
     }
+    handle?.cancelResumedDrag();
+    _resumedDrag = null;
+    _sheet.reset();
+    _homeDrag = scroll.position.drag(
+      DragStartDetails(
+        globalPosition: details.globalPosition - Offset(0, remaining),
+        sourceTimeStamp: details.sourceTimeStamp,
+        kind: details.kind,
+      ),
+      () => _homeDrag = null,
+    );
+    _homeDrag!.update(
+      DragUpdateDetails(
+        globalPosition: details.globalPosition,
+        sourceTimeStamp: details.sourceTimeStamp,
+        delta: Offset(0, remaining),
+        primaryDelta: remaining,
+        kind: details.kind,
+      ),
+    );
   }
 
-  void _endSurfaceDrag(double velocity) {
+  void _endSurfaceDrag(DragEndDetails details) {
+    if (_homeDrag != null) {
+      _homeDrag!.end(details);
+      setState(() => _homeDrag = null);
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
     final handle = _resumedDrag;
     _resumedDrag = null;
     if (handle != null) {
@@ -138,12 +180,17 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
         // 首页切换标签或刷新组件被移除时，也必须释放前景。
         _sheet.close();
       }
-    } else {
+    } else if (isOpen) {
       _sheet.endCloseDrag(velocity);
     }
   }
 
   void _cancelSurfaceDrag() {
+    if (_homeDrag != null) {
+      _homeDrag!.cancel();
+      setState(() => _homeDrag = null);
+      return;
+    }
     final handle = _resumedDrag;
     _resumedDrag = null;
     if (handle != null) {
@@ -177,12 +224,8 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
             _closing = false;
             _sheet.beginCloseDrag();
           },
-    onVerticalDragUpdate: !enabled
-        ? null
-        : (d) => _updateSurfaceDrag(d.delta.dy),
-    onVerticalDragEnd: !enabled
-        ? null
-        : (d) => _endSurfaceDrag(d.primaryVelocity ?? 0),
+    onVerticalDragUpdate: enabled ? _updateSurfaceDrag : null,
+    onVerticalDragEnd: enabled ? _endSurfaceDrag : null,
     onVerticalDragCancel: enabled ? _cancelSurfaceDrag : null,
     child: child,
   );
@@ -190,6 +233,7 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
   @override
   void dispose() {
     _disposing = true;
+    _homeDrag?.cancel();
     _history?.remove();
     _sheet.removeListener(_syncHistory);
     _sheet.dispose();
@@ -369,7 +413,10 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                           // 手势范围跟随可见前景，不能覆盖背后已露出的广场。
                           child: _surfaceGesture(
                             key: const ValueKey('mini-app-motion-gesture'),
-                            enabled: isOpen || _resumedDrag != null,
+                            enabled:
+                                isOpen ||
+                                _resumedDrag != null ||
+                                _homeDrag != null,
                             child: DecoratedBox(
                               decoration: ShapeDecoration(
                                 shape: RoundedSuperellipseBorder(

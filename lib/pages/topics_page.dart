@@ -3111,7 +3111,9 @@ class _TopicListState extends ConsumerState<_TopicList>
           child: DesktopRefreshIndicator(
             refreshIndicatorKey: _refreshIndicatorKey,
             onSecondaryAction: miniAppPullEnabled
-                ? () => HomeMiniAppsLayer.of(context).open()
+                ? () => HomeMiniAppsLayer.of(
+                    context,
+                  ).open(scrollController: _scrollController)
                 : null,
             externalReveal: miniAppPullEnabled,
             revealOffset: miniAppPullEnabled
