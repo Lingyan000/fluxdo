@@ -26,13 +26,13 @@ Future<void> ensureWindowsProtocolsRegistered() async {
 }
 
 void _registerPluginFiles() {
-  final program = Registry.currentUser.createKey(r'Software\Classes\FluxDO.Plugin');
+  final program = CURRENT_USER.create(r'Software\Classes\FluxDO.Plugin');
   try {
-    program.createValue(const RegistryValue.string('', 'FluxDO Plugin'));
-    final command = program.createKey(r'shell\open\command');
+    program.setValue('', const RegistryValue.string('FluxDO Plugin'));
+    final command = program.create(r'shell\open\command');
     try {
-      command.createValue(
-        RegistryValue.string('', '"${Platform.resolvedExecutable}" "%1"'),
+      command.setValue(
+        '', RegistryValue.string('"${Platform.resolvedExecutable}" "%1"'),
       );
     } finally {
       command.close();
@@ -40,11 +40,11 @@ void _registerPluginFiles() {
   } finally {
     program.close();
   }
-  final openWith = Registry.currentUser.createKey(
+  final openWith = CURRENT_USER.create(
     r'Software\Classes\.fluxplugin\OpenWithProgids',
   );
   try {
-    openWith.createValue(const RegistryValue.string('FluxDO.Plugin', ''));
+    openWith.setValue('FluxDO.Plugin', const RegistryValue.string(''));
   } finally {
     openWith.close();
   }
