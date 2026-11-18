@@ -606,7 +606,7 @@ class _NotificationHeader extends ConsumerWidget {
     );
     final listUnread = listAsync.value?.where((n) => !n.read).length ?? 0;
     final badgeUnread = tab == NotificationPanelTab.all
-        ? countState.allUnread
+        ? countState.totalUnread
         : (tab.unreadCount(siteTypes, countState.grouped) ?? 0);
     final unreadCount = badgeUnread > 0 ? badgeUnread : listUnread;
     final canMarkRead = unreadCount > 0;
@@ -650,8 +650,8 @@ class _NotificationHeader extends ConsumerWidget {
                     final currentTab = ref.read(notificationPanelTabProvider);
                     if (currentTab == NotificationPanelTab.all) {
                       await ref
-                          .read(recentNotificationsProvider.notifier)
-                          .markAllAsRead();
+                          .read(notificationCountStateProvider.notifier)
+                          .markAllNotificationsRead();
                     } else {
                       await ref
                           .read(

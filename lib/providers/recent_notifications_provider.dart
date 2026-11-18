@@ -1,14 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/notification.dart';
 import 'core_providers.dart';
-import 'message_bus_providers.dart';
 
 /// 最近通知 Notifier（非分页，供快捷面板和 messageBus 使用）
 class RecentNotificationsNotifier extends AsyncNotifier<List<DiscourseNotification>> {
+  bool _reloadSilently = false;
+
   @override
   Future<List<DiscourseNotification>> build() async {
     final service = ref.read(discourseServiceProvider);
-    final response = await service.getRecentNotifications();
+    final silent = _reloadSilently;
+    _reloadSilently = false;
+    final response = await service.getRecentNotifications(silent: silent);
     return response.notifications;
   }
 
@@ -76,19 +79,22 @@ class RecentNotificationsNotifier extends AsyncNotifier<List<DiscourseNotificati
     });
   }
 
-  /// 标记所有通知为已读
-  Future<void> markAllAsRead() async {
-    final service = ref.read(discourseServiceProvider);
-    await service.markAllNotificationsRead();
-
-    // 重置通知计数
-    ref.read(notificationCountStateProvider.notifier).markAllRead();
-
-    // 更新本地状态
+  /// 更新已加载的通知；请求仍在途时，静默重读服务端的最新状态。
+  void markLocalRead({Set<int>? typeIds}) {
+    if (state.isLoading) {
+      _reloadSilently = true;
+      ref.invalidateSelf(asReload: true);
+      return;
+    }
     state.whenData((list) {
-      state = AsyncValue.data(
-        list.map((n) => n.copyWith(read: true)).toList(),
-      );
+      state = AsyncValue.data([
+        for (final n in list)
+          if (!n.read &&
+              (typeIds == null || typeIds.contains(n.notificationType.id)))
+            n.copyWith(read: true)
+          else
+            n,
+      ]);
     });
   }
 }
@@ -192,25 +198,33 @@ class CategorizedNotificationsNotifier
   void markAsRead(int notificationId) =>
       applyReadStatus({notificationId: true});
 
+  void markAllLocalRead() {
+    if (state.isLoading) {
+      // 旧请求可能返回标记前的快照；分类重查为 silent，不推进已看位置。
+      ref.invalidateSelf(asReload: true);
+      return;
+    }
+    state.whenData((list) {
+      if (list.every((n) => n.read)) return;
+      state = AsyncValue.data([for (final n in list) n.copyWith(read: true)]);
+    });
+  }
+
   /// 只把本分类标为已读
   Future<void> markAllAsRead() async {
     if (_typeNames.isEmpty) return;
-    await ref
+    final requestRef = ref;
+    await requestRef
         .read(discourseServiceProvider)
         .markNotificationsReadByTypes(_typeNames);
-    state.whenData((list) {
-      state = AsyncValue.data([for (final n in list) n.copyWith(read: true)]);
-    });
-    // 「全部」列表里同类型的条目一并更新，计数由服务端推送校正
-    if (ref.exists(recentNotificationsProvider)) {
-      final recent = ref.read(recentNotificationsProvider).value ?? const [];
-      final notifier = ref.read(recentNotificationsProvider.notifier);
-      for (final n in recent) {
-        if (!n.read && _typeIds.contains(n.notificationType.id)) {
-          notifier.markAsRead(n.id);
-        }
-      }
+    if (!requestRef.mounted) return;
+    // 计数由服务端推送校正。
+    if (ref.read(recentNotificationsProvider.exists)) {
+      ref.read(recentNotificationsProvider.notifier).markLocalRead(
+        typeIds: _typeIds,
+      );
     }
+    markAllLocalRead();
   }
 }
 

@@ -4,7 +4,6 @@ import '../models/notification.dart';
 import '../utils/paged_async_notifier.dart';
 import '../utils/pagination_helper.dart';
 import 'core_providers.dart';
-import 'message_bus_providers.dart';
 
 /// 通知列表的已读状态筛选，[query] 为服务端 `filter` 参数
 enum NotificationReadFilter {
@@ -33,19 +32,22 @@ class NotificationListNotifier
       );
 
   Future<PagedPage<DiscourseNotification>> _loadFirstPage() async {
-    final service = ref.read(discourseServiceProvider);
+    final requestRef = ref;
+    final service = requestRef.read(discourseServiceProvider);
     final response = await service.getNotifications(filter: filter.query);
-    _totalRows = response.totalRowsNotifications;
+    if (requestRef.mounted) _totalRows = response.totalRowsNotifications;
     return PagedPage(
       items: response.notifications,
-      hasMore: response.notifications.length < _totalRows,
+      hasMore: response.notifications.length < response.totalRowsNotifications,
     );
   }
 
   @override
   Future<List<DiscourseNotification>> build() async {
     resetPagingState();
-    return completePagedRefresh(await _loadFirstPage());
+    final requestRef = ref;
+    final page = await _loadFirstPage();
+    return requestRef.mounted ? completePagedRefresh(page) : page.items;
   }
 
   /// 刷新列表
@@ -82,16 +84,13 @@ class NotificationListNotifier
     return retryPagedLoadMore(loadMore);
   }
 
-  /// 标记所有为已读
-  Future<void> markAllAsRead() async {
-    final service = ref.read(discourseServiceProvider);
-    await service.markAllNotificationsRead();
-
-    // 重置通知计数
-    ref.read(notificationCountStateProvider.notifier).markAllRead();
-
-    // 更新本地状态
+  void markAllLocalRead() {
+    if (state.isLoading) {
+      ref.invalidateSelf(asReload: true);
+      return;
+    }
     state.whenData((list) {
+      if (list.every((n) => n.read)) return;
       state = AsyncValue.data(list.map((n) => n.copyWith(read: true)).toList());
     });
   }

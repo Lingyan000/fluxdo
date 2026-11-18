@@ -8,6 +8,7 @@ import '../l10n/s.dart';
 import '../models/notification.dart';
 import '../models/user_action.dart';
 import '../providers/discourse_providers.dart';
+import '../providers/message_bus_providers.dart';
 import '../providers/notification_activity_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../utils/blocked_user_filter.dart';
@@ -119,6 +120,15 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage>
 
   @override
   Widget build(BuildContext context) {
+    final totalUnread = ref.watch(
+      notificationCountStateProvider.select((s) => s.totalUnread),
+    );
+    final hasUnreadInList = ref.watch(
+      notificationListProvider(
+        _readFilter,
+      ).select((v) => v.value?.any((n) => !n.read) ?? false),
+    );
+    final canMarkRead = totalUnread > 0 || hasUnreadInList;
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= NotificationsWideLayout.minWidth;
@@ -157,12 +167,13 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage>
             actions: [
               IconButton(
                 icon: const Icon(Symbols.done_all_rounded),
-                onPressed: () async {
-                  await ref
-                      .read(notificationListProvider(_readFilter).notifier)
-                      .markAllAsRead();
-                  // 快捷面板下次打开时会自动 silentRefresh 同步已读状态
-                },
+                onPressed: canMarkRead
+                    ? () async {
+                        await ref
+                            .read(notificationCountStateProvider.notifier)
+                            .markAllNotificationsRead();
+                      }
+                    : null,
                 tooltip: context.l10n.notification_markAllRead,
               ),
             ],
