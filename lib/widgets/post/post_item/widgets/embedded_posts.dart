@@ -8,6 +8,7 @@ import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
 import '../../../../utils/platform_utils.dart';
+import '../../../common/positioned_stream_list.dart';
 import '../../../common/smart_avatar.dart';
 
 const double _embeddedFontSize = 13;
@@ -388,7 +389,13 @@ class _FoldableContentState extends State<_FoldableContent> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               textStyle: theme.textTheme.labelMedium,
             ),
-            onPressed: widget.onToggleUnfold,
+            onPressed: () {
+              // 收起全文时保持其后内容不动(长父帖收起不越过后面的帖子)
+              if (widget.unfolded) {
+                PositionedStreamList.keepTrailingEdgeOnShrink(context);
+              }
+              widget.onToggleUnfold();
+            },
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

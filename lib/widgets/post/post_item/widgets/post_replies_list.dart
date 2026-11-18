@@ -3,6 +3,7 @@ import 'package:app_icons/app_icons.dart';
 
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
+import '../../../common/positioned_stream_list.dart';
 import 'embedded_posts.dart';
 
 /// 回复列表组件:整体缩进一级,左侧竖线表示子级,末端是收起按钮
@@ -53,7 +54,11 @@ class PostRepliesList extends StatelessWidget {
               Row(
                 children: [
                   EmbeddedReplyCollapseButton(
-                    onPressed: () => showRepliesNotifier.value = false,
+                    onPressed: () {
+                      // 底部收起:长回复区收起后保持其后的帖子不动
+                      PositionedStreamList.keepTrailingEdgeOnShrink(context);
+                      showRepliesNotifier.value = false;
+                    },
                   ),
                   if (canLoadMore) ...[
                     const SizedBox(width: 8),
