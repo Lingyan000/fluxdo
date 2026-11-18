@@ -51,9 +51,10 @@ dart run tool/flutterw.dart run -d windows
 
 ## Flutter SDK 与 UI 包
 
-项目通过 `.fvmrc` 固定 Flutter 3.50.0（Dart 3.14）。本机全局 SDK 与项目版本不同时，
-使用 `fvm exec just sync`、`fvm exec just run -- -d macos` 等命令，确保 `just` 内部调用的
-Dart 和 Flutter 来自同一个 SDK；不需要修改其他项目的全局 SDK。
+项目通过 `.fvmrc` 固定 Flutter 3.50.0（Dart 3.14）。使用 FVM 时，在仓库根目录执行
+`fvm use --skip-pub-get`，再运行 `just sync` 或 `just run`。`just` 按 `.fvmrc` 选择
+`.fvm/versions/<版本>/bin` 下的 Dart 和 Flutter。切换分支后若提示缺少对应版本，再执行一次
+`fvm use --skip-pub-get` 即可。没有本地 `.fvm` 目录时，`just` 使用 `PATH` 中的 SDK，其版本需与项目匹配。
 
 应用、公共 UI 包与 `fluxdo_render` 使用独立的 `material_ui` / `cupertino_ui`。
 主窗口和小程序启动窗口通过官方兼容桥为尚未迁移的第三方组件提供旧主题和本地化。
