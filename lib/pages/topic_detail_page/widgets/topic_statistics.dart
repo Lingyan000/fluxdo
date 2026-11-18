@@ -158,7 +158,7 @@ class _TopicStatisticsState extends State<TopicStatistics> {
     // 至少两人时才叠头像，只有一人时头像没有信息量
     final showAvatars = participants.length >= 2;
     final stats = <Widget>[
-      if (count > 0)
+      if (!detail.isPrivateMessage && count > 0)
         _StatItem(
           leading: showAvatars
               ? _AvatarStack(

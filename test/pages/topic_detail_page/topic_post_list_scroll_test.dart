@@ -117,7 +117,7 @@ void main() {
     failed.dispose();
   });
 
-  Widget app() => ProviderScope(
+  Widget app({VoidCallback? onShowMembers}) => ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       categoryMapProvider.overrideWith(
@@ -142,6 +142,7 @@ void main() {
             valueListenable: details,
             builder: (context, detail, _) => TopicPostList(
               detail: detail,
+              onShowMembers: onShowMembers,
               scrollController: controller.scrollController,
               listController: controller.postListController,
               positionRevision: controller.positionRevision,
@@ -481,6 +482,38 @@ void main() {
     expect(box.localToGlobal(Offset.zero).dy, closeTo(12, 0.5));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 20));
+  });
+
+  testWidgets('私信从隐私标识、标题和成员进入首帖，长帖末尾不会重复名单', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = false;
+    final pm = TopicDetail.fromJson({
+      'id': 42, 'title': '读书会', 'archetype': 'private_message',
+      'post_stream': {'posts': [], 'stream': []},
+      'details': {'allowed_users': [{'id': 1, 'username': 'reader'}]},
+    });
+    details.value = pm.copyWith(postStream: topic([post(1), post(2)]).postStream);
+    var opened = false;
+    await tester.pumpWidget(app(onShowMembers: () => opened = true));
+    await tester.pumpAndSettle();
+
+    final entry = find.byTooltip('会话成员');
+    final title = tester.getRect(find.byKey(headerKey));
+    expect(tester.getRect(find.text('私人讨论')).bottom, lessThanOrEqualTo(title.top));
+    expect(title.bottom, lessThanOrEqualTo(tester.getRect(entry).top));
+    expect(tester.getRect(entry).bottom, lessThan(tester.getRect(floor(1)).top));
+    await tester.tap(entry);
+    expect(opened, isTrue);
+    final longHtml = List.generate(
+      100,
+      (i) => '<p>Long message paragraph $i with additional content.</p>',
+    ).join();
+    details.value = pm.copyWith(postStream: topic([post(1, cooked: longHtml), post(2)]).postStream);
+    await tester.pumpAndSettle();
+    expect(entry, findsOneWidget);
+    await jumpToFloor(tester, 2);
+    expect(entry, findsNothing);
+    await disposeList(tester);
   });
 
   testWidgets('从首楼进入显示话题标题，回到顶部恢复标题', (tester) async {

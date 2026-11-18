@@ -80,7 +80,7 @@ import 'controllers/topic_toc_controller.dart';
 import 'controllers/topic_position_info.dart';
 import 'controllers/topic_reply_session.dart';
 import 'widgets/nested_post_list.dart';
-import 'widgets/invite_private_message_dialog.dart';
+import 'widgets/private_message_participants.dart';
 import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_bottom_bar.dart';
 import 'widgets/topic_filter_controls.dart';
@@ -284,8 +284,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
-  int? _removingPrivateMessageParticipantId;
-  String? _removingPrivateMessageGroupName;
+  ModalRoute<bool>? _membersRoute;
+  int? _removedPrivateMessageId;
   bool _isTogglingArchiveMessage = false;
 
   /// 本地屏蔽名单过滤缓存：provider 状态与名单实例都未变时复用同一份
@@ -837,6 +837,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _closeRemovedPrivateMessage() {
+    if (_removedPrivateMessageId == widget.topicId) return;
+    _removedPrivateMessageId = widget.topicId;
+    final members = _membersRoute;
+    if (members != null && members.isActive) {
+      final navigator = members.navigator!;
+      // 远端移除成员时，名单上面可能还开着行尾菜单或确认框。
+      navigator.popUntil((route) => route == members || route is! PopupRoute);
+      navigator.removeRoute(members);
+    }
     _invalidatePrivateMessageLists();
     _leaveTopicPage();
   }
@@ -1442,7 +1451,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   shouldShowTitle: shouldShowTitle,
                   expandProgress: expandProgress,
                 ),
-                centerTitle: false,
+                centerTitle: detail?.isPrivateMessage == true && !shouldShowTitle,
                 actions: _buildAppBarActions(
                   detail: detail,
                   notifier: notifier,
@@ -1464,6 +1473,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     required bool shouldShowTitle,
     required double expandProgress,
   }) {
+    if (detail?.isPrivateMessage == true && !shouldShowTitle) {
+      return InkWell(
+        onTap: _toggleExpandedHeader,
+        child: Text(context.l10n.privateMessages_title),
+      );
+    }
     return Opacity(
       opacity: shouldShowTitle ? (1.0 - expandProgress).clamp(0.0, 1.0) : 0.0,
       child: GestureDetector(
@@ -1977,6 +1992,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onExport: _showExportSheet,
           onOpenInBrowser: _openInBrowser,
           onFilter: _showFilterSheet,
+          onShowMembers: _showPrivateMessageMembers,
           onToggleArchiveMessage: () =>
               unawaited(_handleToggleArchiveMessage(notifier)),
           onReadingSettings: () {
@@ -2017,6 +2033,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
                 const SizedBox(width: 12),
                 Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
+          ),
+        if (PrivateMessageMemberSummary.isAvailable(detail))
+          PopupMenuItem(
+            value: 'members',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.group_rounded, size: 20),
+                const SizedBox(width: 12),
+                Text(context.l10n.pm_conversationMembers),
               ],
             ),
           ),
@@ -3538,6 +3566,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                             child: SingleChildScrollView(
                               child: TopicDetailHeader(
                                 detail: detail,
+                                expanded: true,
+                                onShowMembers: _showPrivateMessageMembers,
                                 headerKey: null,
                                 onVoteChanged: _handleVoteChanged,
                                 onNotificationLevelChanged: (level) =>
@@ -3751,18 +3781,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           headerKey: _headerKey,
           hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
-          removingPrivateMessageParticipantId:
-              _removingPrivateMessageParticipantId,
-          removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-          onRemovePrivateMessageParticipant: isLoggedIn
-              ? _handleRemovePrivateMessageParticipant
-              : null,
-          onRemovePrivateMessageGroup: isLoggedIn
-              ? _handleRemovePrivateMessageGroup
-              : null,
-          onInvitePrivateMessageParticipants: isLoggedIn
-              ? _handleInvitePrivateMessageParticipants
-              : null,
+          onShowMembers: _showPrivateMessageMembers,
           onReply: _handleReply,
           onEdit: _handleEdit,
           onRefreshPost: _handleRefreshPost,
@@ -3823,18 +3842,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onAnswerSortChanged: (byActivity) =>
                   byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
-              removingPrivateMessageParticipantId:
-                  _removingPrivateMessageParticipantId,
-              removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-              onRemovePrivateMessageParticipant: isLoggedIn
-                  ? _handleRemovePrivateMessageParticipant
-                  : null,
-              onRemovePrivateMessageGroup: isLoggedIn
-                  ? _handleRemovePrivateMessageGroup
-                  : null,
-              onInvitePrivateMessageParticipants: isLoggedIn
-                  ? _handleInvitePrivateMessageParticipants
-                  : null,
+              onShowMembers: _showPrivateMessageMembers,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
               loadingPreviousListenable: notifier.loadingPreviousListenable,
