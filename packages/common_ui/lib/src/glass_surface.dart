@@ -258,6 +258,18 @@ class GlassSurface extends StatefulWidget {
   static bool get opticalEdgeAvailable =>
       ui.ImageFilter.isShaderFilterSupported;
 
+  /// 提前加载折射 shader。
+  ///
+  /// [ui.FragmentProgram.fromAsset] 虽然返回 Future，实际是在 microtask 里
+  /// 同步调用引擎：UI 线程上读 shader 资产并交给渲染后端注册编译，首次可达
+  /// 数百毫秒。首个玻璃组件出现时才加载，就会卡在它所在页面的入场动画里
+  /// （如完整编辑器的工具岛）。在空闲时调用本方法提前加载，之后的实例直接
+  /// 取缓存；后端不支持或已加载时什么都不做。
+  static void precacheProgram() {
+    if (!opticalEdgeAvailable) return;
+    _GlassSurfaceState._loadProgram();
+  }
+
   /// 场景配方,见 [GlassRecipe.navigation] / [GlassRecipe.sheet] /
   /// [GlassRecipe.dialog]
   final GlassRecipe recipe;
@@ -297,10 +309,32 @@ class GlassSurface extends StatefulWidget {
 class _GlassSurfaceState extends State<GlassSurface> {
   // 进程内只加载一次,所有玻璃实例共享
   static ui.FragmentProgram? _cachedProgram;
-  static Future<ui.FragmentProgram>? _loading;
+  static Future<ui.FragmentProgram?>? _loading;
   static bool _loggedPath = false;
 
   ui.FragmentProgram? _program;
+
+  /// 本实例复用的 shader。引擎在创建滤镜时就拷贝走一份 uniform
+  /// (fragment_shader.cc 的 as_image_filter),之后在 UI 线程改 uniform 不会
+  /// 影响已提交的帧,所以不必每次 build 新建;复用后参数没变时滤镜判等相同,
+  /// 底层也不会重绘这一层
+  ui.FragmentShader? _shader;
+  ui.FragmentProgram? _shaderProgram;
+
+  ui.FragmentShader _shaderFor(ui.FragmentProgram program) {
+    if (_shaderProgram != program) {
+      _shader?.dispose();
+      _shader = program.fragmentShader();
+      _shaderProgram = program;
+    }
+    return _shader!;
+  }
+
+  @override
+  void dispose() {
+    _shader?.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -333,19 +367,30 @@ class _GlassSurfaceState extends State<GlassSurface> {
       _program = cached;
       return;
     }
-    (_loading ??= ui.FragmentProgram.fromAsset(
-      'packages/common_ui/shaders/glass_surface.frag',
-    )).then(
-      (program) {
-        _cachedProgram = program;
-        _logPathOnce('折射玻璃 shader 已激活');
-        if (mounted) setState(() => _program = program);
-      },
-      // 资产缺失(如改过 .frag 忘了冷启动重建)→ 留在降级路径,不红屏
-      onError: (Object e, StackTrace s) {
-        _logPathOnce('shader 加载失败,走降级(改过 .frag 需冷启动重建): $e');
-      },
-    );
+    _loadProgram().then((program) {
+      if (program != null && mounted) setState(() => _program = program);
+    });
+  }
+
+  /// 进程内只加载一次，所有玻璃实例与 [GlassSurface.precacheProgram] 共享
+  static Future<ui.FragmentProgram?> _loadProgram() {
+    final cached = _cachedProgram;
+    if (cached != null) return Future.value(cached);
+    return _loading ??=
+        ui.FragmentProgram.fromAsset(
+          'packages/common_ui/shaders/glass_surface.frag',
+        ).then<ui.FragmentProgram?>(
+          (program) {
+            _cachedProgram = program;
+            _logPathOnce('折射玻璃 shader 已激活');
+            return program;
+          },
+          // 资产缺失(如改过 .frag 忘了冷启动重建)→ 留在降级路径,不红屏
+          onError: (Object e, StackTrace s) {
+            _logPathOnce('shader 加载失败,走降级(改过 .frag 需冷启动重建): $e');
+            return null;
+          },
+        );
   }
 
   static void _logPathOnce(String msg) {
@@ -520,8 +565,7 @@ class _GlassSurfaceState extends State<GlassSurface> {
     // 11 u_hl_alpha / 12 u_hl_gray / 13 u_noise
     // 14 u_saturation / 15 u_brightness / 16 u_contrast
     // 17 u_superellipse / 18–22 top octant / 23–27 right octant
-    // 每 build 新建实例,避免渲染途中改 uniform
-    final shader = program.fragmentShader()
+    final shader = _shaderFor(program)
       ..setFloat(2, 0)
       ..setFloat(3, 0)
       ..setFloat(4, size.width * dpr)

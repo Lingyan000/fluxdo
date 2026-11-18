@@ -66,7 +66,7 @@ import 'widgets/festival_greeting.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, ParagraphLayoutCache, FluxdoRenderShapes;
+    show FlattenCache, ParagraphLayoutCache, FluxdoRenderShapes, SpoilerShader;
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -94,6 +94,7 @@ import 'providers/connectivity_provider.dart';
 import 'utils/dialog_utils.dart';
 import 'utils/frame_jank_monitor.dart';
 import 'utils/hashtag_handlers.dart';
+import 'utils/idle_task.dart';
 import 'utils/image_decode_gate.dart';
 import 'widgets/post/post_item/render_parse_cache.dart';
 import 'utils/scroll_busy_signal.dart';
@@ -1052,6 +1053,7 @@ class _MainPageState extends ConsumerState<MainPage>
 
       // 初始化 Deep Link 服务
       DeepLinkService.instance.initialize(context);
+      _precacheShaders();
       unawaited(
         _runStartupUiTasks().catchError((Object e, StackTrace s) {
           debugPrint('[MainPage] 启动 UI 任务失败: $e\n$s');
@@ -1204,6 +1206,26 @@ class _MainPageState extends ConsumerState<MainPage>
     final prefs = ref.read(sharedPreferencesProvider);
     final updateService = UpdateService(prefs: prefs);
     await UpdateCheckerHelper.checkUpdateOnStartup(context, updateService);
+  }
+
+  /// 首个玻璃组件、首个剧透出现时要加载 shader：`FragmentProgram.fromAsset`
+  /// 实际在 UI 线程上同步读资产并交给渲染后端，首次可达数百毫秒，会卡在
+  /// 它所在页面的入场动画里（如编辑器工具岛、首页之外的第一个提示条）。
+  /// 首屏稳定后趁空闲逐个提前加载，两次加载分开礼让，不叠在同一刻；
+  /// 只加载、不提前离屏渲染，不在冷启动时抢光栅线程编译管线
+  void _precacheShaders() {
+    const patience = Duration(seconds: 10);
+    final glass = GlassSettingsScope.of(context).allowsOptics(
+      shaderSupported: GlassSurface.opticalEdgeAvailable,
+      highContrast: MediaQuery.highContrastOf(context),
+    );
+    scheduleIdleTask(() {
+      if (glass) GlassSurface.precacheProgram();
+      scheduleIdleTask(
+        () => unawaited(SpoilerShader.ensureLoaded()),
+        maxDeferral: patience,
+      );
+    }, maxDeferral: patience);
   }
 
   Future<void> _runStartupUiTasks() async {
