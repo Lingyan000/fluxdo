@@ -7,6 +7,7 @@ import 'package:app_icons/app_icons.dart';
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
 import '../../../../utils/fluxdo_render_callbacks.dart';
+import '../../../../utils/platform_utils.dart';
 import '../../../common/smart_avatar.dart';
 
 const double _embeddedFontSize = 13;
@@ -38,13 +39,19 @@ Widget _renderCooked(
   );
 }
 
-/// 父帖引用卡:与正文里的引用块(aside.quote)同一套样式——左侧竖条、
-/// 浅底、头像 + 用户名,点击跳到该楼层。父帖是当前帖的上文,按引用
-/// 呈现,不缩进、不缩小成子级的样子。
+/// 父帖引用卡:当前帖的上文,点击跳到该楼层。
+///
+/// 圆角浅色容器 + 卡内圆头竖条,色调取主题强调色,与头部回复按钮成对,
+/// 也和正文里作者引用的灰色引用块区分开。主题关闭引用底色
+/// ([FluxdoRenderStyle.quoteBackground])时只留竖条。
 ///
 /// 超长正文收起时只露开头 [foldedLines] 行并渐隐,下方给展开/收起;
 /// 展开状态由调用方持有([unfolded]/[onToggleUnfold]),随快照保留。
 class ParentPostQuoteCard extends StatelessWidget {
+  static const double _padding = 12;
+  static const double _barWidth = 3;
+  static const double _barGap = 10;
+
   final Post post;
   final double contentFontScale;
   final VoidCallback? onTap;
@@ -66,31 +73,44 @@ class ParentPostQuoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final renderStyle = FluxdoRenderStyle.of(theme);
+    final accent = context.emphasis.accent;
     final avatarUrl = post.getAvatarUrl(size: 48);
-    final borderRadius = BorderRadiusDirectional.horizontal(
-      end: context.shapes.radius(4),
-    ).resolve(Directionality.of(context));
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(16),
+    );
 
-    return ClipRSuperellipse(
-      borderRadius: borderRadius,
-      child: Material(
-        color: renderStyle.quoteBackground
-            ? scheme.surfaceContainerHighest.withValues(alpha: 0.3)
-            : Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: BorderDirectional(
-                start: BorderSide(
-                  color: scheme.outline,
-                  width: renderStyle.quoteBarWidth,
+    return Material(
+      color: FluxdoRenderStyle.of(theme).quoteBackground
+          ? accent.withValues(alpha: 0.06)
+          : Colors.transparent,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: shape,
+        child: Stack(
+          children: [
+            PositionedDirectional(
+              start: _padding,
+              top: _padding,
+              bottom: _padding,
+              width: _barWidth,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: accent.withValues(alpha: 0.6),
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: context.shapes.borderRadius(_barWidth / 2),
+                  ),
                 ),
               ),
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(
+                _padding + _barWidth + _barGap,
+                _padding,
+                _padding,
+                _padding,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -106,9 +126,8 @@ class ParentPostQuoteCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           _displayName(post),
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -121,7 +140,7 @@ class ParentPostQuoteCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   _FoldableContent(
                     foldedLines: foldedLines,
                     unfolded: unfolded,
@@ -138,7 +157,7 @@ class ParentPostQuoteCard extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -153,7 +172,7 @@ abstract final class EmbeddedReplyMetrics {
 
   /// 回复内容起排位置 = 竖线 + 一级缩进
   static const double indent = 32;
-  static const double buttonSize = 28;
+  static const double buttonSize = 32;
 }
 
 /// 展开的单条直接回复:与主帖同构的迷你帖——头像与名字一行,正文在下
@@ -260,7 +279,7 @@ class EmbeddedReplyRail extends StatelessWidget {
   }
 }
 
-/// 回复区竖线末端的收起按钮
+/// 回复区竖线末端的收起按钮,与操作栏的圆形图标按钮同款
 class EmbeddedReplyCollapseButton extends StatelessWidget {
   final VoidCallback onPressed;
 
@@ -269,35 +288,37 @@ class EmbeddedReplyCollapseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final shape = RoundedSuperellipseBorder(
-      borderRadius: context.shapes.borderRadius(8),
-      side: BorderSide(color: theme.colorScheme.outlineVariant),
+    final shape = context.shapes.circle();
+    Widget button = Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      shape: shape,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: shape,
+        child: SizedBox.square(
+          dimension: EmbeddedReplyMetrics.buttonSize,
+          child: Icon(
+            Symbols.keyboard_arrow_up_rounded,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
     );
+    // 与操作栏一致:触摸端长按气泡几乎不可达,只在桌面端保留悬停提示
+    if (PlatformUtils.isDesktop) {
+      button = Tooltip(
+        message: context.l10n.post_collapseReplies,
+        child: button,
+      );
+    }
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start:
             EmbeddedReplyMetrics.railCenter -
             EmbeddedReplyMetrics.buttonSize / 2,
       ),
-      child: Tooltip(
-        message: context.l10n.post_collapseReplies,
-        child: Material(
-          color: Colors.transparent,
-          shape: shape,
-          child: InkWell(
-            onTap: onPressed,
-            customBorder: shape,
-            child: SizedBox.square(
-              dimension: EmbeddedReplyMetrics.buttonSize,
-              child: Icon(
-                Symbols.keyboard_arrow_up_rounded,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-      ),
+      child: button,
     );
   }
 }

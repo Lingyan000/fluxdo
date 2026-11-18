@@ -41,7 +41,7 @@ class PostReplyHistory extends StatelessWidget {
         children: [
           for (final parent in parents)
             Padding(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: 8),
               child: ParentPostQuoteCard(
                 post: parent,
                 contentFontScale: contentFontScale,
