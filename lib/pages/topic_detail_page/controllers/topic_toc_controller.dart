@@ -51,6 +51,8 @@ class TopicTocController extends ChangeNotifier {
   /// 高亮沿路径狂闪;落地后恢复。
   String? _jumpTargetId;
   int _jumpGeneration = 0;
+  // 定位落地后布局还可能再次上报同一位置。正文实际移动前保留点选的章节。
+  double? _headingJumpOffset;
 
   String? _activeHeadingId;
   Set<String> _activeAncestorIds = const {};
@@ -122,6 +124,7 @@ class TopicTocController extends ChangeNotifier {
   }
 
   void _apply(TocData data) {
+    _headingJumpOffset = null;
     _tocData = data;
     _entryById = {for (final e in data.flat) e.id: e};
     // 父链(spy 祖先高亮用)
@@ -147,6 +150,7 @@ class TopicTocController extends ChangeNotifier {
 
   void _clear() {
     _jumpGeneration++;
+    _headingJumpOffset = null;
     _tocData = null;
     _tocSignature = 0;
     _entryById = const {};
@@ -161,6 +165,8 @@ class TopicTocController extends ChangeNotifier {
   /// 等两帧让标题挂载,再按 reveal 几何精确对齐到视口顶。
   Future<void> scrollToHeading(TocEntry entry, List<Post> posts) async {
     final generation = ++_jumpGeneration;
+    _headingJumpOffset = null;
+    _spyThrottle?.cancel();
     _jumpTargetId = entry.id;
     _setActive(entry.id);
     try {
@@ -201,11 +207,14 @@ class TopicTocController extends ChangeNotifier {
       sc.position.minScrollExtent,
       sc.position.maxScrollExtent,
     ));
+    _headingJumpOffset = sc.position.pixels;
   }
 
   /// 页面滚动回调里调用(内部 80ms 节流)。
   void scheduleSpyUpdate() {
-    if (!hasToc) return;
+    // 跳转过程中的滚动通知不能延后到落地再处理，否则相邻标题落在
+    // 阅读缓冲区内时，刚选中的章节会立即失去高亮。
+    if (!hasToc || isJumping) return;
     if (_spyThrottle?.isActive ?? false) return;
     _spyThrottle = Timer(const Duration(milliseconds: 80), () {
       _spyThrottle = null;
@@ -221,7 +230,11 @@ class TopicTocController extends ChangeNotifier {
     final sc = detailController.scrollController;
     if (!sc.hasClients) return;
 
-    final threshold = sc.position.pixels + _topBuffer + _spyBuffer;
+    final pixels = sc.position.pixels;
+    final landed = _headingJumpOffset;
+    if (landed != null && (pixels - landed).abs() <= 0.5) return;
+    _headingJumpOffset = null;
+    final threshold = pixels + _topBuffer + _spyBuffer;
     String? activeId;
     for (final entry in data.flat) {
       final offset = _topAlignOffsetOf(entry.anchorKey);

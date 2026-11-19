@@ -522,8 +522,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // 话题目录(TOC):依赖 detailController 的段映射做标题级跳转
     _tocController = TopicTocController(detailController: _controller);
-    _tocController.addListener(_syncTocFabVisible);
-    _controller.viewportPostNumberNotifier.addListener(_syncTocFabVisible);
+    _tocController.addListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.addListener(_syncTocVisible);
 
     _controller.scrollController.addListener(_onScroll);
     // 滚动停止 → 回放滚动期间推迟的 msgbus 帖子更新
@@ -990,11 +990,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _controller.scrollController.removeListener(_onScroll);
     _screenTrack.stop();
     unawaited(_nestedReadingStore.flush());
-    _tocController.removeListener(_syncTocFabVisible);
-    _controller.viewportPostNumberNotifier.removeListener(_syncTocFabVisible);
+    _tocController.removeListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.removeListener(_syncTocVisible);
     _controller.dispose();
     _tocController.dispose();
-    _tocFabVisible.dispose();
+    _tocVisible.dispose();
     _positionInfo.dispose();
     DraftsSignal.localRevision.removeListener(_refreshReplyDraftPreview);
     _replySession.activeNotifier.removeListener(_onReplySessionActiveChanged);
@@ -2564,7 +2564,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           ? _replySession
           : null,
       replyEntryKey: _replyEntryKey,
-      tocVisibleListenable: _tocFabVisible,
+      tocVisibleListenable: _tocVisible,
       onOpenTimeline: _showTimelineSheetForCurrent,
       bookmarked: bookmarked,
       onBookmark: _handleBottomBarBookmark,
@@ -2578,14 +2578,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return overlay;
   }
 
-  /// 话题目录(TOC)浮层:宽屏右侧常驻可折叠面板,窄屏右下浮动按钮
-  /// (叠在回复 FAB 上方,随底栏显隐联动)。平行视界右栏(embeddedMode)
-  /// 宽度有限,也走浮动按钮形态。
-  ///
-  /// 自动展开的最小页面宽度:正文列(maxContentWidth 800)居中后,单侧
-  /// 留白要装得下展开面板(240)+右偏移(12)+呼吸间距(16),展开才不
-  /// 遮挡正文 = 800 + 2×268 = 1336。
-  /// 宽屏两侧常驻面板(目录、阅读栏)的顶距
+  /// 正文两侧目录和阅读栏的顶距。
   static const double _sidePanelTop = 88;
 
   bool _usesDockedComposer(bool railMode) => railMode;
@@ -2657,78 +2650,48 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
-  static const double _tocAutoExpandMinWidth =
+  static const double _tocColumnGap = 16;
+  static const double _readingRailMinWidth =
       Breakpoints.maxContentWidth +
-      2 * (TopicTocSidePanel.expandedWidth + 12 + 16);
+      2 * (TopicTocSidePanel.expandedWidth + _tocColumnGap + 12);
 
-  Widget _buildTocLayer(
-    BuildContext context,
-    bool panelVisible, {
-    bool railMode = false,
-  }) {
-    // 显隐门控(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,
-    // 滚过 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)。
-    // hasToc 由 _tocController 通知,eyeline 位置走 viewportPostNumberNotifier。
-    Widget gateVisibility({required Widget child}) {
-      return ListenableBuilder(
-        listenable: _tocController,
-        builder: (context, _) {
-          if (!_tocController.hasToc) return const SizedBox.shrink();
-          return ValueListenableBuilder<int?>(
-            valueListenable: _controller.viewportPostNumberNotifier,
-            builder: (context, viewportPost, _) {
-              final visible = viewportPost == 1 || _tocController.isJumping;
-              return AnimatedOpacity(
-                opacity: visible ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 180),
-                child: IgnorePointer(ignoring: !visible, child: child),
-              );
-            },
+  Widget _buildTocLayer(double pageWidth, double pageHeight) {
+    final expanded = ref.watch(topicTocVisibilityProvider) ?? true;
+    final columnLeft = (pageWidth - Breakpoints.maxContentWidth) / 2;
+    final availableHeight =
+        pageHeight - MediaQuery.paddingOf(context).bottom - 24;
+    final top = (availableHeight - kMinInteractiveDimension).clamp(
+      0.0,
+      _sidePanelTop,
+    );
+    final maxHeight = availableHeight - top;
+    return Positioned(
+      right: pageWidth - columnLeft + _tocColumnGap,
+      top: top,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _tocVisible,
+        builder: (context, visible, _) {
+          if (!visible) return const SizedBox.shrink();
+          // 极矮的窗格只够放一个入口，打开弹层仍能选到任意章节。
+          if (maxHeight < 2 * kMinInteractiveDimension) return _tocFab;
+          return TopicTocSidePanel(
+            controller: _tocController,
+            visible: expanded,
+            maxHeight: maxHeight,
+            onToggleVisible: () =>
+                ref.read(topicTocVisibilityProvider.notifier).toggle(expanded),
+            onEntryTap: _handleTocEntryTap,
           );
         },
-      );
-    }
-
-    // 窄屏的目录浮动按钮由底栏浮层统一摆放(与回顶按钮同列同动效),
-    // 见 _tocUsesFloatingButton
-    if (_tocUsesFloatingButton(context, railMode)) {
-      return const SizedBox.shrink();
-    }
-    return Positioned(
-      // 有阅读栏时目录让到左侧:目录是文档大纲,右侧留给时间线
-      left: railMode ? 12 : null,
-      right: railMode ? null : 12,
-      top: _sidePanelTop,
-      // 不定 bottom:高度随目录内容自适应,上限扣除顶距与底部操作栏区
-      child: gateVisibility(
-        child: TopicTocSidePanel(
-          controller: _tocController,
-          visible: panelVisible,
-          maxHeight:
-              MediaQuery.sizeOf(context).height -
-              kToolbarHeight -
-              MediaQuery.paddingOf(context).top -
-              _sidePanelTop -
-              TopicBottomBarMetrics.occupiedHeight(context),
-          onToggleVisible: () => ref
-              .read(topicTocVisibilityProvider.notifier)
-              .toggle(panelVisible),
-          onEntryTap: _handleTocEntryTap,
-        ),
       ),
     );
   }
 
-  /// 窄屏(及非阅读栏形态的平行视界右栏)目录用浮动按钮,否则用常驻面板
-  bool _tocUsesFloatingButton(BuildContext context, bool railMode) =>
-      !railMode && (Responsive.isMobile(context) || widget.embeddedMode);
+  /// 目录只在阅读首帖或跳转章节途中显示，侧栏和浮动入口共用。
+  final ValueNotifier<bool> _tocVisible = ValueNotifier<bool>(false);
 
-  /// 目录浮动按钮显隐(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,滚过
-  /// 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)
-  final ValueNotifier<bool> _tocFabVisible = ValueNotifier<bool>(false);
-
-  void _syncTocFabVisible() {
-    _tocFabVisible.value =
+  void _syncTocVisible() {
+    _tocVisible.value =
         _tocController.hasToc &&
         (_controller.viewportPostNumberNotifier.value == 1 ||
             _tocController.isJumping);
@@ -3400,16 +3363,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final isSearchMode = searchState.isSearchMode;
     // 宽屏阅读栏:帖子列两侧留白够放下目录(左)与阅读栏(右)时,阅读工具
     // 移到右侧常驻,底部不再放任何东西
-    final railMode = pageWidth >= _tocAutoExpandMinWidth;
+    final railMode = pageWidth >= _readingRailMinWidth;
     _railMode = railMode;
     _pageHeight = pageHeight;
-    // TOC 面板展开状态:null = 自动(宽度够才默认展开,否则收起成细条,
-    // 不遮挡正文);用户手动切换后为显式持久化选择。watch 在此层,
-    // 切换只走 _buildTocLayer 重建。
-    final tocPanelVisible =
-        ref.watch(topicTocVisibilityProvider) ??
-        MediaQuery.sizeOf(context).width >= _tocAutoExpandMinWidth;
-
     // 初始加载或切换模式时显示骨架屏
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），
     // 也应该优先显示错误页面而不是骨架屏
@@ -3519,11 +3475,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         if (detail != null && _usesDockedComposer(railMode))
           _buildDockedComposer(detail, notifier, pageWidth),
 
-        // 话题目录(TOC):宽屏常驻面板(有阅读栏时在左侧),窄屏浮动按钮
-        // (叠回顶按钮上方)。嵌套视图自有滚动体系,不挂(对齐段映射只对
-        // 平铺流有效)。
-        if (detail != null && !isSearchMode && !_isNestedView)
-          _buildTocLayer(context, tocPanelVisible, railMode: railMode),
+        // 左侧有足够空间才显示常驻大纲，其余宽度只使用底栏浮动入口。
+        if (railMode && detail != null && !isSearchMode && !_isNestedView)
+          _buildTocLayer(pageWidth, pageHeight),
 
         // Expanded Header 相关组件（使用 ValueListenableBuilder 隔离状态变化）
         if (!isSearchMode)
