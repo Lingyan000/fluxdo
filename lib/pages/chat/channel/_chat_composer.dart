@@ -510,9 +510,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     );
 
     // 悬浮卡:四周圆角 + 外边距 + 描边投影;移动端底部安全区/键盘
-    // 占位交给下方 ChatBottomPanelContainer,卡本身静止态不再留间距
-    // (卡下直接是导航条沉浸区);键盘/表情面板起来时留 8,输入行
-    // 不贴键盘/面板顶(用户点名"键盘弹起时不能一点边距没有")
+    // 占位交给下方 ChatBottomPanelContainer,卡底恒留 8,输入行不贴
+    // 导航条/键盘/面板顶。间距不能跟面板态走:输入框聚焦但键盘未弹
+    // (进页 autofocus、菜单关闭后焦点回来)是 keyboard 态,收键盘或
+    // 菜单抢焦点是 none 态,同样停在安全区上方却差 8,整个列表跟着跳
     final composerCard = CompositedTransformTarget(
       link: _composerLink,
       child: Padding(
@@ -520,9 +521,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
           8,
           0,
           8,
-          PlatformUtils.isDesktop
-              ? 8 + bottomPadding
-              : (_currentPanel == _ComposerPanel.none ? 0 : 8),
+          PlatformUtils.isDesktop ? 8 + bottomPadding : 8,
         ),
         child: GlassSurfaceFrame(
           key: const ValueKey('chat-composer-surface'),

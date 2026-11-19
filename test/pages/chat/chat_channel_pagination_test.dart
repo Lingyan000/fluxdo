@@ -389,6 +389,27 @@ void main() {
     });
   }
 
+  testWidgets('输入框失焦与重新聚焦时输入条不上下跳', (tester) async {
+    await _pumpPage(tester, _Messages());
+    final surface = find.byKey(const ValueKey('chat-composer-surface'));
+    final field = find.byType(TextField);
+    final focusNode = tester.widget<TextField>(field).focusNode!;
+    // 进页 autofocus:聚焦但键盘未弹
+    expect(focusNode.hasFocus, isTrue);
+    final focusedBottom = tester.getRect(surface).bottom;
+
+    // 打开菜单/大图时焦点被新路由抢走
+    focusNode.unfocus();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(surface).bottom, focusedBottom);
+
+    // 菜单关闭后焦点回来
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(surface).bottom, focusedBottom);
+    await _disposePage(tester);
+  });
+
   testWidgets('聊天工具条玻璃与发送忙碌状态不重复提交', (tester) async {
     final messages = _Messages()..sendRequest = Completer<void>();
     await _pumpPage(tester, messages);
