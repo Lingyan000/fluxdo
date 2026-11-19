@@ -1714,6 +1714,7 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
       frame = await WebViewSurfaceCapture.capture(
         takeScreenshot: (configuration) =>
             controller.takeScreenshot(screenshotConfiguration: configuration),
+        viewId: WebViewSurfaceCapture.keepAliveIdOf(controller),
         platform: defaultTargetPlatform,
         viewport: render.localToGlobal(Offset.zero) & size,
         region: actualGlobal,
@@ -1768,48 +1769,52 @@ class _MiniAppRunnerPageState extends ConsumerState<MiniAppRunnerPage>
             final size = _viewportKey.currentContext?.size;
             if (size == null || size.isEmpty) return null;
             final density = MediaQuery.devicePixelRatioOf(context);
-            final bytes = await controller.takeScreenshot(
-              screenshotConfiguration: ScreenshotConfiguration(
-                // Android 的 snapshotWidth 是逻辑尺寸，会再次乘 DPR。
-                // 模糊底图只需约 360 个物理像素，避免高分屏的大图 PNG 编解码。
-                snapshotWidth:
-                    (size.width * density).clamp(1.0, 360.0) / density,
-                compressFormat: CompressFormat.JPEG,
-                quality: 70,
-              ),
-            );
-            if (bytes == null ||
-                !mounted ||
+            // 模糊底图只需约 360 个物理像素
+            final width = (size.width * density).clamp(1.0, 360.0).round();
+            final viewId = WebViewSurfaceCapture.keepAliveIdOf(controller);
+            var image = viewId != null
+                ? await WebViewSurfaceCapture.androidSnapshot(
+                    viewId,
+                    width: width,
+                  )
+                : null;
+            if (image == null) {
+              final bytes = await controller.takeScreenshot(
+                screenshotConfiguration: ScreenshotConfiguration(
+                  // Android 的 snapshotWidth 是逻辑尺寸，会再次乘 DPR。
+                  snapshotWidth: width / density,
+                  compressFormat: CompressFormat.JPEG,
+                  quality: 70,
+                ),
+              );
+              if (bytes == null) return null;
+              final codec = await ui.instantiateImageCodec(bytes);
+              try {
+                image = (await codec.getNextFrame()).image;
+              } finally {
+                codec.dispose();
+              }
+            }
+            if (!mounted ||
                 captureEpoch != _documentEpoch ||
-                controller != _controller) {
+                controller != _controller ||
+                size != _viewportKey.currentContext?.size) {
+              image.dispose();
               return null;
             }
-            final codec = await ui.instantiateImageCodec(bytes);
             try {
-              final image = (await codec.getNextFrame()).image;
+              final composed = await _composeModalFrame(image);
               if (!mounted ||
                   captureEpoch != _documentEpoch ||
                   controller != _controller ||
-                  size != _viewportKey.currentContext?.size) {
-                image.dispose();
+                  size != _viewportKey.currentContext?.size ||
+                  !AuthSession().isValid(_generation)) {
+                composed?.dispose();
                 return null;
               }
-              try {
-                final composed = await _composeModalFrame(image);
-                if (!mounted ||
-                    captureEpoch != _documentEpoch ||
-                    controller != _controller ||
-                    size != _viewportKey.currentContext?.size ||
-                    !AuthSession().isValid(_generation)) {
-                  composed?.dispose();
-                  return null;
-                }
-                return composed;
-              } finally {
-                image.dispose();
-              }
+              return composed;
             } finally {
-              codec.dispose();
+              image.dispose();
             }
           } finally {
             _visualCapturePending = false;
