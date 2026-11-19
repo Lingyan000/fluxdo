@@ -160,6 +160,32 @@ void main() {
     );
   });
 
+  testWidgets('窄屏拖动预览在深色图片上方渐入，摘要区有足够底色', (tester) async {
+    final bar = await showBar(tester);
+    final finger = await tester.startGesture(bar.center);
+    await finger.moveBy(const Offset(-36, 0));
+    await tester.pumpAndSettle();
+    final field = find.descendant(
+      of: find.byType(TopicScrubIndicator),
+      matching: find.byType(TopicProgressGradient),
+    );
+    final height = tester.getSize(field).height;
+    final gradient = tester.widget<TopicProgressGradient>(field).gradient;
+    final stops = gradient.stops!;
+    final colors = gradient.colors;
+    final readout = colors.indexWhere((c) => c.a >= .97);
+    expect(colors.first.a, 0);
+    expect(readout, greaterThan(0));
+    expect(stops[readout] * height, greaterThan(175));
+    for (var i = 1; i <= readout; i++) {
+      final span = (stops[i] - stops[i - 1]) * height;
+      final slope = (colors[i].a - colors[i - 1].a) / span;
+      expect(slope, inInclusiveRange(0.0, .009));
+    }
+    await finger.cancel();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('横向握柄随拖动方向留尾，慢移、换档和停手时恢复圆形', (tester) async {
     final bar = await showBar(tester);
     final track = find.byType(TopicProgressTrack);

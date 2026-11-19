@@ -66,7 +66,6 @@ class TopicScrubIndicator extends StatelessWidget {
     );
     final belowRail = bottom - railY;
     final roomAbove = math.max(0.0, railY - MediaQuery.paddingOf(context).top);
-    final feather = math.min(100.0, roomAbove * (floating ? .25 : .22));
     final sideFeather = floating ? math.min(48.0, barRect.width * .10) : 0.0;
     final available = floating
         ? math.max(0.0, barRect.width - 2 * sideFeather - 24)
@@ -82,6 +81,8 @@ class TopicScrubIndicator extends StatelessWidget {
         : 1.0;
     final lift = (railY - pointer.dy + 4).clamp(0.0, 68.0);
     final gap = math.min(24 + lift * proximity, roomAbove * .35);
+    final readoutRoom = math.max(0.0, roomAbove - gap);
+    final feather = math.min(232.0, readoutRoom * (floating ? .28 : .36));
     // 悬浮底栏的渐变覆盖轨道与读数之间的整段距离，收在操作行上沿。
     final fieldBottom = floating ? math.max(0.0, bottom - restY) : 0.0;
     final paintHeight = style.openThickness + 6;
@@ -128,9 +129,7 @@ class TopicScrubIndicator extends StatelessWidget {
               child: FadeTransition(
                 opacity: visibility,
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: math.max(0, roomAbove - feather - gap),
-                  ),
+                  constraints: BoxConstraints(maxHeight: readoutRoom - feather),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     child: SizedBox(
@@ -419,6 +418,12 @@ class _ScrubBackdrop extends StatelessWidget {
   final double leftFeather, rightFeather;
   final bool atBottom;
 
+  // 对三次平滑插值等距采样，使图片和读数区两端的透明度变化都逐渐放缓。
+  static final _fade = List.generate(11, (i) {
+    final x = i / 10;
+    return (stop: x, opacity: .98 * x * x * (3 - 2 * x));
+  }, growable: false);
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -427,7 +432,6 @@ class _ScrubBackdrop extends StatelessWidget {
         if (height <= 0) return const SizedBox.shrink();
         final rail = (1 - belowRail / height).clamp(0.0, 1.0);
         final top = (feather / height).clamp(0.0, rail);
-        final clear = surface.withValues(alpha: 0);
         return TopicProgressGradient(
           axis: Axis.horizontal,
           startFeather: leftFeather,
@@ -436,10 +440,8 @@ class _ScrubBackdrop extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              clear,
-              surface.withValues(alpha: .20),
-              surface.withValues(alpha: .74),
-              surface.withValues(alpha: .98),
+              for (final sample in _fade)
+                surface.withValues(alpha: sample.opacity),
               floating
                   ? TopicProgressGradient.tintOf(context)
                   : Color.alphaBlend(accent.withValues(alpha: .10), surface),
@@ -447,10 +449,7 @@ class _ScrubBackdrop extends StatelessWidget {
               surface.withValues(alpha: !floating && atBottom ? .44 : 0),
             ],
             stops: [
-              0,
-              top * .42,
-              top * .77,
-              top,
+              for (final sample in _fade) top * sample.stop,
               rail,
               rail + (1 - rail) * .54,
               1,
