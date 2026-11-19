@@ -1,4 +1,12 @@
 {
+  "metaverse_imagePreview": "查看图片",
+  "metaverse_quantityDecrease": "减少数量",
+  "metaverse_quantityIncrease": "增加数量",
+  "metaverse_componentCopyButton": "用户点击后复制文本并显示应用提示，不读取剪贴板。",
+  "metaverse_componentStatistics": "自适应统计：数值与说明，窄屏或大字自动换行。",
+  "metaverse_componentAmount": "数值、单位与可选原值，支持主题样式和自动换行。",
+  "metaverse_componentQuantityInput": "有上下限的数量步进，触发 onChanged(value)。",
+  "metaverse_componentMarkdown": "原生 Markdown 内容；图片受插件权限约束，点击链接触发 onLink(url)。",
   "metaverse_managedPermissions": "可管理权限",
   "metaverse_basicPermissions": "基础能力",
   "metaverse_apiDismiss": "仅关闭当前插件自己的弹层，完成输入后回到上一页。",

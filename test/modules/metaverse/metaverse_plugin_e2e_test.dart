@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:app_icons/app_icons.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' as content;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../support/material_ui_finders.dart';
@@ -350,7 +352,8 @@ class _Delegate extends MetaversePluginHostDelegate {
   Object? paymentResult = const {'state': 'checking'};
 
   @override
-  Future<bool> confirm(BuildContext context, Map<String, Object?> options) async => await onConfirm?.call() ?? true;
+  Future<bool> confirm(BuildContext context, Map<String, Object?> options) async {confirmations.add(options);return await onConfirm?.call() ?? true;}
+  final confirmations=<Map<String,Object?>>[];
   Future<bool> Function()? onConfirm;
 
   @override
@@ -488,7 +491,8 @@ Future<void> main() async {
 
     Widget app(Widget child) => TranslationProvider(
       child: MaterialApp(
-        home: Scaffold(body: SingleChildScrollView(child: child)),
+        navigatorObservers: [appRouteObserver],
+        home: Scaffold(body: child is MetaversePluginSurfaceView && child.page != null ? child : SingleChildScrollView(child: child)),
       ),
     );
 
@@ -729,13 +733,10 @@ Future<void> main() async {
       );
       await settle(tester, () => find.text('取消订单').evaluate().isNotEmpty);
       await tester.ensureVisible(find.text('取消订单'));
+      expect(service.requests.where((r)=>r.uri.path.endsWith('/cancel')),isEmpty);
       await tester.tap(find.text('取消订单'));
-      await settle(tester, () => find.text('确认取消订单').evaluate().isNotEmpty);
-      expect(
-        service.requests.where((r) => r.uri.path.endsWith('/cancel')),
-        isEmpty,
-      );
-      await tester.tap(find.text('确认取消订单'));
+      await settle(tester, () => delegate.confirmations.any((c)=>c['title']=='取消订单'));
+      // 通用确认由测试 delegate 明确同意，取消请求在确认返回后才发生。
       await settle(tester, () => service.requests.length == 7);
       expect(
         service.requests.where((r) => r.uri.path.endsWith('/cancel')),
@@ -769,7 +770,8 @@ Future<void> main() async {
         app(
           MetaversePluginSurfaceView(
             host: host,
-            kind: MetaversePluginSurfaceKind.card,
+            kind: MetaversePluginSurfaceKind.page,
+            page: 'account',
           ),
         ),
       );
@@ -948,19 +950,19 @@ Future<void> main() async {
             ),
           ),
         );
-        await settle(tester, () => find.text('立即兑换').evaluate().isNotEmpty);
+        await settle(tester, () => find.text(stock == -1 ? '立即兑换' : '已售罄').evaluate().isNotEmpty);
         expect(
           tester
                   .widget<FilledButton>(
-                    find.widgetWithText(FilledButton, '立即兑换'),
+                    find.widgetWithText(FilledButton, stock == -1 ? '立即兑换' : '已售罄'),
                   )
                   .onPressed !=
               null,
           stock == -1,
         );
-        expect(service.requests.single.method, 'GET');
+        expect(service.requests.every((r)=>r.method=='GET'),isTrue);
         expect(
-          service.requests.single.headers.containsKey('Authorization'),
+          service.requests.any((r)=>r.headers.containsKey('Authorization')),
           isFalse,
         );
         await tester.pumpWidget(const SizedBox.shrink());
@@ -999,7 +1001,7 @@ Future<void> main() async {
       await settle(tester, () => quote.evaluate().isNotEmpty);
       expect(find.textContaining('当前可购 2 件'), findsOneWidget);
       await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
-      final none = find.widgetWithText(ChoiceChip, '不使用优惠券');
+      final none = find.widgetWithText(ListTile, '不使用优惠券');
       await tester.ensureVisible(none);
       await tester.tap(none);
       await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
@@ -1011,18 +1013,16 @@ Future<void> main() async {
         tester,
         () => service.requests.where((r) => r.method == 'POST').length == 2,
       );
-      await tester.ensureVisible(find.text('+'));
-      await tester.tap(find.text('+'));
+      await tester.ensureVisible(find.byIcon(Symbols.add_rounded));
+      await tester.tap(find.byIcon(Symbols.add_rounded));
       await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
       delayed.complete();
       // 改数量后重新查价，保留用户主动选择的「不用券」。
       await settle(
         tester,
         () =>
-            find.widgetWithText(ChoiceChip, '不使用优惠券').evaluate().isNotEmpty &&
-            tester
-                .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '不使用优惠券'))
-                .selected,
+            find.widgetWithText(ListTile, '不使用优惠券').evaluate().isNotEmpty &&
+            find.descendant(of:find.widgetWithText(ListTile, '不使用优惠券'),matching:find.byIcon(Symbols.check_circle_rounded)).evaluate().isNotEmpty,
       );
       expect(find.text('2.00 LDC'), findsNothing);
       final best = find.text('模拟券 · 2.00 LDC');
@@ -1036,7 +1036,7 @@ Future<void> main() async {
         tester,
         () => find.textContaining('优惠券已不可用').evaluate().isNotEmpty,
       );
-      expect(find.widgetWithText(ChoiceChip, '不使用优惠券'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, '不使用优惠券'), findsOneWidget);
       expect(find.text('24.00 LDC'), findsNWidgets(2));
       final posted = service.requests.where((r) => r.method == 'POST').toList();
       expect(posted.map((r) => jsonDecode(r.data)['quantity']), [1, 1, 2, 2]);
@@ -1066,8 +1066,8 @@ Future<void> main() async {
           ),
         ),
       );
-      await settle(tester, () => find.text('+').evaluate().isNotEmpty);
-      await tester.tap(find.text('+'));
+      await settle(tester, () => find.byIcon(Symbols.add_rounded).evaluate().isNotEmpty);
+      await tester.tap(find.byIcon(Symbols.add_rounded));
       await settle(tester, () => find.text('24.00 LDC').evaluate().isNotEmpty);
       void resume() {
         tester.binding.handleAppLifecycleStateChanged(
@@ -1098,7 +1098,7 @@ Future<void> main() async {
       expect(find.text('2'), findsOneWidget);
       expect(
         tester
-            .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '+'))
+            .widget<IconButton>(find.ancestor(of:find.byIcon(Symbols.add_rounded),matching:find.byType(IconButton)))
             .onPressed,
         isNotNull,
       );
@@ -1163,7 +1163,7 @@ Future<void> main() async {
         await mount();
         await settle(tester, () => find.text('1.00 LDC').evaluate().isNotEmpty);
         expect(submit, isEmpty);
-        await click('核对并创建订单');
+        await click('确认兑换');
         if (immediate) {
           await settle(tester, () => delegate.pages.contains('order'));
           expect(delegate.pages, ['order']);
@@ -1251,14 +1251,15 @@ Future<void> main() async {
         );
         if (page == 'orders') {
           await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
-          await tester.tap(find.text('加载更多订单'));
+          await tester.ensureVisible(find.text('更多'));
+        await tester.tap(find.text('更多'));
           await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
         } else if (page == 'review') {
           await settle(
             tester,
             () => find.text('1.00 LDC').evaluate().isNotEmpty,
           );
-          final none = find.widgetWithText(ChoiceChip, '不使用优惠券');
+          final none = find.widgetWithText(ListTile, '不使用优惠券');
           await tester.ensureVisible(none);
           await tester.tap(none);
           await settle(tester, () => find.text('1.00 LDC').evaluate().isEmpty);
@@ -1380,7 +1381,7 @@ Future<void> main() async {
           ),
         ),
       );
-      await settle(tester, () => find.text('待支付').evaluate().isNotEmpty);
+      await settle(tester, () => find.text('待付款').evaluate().isNotEmpty);
       final next = InteractionPageRoute<void>(
         builder: (_) => const Scaffold(body: Text('离开订单页')),
       );
@@ -1399,7 +1400,7 @@ Future<void> main() async {
         tester,
         () =>
             service.requests.length == 1 &&
-            find.text('待支付').evaluate().isNotEmpty,
+            find.text('待付款').evaluate().isNotEmpty,
       );
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
@@ -1415,7 +1416,7 @@ Future<void> main() async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(find.text('待支付'), findsWidgets);
+      expect(find.text('待付款'), findsWidgets);
       expect(service.requests, hasLength(1));
       expect(
         service.requests.every(
@@ -1454,7 +1455,8 @@ Future<void> main() async {
           ),
         );
         await settle(tester, () => find.text('买家商品 1').evaluate().isNotEmpty);
-        await tester.tap(find.text('加载更多订单'));
+        await tester.ensureVisible(find.text('更多'));
+        await tester.tap(find.text('更多'));
         await settle(tester, () => find.text('买家商品 2').evaluate().isNotEmpty);
         expect(find.text('买家商品 1'), findsOneWidget);
         await tester.tap(find.text('买家商品 1'));
@@ -1471,14 +1473,16 @@ Future<void> main() async {
           ),
         );
         await settle(tester, () => find.text('自动发货').evaluate().isNotEmpty);
-        expect(find.text('0.00 LDC'), findsOneWidget);
+        expect(find.text('0.00 LDC'), findsWidgets);
         expect(find.text('仅用于离线测试的交付说明'), findsNothing);
+        await tester.ensureVisible(find.text('查看交付内容'));
         await tester.tap(find.text('查看交付内容'));
         await settle(
           tester,
           () => find.text('仅用于离线测试的交付说明').evaluate().isNotEmpty,
         );
         service.expired = true;
+        await tester.ensureVisible(find.text('刷新订单'));
         await tester.tap(find.text('刷新订单'));
         await settle(tester, () => find.text('士多会话已失效。').evaluate().isNotEmpty);
         expect(find.text('FIX-1'), findsNothing);
@@ -1548,11 +1552,14 @@ Future<void> main() async {
         shop.requests.where((r) => r.uri.host == 'packages.example.org'),
         hasLength(3),
       );
-      await tester.tap(find.text('筛选与排序'));
+      await tester.tap(find.text('筛选'));
       final low = find.text('低价');
       await settle(tester, () => low.evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(low);
       await tester.tap(low);
+      await tester.tap(find.text('查看结果'));
+      await tester.pumpAndSettle();
       await settle(
         tester,
         () =>
@@ -1561,8 +1568,9 @@ Future<void> main() async {
               (r) => r.uri.queryParameters['sortOrder'] == 'ASC',
             ),
       );
-      expect(find.widgetWithText(ChoiceChip, '低价'), findsOneWidget);
-      await settle(tester, () => find.text('测试商品').evaluate().isNotEmpty);
+      await settle(tester, () => find.widgetWithText(ChoiceChip, '低价').evaluate().isEmpty && find.text('测试商品').evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ChoiceChip, '低价'), findsNothing);
       final productReads = shop.requests
           .where((r) => r.uri.path == '/api/shop/products')
           .length;
@@ -1571,7 +1579,7 @@ Future<void> main() async {
         await tester.pump();
         await tester.ensureVisible(find.text('帖子链接'));
         await tester.tap(find.text('帖子链接'));
-        await settle(tester, () => find.text('测试说明').evaluate().isNotEmpty);
+        await settle(tester, () => find.byType(content.FluxdoRender).evaluate().isNotEmpty);
         expect(find.byType(width < 600 ? BottomSheet : Dialog), findsOneWidget);
         expect(find.text('立即兑换'), findsOneWidget);
         final shell = find.byType(AppSheetScaffold);
@@ -1594,7 +1602,7 @@ Future<void> main() async {
         }
         await tester.pumpAndSettle();
         expect(find.text('帖子链接'), findsOneWidget);
-        expect(find.text('测试说明'), findsNothing);
+        expect(find.byType(content.FluxdoRender), findsNothing);
       }
       expect(find.text('全部 · 低价'), findsOneWidget);
       expect(

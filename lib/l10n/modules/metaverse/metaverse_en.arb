@@ -1,4 +1,12 @@
 {
+  "metaverse_imagePreview": "View image",
+  "metaverse_quantityDecrease": "Decrease quantity",
+  "metaverse_quantityIncrease": "Increase quantity",
+  "metaverse_componentCopyButton": "Copies text after a user tap and shows app feedback. Does not read the clipboard.",
+  "metaverse_componentStatistics": "Responsive values and labels that wrap on narrow screens or with larger text.",
+  "metaverse_componentAmount": "A value, unit and optional previous value, with theme styles and wrapping.",
+  "metaverse_componentQuantityInput": "A bounded quantity stepper that emits onChanged(value).",
+  "metaverse_componentMarkdown": "Native Markdown; images use plugin permissions and links emit onLink(url).",
   "metaverse_managedPermissions": "Permissions you control",
   "metaverse_basicPermissions": "Basic capabilities",
   "metaverse_apiDismiss": "Close the current plugin sheet and return to the previous page.",

@@ -170,23 +170,40 @@ class MetaversePluginCard extends ConsumerWidget {
         shape: RoundedSuperellipseBorder(
           borderRadius: context.shapes.borderRadius(24),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(context, ref, plugin, manifest),
-            if (!plugin.manifest.runtimeSupported)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                child: Text(
-                  context.l10n.metaverse_pluginApiUpgradeRequired,
-                  style: theme.textTheme.bodyMedium,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          customBorder: RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(24),
+          ),
+          onTap: manifest.cardPage != null &&
+                  plugin.suspendedReason == null &&
+                  manifest.runtimeSupported
+              ? () => MetaversePluginPage.open(
+                    context, manifest.id, manifest.cardPage!,
+                  )
+              : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(context, ref, plugin, manifest),
+              if (!plugin.manifest.runtimeSupported)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text(
+                    context.l10n.metaverse_pluginApiUpgradeRequired,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                )
+              else if (plugin.suspendedReason != null)
+                _suspended(context, ref, plugin)
+              else
+                _content(
+                  context,
+                  ref.watch(metaversePluginHostsProvider).hostFor(plugin),
+                  manifest,
                 ),
-              )
-            else if (plugin.suspendedReason != null)
-              _suspended(context, ref, plugin)
-            else
-              _content(context, ref.watch(metaversePluginHostsProvider).hostFor(plugin), manifest),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -244,6 +261,8 @@ class MetaversePluginCard extends ConsumerWidget {
               ],
             ),
           ),
+          if (manifest.cardPage != null)
+            Icon(Symbols.chevron_right_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
           _menu(context, ref, manifest),
         ],
       ),

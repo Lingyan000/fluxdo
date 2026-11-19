@@ -51,6 +51,15 @@ class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('整卡入口必须声明能力且指向普通页面，旧卡片仍兼容', () {
+    final raw=jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()) as Map<String,dynamic>;
+    expect(_parse(raw).cardPage,'market');
+    for(final page in ['missing','product',4,null]) {
+      expect(()=>_parse({...raw,'card':{'widget':'Card','page':page}}),throwsA(isA<MetaverseManifestException>()));
+    }
+    expect(()=>_parse({...raw,'requiredFeatures':(raw['requiredFeatures'] as List).where((v)=>v!='cardNavigation').toList()}),throwsA(isA<MetaverseManifestException>()));
+    expect(_parse({...raw,'card':{'widget':'Card'}}).cardPage,isNull);
+  });
   test('宿主登记的论坛头像可匿名加载，但不能转向任意站内接口', () async {
     final adapter = _Adapter()..bytes = Uint8List.fromList([0xff, 0xd8, 0xff, 0xe0]);
     final network = MetaversePluginNetwork(dio: Dio()..httpClientAdapter = adapter,

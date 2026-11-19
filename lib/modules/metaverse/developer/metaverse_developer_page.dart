@@ -211,7 +211,7 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
       _events.insert(0, '$name ${jsonEncode(args)}');
       if (_events.length > 50) _events.removeLast();
     });
-    if (name == 'change') {
+    if (name == 'change' || name == 'quantity') {
       final value = args['value'];
       if (value != null) _change('value', value);
     }
@@ -352,7 +352,7 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
       );
     }
     if (value is num) {
-      final (low, high) = switch (key) {
+      final (low, high) = widget.example.ranges[key] ?? switch (key) {
         'masterWidth' => (160.0, 500.0),
         'minDetailWidth' => (240.0, 800.0),
         'maxLines' => (1.0, 8.0),
@@ -365,7 +365,7 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
         children: [
           Text('$key · ${value is int ? value : value.toStringAsFixed(2)}'),
           Slider(
-            value: value.toDouble(),
+            value: value.toDouble().clamp(low, high),
             min: low,
             max: high,
             divisions: key == 'maxLines' ? 7 : key == 'columns' ? 6 : null,

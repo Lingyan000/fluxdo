@@ -4,17 +4,21 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=readFileSync(new URL('../../fixtures/metaverse/ld-store/main.js',import.meta.url),'utf8');
 const campaign={id:'c1',name:'测试券',discountType:'fixed_amount',fixedAmount:2,minSpend:5,scopeType:'product',productId:'p1',sellerUsername:'seller',claimable:true};
-function setup({authorized=true,consent=true,respond=()=>({})}={}) {
+function setup({authorized=true,consent=true,respond=()=>({}),timers=false}={}) {
   const handlers=new Map(),calls=[],nav=[],confirmations=[];
+  const pendingTimers=new Map();let timerId=0;
   const api={
     on:(name,handler)=>handlers.set(name,handler),
     user:{get:async()=>({id:42,username:'tester'})},
     credentials:{status:async()=>({authorized}),remove:async()=>{},capture:async()=>{throw Error('unexpected capture');}},
+    permissions:{status:async()=>({identity:true,serviceAccount:true,payments:true}),request:async()=>true},
     crypto:{pkce:async()=>({verifier:'v',challenge:'c',method:'S256'}),uuid:async()=> 'uuid'},
     storage:{get:async()=>null},
     dialogs:{confirm:async options=>{confirmations.push(options);return consent;}},
     connect:{authorize:async()=>null},
     navigate:async(page,args)=>nav.push({page,args}),
+    navigation:{dismiss:async()=>nav.push({dismiss:true})},
+    browser:{open:async(url,options)=>nav.push({url,options})},
     toast:async()=>{},
     fetch:async(url,options={})=>{
       const request={url:new URL(url),method:options.method||'GET',...options};calls.push(request);
@@ -22,14 +26,17 @@ function setup({authorized=true,consent=true,respond=()=>({})}={}) {
       return {ok:!(result?.failure),status:result?.failure||200,json:()=>result?.failure ? {success:false,error:result.message} : {success:true,data:result}};
     },
   };
-  vm.runInNewContext(script,{fluxdo:api,console:{warn:()=>{},log:()=>{}}});
+  vm.runInNewContext(script,{fluxdo:api,console:{warn:()=>{},log:()=>{}},...(timers ? {
+    setTimeout:(fn,delay)=>{const id=++timerId;pendingTimers.set(id,{fn,delay});return id;},
+    clearTimeout:id=>pendingTimers.delete(id),
+  } : {})});
   let sequence=0;
   async function page(name,params={}) {
     const data={},ctx={surface:String(++sequence),page:name,params,api,setData:(key,value)=>data[key]=value};
     await handlers.get('page.open')(ctx);return {ctx,data};
   }
   const fire=(p,name,args={})=>handlers.get(name)(p.ctx,args);
-  return {api,handlers,calls,nav,confirmations,page,fire};
+  return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
 }
 test('不同意士多协议时不初始化授权也不调用 Connect',async()=>{
   const t=setup({consent:false});const ctx={api:t.api,setData:()=>{}};
@@ -137,4 +144,76 @@ test('分页错误保留已有内容，手动重试同页',async()=>{
 });
 test('401 清除当前页面私人列表，提示重新登录',async()=>{
   const t=setup({respond:()=>({failure:401})});const p=await t.page('coupons');assert.equal(p.data.rows.length,0);assert.equal(p.data.needsSession,true);assert.equal(p.data.authorized,false);
+});
+
+test('拒绝登录权限给出可重试提示，不初始化服务授权',async()=>{
+ const t=setup();t.api.permissions.status=async()=>({identity:false,serviceAccount:false});t.api.permissions.request=async()=>false;
+ const p=await t.page('account');t.calls.length=0;await t.fire(p,'login');
+ assert.equal(t.calls.length,0);assert.equal(t.confirmations.length,0);assert.match(p.data.loginError,/未允许登录所需权限/);
+});
+test('支付权限拒绝后不读取支付链接或调用收银台',async()=>{
+ const t=setup({respond:()=>({order:{orderNo:'O1',status:'pending',amount:5}})});
+ const p=await t.page('order',{no:'O1'});t.api.permissions.status=async()=>({identity:true,serviceAccount:true,payments:false});t.api.permissions.request=async()=>false;
+ await t.fire(p,'payOrder');assert.equal(t.calls.length,1);assert.match(p.data.paymentNote,/未允许支付权限/);
+});
+test('商品详情兼容混合字段，折扣异常退回原价，类型和购买限制正确',async()=>{
+ let product={id:'p1',name:'工具',price:'10',discount:0,stock:2,product_type:'cdk',seller_username:'seller',is_test_mode:'false'};
+ const t=setup({respond:r=>r.url.pathname.endsWith('/comments')?{comments:[],pagination:{}}:{product}});
+ let p=await t.page('product',{id:'p1'});assert.equal(p.data.value,'10.00');assert.equal(p.data.seller,'卖家：seller');assert.equal(p.data.buy,true);
+ product={...product,is_test_mode:'true'};p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,false);assert.match(p.data.buyLabel,/测试/);
+ product={...product,is_test_mode:false,seller_user_id:42};p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,false);assert.match(p.data.buyLabel,/自己的商品/);
+ product={...product,seller_site:'other.example'};p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,true);
+ product={...product,product_type:'store',stock:0};p=await t.page('product',{id:'p1'});assert.equal(p.data.linkProduct,true);assert.equal(p.data.buy,true);
+});
+test('详情使用权威可用库存和已购限额，CDK 不限库存不误报售罄',async()=>{
+ let product={id:'p1',price:5,product_type:'cdk',cdk_stats:{total:-1},stock:0};
+ const t=setup({respond:r=>r.url.pathname.endsWith('/comments')?{comments:[],pagination:{}}:{product}});
+ let p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,true);assert.equal(p.data.metrics[0].value,'不限');
+ product={...product,available_stock:0};p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,false);
+ product={...product,available_stock:10,purchase_limit:{mode:'per_user',quantity:2,remaining_quantity:0}};
+ p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,false);
+});
+test('筛选弹层取消保留原条件，确认后才刷新源页面',async()=>{
+ const t=setup({respond:r=>r.url.pathname.endsWith('/categories')?{categories:[]}:{products:[],pagination:{}}});
+ const p=await t.page('market');const f=await t.page('filters',{source:p.ctx.surface});
+ await t.fire(f,'input',{field:'min',value:'5'});await t.fire(f,'surface.close');await t.fire(p,'page.resume');
+ assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/products')).length,1);
+ const next=await t.page('filters',{source:p.ctx.surface});await t.fire(next,'input',{field:'min',value:'5'});await t.fire(next,'input',{field:'max',value:'3'});
+ await t.fire(next,'applyFilters');assert.equal(t.nav.length,0);assert.match(next.data.filterError,/有效/);
+ await t.fire(next,'input',{field:'max',value:'8'});await t.fire(next,'applyFilters');assert.equal(t.nav.at(-1).dismiss,true);
+ await t.fire(p,'page.resume');assert.equal(t.calls.at(-1).url.searchParams.get('priceMin'),'5');assert.equal(t.calls.at(-1).url.searchParams.get('priceMax'),'8');
+});
+test('搜索防抖合并请求，显式提交和隐藏不遗留重复定时器',async()=>{
+ const t=setup({timers:true,respond:r=>r.url.pathname.endsWith('/categories')?{categories:[]}:{products:[],pagination:{}}});
+ const p=await t.page('market');await t.fire(p,'input',{field:'search',value:'a'});await t.fire(p,'input',{field:'search',value:'ab'});
+ assert.equal(t.pendingTimers.size,1);await t.fire(p,'apply');assert.equal(t.pendingTimers.size,0);assert.equal(t.calls.at(-1).url.searchParams.get('search'),'ab');
+ await t.fire(p,'input',{field:'search',value:'abc'});await t.fire(p,'page.hide');assert.equal(t.pendingTimers.size,0);
+ await t.fire(p,'page.resume');assert.equal(t.calls.at(-1).url.searchParams.get('search'),'abc');
+});
+test('订单明细包括优惠和时间线，交付内容默认隐藏且离开后收起',async()=>{
+ const t=setup({respond:()=>({order:{order_no:'O1',status:'delivered',quantity:2,amount:8,product_subtotal:10,original_price:12,
+  coupon_snapshot:'{"name":"测试券","coupon_discount_amount":2}',cdk:['code-1','code-2'],product:{id:'p1',name:'商品',description:'**使用说明**'},paid_at:'2026-11-01T01:00:00Z',ldc_trade_no:'T1'},logs:[{action:'deliver',created_at:'2026-11-01T02:00:00Z'}]})});
+ const p=await t.page('order',{no:'O1'});assert.equal(p.data.deliveryText,'');assert.equal(p.data.hasDelivery,true);
+ assert.equal(p.data.fields.find(f=>f.label==='优惠金额').value,'− 2.00 LDC');assert.equal(p.data.orderEvents[0].title,'发货完成');
+ assert.equal(p.data.tradeNo,'T1');assert.equal(p.data.usage,'**使用说明**');await t.fire(p,'delivery');assert.equal(p.data.deliveryText,'code-1\ncode-2');
+ await t.fire(p,'page.hide');assert.equal(p.data.deliveryText,'');await t.fire(p,'page.resume');assert.equal(t.calls.length,1);
+ await t.fire(p,'repurchase');assert.equal(t.nav.at(-1).args.id,'p1');
+});
+test('支付未明确时禁再次付款和取消，可见订单才轮询且完成后停止',async()=>{
+ let status='pending',failure=0;
+ const t=setup({timers:true,respond:()=>failure?{failure}:{order:{orderNo:'O1',status,paymentInitStatus:'unknown',amount:3}}});
+ const p=await t.page('order',{no:'O1'});assert.equal(p.data.canPay,false);assert.equal(p.data.canCancel,false);assert.equal(t.pendingTimers.size,1);
+ await t.fire(p,'page.hide');assert.equal(t.pendingTimers.size,0);await t.fire(p,'page.resume');assert.equal(t.pendingTimers.size,1);
+ failure=503;await t.tick();assert.equal(t.pendingTimers.size,1);assert.equal(p.data.ready,true);
+ failure=0;status='delivered';await t.tick();assert.equal(t.pendingTimers.size,0);assert.equal(p.data.error,'');
+});
+test('系统消息支持分页筛选，只在点击后标记已读，并跳转原生订单',async()=>{
+ const t=setup({respond:r=>r.method==='POST'?{}:{messages:[{id:'m1',title:'已发货',content:'请查收',is_read:false,link:'/order/O1'}],pagination:{totalPages:1},summary:{totalUnread:1}}});
+ const p=await t.page('messages');assert.equal(p.data.rows[0].read,false);assert.equal(t.calls.every(r=>r.method==='GET'),true);
+ await t.fire(p,'messageOpen',{id:'m1'});assert.equal(t.nav.at(-1).page,'order');assert.equal(t.nav.at(-1).args.no,'O1');
+ await t.fire(p,'messageRead',{id:'m1'});assert.equal(p.data.rows[0].read,true);assert.equal(t.calls.at(-1).url.pathname,'/api/shop/messages/system/m1/read');
+ await t.fire(p,'messageTab',{value:'unread'});assert.equal(t.calls.at(-1).url.searchParams.get('readStatus'),'unread');
+});
+test('全部消息已读需确认，取消不会写入',async()=>{
+ const t=setup({consent:false,respond:()=>({messages:[],pagination:{},summary:{}})});const p=await t.page('messages');await t.fire(p,'messagesReadAll');assert.equal(t.calls.length,1);
 });

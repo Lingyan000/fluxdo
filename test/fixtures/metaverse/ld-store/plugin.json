@@ -1,9 +1,9 @@
 {
-  "schema": 10,
+  "schema": 12,
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -51,7 +51,8 @@
     ]
   },
   "card": {
-    "widget": "Card"
+    "widget": "Card",
+    "page": "market"
   },
   "pages": [
     {
@@ -71,7 +72,7 @@
       "id": "market",
       "widget": "Market",
       "scroll": false,
-      "title": "物品广场"
+      "title": "LD士多"
     },
     {
       "id": "review",
@@ -124,6 +125,25 @@
       "widget": "Merchant",
       "scroll": false,
       "title": "店铺商品"
+    },
+    {
+      "id": "filters",
+      "widget": "Filters",
+      "title": "筛选商品",
+      "scroll": false,
+      "presentation": "modal"
+    },
+    {
+      "id": "account",
+      "widget": "Account",
+      "title": "我的士多",
+      "scroll": false
+    },
+    {
+      "id": "messages",
+      "widget": "Messages",
+      "title": "士多消息",
+      "scroll": false
     }
   ],
   "links": [
@@ -141,6 +161,10 @@
   "requiredFeatures": [
     "confirmationDialog",
     "virtualGrid",
-    "nativeExecutionLimits"
+    "nativeExecutionLimits",
+    "cardNavigation",
+    "contentPresentation",
+    "runtimePermissions",
+    "modalDismiss"
   ]
 }

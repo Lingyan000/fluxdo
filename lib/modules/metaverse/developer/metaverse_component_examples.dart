@@ -13,6 +13,7 @@ class MetaverseComponentExample {
     required this.description,
     this.previewHeight = 200,
     this.options = const {},
+    this.ranges = const {},
   });
   final String name;
   final String description;
@@ -20,6 +21,7 @@ class MetaverseComponentExample {
   final Map<String, Object> parameters;
   final double previewHeight;
   final Map<String, List<String>> options;
+  final Map<String, (double, double)> ranges;
 }
 
 List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
@@ -27,6 +29,18 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
   final label = {'label': text};
   final title = {'title': text, 'message': l.metaverse_developerPreview};
   return [
+    MetaverseComponentExample('CopyButton', 'CopyButton(text: data.text, label: data.label)',
+      {'text':text, 'label':l.common_copy}, description: l.metaverse_componentCopyButton),
+    MetaverseComponentExample('Statistics', 'Statistics(items: [{value: data.value, label: data.label}, {value: "8", label: data.title}])',
+      {...title, ...label, 'value': '24'}, description: l.metaverse_componentStatistics),
+    MetaverseComponentExample('Amount', 'Amount(value: data.value, unit: data.unit, original: data.original, style: data.style)',
+      {'value':'12.50', 'unit':'LDC', 'original':'20.00', 'style':'headlineSmall'}, description: l.metaverse_componentAmount,
+      options: {'style':['titleMedium','titleLarge','headlineSmall','headlineMedium']}),
+    MetaverseComponentExample('QuantityInput', 'QuantityInput(value: data.value, min: data.min, max: data.max, enabled: data.enabled, onChanged: event "quantity" {})',
+      {'value':2, 'min':1, 'max':5, 'enabled':true}, description: l.metaverse_componentQuantityInput,
+      ranges: {'value':(0,20), 'min':(0,10), 'max':(1,20)}),
+    MetaverseComponentExample('Markdown', 'Markdown(text: data.text, onLink: event "link" {})',
+      {'text':'## $text\n\n**$text** · [Linux DO](https://linux.do)\n\n- $text\n- $text'}, description: l.metaverse_componentMarkdown, previewHeight: 320),
     MetaverseComponentExample('ContentRow',
       'ContentRow(title: data.title, meta: data.label, summary: data.message, summaryLines: data.lines, leading: Avatar(label: data.label), detail: Symbol(name: "bookmark"), onTap: event "open" {})',
       {...title, ...label, 'lines': 2}, description: l.metaverse_componentContentRow),
@@ -40,7 +54,7 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'PageLayout',
       description: l.metaverse_componentPageLayout,
-      'PageLayout(loading: data.loading, hasMore: data.hasMore, loadingMore: data.loadingMore, loadMoreError: data.loadMoreError, onLoadMore: event "loadMore" {}, onRefresh: event "refresh" {}, children: [Label(text: data.title), Gap(), Button(label: data.message, onPressed: event "action" {})], footer: Button(label: data.title, onPressed: event "footer" {}))',
+      'PageLayout(toolbar: SearchInput(hint: data.title), loading: data.loading, hasMore: data.hasMore, loadingMore: data.loadingMore, loadMoreError: data.loadMoreError, onLoadMore: event "loadMore" {}, onRefresh: event "refresh" {}, children: [Label(text: data.title), Gap(), Button(label: data.message, onPressed: event "action" {})], footer: Button(label: data.title, onPressed: event "footer" {}))',
       {
         ...title,
         'loading': false,
@@ -53,7 +67,7 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'ListPage',
       description: l.metaverse_componentListPage,
-      'ListPage(loading: data.loading, loadingMore: data.loadingMore, error: data.error, emptyTitle: data.emptyTitle, moreLabel: data.moreLabel, onRetry: event "retry" {}, hasMore: data.hasMore, onRefresh: event "refresh" {}, onLoadMore: event "loadMore" {}, search: SearchInput(value: data.value, hint: data.title, onChanged: event "change" {}), items: [ListItem(title: data.title, subtitle: data.message, onTap: event "open" {id: "one"}), ListItem(title: data.message, onTap: event "open" {id: "two"})])',
+      'ListPage(loading: data.loading, loadingMore: data.loadingMore, error: data.error, emptyTitle: data.emptyTitle, moreLabel: data.moreLabel, onRetry: event "retry" {}, hasMore: data.hasMore, onRefresh: event "refresh" {}, onLoadMore: event "loadMore" {}, toolbar: SearchInput(value: data.value, hint: data.title, onChanged: event "change" {}), items: [ListItem(title: data.title, subtitle: data.message, onTap: event "open" {id: "one"}), ListItem(title: data.message, onTap: event "open" {id: "two"})])',
       {
         ...title,
         'loading': false,
@@ -94,7 +108,7 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'GridPage',
       description: l.metaverse_componentGridPage,
-      'GridPage(layout: data.layout, columns: data.columns, minTileWidth: data.minTileWidth, spacing: data.spacing, runSpacing: data.runSpacing, loading: data.loading, hasMore: data.hasMore, loadingMore: data.loadingMore, error: data.error, onRefresh: event "refresh" {}, onRetry: event "retry" {}, onLoadMore: event "loadMore" {}, header: Label(text: data.label), items: [Surface(child: SizedBox(height: 60.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 100.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 80.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 40.0, child: Label(text: data.label)))])',
+      'GridPage(toolbar: SearchInput(hint: data.label), layout: data.layout, columns: data.columns, minTileWidth: data.minTileWidth, spacing: data.spacing, runSpacing: data.runSpacing, loading: data.loading, hasMore: data.hasMore, loadingMore: data.loadingMore, error: data.error, onRefresh: event "refresh" {}, onRetry: event "retry" {}, onLoadMore: event "loadMore" {}, header: Label(text: data.label), items: [Surface(child: SizedBox(height: 60.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 100.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 80.0, child: Label(text: data.label))), Surface(child: SizedBox(height: 40.0, child: Label(text: data.label)))])',
       {...label, 'layout': 'equalHeight', 'columns': 2, 'minTileWidth': 0.0,
         'spacing': 12.0, 'runSpacing': 12.0, 'loading': false,
         'hasMore': true, 'loadingMore': false, 'error': ''},
@@ -197,13 +211,14 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'Image',
       description: l.metaverse_componentImage,
-      'Image(url: data.url, height: data.height, width: data.width, radius: data.radius, fit: data.fit)',
+      'Image(url: data.url, height: data.height, width: data.width, radius: data.radius, fit: data.fit, preview: data.preview)',
       {
         'url': 'https://example.org/preview.png',
         'height': 120.0,
         'width': 120.0,
         'radius': 16.0,
         'fit': 'contain',
+        'preview': true,
       },
       options: {'fit': BoxFit.values.map((value) => value.name).toList()},
     ),

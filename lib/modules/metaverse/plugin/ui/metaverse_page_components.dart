@@ -44,6 +44,7 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     final loadingMore = source.v<bool>(['loadingMore']) == true;
     final hasMore = source.v<bool>(['hasMore']) == true;
     return _PluginPageLayout(
+      toolbar: source.optionalChild(['toolbar']),
       lazy: true,
       itemCount: items.length,
       loading: loading,
@@ -111,6 +112,7 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     final loading = source.v<bool>(['loading']) == true;
     final error = source.v<String>(['error']) ?? '';
     return _PluginPageLayout(
+      toolbar: source.optionalChild(['toolbar']),
       loading: loading,
       onRefresh: source.voidHandler(['onRefresh']),
       footer: source.optionalChild(['actions']),

@@ -24,6 +24,15 @@
       "widthFactor"
     ]
   },
+  "Amount": {
+    "parameters": [
+      "color",
+      "original",
+      "style",
+      "unit",
+      "value"
+    ]
+  },
   "AspectRatio": {
     "parameters": [
       "aspectRatio",
@@ -106,6 +115,12 @@
       "title"
     ]
   },
+  "CopyButton": {
+    "parameters": [
+      "label",
+      "text"
+    ]
+  },
   "DefaultTextStyle": {
     "parameters": [
       "child",
@@ -130,7 +145,8 @@
       "loading",
       "onRefresh",
       "onRetry",
-      "sections"
+      "sections",
+      "toolbar"
     ]
   },
   "Directionality": {
@@ -226,7 +242,8 @@
       "onRefresh",
       "onRetry",
       "runSpacing",
-      "spacing"
+      "spacing",
+      "toolbar"
     ]
   },
   "GridView": {
@@ -260,6 +277,7 @@
     "parameters": [
       "fit",
       "height",
+      "preview",
       "radius",
       "url",
       "width"
@@ -318,7 +336,8 @@
       "onLoadMore",
       "onRefresh",
       "onRetry",
-      "search"
+      "search",
+      "toolbar"
     ]
   },
   "ListView": {
@@ -340,6 +359,12 @@
       "scrollDirection",
       "semanticChildCount",
       "shrinkWrap"
+    ]
+  },
+  "Markdown": {
+    "parameters": [
+      "onLink",
+      "text"
     ]
   },
   "Opacity": {
@@ -370,7 +395,8 @@
       "loading",
       "loadingMore",
       "onLoadMore",
-      "onRefresh"
+      "onRefresh",
+      "toolbar"
     ]
   },
   "Positioned": {
@@ -389,6 +415,15 @@
   },
   "ProgressBar": {
     "parameters": [
+      "value"
+    ]
+  },
+  "QuantityInput": {
+    "parameters": [
+      "enabled",
+      "max",
+      "min",
+      "onChanged",
       "value"
     ]
   },
@@ -501,6 +536,11 @@
       "clipBehavior",
       "fit",
       "textDirection"
+    ]
+  },
+  "Statistics": {
+    "parameters": [
+      "items"
     ]
   },
   "Surface": {

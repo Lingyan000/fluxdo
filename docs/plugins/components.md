@@ -40,9 +40,9 @@ widget SearchPage = PageLayout(
 
 | 组件 | 参数与默认值 | 事件及行为 |
 | --- | --- | --- |
-| `PageLayout` | `children`、可选 `footer`、`loading: false`、`hasMore: false`、`loadingMore: false`、`loadMoreError: ""` | `onRefresh`、`onLoadMore`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
-| `ListPage` | `items`、可选 `search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，上滑接近底部时加载下一页，也保留手动加载入口，刷新保留已有条目 |
-| `DetailPage` | `sections`、可选 `header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
+| `PageLayout` | `children`、可选 `toolbar`、`footer`、`loading: false`、`hasMore: false`、`loadingMore: false`、`loadMoreError: ""` | `onRefresh`、`onLoadMore`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
+| `ListPage` | `items`、可选 `toolbar`、`search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，上滑接近底部时加载下一页，也保留手动加载入口，刷新保留已有条目 |
+| `DetailPage` | `sections`、可选 `toolbar`、`header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
 | `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
 | `ActionBar` | `actions` 组件列表 | 操作靠右排列，窄屏自动换为纵向；事件由内部按钮声明 |
 | `TileGrid` | `children`、`layout: natural`、`columns: 0`、`minTileWidth: 0`、`spacing: 12`、`runSpacing: 12` | 自然高度、同排等高、瀑布流，详见下方网格布局 |
@@ -54,7 +54,12 @@ widget SearchPage = PageLayout(
 | `Button` | `label`、`icon`、`variant`、`enabled: true`、`loading: false` | `onPressed`。variant 支持 tonal、outlined、text，默认填充按钮。loading 时显示进度并禁用 |
 | `IconButton` | `icon`、`tooltip` | `onPressed`。未知图标使用 extension，省略回调时禁用 |
 | `Symbol` | `name`、`size`、`color` | 未知图标使用 extension |
-| `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
+| `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0`、`preview: false` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
+| `Statistics` | `items: [{value, label}]`，最多 12 项 | 数字与标签自动分列，大字与窄屏换行。无内置点击行为，可放在整卡入口中 |
+| `Amount` | `value`、`unit`、`original`、`style: titleLarge`、`color` | 主题金额，原值删除线，空间不足时换行；值由插件格式化 |
+| `QuantityInput` | `value`、`min: 1`、`max: 9999`、`enabled: true` | `onChanged` 回传 `{value: number}`，边界禁用增减；脚本回写 value |
+| `Markdown` | `text`，最多 131072 字符 | 标题、列表、表格、代码、强调与链接，原始 HTML 作为文本。图片通过插件图片出口；`onLink` 仅在点击时回传 `{url}` |
+| `CopyButton` | `text`、`label` | 点击后复制并显示应用提示；空文本禁用，不读取剪贴板 |
 | `ListItem` | `title`、`subtitle`、`leading`、`trailing` | `onTap`，空 subtitle 隐藏 |
 | `Divider` | 无参数 | 高度 1 的分隔组件 |
 | `Spinner` | `size: 32` | 应用统一加载指示器 |
@@ -195,3 +200,11 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 声明 `adaptiveCollections` 后，可用 `AdaptivePane` 布置名单与内容。页面设置 `scroll: false`，用 `compactHeader` 放窄屏筛选栏，`sidebar` 放宽屏名单，`body` 放 `ListPage`。`masterWidth` 和 `minDetailWidth` 按当前可用空间决定何时并排。`ListPage.empty` 可放带操作按钮的空态，首次打开就能引导用户添加内容。
 
 `ContentRow` 可组合 `leading`、`meta`、`title`、`summary` 和 `detail`。`Avatar` 按宿主图片权限加载，加载失败显示名称首字。传入正整数 `count` 会显示角标，零会隐藏角标。`RelativeTime` 接受 UTC 时间并跟随应用的相对时间显示，`Choice.leading` 可放头像或图标。
+
+## 固定工具区与卡片入口
+
+`PageLayout`、`ListPage`、`DetailPage`、`GridPage` 的 `toolbar` 固定在内容区上方，适合搜索和分类。普通 `header` 随列表滚动。工具区最高占页面 45%，大字下内部可滚动；`footer` / `actions` 放主要操作。
+
+`Image(preview: true)` 支持点击查看和缩放，预览沿用同一图片权限与网络出口。上述新增展示能力需要声明 `requiredFeatures: ["contentPresentation"]`。
+
+清单可声明 `card: {"widget":"Card", "page":"home"}` 并包含 `cardNavigation` 必需能力。`page` 必须指向普通页面。宿主使整张卡片可点击，卡片内部的按钮和更多菜单仍独立响应。`Card` 的内容仍由插件任意组合组件；例如只放 `Statistics(items: data.stats)`，不必再放一个“进入”按钮。未声明 `page` 的历史卡片行为不变。

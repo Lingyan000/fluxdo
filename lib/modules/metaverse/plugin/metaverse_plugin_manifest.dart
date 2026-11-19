@@ -172,6 +172,8 @@ class MetaversePluginManifest {
 
   /// 元宇宙页卡片对应的组件名；为空则只显示名称与入口。
   final String? cardWidget;
+  /// 点击整张服务卡片的默认入口，内容组件仍可声明自己的独立操作。
+  String? get cardPage => (raw['card'] as Map?)?['page'] as String?;
   final List<MetaversePluginPageSpec> pages;
   final List<MetaverseLinkRule> links;
 
@@ -382,6 +384,15 @@ class MetaversePluginManifest {
         throw const MetaverseManifestException('card', '必须是对象');
       }
       cardWidget = _widgetName(card, 'widget', 'card');
+      if (card.containsKey('page')) {
+        final target = card['page'];
+        if (target is! String || !pages.any((p) => p.id == target && !p.modal)) {
+          throw const MetaverseManifestException('card.page', '须引用一个普通页面');
+        }
+        if (!requiredFeatures.contains('cardNavigation')) {
+          throw const MetaverseManifestException('requiredFeatures', '卡片入口需要 cardNavigation');
+        }
+      }
     }
     if (cardWidget == null && pages.isEmpty) {
       throw const MetaverseManifestException('card', '至少声明卡片或一个页面');

@@ -13,6 +13,8 @@ import 'package:fluxdo/modules/metaverse/host/metaverse_forum_adapter.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_forum_request.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
+import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
@@ -33,7 +35,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../helpers/preview_fonts.dart';
 import 'metaverse_navigation_forum_test.dart' show Secrets;
 
-const _bundle = 'test/fixtures/metaverse/activity-feed-1.1.0.fluxplugin';
+const _bundle = 'test/fixtures/metaverse/activity-feed-1.2.0.fluxplugin';
 const _plugin = 'community.fluxdo.activity';
 const _screenshots = bool.fromEnvironment('PLUGIN_SNAPSHOTS');
 
@@ -155,7 +157,7 @@ void main() {
         )
         ..update(
           metaversePluginLibraryName,
-          parseLibraryFile(bundle['files']['ui.rfwtxt'] as String),
+          parseLibraryFile((bundle['files']['ui.rfwtxt'] as String).replaceAll('\r\n','\n')),
         );
       addTearDown(runtime.dispose);
       final people = ['', '林间', 'mori', '小禾'];
@@ -259,7 +261,7 @@ void main() {
     });
   }
 
-  testWidgets('正式页面拒绝后可重试，只申请缺失权限，允许后关闭自己的弹层并返回动态', (tester) async {
+  testWidgets('整卡入口与菜单独立，页面按需授权后返回动态', (tester) async {
     size(tester, const Size(360, 780));
     final forum = _Forum();
     SharedPreferences.setMockInitialValues({});
@@ -317,14 +319,33 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: app(
-          const MetaversePluginPage(
-            pluginId: _plugin,
-            page: 'feed',
-            workspace: true,
-          ),
+          Scaffold(body: Padding(padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(child: MetaversePluginCard(
+              service: MetaversePluginService(plugins.byId(_plugin)!),
+              host: MetaverseCardHost(isProcessing:false,onDisable:(){},onReauthorize:(){}),
+            )))),
         ),
       ),
     );
+    await until(find.text('订阅用户'));
+    await tester.pumpAndSettle();
+    expect(find.byType(MetaversePluginPage),findsNothing);
+    expect(find.text('进入动态'),findsNothing);
+    await snapshot(tester,'service-card');
+    await tester.tap(find.byType(SwipeDismissiblePopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.metaverse_permissionSettings),findsOneWidget);
+    expect(find.byType(MetaversePluginPage),findsNothing);
+    navigatorKey.currentState!.pop();await tester.pumpAndSettle();
+    // 卡片下方的统计和标题都能打开页面，菜单不参与整卡点击。
+    await tester.tap(find.text('订阅用户'));
+    await until(find.text('添加用户'));
+    expect(find.text(S.current.metaverse_thirdParty),findsNothing);
+    expect(find.byType(AppBar),findsOneWidget);
+    expect(tester.widget<AppBar>(find.byType(AppBar)).actions,isEmpty);
+    navigatorKey.currentState!.pop();await tester.pumpAndSettle();
+    await until(find.text('订阅用户'));
+    await tester.tap(find.text('动态订阅'));
     await until(find.text('添加用户'));
     await tester.tap(find.text('添加用户'));
     await until(find.text('订阅此人'));

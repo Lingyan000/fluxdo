@@ -1,4 +1,12 @@
 {
+  "metaverse_imagePreview": "檢視圖片",
+  "metaverse_quantityDecrease": "減少數量",
+  "metaverse_quantityIncrease": "增加數量",
+  "metaverse_componentCopyButton": "使用者點擊後複製文字並顯示應用程式提示，不讀取剪貼簿。",
+  "metaverse_componentStatistics": "自適應統計：數值與說明，窄螢幕或大字自動換行。",
+  "metaverse_componentAmount": "數值、單位與可選原值，支援主題樣式和自動換行。",
+  "metaverse_componentQuantityInput": "有上下限的數量步進，觸發 onChanged(value)。",
+  "metaverse_componentMarkdown": "原生 Markdown 內容；圖片受外掛權限約束，點擊連結觸發 onLink(url)。",
   "metaverse_managedPermissions": "可管理權限",
   "metaverse_basicPermissions": "基本功能",
   "metaverse_apiDismiss": "只關閉目前插件自己的彈層，完成輸入後返回上一頁。",

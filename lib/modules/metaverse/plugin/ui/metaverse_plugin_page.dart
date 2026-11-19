@@ -8,8 +8,6 @@ import '../../../../navigation/nav_entry.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../providers/metaverse_plugin_providers.dart';
-import '../metaverse_plugin_permission.dart';
-import 'metaverse_plugin_management_page.dart';
 import 'metaverse_plugin_surface_view.dart';
 
 /// 插件声明的一个独立页面。
@@ -164,31 +162,13 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
       );
     }
 
-    final title = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          spec?.title ?? plugin?.manifest.name ?? pluginId,
-          style: theme.textTheme.titleMedium,
-        ),
-        if (plugin != null)
-          Text(
-            '${plugin.manifest.name} · ${context.l10n.metaverse_thirdParty}',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-      ],
+    final title = Text(
+      spec?.title ?? plugin?.manifest.name ?? pluginId,
+      style: theme.textTheme.titleMedium,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
     final actions = <Widget>[
-      if (plugin != null && plugin.manifest.declaredPermissions.any((p) => p.manageable))
-        IconButton(
-          tooltip: context.l10n.metaverse_permissionSettings,
-          icon: const Icon(Symbols.shield_rounded),
-          onPressed: () => Navigator.of(context).push<void>(InteractionPageRoute(
-            builder: (_) => MetaversePluginPermissionsPage(pluginId: pluginId),
-          )),
-        ),
       if (sourceUrl is String)
         IconButton(
           tooltip: context.l10n.metaverse_pluginOpen,

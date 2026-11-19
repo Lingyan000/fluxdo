@@ -15,6 +15,8 @@ enum PluginFeature {
   runtimePermissions,
   adaptiveCollections,
   modalDismiss,
+  cardNavigation,
+  contentPresentation,
 }
 
 class PluginFeatures {

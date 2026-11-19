@@ -31,6 +31,9 @@ class _Orders implements HttpClientAdapter {
     Stream<Uint8List>? request,
     Future<void>? cancel,
   ) async {
+    if (!options.uri.path.startsWith('/api/shop/orders') && !options.uri.path.startsWith('/api/shop/order-submissions')) {
+      return ResponseBody.fromString('{"success":true,"data":{}}',200);
+    }
     expect(options.headers['Authorization'], 'Bearer fixture');
     requests.add(options);
     afterRequest?.call();

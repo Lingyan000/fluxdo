@@ -16,7 +16,6 @@ import '../../support/material_ui_finders.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/metaverse_page.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
-import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -1167,7 +1166,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
   }
 
   for (final scale in [1.0, 1.4]) {
-    testWidgets('实际插件卡片的登录错误完整显示 scale=$scale', (tester) async {
+    testWidgets('实际插件账号页的登录错误完整显示 scale=$scale', (tester) async {
       await preferences.clear();
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -1179,7 +1178,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
           script:
               '''
-            fluxdo.on('card.load', ctx => {
+            fluxdo.on('page.open', ctx => {
               ctx.setData('loginLabel', '登录士多');
               ctx.setData('loginError', ${jsonEncode(error)});
               ctx.setData('authorized', false);
@@ -1197,19 +1196,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       await store.saveIndex([plugin]);
       await tester.pumpWidget(
         app(
-          SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: MetaversePluginCard(
-                service: MetaversePluginService(plugin),
-                host: MetaverseCardHost(
-                  isProcessing: false,
-                  onDisable: () {},
-                  onReauthorize: () {},
-                ),
-              ),
-            ),
-          ),
+          MetaversePluginPage(pluginId: plugin.id, page: 'account'),
           pluginStore: store,
           scale: scale,
         ),
@@ -1467,6 +1454,18 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
   });
 
   final data = <String, Object?>{
+    'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
+    'accountName':'','usage':'','tradeNo':'','refundHint':'','couponHint':'','sellerProfileAvailable':true,'overviewError':'','value':'12.50','original':'20.00','discount':'38% 优惠','buyLabel':'立即兑换',
+    'typeLabel':'自动发卡','category':'开发工具','sellerName':'tester','sellerAvatar':'',
+    'rules':['每人累计限购 2 件','需要信任等级 TL1'],'metrics':[{'label':'库存','value':'18'},{'label':'已售','value':'32'},{'label':'浏览','value':'128'}],
+    'listedAt':'2026-11-18 上架','total':'24 件商品','quantityValue':1,'quantityMax':5,
+    'categories':[{'id':'','name':'全部','selected':true},{'id':'tool','name':'工具','selected':false},{'id':'media','name':'影音','selected':false}],
+    'sorts':[{'label':'默认排序','sort':'updated_at','direction':'DESC','selected':true},{'label':'低价','sort':'final_price','direction':'ASC','selected':false}],
+    'filterError':'','min':'','max':'','stock':false,
+    'canCancel':true,'canCheck':true,'canRepurchase':true,'cancelLabel':'取消订单','statusNote':'请在 2026-11-20 10:30 前完成付款',
+    'fields':[{'label':'数量','value':'1'},{'label':'商品小计','value':'12.50 LDC'}],
+    'times':[{'label':'创建时间','value':'2026-11-20 10:25'}],
+    'orderEvents':[{'title':'创建订单','time':'2026-11-20 10:25','message':''}],
     'loading': false,
     'loginLabel': '登录士多',
     'loginError': '',
@@ -1523,6 +1522,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     'rows': [
       {
         'id': '1',
+        'value':'12.50','original':'20.00','sellerName':'tester','sellerAvatar':'','typeIcon':'key','typeLabel':'自动发卡',
         'title': '开发者工具包',
         'price': '12.50 LDC',
         'stock': '库存 18',
@@ -1533,6 +1533,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       },
       {
         'id': '2',
+        'value':'3.00','original':'','sellerName':'seller','sellerAvatar':'','typeIcon':'gift','typeLabel':'手动发货',
         'title': '社区数字纪念卡与开发者工具兑换套装',
         'price': '3.00 LDC',
         'stock': '库存 不限',
@@ -1570,7 +1571,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           'Product',
           'Review',
           'BuyerOrders',
-          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant',
+          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant','Filters','Account','Messages',
         ]) {
           await tester.pumpWidget(
             app(
@@ -1593,17 +1594,36 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
                       {'name':'reasonDetail','label':'问题描述','hint':'请说明具体问题（10–500 字）','type':'multiline','required':true,'maxLength':500},
                       {'name':'contacted','label':'已联系卖家协商','type':'toggle','value':false},
                     ],
-                    'fields':[{'name':'content','label':'评论内容','hint':'分享使用体验或提出问题（5–500 字）','type':'multiline','maxLength':500}],
+                    if (name == 'CommentForm') 'fields':[{'name':'content','label':'评论内容','hint':'分享使用体验或提出问题（5–500 字）','type':'multiline','maxLength':500}],
                     'canClaim':true,'claimed':false,'claimLabel':'领取优惠券',
                     'coupon':{'title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','starts':'2026-11-17 00:00（北京时间）','state':''},
+                    if(name=='Messages') 'rows':[{'id':'m1','title':'订单已交付','content':'您兑换的开发工具包已交付，可前往订单查看。','time':'2026-11-18T12:00:00Z','read':false,'link':'/order/LD1'}],
                     if(name=='Coupons') 'rows':[
                       {'id':'c1','title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','state':'待支付订单占用','action':'查看订单'},
                     ],
-                    'tabs':[{'value':'unused','label':'未使用','selected':true},{'value':'used','label':'已使用','selected':false},{'value':'expired','label':'已过期','selected':false}],
+                    'tabs': name == 'Messages'
+                        ? [{'value':'all','label':'全部','selected':true},{'value':'unread','label':'未读','selected':false},{'value':'read','label':'已读','selected':false}]
+                        : [{'value':'unused','label':'未使用','selected':true},{'value':'used','label':'已使用','selected':false},{'value':'expired','label':'已过期','selected':false}],
                     'merchantTitle':'tester 的商品',
                   }),
                 ),
               ),
+              title: switch (name) {
+                'Product' => '商品详情',
+                'Review' => '确认订单',
+                'BuyerOrders' => '我的订单',
+                'BuyerOrder' => '订单详情',
+                'Favorites' => '我的收藏',
+                'Coupons' => '我的优惠券',
+                'Coupon' => '领取优惠券',
+                'CommentForm' => '发布评论',
+                'Refund' => '退款与售后',
+                'Merchant' => '卖家商品',
+                'Filters' => '筛选与排序',
+                'Account' => '我的士多',
+                'Messages' => '系统消息',
+                _ => 'LD士多',
+              },
               brightness: brightness,
               scale: width == 320 ? 1.4 : 1,
             ),
@@ -1621,7 +1641,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
                   widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
                   data: DynamicContent({
                     ...data,
-                    'linkProduct': true,
+                    'linkProduct': true, 'buyLabel':'查看兑换方式',
                     'externalError': failed ? '读取兑换地址失败（HTTP 503）' : '',
                   }),
                 ),

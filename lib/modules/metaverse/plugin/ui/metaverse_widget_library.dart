@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -9,6 +9,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' as content;
+import 'package:markdown/markdown.dart' as md;
+import 'package:html/parser.dart' as html;
 // rfw 的 Switch 是界面描述里的分支节点，与 Material 的开关组件重名。
 import 'package:rfw/rfw.dart' hide Switch;
 
@@ -19,11 +22,14 @@ import '../../../../widgets/common/paged_list_footer.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../../widgets/common/relative_time_text.dart';
 import '../../../../widgets/layout/master_detail_layout.dart';
+import '../../../../utils/dialog_utils.dart';
+import '../../../../services/toast_service.dart';
 
 part 'metaverse_page_components.dart';
 part 'metaverse_form_component.dart';
 part 'metaverse_tile_grid.dart';
 part 'metaverse_grid_page.dart';
+part 'metaverse_content_components.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -240,6 +246,25 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
 ) => {
   ..._pageWidgets(),
   'GridPage': _buildGridPage,
+  'Statistics': _buildStatistics,
+  'Amount': _buildAmount,
+  'QuantityInput': _buildQuantityInput,
+  'CopyButton': (context, source) {
+    final text = _text(source, ['text']);
+    return TextButton.icon(
+      onPressed: text.isEmpty ? null : () async {
+        await Clipboard.setData(ClipboardData(text: text));
+        if (context.mounted) ToastService.showSuccess(context.l10n.common_copiedToClipboard);
+      },
+      icon: const Icon(Symbols.content_copy_rounded, size: 18),
+      label: Text(source.v<String>(['label']) ?? context.l10n.common_copy),
+    );
+  },
+  'Markdown': (context, source) => _PluginMarkdown(
+    text: _text(source, ['text']),
+    loadImage: loadImage,
+    onLink: source.handler(['onLink'], (trigger) => (String url) => trigger({'url': url})),
+  ),
   'AdaptivePane': (context, source) {
     final masterWidth = _gridDimension(source, 'masterWidth', 260).clamp(160.0, 500.0).toDouble();
     final detailWidth = _gridDimension(source, 'minDetailWidth', 440).clamp(240.0, 800.0).toDouble();
@@ -295,6 +320,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     dateTime: TimeUtils.parseUtcTime(source.v<String>(['value'])),
     style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
   'PageLayout': (context, source) => _PluginPageLayout(
+    toolbar: source.optionalChild(['toolbar']),
     loading: source.v<bool>(['loading']) == true,
     onRefresh: source.voidHandler(['onRefresh']),
     onLoadMore: source.voidHandler(['onLoadMore']),
@@ -442,6 +468,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   ),
 
   'Image': (context, source) => _PluginImage(
+    preview: source.v<bool>(['preview']) == true,
     url: source.v<String>(['url']) ?? '',
     width: _number(source, ['width']),
     height: _number(source, ['height']),
@@ -548,6 +575,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
 class _PluginPageLayout extends StatefulWidget {
   const _PluginPageLayout({
     required this.children,
+    this.toolbar,
     this.footer,
     this.onRefresh,
     required this.loading,
@@ -560,6 +588,7 @@ class _PluginPageLayout extends StatefulWidget {
     this.loadMoreError = '',
   });
   final List<Widget> children;
+  final Widget? toolbar;
   final Widget? footer;
   final VoidCallback? onRefresh;
   final bool loading;
@@ -643,7 +672,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
       if (!constraints.hasBoundedHeight && widget.slivers == null) {
         return Column(
           mainAxisSize: MainAxisSize.min,
-          children: [content, ?widget.footer],
+          children: [?widget.toolbar, content, ?widget.footer],
         );
       }
       Widget scroll = SingleChildScrollView(
@@ -688,7 +717,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
         );
       }
       if (!constraints.hasBoundedHeight) {
-        return Column(mainAxisSize: MainAxisSize.min, children: [scroll, ?widget.footer]);
+        return Column(mainAxisSize: MainAxisSize.min, children: [?widget.toolbar, scroll, ?widget.footer]);
       }
       if (widget.onRefresh != null) {
         scroll = M3eRefreshIndicator(
@@ -708,6 +737,14 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.toolbar != null)
+            PageBackdrop(child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: constraints.maxHeight * .45),
+              child: SingleChildScrollView(primary: false, child: Center(child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: widget.toolbar),
+              ))),
+            )),
           Expanded(child: scroll),
           if (widget.footer != null)
             PageBackdrop(
@@ -731,8 +768,10 @@ class _PluginImage extends StatefulWidget {
     required this.radius,
     required this.load,
     this.fallback,
+    this.preview = false,
   });
   final Widget? fallback;
+  final bool preview;
   final String url;
   final double? width, height;
   final BoxFit fit;
@@ -769,7 +808,7 @@ class _PluginImageState extends State<_PluginImage> {
   Widget build(BuildContext context) {
     final placeholder = widget.fallback ?? ImagePlaceholder(loading: _request != null);
     final retry = widget.fallback ?? ImagePlaceholder(onRetry: () => setState(_update));
-    return ClipRRect(
+    final image = ClipRRect(
       borderRadius: widget.radius,
       child: SizedBox(
         width: widget.width,
@@ -811,6 +850,17 @@ class _PluginImageState extends State<_PluginImage> {
         ),
       ),
     );
+    if (!widget.preview || _request == null) return image;
+    return Semantics(button: true, label: context.l10n.metaverse_imagePreview,
+      child: GestureDetector(onTap: () => showAppDialog<void>(
+        context: context,
+        builder: (context) => Dialog.fullscreen(child: Scaffold(
+          appBar: AppBar(title: Text(context.l10n.metaverse_imagePreview), leading: CloseButton()),
+          body: Center(child: InteractiveViewer(minScale: .5, maxScale: 5,
+            child: _PluginImage(url: widget.url, width: double.infinity, height: double.infinity,
+              fit: BoxFit.contain, radius: BorderRadius.zero, load: widget.load))),
+        )),
+      ), child: image));
   }
 }
 

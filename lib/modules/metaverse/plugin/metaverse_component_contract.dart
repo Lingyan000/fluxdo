@@ -25,6 +25,15 @@ const metaverseComponentContract = {
       "widthFactor"
     ]
   },
+  "Amount": {
+    "parameters": [
+      "color",
+      "original",
+      "style",
+      "unit",
+      "value"
+    ]
+  },
   "AspectRatio": {
     "parameters": [
       "aspectRatio",
@@ -107,6 +116,12 @@ const metaverseComponentContract = {
       "title"
     ]
   },
+  "CopyButton": {
+    "parameters": [
+      "label",
+      "text"
+    ]
+  },
   "DefaultTextStyle": {
     "parameters": [
       "child",
@@ -131,7 +146,8 @@ const metaverseComponentContract = {
       "loading",
       "onRefresh",
       "onRetry",
-      "sections"
+      "sections",
+      "toolbar"
     ]
   },
   "Directionality": {
@@ -227,7 +243,8 @@ const metaverseComponentContract = {
       "onRefresh",
       "onRetry",
       "runSpacing",
-      "spacing"
+      "spacing",
+      "toolbar"
     ]
   },
   "GridView": {
@@ -261,6 +278,7 @@ const metaverseComponentContract = {
     "parameters": [
       "fit",
       "height",
+      "preview",
       "radius",
       "url",
       "width"
@@ -319,7 +337,8 @@ const metaverseComponentContract = {
       "onLoadMore",
       "onRefresh",
       "onRetry",
-      "search"
+      "search",
+      "toolbar"
     ]
   },
   "ListView": {
@@ -341,6 +360,12 @@ const metaverseComponentContract = {
       "scrollDirection",
       "semanticChildCount",
       "shrinkWrap"
+    ]
+  },
+  "Markdown": {
+    "parameters": [
+      "onLink",
+      "text"
     ]
   },
   "Opacity": {
@@ -371,7 +396,8 @@ const metaverseComponentContract = {
       "loading",
       "loadingMore",
       "onLoadMore",
-      "onRefresh"
+      "onRefresh",
+      "toolbar"
     ]
   },
   "Positioned": {
@@ -390,6 +416,15 @@ const metaverseComponentContract = {
   },
   "ProgressBar": {
     "parameters": [
+      "value"
+    ]
+  },
+  "QuantityInput": {
+    "parameters": [
+      "enabled",
+      "max",
+      "min",
+      "onChanged",
       "value"
     ]
   },
@@ -502,6 +537,11 @@ const metaverseComponentContract = {
       "clipBehavior",
       "fit",
       "textDirection"
+    ]
+  },
+  "Statistics": {
+    "parameters": [
+      "items"
     ]
   },
   "Surface": {

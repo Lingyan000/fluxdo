@@ -1,475 +1,296 @@
 import fluxdo;
 
-widget Card = Column(crossAxisAlignment: "stretch", children: [
-  Row(children: [
-    Expanded(child: Button(label: "物品广场", icon: "storefront", variant: "tonal", onPressed: event "market" {})),
-    Gap(size: 8),
-    Expanded(child: Button(label: "我的订单", icon: "history", variant: "tonal", onPressed: event "orders" {})),
-  ]),
-  Gap(size: 8),
-  Row(children: [
-    Expanded(child: Button(label: "我的收藏", icon: "favorite", variant: "text", onPressed: event "favorites" {})),
-    Expanded(child: Button(label: "优惠券", icon: "gift", variant: "text", onPressed: event "coupons" {})),
-  ]),
-  LoginButton(),
+widget Card = Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+  Statistics(items: data.stats),
+  switch data.overviewError {"": SizedBoxShrink(), default: Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant")},
 ]);
 
-widget Market = GridPage(
-  layout: "equalHeight",
-  hasMore: data.more, loadingMore: data.loadingMore,
-  onLoadMore: event "more" {}, loading: data.loading,
-  error: data.message, emptyTitle: "没有符合条件的商品",
+widget Market = GridPage(layout: "equalHeight", minTileWidth: 156,
+  hasMore: data.more, loadingMore: data.loadingMore, onLoadMore: event "more" {},
+  loading: data.loading, error: data.message, emptyTitle: "没有符合条件的商品",
   onRefresh: event "refresh" {}, onRetry: event "marketRetry" {},
-  header: Column(crossAxisAlignment: "stretch", children: [
-    SearchInput(hint: "搜索商品", onChanged: event "input" {field: "search"}, onSubmitted: event "apply" {}),
-    Gap(size: 12),
-    Row(children: [
-      Button(label: data.filterLabel, icon: "settings", variant: "tonal", onPressed: event "filters" {}),
-      Spacer(),
-      Button(label: "我的订单", icon: "history", variant: "text", onPressed: event "orders" {}),
+  toolbar: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Expanded(child: SearchInput(value: data.search, hint: "搜索商品", onChanged: event "input" {field: "search"}, onSubmitted: event "apply" {})), Gap(size: 4),
+      IconButton(icon: "person", tooltip: "我的士多", onPressed: event "account" {}),
     ]),
-    switch data.filters {
-      true: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
-        Label(text: "商品分类", style: "titleSmall"),
-        Gap(size: 8),
-        Wrap(spacing: 8.0, runSpacing: 4.0, children: [
-          ...for c in data.categories: Choice(label: c.name, selected: c.selected, onSelected: event "select" {cat: c.id, label: c.name}),
-        ]),
-        switch data.categoryMessage {"": SizedBoxShrink(), default: Label(text: data.categoryMessage, color: "error")},
-        Gap(size: 16),
-        Label(text: "排序", style: "titleSmall"),
-        Gap(size: 8),
-        Wrap(spacing: 8.0, runSpacing: 4.0, children: [
-          ...for o in data.sorts: Choice(label: o.label, selected: o.selected, onSelected: event "select" {sort: o.sort, direction: o.direction, label: o.label}),
-        ]),
-        Gap(size: 16),
-        Row(children: [
-          Expanded(child: TextInput(value: data.min, label: "最低价", onChanged: event "input" {field: "min"})),
-          Gap(size: 12),
-          Expanded(child: TextInput(value: data.max, label: "最高价", onChanged: event "input" {field: "max"})),
-        ]),
-        Gap(size: 8),
-        Row(children: [Expanded(child: Label(text: "仅有库存")), Toggle(value: data.stock, onChanged: event "stock" {})]),
-        Gap(size: 8),
-        Button(label: "应用价格筛选", onPressed: event "apply" {}),
-      ]))),
-      default: SizedBoxShrink(),
-    },
-    Gap(size: 20),
-    Label(text: data.selection, style: "labelMedium", color: "onSurfaceVariant"),
-    Gap(size: 12),
-
+    Gap(size: 8),
+    SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [
+      ...for c in data.categories: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: c.name, selected: c.selected, onSelected: event "select" {cat: c.id, label: c.name})),
+    ])),
   ]),
-  actions: switch data.webFallback {true: Button(label: "在网页中浏览士多", variant: "tonal", onPressed: event "webMarket" {}), default: SizedBoxShrink()},
+  header: Row(children: [Expanded(child: Column(crossAxisAlignment: "start", children: [
+    Label(text: data.total, style: "titleSmall"), Label(text: data.selection, style: "bodySmall", color: "onSurfaceVariant"),
+  ])), Button(label: "筛选", icon: "settings", variant: "text", onPressed: event "filters" {})]),
+  actions: switch data.webFallback {true: Button(label: "在网页中浏览士多", variant: "text", onPressed: event "webMarket" {}), default: SizedBoxShrink()},
   items: [...for item in data.rows: ProductTile(item: item)],
 );
 
 widget ProductTile = Surface(padding: [0.0], onTap: event "product" {id: args.item.id}, child: Column(crossAxisAlignment: "stretch", children: [
-  AspectRatio(aspectRatio: 1.25, child: Image(url: args.item.image, fit: "cover")),
+  AspectRatio(aspectRatio: 1.2, child: Image(url: args.item.image, fit: "cover")),
   Padding(padding: [12.0], child: Column(crossAxisAlignment: "stretch", children: [
     Label(text: args.item.title, style: "titleSmall", maxLines: 2), Gap(size: 8),
-    Label(text: args.item.price, style: "titleMedium", color: "primary", bold: true), Gap(size: 4),
-    Label(text: args.item.stock, style: "labelSmall", color: "onSurfaceVariant"),
+    Amount(value: args.item.value, unit: "LDC", original: args.item.original), Gap(size: 8),
+    Row(children: [Symbol(name: args.item.typeIcon, size: 14.0, color: "onSurfaceVariant"), Gap(size: 4), Expanded(child: Label(text: args.item.typeLabel, style: "labelSmall", color: "onSurfaceVariant"))]),
+    Gap(size: 4), Label(text: args.item.stock, style: "labelSmall", color: "onSurfaceVariant"),
+    switch args.item.sellerName {"": SizedBoxShrink(), default: Padding(padding: [0.0, 10.0, 0.0, 0.0], child: Row(children: [
+      Avatar(label: args.item.sellerName, url: args.item.sellerAvatar, size: 20), Gap(size: 6),
+      Expanded(child: Label(text: args.item.sellerName, style: "labelSmall", color: "onSurfaceVariant", maxLines: 1)),
+    ]))},
   ])),
 ]));
 
-widget Product = PageLayout(
-  hasMore: data.commentsMore,
-  loadingMore: data.commentsLoading,
-  loadMoreError: data.commentsError,
-  onLoadMore: event "commentsMore" {},
-  loading: data.loading,
-  onRefresh: event "retry" {},
-  footer: switch data.ready {
-    true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
-      ExternalFeedback(),
-      Row(children: [
-        Expanded(child: Label(text: data.price, style: "titleLarge", color: "primary", bold: true)),
-        Gap(size: 12),
-        switch data.linkProduct {
-          true: Button(label: "查看兑换方式", icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
-          default: Button(label: "立即兑换", enabled: data.buy, onPressed: event "review" {}),
-        },
-      ]),
+widget Filters = PageLayout(loading: false, footer: Row(children: [
+  Button(label: "重置", variant: "text", onPressed: event "resetFilters" {}), Gap(size: 12),
+  Expanded(child: Button(label: "查看结果", onPressed: event "applyFilters" {})),
+]), children: [
+  Label(text: "排序", style: "titleSmall"), Gap(size: 12),
+  Wrap(spacing: 8.0, runSpacing: 8.0, children: [...for o in data.sorts: Choice(label: o.label, selected: o.selected, onSelected: event "select" {sort: o.sort, direction: o.direction, label: o.label})]),
+  Gap(size: 24), Label(text: "价格范围 · LDC", style: "titleSmall"), Gap(size: 12),
+  Row(children: [Expanded(child: TextInput(value: data.min, label: "最低价", onChanged: event "input" {field: "min"})), Gap(size: 16), Expanded(child: TextInput(value: data.max, label: "最高价", onChanged: event "input" {field: "max"}))]),
+  Gap(size: 24), ListItem(title: "仅显示有库存的商品", trailing: Toggle(value: data.stock, onChanged: event "stock" {})),
+  Gap(size: 16), Label(text: data.filterError, color: "error"),
+]);
+
+widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
+  hasMore: data.commentsMore, loadingMore: data.commentsLoading, loadMoreError: data.commentsError, onLoadMore: event "commentsMore" {},
+  footer: switch data.ready {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+    ExternalFeedback(),
+    Row(children: [Expanded(child: Amount(value: data.value, unit: "LDC")), Gap(size: 12),
+      Flexible(flex: 2, child: switch data.linkProduct {
+        true: Button(label: data.buyLabel, icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
+        default: Button(label: data.buyLabel, enabled: data.buy, onPressed: event "review" {}),
+      }),
     ]),
-    default: SizedBoxShrink(),
-  },
+  ]), default: SizedBoxShrink()},
   children: [
     switch data.loading {true: Padding(padding: [32.0], child: Spinner()), default: SizedBoxShrink()},
-    switch data.ready {
-      true: Column(crossAxisAlignment: "stretch", children: [
-        switch data.image {
-          "": SizedBoxShrink(),
-          default: Surface(padding: [0.0], child: AspectRatio(aspectRatio: 1.5, child: Image(url: data.image, fit: "contain"))),
-        },
-        Gap(size: 20),
-        Label(text: data.title, style: "titleLarge", bold: true),
-        Gap(size: 8),
-        Label(text: data.seller, color: "onSurfaceVariant"),
-        Wrap(spacing: 8.0, runSpacing: 8.0, children: [
-          Button(label: data.favoriteLabel, icon: "favorite", variant: "text", loading: data.buyerBusy, onPressed: event "favorite" {}),
-          Button(label: "我的收藏", variant: "text", onPressed: event "favorites" {}),
-        ]),
-        BuyerFeedback(),
-        Gap(size: 20),
-        Surface(child: Column(crossAxisAlignment: "stretch", children: [
-          Label(text: data.details),
-          Gap(size: 8),
-          Label(text: data.conditions, color: "onSurfaceVariant"),
-        ])),
-        Gap(size: 24),
-        Label(text: "商品说明", style: "titleMedium"),
-        Gap(size: 12),
-        SelectableLabel(text: data.description),
-        Gap(size: 24),
-        Row(children: [Expanded(child: Label(text: "商品评论", style: "titleMedium")),
-          switch data.canComment {true: Button(label: "写评论", icon: "edit", variant: "text", onPressed: event "comment" {}), default: SizedBoxShrink()},
-        ]),
-        Gap(size: 12),
-        ...for comment in data.comments: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Column(crossAxisAlignment: "stretch", children: [
-          Row(children: [
-            Expanded(child: Label(text: comment.author, bold: true)),
-            Label(text: comment.rating, color: "onSurfaceVariant"),
-          ]),
-          Gap(size: 8),
-          SelectableLabel(text: comment.content),
-        ])),
-        Label(text: data.commentsMessage, color: "onSurfaceVariant"),
-        switch data.commentsLoading {true: Spinner(), default: SizedBoxShrink()},
-        switch data.commentsError {
-          "": SizedBoxShrink(),
-          default: Column(children: [
-            Label(text: data.commentsError, color: "error"),
-            Button(label: "重新加载评论", variant: "text", onPressed: event "commentsRetry" {}),
-          ]),
-        },
-        switch data.commentsMore {true: Button(label: "更多评论", variant: "text", onPressed: event "commentsMore" {}), default: SizedBoxShrink()},
+    switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+      switch data.image {"": SizedBoxShrink(), default: Surface(padding: [0.0], child: AspectRatio(aspectRatio: 1.35, child: Image(url: data.image, fit: "contain", preview: true)))},
+      Gap(size: 20), Amount(value: data.value, unit: "LDC", original: data.original, style: "headlineMedium"),
+      Gap(size: 12), Label(text: data.title, style: "titleLarge", bold: true), Gap(size: 12),
+      Wrap(spacing: 8.0, runSpacing: 8.0, children: [Chip(label: data.typeLabel),
+        switch data.category {"": SizedBoxShrink(), default: Chip(label: data.category)},
+        switch data.discount {"": SizedBoxShrink(), default: Chip(label: data.discount)},
       ]),
-      default: SizedBoxShrink(),
-    },
-    switch data.error {
-      "": SizedBoxShrink(),
-      default: EmptyState(icon: "error", title: data.error, action: Column(mainAxisSize: "min", children: [
-        Button(label: "重试", onPressed: event "retry" {}),
-        Button(label: "在网页中查看商品", variant: "text", onPressed: event "webProduct" {}),
+      Gap(size: 20), Surface(child: Statistics(items: data.metrics)),
+      Gap(size: 12), Surface(padding: [0.0], child: ListItem(title: data.sellerName, subtitle: "查看店铺商品",
+        leading: Avatar(label: data.sellerName, url: data.sellerAvatar, size: 40), trailing: switch data.sellerProfileAvailable {true: IconButton(icon: "person", tooltip: "卖家主页", onPressed: event "sellerProfile" {}), default: Symbol(name: "chevron_right")}, onTap: event "seller" {})),
+      Row(children: [Expanded(child: Label(text: data.listedAt, style: "bodySmall", color: "onSurfaceVariant")),
+        Button(label: data.favoriteLabel, icon: "favorite", variant: "text", loading: data.buyerBusy, onPressed: event "favorite" {}),
+      ]), BuyerFeedback(), LoginButton(),
+      ...for rule in data.rules: Padding(padding: [0.0, 4.0, 0.0, 4.0], child: Row(crossAxisAlignment: "start", children: [Symbol(name: "info", size: 18.0, color: "onSurfaceVariant"), Gap(size: 8), Expanded(child: Label(text: rule, color: "onSurfaceVariant"))])),
+      Gap(size: 24), SectionTitle(title: "商品说明"), Gap(size: 12), Markdown(text: data.description, onLink: event "contentLink" {}),
+      Gap(size: 28), Row(children: [Expanded(child: SectionTitle(title: "商品评论")),
+        switch data.canComment {true: Button(label: "写评论", icon: "edit", variant: "text", onPressed: event "comment" {}), default: SizedBoxShrink()},
+      ]), Gap(size: 8),
+      ...for comment in data.comments: Padding(padding: [0.0, 8.0, 0.0, 12.0], child: Column(crossAxisAlignment: "stretch", children: [
+        Row(children: [Avatar(label: comment.author, url: comment.avatar, size: 32), Gap(size: 10), Expanded(child: Label(text: comment.author, style: "titleSmall")), Label(text: comment.rating, style: "labelSmall", color: "primary")]),
+        Gap(size: 8), SelectableLabel(text: comment.content), Gap(size: 6), RelativeTime(value: comment.time),
       ])),
-    },
+      Label(text: data.commentsMessage, color: "onSurfaceVariant"),
+      switch data.commentsLoading {true: Spinner(), default: SizedBoxShrink()},
+      switch data.commentsError {"": SizedBoxShrink(), default: Column(children: [Label(text: data.commentsError, color: "error"), Button(label: "重新加载评论", variant: "text", onPressed: event "commentsRetry" {})])},
+      switch data.commentsMore {true: Button(label: "更多评论", variant: "text", onPressed: event "commentsMore" {}), default: SizedBoxShrink()},
+    ]), default: SizedBoxShrink()},
+    switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: ActionBar(actions: [Button(label: "重试", onPressed: event "retry" {}), Button(label: "在网页中查看商品", variant: "text", onPressed: event "webProduct" {})]))},
   ],
 );
 
-widget Review = PageLayout(
-  loading: data.loading,
-  onRefresh: event "retry" {},
-  footer: ReviewAction(),
-  children: [
-    switch data.loading {true: Padding(padding: [32.0], child: Spinner()), default: SizedBoxShrink()},
-    switch data.ready {
-      true: Column(crossAxisAlignment: "stretch", children: [
-        Surface(child: Column(crossAxisAlignment: "stretch", children: [
-          Label(text: data.title, style: "titleMedium", bold: true),
-          Gap(size: 8),
-          Label(text: data.seller, color: "onSurfaceVariant"),
-          Gap(size: 16),
-          DetailRow(label: "单价", value: data.price),
-          Gap(size: 8),
-          Label(text: data.conditions, style: "bodySmall", color: "onSurfaceVariant"),
-          Gap(size: 16),
-          Row(children: [
-            Expanded(child: Label(text: "数量")),
-            Button(label: "−", variant: "outlined", enabled: data.canRemove, onPressed: event "quantity" {step: -1}),
-            Padding(padding: [12.0, 0.0, 12.0, 0.0], child: Label(text: data.quantity, style: "titleMedium")),
-            Button(label: "+", variant: "outlined", enabled: data.canAdd, onPressed: event "quantity" {step: 1}),
-          ]),
-          Gap(size: 16),
-          DetailRow(label: "商品小计", value: data.estimate),
-        ])),
-        Gap(size: 20),
-        switch data.quoting {true: Spinner(), default: SizedBoxShrink()},
-        switch data.quoteReady {
-          true: Surface(child: Column(crossAxisAlignment: "stretch", children: [
-            Label(text: "优惠券", style: "titleMedium"),
-            Gap(size: 8),
-            Label(text: "选项中显示券后应付", style: "bodySmall", color: "onSurfaceVariant"),
-            Gap(size: 8),
-            Wrap(spacing: 8.0, runSpacing: 8.0, children: [
-              ...for c in data.couponRows: Choice(label: c.label, selected: c.selected, onSelected: event "quoteCoupon" {id: c.id}),
-              Choice(label: "不使用优惠券", selected: data.noCoupon, onSelected: event "quoteCoupon" {id: ""}),
-            ]),
-            Gap(size: 16),
-            DetailRow(label: "应付积分", value: data.payable),
-          ])),
-          default: SizedBoxShrink(),
-        },
-        switch data.canQuote {true: Button(label: "刷新报价", loading: data.quoting, variant: "text", onPressed: event "quote" {}), default: SizedBoxShrink()},
-        switch data.quoteNote {"": SizedBoxShrink(), default: Label(text: data.quoteNote, color: "error")},
-      ]),
-      default: SizedBoxShrink(),
-    },
-    switch data.nativeOrder {
-      true: Column(crossAxisAlignment: "stretch", children: [
-        switch data.orderState {
-          "pending": SubmissionRecovery(),
-          "missing": Column(crossAxisAlignment: "stretch", children: [
-            SubmissionRecovery(),
-            Gap(size: 8),
-            Button(label: "用原提交号重试", variant: "outlined", loading: data.orderBusy, onPressed: event "retrySubmission" {}),
-          ]),
-          "created": Surface(child: Column(crossAxisAlignment: "stretch", children: [
-            Label(text: "订单已创建", style: "titleMedium"),
-            Gap(size: 12),
-            Label(text: data.orderSummary),
-            Gap(size: 8),
-            SelectableLabel(text: data.orderNo),
-            Gap(size: 16),
-            Button(label: "查看订单并支付", icon: "payments", onPressed: event "createdOrder" {}),
-            Button(label: "结束本次兑换", variant: "text", onPressed: event "finishSubmission" {}),
-          ])),
-          "unavailable": Label(text: "暂时无法读取本机订单记录，请稍后重新进入。"),
-          default: SizedBoxShrink(),
-        },
-        switch data.orderNote {"": SizedBoxShrink(), default: Label(text: data.orderNote)},
-      ]),
-      default: SizedBoxShrink(),
-    },
-    switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: Button(label: "重试", onPressed: event "retry" {}))},
-  ],
-);
-
-widget ReviewAction = switch data.ready {
-  true: switch data.nativeOrder {
-    true: switch data.orderState {
-      "idle": Button(label: "核对并创建订单", enabled: data.canSubmit, loading: data.orderBusy, onPressed: event "submitOrder" {}),
-      default: SizedBoxShrink(),
-    },
-    default: switch data.linkProduct {
-      true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
-        ExternalFeedback(),
-        Button(label: "查看兑换方式", icon: "open_in_new", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}),
-      ]),
-      default: LoginButton(),
-    },
-  },
-  default: SizedBoxShrink(),
-};
-
-widget ExternalFeedback = switch data.externalError {
-  "": SizedBoxShrink(),
-  default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.externalError, color: "error")),
-};
-
-widget BuyerOrders = PageLayout(hasMore: data.more, onLoadMore: event "ordersMore" {}, loadMoreError: data.error, loading: data.loading, onRefresh: event "ordersRefresh" {}, children: [
-  switch data.needsSession {
-    true: SizedBoxShrink(),
-    default: Wrap(spacing: 8.0, runSpacing: 8.0, children: [
-      ...for filter in data.orderFilters: Choice(label: filter.label, selected: filter.selected, onSelected: event "ordersFilter" {status: filter.status, name: filter.name}),
-    ]),
-  },
-  Gap(size: 16),
-  switch data.loading {true: Padding(padding: [24.0], child: Spinner()), default: SizedBoxShrink()},
-  switch data.empty {true: EmptyState(icon: "history", title: "没有符合条件的订单"), default: SizedBoxShrink()},
-  ...for order in data.rows: Padding(padding: [0.0, 0.0, 0.0, 12.0], child: Surface(onTap: event "order" {no: order.no}, child: Column(crossAxisAlignment: "stretch", children: [
-    Row(children: [
-      Expanded(child: Label(text: order.title, style: "titleMedium", maxLines: 2)),
-      Gap(size: 12),
-      Label(text: order.state, style: "labelMedium", color: "primary"),
-    ]),
-    Gap(size: 12),
-    Label(text: order.no, style: "bodySmall", color: "onSurfaceVariant", maxLines: 1),
-    Gap(size: 12),
-    Row(children: [
-      Expanded(child: Label(text: order.amount, style: "titleMedium", bold: true)),
-      Symbol(name: "chevron_right"),
-    ]),
-  ]))),
-  switch data.more {true: Button(label: "加载更多订单", variant: "tonal", onPressed: event "ordersMore" {}), default: SizedBoxShrink()},
-  OrderFeedback(),
+widget SectionTitle = Label(text: args.title, style: "titleMedium", bold: true);
+widget ProductSummary = Row(crossAxisAlignment: "start", children: [
+  Image(url: args.image, width: 72, height: 72, radius: 12), Gap(size: 12),
+  Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: args.title, style: "titleSmall", maxLines: 3), Gap(size: 6), Label(text: args.subtitle, style: "bodySmall", color: "onSurfaceVariant")]))
 ]);
-
-widget BuyerOrder = PageLayout(
-  loading: data.loading,
-  onRefresh: event "ordersRefresh" {},
-  footer: switch data.ready {
-    true: switch data.canPay {
-      true: Row(children: [
-        Expanded(child: Button(label: data.cancelLabel, variant: "text", enabled: data.paymentAvailable, onPressed: event "cancelOrder" {})),
-        Gap(size: 12),
-        Expanded(child: Button(label: "立即支付", icon: "payments", loading: data.paymentBusy, onPressed: event "payOrder" {})),
-      ]),
-      default: SizedBoxShrink(),
-    },
-    default: SizedBoxShrink(),
-  },
-  children: [
-    switch data.loading {true: Padding(padding: [32.0], child: Spinner()), default: SizedBoxShrink()},
-    switch data.ready {
-      true: Column(crossAxisAlignment: "stretch", children: [
-        Gap(size: 8),
-        Label(text: data.state, style: "titleMedium", align: "center", color: "primary"),
-        Gap(size: 12),
-        Label(text: data.amount, style: "headlineMedium", align: "center", bold: true),
-        Gap(size: 24),
-        Surface(child: Column(crossAxisAlignment: "stretch", children: [
-          Label(text: data.orderTitle, style: "titleMedium", bold: true),
-          Gap(size: 20),
-          DetailRow(label: "交付方式", value: data.delivery),
-          Gap(size: 16),
-          Label(text: "订单号", style: "labelMedium", color: "onSurfaceVariant"),
-          Gap(size: 4),
-          SelectableLabel(text: data.orderNo),
-        ])),
-        switch data.hasDelivery {
-          true: Padding(padding: [0.0, 16.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
-            Button(label: data.deliveryAction, icon: "gift", variant: "tonal", onPressed: event "delivery" {}),
-            switch data.deliveryText {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: SelectableLabel(text: data.deliveryText))},
-          ]))),
-          default: SizedBoxShrink(),
-        },
-        Gap(size: 20),
-        switch data.paymentNote {"": SizedBoxShrink(), default: Label(text: data.paymentNote, color: "error")},
-        Button(label: "退款与售后", icon: "history", variant: "tonal", onPressed: event "refund" {}),
-        Gap(size: 8),
-        Button(label: "刷新订单", icon: "refresh", variant: "text", onPressed: event "ordersRefresh" {}),
-      ]),
-      default: SizedBoxShrink(),
-    },
-    OrderFeedback(),
-  ],
-);
-
-widget DetailRow = Row(crossAxisAlignment: "start", children: [
-  Label(text: args.label, color: "onSurfaceVariant"),
-  Gap(size: 20),
-  Expanded(child: Label(text: args.value, align: "end", style: "titleSmall")),
+widget Review = PageLayout(loading: data.loading, onRefresh: event "retry" {}, footer: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [ExternalFeedback(), ReviewAction()]), children: [
+  switch data.loading {true: Padding(padding: [32.0], child: Spinner()), default: SizedBoxShrink()},
+  switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      ProductSummary(image: data.image, title: data.title, subtitle: data.seller), Gap(size: 20),
+      DetailRow(label: "单价", value: data.price), Gap(size: 16),
+      Row(children: [Expanded(child: Label(text: "数量")), QuantityInput(value: data.quantityValue, max: data.quantityMax, enabled: data.buy, onChanged: event "quantity" {})]),
+      Gap(size: 16), DetailRow(label: "商品小计", value: data.estimate),
+    ])),
+    Gap(size: 12), Label(text: data.conditions, style: "bodySmall", color: "onSurfaceVariant"),
+    Gap(size: 24), SectionTitle(title: "选择优惠券"), Gap(size: 12),
+    switch data.quoting {true: Spinner(), default: SizedBoxShrink()},
+    switch data.quoteReady {true: Surface(padding: [0.0], child: Column(crossAxisAlignment: "stretch", children: [
+      ...for c in data.couponRows: ListItem(title: c.label, trailing: switch c.selected {true: Symbol(name: "check_circle", color: "primary"), default: Symbol(name: "gift", color: "onSurfaceVariant")}, onTap: event "quoteCoupon" {id: c.id}),
+      ListItem(title: "不使用优惠券", trailing: switch data.noCoupon {true: Symbol(name: "check_circle", color: "primary"), default: SizedBoxShrink()}, onTap: event "quoteCoupon" {id: ""}),
+    ])), default: SizedBoxShrink()},
+    switch data.canQuote {true: Button(label: "刷新报价", loading: data.quoting, variant: "text", onPressed: event "quote" {}), default: SizedBoxShrink()},
+    Label(text: data.quoteNote, color: "error"), Gap(size: 16), DetailRow(label: "应付积分", value: data.payable),
+  ]), default: SizedBoxShrink()},
+  switch data.nativeOrder {true: Column(crossAxisAlignment: "stretch", children: [
+    switch data.orderState {
+      "pending": SubmissionRecovery(),
+      "missing": Column(children: [SubmissionRecovery(), Button(label: "用原提交号重试", variant: "outlined", loading: data.orderBusy, onPressed: event "retrySubmission" {})]),
+      "created": Surface(child: Column(crossAxisAlignment: "stretch", children: [
+        SectionTitle(title: "订单已创建"), Gap(size: 12), Label(text: data.orderSummary), Gap(size: 8), SelectableLabel(text: data.orderNo),
+        Gap(size: 16), Button(label: "查看订单并支付", icon: "payments", onPressed: event "createdOrder" {}), Button(label: "结束本次兑换", variant: "text", onPressed: event "finishSubmission" {}),
+      ])),
+      "unavailable": Label(text: "暂时无法读取本机订单记录，请稍后重新进入。"), default: SizedBoxShrink(),
+    }, Label(text: data.orderNote, color: "error"),
+  ]), default: SizedBoxShrink()},
+  switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: Button(label: "重试", onPressed: event "retry" {}))},
 ]);
-
-widget OrderFeedback = switch data.error {
-  "": SizedBoxShrink(),
-  default: EmptyState(icon: "history", title: data.error, action: switch data.needsSession {
-    true: LoginButton(),
-    default: Button(label: "重新读取订单", variant: "outlined", onPressed: event "ordersRefresh" {}),
-  }),
-};
-
+widget ReviewAction = switch data.ready {true: switch data.nativeOrder {
+  true: switch data.orderState {"idle": Button(label: "确认兑换", enabled: data.canSubmit, loading: data.orderBusy, onPressed: event "submitOrder" {}), default: SizedBoxShrink()},
+  default: switch data.linkProduct {true: Button(label: "查看兑换方式", enabled: data.buy, loading: data.externalBusy, onPressed: event "buy" {}), default: LoginButton()},
+}, default: SizedBoxShrink()};
 widget SubmissionRecovery = Surface(child: Column(crossAxisAlignment: "stretch", children: [
-  Label(text: "核对上次提交", style: "titleMedium"),
-  Gap(size: 12),
-  Label(text: data.orderSummary),
-  Gap(size: 8),
-  switch data.orderState {
-    "missing": Label(text: "士多尚未查到这笔订单。重试仍使用原订单信息和提交号。"),
-    default: Label(text: "尚未确认是否建单。先查询结果，避免重复兑换。"),
-  },
-  Gap(size: 16),
+  SectionTitle(title: "核对上次提交"), Gap(size: 12), Label(text: data.orderSummary), Gap(size: 8),
+  Label(text: "尚未确认是否建单。先查询结果，避免重复兑换。"), Gap(size: 16),
   Button(label: "查询提交结果", variant: "tonal", loading: data.orderBusy, onPressed: event "lookupSubmission" {}),
 ]));
 
-widget LoginButton = switch data.authorized {
-  true: SizedBoxShrink(),
-  default: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
-    Button(label: "登录士多", icon: "person", variant: "text", loading: data.loggingIn, onPressed: event "login" {}),
-    switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Label(text: data.loginError, style: "bodySmall", color: "error"))},
-  ]),
-};
-
-
-widget BuyerFeedback = switch data.buyerError {
-  "": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 12.0], child: Label(text: data.buyerError, color: "error")),
-};
-widget BuyerLogin = switch data.needsSession {true: LoginButton(), default: SizedBoxShrink()};
-
-widget Favorites = GridPage(layout: "equalHeight", loading: data.loading, loadingMore: data.loadingMore,
-  hasMore: data.more, error: data.error, emptyTitle: "还没有收藏商品",
-  onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
-  header: Column(crossAxisAlignment: "stretch", children: [
-    SearchInput(hint: "搜索收藏的商品", onChanged: event "favoriteSearch" {}, onSubmitted: event "buyerRefresh" {}),
-    BuyerLogin(),
-  ]),
-  items: [...for item in data.rows: ProductTile(item: item)],
+widget BuyerOrders = ListPage(loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  onLoadMore: event "ordersMore" {}, error: data.error, onRetry: event "ordersRefresh" {}, onRefresh: event "ordersRefresh" {}, emptyTitle: "没有符合条件的订单",
+  toolbar: SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [
+    ...for filter in data.orderFilters: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: filter.label, selected: filter.selected, onSelected: event "ordersFilter" {status: filter.status, name: filter.name})),
+  ])),
+  header: BuyerLogin(),
+  items: [...for order in data.rows: Surface(padding: [16.0], onTap: event "order" {no: order.no}, child: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Expanded(child: Label(text: order.seller, style: "labelMedium", color: "onSurfaceVariant")), Label(text: order.state, style: "labelMedium", color: "primary")]), Gap(size: 12),
+    ProductSummary(image: order.image, title: order.title, subtitle: order.quantity), Gap(size: 12),
+    Row(children: [Expanded(child: RelativeTime(value: order.time)), Label(text: order.amount, style: "titleMedium", bold: true), Gap(size: 8), Symbol(name: "chevron_right", size: 18.0)]),
+  ]))],
 );
 
-widget Coupons = ListPage(loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
-  error: data.error, emptyTitle: "暂无此类优惠券", onRefresh: event "buyerRefresh" {},
-  onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+widget BuyerOrder = PageLayout(loading: data.loading, onRefresh: event "ordersRefresh" {}, footer: switch data.ready {true: ActionBar(actions: [
+  switch data.canCancel {true: Button(label: data.cancelLabel, variant: "text", enabled: data.paymentAvailable, onPressed: event "cancelOrder" {}), default: SizedBoxShrink()},
+  switch data.canPay {true: Button(label: "立即支付", icon: "payments", loading: data.paymentBusy, onPressed: event "payOrder" {}), default: switch data.canRepurchase {true: Button(label: "重新兑换", variant: "tonal", onPressed: event "repurchase" {}), default: SizedBoxShrink()}},
+]), default: SizedBoxShrink()}, children: [
+  switch data.loading {true: Padding(padding: [32.0], child: Spinner()), default: SizedBoxShrink()},
+  switch data.ready {true: Column(crossAxisAlignment: "stretch", children: [
+    Label(text: data.state, style: "headlineSmall", bold: true, color: "primary"), Gap(size: 8),
+    Label(text: data.statusNote, color: "onSurfaceVariant"), Gap(size: 24),
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      ProductSummary(image: data.orderImage, title: data.orderTitle, subtitle: data.quantity), Gap(size: 20),
+      ...for row in data.fields: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
+    ])),
+    switch data.hasDelivery {true: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      Row(children: [Expanded(child: SectionTitle(title: "发货内容")), Button(label: data.deliveryAction, icon: "visibility", variant: "text", onPressed: event "delivery" {})]),
+      switch data.deliveryText {"": Label(text: "内容已隐藏，点击查看", style: "bodySmall", color: "onSurfaceVariant"), default: Column(crossAxisAlignment: "stretch", children: [Gap(size: 12), SelectableLabel(text: data.deliveryText), CopyButton(text: data.deliveryText, label: "复制全部发货内容")])},
+    ]))), default: SizedBoxShrink()},
+    switch data.usage {"": SizedBoxShrink(), default: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [SectionTitle(title: "使用说明"), Gap(size: 12), Markdown(text: data.usage, onLink: event "contentLink" {})]))},
+    Gap(size: 24), SectionTitle(title: "订单信息"), Gap(size: 12),
+    Surface(child: Column(crossAxisAlignment: "stretch", children: [
+      DetailRow(label: "交付方式", value: data.delivery), Gap(size: 12), Label(text: "订单号", style: "labelMedium", color: "onSurfaceVariant"),
+      Row(children: [Expanded(child: SelectableLabel(text: data.orderNo)), CopyButton(text: data.orderNo)]),
+      switch data.tradeNo {"": SizedBoxShrink(), default: Column(crossAxisAlignment: "stretch", children: [Label(text: "Credit 交易号", style: "labelMedium", color: "onSurfaceVariant"), SelectableLabel(text: data.tradeNo), Gap(size: 12)])},
+      ...for row in data.times: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
+    ])),
+    Gap(size: 24), SectionTitle(title: "订单动态"), Gap(size: 12),
+    ...for entry in data.orderEvents: TimelineEntry(entry: entry),
+    Label(text: data.paymentNote, color: "error"),
+    switch data.canCheck {true: Button(label: "检查支付状态", loading: data.paymentBusy, icon: "sync", variant: "tonal", onPressed: event "checkPayment" {}), default: SizedBoxShrink()},
+    Wrap(spacing: 8.0, children: [Button(label: "退款与售后", icon: "history", variant: "text", onPressed: event "refund" {}), Button(label: "刷新订单", icon: "refresh", variant: "text", onPressed: event "ordersRefresh" {})]),
+  ]), default: SizedBoxShrink()}, OrderFeedback(),
+]);
+widget TimelineEntry = Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Row(crossAxisAlignment: "start", children: [
+  Symbol(name: "check_circle", size: 18.0, color: "onSurfaceVariant"), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "stretch", children: [
+    Label(text: args.entry.title, style: "titleSmall"), Gap(size: 4), Label(text: args.entry.time, style: "bodySmall", color: "onSurfaceVariant"),
+    switch args.entry.message {"": SizedBoxShrink(), default: Padding(padding: [0.0, 6.0, 0.0, 0.0], child: Label(text: args.entry.message))},
+  ])),
+]));
+widget DetailRow = Row(crossAxisAlignment: "start", children: [
+  Expanded(child: Label(text: args.label, color: "onSurfaceVariant")), Gap(size: 16),
+  Expanded(flex: 2, child: Label(text: args.value, align: "end", style: "bodyMedium")),
+]);
+widget OrderFeedback = switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "history", title: data.error, action: switch data.needsSession {
+  true: LoginButton(), default: Button(label: "重新读取订单", variant: "outlined", onPressed: event "ordersRefresh" {}),
+})};
+widget ExternalFeedback = switch data.externalError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 8.0], child: Label(text: data.externalError, color: "error"))};
+widget LoginButton = switch data.authorized {true: SizedBoxShrink(), default: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+  Button(label: "登录士多", icon: "person", variant: "tonal", loading: data.loggingIn, onPressed: event "login" {}),
+  switch data.loginError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Label(text: data.loginError, style: "bodySmall", color: "error"))},
+])};
+widget BuyerFeedback = switch data.buyerError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 12.0], child: Label(text: data.buyerError, color: "error"))};
+widget BuyerLogin = switch data.needsSession {true: LoginButton(), default: SizedBoxShrink()};
+
+widget Account = ListPage(loading: false, onRefresh: event "overviewRefresh" {},
   header: Column(crossAxisAlignment: "stretch", children: [
-    Wrap(spacing: 8.0, runSpacing: 8.0, children: [...for tab in data.tabs: Choice(label: tab.label, selected: tab.selected, onSelected: event "couponTab" {value: tab.value})]),
-    BuyerLogin(),
-  ]),
-  items: [...for coupon in data.rows: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
-    CouponInfo(coupon: coupon),
-    Gap(size: 16),
-    Button(label: coupon.action, variant: "tonal", onPressed: event "couponUse" {id: coupon.id}),
+    switch data.accountName {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 20.0], child: Row(children: [Avatar(label: data.accountName, size: 48), Gap(size: 12), Expanded(child: Label(text: data.accountName, style: "titleLarge", bold: true))]))},
+    Statistics(items: data.stats), Gap(size: 12), Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant"), LoginButton()]),
+  items: [
+    ListItem(title: "我的订单", subtitle: "付款、交付与售后", leading: Symbol(name: "history"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {}),
+    switch data.refundHint {"": SizedBoxShrink(), default: ListItem(title: data.refundHint, leading: Symbol(name: "info"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {status: "refund_pending,refunded,refund_failed"})},
+    ListItem(title: "我的收藏", leading: Symbol(name: "favorite"), trailing: Symbol(name: "chevron_right"), onTap: event "favorites" {}),
+    ListItem(title: "我的优惠券", subtitle: data.couponHint, leading: Symbol(name: "gift"), trailing: Symbol(name: "chevron_right"), onTap: event "coupons" {}),
+    ListItem(title: "士多消息", leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "messages" {}),
+  ], actions: switch data.authorized {true: Button(label: "退出士多登录", variant: "text", onPressed: event "signOut" {}), default: SizedBoxShrink()},
+);
+
+widget Favorites = GridPage(layout: "equalHeight", minTileWidth: 156, loading: data.loading, loadingMore: data.loadingMore,
+  hasMore: data.more, error: data.error, emptyTitle: "还没有收藏商品", onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  toolbar: SearchInput(hint: "搜索收藏的商品", onChanged: event "favoriteSearch" {}, onSubmitted: event "buyerRefresh" {}), header: BuyerLogin(),
+  items: [...for item in data.rows: ProductTile(item: item)],
+);
+widget Coupons = ListPage(loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more, error: data.error, emptyTitle: "暂无此类优惠券",
+  onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  toolbar: SingleChildScrollView(scrollDirection: "horizontal", primary: false, child: Row(children: [...for tab in data.tabs: Padding(padding: [0.0, 0.0, 8.0, 0.0], child: Choice(label: tab.label, selected: tab.selected, onSelected: event "couponTab" {value: tab.value}))])),
+  header: BuyerLogin(), items: [...for coupon in data.rows: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
+    CouponInfo(coupon: coupon), Gap(size: 12), Button(label: coupon.action, variant: "tonal", onPressed: event "couponUse" {id: coupon.id}),
   ]))],
 );
 widget CouponInfo = Column(crossAxisAlignment: "stretch", children: [
-  Label(text: args.coupon.title, style: "titleMedium", bold: true), Gap(size: 8),
-  Label(text: args.coupon.rule, style: "titleLarge", color: "primary", bold: true), Gap(size: 8),
-  Label(text: args.coupon.seller, color: "onSurfaceVariant"), Gap(size: 16),
-  DetailRow(label: "适用范围", value: args.coupon.scope), Gap(size: 8),
-  DetailRow(label: "使用门槛", value: args.coupon.minimum), Gap(size: 8),
-  DetailRow(label: "到期时间", value: args.coupon.expires),
-  switch args.coupon.state {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Label(text: args.coupon.state, color: "primary"))},
+  Label(text: args.coupon.rule, style: "headlineSmall", color: "primary", bold: true), Gap(size: 12),
+  Label(text: args.coupon.title, style: "titleMedium", bold: true), Gap(size: 4),
+  Label(text: args.coupon.seller, style: "bodySmall", color: "onSurfaceVariant"), Gap(size: 16),
+  DetailRow(label: "适用范围", value: args.coupon.scope), Gap(size: 8), DetailRow(label: "使用门槛", value: args.coupon.minimum),
+  Gap(size: 8), DetailRow(label: "到期时间", value: args.coupon.expires),
+  switch args.coupon.usedAt {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: DetailRow(label: "使用时间", value: args.coupon.usedAt))},
+  switch args.coupon.actualDiscount {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: DetailRow(label: "实际优惠", value: args.coupon.actualDiscount))},
+  switch args.coupon.state {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Label(text: args.coupon.state, style: "labelMedium", color: "primary"))},
 ]);
-widget Coupon = PageLayout(loading: data.loading, onRefresh: event "buyerRefresh" {},
-  footer: switch data.ready {
-    true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [BuyerFeedback(),
-      switch data.claimed {
-        true: Button(label: "查看我的优惠券", icon: "check_circle", onPressed: event "coupons" {}),
-        default: switch data.authorized {
-          true: Button(label: data.claimLabel, enabled: data.canClaim, loading: data.buyerBusy, onPressed: event "claimCoupon" {}),
-          default: LoginButton(),
-        },
-      },
-    ]), default: SizedBoxShrink(),
-  },
-  children: [
-    switch data.loading {true: Spinner(), default: SizedBoxShrink()},
-    switch data.ready {true: Surface(child: Column(crossAxisAlignment: "stretch", children: [
-      Symbol(name: "gift", size: 48.0), Gap(size: 20), CouponInfo(coupon: data.coupon), Gap(size: 16),
-      Label(text: data.description), Gap(size: 12), DetailRow(label: "生效时间", value: data.coupon.starts),
-    ])), default: SizedBoxShrink()},
-    switch data.error {"": SizedBoxShrink(), default: EmptyState(title: data.error, action: Button(label: "重试", onPressed: event "buyerRefresh" {}))},
-  ],
-);
-
+widget Coupon = PageLayout(loading: data.loading, onRefresh: event "buyerRefresh" {}, footer: switch data.ready {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [BuyerFeedback(),
+  switch data.claimed {true: Button(label: "查看我的优惠券", icon: "check_circle", onPressed: event "coupons" {}), default: switch data.authorized {
+    true: Button(label: data.claimLabel, enabled: data.canClaim, loading: data.buyerBusy, onPressed: event "claimCoupon" {}), default: LoginButton(),
+  }},
+]), default: SizedBoxShrink()}, children: [
+  switch data.loading {true: Spinner(), default: SizedBoxShrink()},
+  switch data.ready {true: Surface(child: Column(crossAxisAlignment: "stretch", children: [CouponInfo(coupon: data.coupon), Gap(size: 16), Label(text: data.description), Gap(size: 12), DetailRow(label: "生效时间", value: data.coupon.starts)])), default: SizedBoxShrink()},
+  switch data.error {"": SizedBoxShrink(), default: EmptyState(title: data.error, action: Button(label: "重试", onPressed: event "buyerRefresh" {}))},
+]);
 widget CommentForm = switch data.commentSubmitted {
   true: DetailPage(sections: [EmptyState(icon: "check_circle", title: data.commentResult)]),
   default: switch data.canComment {
-    true: FormPage(loading: data.buyerBusy, submitLabel: "提交评论", fields: data.fields,
-      header: Column(crossAxisAlignment: "stretch", children: [Label(text: "评论将公开展示，请勿填写订单密码或其他敏感信息。", color: "onSurfaceVariant"), BuyerFeedback()]),
-      onSubmit: event "postComment" {}),
+    true: FormPage(loading: data.buyerBusy, submitLabel: "提交评论", fields: data.fields, header: Column(crossAxisAlignment: "stretch", children: [Label(text: "评论将公开展示，请勿填写订单密码或其他敏感信息。", color: "onSurfaceVariant"), BuyerFeedback()]), onSubmit: event "postComment" {}),
     default: DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {}, sections: [BuyerLogin()]),
   },
 };
 widget RefundSummary = Column(crossAxisAlignment: "stretch", children: [
   Label(text: data.refundState, style: "titleLarge", bold: true, color: "primary"), Gap(size: 12),
   switch data.refundAmount {"": SizedBoxShrink(), default: Label(text: data.refundAmount, style: "headlineSmall")},
-  Label(text: data.refundMessage), Gap(size: 8),
-  switch data.deadline {"": SizedBoxShrink(), default: Label(text: data.deadline, style: "bodySmall", color: "onSurfaceVariant")},
-  BuyerFeedback(),
+  Label(text: data.refundMessage), Gap(size: 8), Label(text: data.deadline, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(),
 ]);
 widget Refund = switch data.canApply {
-  true: FormPage(loading: data.buyerBusy, submitLabel: "申请退款", fields: data.refundFields,
-    header: RefundSummary(), onSubmit: event "applyRefund" {}),
-  default: DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {},
-    onRefresh: event "buyerRefresh" {},
-    actions: ActionBar(actions: [
-      switch data.hasGuide {true: Button(label: "争议处理说明", variant: "text", onPressed: event "refundGuide" {}), default: SizedBoxShrink()},
-      Button(label: "刷新进度", variant: "tonal", onPressed: event "buyerRefresh" {}),
-    ]),
-    sections: [BuyerLogin(), RefundSummary(),
-      SelectableLabel(text: data.reason),
-      ...for entry in data.events: Surface(child: Column(crossAxisAlignment: "stretch", children: [
-        Label(text: entry.title, style: "titleSmall", bold: true), Gap(size: 8),
-        Label(text: entry.message), Gap(size: 8),
-        Label(text: entry.time, style: "bodySmall", color: "onSurfaceVariant"),
-      ])),
-    ],
+  true: FormPage(loading: data.buyerBusy, submitLabel: "申请退款", fields: data.refundFields, header: RefundSummary(), onSubmit: event "applyRefund" {}),
+  default: DetailPage(loading: data.loading, error: data.error, onRetry: event "buyerRetry" {}, onRefresh: event "buyerRefresh" {},
+    actions: ActionBar(actions: [switch data.hasGuide {true: Button(label: "争议处理说明", variant: "text", onPressed: event "refundGuide" {}), default: SizedBoxShrink()}, Button(label: "刷新进度", variant: "tonal", onPressed: event "buyerRefresh" {})]),
+    sections: [BuyerLogin(), RefundSummary(), SelectableLabel(text: data.reason), ...for entry in data.events: TimelineEntry(entry: entry)],
   ),
 };
+widget Merchant = GridPage(layout: "equalHeight", minTileWidth: 156, loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: "暂无在售商品", onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
+  header: SectionTitle(title: data.merchantTitle), items: [...for item in data.rows: ProductTile(item: item)],
+);
 
-widget Merchant = GridPage(layout: "equalHeight", loading: data.loading, loadingMore: data.loadingMore,
-  hasMore: data.more, error: data.error, emptyTitle: "暂无在售商品",
-  onRefresh: event "buyerRefresh" {}, onRetry: event "buyerRetry" {}, onLoadMore: event "buyerMore" {},
-  header: Label(text: data.merchantTitle, style: "titleMedium"),
-  items: [...for item in data.rows: ProductTile(item: item)],
+widget Messages = ListPage(loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: "暂无系统消息", onRefresh: event "messagesRefresh" {}, onRetry: event "messagesRetry" {}, onLoadMore: event "messagesMore" {},
+  toolbar: Column(crossAxisAlignment: "stretch", children: [
+    SearchInput(value: data.search, hint: "搜索消息", onChanged: event "favoriteSearch" {}, onSubmitted: event "messagesRefresh" {}), Gap(size: 8),
+    Wrap(spacing: 8.0, children: [...for tab in data.tabs: Choice(label: tab.label, selected: tab.selected, onSelected: event "messageTab" {value: tab.value})]),
+  ]), header: Column(crossAxisAlignment: "stretch", children: [BuyerLogin(), BuyerFeedback()]),
+  actions: ActionBar(actions: [Button(label: "网站消息中心", variant: "text", icon: "open_in_new", onPressed: event "webMessages" {}),
+    switch data.unread {true: Button(label: "全部已读", variant: "tonal", loading: data.buyerBusy, onPressed: event "messagesReadAll" {}), default: SizedBoxShrink()},
+  ]),
+  items: [...for message in data.rows: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
+    Row(children: [Expanded(child: Label(text: message.title, style: "titleMedium", bold: true)),
+      switch message.read {false: Chip(label: "未读"), default: SizedBoxShrink()},
+    ]), Gap(size: 8), SelectableLabel(text: message.content), Gap(size: 12), RelativeTime(value: message.time),
+    ActionBar(actions: [switch message.read {false: Button(label: "标记已读", variant: "text", enabled: data.actionsEnabled, onPressed: event "messageRead" {id: message.id}), default: SizedBoxShrink()},
+      switch message.link {"": SizedBoxShrink(), default: Button(label: "查看详情", variant: "tonal", onPressed: event "messageOpen" {id: message.id})},
+    ]),
+  ]))],
 );
