@@ -454,26 +454,35 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
 
   // ========== UI ==========
 
-  static const _fieldPadding = EdgeInsets.symmetric(
-    horizontal: 16,
-    vertical: 10,
-  );
+  static const _fieldMinVerticalPadding = 10.0;
 
   /// 操作区与单行输入框等高；字体放大时一起增长，多行时贴底对齐最后一行。
   /// 使用与 TextField 相同的样式和缩放，不按固定像素补偿按钮位置。
-  double _inputActionHeight(BuildContext context, TextStyle style) {
+  /// 输入框上下内边距由行高反推，让底色本身撑满操作区高度：
+  /// 装饰的 constraints 只撑大外框，底色仍按内容高度画在顶部。
+  ({double actionHeight, EdgeInsets fieldPadding}) _inputMetrics(
+    BuildContext context,
+    TextStyle style,
+  ) {
     final painter = TextPainter(
       text: TextSpan(text: ' ', style: style),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       locale: Localizations.maybeLocaleOf(context),
     );
-    final height = math.max(
-      kMinInteractiveDimension,
-      painter.preferredLineHeight + _fieldPadding.vertical,
-    );
+    final lineHeight = painter.preferredLineHeight;
     painter.dispose();
-    return height;
+    final actionHeight = math.max(
+      kMinInteractiveDimension,
+      lineHeight + _fieldMinVerticalPadding * 2,
+    );
+    return (
+      actionHeight: actionHeight,
+      fieldPadding: EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: (actionHeight - lineHeight) / 2,
+      ),
+    );
   }
 
   @override
@@ -486,7 +495,8 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     final inputStyle = (theme.useMaterial3
         ? theme.textTheme.bodyLarge
         : theme.textTheme.titleMedium)!;
-    final actionHeight = _inputActionHeight(context, inputStyle);
+    final inputMetrics = _inputMetrics(context, inputStyle);
+    final actionHeight = inputMetrics.actionHeight;
     Widget actionSlot(Widget child) => SizedBox(
       width: kMinInteractiveDimension,
       height: actionHeight,
@@ -632,7 +642,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
                         context,
                         theme,
                         style: inputStyle,
-                        minimumHeight: actionHeight,
+                        padding: inputMetrics.fieldPadding,
                       ),
                     ),
                     // 附件(编辑态隐藏):输入框右侧、发送键左边
@@ -936,10 +946,9 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
   InputDecoration _fieldDecoration(
     BuildContext context,
     ThemeData theme, {
-    required double minimumHeight,
+    required EdgeInsets padding,
   }) {
     return InputDecoration(
-      constraints: BoxConstraints(minHeight: minimumHeight),
       hintText: context.l10n.chat_inputHint,
       hintStyle: TextStyle(
         color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -956,8 +965,10 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
         borderRadius: context.shapes.borderRadius(20),
         borderSide: BorderSide.none,
       ),
-      contentPadding: _fieldPadding,
+      contentPadding: padding,
       isDense: true,
+      // 桌面默认 compact 密度会再扣掉 8 高度，内边距已按操作区高度算好
+      visualDensity: VisualDensity.standard,
       filled: true,
       fillColor: theme.colorScheme.surface,
       hoverColor: Colors.transparent,
@@ -968,7 +979,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
     BuildContext context,
     ThemeData theme, {
     required TextStyle style,
-    required double minimumHeight,
+    required EdgeInsets padding,
   }) {
     final field = TextField(
       controller: widget.controller,
@@ -989,11 +1000,7 @@ class _ChatComposerState extends ConsumerState<_ChatComposer> {
       // 退格命中 :shortcode: 局部时扩删整个表情(boost 输入条同款),
       // 否则删一下只掉个冒号,表情"炸回"文本
       inputFormatters: const [EmojiShortcodeDeleteFormatter()],
-      decoration: _fieldDecoration(
-        context,
-        theme,
-        minimumHeight: minimumHeight,
-      ),
+      decoration: _fieldDecoration(context, theme, padding: padding),
     );
     if (!PlatformUtils.isDesktop) {
       // 面板开着(readOnly)时点输入框=收面板换键盘(编辑器同款)

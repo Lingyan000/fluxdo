@@ -478,6 +478,22 @@ void main() {
           tester.getCenter(send).dy,
           closeTo(tester.getCenter(field).dy, 0.5),
         );
+        // 底色由装饰内部容器绘制，需与输入框外框一致，否则底色偏上
+        final fill = find.descendant(
+          of: field,
+          matching: find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_BorderContainer',
+          ),
+        );
+        expect(
+          tester.getRect(fill).top,
+          closeTo(tester.getRect(field).top, 0.5),
+        );
+        expect(
+          tester.getRect(fill).bottom,
+          closeTo(tester.getRect(field).bottom, 0.5),
+          reason: '单行时输入框底色撑满操作区高度，与按钮同一中线',
+        );
         final distanceFromBottom =
             tester.getBottomLeft(field).dy - tester.getCenter(send).dy;
         tester.widget<TextField>(field).controller!.text = '第一行\n第二行\n第三行';
