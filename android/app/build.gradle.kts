@@ -107,6 +107,14 @@ android {
         }
     }
 
+    // 原生库压缩进 APK，安装时解压：下载包约小 40MB（libapp/libflutter/libfluxdo_net
+    // 不压缩时占 APK 七成），代价是安装后多占一份解压副本。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // 显式根据构建目标过滤 ABI，防止 Cronet 等原生库引入不需要的架构
     val targetPlatform = project.findProperty("target-platform") as? String
     println("Target Platform: $targetPlatform")
