@@ -164,6 +164,9 @@ pub struct FingerprintTemplates {
     fetch_h2_priority: RwLock<Option<H2FetchPriority>>,
     hpack_indexing: RwLock<Option<std::collections::BTreeMap<String, bool>>>,
     capability_audit: RwLock<Option<(u64, serde_json::Value)>>,
+    /// 冷启动载入的缓存模板。本进程重新采样校准完成前，业务请求继续按它回放，
+    /// 不用采样途中被清空的半成品——否则启动时的连接按半成品建立，校准完又得重连。
+    revalidating: RwLock<Option<FingerprintTemplate>>,
 }
 
 /// 连接身份只比较稳定的浏览器能力，原始模板仍完整保留供新连接回放。
@@ -338,6 +341,10 @@ impl FingerprintTemplates {
             info!("Loaded fingerprint template from cache");
             *templates.source.write() = TemplateSource::Cached;
             templates.generation.store(1, Ordering::Relaxed);
+            *templates.revalidating.write() = Some(FingerprintTemplate {
+                source: TemplateSource::Cached,
+                ..template.clone()
+            });
             *templates.hello_hash.lock() = Some(profile_hash(&template.hello));
             *templates.hello.write() = Some(template.hello);
             *templates.h2.write() = Some((template.early_frames, template.pseudo_order));
@@ -555,7 +562,18 @@ impl FingerprintTemplates {
         if self.pinned {
             return self.preset.clone();
         }
-        self.captured_snapshot().or_else(|| self.preset.clone())
+        let captured = self.captured_snapshot();
+        if self.revalidating.read().is_some() {
+            // 采样前 captured 就是缓存本身；本进程的新采样完成校准后才换用它
+            if captured.as_ref().is_some_and(|template| {
+                template.source == TemplateSource::Sampled && template.is_calibrated()
+            }) {
+                *self.revalidating.write() = None;
+            } else if let Some(cached) = self.revalidating.read().clone() {
+                return Some(cached);
+            }
+        }
+        captured.or_else(|| self.preset.clone())
     }
 
     pub fn captured_snapshot(&self) -> Option<FingerprintTemplate> {
@@ -582,7 +600,12 @@ impl FingerprintTemplates {
 
     /// 供宿主查询的模板状态：是否可回放、采样时的 UA。
     pub fn status_json(&self) -> String {
-        let template = self.snapshot();
+        // 状态反映采样本身：重新校准期间不拿缓存模板冒充已就绪
+        let template = if self.pinned {
+            self.preset.clone()
+        } else {
+            self.captured_snapshot().or_else(|| self.preset.clone())
+        };
         let capabilities = template.as_ref().map(|template| {
             let mut cached = self.capability_audit.write();
             if cached.as_ref().is_none_or(|(generation, _)| *generation != template.generation) {
@@ -627,6 +650,24 @@ impl FingerprintTemplate {
         self.tls_permute_extensions.is_some()
             && self.low_entropy_client_hints.is_some()
             && self.user_agent.is_some()
+    }
+
+    /// 连接身份：只含建连时回放的特征（TLS 能力与扩展顺序策略、HTTP/2 早期帧与伪头顺序）。
+    /// UA、fetch 头、优先级等请求层特征逐请求生效，变化时不必断开已有连接；
+    /// 冷启动重新校准得出与缓存相同的结果时，启动期建立的连接也能继续复用。
+    pub(crate) fn connection_identity(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        profile_hash(&self.hello).hash(&mut hasher);
+        self.tls_permute_extensions.hash(&mut hasher);
+        if self.tls_permute_extensions != Some(true) {
+            extension_order(&self.hello).hash(&mut hasher);
+        }
+        // Linux 是否改走系统 TLS 取决于是否完成校准
+        self.is_calibrated().hash(&mut hasher);
+        serde_json::to_vec(&(&self.early_frames, &self.pseudo_order))
+            .ok()
+            .hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -1351,6 +1392,44 @@ mod profile_tests {
         reference.cache_revision = Some("future-or-other-backend".into());
         std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
         assert!(FingerprintTemplates::new(Some(path.clone())).captured_snapshot().is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cold_start_revalidation_keeps_cached_connection_identity() {
+        let path = std::env::temp_dir().join(format!("fluxdo-cold-start-{}.json", uuid_for_test()));
+        let mut reference = crate::presets::by_id("android-webview133").unwrap();
+        reference.cache_revision = Some(cache_revision());
+        reference.tls_permute_extensions = Some(true);
+        reference.low_entropy_client_hints = Some(Vec::new());
+        reference.user_agent = Some("cold-start-lab".into());
+        std::fs::write(&path, serde_json::to_vec(&reference).unwrap()).unwrap();
+        let templates = FingerprintTemplates::new(Some(path.clone()));
+        let cached = templates.snapshot().unwrap().connection_identity();
+
+        // 本进程第一次握手清空了顺序策略：业务请求仍按缓存回放，连接身份不变
+        templates.record_hello(&reference.hello);
+        let during = templates.snapshot().unwrap();
+        assert_eq!(during.source, TemplateSource::Cached);
+        assert_eq!(during.connection_identity(), cached);
+
+        let mut permuted = serde_json::to_value(&reference.hello).unwrap();
+        permuted["extensions"].as_array_mut().unwrap().swap(1, 2);
+        templates.record_hello(&serde_json::from_value(permuted).unwrap());
+        let mut request = Request::builder()
+            .header("user-agent", "cold-start-lab")
+            .header("sec-fetch-mode", "cors")
+            .body(())
+            .unwrap();
+        request.extensions_mut().insert(reference.early_frames.clone());
+        request.extensions_mut().insert(reference.pseudo_order.clone());
+        templates.observe_request(&request);
+
+        // 校准结果与缓存一致：改用新采样，但启动期建立的连接仍可复用
+        let sampled = templates.snapshot().unwrap();
+        assert_eq!(sampled.source, TemplateSource::Sampled);
+        assert!(sampled.is_calibrated());
+        assert_eq!(sampled.connection_identity(), cached);
         std::fs::remove_file(path).unwrap();
     }
 

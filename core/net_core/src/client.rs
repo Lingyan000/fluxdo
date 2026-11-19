@@ -5,8 +5,8 @@
 //!   WebView，请求头按 WebView fetch 请求的顺序重排；
 //! - DoH 查询（[`crate::dns`]）：不带模板，用标准 BoringSSL 配置即可。
 //!
-//! 连接按「站点 + 模板版本」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
-//! 与浏览器的连接行为一致；模板换代（WebView 升级）后旧指纹的连接不再复用。
+//! 连接按「站点 + 模板的建连特征」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
+//! 与浏览器的连接行为一致；WebView 升级使握手或 HTTP/2 设置变化后，旧指纹的连接不再复用。
 
 use std::{
     collections::{HashMap, HashSet},
@@ -252,12 +252,12 @@ impl PoolState {
         None
     }
 
-    /// 收下新建的连接。`generation` 为当前模板版本，旧版本的站点整体淘汰。
-    fn admit(&self, key: &str, conn: &Sender, generation: Option<u64>) {
+    /// 收下新建的连接。`identity` 为当前模板的连接身份，其他身份的站点整体淘汰。
+    fn admit(&self, key: &str, conn: &Sender, identity: Option<u64>) {
         let mut hosts = self.hosts.lock();
-        if let Some(generation) = generation {
-            // 模板换代后旧指纹的连接不再复用
-            let suffix = format!("#{generation}");
+        if let Some(identity) = identity {
+            // 模板的建连特征变了，旧指纹的连接不再复用
+            let suffix = format!("#{identity}");
             hosts.retain(|existing, _| existing.ends_with(&suffix));
         }
         let new = !hosts.contains_key(key);
@@ -754,18 +754,16 @@ impl HttpEgressClient {
         self.established.fetch_add(1, Ordering::Relaxed);
 
         // 切网清池之前开始的连接仍可完成原请求，但不能污染新连接池；
-        // 模板在建连期间换代时同理
-        let current_generation = self
+        // 模板的建连特征在建连期间变化时同理
+        let current_identity = self
             .templates
             .as_ref()
             .and_then(|t| t.snapshot())
-            .map(|current| current.generation);
-        let stale_generation = target
-            .template
-            .is_some_and(|template| current_generation != Some(template.generation));
-        if self.pool.epoch() == epoch && !stale_generation {
-            self.pool
-                .admit(target.key, &conn, target.template.map(|t| t.generation));
+            .map(|current| current.connection_identity());
+        let identity = target.template.map(FingerprintTemplate::connection_identity);
+        let stale_identity = identity.is_some() && current_identity != identity;
+        if self.pool.epoch() == epoch && !stale_identity {
+            self.pool.admit(target.key, &conn, identity);
         }
         if matches!(conn.version, Version::HTTP_2 | Version::HTTP_3) {
             return Ok(Checkout {
@@ -1151,11 +1149,11 @@ fn authority_of<B>(request: &Request<B>) -> Result<(String, u16), BoxError> {
 }
 
 fn pool_key(template: Option<&FingerprintTemplate>, host: &str, port: u16) -> String {
-    let generation = template.map_or(0, |template| template.generation);
+    let identity = template.map_or(0, FingerprintTemplate::connection_identity);
     if host.contains(':') && !host.starts_with('[') {
-        format!("[{host}]:{port}#{generation}")
+        format!("[{host}]:{port}#{identity}")
     } else {
-        format!("{host}:{port}#{generation}")
+        format!("{host}:{port}#{identity}")
     }
 }
 
