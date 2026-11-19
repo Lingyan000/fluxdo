@@ -51,8 +51,48 @@ class TagBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final tagInfo = TagIconList.get(name);
+    final badge = TopicLabelBadge(
+      label: name,
+      size: size,
+      textStyle: textStyle,
+      backgroundColor: backgroundColor,
+      border: border,
+      leading: tagInfo == null
+          ? null
+          : FaIcon(
+              tagInfo.icon,
+              size: size.iconSize,
+              color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
+            ),
+    );
+    if (onTap == null) return badge;
+    return GestureDetector(onTap: onTap, child: badge);
+  }
+}
+
+/// 话题标签与私信标识共用的紧凑徽章。
+class TopicLabelBadge extends StatelessWidget {
+  const TopicLabelBadge({
+    super.key,
+    required this.label,
+    this.leading,
+    this.size = BadgeSize.compact,
+    this.textStyle,
+    this.backgroundColor,
+    this.border,
+  });
+
+  final String label;
+  final Widget? leading;
+  final BadgeSize size;
+  final TextStyle? textStyle;
+  final Color? backgroundColor;
+  final Border? border;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final bg =
         backgroundColor ??
         theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
@@ -63,7 +103,7 @@ class TagBadge extends StatelessWidget {
           color: theme.colorScheme.onSurfaceVariant,
         );
 
-    Widget badge = ClipRSuperellipse(
+    return ClipRSuperellipse(
       borderRadius: context.shapes.borderRadius(size.radius),
       child: Container(
         padding: size.padding,
@@ -71,24 +111,12 @@ class TagBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (tagInfo != null) ...[
-              FaIcon(
-                tagInfo.icon,
-                size: size.iconSize,
-                color: ColorUtils.themed(tagInfo.color, Theme.of(context)),
-              ),
-              const SizedBox(width: 4),
-            ],
-            Text(name, style: text),
+            if (leading != null) ...[leading!, const SizedBox(width: 4)],
+            Flexible(child: Text(label, style: text)),
           ],
         ),
       ),
     );
-
-    if (onTap != null) {
-      return GestureDetector(onTap: onTap, child: badge);
-    }
-    return badge;
   }
 }
 

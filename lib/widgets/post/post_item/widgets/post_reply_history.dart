@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../models/topic.dart';
 import 'embedded_posts.dart';
 
-/// 父帖预览:当前帖头部下方按时间顺序列出父帖引用卡
+/// 父帖预览:当前帖头部下方按时间顺序列出父帖卡,多层父帖成一组分段卡片
 class PostReplyHistory extends StatelessWidget {
   final List<Post>? replyHistory;
 
@@ -36,21 +36,23 @@ class PostReplyHistory extends StatelessWidget {
 
     return ValueListenableBuilder<Set<int>>(
       valueListenable: unfoldedPostIdsNotifier,
-      builder: (context, unfoldedIds, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final parent in parents)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: ParentPostQuoteCard(
-                post: parent,
+      builder: (context, unfoldedIds, _) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < parents.length; i++)
+              ParentPostCard(
+                post: parents[i],
+                index: i,
+                count: parents.length,
                 contentFontScale: contentFontScale,
-                onTap: () => onJumpToPost?.call(parent.postNumber),
-                unfolded: unfoldedIds.contains(parent.id),
-                onToggleUnfold: () => _toggleUnfold(parent.id),
+                onTap: () => onJumpToPost?.call(parents[i].postNumber),
+                unfolded: unfoldedIds.contains(parents[i].id),
+                onToggleUnfold: () => _toggleUnfold(parents[i].id),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

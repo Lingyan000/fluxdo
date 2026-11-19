@@ -1,18 +1,15 @@
+import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit, ScrollDirection;
 import 'package:fluxdo_render/fluxdo_render.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
 import '../../../l10n/s.dart';
 import '../../../utils/dialog_utils.dart';
 import '../controllers/topic_toc_controller.dart';
 
-/// 话题目录(TOC)面板 —— 对齐 DiscoTOC 双形态:
-/// - 宽屏:右侧常驻可折叠面板([TopicTocSidePanel]),scroll-spy 激活项
-///   自动跟随进视口(用户拖拽面板滚动时不打扰);
-/// - 窄屏:右下浮动按钮([TopicTocFab]) + bottom sheet,打开即定位到
-///   当前阅读节点。
-
-/// 宽屏右侧面板(展开 240 / 收起 44),高度随内容自适应、不超 [maxHeight]。
+/// 正文左侧的目录大纲。展开和收起时，靠近正文的一侧保持固定。
 class TopicTocSidePanel extends StatelessWidget {
   const TopicTocSidePanel({
     super.key,
@@ -27,134 +24,127 @@ class TopicTocSidePanel extends StatelessWidget {
   final bool visible;
   final VoidCallback onToggleVisible;
   final ValueChanged<TocEntry> onEntryTap;
-
-  /// 面板高度上限(页面按视口可用高度传入)。
   final double maxHeight;
 
   static const double expandedWidth = 240;
   static const double collapsedWidth = 44;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      duration: _tocMotion(context),
+      curve: Curves.easeOutCubic,
       width: visible ? expandedWidth : collapsedWidth,
       constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Card(
-        margin: EdgeInsets.zero,
-        elevation: 1,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(14),
-        ),
-        child: visible
-            ? OverflowBox(
-                // 展开内容恒按 expandedWidth 布局:宽度动画(44↔240)途中
-                // 不做窄布局,由 Card 的 clip 裁剪 —— 否则 header/深层目录项
-                // 在中间宽度下 RenderFlex 溢出(对齐抽屉揭示动画做法)。
-                // 高度方向保持有界(maxHeight),Column+Flexible 才合法。
-                minWidth: expandedWidth,
-                maxWidth: expandedWidth,
-                minHeight: 0,
-                maxHeight: maxHeight,
-                alignment: Alignment.centerLeft,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _PanelHeader(
-                      title: context.l10n.topicDetail_toc,
-                      entryCount: controller.tocData?.flat.length ?? 0,
-                      trailing: IconButton(
-                        icon: const Icon(Icons.chevron_right, size: 20),
-                        tooltip: context.l10n.topicDetail_tocCollapse,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onToggleVisible,
+      child: ClipRect(
+        child: Material(
+          type: MaterialType.transparency,
+          child: visible
+              ? OverflowBox(
+                  // 只裁剪宽度动画，面板高度取标题和列表的实际高度。
+                  fit: OverflowBoxFit.deferToChild,
+                  alignment: Alignment.topRight,
+                  minWidth: expandedWidth,
+                  maxWidth: expandedWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Semantics(
+                        button: true,
+                        expanded: true,
+                        child: Tooltip(
+                          message: context.l10n.topicDetail_tocCollapse,
+                          child: ListTile(
+                            onTap: onToggleVisible,
+                            minTileHeight: collapsedWidth,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                            ),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(8),
+                            ),
+                            title: _TocTitle(controller: controller),
+                            trailing: Icon(
+                              AppIcons.chevronLeft,
+                              size: 20,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const Divider(height: 1),
-                    // 展开即定位当前节点;后续 spy 激活变化自动跟随。
-                    // Flexible+shrinkWrap:条目少时面板随之变矮,不留大段空白
-                    Flexible(
-                      child: _TocTree(
-                        controller: controller,
-                        onEntryTap: onEntryTap,
-                        followActive: true,
-                        shrinkWrap: true,
+                      Flexible(
+                        child: _TocTree(
+                          controller: controller,
+                          onEntryTap: onEntryTap,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              )
-            : InkWell(
-                onTap: onToggleVisible,
-                child: SizedBox(
-                  width: collapsedWidth,
-                  height: collapsedWidth,
-                  child: Center(
-                    child: Tooltip(
-                      message: context.l10n.topicDetail_tocExpand,
-                      child: Icon(
-                        Icons.format_list_bulleted,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                    ],
+                  ),
+                )
+              : Align(
+                  alignment: Alignment.topRight,
+                  heightFactor: 1,
+                  child: Semantics(
+                    expanded: false,
+                    child: IconButton(
+                      tooltip: context.l10n.topicDetail_tocExpand,
+                      onPressed: onToggleVisible,
+                      icon: const Icon(Symbols.toc_rounded),
                     ),
                   ),
                 ),
-              ),
-      ),
-    );
-  }
-}
-
-class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({required this.title, this.entryCount = 0, this.trailing});
-
-  final String title;
-  final int entryCount;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(left: 14, right: 4),
-      child: SizedBox(
-        height: 44,
-        child: Row(
-          children: [
-            Icon(
-              Icons.format_list_bulleted,
-              size: 16,
-              color: context.emphasis.accent,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (entryCount > 0)
-              Text(
-                '$entryCount',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              ),
-            ?trailing,
-          ],
         ),
       ),
     );
   }
 }
 
-/// 窄屏浮动按钮:点击弹出目录 bottom sheet。
+Duration _tocMotion(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context)
+    ? Duration.zero
+    : const Duration(milliseconds: 180);
+
+class _TocTitle extends StatelessWidget {
+  const _TocTitle({required this.controller});
+
+  final TopicTocController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(Symbols.toc_rounded, size: 20, color: context.emphasis.accent),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            context.l10n.topicDetail_toc,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) => Text(
+            '${controller.tocData?.flat.length ?? 0}',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 正文两侧放不下大纲时从底栏上方打开目录。
 class TopicTocFab extends StatelessWidget {
   const TopicTocFab({
     super.key,
@@ -166,215 +156,240 @@ class TopicTocFab extends StatelessWidget {
   final ValueChanged<TocEntry> onEntryTap;
 
   @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton.small(
-      heroTag: 'topic_toc_fab',
-      tooltip: context.l10n.topicDetail_toc,
-      onPressed: () => showTocBottomSheet(
-        context: context,
-        controller: controller,
-        onEntryTap: onEntryTap,
-      ),
-      child: const Icon(Icons.format_list_bulleted, size: 20),
-    );
-  }
+  Widget build(BuildContext context) => FloatingActionButton.small(
+    heroTag: null,
+    tooltip: context.l10n.topicDetail_toc,
+    onPressed: () => showTocBottomSheet(
+      context: context,
+      controller: controller,
+      onEntryTap: onEntryTap,
+    ),
+    child: const Icon(Symbols.toc_rounded, size: 22),
+  );
 }
 
-/// 目录 bottom sheet(窄屏点击 FAB 后弹出),打开即滚动到当前阅读节点。
 Future<void> showTocBottomSheet({
   required BuildContext context,
   required TopicTocController controller,
   required ValueChanged<TocEntry> onEntryTap,
-}) {
-  return showAppBottomSheet<void>(
+}) async {
+  final entry = await showAppBottomSheet<TocEntry>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
-    shape: RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
-    ),
-    builder: (sheetContext) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(sheetContext).size.height * 0.62,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _PanelHeader(
-              title: sheetContext.l10n.topicDetail_toc,
-              entryCount: controller.tocData?.flat.length ?? 0,
-              trailing: IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => Navigator.of(sheetContext).pop(),
-              ),
-            ),
-            const Divider(height: 1),
-            // 弹框场景一次性定位(followActive=false:用户翻目录时
-            // 帖子滚动不该把目录拽回去)
-            Flexible(
-              child: _TocTree(
-                controller: controller,
-                followActive: false,
-                onEntryTap: (entry) {
-                  Navigator.of(sheetContext).pop();
-                  onEntryTap(entry);
-                },
-              ),
-            ),
-          ],
+    backgroundColor: Colors.transparent,
+    showDragHandle: false,
+    builder: (_) => _TocSheet(controller: controller),
+  );
+  if (entry != null && context.mounted) onEntryTap(entry);
+}
+
+class _TocSheet extends StatefulWidget {
+  const _TocSheet({required this.controller});
+
+  final TopicTocController controller;
+
+  @override
+  State<_TocSheet> createState() => _TocSheetState();
+}
+
+class _TocSheetState extends State<_TocSheet> {
+  static const _initialSize = .60;
+  static const _minSize = .38;
+  static const _maxSize = .95;
+  final _extent = DraggableScrollableController();
+
+  @override
+  void dispose() {
+    _extent.dispose();
+    super.dispose();
+  }
+
+  Widget _buildContent(
+    BuildContext context, [
+    ScrollController? scrollController,
+  ]) {
+    return AppSheetScaffold(
+      titleWidget: _TocTitle(controller: widget.controller),
+      contentPadding: EdgeInsets.zero,
+      expandToFill: scrollController != null,
+      child: _TocTree(
+        controller: widget.controller,
+        inSheet: true,
+        scrollController: scrollController,
+        onEntryTap: (entry) => Navigator.of(context).pop(entry),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      // 用弹层实际拿到的高度判断，旋转屏幕时也会重新排版。
+      final listRoom =
+          constraints.maxHeight * _initialSize -
+          MediaQuery.paddingOf(context).bottom -
+          kToolbarHeight -
+          24;
+      final count = widget.controller.tocData?.flat.length ?? 0;
+      if (count * kMinInteractiveDimension <= listRoom) {
+        return _buildContent(context);
+      }
+
+      return DraggableScrollableSheet(
+        controller: _extent,
+        initialChildSize: _initialSize,
+        minChildSize: _minSize,
+        maxChildSize: _maxSize,
+        expand: false,
+        builder: (context, scrollController) => GestureDetector(
+          // 列表自己接管内容区的拖动。标题和把手可直接调整面板高度，
+          // 即使打开时已定位到目录中段，也无需先翻回第一项。
+          excludeFromSemantics: true,
+          onVerticalDragUpdate: (drag) {
+            final size = _extent.size - _extent.pixelsToSize(drag.delta.dy);
+            _extent.jumpTo(size.clamp(_minSize, _maxSize));
+          },
+          child: _buildContent(context, scrollController),
         ),
       );
     },
   );
 }
 
-/// 目录树(面板与 bottom sheet 共用)。
-///
-/// 固定行高 + ListView.builder:激活项位置可精确计算,不依赖
-/// ensureVisible(它会连帖子列表这个祖先 Scrollable 一起滚)。
-/// 挂载完成先把激活项滚进视口;[followActive] 时后续 spy 激活变化
-/// 自动跟随(用户正在拖拽滚动时跳过,不打断浏览)。
+/// 侧栏与弹层共用同一棵目录树，标题可换行，定位按条目索引进行。
 class _TocTree extends StatefulWidget {
   const _TocTree({
     required this.controller,
     required this.onEntryTap,
-    required this.followActive,
-    this.shrinkWrap = false,
+    this.inSheet = false,
+    this.scrollController,
   });
 
   final TopicTocController controller;
   final ValueChanged<TocEntry> onEntryTap;
-
-  /// spy 激活变化时是否自动把激活项滚进视口(宽屏面板 true;
-  /// bottom sheet false —— 打开定位一次即可)。
-  final bool followActive;
-
-  /// 宽屏面板传 true:条目少时高度随内容收缩。
-  final bool shrinkWrap;
-
-  /// 行高(itemExtent):固定才能按下标直接换算滚动偏移。
-  static const double itemExtent = 40;
+  final bool inSheet;
+  final ScrollController? scrollController;
 
   @override
   State<_TocTree> createState() => _TocTreeState();
 }
 
 class _TocTreeState extends State<_TocTree> {
-  final ScrollController _scrollController = ScrollController();
-
-  /// 先序展开的扁平条目(与 TocData.flat 同序,带展示深度)。
+  final _list = ListController();
+  TocData? _data;
   List<({TocEntry entry, int depth})> _items = const [];
-
-  /// 上次跟随过的激活 id:controller 通知里据此判断激活项是否真变了
-  /// (TOC 数据更新/重挂不该触发跟随)。
-  String? _lastActiveId;
-  TopicTocController get _toc => widget.controller;
+  String? _activeId;
 
   @override
   void initState() {
     super.initState();
-    _items = _flatten(_toc.tocData);
-    _lastActiveId = _toc.activeHeadingId;
-    _toc.addListener(_onTocChanged);
-    // 打开(或收起后展开)即定位到当前阅读节点
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _scrollActiveIntoView(animate: false),
-    );
+    _readController();
+    widget.controller.addListener(_onTocChanged);
+  }
+
+  @override
+  void didUpdateWidget(_TocTree oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onTocChanged);
+      widget.controller.addListener(_onTocChanged);
+      _readController();
+    }
   }
 
   @override
   void dispose() {
-    _toc.removeListener(_onTocChanged);
-    _scrollController.dispose();
+    widget.controller.removeListener(_onTocChanged);
+    _list.dispose();
     super.dispose();
   }
 
-  static List<({TocEntry entry, int depth})> _flatten(TocData? data) {
-    if (data == null) return const [];
-    final out = <({TocEntry entry, int depth})>[];
-    void walk(List<TocEntry> items, int depth) {
-      for (final item in items) {
-        out.add((entry: item, depth: depth));
-        walk(item.subItems, depth + 1);
+  void _readController() {
+    _activeId = widget.controller.activeHeadingId;
+    final data = widget.controller.tocData;
+    if (identical(data, _data)) return;
+    _data = data;
+    final items = <({TocEntry entry, int depth})>[];
+    void walk(List<TocEntry> entries, int depth) {
+      for (final entry in entries) {
+        items.add((entry: entry, depth: depth));
+        walk(entry.subItems, depth + 1);
       }
     }
 
-    walk(data.tree, 0);
-    return out;
+    if (data != null) walk(data.tree, 0);
+    _items = items;
   }
 
   void _onTocChanged() {
-    final next = _flatten(_toc.tocData);
-    final activeId = _toc.activeHeadingId;
-    final activeChanged = activeId != _lastActiveId;
-    _lastActiveId = activeId;
-    setState(() => _items = next);
-    if (widget.followActive && activeChanged && activeId != null) {
-      // 等 setState 落地、列表重建后再滚
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _scrollActiveIntoView(animate: true),
-      );
+    final previous = _activeId;
+    setState(_readController);
+    // 弹层只在打开时定位，翻目录时不随正文移动。
+    if (!widget.inSheet && _activeId != previous && _activeId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _followActive());
     }
   }
 
-  int _activeIndexOf(List<({TocEntry entry, int depth})> items) {
-    final activeId = _toc.activeHeadingId;
-    if (activeId == null) return -1;
-    return items.indexWhere((e) => e.entry.id == activeId);
+  int? get _activeIndex {
+    if (_activeId == null) return null;
+    final index = _items.indexWhere((item) => item.entry.id == _activeId);
+    return index < 0 ? null : index;
   }
 
-  /// 把激活项滚进视口;已在视口内/正在滚动(用户拖拽或跟随动画途中)
-  /// 则不动。
-  void _scrollActiveIntoView({required bool animate}) {
-    if (!mounted || !_scrollController.hasClients) return;
-    final index = _activeIndexOf(_items);
-    if (index < 0) return;
-    final pos = _scrollController.position;
-    if (pos.isScrollingNotifier.value) return; // 用户拖拽/动画途中不打扰
-
-    const extent = _TocTree.itemExtent;
-    final itemTop = index * extent;
-    final itemBottom = itemTop + extent;
-    final viewTop = pos.pixels;
-    final viewBottom = viewTop + pos.viewportDimension;
-    if (itemTop >= viewTop && itemBottom <= viewBottom) return; // 已完整可见
-
-    final target = (itemTop - pos.viewportDimension / 2 + extent / 2).clamp(
-      pos.minScrollExtent,
-      pos.maxScrollExtent,
+  void _followActive() {
+    if (!mounted || !_list.isAttached) return;
+    // 鼠标滚轮、拖动或惯性滚动期间，保留读者自行浏览的位置。
+    if (_list.scrollPosition?.userScrollDirection != ScrollDirection.idle) {
+      return;
+    }
+    final index = _activeIndex;
+    if (index == null) return;
+    final visible = _list.computeItemPositions();
+    if (visible != null &&
+        visible.any(
+          (item) =>
+              item.index == index &&
+              item.itemLeadingEdge >= 0 &&
+              item.itemTrailingEdge <= 1,
+        )) {
+      return;
+    }
+    _list.scrollToIndex(
+      index,
+      alignment: .35,
+      duration: _tocMotion(context),
+      curve: Curves.easeOutCubic,
     );
-    if (animate) {
-      _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-      );
-    } else {
-      _scrollController.jumpTo(target);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_items.isEmpty) return const SizedBox.shrink();
-    final activeId = _toc.activeHeadingId;
-    final ancestors = _toc.activeAncestorIds;
-    return ListView.builder(
-      controller: _scrollController,
-      shrinkWrap: widget.shrinkWrap,
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      itemExtent: _TocTree.itemExtent,
+    final inSheet = widget.inSheet;
+    return SuperListView.builder(
+      key: ObjectKey(widget.controller),
+      primary: false,
+      controller: widget.scrollController,
+      listController: _list,
+      shrinkWrap: widget.scrollController == null,
+      initialIndex: _activeIndex,
+      initialAlignment: .35,
+      padding: EdgeInsets.fromLTRB(
+        inSheet ? 16 : 8,
+        2,
+        inSheet ? 16 : 4,
+        inSheet ? 12 : 4,
+      ),
       itemCount: _items.length,
       itemBuilder: (context, index) {
         final item = _items[index];
         return _TocTile(
           entry: item.entry,
           depth: item.depth,
-          isActive: activeId == item.entry.id,
-          isAncestorActive: ancestors.contains(item.entry.id),
+          inSheet: inSheet,
+          isActive: item.entry.id == _activeId,
+          isAncestor: widget.controller.activeAncestorIds.contains(
+            item.entry.id,
+          ),
           onTap: () => widget.onEntryTap(item.entry),
         );
       },
@@ -386,84 +401,97 @@ class _TocTile extends StatelessWidget {
   const _TocTile({
     required this.entry,
     required this.depth,
+    required this.inSheet,
     required this.isActive,
-    required this.isAncestorActive,
+    required this.isAncestor,
     required this.onTap,
   });
 
   final TocEntry entry;
   final int depth;
+  final bool inSheet;
   final bool isActive;
-  final bool isAncestorActive;
+  final bool isAncestor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-
-    // 对齐 DiscoTOC:direct-active 主色强调,active(祖先)主色弱化,
-    // 其余 onSurfaceVariant;外加激活浅底 + 左指示条提升可辨识度。
-    final Color textColor;
-    final FontWeight weight;
-    if (isActive) {
-      textColor = scheme.primary;
-      weight = FontWeight.w600;
-    } else if (isAncestorActive) {
-      textColor = scheme.primary.withValues(alpha: 0.75);
-      weight = FontWeight.w500;
-    } else {
-      textColor = scheme.onSurfaceVariant;
-      weight = FontWeight.w400;
-    }
-
-    return Padding(
-      // 行高 40 = 上下各 2 间距 + 内部 36
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      child: Material(
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(8),
+    );
+    final selectedColor = context.emphasis.selected;
+    final prominent = depth == 0 || isAncestor;
+    final label = Text(
+      entry.text,
+      maxLines: inSheet ? null : 2,
+      overflow: inSheet ? null : TextOverflow.ellipsis,
+      style: theme.textTheme.bodyMedium?.copyWith(
         color: isActive
-            ? scheme.primary.withValues(alpha: 0.10)
+            ? selectedColor
+            : prominent
+            ? scheme.onSurface
+            : scheme.onSurfaceVariant,
+        fontWeight: isActive || isAncestor
+            ? FontWeight.w600
+            : prominent
+            ? FontWeight.w500
+            : FontWeight.normal,
+      ),
+    );
+    return Semantics(
+      button: true,
+      selected: isActive,
+      child: Material(
+        shape: shape,
+        color: isActive
+            ? selectedColor.withValues(alpha: .08)
             : Colors.transparent,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(8),
-        ),
         child: InkWell(
           onTap: onTap,
-          customBorder: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(8),
-          ),
-          hoverColor: scheme.onSurface.withValues(alpha: 0.06),
-          child: Padding(
-            // 层级缩进:顶级 8,每深一级 +12
-            padding: EdgeInsets.only(left: 8.0 + depth * 12, right: 6),
-            child: Row(
-              children: [
-                // 激活指示条(非激活占位保对齐)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 3,
-                  height: 16,
+          customBorder: shape,
+          child: Stack(
+            children: [
+              PositionedDirectional(
+                start: 1,
+                top: isActive ? 5 : 0,
+                bottom: isActive ? 5 : 0,
+                width: isActive ? 3 : 1,
+                child: DecoratedBox(
                   decoration: ShapeDecoration(
-                    color: isActive ? scheme.primary : Colors.transparent,
+                    color: isActive ? selectedColor : scheme.outlineVariant,
                     shape: RoundedSuperellipseBorder(
-                      borderRadius: context.shapes.borderRadius(1.5),
+                      borderRadius: context.shapes.borderRadius(2),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    entry.text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: textColor,
-                      fontWeight: weight,
-                    ),
+              ),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: inSheet ? kMinInteractiveDimension : 36,
+                ),
+                child: Padding(
+                  padding: EdgeInsetsDirectional.fromSTEB(
+                    14.0 + depth * 14,
+                    inSheet ? 10 : 6,
+                    8,
+                    inSheet ? 10 : 6,
+                  ),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    heightFactor: 1,
+                    child: inSheet
+                        ? label
+                        : Tooltip(
+                            message: entry.text,
+                            excludeFromSemantics: true,
+                            child: label,
+                          ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

@@ -1,4 +1,6 @@
+import 'package:app_icons/app_icons.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,12 +8,18 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/providers/category_provider.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_detail_controller.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_toc_controller.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_header.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_more_topics.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_status_notices.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
+import 'package:fluxdo/widgets/common/relative_time_text.dart';
+import 'package:fluxdo/widgets/common/topic_badges.dart';
+import 'package:fluxdo/utils/time_utils.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/screen_track.dart';
@@ -85,6 +93,23 @@ void main() {
   Set<int> visiblePosts = {};
   var visibleReportCount = 0;
 
+  Finder metadataText(String value) => find.byWidgetPredicate((widget) {
+    if (widget is! Text) return false;
+    final text = widget.textSpan?.toPlainText(includePlaceholders: false);
+    return (widget.data ?? text) == value;
+  });
+
+  double digitCenterY(WidgetTester tester, Finder text) {
+    final paragraph = tester.renderObject<RenderParagraph>(text);
+    final index = paragraph.text.toPlainText().indexOf(RegExp(r'\d'));
+    final digit = paragraph
+        .getBoxesForSelection(
+          TextSelection(baseOffset: index, extentOffset: index + 1),
+        )
+        .single;
+    return paragraph.localToGlobal(digit.toRect().center).dy;
+  }
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
@@ -117,7 +142,7 @@ void main() {
     failed.dispose();
   });
 
-  Widget app() => ProviderScope(
+  Widget app({VoidCallback? onShowMembers, Widget? body}) => ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       categoryMapProvider.overrideWith(
@@ -138,10 +163,11 @@ void main() {
         ),
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: Scaffold(
-          body: ValueListenableBuilder<TopicDetail>(
+          body: body ?? ValueListenableBuilder<TopicDetail>(
             valueListenable: details,
             builder: (context, detail, _) => TopicPostList(
               detail: detail,
+              onShowMembers: onShowMembers,
               scrollController: controller.scrollController,
               listController: controller.postListController,
               positionRevision: controller.positionRevision,
@@ -481,6 +507,111 @@ void main() {
     expect(box.localToGlobal(Offset.zero).dy, closeTo(12, 0.5));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 20));
+  });
+
+  testWidgets('私信标识独占标签行，回复数和时间对齐，成员入口随首帖滚动', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = false;
+    final pm = TopicDetail.fromJson({
+      'id': 42,
+      'title': '读书会',
+      'archetype': 'private_message',
+      'posts_count': 7,
+      'created_at': DateTime.now()
+          .toUtc()
+          .subtract(const Duration(days: 1))
+          .toIso8601String(),
+      'post_stream': {'posts': [], 'stream': []},
+      'details': {'allowed_users': [{'id': 1, 'username': 'reader'}]},
+    });
+    details.value = pm.copyWith(postStream: topic([post(1), post(2)]).postStream);
+    var opened = false;
+    await tester.pumpWidget(app(onShowMembers: () => opened = true));
+    await tester.pumpAndSettle();
+
+    final entry = find.byTooltip('会话成员');
+    final title = tester.getRect(find.byKey(headerKey));
+    final badge = tester.getRect(find.widgetWithText(TopicLabelBadge, '私信'));
+    final repliesText = metadataText('6回复');
+    final replies = tester.getRect(repliesText);
+    final creationTime = find.byWidgetPredicate(
+      (w) => w is RelativeTimeText && w.dateTime == pm.createdAt,
+    );
+    final time = tester.getRect(creationTime);
+    expect(badge.left, closeTo(title.left, 0.1));
+    expect(badge.top, greaterThan(title.bottom));
+    expect(replies.left, closeTo(badge.left, 0.1));
+    expect(replies.top, greaterThan(badge.bottom));
+    expect(time.left, greaterThan(replies.right));
+    final replyIcon = find.byIcon(Symbols.chat_bubble_rounded);
+    final clockIcon = find.byIcon(Symbols.schedule_rounded);
+    expect(
+      tester.getCenter(clockIcon).dy,
+      closeTo(tester.getCenter(replyIcon).dy, 0.5),
+    );
+    final timeText = find.descendant(
+      of: creationTime,
+      matching: find.byType(Text),
+    );
+    expect(
+      digitCenterY(tester, timeText),
+      closeTo(digitCenterY(tester, repliesText), 0.5),
+    );
+    expect(
+      find.byTooltip(TimeUtils.formatTooltipTime(pm.createdAt)),
+      findsOneWidget,
+    );
+    expect(tester.getRect(entry).left, closeTo(badge.left, 0.1));
+    expect(tester.getRect(entry).top, greaterThanOrEqualTo(time.bottom));
+    expect(tester.getRect(entry).bottom, lessThan(tester.getRect(floor(1)).top));
+    await tester.tap(entry);
+    expect(opened, isTrue);
+    final longHtml = List.generate(
+      100,
+      (i) => '<p>Long message paragraph $i with additional content.</p>',
+    ).join();
+    details.value = pm.copyWith(postStream: topic([post(1, cooked: longHtml), post(2)]).postStream);
+    await tester.pumpAndSettle();
+    expect(entry, findsOneWidget);
+    await jumpToFloor(tester, 2);
+    expect(entry, findsNothing);
+    await disposeList(tester);
+  });
+
+  testWidgets('窄栏双倍字号下私信统计按整项换行', (tester) async {
+    textScale = 2;
+    final detail = TopicDetail.fromJson({
+      'id': 42,
+      'title': '读书会',
+      'archetype': 'private_message',
+      'posts_count': 1235,
+      'created_at': DateTime.now()
+          .toUtc()
+          .subtract(const Duration(hours: 23))
+          .toIso8601String(),
+      'post_stream': {'posts': [], 'stream': []},
+      'details': {'allowed_users': [{'id': 1, 'username': 'reader'}]},
+    });
+    await tester.pumpWidget(app(
+      body: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: 240,
+          child: TopicDetailHeader(detail: detail, onShowMembers: () {}),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final badge = tester.getRect(find.widgetWithText(TopicLabelBadge, '私信'));
+    final replies = tester.getRect(metadataText('1234回复'));
+    final time = tester.getRect(find.byType(RelativeTimeText));
+    final members = tester.getRect(find.byTooltip('会话成员'));
+    expect(replies.top, greaterThan(badge.bottom));
+    expect(time.top, greaterThan(replies.bottom));
+    expect(time.left, closeTo(replies.left, 0.1));
+    expect(members.top, greaterThanOrEqualTo(time.bottom));
+    expect(tester.takeException(), isNull);
+    await disposeList(tester);
   });
 
   testWidgets('从首楼进入显示话题标题，回到顶部恢复标题', (tester) async {
@@ -826,6 +957,87 @@ void main() {
     details.value = details.value.copyWith(slowModeSeconds: 0);
     await tester.pumpAndSettle();
     expect(find.textContaining('两次发帖'), findsNothing);
+    await disposeList(tester);
+  });
+
+  testWidgets('私信读到底只显示相关消息，空结果或关闭推荐时隐藏', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = false;
+    final pm = TopicDetail.fromJson({
+      'id': 42,
+      'title': '读书会',
+      'archetype': 'private_message',
+      'posts_count': 1,
+      'post_stream': {'posts': [], 'stream': [1]},
+      'related_messages': [
+        {
+          'id': 43,
+          'title': '下次读什么',
+          'posts_count': 6,
+          'reply_count': 2,
+          'last_posted_at': '2026-11-15T08:00:00Z',
+        },
+      ],
+      'suggested_topics': [
+        {'id': 44, 'title': '另一条推荐'},
+      ],
+    }).copyWith(postStream: PostStream(posts: [post(1)], stream: [1]));
+    details.value = pm;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+
+    hasMoreAfter = false;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsOneWidget);
+    final title = tester.getRect(find.text('下次读什么'));
+    final stats = tester.getRect(find.textContaining('5 · '));
+    expect(stats.left, closeTo(title.left, 0.1));
+    expect(stats.top, greaterThanOrEqualTo(title.bottom));
+    expect(find.text('另一条推荐'), findsNothing);
+
+    details.value = pm.copyWith(relatedMessages: []);
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TopicPostList)),
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setShowSuggestedTopics(false);
+    details.value = pm;
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+    await disposeList(tester);
+  });
+
+  testWidgets('推荐条目有标签时分列展示，回复图标随字号等比缩放', (tester) async {
+    final detail = topic([]).copyWith(
+      suggestedTopics: [
+        Topic.fromJson({
+          'id': 43,
+          'title': '读书交流',
+          'tags': ['阅读'],
+          'posts_count': 2,
+        }),
+      ],
+    );
+    final section = MoreTopicsSection(detail: detail);
+    await tester.pumpWidget(app(body: section));
+    await tester.pumpAndSettle();
+    final title = tester.getRect(find.text('读书交流'));
+    final row = tester.getRect(find.byType(MoreTopicsSection));
+    final stats = tester.getRect(metadataText('1'));
+    expect(tester.getRect(find.text('#阅读')).left, closeTo(title.left, 0.1));
+    expect(row.right - stats.right, closeTo(title.left - row.left, 0.1));
+
+    final icon = find.byIcon(Symbols.chat_bubble_rounded);
+    final iconWidth = tester.getRect(icon).width;
+    textScale = 2;
+    await tester.pumpWidget(app(body: section));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(icon).width, closeTo(iconWidth * 2, 0.1));
     await disposeList(tester);
   });
 

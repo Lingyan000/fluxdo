@@ -35,7 +35,11 @@ import 'package:flutter/foundation.dart'
         visibleForTesting;
 import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart'
-    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
+    show
+        showInteractionDialog,
+        SwipeDismissiblePopupMenuButton,
+        UiShapesContext,
+        UiEmphasisContext;
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:fluxdo_render/editor.dart';
@@ -68,6 +72,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../../constants.dart';
 import '../../../l10n/s.dart';
+import '../ai_content_block.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../services/discourse_cache_manager.dart';
 import '../../../models/mention_user.dart';
@@ -966,6 +971,12 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       action();
     }
 
+    void togglePin(String id) {
+      final ids = List<String>.of(_richVisibleToolIds);
+      if (!ids.remove(id)) ids.add(id);
+      container.read(preferencesProvider.notifier).setRichToolbarTools(ids);
+    }
+
     try {
       final actions = <ComposerToolAction>[
         ComposerToolAction(
@@ -999,19 +1010,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                 : ComposerToolGroup.format,
             shortcut: composerShortcutHint(tool.id),
             active: tool.isActive?.call(snapshot) ?? false,
-            isPinned: () => container
-                .read(preferencesProvider)
-                .richToolbarTools
-                .contains(tool.id),
-            togglePinned: () {
-              final ids = List<String>.of(
-                container.read(preferencesProvider).richToolbarTools,
-              );
-              if (!ids.remove(tool.id)) ids.add(tool.id);
-              container
-                  .read(preferencesProvider.notifier)
-                  .setRichToolbarTools(ids);
-            },
+            isPinned: () => _richVisibleToolIds.contains(tool.id),
+            togglePinned: () => togglePin(tool.id),
             run: () => run(() => tool.run(toolContext)),
           ),
         for (final action in _buildInsertActions())
@@ -1021,21 +1021,21 @@ class RichComposerEditorState extends State<RichComposerEditor> {
             icon: action.icon,
             searchText: action.searchText,
             group: ComposerToolGroup.insert,
-            isPinned: () => container
-                .read(preferencesProvider)
-                .richToolbarTools
-                .contains('insert:${action.searchText}'),
-            togglePinned: () {
-              final ids = List<String>.of(
-                container.read(preferencesProvider).richToolbarTools,
-              );
-              final id = 'insert:${action.searchText}';
-              if (!ids.remove(id)) ids.add(id);
-              container
-                  .read(preferencesProvider.notifier)
-                  .setRichToolbarTools(ids);
-            },
+            isPinned: () =>
+                _richVisibleToolIds.contains('insert:${action.searchText}'),
+            togglePinned: () => togglePin('insert:${action.searchText}'),
             run: () => run(action.run),
+            children: [
+              for (final child in action.children)
+                ComposerToolAction(
+                  id: 'insert:${child.searchText}',
+                  label: child.label,
+                  icon: child.icon,
+                  searchText: child.searchText,
+                  group: child.group,
+                  run: () => run(child.run),
+                ),
+            ],
           ),
         if (widget.onSwitchToSource != null)
           ComposerToolAction(
@@ -1056,7 +1056,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
               context,
               actions,
               anchor: _toolsAnchor,
-              pinnedIds: container.read(preferencesProvider).richToolbarTools,
+              pinnedIds: _richVisibleToolIds,
             );
       if (!executed &&
           mounted &&
@@ -1348,8 +1348,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   /// 候选:(关键字集, 标签, 图标, 动作)。关键字含中文与英文别名。
-  late final List<(List<String>, String, IconData, Future<void> Function())>
-  _blockCommands = [
+  List<(List<String>, String, IconData, Future<void> Function())>
+  get _blockCommands => [
     (
       ['paragraph', 'text', '正文', '段落'],
       '正文',
@@ -1411,6 +1411,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       Icons.code_rounded,
       () async => insertMarkdownSnippet('```dart\n// 代码\n```'),
     ),
+    for (final block in AiContentBlock.available)
+      (
+        ['ai-${block.name}', 'ai', block.name],
+        block.label(context.l10n),
+        block.icon,
+        () => _insertAiContent(block),
+      ),
     (
       ['math', '公式', 'gs'],
       '公式块',
@@ -1734,7 +1741,9 @@ class RichComposerEditorState extends State<RichComposerEditor> {
 
   void _subscribePrefs() {
     final container = ProviderScope.containerOf(context, listen: false);
-    _richVisibleToolIds = container.read(preferencesProvider).richToolbarTools;
+    _richVisibleToolIds = normalizeRichToolbarTools(
+      container.read(preferencesProvider).richToolbarTools,
+    );
     _prefsSub?.close();
     _prefsSub = container.listen<AppPreferences>(preferencesProvider, (
       prev,
@@ -1742,7 +1751,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     ) {
       if (!mounted) return;
       if (!listEquals(prev?.richToolbarTools, next.richToolbarTools)) {
-        setState(() => _richVisibleToolIds = next.richToolbarTools);
+        setState(
+          () => _richVisibleToolIds = normalizeRichToolbarTools(
+            next.richToolbarTools,
+          ),
+        );
       }
     });
   }
@@ -2552,6 +2565,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     await insertMarkdownSnippet('[${text.isEmpty ? url : text}]($url)');
   }
 
+  Future<void> _insertAiContent(AiContentBlock block) {
+    final selected = _editor?.copySelectionAsMarkdown() ?? '';
+    return insertMarkdownSnippet(block.markdown(context.l10n, selected));
+  }
+
   /// "+"插入菜单:每项 = 一段模板 markdown(经 cook 变成对应块类型)。
   /// 覆盖编辑白名单外的全部常用块 —— 验证任何类型不再需要手写语法。
   List<ComposerToolAction> _buildInsertActions() {
@@ -2589,6 +2607,23 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       'quote',
     ];
     return [
+      ComposerToolAction(
+        group: ComposerToolGroup.insert,
+        label: context.l10n.editor_aiContent,
+        icon: const Icon(Icons.auto_awesome_outlined),
+        searchText: 'ai content',
+        run: () {},
+        children: [
+          for (final block in AiContentBlock.available)
+            ComposerToolAction(
+              group: ComposerToolGroup.insert,
+              label: block.label(context.l10n),
+              icon: Icon(block.icon),
+              searchText: 'ai ${block.name}',
+              run: () => _insertAiContent(block),
+            ),
+        ],
+      ),
       for (var i = 0; i < entries.length; i++)
         ComposerToolAction(
           group: ComposerToolGroup.insert,
@@ -2910,6 +2945,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         id: island.node.id,
         code: code,
         language: language,
+        aiGenerated: (island.node as CodeBlockNode).aiGenerated,
         rawHtml: (island.node as CodeBlockNode).rawHtml,
         rawMarkdown: (island.node as CodeBlockNode).rawMarkdown,
       ),
@@ -3371,7 +3407,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   List<ComposerBlockChoice> _blockChoices({required bool transformOnly}) {
-    const order = [
+    final order = [
       'paragraph',
       'h1',
       'h2',
@@ -3385,6 +3421,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       'code',
       'hr',
       'details',
+      for (final block in AiContentBlock.values) 'ai-${block.name}',
       'callout',
       'spoiler',
       'math',
@@ -3672,7 +3709,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (text == null || text == frame.summary || !mounted) return;
     editor.updateContainerFrame(
       frame.groupId,
-      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open),
+      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open, aiGenerated: frame.aiGenerated),
     );
   }
 
@@ -4646,6 +4683,21 @@ class _RichToolbarState extends State<_RichToolbar> {
       data: const IconThemeData(size: 20),
       child: action.icon,
     );
+    if (action.children.isNotEmpty) {
+      return SwipeDismissiblePopupMenuButton<ComposerToolAction>(
+        icon: icon,
+        tooltip: action.label,
+        itemBuilder: (_) => [
+          for (final child in action.children)
+            PopupMenuItem(value: child, child: Text(child.label)),
+        ],
+        onSelected: (child) =>
+            anchored ? child.run() : _desktopAction(child.run),
+        padding: EdgeInsets.zero,
+        iconSize: 20,
+        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+      );
+    }
     final button = IconButton(
       tooltip: action.label,
       icon: icon,

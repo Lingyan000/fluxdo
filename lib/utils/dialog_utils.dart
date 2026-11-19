@@ -1,7 +1,9 @@
+import 'dart:ui' as ui;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -287,10 +289,12 @@ final Curve _kDialogEnterCurve = M3eMotion.defaultSpatial.curveFor(
   const Duration(milliseconds: 250),
 );
 
+typedef MorphSheetAnchor = ({Rect rect, double radius, Color color});
+
 /// 从页面上某个元素「长大」成底部弹层（容器变形）：弹层的外形从
 /// [fromRect]（全局坐标、圆角 [fromRadius]、底色 [fromColor]）连续变形到
 /// 屏幕底部 [heightFactor] 高度、顶部圆角 [toRadius] 的弹层，内容随后淡入；
-/// 返回时原路缩回。用于输入框展开成完整编辑器等「一镜到底」的场景。
+/// 展开后向 [returnAnchor] 的当前位置收起。未指定时原路返回。
 ///
 /// [builder] 的内容按全屏约束布局（与 isScrollControlled 的底部弹层一致），
 /// 弹层自己负责只占底部 [heightFactor]。
@@ -302,6 +306,16 @@ Future<T?> showAppMorphSheet<T>({
   Color? fromColor,
   double toRadius = 16,
   double heightFactor = 0.95,
+  MorphSheetAnchor? Function()? returnAnchor,
+  VoidCallback? onHandoffComplete,
+
+  /// 起点元素的截图（与 [fromRect] 同尺寸）。入场时钉在起点位置随外形长大
+  /// 淡出，起点元素本身可在 [onHandoffStart] 里立即隐藏——看起来是它自己
+  /// 变成了弹层。路由接管后由路由释放
+  ui.Image? fromSnapshot,
+
+  /// 弹层首次真正画到屏上之后回调：在这里隐藏起点元素
+  VoidCallback? onHandoffStart,
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
 }) {
@@ -310,30 +324,44 @@ Future<T?> showAppMorphSheet<T>({
   final sheetConstraints =
       theme.bottomSheetTheme.constraints ?? const BoxConstraints(maxWidth: 640);
   // 路由内容按导航器自身坐标布局（嵌套导航器原点不在屏幕原点）
-  final navigatorBox = navigator.context.findRenderObject() as RenderBox?;
-  final localFrom = navigatorBox == null
-      ? fromRect
-      : fromRect.shift(-navigatorBox.localToGlobal(Offset.zero));
-  final route = InteractionPageRouteBuilder<T>(
-    opaque: false,
-    barrierDismissible: true,
+  Rect localRect(Rect rect) {
+    final box = navigator.context.findRenderObject()! as RenderBox;
+    return Rect.fromPoints(
+      box.globalToLocal(rect.topLeft),
+      box.globalToLocal(rect.bottomRight),
+    );
+  }
+
+  final source = (
+    rect: localRect(fromRect),
+    radius: fromRadius,
+    color: fromColor ?? theme.colorScheme.surfaceContainerHighest,
+  );
+  late final _MorphSheetRoute<T> route;
+  route = _MorphSheetRoute<T>(
+    constraints: sheetConstraints,
+    onHandoffComplete: onHandoffComplete,
+    onHandoffStart: onHandoffStart,
+    snapshot: fromSnapshot,
     barrierColor: theme.bottomSheetTheme.modalBarrierColor ?? Colors.black54,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    transitionDuration: const Duration(milliseconds: 380),
-    reverseTransitionDuration: const Duration(milliseconds: 280),
-    // 与底部弹层同样的宽度上限（M3 默认 640）：桌面上不铺满整宽
-    pageBuilder: (context, _, _) => Align(
-      alignment: Alignment.bottomCenter,
-      child: ConstrainedBox(
-        constraints: sheetConstraints,
-        child: builder(context),
-      ),
-    ),
+    pageBuilder: (context, _, _) => builder(context),
     transitionsBuilder: (context, animation, _, child) => _MorphSheetTransition(
       animation: animation,
-      fromRect: localFrom,
-      fromRadius: fromRadius,
-      fromColor: fromColor ?? theme.colorScheme.surfaceContainerHighest,
+      anchor: () {
+        if (!route.expanded || returnAnchor == null) return source;
+        final target = returnAnchor();
+        if (target == null) return null;
+        return (
+          rect: localRect(target.rect),
+          radius: target.radius,
+          color: target.color,
+        );
+      },
+      followsDrag: () => route.followsDrag,
+      snapshot: () => route.expanded ? null : route.snapshot,
+      onFirstPaint: route.notifyShown,
+      snapshotRect: source.rect,
       toColor: theme.colorScheme.surface,
       toRadius: toRadius,
       heightFactor: heightFactor,
@@ -350,12 +378,112 @@ Future<T?> showAppMorphSheet<T>({
   );
 }
 
+class _MorphSheetRoute<T> extends InteractionPageRouteBuilder<T> {
+  _MorphSheetRoute({
+    required this.constraints,
+    required this.onHandoffComplete,
+    required this.onHandoffStart,
+    required this.snapshot,
+    required super.barrierColor,
+    required super.barrierLabel,
+    required super.pageBuilder,
+    required super.transitionsBuilder,
+  }) : super(
+         opaque: false,
+         barrierDismissible: true,
+         transitionDuration: const Duration(milliseconds: 380),
+         reverseTransitionDuration: const Duration(milliseconds: 280),
+       );
+
+  final BoxConstraints constraints;
+  final VoidCallback? onHandoffComplete;
+  final VoidCallback? onHandoffStart;
+  ui.Image? snapshot;
+  bool expanded = false;
+  bool followsDrag = false;
+
+  @override
+  void install() {
+    super.install();
+    // Hero 的首帧测量会临时把路由 animation 标记为已完成；交接以实际控制器为准。
+    controller!.addStatusListener(_onStatus);
+    // 入场被提前关闭时，等退场走完再撤掉仍在承接动画的快捷回复。
+    completed.then((_) {
+      if (!expanded) onHandoffComplete?.call();
+    });
+  }
+
+  void _onStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    followsDrag = false;
+    if (expanded) return;
+    expanded = true;
+    _releaseSnapshot();
+    onHandoffComplete?.call();
+  }
+
+  bool _shown = false;
+
+  /// 弹层首次绘制后通知起点元素隐藏。不能在 install 里通知：PageRoute
+  /// 入场首帧会被 HeroController 置为 offstage 测量（不绘制），那一帧起点
+  /// 已隐藏、弹层却还没画，就是一帧空白闪烁
+  void notifyShown() {
+    if (_shown) return;
+    _shown = true;
+    onHandoffStart?.call();
+  }
+
+  void _releaseSnapshot() {
+    snapshot?.dispose();
+    snapshot = null;
+  }
+
+  Future<void> _requestClose() async {
+    if (!isCurrent) return;
+    controller!.stop();
+    await navigator!.maybePop<T>();
+    // 表情面板或正文同步可能消费这次返回，恢复弹层可见高度。
+    if (isCurrent) controller!.forward();
+  }
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    final page = super.buildPage(context, animation, secondaryAnimation);
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: BottomSheet(
+        animationController: controller,
+        constraints: constraints,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        showDragHandle: false,
+        onDragStart: (_) => followsDrag = expanded,
+        onClosing: _requestClose,
+        builder: (_) => page,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    controller!.removeStatusListener(_onStatus);
+    _releaseSnapshot();
+    super.dispose();
+  }
+}
+
 class _MorphSheetTransition extends StatelessWidget {
   const _MorphSheetTransition({
     required this.animation,
-    required this.fromRect,
-    required this.fromRadius,
-    required this.fromColor,
+    required this.anchor,
+    required this.followsDrag,
+    required this.snapshot,
+    required this.snapshotRect,
+    required this.onFirstPaint,
     required this.toColor,
     required this.toRadius,
     required this.heightFactor,
@@ -364,9 +492,11 @@ class _MorphSheetTransition extends StatelessWidget {
   });
 
   final Animation<double> animation;
-  final Rect fromRect;
-  final double fromRadius;
-  final Color fromColor;
+  final MorphSheetAnchor? Function() anchor;
+  final bool Function() followsDrag;
+  final ui.Image? Function() snapshot;
+  final Rect snapshotRect;
+  final VoidCallback onFirstPaint;
   final Color toColor;
   final double toRadius;
   final double heightFactor;
@@ -376,6 +506,9 @@ class _MorphSheetTransition extends StatelessWidget {
   static const Curve _geometry = Curves.easeInOutCubicEmphasized;
   static const Curve _content = Interval(0.35, 1, curve: Curves.easeOut);
   static const Curve _fill = Interval(0.5, 1, curve: Curves.easeIn);
+
+  /// 起点截图淡出，与内容淡入首尾相接
+  static const Curve _snapshotFade = Interval(0, 0.35, curve: Curves.easeOut);
 
   @override
   Widget build(BuildContext context) {
@@ -396,8 +529,15 @@ class _MorphSheetTransition extends StatelessWidget {
           animation: animation,
           child: child,
           builder: (context, child) {
-            final t = _geometry.transform(animation.value);
-            final rect = Rect.lerp(fromRect, toRect, t)!;
+            final dragging = followsDrag();
+            final t = dragging
+                ? animation.value
+                : _geometry.transform(animation.value);
+            final target = t == 1 ? null : anchor();
+            // 回复入口已离开视口时，缩到底边，避免回到已经消失的快捷面板。
+            final bottom = Rect.fromLTWH(left, size.height, width, 0);
+            final rect = Rect.lerp(target?.rect ?? bottom, toRect, t)!;
+            final fromRadius = target?.radius ?? toRadius;
             final topRadius = Radius.circular(
               lerpDouble(fromRadius, toRadius, t)!,
             );
@@ -410,34 +550,90 @@ class _MorphSheetTransition extends StatelessWidget {
               bottomRight: bottomRadius,
             );
             final fillOpacity = 1 - _fill.transform(animation.value);
-            return ClipPath(
-              clipper: _RRectClipper(shape),
-              child: Stack(
-                children: [
-                  if (fillOpacity > 0)
-                    Positioned.fromRect(
-                      rect: rect,
-                      child: ColoredBox(
-                        color: Color.lerp(
-                          fromColor,
-                          toColor,
-                          t,
-                        )!.withValues(alpha: fillOpacity),
+            final image = snapshot();
+            final snapshotOpacity = image == null
+                ? 0.0
+                : 1 - _snapshotFade.transform(animation.value);
+            return _FirstPaintNotifier(
+              onFirstPaint: onFirstPaint,
+              child: ClipPath(
+                clipper: _RRectClipper(shape),
+                child: Stack(
+                  children: [
+                    if (fillOpacity > 0)
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: ColoredBox(
+                          color: Color.lerp(
+                            target?.color ?? toColor,
+                            toColor,
+                            t,
+                          )!.withValues(alpha: fillOpacity),
+                        ),
+                      ),
+                    // 起点元素的截图钉在原位，外形从它周围长大时淡出
+                    if (snapshotOpacity > 0)
+                      Positioned.fromRect(
+                        rect: snapshotRect,
+                        child: Opacity(
+                          opacity: snapshotOpacity,
+                          child: RawImage(image: image, fit: BoxFit.fill),
+                        ),
+                      ),
+                    Positioned.fill(
+                      child: Transform.translate(
+                        offset: Offset(0, dragging ? rect.top - toRect.top : 0),
+                        child: Opacity(
+                          opacity: _content.transform(animation.value),
+                          child: child,
+                        ),
                       ),
                     ),
-                  Positioned.fill(
-                    child: Opacity(
-                      opacity: _content.transform(animation.value),
-                      child: child,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
         );
       },
     );
+  }
+}
+
+/// 子树第一次真正绘制（不在 offstage 里）后，在该帧结束时回调一次。
+/// 回调晚于绘制一帧落地：起点元素与接替画面在同一帧里叠放过渡，
+/// 不会出现两者都不在屏上的空白帧
+class _FirstPaintNotifier extends SingleChildRenderObjectWidget {
+  const _FirstPaintNotifier({required this.onFirstPaint, super.child});
+
+  final VoidCallback onFirstPaint;
+
+  @override
+  _RenderFirstPaintNotifier createRenderObject(BuildContext context) =>
+      _RenderFirstPaintNotifier(onFirstPaint);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFirstPaintNotifier renderObject,
+  ) {
+    renderObject.onFirstPaint = onFirstPaint;
+  }
+}
+
+class _RenderFirstPaintNotifier extends RenderProxyBox {
+  _RenderFirstPaintNotifier(this.onFirstPaint);
+
+  VoidCallback onFirstPaint;
+  bool _fired = false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    if (_fired) return;
+    _fired = true;
+    final callback = onFirstPaint;
+    WidgetsBinding.instance.addPostFrameCallback((_) => callback());
   }
 }
 

@@ -18,6 +18,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../ai_content_block.dart';
+
+const kRichAiContentToolId = 'insert:ai content';
+
+/// 旧版分别固定的 AI 类型合并到统一入口，保留首次出现的位置。
+List<String> normalizeRichToolbarTools(List<String> ids) {
+  final aliases = {
+    for (final block in AiContentBlock.values)
+      'insert:ai ${block.name}': kRichAiContentToolId,
+  };
+  return ids.map((id) => aliases[id] ?? id).toSet().toList();
+}
+
 /// 富文本工具的执行上下文：命令目标 + 需要宿主配合的动作。
 class RichToolContext {
   const RichToolContext({

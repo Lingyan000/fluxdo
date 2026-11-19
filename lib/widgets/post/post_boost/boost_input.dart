@@ -9,6 +9,7 @@ import '../../../utils/emoji_shortcodes.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../utils/platform_utils.dart';
 import '../../common/emoji_text_editing_controller.dart';
+import '../../markdown_editor/composer_panel_height.dart';
 import '../../markdown_editor/emoji_picker.dart';
 
 /// Boost 输入框的提交结果。
@@ -50,6 +51,7 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
   final _focusNode = FocusNode();
   // 默认展开表情面板，避免浮层过小
   bool _showEmojiPanel = true;
+  double? _lastKeyboardHeight;
   bool _normalizingSelection = false;
 
   static const int _maxVisibleLength = 16;
@@ -141,7 +143,11 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
   void _toggleEmojiPanel() {
     setState(() {
       _showEmojiPanel = !_showEmojiPanel;
-      if (_showEmojiPanel) {
+      if (_showEmojiPanel && PlatformUtils.isMobile) {
+        final view = View.of(context);
+        _lastKeyboardHeight = view.viewInsets.bottom / view.devicePixelRatio;
+        _focusNode.requestFocus();
+      } else if (_showEmojiPanel) {
         _focusNode.unfocus();
       } else {
         _focusNode.requestFocus();
@@ -152,12 +158,12 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
     final visibleLength = _visibleLength;
     final isReplyIntent = visibleLength > _maxVisibleLength;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: _showEmojiPanel ? 0 : bottomInset),
+    return _BoostKeyboardPadding(
+      showEmojiPanel: _showEmojiPanel,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -196,6 +202,8 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                   child: TextField(
                     controller: _controller,
                     focusNode: _focusNode,
+                    readOnly: _showEmojiPanel && PlatformUtils.isMobile,
+                    showCursor: true,
                     inputFormatters: const [EmojiShortcodeDeleteFormatter()],
                     style: theme.textTheme.bodyMedium,
                     textInputAction: TextInputAction.send,
@@ -267,14 +275,17 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
           // Emoji 面板(bottomPadding 给底部安全区 + 悬浮退格键留空)
           if (_showEmojiPanel)
             SizedBox(
-              height: 280 + MediaQuery.of(context).padding.bottom,
+              height: resolveComposerPanelHeight(
+                keyboardHeight: _lastKeyboardHeight ?? 0,
+                fallbackHeight: 280 + safeBottom,
+                safeBottom: safeBottom,
+              ),
               child: Stack(
                 children: [
                   EmojiPicker(
-                    onEmojiSelected: (emoji) => _insertEmoji(emoji),
+                    onEmojiSelected: _insertEmoji,
                     bottomPadding:
-                        MediaQuery.of(context).padding.bottom +
-                        (PlatformUtils.isMobile ? 48 : 0),
+                        safeBottom + (PlatformUtils.isMobile ? 48 : 0),
                   ),
                   // 悬浮退格键,仅移动端(面板打开时软键盘收起,没有
                   // 它就无法删除;桌面端焦点常驻输入框,物理退格直接
@@ -282,7 +293,7 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                   if (PlatformUtils.isMobile)
                     Positioned(
                       right: 12,
-                      bottom: MediaQuery.of(context).padding.bottom + 8,
+                      bottom: safeBottom + 8,
                       child: Material(
                         color: theme.colorScheme.surfaceContainerHighest,
                         shape: RoundedSuperellipseBorder(
@@ -320,12 +331,30 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                 ],
               ),
             ),
-
-          // 底部安全区(面板打开时安全区已计入面板高度)
-          if (!_showEmojiPanel)
-            SizedBox(height: MediaQuery.of(context).padding.bottom),
         ],
       ),
     );
   }
+}
+
+/// 键盘高度只驱动浮层外侧的留白，输入框与表情网格无需逐帧重建。
+class _BoostKeyboardPadding extends StatelessWidget {
+  const _BoostKeyboardPadding({
+    required this.showEmojiPanel,
+    required this.child,
+  });
+
+  final bool showEmojiPanel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.only(
+      bottom: showEmojiPanel
+          ? 0
+          : MediaQuery.viewInsetsOf(context).bottom +
+                MediaQuery.paddingOf(context).bottom,
+    ),
+    child: child,
+  );
 }

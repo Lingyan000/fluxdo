@@ -4,6 +4,7 @@ import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import '../../services/image_decode_spec_memo.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/svg_utils.dart';
 import 'first_paint_probe.dart';
 
@@ -148,7 +149,9 @@ class _SmartAvatarState extends State<SmartAvatar> {
       );
       if (bytes == null || bytes.isEmpty) return null;
       if (!SvgUtils.isSvgBytes(bytes)) return null;
-      return SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+      final content = SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+      await _preparse(content);
+      return content;
     } catch (_) {
       return null;
     }
@@ -331,7 +334,7 @@ class _SmartAvatarState extends State<SmartAvatar> {
 
   Widget? _buildSvg(String svgContent, double size) {
     try {
-      final si = ScalableImage.fromSvgString(svgContent, warnF: (_) {});
+      final si = SvgImageCache.sync(svgContent);
       return SizedBox(
         width: size,
         height: size,
@@ -409,6 +412,7 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
 
       if (SvgUtils.isSvgBytes(bytes)) {
         final svgString = SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+        await _preparse(svgString);
         if (mounted) {
           setState(() {
             _svgContent = svgString;
@@ -431,7 +435,7 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
   Widget build(BuildContext context) {
     if (_svgContent != null) {
       try {
-        final si = ScalableImage.fromSvgString(_svgContent!, warnF: (_) {});
+        final si = SvgImageCache.sync(_svgContent!);
         return SizedBox(
           width: widget.size,
           height: widget.size,
@@ -449,4 +453,11 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
 
     return widget.fallback;
   }
+}
+
+/// 在异步探测阶段预先解析，构建时只做缓存命中；解析失败留给构建期兜底处理。
+Future<void> _preparse(String content) async {
+  try {
+    await SvgImageCache.load(content);
+  } catch (_) {}
 }

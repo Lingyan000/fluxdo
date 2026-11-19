@@ -221,7 +221,7 @@
   "progressGesture_enable": "啟用手勢",
   "progressGesture_enableDesc": "在話題底欄上啟用拖曳定位、上滑與長按手勢",
   "progressGesture_dragToLocate": "左右拖曳定位",
-  "progressGesture_dragToLocateDesc": "在底欄上左右拖曳：短距離逐樓移動，長距離快速跳轉，放手即到達",
+  "progressGesture_dragToLocateDesc": "橫向拖動底欄選擇樓層，拖到兩端可到達首尾樓。按住向上移動可逐樓微調，放手即前往。",
   "progressGesture_emptySelection": "尚未選擇任何功能",
   "progressGesture_longPressEnable": "啟用長按選單",
   "progressGesture_longPressEnableDesc": "長按底欄彈出半圓功能選單",

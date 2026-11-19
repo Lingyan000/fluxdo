@@ -58,6 +58,7 @@ class NestedRootsResponse {
   final bool hasMoreRoots;
   final int page;
   final List<int> pinnedPostIds;
+  final List<Topic>? relatedMessages;
 
   const NestedRootsResponse({
     this.topicJson,
@@ -67,6 +68,7 @@ class NestedRootsResponse {
     required this.hasMoreRoots,
     required this.page,
     this.pinnedPostIds = const [],
+    this.relatedMessages,
   });
 
   factory NestedRootsResponse.fromJson(Map<String, dynamic> json) {
@@ -82,6 +84,7 @@ class NestedRootsResponse {
           .toList(),
       hasMoreRoots: json['has_more_roots'] as bool? ?? false,
       page: json['page'] as int? ?? 0,
+      relatedMessages: parseRelatedMessages(json),
       pinnedPostIds: (json['pinned_post_ids'] as List<dynamic>? ?? [])
           .map((e) => e as int)
           .toList(),

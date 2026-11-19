@@ -24,7 +24,6 @@ dependencies:
   path_provider:
   path:
   uuid:
-  jovial_svg: ^1.1.29  # 用于渲染 ModelIcon 中的 brand SVG（CC0 simple-icons 资产）
   app_icons:
     path: ../app_icons
   # 直接用各 LLM provider 的官方 SDK，不经过 langchain_dart 抽象层

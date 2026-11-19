@@ -28,6 +28,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
 import 'package:uuid/uuid.dart';
 
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import '../../models/draft.dart';
@@ -80,7 +81,7 @@ import 'controllers/topic_toc_controller.dart';
 import 'controllers/topic_position_info.dart';
 import 'controllers/topic_reply_session.dart';
 import 'widgets/nested_post_list.dart';
-import 'widgets/invite_private_message_dialog.dart';
+import 'widgets/private_message_participants.dart';
 import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_bottom_bar.dart';
 import 'widgets/topic_filter_controls.dart';
@@ -284,8 +285,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
-  int? _removingPrivateMessageParticipantId;
-  String? _removingPrivateMessageGroupName;
+  ModalRoute<bool>? _membersRoute;
+  int? _removedPrivateMessageId;
   bool _isTogglingArchiveMessage = false;
 
   /// 本地屏蔽名单过滤缓存：provider 状态与名单实例都未变时复用同一份
@@ -521,8 +522,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
     // 话题目录(TOC):依赖 detailController 的段映射做标题级跳转
     _tocController = TopicTocController(detailController: _controller);
-    _tocController.addListener(_syncTocFabVisible);
-    _controller.viewportPostNumberNotifier.addListener(_syncTocFabVisible);
+    _tocController.addListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.addListener(_syncTocVisible);
 
     _controller.scrollController.addListener(_onScroll);
     // 滚动停止 → 回放滚动期间推迟的 msgbus 帖子更新
@@ -837,6 +838,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _closeRemovedPrivateMessage() {
+    if (_removedPrivateMessageId == widget.topicId) return;
+    _removedPrivateMessageId = widget.topicId;
+    final members = _membersRoute;
+    if (members != null && members.isActive) {
+      final navigator = members.navigator!;
+      // 远端移除成员时，名单上面可能还开着行尾菜单或确认框。
+      navigator.popUntil((route) => route == members || route is! PopupRoute);
+      navigator.removeRoute(members);
+    }
     _invalidatePrivateMessageLists();
     _leaveTopicPage();
   }
@@ -980,11 +990,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _controller.scrollController.removeListener(_onScroll);
     _screenTrack.stop();
     unawaited(_nestedReadingStore.flush());
-    _tocController.removeListener(_syncTocFabVisible);
-    _controller.viewportPostNumberNotifier.removeListener(_syncTocFabVisible);
+    _tocController.removeListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.removeListener(_syncTocVisible);
     _controller.dispose();
     _tocController.dispose();
-    _tocFabVisible.dispose();
+    _tocVisible.dispose();
     _positionInfo.dispose();
     DraftsSignal.localRevision.removeListener(_refreshReplyDraftPreview);
     _replySession.activeNotifier.removeListener(_onReplySessionActiveChanged);
@@ -1977,6 +1987,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onExport: _showExportSheet,
           onOpenInBrowser: _openInBrowser,
           onFilter: _showFilterSheet,
+          onShowMembers: _showPrivateMessageMembers,
           onToggleArchiveMessage: () =>
               unawaited(_handleToggleArchiveMessage(notifier)),
           onReadingSettings: () {
@@ -2017,6 +2028,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
                 const SizedBox(width: 12),
                 Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
+          ),
+        if (PrivateMessageMemberSummary.isAvailable(detail))
+          PopupMenuItem(
+            value: 'members',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.group_rounded, size: 20),
+                const SizedBox(width: 12),
+                Text(context.l10n.pm_conversationMembers),
               ],
             ),
           ),
@@ -2291,8 +2314,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   /// 底栏回复胶囊当前的外形:直接打开完整编辑器时从它长出;底栏收起或
   /// 不在屏上时为 null(退回从屏幕底部滑入)
-  ({Rect rect, double radius, Color color})? _replyEntryMorphSource() {
-    if (!_controller.showBottomBarNotifier.value) return null;
+  MorphSheetAnchor? _replyEntryMorphSource() {
+    if (!mounted || !_controller.showBottomBarNotifier.value) return null;
     final box = _replyEntryKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.attached || !box.hasSize) return null;
     final rect = box.localToGlobal(Offset.zero) & box.size;
@@ -2405,30 +2428,38 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
-  /// 快捷回复展开成完整编辑器,一镜到底:编辑器从面板当前外形继续长大;
-  /// 交接期间快捷回复的输入框保持焦点,完整编辑器挂载后直接接过焦点,
-  /// 键盘不会先收起再弹出;面板被盖住后再静默撤掉
-  Future<void> _expandQuickReply(Rect rect, double radius, Color color) async {
+  /// 快捷回复展开成完整编辑器,一镜到底:编辑器从面板当前外形继续长大,
+  /// 面板截图钉在原位随之淡出,面板本体在编辑器首帧同一帧隐藏——看起来
+  /// 是面板自己长成了编辑器。交接期间快捷回复的输入框保持焦点,完整
+  /// 编辑器挂载后直接接过焦点,键盘不会先收起再弹出
+  Future<void> _expandQuickReply(QuickReplyExpansion from) async {
+    if (_replySession.handingOff) {
+      from.snapshot?.dispose();
+      return;
+    }
     final handed = await _replySession.prepareHandOff();
-    if (!mounted) return;
+    if (!mounted) {
+      from.snapshot?.dispose();
+      return;
+    }
     // 草稿在后台交接:不等保存往返,编辑器立即展开
     final released = _replySession.releaseDraftInBackground();
-    final editor = _handleReply(
+    await _handleReply(
       handed.target,
       initialContent: handed.content.trim().isEmpty ? null : handed.content,
       forceFullEditor: true,
       initialContentIsComplete: true,
-      morphFrom: rect,
-      morphFromRadius: radius,
-      morphFromColor: color,
+      morphFrom: from.rect,
+      morphFromRadius: from.radius,
+      morphFromColor: from.color,
+      morphFromSnapshot: from.snapshot,
+      onHandoffStart: from.onShown,
+      onHandoffComplete: () {
+        if (mounted) _replySession.finishHandOff();
+      },
       draftReleased: released,
     );
-    // 展开动画(380ms)结束时面板已完全被编辑器盖住
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (mounted) _replySession.finishHandOff();
-    await editor;
   }
-
 
   TopicReplyEntryState _replyEntryState(TopicDetail detail, bool isLoggedIn) {
     if (!isLoggedIn) return TopicReplyEntryState.login;
@@ -2533,7 +2564,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           ? _replySession
           : null,
       replyEntryKey: _replyEntryKey,
-      tocVisibleListenable: _tocFabVisible,
+      tocVisibleListenable: _tocVisible,
       onOpenTimeline: _showTimelineSheetForCurrent,
       bookmarked: bookmarked,
       onBookmark: _handleBottomBarBookmark,
@@ -2547,14 +2578,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return overlay;
   }
 
-  /// 话题目录(TOC)浮层:宽屏右侧常驻可折叠面板,窄屏右下浮动按钮
-  /// (叠在回复 FAB 上方,随底栏显隐联动)。平行视界右栏(embeddedMode)
-  /// 宽度有限,也走浮动按钮形态。
-  ///
-  /// 自动展开的最小页面宽度:正文列(maxContentWidth 800)居中后,单侧
-  /// 留白要装得下展开面板(240)+右偏移(12)+呼吸间距(16),展开才不
-  /// 遮挡正文 = 800 + 2×268 = 1336。
-  /// 宽屏两侧常驻面板(目录、阅读栏)的顶距
+  /// 正文两侧目录和阅读栏的顶距。
   static const double _sidePanelTop = 88;
 
   bool _usesDockedComposer(bool railMode) => railMode;
@@ -2626,78 +2650,48 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
-  static const double _tocAutoExpandMinWidth =
+  static const double _tocColumnGap = 16;
+  static const double _readingRailMinWidth =
       Breakpoints.maxContentWidth +
-      2 * (TopicTocSidePanel.expandedWidth + 12 + 16);
+      2 * (TopicTocSidePanel.expandedWidth + _tocColumnGap + 12);
 
-  Widget _buildTocLayer(
-    BuildContext context,
-    bool panelVisible, {
-    bool railMode = false,
-  }) {
-    // 显隐门控(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,
-    // 滚过 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)。
-    // hasToc 由 _tocController 通知,eyeline 位置走 viewportPostNumberNotifier。
-    Widget gateVisibility({required Widget child}) {
-      return ListenableBuilder(
-        listenable: _tocController,
-        builder: (context, _) {
-          if (!_tocController.hasToc) return const SizedBox.shrink();
-          return ValueListenableBuilder<int?>(
-            valueListenable: _controller.viewportPostNumberNotifier,
-            builder: (context, viewportPost, _) {
-              final visible = viewportPost == 1 || _tocController.isJumping;
-              return AnimatedOpacity(
-                opacity: visible ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 180),
-                child: IgnorePointer(ignoring: !visible, child: child),
-              );
-            },
+  Widget _buildTocLayer(double pageWidth, double pageHeight) {
+    final expanded = ref.watch(topicTocVisibilityProvider) ?? true;
+    final columnLeft = (pageWidth - Breakpoints.maxContentWidth) / 2;
+    final availableHeight =
+        pageHeight - MediaQuery.paddingOf(context).bottom - 24;
+    final top = (availableHeight - kMinInteractiveDimension).clamp(
+      0.0,
+      _sidePanelTop,
+    );
+    final maxHeight = availableHeight - top;
+    return Positioned(
+      right: pageWidth - columnLeft + _tocColumnGap,
+      top: top,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _tocVisible,
+        builder: (context, visible, _) {
+          if (!visible) return const SizedBox.shrink();
+          // 极矮的窗格只够放一个入口，打开弹层仍能选到任意章节。
+          if (maxHeight < 2 * kMinInteractiveDimension) return _tocFab;
+          return TopicTocSidePanel(
+            controller: _tocController,
+            visible: expanded,
+            maxHeight: maxHeight,
+            onToggleVisible: () =>
+                ref.read(topicTocVisibilityProvider.notifier).toggle(expanded),
+            onEntryTap: _handleTocEntryTap,
           );
         },
-      );
-    }
-
-    // 窄屏的目录浮动按钮由底栏浮层统一摆放(与回顶按钮同列同动效),
-    // 见 _tocUsesFloatingButton
-    if (_tocUsesFloatingButton(context, railMode)) {
-      return const SizedBox.shrink();
-    }
-    return Positioned(
-      // 有阅读栏时目录让到左侧:目录是文档大纲,右侧留给时间线
-      left: railMode ? 12 : null,
-      right: railMode ? null : 12,
-      top: _sidePanelTop,
-      // 不定 bottom:高度随目录内容自适应,上限扣除顶距与底部操作栏区
-      child: gateVisibility(
-        child: TopicTocSidePanel(
-          controller: _tocController,
-          visible: panelVisible,
-          maxHeight:
-              MediaQuery.sizeOf(context).height -
-              kToolbarHeight -
-              MediaQuery.paddingOf(context).top -
-              _sidePanelTop -
-              TopicBottomBarMetrics.occupiedHeight(context),
-          onToggleVisible: () => ref
-              .read(topicTocVisibilityProvider.notifier)
-              .toggle(panelVisible),
-          onEntryTap: _handleTocEntryTap,
-        ),
       ),
     );
   }
 
-  /// 窄屏(及非阅读栏形态的平行视界右栏)目录用浮动按钮,否则用常驻面板
-  bool _tocUsesFloatingButton(BuildContext context, bool railMode) =>
-      !railMode && (Responsive.isMobile(context) || widget.embeddedMode);
+  /// 目录只在阅读首帖或跳转章节途中显示，侧栏和浮动入口共用。
+  final ValueNotifier<bool> _tocVisible = ValueNotifier<bool>(false);
 
-  /// 目录浮动按钮显隐(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,滚过
-  /// 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)
-  final ValueNotifier<bool> _tocFabVisible = ValueNotifier<bool>(false);
-
-  void _syncTocFabVisible() {
-    _tocFabVisible.value =
+  void _syncTocVisible() {
+    _tocVisible.value =
         _tocController.hasToc &&
         (_controller.viewportPostNumberNotifier.value == 1 ||
             _tocController.isJumping);
@@ -3179,7 +3173,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 快捷回复层挂在 Scaffold 之外：遮罩盖住整页（含顶栏），而不只是 body
     final topicPage = Stack(
       children: [
-        topicScaffold,
+        ValueListenableBuilder<bool>(
+          valueListenable: _replySession.presentedNotifier,
+          child: topicScaffold,
+          builder: (context, presented, child) => KeyboardInsetIsolation(
+            active: !presented,
+            child: child!,
+          ),
+        ),
         Positioned.fill(child: _buildQuickReplyLayer(params)),
       ],
     );
@@ -3362,16 +3363,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final isSearchMode = searchState.isSearchMode;
     // 宽屏阅读栏:帖子列两侧留白够放下目录(左)与阅读栏(右)时,阅读工具
     // 移到右侧常驻,底部不再放任何东西
-    final railMode = pageWidth >= _tocAutoExpandMinWidth;
+    final railMode = pageWidth >= _readingRailMinWidth;
     _railMode = railMode;
     _pageHeight = pageHeight;
-    // TOC 面板展开状态:null = 自动(宽度够才默认展开,否则收起成细条,
-    // 不遮挡正文);用户手动切换后为显式持久化选择。watch 在此层,
-    // 切换只走 _buildTocLayer 重建。
-    final tocPanelVisible =
-        ref.watch(topicTocVisibilityProvider) ??
-        MediaQuery.sizeOf(context).width >= _tocAutoExpandMinWidth;
-
     // 初始加载或切换模式时显示骨架屏
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），
     // 也应该优先显示错误页面而不是骨架屏
@@ -3481,11 +3475,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         if (detail != null && _usesDockedComposer(railMode))
           _buildDockedComposer(detail, notifier, pageWidth),
 
-        // 话题目录(TOC):宽屏常驻面板(有阅读栏时在左侧),窄屏浮动按钮
-        // (叠回顶按钮上方)。嵌套视图自有滚动体系,不挂(对齐段映射只对
-        // 平铺流有效)。
-        if (detail != null && !isSearchMode && !_isNestedView)
-          _buildTocLayer(context, tocPanelVisible, railMode: railMode),
+        // 左侧有足够空间才显示常驻大纲，其余宽度只使用底栏浮动入口。
+        if (railMode && detail != null && !isSearchMode && !_isNestedView)
+          _buildTocLayer(pageWidth, pageHeight),
 
         // Expanded Header 相关组件（使用 ValueListenableBuilder 隔离状态变化）
         if (!isSearchMode)
@@ -3531,6 +3523,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                             child: SingleChildScrollView(
                               child: TopicDetailHeader(
                                 detail: detail,
+                                expanded: true,
+                                onShowMembers: _showPrivateMessageMembers,
                                 headerKey: null,
                                 onVoteChanged: _handleVoteChanged,
                                 onNotificationLevelChanged: (level) =>
@@ -3744,18 +3738,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           headerKey: _headerKey,
           hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
-          removingPrivateMessageParticipantId:
-              _removingPrivateMessageParticipantId,
-          removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-          onRemovePrivateMessageParticipant: isLoggedIn
-              ? _handleRemovePrivateMessageParticipant
-              : null,
-          onRemovePrivateMessageGroup: isLoggedIn
-              ? _handleRemovePrivateMessageGroup
-              : null,
-          onInvitePrivateMessageParticipants: isLoggedIn
-              ? _handleInvitePrivateMessageParticipants
-              : null,
+          onShowMembers: _showPrivateMessageMembers,
           onReply: _handleReply,
           onEdit: _handleEdit,
           onRefreshPost: _handleRefreshPost,
@@ -3816,18 +3799,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onAnswerSortChanged: (byActivity) =>
                   byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
-              removingPrivateMessageParticipantId:
-                  _removingPrivateMessageParticipantId,
-              removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-              onRemovePrivateMessageParticipant: isLoggedIn
-                  ? _handleRemovePrivateMessageParticipant
-                  : null,
-              onRemovePrivateMessageGroup: isLoggedIn
-                  ? _handleRemovePrivateMessageGroup
-                  : null,
-              onInvitePrivateMessageParticipants: isLoggedIn
-                  ? _handleInvitePrivateMessageParticipants
-                  : null,
+              onShowMembers: _showPrivateMessageMembers,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
               loadingPreviousListenable: notifier.loadingPreviousListenable,

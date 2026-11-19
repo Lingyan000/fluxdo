@@ -96,6 +96,8 @@
     }
   },
   "topicDetail_relatedTopics": "相關話題",
+  "topicDetail_relatedMessages": "相關訊息",
+  "topicDetail_allMessagesFrom": "查看來自 @{username} 的所有私訊",
   "topicDetail_removePrivateMessageParticipantConfirm": "確定要將 @{username} 移出此私信嗎？",
   "@topicDetail_removePrivateMessageParticipantConfirm": {
     "placeholders": {
@@ -154,7 +156,12 @@
   "topicDetail_quickReplyKeepContent": "保留內容，改回覆這一樓",
   "topicDetail_quickReplySaveAndNew": "存為草稿，另寫新回覆",
   "topicDetail_quickReplyFormattingHint": "含有格式內容，展開編輯器顯示效果更好",
-  "topicDetail_barGestureHint": "左右拖曳底欄可快速定位樓層，長按開啟快捷選單",
+  "topicDetail_barGestureHint": "橫拖選樓，長串可上移微調，長按開啟選單",
+  "topic_scrubWhole": "整串",
+  "topic_scrubNearby": "附近",
+  "topic_scrubSingle": "逐樓",
+  "topic_scrubLiftHint": "按住往上移動可微調",
+  "topic_scrubStepHint": "左右移動，一格一樓",
   "topicDetail_searchHint": "在本話題中搜尋...",
   "topicDetail_searchTopic": "搜尋本話題",
   "topicDetail_setToLevel": "已設定為{level}",

@@ -1671,6 +1671,7 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
     this.requestFocus,
     this.headerActions,
     this.menuNavigatorKey,
+    this.openOnPress = true,
   }) : assert(
          !(child != null && icon != null),
          'You can only pass [child] or [icon], not both.',
@@ -1716,6 +1717,9 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
   /// 用于按钮位于手动 OverlayEntry 内的场景：菜单仍复用同一套路由与样式，
   /// 但可以由后插入/更高层的 Navigator 承载，避免被外层 OverlayEntry 盖住。
   final GlobalKey<NavigatorState>? menuNavigatorKey;
+
+  /// 按下后可继续拖动选项。位于可拖动的控件内时可改为确认点按后打开。
+  final bool openOnPress;
 
   @override
   State<SwipeDismissiblePopupMenuButton<T>> createState() =>
@@ -1873,19 +1877,20 @@ class _SwipeDismissiblePopupMenuButtonState<T>
   Widget build(BuildContext context) => RawGestureDetector(
     excludeFromSemantics: true,
     gestures: {
-      _MenuAnchorRecognizer:
-          GestureRecognizerFactoryWithHandlers<_MenuAnchorRecognizer>(
-            () => _MenuAnchorRecognizer(debugOwner: this),
-            (recognizer) => recognizer
-              ..canOpen = (() => mounted && widget.enabled && !_active)
-              ..delay = Scrollable.maybeOf(context) == null
-                  ? Duration.zero
-                  : kPressTimeout
-              ..onOpen = _openFromPress
-              ..onMove = _movePress
-              ..onUp = _endPress
-              ..onCancel = _cancelPress,
-          ),
+      if (widget.openOnPress)
+        _MenuAnchorRecognizer:
+            GestureRecognizerFactoryWithHandlers<_MenuAnchorRecognizer>(
+              () => _MenuAnchorRecognizer(debugOwner: this),
+              (recognizer) => recognizer
+                ..canOpen = (() => mounted && widget.enabled && !_active)
+                ..delay = Scrollable.maybeOf(context) == null
+                    ? Duration.zero
+                    : kPressTimeout
+                ..onOpen = _openFromPress
+                ..onMove = _movePress
+                ..onUp = _endPress
+                ..onCancel = _cancelPress,
+            ),
     },
     child: RepaintBoundary(key: _anchorKey, child: _buildButton(context)),
   );

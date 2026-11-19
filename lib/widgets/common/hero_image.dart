@@ -5,6 +5,51 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../utils/hero_visibility_controller.dart';
 
+/// 把查看器的固定前景挂在图片所在的 Overlay。图片飞行时，前景仍覆盖整个视口。
+class ViewerHeroForeground extends StatefulWidget {
+  const ViewerHeroForeground({
+    super.key,
+    required this.child,
+    required this.foregroundBuilder,
+    this.inFlight = false,
+  });
+
+  final Widget child;
+  final Widget Function(bool inFlight) foregroundBuilder;
+  final bool inFlight;
+
+  /// 打开取查看器端的飞行体，返回通常取缩略图端。两端都从查看器接过同一份前景。
+  static HeroFlightShuttleBuilder wrapFlight(
+    HeroFlightShuttleBuilder buildImage,
+  ) {
+    return (context, animation, direction, from, to) {
+      final image = buildImage(context, animation, direction, from, to);
+      final viewer = direction == HeroFlightDirection.pop ? from : to;
+      final content = (viewer.widget as Hero).child;
+      if (content is! ViewerHeroForeground) return image;
+      return ViewerHeroForeground(
+        foregroundBuilder: content.foregroundBuilder,
+        inFlight: true,
+        child: image,
+      );
+    };
+  }
+
+  @override
+  State<ViewerHeroForeground> createState() => _ViewerHeroForegroundState();
+}
+
+class _ViewerHeroForegroundState extends State<ViewerHeroForeground> {
+  final _portal = OverlayPortalController()..show();
+
+  @override
+  Widget build(BuildContext context) => OverlayPortal(
+    controller: _portal,
+    overlayChildBuilder: (_) => widget.foregroundBuilder(widget.inFlight),
+    child: widget.child,
+  );
+}
+
 /// Hero 飞行体:cover↔contain 单层裁切插值(网格瓦片/圆形头像来源)。
 ///
 /// 裁切窗口与飞行缩放绑同一 progress(参考成熟查看器的 clip 插值
@@ -475,39 +520,44 @@ class _HeroImageState extends State<HeroImage> {
           // 本 builder 全程只以 push 方向调用一次,pop 分支永不执行 ⇒
           // 源端 Opacity 锁死在 0 ⇒ 空洞黑闪。宣告退场已改由查看器在
           // 路由转 reverse / 手势置位时直接做,与 shuttle 无关。
-          flightShuttleBuilder:
-              (flightContext, animation, direction, fromContext, toContext) {
-                // 自绘飞行体需要位图源;有它就用,以便 cover 窗口/圆角随飞行
-                // 插值。判据走 effective* —— style 给了就以它为准。
-                if (widget.flightImage != null &&
-                    (widget.effectiveCover || widget.effectiveCircular)) {
-                  // 源端缩略图盒子的固定宽高比:push 时源在 from,pop 时源在 to。
-                  // 飞行起止两端的盒子布局在 flight 启动时已测好,此处读到的是
-                  // 稳定值。push 被 pop 打断(divert)不重建 shuttle,仍持 push
-                  // 时算得的 from=源端,与 pop 的 to 是同一缩略图,口径一致。
-                  final BuildContext srcContext =
-                      direction == HeroFlightDirection.pop
-                      ? toContext
-                      : fromContext;
-                  double? sourceAspect;
-                  final ro = srcContext.findRenderObject();
-                  if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
-                    sourceAspect = ro.size.width / ro.size.height;
-                  }
-                  return CoverContainFlightImage(
-                    image: widget.flightImage!,
-                    animation: animation,
-                    radius: widget.effectiveRadius,
-                    circular: widget.effectiveCircular,
-                    // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
-                    // 否则落地瞬间「裁切一块」突变成完整图
-                    coverSource: true,
-                    sourceAspect: sourceAspect,
-                    fallback: child,
-                  );
-                }
-                return child;
-              },
+          flightShuttleBuilder: ViewerHeroForeground.wrapFlight((
+            flightContext,
+            animation,
+            direction,
+            fromContext,
+            toContext,
+          ) {
+            // 自绘飞行体需要位图源;有它就用,以便 cover 窗口/圆角随飞行
+            // 插值。判据走 effective* —— style 给了就以它为准。
+            if (widget.flightImage != null &&
+                (widget.effectiveCover || widget.effectiveCircular)) {
+              // 源端缩略图盒子的固定宽高比:push 时源在 from,pop 时源在 to。
+              // 飞行起止两端的盒子布局在 flight 启动时已测好,此处读到的是
+              // 稳定值。push 被 pop 打断(divert)不重建 shuttle,仍持 push
+              // 时算得的 from=源端,与 pop 的 to 是同一缩略图,口径一致。
+              final BuildContext srcContext =
+                  direction == HeroFlightDirection.pop
+                  ? toContext
+                  : fromContext;
+              double? sourceAspect;
+              final ro = srcContext.findRenderObject();
+              if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                sourceAspect = ro.size.width / ro.size.height;
+              }
+              return CoverContainFlightImage(
+                image: widget.flightImage!,
+                animation: animation,
+                radius: widget.effectiveRadius,
+                circular: widget.effectiveCircular,
+                // 贴源端窗口要与源端 Image(fit:cover) 的可见区域对齐,
+                // 否则落地瞬间「裁切一块」突变成完整图
+                coverSource: true,
+                sourceAspect: sourceAspect,
+                fallback: child,
+              );
+            }
+            return child;
+          }),
           // 飞行期间源端占位 - 直接读取最新状态
           placeholderBuilder: (context, heroSize, _) {
             final ctrl = HeroVisibilityController.instance;

@@ -1,5 +1,5 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:jovial_svg/jovial_svg.dart';
 
 /// 浮动发光 logo。
 ///
@@ -75,13 +75,7 @@ class _FloatingLogoState extends State<FloatingLogo>
           SizedBox(
             width: widget.size,
             height: widget.size,
-            child: ScalableImageWidget.fromSISource(
-              si: ScalableImageSource.fromSvg(
-                DefaultAssetBundle.of(context),
-                'assets/logo.svg',
-                warnF: (_) {},
-              ),
-            ),
+            child: const AppSvgAsset('assets/logo.svg'),
           ),
         ],
       ),

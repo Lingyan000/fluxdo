@@ -32,6 +32,7 @@ class RelativeTimeText extends StatefulWidget {
     this.displayStyle = TimeDisplayStyle.relative,
     this.prefix,
     this.suffix,
+    this.builder,
   });
 
   /// 要显示的时间
@@ -48,6 +49,9 @@ class RelativeTimeText extends StatefulWidget {
 
   /// 后缀文本，displayStyle 为 suffixed 时使用
   final String? suffix;
+
+  /// 自定义时间文本的排版，沿用分钟刷新和精确时间提示。
+  final Widget Function(String text)? builder;
 
   @override
   State<RelativeTimeText> createState() => _RelativeTimeTextState();
@@ -97,15 +101,11 @@ class _RelativeTimeTextState extends State<RelativeTimeText> {
 
     final displayText = _buildDisplayText();
     final tooltipText = TimeUtils.formatTooltipTime(widget.dateTime);
+    final child =
+        widget.builder?.call(displayText) ??
+        Text(displayText, style: widget.style);
 
-    if (tooltipText.isEmpty) {
-      return Text(displayText, style: widget.style);
-    }
-
-    return Tooltip(
-      message: tooltipText,
-      preferBelow: true,
-      child: Text(displayText, style: widget.style),
-    );
+    if (tooltipText.isEmpty) return child;
+    return Tooltip(message: tooltipText, preferBelow: true, child: child);
   }
 }

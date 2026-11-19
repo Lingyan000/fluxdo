@@ -1,69 +1,148 @@
-/// 底栏拖动定位：手指横向移动 → 目标楼层（stream 索引，1 起）。
-///
-/// 速度自适应的增量映射（同鼠标指针加速）：
-/// - 慢慢移动时每 [stepWidth] 走一楼，可以逐楼精确定位；
-/// - 移动越快增益越大，平滑过渡到上限。上限由楼数推导——全宽快划一次
-///   大约走完整个话题——长话题也不需要额外的精细模式，不写死倍率；
-/// - 增量累积，中途反向慢慢挪就逐楼退回。
-///
-/// 向右为往后读（与进度线填充方向一致）。
+import 'dart:math' as math;
+
+import 'package:flutter/gestures.dart' show kTouchSlop;
+
+enum TopicScrubScale { whole, nearby, single }
+
+/// 从当前握柄位置按位移选楼。短拖一比一跟手，长扫后半程才补足到端点的行程。
+double relativeScrubPosition({
+  required double startPosition,
+  required double pointerStart,
+  required double pointer,
+  required double extent,
+}) {
+  final delta = pointer - pointerStart;
+  final room = delta > 0 ? extent - pointerStart : pointerStart;
+  final travel = delta > 0 ? extent - startPosition : startPosition;
+  // 起手就在端点附近时，轻轻向外拖也应基于当前楼层微调。
+  if (room < 2 * kTouchSlop || travel <= room) {
+    return (startPosition + delta).clamp(0.0, extent);
+  }
+  final tail = (2 * delta.abs() / room - 1).clamp(0.0, 1.0);
+  final extra = (travel - room) * tail * tail * (3 - 2 * tail);
+  return (startPosition + delta + delta.sign * extra).clamp(0.0, extent);
+}
+
+/// 底栏的横向位移选楼，上移距离选精度。坐标以可用轨道的左端为原点。
 class TopicScrubTracker {
   TopicScrubTracker({
     required int startIndex,
-    required this.totalCount,
-    required this.surfaceWidth,
-    this.stepWidth = 24,
-  }) : _position = startIndex
-           .clamp(1, totalCount < 1 ? 1 : totalCount)
-           .toDouble();
+    required int totalCount,
+    required double surfaceWidth,
+    required double startX,
+  }) : totalCount = math.max(1, totalCount),
+       surfaceWidth = math.max(1, surfaceWidth),
+       _pointerX = startX {
+    _position = startIndex.clamp(1, this.totalCount).toDouble();
+    final fraction = this.totalCount > 1
+        ? (_position - 1) / (this.totalCount - 1)
+        : 1.0;
+    _thumbX = fraction * this.surfaceWidth;
+    _anchor();
+  }
+
+  static const double _stepWidth = 14;
+  static const double _bandHeight = 38;
+  static const double _bandMargin = 5;
+  static bool canZoom(int totalCount, double width) =>
+      (totalCount - 1) * _stepWidth > width;
 
   final int totalCount;
-
-  /// 可拖动的手势面宽度（扣除屏幕边缘手势区）
   final double surfaceWidth;
+  double get _wholeRate => (totalCount - 1) / surfaceWidth;
+  late final scales = [
+    TopicScrubScale.whole,
+    if (_wholeRate * _stepWidth > 8) TopicScrubScale.nearby,
+    if (canZoom(totalCount, surfaceWidth)) TopicScrubScale.single,
+  ];
 
-  /// 慢速时每走一楼需要的位移
-  final double stepWidth;
+  int _level = 0;
+  double _pointerX;
+  late double _thumbX;
+  late double _anchorPointerX;
+  double _lift = 0;
+  late double _position;
+  late double _anchorX;
+  late double _anchorFloor;
+  bool _turning = false;
 
-  /// 低于此速度（px/s）为精细定位，增益 1
-  static const double slowSpeed = 160;
+  int get index => _position.round().clamp(1, totalCount);
+  TopicScrubScale get scale => scales[_level];
+  double get thumbX => _thumbX;
 
-  /// 高于此速度（px/s）增益达到上限
-  static const double fastSpeed = 1400;
+  double get floorsPerPixel => switch (scale) {
+    TopicScrubScale.whole => _wholeRate,
+    TopicScrubScale.nearby => math.sqrt(_wholeRate / _stepWidth),
+    TopicScrubScale.single => 1 / _stepWidth,
+  };
 
-  double _position;
-  double _speed = 0;
+  /// 局部刻度在轨道左端对应的楼层，可位于首末楼之外。
+  double get rulerOrigin => _position - thumbX * floorsPerPixel;
 
-  /// 当前目标楼层
-  int get index => _position.round().clamp(1, totalCount < 1 ? 1 : totalCount);
-
-  /// 增益上限：全宽快划一次约覆盖整个话题，楼数少时就是 1
-  double get maxGain {
-    if (surfaceWidth <= 0) return 1;
-    final gain = totalCount * stepWidth / surfaceWidth;
-    return gain < 1 ? 1 : gain;
+  void _anchor() {
+    _anchorPointerX = _pointerX;
+    _anchorX = thumbX;
+    _anchorFloor = _position;
   }
 
-  /// 按当前速度插值的增益（smoothstep，起止都平滑）
-  double gainFor(double speed) {
-    final t = ((speed - slowSpeed) / (fastSpeed - slowSpeed)).clamp(0.0, 1.0);
-    final eased = t * t * (3 - 2 * t);
-    return 1 + (maxGain - 1) * eased;
-  }
-
-  /// 喂入一次移动：[dx] 横向位移，[dtSeconds] 距上次的时间。返回目标楼层
-  int update(double dx, double dtSeconds) {
-    if (totalCount <= 1) return 1;
-    if (dtSeconds > 0) {
-      final instant = dx.abs() / dtSeconds;
-      // 指数平滑，过滤单次事件的抖动；间隔越长新样本权重越大
-      final alpha = (dtSeconds / 0.05).clamp(0.2, 1.0);
-      _speed += (instant - _speed) * alpha;
+  double _overviewAt(double x) {
+    if (x <= 0) return 1;
+    if (x >= surfaceWidth) return totalCount.toDouble();
+    // 从局部刻度放回底栏时保留当前楼号，两侧行程分别走到首末楼。
+    if (x < _anchorX) return 1 + (_anchorFloor - 1) * x / _anchorX;
+    if (x > _anchorX) {
+      return _anchorFloor +
+          (totalCount - _anchorFloor) *
+              (x - _anchorX) /
+              (surfaceWidth - _anchorX);
     }
-    _position = (_position + dx / stepWidth * gainFor(_speed)).clamp(
-      1.0,
-      totalCount.toDouble(),
-    );
-    return index;
+    return _anchorFloor;
+  }
+
+  void update(double x, double lift) {
+    final dx = x - _pointerX;
+    final dy = lift - _lift;
+    _pointerX = x;
+    _lift = lift;
+    var next = _level;
+    while (next + 1 < scales.length &&
+        lift >= (next + 0.5) * _bandHeight + _bandMargin) {
+      next++;
+    }
+    while (next > 0 && lift <= (next - 0.5) * _bandHeight - _bandMargin) {
+      next--;
+    }
+    // 斜着抬高拇指时吸收横向偏移，防止换档途中跳过几十楼。
+    if (next != _level || (dy != 0 && dy.abs() >= dx.abs())) {
+      if (next != _level) _position = index.toDouble();
+      _level = next;
+      _anchor();
+      _turning = true;
+      return;
+    }
+    final delta = x - _anchorPointerX;
+    if (dx == 0 || (_turning && delta.abs() < 2)) return;
+    _turning = false;
+    if (scale == TopicScrubScale.whole) {
+      _thumbX = relativeScrubPosition(
+        startPosition: _anchorX,
+        pointerStart: _anchorPointerX,
+        pointer: x,
+        extent: surfaceWidth,
+      );
+      _position = _overviewAt(thumbX);
+    } else {
+      _position = (_anchorFloor + delta * floorsPerPixel).clamp(
+        1.0,
+        totalCount.toDouble(),
+      );
+      _thumbX = (_anchorX + (_position - _anchorFloor) / floorsPerPixel).clamp(
+        0.0,
+        surfaceWidth,
+      );
+    }
+    if ((_position == 1 && dx < 0) || (_position == totalCount && dx > 0)) {
+      _anchor();
+    }
   }
 }

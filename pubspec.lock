@@ -1282,6 +1282,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.31"
+  jovial_svg_transformer:
+    dependency: "direct dev"
+    description:
+      name: jovial_svg_transformer
+      sha256: "1a0f8cda13c97bd28e2d31654f4434d7fc61ca90a90f6f9c084585747d60fb90"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.5"
   js:
     dependency: transitive
     description:

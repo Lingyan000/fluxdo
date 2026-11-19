@@ -1111,6 +1111,7 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
       final frame = await WebViewSurfaceCapture.capture(
         takeScreenshot: (configuration) =>
             controller.takeScreenshot(screenshotConfiguration: configuration),
+        viewId: WebViewSurfaceCapture.keepAliveIdOf(controller),
         platform: defaultTargetPlatform,
         viewport: render.localToGlobal(Offset.zero) & size,
         region: region,

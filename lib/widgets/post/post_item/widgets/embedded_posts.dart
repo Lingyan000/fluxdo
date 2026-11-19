@@ -1,8 +1,8 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/rendering.dart';
-import 'package:fluxdo_render/fluxdo_render.dart' show FluxdoRenderStyle;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../../l10n/s.dart';
 import '../../../../models/topic.dart';
@@ -40,29 +40,34 @@ Widget _renderCooked(
   );
 }
 
-/// 父帖引用卡:当前帖的上文,点击跳到该楼层。
+/// 父帖卡:当前帖的上文,点击跳到该楼层。
 ///
-/// 圆角浅色容器 + 卡内圆头竖条,色调取主题强调色,与头部回复按钮成对,
-/// 也和正文里作者引用的灰色引用块区分开。主题关闭引用底色
-/// ([FluxdoRenderStyle.quoteBackground])时只留竖条。
+/// 外壳用主题的分段卡片([SegmentedCardItem]),多层父帖自然成组,形态随
+/// 主题的分段 / 描边 / 平铺风格变化;名字前的回复图标与头部回复按钮
+/// 同款同色,表明这是它展开的内容。
 ///
 /// 超长正文收起时只露开头 [foldedLines] 行并渐隐,下方给展开/收起;
 /// 展开状态由调用方持有([unfolded]/[onToggleUnfold]),随快照保留。
-class ParentPostQuoteCard extends StatelessWidget {
-  static const double _padding = 12;
-  static const double _barWidth = 3;
-  static const double _barGap = 10;
+class ParentPostCard extends StatelessWidget {
+  /// 分段卡片组的条目间距,与 [SegmentedCardGroup] 默认值一致
+  static const double _gap = 3;
 
   final Post post;
+
+  /// 在父帖链中的位置,决定分段圆角
+  final int index;
+  final int count;
   final double contentFontScale;
   final VoidCallback? onTap;
   final int foldedLines;
   final bool unfolded;
   final VoidCallback onToggleUnfold;
 
-  const ParentPostQuoteCard({
+  const ParentPostCard({
     super.key,
     required this.post,
+    required this.index,
+    required this.count,
     required this.onToggleUnfold,
     this.contentFontScale = 1.0,
     this.onTap,
@@ -74,120 +79,118 @@ class ParentPostQuoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final accent = context.emphasis.accent;
     final avatarUrl = post.getAvatarUrl(size: 48);
-    final shape = RoundedSuperellipseBorder(
-      borderRadius: context.shapes.borderRadius(16),
-    );
 
-    return Material(
-      color: FluxdoRenderStyle.of(theme).quoteBackground
-          ? accent.withValues(alpha: 0.06)
-          : Colors.transparent,
-      shape: shape,
-      clipBehavior: Clip.antiAlias,
+    return SegmentedCardItem(
+      index: index,
+      count: count,
+      gap: _gap,
       child: InkWell(
         onTap: onTap,
-        customBorder: shape,
-        child: Stack(
-          children: [
-            PositionedDirectional(
-              start: _padding,
-              top: _padding,
-              bottom: _padding,
-              width: _barWidth,
-              child: DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: accent.withValues(alpha: 0.6),
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(_barWidth / 2),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(
-                _padding + _barWidth + _barGap,
-                _padding,
-                _padding,
-                _padding,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        borderRadius: SegmentedCardItem.borderRadiusOf(
+          context,
+          index: index,
+          count: count,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      SmartAvatar(
-                        imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
-                        radius: 12,
-                        backgroundColor: scheme.primaryContainer,
-                        fallbackText: post.username,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _displayName(post),
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Text(
-                        '#${post.postNumber}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                  Icon(
+                    Symbols.reply_rounded,
+                    size: 14,
+                    color: context.emphasis.accent,
                   ),
-                  const SizedBox(height: 6),
-                  _FoldableContent(
-                    foldedLines: foldedLines,
-                    unfolded: unfolded,
-                    onToggleUnfold: onToggleUnfold,
-                    fontSize: _embeddedFontSize * contentFontScale,
-                    child: _renderCooked(
-                      context,
-                      post: post,
-                      heroTagNamespace: 'reply_history_${post.postNumber}',
-                      contentFontScale: contentFontScale,
+                  const SizedBox(width: 6),
+                  SmartAvatar(
+                    imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
+                    radius: 10,
+                    backgroundColor: scheme.primaryContainer,
+                    fallbackText: post.username,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _displayName(post),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    '#${post.postNumber}',
+                    style: theme.textTheme.labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              _FoldableContent(
+                foldedLines: foldedLines,
+                unfolded: unfolded,
+                onToggleUnfold: onToggleUnfold,
+                fontSize: _embeddedFontSize * contentFontScale,
+                child: _renderCooked(
+                  context,
+                  post: post,
+                  heroTagNamespace: 'reply_history_${post.postNumber}',
+                  contentFontScale: contentFontScale,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 展开的直接回复的几何:整体缩进一级,竖线走当前帖头像中心
+/// 展开的直接回复的几何:头像列与当前帖头像等宽,竖线走头像列中心,
+/// 名字与正文从当前帖名字的同一位置起排
 abstract final class EmbeddedReplyMetrics {
-  /// 当前帖头像中心(PostAvatar 默认半径 20)
-  static const double railCenter = 20;
+  /// 头像列宽 = 当前帖头像直径(PostAvatar 默认半径 20)
+  static const double gutter = 40;
+
+  /// 头像列到文字的间距 = PostHeader 头像与名字的间距
+  static const double gap = 12;
+  static const double avatarRadius = 14;
+  static const double railCenter = gutter / 2;
   static const double railWidth = 1.5;
 
-  /// 回复内容起排位置 = 竖线 + 一级缩进
-  static const double indent = 32;
-  static const double buttonSize = 32;
+  /// 收起按钮与回复头像同尺寸,作为这串头像的收尾
+  static const double buttonSize = avatarRadius * 2;
+
+  /// 竖线在头像、收起按钮上下断开的间隙
+  static const double railGap = 3;
+
+  /// 单条回复的上下内边距;头像顶边距单条顶部即此值
+  static const double verticalPadding = 10;
 }
 
-/// 展开的单条直接回复:与主帖同构的迷你帖——头像与名字一行,正文在下
-/// 占满缩进后的宽度。点击跳到该楼层。
+/// 展开的单条直接回复:头像在竖线上,名字与正文排在头像右侧。
+/// 点击跳到该楼层。
+///
+/// 竖线由每条自己画:头像上方一段、下方一段,与头像之间留 [EmbeddedReplyMetrics.railGap];
+/// 相邻条目首尾相接,拼成只在头像处断开的一根线。[first] 时不画上方
+/// 那段(线从首个头像起);[last] 时下方那段在底部留出间隙,接收起按钮。
 class EmbeddedReplyTile extends StatelessWidget {
-  static const double _inkInset = 6;
-
   final Post post;
+  final bool first;
+  final bool last;
   final double contentFontScale;
   final VoidCallback? onTap;
 
   const EmbeddedReplyTile({
     super.key,
     required this.post,
+    this.first = false,
+    this.last = false,
     this.contentFontScale = 1.0,
     this.onTap,
   });
@@ -195,11 +198,13 @@ class EmbeddedReplyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final avatarUrl = post.getAvatarUrl(size: 48);
-    return Padding(
-      // 点击高亮比内容外扩一点,内容本身对齐缩进线
-      padding: const EdgeInsetsDirectional.only(
-        start: EmbeddedReplyMetrics.indent - _inkInset,
+    final avatarUrl = post.getAvatarUrl(size: 60);
+    return CustomPaint(
+      painter: _ReplyRailPainter(
+        color: theme.colorScheme.outlineVariant,
+        textDirection: Directionality.of(context),
+        leading: !first,
+        trailingGap: last ? EmbeddedReplyMetrics.railGap : 0,
       ),
       child: Material(
         color: Colors.transparent,
@@ -210,44 +215,55 @@ class EmbeddedReplyTile extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: _inkInset,
-              vertical: 8,
+              vertical: EmbeddedReplyMetrics.verticalPadding,
             ),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    SmartAvatar(
+                SizedBox(
+                  width: EmbeddedReplyMetrics.gutter,
+                  child: Center(
+                    child: SmartAvatar(
                       imageUrl: avatarUrl.isNotEmpty ? avatarUrl : null,
-                      radius: 12,
+                      radius: EmbeddedReplyMetrics.avatarRadius,
                       backgroundColor: theme.colorScheme.primaryContainer,
                       fallbackText: post.username,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _displayName(post),
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      '#${post.postNumber}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 6),
-                _renderCooked(
-                  context,
-                  post: post,
-                  heroTagNamespace: 'reply_preview_${post.postNumber}',
-                  contentFontScale: contentFontScale,
+                const SizedBox(width: EmbeddedReplyMetrics.gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _displayName(post),
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            '#${post.postNumber}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      _renderCooked(
+                        context,
+                        post: post,
+                        heroTagNamespace: 'reply_preview_${post.postNumber}',
+                        contentFontScale: contentFontScale,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -258,29 +274,62 @@ class EmbeddedReplyTile extends StatelessWidget {
   }
 }
 
-/// 回复区左侧竖线(放在 Stack 里)
-class EmbeddedReplyRail extends StatelessWidget {
-  final double? top;
-  final double? bottom;
+/// 单条回复的竖线:头像上方、下方各一段,与头像之间留间隙
+class _ReplyRailPainter extends CustomPainter {
+  const _ReplyRailPainter({
+    required this.color,
+    required this.textDirection,
+    required this.leading,
+    required this.trailingGap,
+  });
 
-  const EmbeddedReplyRail({super.key, this.top, this.bottom});
+  final Color color;
+  final TextDirection textDirection;
+
+  /// 是否画头像上方那段(首条不画)
+  final bool leading;
+  final double trailingGap;
 
   @override
-  Widget build(BuildContext context) {
-    return PositionedDirectional(
-      start:
-          EmbeddedReplyMetrics.railCenter - EmbeddedReplyMetrics.railWidth / 2,
-      top: top,
-      bottom: bottom,
-      child: ColoredBox(
-        color: Theme.of(context).colorScheme.outlineVariant,
-        child: const SizedBox(width: EmbeddedReplyMetrics.railWidth),
-      ),
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    // 头像列在起始侧:从右往左排版时竖线在右侧
+    final center = textDirection == TextDirection.rtl
+        ? size.width - EmbeddedReplyMetrics.railCenter
+        : EmbeddedReplyMetrics.railCenter;
+    final left = center - EmbeddedReplyMetrics.railWidth / 2;
+    final avatarTop = EmbeddedReplyMetrics.verticalPadding;
+    final avatarBottom = avatarTop + EmbeddedReplyMetrics.avatarRadius * 2;
+    void segment(double top, double bottom) {
+      if (bottom > top) {
+        canvas.drawRect(
+          Rect.fromLTRB(
+            left,
+            top,
+            left + EmbeddedReplyMetrics.railWidth,
+            bottom,
+          ),
+          paint,
+        );
+      }
+    }
+
+    if (leading) segment(0, avatarTop - EmbeddedReplyMetrics.railGap);
+    segment(
+      avatarBottom + EmbeddedReplyMetrics.railGap,
+      size.height - trailingGap,
     );
   }
+
+  @override
+  bool shouldRepaint(_ReplyRailPainter oldDelegate) =>
+      color != oldDelegate.color ||
+      textDirection != oldDelegate.textDirection ||
+      leading != oldDelegate.leading ||
+      trailingGap != oldDelegate.trailingGap;
 }
 
-/// 回复区竖线末端的收起按钮,与操作栏的圆形图标按钮同款
+/// 回复区竖线末端的收起按钮
 class EmbeddedReplyCollapseButton extends StatelessWidget {
   final VoidCallback onPressed;
 
@@ -289,9 +338,12 @@ class EmbeddedReplyCollapseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final shape = context.shapes.circle();
+    // 与竖线同色的细描边圈,和回复头像同尺寸,读作这串头像的收尾
+    final shape = context.shapes.circle(
+      side: BorderSide(color: theme.colorScheme.outlineVariant),
+    );
     Widget button = Material(
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+      color: Colors.transparent,
       shape: shape,
       child: InkWell(
         onTap: onPressed,

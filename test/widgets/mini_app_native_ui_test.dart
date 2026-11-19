@@ -109,6 +109,10 @@ class _Api extends MiniAppService {
   final requests = <(String, String, bool)>[];
   Completer<MiniAppDetails>? detailsRequest;
   List<MiniApp> apps = [_app];
+
+  /// 设置后按页切分结果，并在返回后续页前等待 [pageGate]。
+  int? pageSize;
+  Completer<void>? pageGate;
   @override
   Future<MiniAppDirectory> directory({
     required String sort,
@@ -119,10 +123,20 @@ class _Api extends MiniAppService {
     queries.add(query);
     requests.add((sort, query, favorites));
     final result = favorites ? apps.where((a) => a.favorited).toList() : apps;
+    final size = pageSize;
+    if (size == null) {
+      return MiniAppDirectory(
+        apps: result,
+        page: 0,
+        perPage: 40,
+        total: result.length,
+      );
+    }
+    if (page > 0) await pageGate?.future;
     return MiniAppDirectory(
-      apps: result,
-      page: 0,
-      perPage: 40,
+      apps: result.skip(page * size).take(size).toList(),
+      page: page,
+      perPage: size,
       total: result.length,
     );
   }
@@ -1229,6 +1243,58 @@ void main() {
     });
   }
 
+  testWidgets('翻页加载只重建底部与新增卡片，已有卡片和页头保持原实例', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    api
+      ..pageSize = 10
+      ..pageGate = Completer<void>()
+      ..apps = [
+        for (var i = 0; i < 25; i++)
+          MiniApp.fromJson({
+            ..._app.toJson(),
+            'app_id': '${_app.id.substring(0, 34)}${i.toString().padLeft(2, '0')}',
+            'name': '应用 $i',
+          }),
+      ];
+    await tester.pumpWidget(wrap(const MiniAppGalleryPage()));
+    await tester.pumpAndSettle();
+    Finder row(int index) => find.byWidgetPredicate(
+      (w) => w is MiniAppDiscoveryRow && w.app.id == api.apps[index].id,
+    );
+    final scroll = find.byType(CustomScrollView);
+    // 滚到首页末尾附近即触发翻页，第二页被闸门挡住，停在加载中。
+    await tester.dragUntilVisible(row(9), scroll, const Offset(0, -300));
+    await tester.pump();
+    final header = tester.widget(find.byType(MiniAppGalleryHeader));
+    final lastRow = tester.widget(row(9));
+    expect(find.byType(LoadingSpinner), findsOneWidget, reason: '底部显示加载中');
+    expect(row(10), findsNothing);
+
+    api.pageGate!.complete();
+    await tester.pumpAndSettle();
+    expect(tester.widget(find.byType(MiniAppGalleryHeader)), same(header));
+    expect(tester.widget(row(9)), same(lastRow), reason: '已有卡片不随追加重建');
+    await tester.dragUntilVisible(row(10), scroll, const Offset(0, -300));
+    expect(row(10), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('搜索框清除按钮随输入显隐，不依赖目录刷新', (tester) async {
+    await tester.pumpWidget(wrap(const MiniAppGalleryPage()));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('清除'), findsNothing);
+    await tester.enterText(find.byType(TextField), '合成');
+    await tester.pump();
+    expect(find.byTooltip('清除'), findsOneWidget);
+    await tester.tap(find.byTooltip('清除'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('清除'), findsNothing);
+    expect(api.queries.last, '');
+  });
+
   testWidgets('directory and detail layout across themes and screen widths', (
     tester,
   ) async {
@@ -1313,12 +1379,9 @@ void main() {
         for (var index = 0; index < assets.length; index++) {
           final asset = assets[index];
           final url = 'https://mini-app.test/preview/${asset.split('/').last}';
-          final data = await rootBundle.load(asset);
-          await BlobImageCache.write(
-            BlobImageCache.contentBucket,
-            url,
-            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-          );
+          // 模拟图片服务器返回源文件，应用资源包里的 SVG 已经编译成 SI。
+          final data = await File(asset).readAsBytes();
+          await BlobImageCache.write(BlobImageCache.contentBucket, url, data);
           api.apps[index] = MiniApp.fromJson({
             ...api.apps[index].toJson(),
             'icon_url': url,

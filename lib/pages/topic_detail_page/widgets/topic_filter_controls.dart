@@ -72,10 +72,12 @@ class TopicFilterButton extends StatelessWidget {
     super.key,
     required this.controls,
     this.showLabel = false,
+    this.openOnPress = true,
   });
 
   final TopicFilterControls controls;
   final bool showLabel;
+  final bool openOnPress;
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +112,7 @@ class TopicFilterButton extends StatelessWidget {
     }
 
     return SwipeDismissiblePopupMenuButton<String>(
+      openOnPress: openOnPress,
       enabled: !c.isLoading,
       style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
       icon: showLabel ? null : const Icon(Symbols.filter_list_rounded),

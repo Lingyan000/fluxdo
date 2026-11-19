@@ -5,10 +5,10 @@ import 'dart:ui' as ui;
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
-import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/relative_time_clock.dart';
 import '../../utils/svg_utils.dart';
 import '../common/animated_avatar_overlay.dart';
@@ -559,9 +559,8 @@ class TopicCardImages {
   /// SVG 按 cover 裁切光栅化成 96px 方图(与位图路径同一解码上限),
   /// 裁切方式与 SmartAvatar 的 BoxFit.cover 一致
   static Future<ui.Image?> _rasterizeSvg(List<int> bytes) async {
-    final si = ScalableImage.fromSvgString(
+    final si = await SvgImageCache.load(
       SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes)),
-      warnF: (_) {},
     );
     await si.prepareImages();
     try {

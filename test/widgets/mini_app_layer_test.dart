@@ -155,23 +155,6 @@ void main() {
       expect(layer.currentState!.isOpen, isFalse);
       expect(find.byKey(gallery), findsOneWidget);
       final originalGallery = gallery.currentContext;
-      final opacity = tester
-          .widget<Opacity>(
-            find
-                .ancestor(
-                  of: find.byKey(const ValueKey('mini-app-gallery-surface')),
-                  matching: find.byType(Opacity),
-                )
-                .first,
-          )
-          .opacity;
-      expect(opacity, inExclusiveRange(0, 1), reason: '深拉时真实广场渐入，不突然全亮');
-      double galleryScale() => tester
-          .widget<Transform>(
-            find.byKey(const ValueKey('mini-app-gallery-scale')),
-          )
-          .transform
-          .storage[0];
       double galleryTint() =>
           (tester
                       .widget<DecoratedBox>(
@@ -181,8 +164,19 @@ void main() {
                   as BoxDecoration)
               .color!
               .a;
+      // 渐入由同色蒙版完成：蒙版未满即已透出，未清零即尚未全亮。
+      expect(
+        galleryTint(),
+        inExclusiveRange(0, 1),
+        reason: '深拉时真实广场渐入，不突然全亮',
+      );
+      double galleryScale() => tester
+          .widget<Transform>(
+            find.byKey(const ValueKey('mini-app-gallery-scale')),
+          )
+          .transform
+          .storage[0];
       expect(galleryScale(), inExclusiveRange(.94, 1));
-      expect(galleryTint(), greaterThan(0));
       expect(
         find.byKey(const ValueKey('mini-app-refresh-feedback')),
         findsOneWidget,

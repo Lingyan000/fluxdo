@@ -9,12 +9,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../providers/preferences_provider.dart';
-import '../../../widgets/common/emoji_text.dart';
 import '../../../widgets/common/radial_long_press_menu.dart';
 import 'progress_gesture_action_meta.dart';
-import '../../../utils/time_utils.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_floating_bar_edge.dart';
+import 'topic_progress_track.dart';
+import 'topic_scrub_indicator.dart';
 import 'topic_scrub_mapping.dart';
 
 /// 上滑触发阈值（手指相对起点的距离 ≥ 此值即视为可触发）
@@ -42,6 +43,7 @@ class TopicBarGestures extends ConsumerStatefulWidget {
     required this.onScrubCommit,
     this.infoSource,
     this.onScrubStart,
+    this.markerIndex,
   });
 
   final Widget child;
@@ -52,6 +54,7 @@ class TopicBarGestures extends ConsumerStatefulWidget {
   /// 当前楼层（stream 索引，1 起），拖动起点
   final ValueListenable<int> streamIndexListenable;
   final int totalCount;
+  final int? markerIndex;
 
   /// 拖动中的目标楼层，由本组件写入（null = 未在拖动），栏内进度读取
   final ValueNotifier<int?> scrubIndexNotifier;
@@ -69,7 +72,8 @@ class TopicBarGestures extends ConsumerStatefulWidget {
   ConsumerState<TopicBarGestures> createState() => _TopicBarGesturesState();
 }
 
-class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
+class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
+    with TickerProviderStateMixin {
   // 长按菜单会话（overlay 生命周期 + 高亮命中 + 触觉反馈）
   final RadialMenuSession _menuSession = RadialMenuSession();
 
@@ -81,15 +85,35 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   double _edgeLeft = _kEdgeGuardMin;
   double _edgeRight = _kEdgeGuardMin;
   double _screenWidth = 0;
+  bool _reduceMotion = false;
+  bool _floating = false;
+  EdgeInsets _railInsets = EdgeInsets.zero;
+  TopicFloatingBarEdge? _floatingEdge;
+
+  TopicFloatingBarEdge _edgeFor(Size size) {
+    final shape = TopicBottomBarMetrics.floatingShape(context);
+    final cached = _floatingEdge;
+    if (cached != null && cached.size == size && cached.shape == shape) {
+      return cached;
+    }
+    return _floatingEdge = TopicFloatingBarEdge(size, shape);
+  }
 
   // ===== 拖动定位状态 =====
   OverlayEntry? _scrubEntry;
+  late final AnimationController _scrubFade;
+  late final _thumbMotion = TopicThumbMotion(this);
+  TopicPositionInfoSource? _scrubSource;
   Rect? _barRect;
   int _scrubStartIndex = 1;
   int _scrubTarget = 1;
   TopicScrubTracker? _tracker;
-  final Stopwatch _scrubClock = Stopwatch();
-  Duration _lastScrubTime = Duration.zero;
+  Axis? _scrubAxis;
+  double _anchorExpansion = 0;
+  double _anchorProgress = 0;
+  Offset _scrubOrigin = Offset.zero;
+  Offset _pointer = Offset.zero;
+  Offset _verticalDown = Offset.zero;
   Duration _lastHapticTime = Duration.zero;
 
   /// 逐楼触觉的最小间隔：快速划动时不连成持续震动
@@ -109,12 +133,24 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   bool _swipeTriggerable = false;
 
   @override
+  void initState() {
+    super.initState();
+    _scrubFade = AnimationController(
+      vsync: this,
+      duration: TopicProgressTrack.openDuration,
+      reverseDuration: TopicProgressTrack.closeDuration,
+    );
+  }
+
+  @override
   void dispose() {
     _menuSession.dispose();
     // 卸载期不回写 scrubIndexNotifier：监听它的兄弟节点可能同批卸载
-    widget.infoSource?.removeListener(_refreshScrubOverlay);
-    _scrubEntry?.remove();
-    _scrubEntry = null;
+    if (_scrubAxis != null) _scrubSource?.removeListener(_refreshScrubOverlay);
+    _scrubAxis = null;
+    _discardScrubEntry();
+    _scrubFade.dispose();
+    _thumbMotion.dispose();
     _excerptTimer?.cancel();
     _removeSwipeOverlay();
     super.dispose();
@@ -184,50 +220,129 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
 
   // ===== 拖动定位 =====
 
-  void _handleScrubStart(DragStartDetails details) {
+  double _railWidth(Rect rect) =>
+      math.max(1, rect.width - _railInsets.horizontal);
+
+  bool _nearHandle(Rect rect, Offset point) {
+    final surface = _floating
+        ? TopicProgressSurface.floating
+        : TopicProgressSurface.docked;
+    final t = TopicProgressTrack.curve.transform(_scrubFade.value);
+    final left = surface.insetAt(_railInsets.left, t);
+    final right = rect.width - surface.insetAt(_railInsets.right, t);
+    final progress = _trackProgress(t);
+    final handle = left + (right - left) * progress;
+    if (_floating) {
+      final x =
+          rect.left +
+          (1 - t) * _edgeFor(rect.size).at(progress).dx +
+          t * handle;
+      return (point.dx - x.clamp(_edgeLeft, _screenWidth - _edgeRight)).abs() <=
+          22;
+    }
+    // 细线延伸到屏幕边缘，首末楼仍可从系统返回区以内抓住。
+    final reachable = handle.clamp(
+      _railInsets.left,
+      _railInsets.left + _railWidth(rect),
+    );
+    return (point.dx - rect.left - reachable).abs() <= 22;
+  }
+
+  double _trackProgress(double expansion) {
+    final reading = TopicProgressTrack.fraction(
+      widget.streamIndexListenable.value,
+      widget.totalCount,
+    );
+    final tracker = _tracker;
+    if (tracker == null) return reading;
+    final opening = _scrubAxis != null;
+    final target = opening ? tracker.thumbX / tracker.surfaceWidth : reading;
+    final remaining = opening ? 1 - _anchorExpansion : _anchorExpansion;
+    if (remaining == 0) return target;
+    final travel = ((expansion - _anchorExpansion).abs() / remaining).clamp(
+      0.0,
+      1.0,
+    );
+    return _anchorProgress + (target - _anchorProgress) * travel;
+  }
+
+  // 在动画中松手或重新抓住时，从屏上握柄的实际位置继续。
+  void _anchorTrack() {
+    final expansion = TopicProgressTrack.curve.transform(_scrubFade.value);
+    _anchorProgress = _trackProgress(expansion);
+    _anchorExpansion = expansion;
+  }
+
+  void _startScrub(Offset origin, Axis axis) {
     final rect = _globalRect();
-    if (rect == null || widget.totalCount <= 1) return;
+    if (rect == null || widget.totalCount <= 1 || _scrubAxis != null) return;
+    _anchorTrack();
+    _thumbMotion.reset();
     _barRect = rect;
+    _scrubOrigin = _pointer = origin;
+    _scrubAxis = axis;
     _scrubStartIndex = widget.streamIndexListenable.value.clamp(
       1,
       widget.totalCount,
     );
-    _scrubTarget = _scrubStartIndex;
-    _excerptIndex = _scrubStartIndex;
     _tracker = TopicScrubTracker(
       startIndex: _scrubStartIndex,
       totalCount: widget.totalCount,
-      surfaceWidth:
-          math.min(rect.right, _screenWidth - _edgeRight) -
-          math.max(rect.left, _edgeLeft),
+      surfaceWidth: _railWidth(rect),
+      startX: origin.dx - rect.left - _railInsets.left,
     );
-    _scrubClock
-      ..reset()
-      ..start();
-    _lastScrubTime = Duration.zero;
+    _scrubTarget = _excerptIndex = _tracker!.index;
     _lastHapticTime = Duration.zero;
     widget.scrubIndexNotifier.value = _scrubTarget;
     widget.onScrubStart?.call();
 
-    _scrubEntry = OverlayEntry(builder: (_) => _buildScrubOverlay());
-    Overlay.of(context, rootOverlay: true).insert(_scrubEntry!);
-    widget.infoSource?.addListener(_refreshScrubOverlay);
+    _scrubSource = widget.infoSource;
+    _scrubSource?.addListener(_refreshScrubOverlay);
+    if (_scrubEntry == null) {
+      _scrubEntry = OverlayEntry(builder: (_) => _buildScrubOverlay());
+      Overlay.of(context, rootOverlay: true).insert(_scrubEntry!);
+      setState(() {});
+    } else {
+      _scrubEntry!.markNeedsBuild();
+    }
+    if (_reduceMotion) {
+      _scrubFade.value = 1;
+    } else {
+      _scrubFade.forward();
+    }
     HapticFeedback.selectionClick();
   }
 
   void _handleScrubUpdate(DragUpdateDetails details) {
     final tracker = _tracker;
-    if (_barRect == null || tracker == null) return;
-    final now = _scrubClock.elapsed;
-    final dt = (now - _lastScrubTime).inMicroseconds / 1e6;
-    _lastScrubTime = now;
-    final target = tracker.update(details.delta.dx, dt);
+    final rect = _barRect;
+    if (_scrubAxis == null || rect == null || tracker == null) return;
+    if (tracker.totalCount != widget.totalCount) {
+      _removeScrubOverlay();
+      return;
+    }
+    _pointer = details.globalPosition;
+    final oldScale = tracker.scale;
+    final previousX = tracker.thumbX;
+    tracker.update(
+      _pointer.dx - rect.left - _railInsets.left,
+      _scrubOrigin.dy - _pointer.dy,
+    );
+    if (!_reduceMotion && tracker.scale == oldScale) {
+      _thumbMotion.moveBy(tracker.thumbX - previousX);
+    }
+    final target = tracker.index;
+    final now = details.sourceTimeStamp ?? Duration.zero;
+    if (tracker.scale != oldScale) {
+      HapticFeedback.selectionClick();
+      _lastHapticTime = now;
+    }
     if (target != _scrubTarget) {
       if (target == 1 || target == widget.totalCount) {
         HapticFeedback.lightImpact();
         _lastHapticTime = now;
-      } else if (now - _lastHapticTime >= _hapticInterval) {
-        // 每过一楼轻震一下；快速划动时按间隔节流
+      } else if (tracker.scale == TopicScrubScale.single &&
+          now - _lastHapticTime >= _hapticInterval) {
         HapticFeedback.selectionClick();
         _lastHapticTime = now;
       }
@@ -243,10 +358,12 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   }
 
   void _handleScrubEnd(DragEndDetails details) {
+    final tracker = _tracker;
+    if (_scrubAxis == null || tracker == null) return;
     final target = _scrubTarget;
     final start = _scrubStartIndex;
     _removeScrubOverlay();
-    if (target != start) {
+    if (target != start && tracker.totalCount == widget.totalCount) {
       HapticFeedback.lightImpact();
       widget.onScrubCommit(target);
     }
@@ -255,42 +372,79 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   void _refreshScrubOverlay() => _scrubEntry?.markNeedsBuild();
 
   void _removeScrubOverlay() {
+    if (_scrubAxis == null) return;
+    _anchorTrack();
+    _scrubAxis = null;
     _excerptTimer?.cancel();
     _excerptTimer = null;
-    _tracker = null;
-    _scrubClock.stop();
-    widget.infoSource?.removeListener(_refreshScrubOverlay);
-    _scrubEntry?.remove();
-    _scrubEntry = null;
-    _barRect = null;
-    if (widget.scrubIndexNotifier.value != null) {
-      widget.scrubIndexNotifier.value = null;
+    _scrubSource?.removeListener(_refreshScrubOverlay);
+    widget.scrubIndexNotifier.value = null;
+    // 立即结束手势并提交楼层，让最后一帧预览与渐变一起淡出。
+    if (_reduceMotion || _scrubFade.isDismissed) {
+      _scrubFade.value = 0;
+      setState(_discardScrubEntry);
+    } else {
+      _scrubFade.reverse().then<void>((_) {
+        if (mounted && _scrubAxis == null) setState(_discardScrubEntry);
+      });
     }
+  }
+
+  void _discardScrubEntry() {
+    _scrubEntry?.remove();
+    _scrubEntry?.dispose();
+    _scrubEntry = null;
+    _scrubSource = null;
+    _barRect = null;
+    _tracker = null;
   }
 
   Widget _buildScrubOverlay() {
     final rect = _barRect;
-    if (rect == null) return const SizedBox.shrink();
-    final source = widget.infoSource;
-    // 悬浮卡片形态的顶角是圆的，进度轨道避开圆角
-    final railInset = TopicBottomBarMetrics.isFloating(context)
-        ? context.shapes.resolve(24)
-        : 0.0;
-    return _ScrubIndicatorOverlay(
-      barRect: rect,
-      railInset: railInset,
-      index: _scrubTarget,
-      totalCount: widget.totalCount,
-      date: source?.dateAt(_scrubTarget),
-      excerptIndex: _excerptIndex,
-      excerpt: source?.infoAt(_excerptIndex),
-      excerptSettled: _excerptIndex == _scrubTarget,
+    final tracker = _tracker;
+    if (rect == null || tracker == null) return const SizedBox.shrink();
+    final source = _scrubSource;
+    return Theme(
+      data: Theme.of(context),
+      child: TopicScrubIndicator(
+        visibility: _scrubFade,
+        thumbTravel: _thumbMotion.travel,
+        barRect: rect,
+        insets: _railInsets,
+        floatingEdge: _floating ? _edgeFor(rect.size) : null,
+        progressAt: _trackProgress,
+        markerIndex: widget.markerIndex,
+        tracker: tracker,
+        pointer: _pointer,
+        date: source?.dateAt(_scrubTarget),
+        excerptIndex: _excerptIndex,
+        excerpt: _excerptIndex == _scrubTarget
+            ? source?.infoAt(_excerptIndex, loadExcerpt: _scrubAxis != null)
+            : null,
+      ),
     );
   }
 
   // ===== 上滑 =====
 
   void _handleSwipeStart(DragStartDetails details, AppPreferences prefs) {
+    final rect = _globalRect();
+    if (rect != null &&
+        TopicScrubTracker.canZoom(widget.totalCount, _railWidth(rect)) &&
+        _isOutsideEdgeZones(_verticalDown) &&
+        _verticalDown.dy <= rect.top + 22 &&
+        details.globalPosition.dy < _verticalDown.dy &&
+        (_verticalDown.dy <= rect.top + TopicProgressLine.handleHeight ||
+            _nearHandle(rect, _verticalDown))) {
+      _startScrub(_verticalDown, Axis.vertical);
+      _handleScrubUpdate(
+        DragUpdateDetails(
+          globalPosition: details.globalPosition,
+          sourceTimeStamp: details.sourceTimeStamp,
+        ),
+      );
+      return;
+    }
     final action = prefs.progressGestureSwipeUp;
     if (action == ProgressGestureAction.none) return;
     _swipeStart = details.globalPosition;
@@ -350,51 +504,123 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures> {
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(preferencesProvider);
-    if (!prefs.progressGesturesEnabled) return widget.child;
 
     final mq = MediaQuery.of(context);
+    _reduceMotion = mq.disableAnimations || mq.reduceMotion;
     _screenWidth = mq.size.width;
     _edgeLeft = math.max(mq.systemGestureInsets.left, _kEdgeGuardMin);
     _edgeRight = math.max(mq.systemGestureInsets.right, _kEdgeGuardMin);
+    _floating = TopicBottomBarMetrics.isFloating(context);
+    final corner = _floating
+        ? context.shapes.resolve(TopicBottomBarMetrics.floatingRadius) +
+              TopicProgressSurface.floating.openThickness / 2 +
+              2
+        : 0.0;
+    _railInsets = EdgeInsets.only(
+      left: math.max(corner, _edgeLeft + 4),
+      right: math.max(corner, _edgeRight + 4),
+    );
+    final enabled = prefs.progressGesturesEnabled;
+    final hasHandle = enabled && widget.totalCount > 1;
+    Widget readingLine(TopicFloatingBarEdge? edge) => TopicProgressLine(
+      streamIndexListenable: widget.streamIndexListenable,
+      totalCount: widget.totalCount,
+      markerIndex: widget.markerIndex,
+      handleInsets: enabled || _floating ? _railInsets : null,
+      floatingEdge: edge,
+      showHandle: hasHandle,
+    );
+    final surface = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(
+            top: TopicBottomBarMetrics.progressLineHeight,
+          ),
+          child: widget.child,
+        ),
+        if (_scrubEntry == null)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: _floating
+                ? 0
+                : (TopicBottomBarMetrics.progressLineHeight -
+                          TopicProgressLine.heightFor(hasHandle)) /
+                      2,
+            bottom: _floating ? 0 : null,
+            child: IgnorePointer(
+              child: _floating
+                  ? LayoutBuilder(
+                      builder: (_, constraints) =>
+                          readingLine(_edgeFor(constraints.biggest)),
+                    )
+                  : readingLine(null),
+            ),
+          ),
+      ],
+    );
+    if (!enabled) return surface;
 
-    return RawGestureDetector(
-      behavior: HitTestBehavior.opaque,
-      gestures: <Type, GestureRecognizerFactory>{
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () => LongPressGestureRecognizer(duration: _longPressTimeout),
-              (instance) {
-                instance.onLongPressStart = (d) =>
-                    _handleLongPressStart(d, prefs);
-                instance.onLongPressMoveUpdate = (d) =>
-                    _menuSession.updatePointer(d.globalPosition);
-                instance.onLongPressEnd = (_) => _menuSession.selectAndClose();
-                instance.onLongPressCancel = _menuSession.cancel;
-              },
-            ),
-        _EdgeGuardedHorizontalDragRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-              _EdgeGuardedHorizontalDragRecognizer
-            >(() => _EdgeGuardedHorizontalDragRecognizer(_isOutsideEdgeZones), (
-              instance,
-            ) {
-              instance.onStart = _handleScrubStart;
-              instance.onUpdate = _handleScrubUpdate;
-              instance.onEnd = _handleScrubEnd;
-              instance.onCancel = _removeScrubOverlay;
-            }),
-        VerticalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
-              () => VerticalDragGestureRecognizer(),
-              (instance) {
-                instance.onStart = (d) => _handleSwipeStart(d, prefs);
-                instance.onUpdate = _handleSwipeUpdate;
-                instance.onEnd = _handleSwipeEnd;
-                instance.onCancel = _removeSwipeOverlay;
-              },
-            ),
+    return Listener(
+      onPointerCancel: (_) {
+        if (_tracker != null) _removeScrubOverlay();
+        _removeSwipeOverlay();
       },
-      child: widget.child,
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: <Type, GestureRecognizerFactory>{
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+                () => LongPressGestureRecognizer(duration: _longPressTimeout),
+                (instance) {
+                  instance.onLongPressStart = (d) =>
+                      _handleLongPressStart(d, prefs);
+                  instance.onLongPressMoveUpdate = (d) =>
+                      _menuSession.updatePointer(d.globalPosition);
+                  instance.onLongPressEnd = (_) =>
+                      _menuSession.selectAndClose();
+                  instance.onLongPressCancel = _menuSession.cancel;
+                },
+              ),
+          if (widget.totalCount > 1)
+            _EdgeGuardedHorizontalDragRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  _EdgeGuardedHorizontalDragRecognizer
+                >(
+                  () =>
+                      _EdgeGuardedHorizontalDragRecognizer(_isOutsideEdgeZones),
+                  (instance) {
+                    instance.dragStartBehavior = DragStartBehavior.down;
+                    instance.onStart = (d) =>
+                        _startScrub(d.globalPosition, Axis.horizontal);
+                    instance.onUpdate = _handleScrubUpdate;
+                    instance.onEnd = _handleScrubEnd;
+                    instance.onCancel = () {
+                      if (_scrubAxis == Axis.horizontal) _removeScrubOverlay();
+                    };
+                  },
+                ),
+          VerticalDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                VerticalDragGestureRecognizer
+              >(() => VerticalDragGestureRecognizer(), (instance) {
+                instance.onDown = (d) => _verticalDown = d.globalPosition;
+                instance.onStart = (d) => _handleSwipeStart(d, prefs);
+                instance.onUpdate = (d) => _scrubAxis == Axis.vertical
+                    ? _handleScrubUpdate(d)
+                    : _handleSwipeUpdate(d);
+                instance.onEnd = (d) => _scrubAxis == Axis.vertical
+                    ? _handleScrubEnd(d)
+                    : _handleSwipeEnd(d);
+                instance.onCancel = () {
+                  if (_scrubAxis == Axis.vertical) _removeScrubOverlay();
+                  _removeSwipeOverlay();
+                };
+              }),
+        },
+        child: surface,
+      ),
     );
   }
 }
@@ -409,319 +635,6 @@ class _EdgeGuardedHorizontalDragRecognizer
   @override
   bool isPointerAllowed(PointerEvent event) =>
       _allowPosition(event.position) && super.isPointerAllowed(event);
-}
-
-// ============================== 拖动定位指示 ==============================
-
-/// 拖动定位时叠在底栏上方的指示：底栏顶边的加粗进度轨道 + 圆形滑块，
-/// 上方是指向滑块的固定尺寸气泡（楼层、日期、作者与摘要）。
-///
-/// 位置跟随目标楼层在话题中的比例（不是手指），三者共用一个短动画平滑
-/// 过渡；气泡宽高固定、摘要区常驻，内容变化时不跳动。
-class _ScrubIndicatorOverlay extends StatelessWidget {
-  const _ScrubIndicatorOverlay({
-    required this.barRect,
-    required this.railInset,
-    required this.index,
-    required this.totalCount,
-    required this.date,
-    required this.excerptIndex,
-    required this.excerpt,
-    required this.excerptSettled,
-  });
-
-  final Rect barRect;
-  final double railInset;
-  final int index;
-  final int totalCount;
-  final DateTime? date;
-  final int excerptIndex;
-  final TopicPositionInfo? excerpt;
-
-  /// 摘要对应的就是当前目标楼层（快速划动途中为 false，显示占位）
-  final bool excerptSettled;
-
-  static const double _railHeight = 4;
-  static const double _knobSize = 16;
-  static const double _bubbleGap = 14;
-  static const double _tailSize = 7;
-  static const double _bubbleMaxWidth = 300;
-  static const double _bubbleRadius = 14;
-  static const double _margin = 12;
-  static const Duration _follow = Duration(milliseconds: 90);
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    // 两端至少让出半个滑块：首末楼时滑块完整落在栏内，不被裁掉半边
-    final inset = math.max(railInset, _knobSize / 2 + 2);
-    final railLeft = barRect.left + inset;
-    final railWidth = math.max(0.0, barRect.width - inset * 2);
-    final fraction = totalCount > 1 ? (index - 1) / (totalCount - 1) : 0.0;
-    final targetX = railLeft + railWidth * fraction;
-    // 气泡限制在底栏的水平范围内（宽屏 / 侧边导航时不跑到栏外）
-    final minLeft = math.max(_margin, barRect.left);
-    final maxRight = math.min(screenWidth - _margin, barRect.right);
-    final bubbleWidth = math.min(_bubbleMaxWidth, maxRight - minLeft);
-    final bubbleColor = theme.colorScheme.inverseSurface;
-    final bubbleRadius = context.shapes.resolve(_bubbleRadius);
-
-    return IgnorePointer(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(end: targetX),
-        duration: _follow,
-        curve: Curves.easeOutCubic,
-        builder: (context, x, _) {
-          final double bubbleLeft = (x - bubbleWidth / 2)
-              .clamp(minLeft, math.max(minLeft, maxRight - bubbleWidth))
-              .toDouble();
-          // 尖角必须连在气泡下沿的直边上：滑块靠边、气泡贴边停住时，
-          // 尖角收在圆角以内，斜指向滑块，而不是悬空在气泡外
-          final double tailX = x
-              .clamp(
-                bubbleLeft + bubbleRadius + _tailSize,
-                math.max(
-                  bubbleLeft + bubbleRadius + _tailSize,
-                  bubbleLeft + bubbleWidth - bubbleRadius - _tailSize,
-                ),
-              )
-              .toDouble();
-          return Stack(
-            children: [
-              // 加粗的进度轨道（盖在底栏自身的细进度线上）
-              Positioned(
-                left: railLeft,
-                top: barRect.top - _railHeight / 2,
-                width: railWidth,
-                height: _railHeight,
-                child: CustomPaint(
-                  painter: _RailPainter(
-                    fill: (x - railLeft).clamp(0.0, railWidth),
-                    track: theme.colorScheme.outlineVariant,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
-              // 滑块
-              Positioned(
-                left: x - _knobSize / 2,
-                top: barRect.top - _knobSize / 2,
-                width: _knobSize,
-                height: _knobSize,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: theme.colorScheme.surface,
-                      width: 2.5,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black26, blurRadius: 4),
-                    ],
-                  ),
-                ),
-              ),
-              // 指向滑块的尖角
-              Positioned(
-                left: tailX - _tailSize,
-                top: barRect.top - _bubbleGap - 0.5,
-                width: _tailSize * 2,
-                height: _tailSize,
-                child: CustomPaint(painter: _TailPainter(color: bubbleColor)),
-              ),
-              // 气泡
-              Positioned(
-                left: bubbleLeft,
-                width: bubbleWidth,
-                bottom:
-                    MediaQuery.sizeOf(context).height -
-                    barRect.top +
-                    _bubbleGap,
-                child: _buildBubble(context, theme, bubbleColor),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildBubble(BuildContext context, ThemeData theme, Color color) {
-    final foreground = theme.colorScheme.onInverseSurface;
-    final secondary = foreground.withValues(alpha: 0.7);
-    const tabular = [FontFeature.tabularFigures()];
-    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
-      color: secondary,
-      height: 1.35,
-    );
-    final lineHeight =
-        (bodyStyle?.fontSize ?? 12) * (bodyStyle?.height ?? 1.35);
-    return Material(
-      color: color,
-      shape: RoundedSuperellipseBorder(
-        borderRadius: context.shapes.borderRadius(_bubbleRadius),
-      ),
-      elevation: 6,
-      shadowColor: Colors.black26,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  '$index',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: tabular,
-                  ),
-                ),
-                Text(
-                  ' / $totalCount',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: secondary,
-                    fontFeatures: tabular,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  date == null ? '' : TimeUtils.formatSmartDate(date),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: secondary,
-                    fontFeatures: tabular,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            // 摘要区高度固定两行：没取到时显示静态占位，取到后淡入
-            SizedBox(
-              height: lineHeight * 2,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 140),
-                layoutBuilder: (current, previous) => Stack(
-                  alignment: Alignment.topLeft,
-                  children: [...previous, ?current],
-                ),
-                child: _buildExcerpt(context, foreground, secondary, bodyStyle),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExcerpt(
-    BuildContext context,
-    Color foreground,
-    Color secondary,
-    TextStyle? style,
-  ) {
-    final info = excerpt;
-    final username = info?.username;
-    final text = info?.excerpt;
-    if (!excerptSettled || (username == null && text == null)) {
-      return Column(
-        key: const ValueKey('placeholder'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _placeholderBar(secondary, 0.9),
-          const SizedBox(height: 6),
-          _placeholderBar(secondary, 0.55),
-        ],
-      );
-    }
-    return Text.rich(
-      key: ValueKey(excerptIndex),
-      TextSpan(
-        children: [
-          if (username != null)
-            TextSpan(
-              // 用字重区分作者与正文，不拼标点（各语言通用）
-              text: text == null ? username : '$username  ',
-              style: TextStyle(color: foreground, fontWeight: FontWeight.w600),
-            ),
-          // 摘要由 cooked 还原，短代码已是 cook 判定过的表情：inline
-          if (text != null)
-            ...EmojiText.buildEmojiSpans(context, text, style, inline: true),
-        ],
-      ),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: style,
-    );
-  }
-
-  Widget _placeholderBar(Color color, double widthFactor) {
-    return FractionallySizedBox(
-      widthFactor: widthFactor,
-      child: Container(
-        height: 8,
-        decoration: ShapeDecoration(
-          color: color.withValues(alpha: 0.18),
-          shape: const StadiumBorder(),
-        ),
-      ),
-    );
-  }
-}
-
-class _RailPainter extends CustomPainter {
-  const _RailPainter({
-    required this.fill,
-    required this.track,
-    required this.color,
-  });
-
-  final double fill;
-  final Color track;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(size.height / 2);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = track,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, fill, size.height), radius),
-      Paint()..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RailPainter old) =>
-      old.fill != fill || old.track != track || old.color != color;
-}
-
-class _TailPainter extends CustomPainter {
-  const _TailPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, 0)
-        ..lineTo(size.width, 0)
-        ..lineTo(size.width / 2, size.height)
-        ..close(),
-      Paint()..color = color,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_TailPainter old) => old.color != color;
 }
 
 // ============================== 上滑预览 ==============================

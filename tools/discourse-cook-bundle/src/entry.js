@@ -10,6 +10,7 @@
 import "./globals-setup.js";
 import { serializeEditorTokens } from "./editor-token-dto.js";
 
+import { extractTokenInfo } from "discourse-markdown-it/features/code";
 import DiscourseMarkdownIt from "discourse-markdown-it";
 import {
   emojiReplacementRegex,
@@ -316,7 +317,15 @@ function installEditorSourceRanges(md) {
 function parseForEditor(raw) {
   if (!editorEngine) throw new Error("__fluxdoCook.init() must be called first");
   if (typeof raw !== "string") throw new Error("编辑器原文必须是字符串");
-  return JSON.stringify(serializeEditorTokens(editorEngine.parse(raw)));
+  const tokens = editorEngine.parse(raw);
+  for (const token of tokens) {
+    if (token.type !== "fence") continue;
+    const info = extractTokenInfo(token.info, editorEngine.options.engine);
+    if (info?.attributes.ai === "true") {
+      token.attrSet("aiFenceOptions", info.options);
+    }
+  }
+  return JSON.stringify(serializeEditorTokens(tokens));
 }
 
 function cook(raw) {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/s.dart';
 import '../models/topic.dart';
+import '../models/mention_user.dart';
 import '../models/pending_post.dart';
 import '../models/user.dart';
 import '../plugins/plugins.dart';
@@ -79,11 +80,10 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   bool get _isLoadPreviousFailed => loadPreviousFailedListenable.value;
   set _isLoadPreviousFailed(bool v) => loadPreviousFailedListenable.value = v;
 
-  /// 推荐话题缓存(对齐网页版 post-stream `_setSuggestedTopics`:响应没带
-  /// 这两组就保留旧值)。服务端只在"帖子流已到末尾"的请求里下发,过滤模式
-  /// 切换、跳楼层重载都拿不到 —— 不缓存的话底部推荐会莫名其妙消失。
+  /// 按当前话题保留页尾列表，供未携带推荐数据的筛选或跳楼响应复用。
   List<Topic> _cachedSuggestedTopics = const [];
   List<Topic> _cachedRelatedTopics = const [];
+  List<Topic>? _cachedRelatedMessages;
 
   String? _filter;  // 当前过滤模式（如 'summary' 表示热门回复）
   String? _usernameFilter;  // 当前用户名过滤（如只看题主）
@@ -135,14 +135,20 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     if (detail.relatedTopics.isNotEmpty) {
       _cachedRelatedTopics = detail.relatedTopics;
     }
+    if (detail.relatedMessages != null || !detail.isPrivateMessage) {
+      _cachedRelatedMessages = detail.relatedMessages;
+    }
     final needSuggested =
         detail.suggestedTopics.isEmpty && _cachedSuggestedTopics.isNotEmpty;
     final needRelated =
         detail.relatedTopics.isEmpty && _cachedRelatedTopics.isNotEmpty;
-    if (!needSuggested && !needRelated) return detail;
+    final needMessages =
+        detail.relatedMessages == null && _cachedRelatedMessages != null;
+    if (!needSuggested && !needRelated && !needMessages) return detail;
     return detail.copyWith(
       suggestedTopics: needSuggested ? _cachedSuggestedTopics : null,
       relatedTopics: needRelated ? _cachedRelatedTopics : null,
+      relatedMessages: _cachedRelatedMessages,
     );
   }
 
@@ -169,7 +175,7 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     ));
   }
 
-  /// 将成员移出当前私信，并同步首楼与底部的成员面板。
+  /// 将成员移出当前私信，并同步会话成员名单。
   Future<void> removePrivateMessageParticipant(TopicUser participant) async {
     final currentDetail = state.value;
     if (currentDetail == null || !currentDetail.isPrivateMessage) return;
@@ -215,72 +221,60 @@ class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
     );
   }
 
-  /// 邀请用户/群组加入当前私信，并把新成员并入面板名单。
-  ///
-  /// 逐个提交:官方 invite 接口一次只收一个收件人(用户走 invite、群组走
-  /// invite-group),这里保持同样粒度,部分成功也把已成功的并进名单,失败
-  /// 名单原样抛给调用方提示。
-  Future<List<String>> invitePrivateMessageParticipants({
-    required List<String> usernames,
-    required List<String> groupNames,
-  }) async {
-    final currentDetail = state.value;
-    if (currentDetail == null || !currentDetail.isPrivateMessage) {
-      return const [];
+  /// 按收件人类型逐项邀请，每次成功立即并入当前名单。
+  Future<void> invitePrivateMessageRecipient(MentionItem recipient) async {
+    final detail = state.requireValue;
+    if (!detail.isPrivateMessage || !detail.canInviteTo) {
+      throw StateError('当前会话不可邀请成员');
     }
-
     final service = ref.read(discourseServiceProvider);
-    final topicId = currentDetail.id;
-    final invitedUsers = <TopicUser>[];
-    final invitedGroups = <TopicGroup>[];
-    final failed = <String>[];
-
-    for (final username in usernames) {
-      try {
-        final user = await service.invitePrivateMessageUser(topicId, username);
-        if (user != null) invitedUsers.add(user);
-      } catch (_) {
-        failed.add(username);
-      }
-    }
-    for (final groupName in groupNames) {
-      try {
-        await service.invitePrivateMessageGroup(topicId, groupName);
-        invitedGroups.add(TopicGroup(name: groupName));
-      } catch (_) {
-        failed.add(groupName);
-      }
+    final group = recipient.group;
+    if (group != null) {
+      bool hasGroup(TopicDetail value) => value.allowedGroups.any(
+        (item) => item.name.toLowerCase() == group.name.toLowerCase(),
+      );
+      if (hasGroup(detail)) return;
+      await service.invitePrivateMessageGroup(detail.id, group.name);
+      if (!ref.mounted) return;
+      final latest = state.value;
+      if (latest == null || latest.id != detail.id || hasGroup(latest)) return;
+      state = AsyncData(
+        latest.copyWith(allowedGroups: [
+          ...latest.allowedGroups,
+          TopicGroup(name: group.name, fullName: group.fullName),
+        ]),
+      );
+      return;
     }
 
-    if (invitedUsers.isEmpty && invitedGroups.isEmpty) return failed;
-
-    // 同 removePrivateMessageParticipant:请求期间可能有别的更新落到 state,
-    // 必须基于最新 detail 追加。
-    final latestDetail = state.value;
-    if (latestDetail == null || latestDetail.id != topicId) return failed;
-
-    final existingUserIds = latestDetail.allowedUsers
-        .map((user) => user.id)
-        .toSet();
-    final existingGroupNames = latestDetail.allowedGroups
-        .map((group) => group.name)
-        .toSet();
-
-    state = AsyncValue.data(
-      latestDetail.copyWith(
-        allowedUsers: [
-          ...latestDetail.allowedUsers,
-          ...invitedUsers.where((user) => !existingUserIds.contains(user.id)),
-        ],
-        allowedGroups: [
-          ...latestDetail.allowedGroups,
-          ...invitedGroups.where(
-            (group) => !existingGroupNames.contains(group.name),
-          ),
-        ],
-      ),
+    final candidate = recipient.user!;
+    bool hasUser(TopicDetail value) => value.allowedUsers.any(
+      (user) => user.username.toLowerCase() == candidate.username.toLowerCase(),
     );
-    return failed;
+    if (hasUser(detail)) return;
+    final invited = await service.invitePrivateMessageUser(
+      detail.id,
+      candidate.username,
+    );
+    if (!ref.mounted) return;
+    final latest = state.value;
+    if (latest == null || latest.id != detail.id || hasUser(latest)) return;
+    // 兼容只回成功状态的站点，搜索命中的用户也携带身份信息。
+    final candidateId = candidate.id;
+    final user = invited ??
+        (candidateId == null
+            ? null
+            : TopicUser(
+                id: candidateId,
+                username: candidate.username,
+                name: candidate.name,
+                avatarTemplate: candidate.avatarTemplate ?? '',
+              ));
+    if (user != null) {
+      state = AsyncData(
+        latest.copyWith(allowedUsers: [...latest.allowedUsers, user]),
+      );
+    }
   }
 
   /// 归档 / 取消归档当前私信，并把 `message_archived` 同步进 detail。

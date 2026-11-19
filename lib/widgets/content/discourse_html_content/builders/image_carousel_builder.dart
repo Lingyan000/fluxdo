@@ -3,12 +3,14 @@ import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
+import '../../../../utils/image_zoom_cursor.dart';
 import '../../../common/hero_image.dart';
 import '../image_utils.dart';
 import 'image_grid_builder.dart';
@@ -391,7 +393,10 @@ class _CarouselSlideState extends State<_CarouselSlide>
       aspectRatio: aspect,
       flightImage: provider,
       onTap: () => widget.onTap(context, widget.index, url),
-      child: _buildImage(provider, fillSlot: aspect == null),
+      child: MouseRegion(
+        cursor: imageZoomCursor,
+        child: _buildImage(provider, fillSlot: aspect == null),
+      ),
     );
   }
 
@@ -449,7 +454,7 @@ class _NavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
+    return ContentTapTarget(
       onTap: onTap,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
@@ -494,7 +499,7 @@ class _DotsIndicator extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(count, (index) {
         final isActive = index == currentIndex;
-        return GestureDetector(
+        return ContentTapTarget(
           onTap: () => onTap(index),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),

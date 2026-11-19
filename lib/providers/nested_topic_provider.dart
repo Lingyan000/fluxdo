@@ -47,6 +47,7 @@ class NestedTopicState {
   final int currentPage;
   final String sort;
   final List<int> pinnedPostIds;
+  final List<Topic>? relatedMessages;
   final bool isLoadingMore;
   final List<int> newRootPostIds;
   final NestedChildCreatedEvent? lastChildCreated;
@@ -74,6 +75,7 @@ class NestedTopicState {
     this.currentPage = 0,
     this.sort = 'old',
     this.pinnedPostIds = const [],
+    this.relatedMessages,
     this.isLoadingMore = false,
     this.newRootPostIds = const [],
     this.lastChildCreated,
@@ -94,6 +96,7 @@ class NestedTopicState {
     int? currentPage,
     String? sort,
     List<int>? pinnedPostIds,
+    List<Topic>? relatedMessages,
     bool? isLoadingMore,
     List<int>? newRootPostIds,
     NestedChildCreatedEvent? lastChildCreated,
@@ -112,6 +115,7 @@ class NestedTopicState {
       currentPage: currentPage ?? this.currentPage,
       sort: sort ?? this.sort,
       pinnedPostIds: pinnedPostIds ?? this.pinnedPostIds,
+      relatedMessages: relatedMessages ?? this.relatedMessages,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       newRootPostIds: newRootPostIds ?? this.newRootPostIds,
       lastChildCreated: clearLastChildCreated
@@ -165,6 +169,7 @@ class NestedTopicNotifier extends AsyncNotifier<NestedTopicState> {
       currentPage: 0,
       sort: response.sort ?? sort,
       pinnedPostIds: response.pinnedPostIds,
+      relatedMessages: response.relatedMessages,
     );
   }
 
@@ -233,6 +238,7 @@ class NestedTopicNotifier extends AsyncNotifier<NestedTopicState> {
           ],
           hasMoreRoots: response.hasMoreRoots,
           currentPage: nextPage,
+          relatedMessages: response.relatedMessages,
           isLoadingMore: false,
         ),
       );
@@ -290,6 +296,7 @@ class NestedTopicNotifier extends AsyncNotifier<NestedTopicState> {
           currentPage: 0,
           sort: newSort,
           pinnedPostIds: response.pinnedPostIds,
+          relatedMessages: response.relatedMessages ?? current.relatedMessages,
         ),
       );
       unawaited(ref.read(nestedReadingStoreProvider).setSort(newSort));
@@ -352,6 +359,7 @@ class NestedTopicNotifier extends AsyncNotifier<NestedTopicState> {
         roots: [...latest.roots, ...added],
         currentPage: page,
         hasMoreRoots: more.hasMoreRoots,
+        relatedMessages: more.relatedMessages,
       );
       state = AsyncData(current);
     }

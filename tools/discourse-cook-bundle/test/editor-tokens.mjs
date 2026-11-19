@@ -53,7 +53,7 @@ assert.equal(attrs(linkTokens[0]).href, 'https://mock.example.com/explicit');
 const image = find('![mock图|640x480,50%](upload://mockPicture.png)', 'image');
 assert.equal(image.content, 'mock图|640x480,50%');
 assert.equal(attrs(image)['data-orig-src'], 'upload://mockPicture.png');
-assert.equal(attrs(image).scale, '50');
+assert.equal(attrs(image)['data-scale'], '50');
 assert.equal(image.children[0].content, image.content);
 
 const grid = parse('[grid]\n![mock甲](upload://mockA.png)\n![mock乙](upload://mockB.png)\n[/grid]');

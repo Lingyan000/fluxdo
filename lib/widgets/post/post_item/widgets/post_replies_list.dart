@@ -6,7 +6,7 @@ import '../../../../models/topic.dart';
 import '../../../common/positioned_stream_list.dart';
 import 'embedded_posts.dart';
 
-/// 回复列表组件:整体缩进一级,左侧竖线表示子级,末端是收起按钮
+/// 回复列表组件:竖线串起各条回复的头像挂在当前帖下,末端是收起按钮
 class PostRepliesList extends StatelessWidget {
   final List<Post> replies;
   final bool canLoadMore;
@@ -34,58 +34,49 @@ class PostRepliesList extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Stack(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const EmbeddedReplyRail(
-            top: 0,
-            bottom: EmbeddedReplyMetrics.buttonSize,
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          for (var i = 0; i < replies.length; i++)
+            EmbeddedReplyTile(
+              post: replies[i],
+              first: i == 0,
+              last: i == replies.length - 1,
+              contentFontScale: contentFontScale,
+              onTap: () => onJumpToPost?.call(replies[i].postNumber),
+            ),
+          Row(
             children: [
-              for (final reply in replies)
-                EmbeddedReplyTile(
-                  post: reply,
-                  contentFontScale: contentFontScale,
-                  onTap: () => onJumpToPost?.call(reply.postNumber),
-                ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  EmbeddedReplyCollapseButton(
-                    onPressed: () {
-                      // 底部收起:长回复区收起后保持其后的帖子不动
-                      PositionedStreamList.keepTrailingEdgeOnShrink(context);
-                      showRepliesNotifier.value = false;
-                    },
-                  ),
-                  if (canLoadMore) ...[
-                    const SizedBox(width: 8),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: isLoadingRepliesNotifier,
-                      builder: (context, isLoadingReplies, _) {
-                        return TextButton.icon(
-                          onPressed: isLoadingReplies ? null : onLoadMore,
-                          icon: isLoadingReplies
-                              ? const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Symbols.refresh_rounded, size: 16),
-                          label: Text(context.l10n.post_loadMoreReplies),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ],
+              EmbeddedReplyCollapseButton(
+                onPressed: () {
+                  // 底部收起:长回复区收起后保持其后的帖子不动
+                  PositionedStreamList.keepTrailingEdgeOnShrink(context);
+                  showRepliesNotifier.value = false;
+                },
               ),
+              if (canLoadMore) ...[
+                const SizedBox(width: 8),
+                ValueListenableBuilder<bool>(
+                  valueListenable: isLoadingRepliesNotifier,
+                  builder: (context, isLoadingReplies, _) {
+                    return TextButton.icon(
+                      onPressed: isLoadingReplies ? null : onLoadMore,
+                      icon: isLoadingReplies
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Symbols.refresh_rounded, size: 16),
+                      label: Text(context.l10n.post_loadMoreReplies),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ],

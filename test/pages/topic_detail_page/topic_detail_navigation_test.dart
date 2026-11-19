@@ -10,6 +10,7 @@ import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/pages/topic_detail_page/topic_detail_page.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_toc_panel.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/message_bus_providers.dart';
@@ -42,7 +43,8 @@ TopicDetail _detail(int first, int last) => TopicDetail.fromJson({
 });
 
 class _DetailNotifier extends TopicDetailNotifier {
-  _DetailNotifier(super.arg);
+  _DetailNotifier(super.arg, this.initialDetail);
+  final TopicDetail initialDetail;
   bool previousEnabled = false;
   int get firstLoadedPost =>
       state.requireValue.postStream.posts.first.postNumber;
@@ -55,7 +57,7 @@ class _DetailNotifier extends TopicDetailNotifier {
       loadPreviousFailedListenable.dispose();
       loadMoreFailedListenable.dispose();
     });
-    return _detail(40, 99);
+    return initialDetail;
   }
 
   @override
@@ -109,6 +111,7 @@ void main() {
   late SharedPreferences prefs;
   late ProviderContainer container;
   late _PagingService service;
+  late TopicDetail initialDetail;
   var enablePrevious = false;
 
   setUp(() async {
@@ -116,6 +119,7 @@ void main() {
     prefs = await SharedPreferences.getInstance();
     LocaleSettings.setLocale(AppLocale.zh);
     service = _PagingService();
+    initialDetail = _detail(40, 99);
     enablePrevious = false;
     container = ProviderContainer(
       overrides: [
@@ -134,6 +138,7 @@ void main() {
         ).overrideWith(
           () => notifier = _DetailNotifier(
             const TopicDetailParams(42, instanceId: 'navigation-test'),
+            initialDetail,
           )..previousEnabled = enablePrevious,
         ),
       ],
@@ -142,23 +147,24 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  Widget app() => UncontrolledProviderScope(
-    container: container,
-    child: TranslationProvider(
-      child: MaterialApp(
-        navigatorKey: navigatorKey,
-        locale: const Locale('zh'),
-        supportedLocales: AppLocaleUtils.supportedLocales,
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: const TopicDetailPage(
-          topicId: 42,
-          scrollToPostNumber: 60,
-          embeddedMode: true,
-          instanceId: 'navigation-test',
+  Widget app({int initialFloor = 60, bool embedded = true}) =>
+      UncontrolledProviderScope(
+        container: container,
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            locale: const Locale('zh'),
+            supportedLocales: AppLocaleUtils.supportedLocales,
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            home: TopicDetailPage(
+              topicId: 42,
+              scrollToPostNumber: initialFloor,
+              embeddedMode: embedded,
+              instanceId: 'navigation-test',
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   Finder floor(int number) => find.byWidgetPredicate(
     (widget) =>
@@ -175,8 +181,105 @@ void main() {
 
   Future<void> disposePage(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
+    // 详情页销毁后，内联帖子缓存还有 30 秒的保活期。
+    await tester.pump(const Duration(seconds: 31));
   }
+
+  testWidgets('目录跟随详情窗格宽度切换单一入口，并记住展开选择', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1900, 900);
+    addTearDown(tester.view.reset);
+    final detail = _detail(1, 60);
+    final stream = detail.postStream;
+    initialDetail = detail.copyWith(
+      postStream: PostStream(
+        stream: stream.stream,
+        posts: [
+          stream.posts.first.copyWith(
+            cooked: List.generate(
+              12,
+              (i) => '<h2>章节 ${i + 1}</h2><p>章节内容</p>',
+            ).join(),
+          ),
+          ...stream.posts.skip(1),
+        ],
+      ),
+    );
+    Future<void> resize(double paneWidth) async {
+      await tester.pumpWidget(
+        Align(
+          alignment: Alignment.topRight,
+          child: SizedBox(
+            width: paneWidth,
+            child: app(initialFloor: 1, embedded: false),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    final outline = find.byType(TopicTocSidePanel);
+    await resize(1500);
+    expect(outline, findsOneWidget);
+    expect(find.byType(TopicTocFab), findsNothing);
+    final expanded = tester.getRect(outline);
+    expect(expanded.right, 400 + (1500 - 800) / 2 - 16);
+
+    final toc = tester.widget<TopicTocSidePanel>(outline).controller;
+    final entry = toc.tocData!.flat[2];
+    await tester.tap(
+      find.descendant(of: outline, matching: find.text(entry.text)),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(toc.activeHeadingId, entry.id);
+    final scroll = toc.detailController.scrollController;
+    scroll.jumpTo(scroll.offset + 180);
+    await tester.pumpAndSettle();
+    expect(toc.activeHeadingId, isNot(entry.id));
+
+    await tester.tap(find.byTooltip('收起目录'));
+    await tester.pumpAndSettle();
+    final collapsed = tester.getRect(outline);
+    expect(collapsed.right, expanded.right);
+    expect(collapsed.width, TopicTocSidePanel.collapsedWidth);
+
+    for (final width in [1050.0, 375.0]) {
+      await resize(width);
+      expect(outline, findsNothing);
+      expect(find.byType(TopicTocFab).hitTestable(), findsOneWidget);
+    }
+    await resize(1500);
+    expect(find.byTooltip('展开目录'), findsOneWidget);
+    await tester.tap(find.byTooltip('展开目录'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(outline), expanded);
+    await disposePage(tester);
+  });
+
+  testWidgets('私信顶栏随滚动显示会话标题', (tester) async {
+    initialDetail = _detail(
+      1,
+      99,
+    ).copyWith(title: '读书会', archetype: 'private_message');
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    final bar = find.byType(AppBar);
+    expect(tester.widget<AppBar>(bar).centerTitle, isFalse);
+    expect(find.descendant(of: bar, matching: find.text('私信')), findsNothing);
+    final title = find.descendant(
+      of: bar,
+      matching: find.textContaining('读书会'),
+    );
+    final opacity = find
+        .ancestor(of: title, matching: find.byType(Opacity))
+        .first;
+    expect(tester.widget<Opacity>(opacity).opacity, 0);
+    tester.widget<TopicPostList>(find.byType(TopicPostList)).onJumpToPost(60);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(opacity).opacity, 1);
+    await disposePage(tester);
+  });
 
   testWidgets('详情页中间进入并通过真实跳楼回调定位', (tester) async {
     await tester.pumpWidget(app());

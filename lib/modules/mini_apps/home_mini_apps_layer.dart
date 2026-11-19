@@ -40,7 +40,9 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
   @override
   void initState() {
     super.initState();
-    _sheet.addListener(_syncHistory);
+    _sheet
+      ..addListener(_syncHistory)
+      ..addListener(_syncGalleryActive);
   }
 
   @override
@@ -87,16 +89,15 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
     }
   }
 
-  Widget? _gallery;
-  bool? _galleryActive;
-  Widget _galleryChild() {
-    if (widget.gallery != null) return widget.gallery!;
-    if (_galleryActive != _sheet.galleryActive) {
-      _galleryActive = _sheet.galleryActive;
-      _gallery = MiniAppGalleryPage(onClose: close, active: _galleryActive!);
-    }
-    return _gallery!;
-  }
+  // 广场只创建一次，显隐经监听传入；下拉越过显现点时不整页重建。
+  late final _galleryActive = ValueNotifier(_sheet.galleryActive);
+  late final Widget _gallery = MiniAppGalleryPage(
+    onClose: close,
+    activity: _galleryActive,
+  );
+  Widget _galleryChild() => widget.gallery ?? _gallery;
+
+  void _syncGalleryActive() => _galleryActive.value = _sheet.galleryActive;
 
   bool get isOpen => _sheet.isOpen;
   double get offset => _sheet.offset;
@@ -235,8 +236,11 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
     _disposing = true;
     _homeDrag?.cancel();
     _history?.remove();
-    _sheet.removeListener(_syncHistory);
+    _sheet
+      ..removeListener(_syncHistory)
+      ..removeListener(_syncGalleryActive);
     _sheet.dispose();
+    _galleryActive.dispose();
     super.dispose();
   }
 
@@ -289,6 +293,10 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                   ? _sheet.galleryOpacity
                   : 0.0;
               final expansion = _sheet.galleryExpansion;
+              // 广场不透明，背后是同色底；整页半透明叠在底色上，等价于在广场上
+              // 盖一层同色蒙版。合并进收拢蒙色，省掉每帧整页离屏合成。
+              final galleryTint =
+                  1 - galleryOpacity * (1 - .60 * (1 - expansion));
               final feedbackOpacity = _sheet.feedbackOpacity;
               final returnOpacity = Curves.easeOut.transform(
                 ((y / _sheet.extent - .65) / .35).clamp(0, 1),
@@ -322,8 +330,9 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                                       'mini-app-close-gesture',
                                     ),
                                     // 静止时目录列表自己滚动，页头和返回条拖动前景。
+                                    // 透明度只用来整体跳过绘制；渐显由下方蒙色完成。
                                     child: Opacity(
-                                      opacity: galleryOpacity,
+                                      opacity: galleryOpacity > 0 ? 1 : 0,
                                       child: Transform.translate(
                                         key: const ValueKey(
                                           'mini-app-gallery-parallax',
@@ -351,8 +360,7 @@ class HomeMiniAppsLayerState extends State<HomeMiniAppsLayer>
                                                   .colorScheme
                                                   .surfaceContainerLow
                                                   .withValues(
-                                                    alpha:
-                                                        .60 * (1 - expansion),
+                                                    alpha: galleryTint,
                                                   ),
                                             ),
                                             position:

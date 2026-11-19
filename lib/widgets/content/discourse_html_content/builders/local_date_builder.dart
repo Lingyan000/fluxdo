@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
 import 'package:material_ui/material_ui.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:intl/intl.dart';
@@ -167,7 +168,7 @@ class _LocalDateChipState extends State<_LocalDateChip> {
     final color = past ? theme.colorScheme.outline : theme.colorScheme.primary;
     final fontSize = widget.baseFontSize;
 
-    return GestureDetector(
+    return ContentTapTarget(
       behavior: HitTestBehavior.opaque,
       onTap: () => _showTimezonePopover(context),
       child: Padding(
