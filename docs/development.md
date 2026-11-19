@@ -235,5 +235,4 @@ Windows Flutter 选项固定运行生产 H3 探针及错误 SPKI 负对照。H3 
 诊断使用一次性 GitHub runner/模拟器，不访问付费真机平台；产物保留 7 天。
 完整应用仍沿用现有 `build.yaml` 发布构建，不在每次提交重复打包。
 
-本轮清理了 16 个已提交的临时工作流及 2 个本地遗留文件，统一为两个入口；GitHub 上另含早期已删文件，共停用 19 个旧入口。旧分支与工作流保存在 `archive/fingerprint-diagnostics-20261116` 标签；
-分支到提交的映射及恢复方式见 `docs/diagnostics/ci-cleanup-20261116.json`。历史测试报告及运行记录保留。
+早期的临时诊断分支与工作流已归档在 `archive/fingerprint-diagnostics-20261116` 标签。

@@ -12,8 +12,6 @@ Android使用MediaExtractor探测音频布局/采样率/帧率，旋转后的显
 
 取消令牌贯穿准备、探测和轮次间隙；准备异常转换为失败结果。Apple泵等待周期检查取消和失败状态，避免writer取消后不再触发ready回调而永久等待。
 
-验证：Flutter3.47.4媒体/上传/播放器26项测试；Android :app:compileDebugKotlin通过；macOS完整Debug构建通过。iOS arm64模拟器完整Debug构建通过；真实编码质量及播放器边缘仍需真机回归。
-
 ## iOS 模拟器构建架构
 
 `native_animated_image_ios` 当前随包的 XCFramework 只有 `ios-arm64` 和 `ios-arm64-simulator`，没有 x86_64 模拟器切片。通用模拟器目标同时构建 arm64/x86_64 时，CocoaPods 的切片选择会跳过此 framework，最后报 `framework native_animated_image_codec not found`。这不是文件缺失。

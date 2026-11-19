@@ -61,7 +61,7 @@ RNGH 源码还有两个值得区分的细节：其横向拖动设置了纵向失
 
 ### 4. 应用级统一接入
 
-本轮把规则收敛到 `packages/common_ui/lib/src/route_interaction.dart`，配合已有滚动 Binding 和 `InteractionGate`。统一的是输入所有权，组件继续使用各自的动画；无需修改 Flutter SDK。
+规则收敛在 `packages/common_ui/lib/src/route_interaction.dart`，配合已有滚动 Binding 和 `InteractionGate`。统一的是输入所有权，组件继续使用各自的动画；无需修改 Flutter SDK。
 
 | 阶段 | 新输入规则 |
 | --- | --- |
@@ -95,41 +95,7 @@ RNGH 源码还有两个值得区分的细节：其横向拖动设置了纵向失
 
 路由适配依赖当前 Flutter 3.47.4 的受保护 `TransitionRoute.controller` 以及 `_ModalScope`、Navigator 的渲染结构；升级 SDK 时需要运行下面的回归，特别是同帧 pop、取消回弹、业务 IgnorePointer 和模态隔离。它是应用公共层的适配，不是 Flutter 官方提供的一个全局开关。
 
-## 验证结果
-
-真实 `ControlledCategoryDrawer` 与底层测试列表的组件测试共 19 项通过，覆盖：
-
-- 遮罩点击关闭后，同一帧、16 ms、80 ms 内开始上下滑；起点分别位于仍可见的面板区域及遮罩区域，包含轻微横向偏移。
-- 向左拖动关闭后立即竖滑。
-- 关闭时那一次点击不穿透，同帧下一次点击可操作列表。
-- 预测返回提交后放行，取消后保持侧栏拦截。
-- 关闭弹簧中重新拖出、打开首帧前关闭、关闭途中销毁。
-
-曾临时恢复旧版“关闭期间持续拦截”的行为，对其中一条同帧竖滑测试做反向验证：列表位移为 0，测试按预期失败；随后恢复修复。
-
-侧栏阶段相关回归共 **117 项通过**，包括侧栏、触摸横纵交接、桌面滚动、全屏返回、预测返回、宿主布局和编辑器对象选择。
-
-本轮新增路由与浮层测试，覆盖弹窗/通用弹窗/sheet/Material dialog/菜单关闭后 0、16、80 ms 接续、模态层叠加、LocalHistory、关闭点击不穿透、同帧重开、嵌套 Navigator、Android/iOS 返回回弹、普通页面退出、预测返回提交/取消，以及业务 IgnorePointer 保持禁用。平行视界还覆盖连续取消后再次拖动、提交立即退栈、退出位置连续、跨宿主进度隔离与过期。
-
-开发工作区相关回归 **255 项全部通过**，包含本轮新增用例以及滚动、侧栏、预测返回生命周期/Hero/sheet、编辑器对象选择、快捷键、浏览器收起恢复和导航测试。拆分其他并行功能后，独立提交快照再次通过 **85 项核心测试**。两轮静态分析 `lib`、`packages/common_ui/lib` 与新增测试均无 error / warning，仓库仍有 info 级风格提示；`git diff --check` 通过。
-
-复现提交快照的核心回归（项目根目录，依赖和本地化生成产物已准备，PowerShell）：
-
-```powershell
-$gestureTests = @(
-  'test/widgets/topic/category_drawer_interruption_test.dart',
-  'test/architecture/interaction_entry_points_test.dart',
-  'test/widgets/common/fullscreen_swipe_back_test.dart',
-  'test/widgets/common/touch_scroll_interruption_test.dart',
-  'test/widgets/common/route_interruption_test.dart',
-  'test/widgets/common/overlay_interruption_test.dart',
-  'test/widgets/layout/pane_projection_test.dart',
-  'test/widgets/layout/pane_filmstrip_test.dart'
-)
-flutter test --no-pub --reporter expanded @gestureTests
-```
-
-## 尚未验证的边界
+## 已知边界
 
 组件测试使用真实侧栏、弹层和受控底层列表，并非整页生产数据与设备触摸链路的端到端验证。Android/iOS 的测试平台变体不能替代真机手感、帧耗时或 vivo 系统行为对比；目前尚未完成这些真机验证。
 

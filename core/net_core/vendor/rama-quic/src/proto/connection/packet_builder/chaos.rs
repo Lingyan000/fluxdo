@@ -1,7 +1,7 @@
 // Copyright (c) 2021 The Chromium Authors. All rights reserved.
 // 算法改编自 QUICHE；BSD 许可条款见本 crate 的 QUICHE-LICENSE。
 //! Initial 包内分片：随机细分 CRYPTO，分配 PING 与填充，再重排帧。
-//! 算法依据及验证范围见 docs/diagnostics/h3-initial-layout-20261115.txt。
+//! 算法依据及验证范围见 docs/h3-initial-layout.txt。
 
 use rama_core::bytes::Bytes;
 use rama_quic_proto::{
