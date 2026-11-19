@@ -12,6 +12,7 @@ import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
 import '../services/image_predecode_controller.dart';
+import '../services/svg_image_cache.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/image_save_utils.dart';
@@ -1658,7 +1659,7 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
           return;
         }
         final svgString = SvgUtils.sanitize(raw);
-        final si = ScalableImage.fromSvgString(svgString, warnF: (_) {});
+        final si = await SvgImageCache.load(svgString);
         if (mounted) {
           setState(() {
             _svgSi = si;

@@ -32,6 +32,7 @@ import '../services/discourse/discourse_service.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
+import '../services/svg_image_cache.dart';
 import '../theme/app_colors.dart';
 import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
@@ -1503,7 +1504,8 @@ class FluxdoRenderCallbacks {
 
         final ScalableImage si;
         try {
-          si = ScalableImage.fromSvgString(resolved, warnF: (_) {});
+          // 内联 SVG 需要立即按 viewport 布局，同源重建时直接命中解析缓存。
+          si = SvgImageCache.sync(resolved);
         } catch (_) {
           return const SizedBox.shrink();
         }

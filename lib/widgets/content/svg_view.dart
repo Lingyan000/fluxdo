@@ -7,6 +7,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/blob_image_cache.dart';
 import '../../services/media_geometry_memo.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/svg_utils.dart';
 import 'animated_svg_view.dart';
 
@@ -192,10 +193,7 @@ class _DiscourseSvgViewState extends State<DiscourseSvgView> {
         return;
       }
 
-      final si = ScalableImage.fromSvgString(
-        SvgUtils.sanitize(content),
-        warnF: (_) {},
-      );
+      final si = await SvgImageCache.load(SvgUtils.sanitize(content));
       if (mounted && _cacheKey == cacheKey) {
         final vp = si.viewport;
         if (vp.width > 0 && vp.height > 0) {

@@ -4,6 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../models/notification.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/url_helper.dart';
 import '../common/emoji_text.dart';
 import '../common/smart_avatar.dart';
@@ -352,9 +353,8 @@ class NotificationAvatar extends StatelessWidget {
         break;
     }
     if (svgData != null) {
-      final si = ScalableImage.fromSvgString(
+      final si = SvgImageCache.sync(
         svgData,
-        warnF: (_) {},
       ).modifyTint(newTintColor: color, newTintMode: BlendMode.srcIn);
       return SizedBox(
         width: _badgeIconSize,
