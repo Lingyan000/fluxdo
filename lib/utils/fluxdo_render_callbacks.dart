@@ -1210,67 +1210,46 @@ class FluxdoRenderCallbacks {
           image.width,
           image.height,
         );
+        void showMenu(
+          BuildContext source,
+          ImageMenuPress press,
+          WidgetBuilder preview, {
+          String? tag,
+        }) {
+          _showImageContextMenu(
+            source,
+            image: image,
+            resolvedUrl: resolvedUrl,
+            post: post,
+            topicId: topicId,
+            onQuoteImage: onQuoteImage,
+            heroTag: tag,
+            lift: ImageLiftSpec(
+              sourceContext: source,
+              previewBuilder: preview,
+              press: press,
+              sourceRadius: inGridTile ? 4 : 0,
+            ),
+          );
+        }
+
         if (isSvg) {
-          // SVG 统一走 DiscourseSvgView(内容嗅探动画:静态 jovial_svg,
-          // 动画 full_svg_flutter 首帧快照+点击播放);外包 GestureDetector
-          // 支持长按/右键菜单(对齐 legacy buildGalleryImage 的 SVG 分支)。
-          return Builder(
-            builder: (svgCtx) => GestureDetector(
-              // 链接内 SVG(如外链卡片图):单击打开外层链接
-              onTap: ImageLinkScope.maybeOf(svgCtx),
-              onLongPress: () => _showImageContextMenu(
-                svgCtx,
-                image: image,
-                resolvedUrl: resolvedUrl,
-                post: post,
-                topicId: topicId,
-                onQuoteImage: onQuoteImage,
-                // SVG 浮起预览复用会话级缓存(_SvgContentCache),
-                // 重挂载零 IO 零重解析。
-                lift: ImageLiftSpec(
-                  sourceContext: svgCtx,
-                  previewBuilder: (_) => DiscourseSvgView(
-                    url: resolvedUrl,
-                    fit: BoxFit.contain,
-                    alignment: Alignment.center,
-                  ),
-                  sourceRadius: inGridTile ? 4 : 0,
-                ),
-              ),
-              onSecondaryTapUp: (details) => _showImageContextMenu(
-                svgCtx,
-                image: image,
-                resolvedUrl: resolvedUrl,
-                post: post,
-                topicId: topicId,
-                onQuoteImage: onQuoteImage,
-                position: details.globalPosition,
-                lift: ImageLiftSpec(
-                  sourceContext: svgCtx,
-                  previewBuilder: (_) => DiscourseSvgView(
-                    url: resolvedUrl,
-                    fit: BoxFit.contain,
-                    alignment: Alignment.center,
-                  ),
-                  sourceRadius: inGridTile ? 4 : 0,
-                ),
-              ),
-              // 浮起菜单会话期间隐藏源图(语义同上 raster 分支)。
-              child: ValueListenableBuilder<BuildContext?>(
-                valueListenable: ImageLiftMenu.activeSource,
-                builder: (_, lifted, child) => Opacity(
-                  opacity: identical(lifted, svgCtx) ? 0.0 : 1.0,
-                  child: child,
-                ),
-                child: SizedBox(
+          return ImageLiftSource(
+            onShowMenu: (source, press) => showMenu(
+              source,
+              press,
+              (_) => DiscourseSvgView(url: resolvedUrl),
+            ),
+            child: GestureDetector(
+              onTap: ImageLinkScope.maybeOf(lbCtx),
+              child: SizedBox(
+                width: dispW,
+                height: dispH,
+                child: DiscourseSvgView(
+                  url: resolvedUrl,
                   width: dispW,
                   height: dispH,
-                  child: DiscourseSvgView(
-                    url: resolvedUrl,
-                    width: dispW,
-                    height: dispH,
-                    placeholderBuilder: (_) => const LoadingSpinner(size: 24),
-                  ),
+                  placeholderBuilder: (_) => const LoadingSpinner(size: 24),
                 ),
               ),
             ),
@@ -1383,47 +1362,15 @@ class FluxdoRenderCallbacks {
                     heroSourceRadius: inGridTile ? 4 : 0,
                   );
                 },
-                // 长按/右键 → 图片上下文菜单(对齐 legacy LazyImage
-                // onLongPress/onSecondaryTapUp,discourse_widget_factory.dart)。
-                // 移动端长按走 X 风格浮起菜单:预览复用同一 provider
-                // (ImageCache 同 key,零闪烁),grid 瓦片 cover 裁切与
-                // 源圆角 4 一并对齐。
-                onLongPress: () => _showImageContextMenu(
-                  ctx,
-                  image: image,
-                  resolvedUrl: resolvedUrl,
-                  post: post,
-                  topicId: topicId,
-                  onQuoteImage: onQuoteImage,
-                  heroTag: heroTag,
-                  lift: ImageLiftSpec(
-                    sourceContext: ctx,
-                    previewBuilder: (_) => Image(
-                      image: discourseImageProvider(displayUrl),
-                      fit: inGridTile ? BoxFit.cover : BoxFit.contain,
-                      gaplessPlayback: true,
-                    ),
-                    sourceRadius: inGridTile ? 4 : 0,
+                onShowMenu: (source, provider, press) => showMenu(
+                  source,
+                  press,
+                  (_) => Image(
+                    image: provider,
+                    fit: inGridTile ? BoxFit.cover : BoxFit.contain,
+                    gaplessPlayback: true,
                   ),
-                ),
-                onSecondaryTapUp: (details) => _showImageContextMenu(
-                  ctx,
-                  image: image,
-                  resolvedUrl: resolvedUrl,
-                  post: post,
-                  topicId: topicId,
-                  onQuoteImage: onQuoteImage,
-                  position: details.globalPosition,
-                  heroTag: heroTag,
-                  lift: ImageLiftSpec(
-                    sourceContext: ctx,
-                    previewBuilder: (_) => Image(
-                      image: discourseImageProvider(displayUrl),
-                      fit: inGridTile ? BoxFit.cover : BoxFit.contain,
-                      gaplessPlayback: true,
-                    ),
-                    sourceRadius: inGridTile ? 4 : 0,
-                  ),
+                  tag: heroTag,
                 ),
               );
               // 预览缩放胶囊(右上角浮层,子包统一视觉)。仅有界宽上下文
@@ -1448,17 +1395,7 @@ class FluxdoRenderCallbacks {
                   ],
                 );
               }
-              // 浮起菜单会话期间隐藏源图(X/iOS lift 语义:源视图被
-              // 「拿走」浮起,原位空缺,与查看大图的 Hero 飞行一致)。
-              // Opacity(0) 保布局保状态,落回/淡出时 notifier 清空即恢复。
-              return ValueListenableBuilder<BuildContext?>(
-                valueListenable: ImageLiftMenu.activeSource,
-                builder: (_, lifted, child) => Opacity(
-                  opacity: identical(lifted, ctx) ? 0.0 : 1.0,
-                  child: child,
-                ),
-                child: img,
-              );
+              return img;
             },
           ),
         );
@@ -1484,7 +1421,6 @@ class FluxdoRenderCallbacks {
     Post? post,
     int? topicId,
     void Function(String quote, Post post)? onQuoteImage,
-    Offset? position,
     String? heroTag,
     ImageLiftSpec? lift,
   }) {
@@ -1501,7 +1437,6 @@ class FluxdoRenderCallbacks {
       post: post,
       topicId: topicId,
       onQuoteImage: liveQuoteHandler,
-      position: position,
       quoteMarkdown: _uploadMarkdownForImage(image),
       heroTag: heroTag,
       lift: lift,

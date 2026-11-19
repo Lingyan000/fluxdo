@@ -1,9 +1,10 @@
-/// X 风格图片长按浮起菜单(ImageLiftMenu)行为测试:
-/// 浮起预览与动作面板同时出现、点选动作执行回调、点遮罩/面板下拉关闭、
-/// 源图会话隐藏(activeSource 生命周期)、ESC surface 注册与关闭。
+/// 图片长按预览的手势、过渡、布局与返回行为。
 library;
 
+import 'dart:ui' show DisplayFeature, DisplayFeatureState, DisplayFeatureType;
+
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -25,18 +26,26 @@ Widget _wrap(Widget child) {
   );
 }
 
-Widget _host({required VoidCallback onOpen}) {
-  return Builder(
+Widget _host({
+  required VoidCallback onOpen,
+  VoidCallback? onTap,
+  List<ImageLiftAction>? actions,
+  WidgetBuilder? preview,
+}) {
+  return ImageLiftSource(
     key: const ValueKey('lift_source'),
-    builder: (context) => GestureDetector(
-      onLongPress: () {
-        ImageLiftMenu.show(
-          context: context,
-          previewBuilder: (_) => const KeyedSubtree(
+    onShowMenu: (context, press) => ImageLiftMenu.show(
+      context: context,
+      press: press,
+      previewBuilder:
+          preview ??
+          (_) => const ColoredBox(
             key: ValueKey('lift_preview'),
-            child: ColoredBox(color: Colors.red),
+            color: Colors.red,
           ),
-          actions: [
+      actions:
+          actions ??
+          [
             ImageLiftAction(
               icon: Icons.save_outlined,
               label: '保存',
@@ -48,9 +57,9 @@ Widget _host({required VoidCallback onOpen}) {
               onTap: onOpen,
             ),
           ],
-        );
-      },
-      // ColoredBox 参与命中测试(空 SizedBox 不吸收指针,长按无从触发)。
+    ),
+    child: GestureDetector(
+      onTap: onTap,
       child: const SizedBox(
         width: 100,
         height: 80,
@@ -60,18 +69,14 @@ Widget _host({required VoidCallback onOpen}) {
   );
 }
 
-final Finder _previewFinder = find.descendant(
-  of: find.byType(ClipRSuperellipse),
-  matching: find.byKey(const ValueKey('lift_preview')),
+final Finder _previewFinder = find.ancestor(
+  of: find.byKey(const ValueKey('lift_preview')),
+  matching: find.byType(ClipRSuperellipse),
 );
 
 Future<void> _openMenu(WidgetTester tester, Widget host) async {
   await tester.pumpWidget(_wrap(host));
-  await tester.pump();
   await tester.longPress(find.byKey(const ValueKey('lift_source')));
-  // 第一帧:测量面板(waitingMeasure,遮罩全透明);
-  // 第二帧起:浮起动画进行中。
-  await tester.pump();
   await tester.pump();
 }
 
@@ -90,12 +95,19 @@ ShortcutSurfaceRegistration? _liftSurfaceRegistration(WidgetTester tester) {
   return null;
 }
 
+void _size(WidgetTester tester, Size size) {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = size;
+  addTearDown(tester.view.reset);
+}
+
 void main() {
-  testWidgets('长按:预览与动作面板同时出现,预览浮起放大', (tester) async {
+  testWidgets('长按后图片浮起放大，底部操作面板滑入', (tester) async {
+    _size(tester, const Size(390, 844));
     var runs = 0;
     await _openMenu(tester, _host(onOpen: () => runs++));
 
-    // 动画进行中(100ms):预览已存在且正在放大(源 100×80 → 目标 ~390×312),
+    // 动画进行中(100ms):预览已存在且正在放大(源 100×80 → 目标 358×286),
     // 动作面板同时在滑入(按钮已在树中且未到位)。
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byKey(const ValueKey('lift_preview')), findsOneWidget);
@@ -107,10 +119,79 @@ void main() {
     await tester.pumpAndSettle();
     final rect = tester.getRect(find.byKey(const ValueKey('lift_preview')));
     // 浮起到屏幕中上部:明显大于源图、水平居中。
-    expect(rect.width, closeTo(390, 30));
-    expect(rect.height, closeTo(312, 30));
-    expect(rect.left, greaterThan(100));
+    expect(rect.width, closeTo(358, 1));
+    expect(rect.height, closeTo(286.4, 1));
+    expect(rect.left, closeTo(16, 1));
     expect(runs, 0);
+  });
+
+  testWidgets('短按和拖动不触发菜单，按住后松手不会打开大图', (tester) async {
+    var taps = 0;
+    final source = find.byKey(const ValueKey('lift_source'));
+    await tester.pumpWidget(
+      _wrap(
+        ListView(
+          children: [
+            Center(
+              child: _host(onOpen: () {}, onTap: () => taps++),
+            ),
+            const SizedBox(height: 1200),
+          ],
+        ),
+      ),
+    );
+    final tap = await tester.startGesture(tester.getCenter(source));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(ImageLiftMenu.activeSource.value, isNull);
+    await tap.up();
+    expect(taps, 1);
+
+    final scroll = await tester.startGesture(tester.getCenter(source));
+    await scroll.moveBy(const Offset(0, -35));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(ImageLiftMenu.activeSource.value, isNull);
+    await scroll.up();
+    final held = await tester.startGesture(tester.getCenter(source));
+    await tester.pump(const Duration(milliseconds: 360));
+    expect(ImageLiftMenu.activeSource.value, isNotNull);
+    await held.up();
+    await tester.pumpAndSettle();
+    expect(_previewFinder, findsOneWidget);
+    expect(taps, 1);
+  });
+
+  testWidgets('图片先起步，中途关闭从当前几何位置返回且预览只挂载一次', (tester) async {
+    _size(tester, const Size(390, 844));
+    var builds = 0;
+    await _openMenu(
+      tester,
+      _host(
+        onOpen: () {},
+        preview: (_) {
+          builds++;
+          return const ColoredBox(
+            key: ValueKey('lift_preview'),
+            color: Colors.red,
+          );
+        },
+      ),
+    );
+    final source = tester.getRect(_previewFinder);
+    await tester.pump(const Duration(milliseconds: 45));
+    expect(tester.getRect(_previewFinder).width, greaterThan(source.width));
+    expect(tester.getTopLeft(find.text('保存')).dy, greaterThan(844));
+    await tester.pump(const Duration(milliseconds: 65));
+    final mid = tester.getRect(_previewFinder);
+    final row = tester.getTopLeft(find.text('保存'));
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    expect(tester.getRect(_previewFinder), mid);
+    expect(tester.getTopLeft(find.text('保存')), row);
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(tester.getRect(_previewFinder).width, lessThan(mid.width));
+    expect(builds, 1);
+    await tester.pumpAndSettle();
+    expect(ImageLiftMenu.activeSource.value, isNull);
   });
 
   testWidgets('会话期间源图标记隐藏,关闭后恢复', (tester) async {
@@ -137,7 +218,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('保存'));
-    // 淡出动画刚开始:源图已恢复(iOS 交叉淡出语义)。
+    // 淡出刚开始时源图就已恢复。
     await tester.pump();
     expect(ImageLiftMenu.activeSource.value, isNull);
 
@@ -162,6 +243,7 @@ void main() {
   });
 
   testWidgets('面板下拉:跟手滑出后整体收回', (tester) async {
+    _size(tester, const Size(390, 844));
     var runs = 0;
     await _openMenu(tester, _host(onOpen: () => runs++));
     await tester.pumpAndSettle();
@@ -172,6 +254,31 @@ void main() {
     expect(runs, 0);
     expect(find.byKey(const ValueKey('lift_preview')), findsNothing);
     expect(find.text('保存'), findsNothing);
+  });
+
+  testWidgets('面板下拉时图片同步回落，小幅拖动松手后两者一起归位', (tester) async {
+    _size(tester, const Size(390, 844));
+    await _openMenu(tester, _host(onOpen: () {}));
+    await tester.pumpAndSettle();
+    final row = find.text('保存');
+    final start = tester.getCenter(row);
+    final open = tester.getRect(_previewFinder);
+    final drag = await tester.startGesture(start);
+    await drag.moveBy(const Offset(0, 20));
+    await tester.pump();
+    final before = tester.getCenter(row);
+    await drag.moveBy(const Offset(0, 24));
+    await tester.pump();
+    expect(tester.getCenter(row).dy, closeTo(before.dy + 24, 0.5));
+    final held = tester.getRect(_previewFinder);
+    expect(held.width, lessThan(open.width));
+    await tester.pump(const Duration(milliseconds: 150));
+    await drag.up();
+    await tester.pump();
+    expect(tester.getRect(_previewFinder), held);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(_previewFinder), open);
+    expect(tester.getCenter(row), start);
   });
 
   testWidgets('ESC surface:注册压过页面,关菜单而非页面,关闭后注销', (tester) async {
@@ -195,54 +302,216 @@ void main() {
     expect(ImageLiftMenu.activeSource.value, isNull);
   });
 
-  testWidgets('动作多时单行不换行(横向滚动)', (tester) async {
-    var runs = 0;
-    // 7 个动作(内容图全量场景)× 76px = 532px,超过手机宽必然溢出。
+  testWidgets('矮窗口和大字号下操作纵向排列，列表可滚到底并执行最后一项', (tester) async {
+    tester.view.physicalSize = const Size(390, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.8;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    int? selected;
+    await _openMenu(
+      tester,
+      _host(
+        onOpen: () {},
+        actions: [
+          for (var i = 0; i < 9; i++)
+            ImageLiftAction(
+              icon: Icons.copy,
+              label: '动作$i',
+              onTap: () => selected = i,
+            ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final first = tester.getCenter(find.text('动作0'));
+    final second = tester.getCenter(find.text('动作1'));
+    expect(second.dx, first.dx);
+    expect(second.dy - first.dy, greaterThanOrEqualTo(48));
+    expect(tester.getRect(_previewFinder).bottom, lessThan(first.dy - 24));
+    await tester.drag(find.text('动作1'), const Offset(0, -480));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('动作8'));
+    await tester.pumpAndSettle();
+    expect(selected, 8);
+  });
+
+  testWidgets('宽屏长按两侧的图，操作列表向有空间的一侧展开', (tester) async {
+    _size(tester, const Size(1280, 800));
+    for (final isLeft in [true, false]) {
+      await _openMenu(
+        tester,
+        Align(
+          alignment: isLeft
+              ? const Alignment(-0.85, 0.45)
+              : const Alignment(0.85, 0.45),
+          child: _host(onOpen: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final image = tester.getRect(_previewFinder);
+      final menu = tester.getRect(find.byType(SingleChildScrollView));
+      expect(image.width, greaterThan(480));
+      expect(image.overlaps(menu), isFalse);
+      expect(
+        isLeft ? menu.left - image.right : image.left - menu.right,
+        closeTo(16, 0.01),
+      );
+      expect(menu.top, greaterThan(24));
+      expect(menu.bottom, lessThan(800 - 24));
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+    }
+  });
+
+  testWidgets('横屏侧栏上拉能滚到末项，下拉到顶保留图片', (tester) async {
+    _size(tester, const Size(920, 380));
+    int? selected;
+    await _openMenu(
+      tester,
+      _host(
+        onOpen: () {},
+        actions: [
+          for (var i = 0; i < 12; i++)
+            ImageLiftAction(
+              icon: Icons.copy,
+              label: '操作$i',
+              onTap: () => selected = i,
+            ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final image = tester.getRect(_previewFinder);
+    final menu = find.byType(SingleChildScrollView);
+    await tester.drag(menu, const Offset(0, 160));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(_previewFinder), image);
+    await tester.drag(menu, const Offset(0, -420));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('操作11'));
+    await tester.pumpAndSettle();
+    expect(selected, 11);
+  });
+
+  testWidgets('拖着底部面板扩窗后，预览和侧栏完成展开', (tester) async {
+    _size(tester, const Size(390, 844));
+    await _openMenu(tester, _host(onOpen: () {}));
+    await tester.pumpAndSettle();
+    final finger = await tester.startGesture(tester.getCenter(find.text('保存')));
+    await finger.moveBy(const Offset(0, 20));
+    await finger.moveBy(const Offset(0, 28));
+    await tester.pump();
+    tester.view.physicalSize = const Size(1200, 800);
+    await tester.pumpAndSettle();
+    await finger.up();
+    await tester.pumpAndSettle();
+    final menu = tester.getRect(find.byType(SingleChildScrollView));
+    final image = tester.getRect(_previewFinder);
+    expect(image.width, greaterThan(480));
+    expect(image.right + 16, closeTo(menu.left, 0.5));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('宽屏操作项接收方向键与回车，关闭后恢复正文焦点', (tester) async {
+    _size(tester, const Size(1120, 780));
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    int? selected;
     await tester.pumpWidget(
       _wrap(
-        Builder(
-          key: const ValueKey('lift_source'),
-          builder: (context) => GestureDetector(
-            onLongPress: () => ImageLiftMenu.show(
-              context: context,
-              previewBuilder: (_) => const ColoredBox(color: Colors.red),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              focusNode: focus,
+              autofocus: true,
+              onPressed: () {},
+              child: const Text('正文'),
+            ),
+            _host(
+              onOpen: () {},
               actions: [
-                for (var i = 0; i < 7; i++)
+                for (var i = 0; i < 3; i++)
                   ImageLiftAction(
-                    icon: Icons.save_outlined,
-                    label: '动作$i',
-                    onTap: () => runs++,
+                    icon: Icons.copy,
+                    label: '按键$i',
+                    onTap: () => selected = i,
                   ),
               ],
             ),
-            child: const SizedBox(
-              width: 100,
-              height: 80,
-              child: ColoredBox(color: Colors.blue),
-            ),
-          ),
+          ],
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(focus.hasFocus, isTrue);
     await tester.longPress(find.byKey(const ValueKey('lift_source')));
     await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(selected, 1);
+    expect(_previewFinder, findsNothing);
+    expect(focus.hasFocus, isTrue);
+  });
 
-    // 所有按钮图标同一 y(单行):取 7 个图标中心,极差为 0。
-    final centers = find
-        .byIcon(Icons.save_outlined)
-        .evaluate()
-        .map((e) => tester.getCenter(find.byWidget(e.widget)));
-    final ys = centers.map((c) => c.dy).toList()..sort();
-    expect(ys.length, 7);
-    expect(ys.last - ys.first, lessThan(1));
-
-    // 横向可滚动(内容溢出面板宽度)。
-    final scrollable = find.descendant(
-      of: find.byType(SingleChildScrollView),
-      matching: find.byType(Row),
+  testWidgets('折叠屏预览与操作都落在图片所在的半屏', (tester) async {
+    _size(tester, const Size(1440, 840));
+    tester.view.displayFeatures = const [
+      DisplayFeature(
+        bounds: Rect.fromLTWH(712, 0, 16, 840),
+        type: DisplayFeatureType.hinge,
+        state: DisplayFeatureState.unknown,
+      ),
+    ];
+    await _openMenu(
+      tester,
+      Align(
+        alignment: const Alignment(0.8, 0.3),
+        child: _host(onOpen: () {}),
+      ),
     );
-    expect(scrollable, findsOneWidget);
+    await tester.pumpAndSettle();
+    for (final rect in [
+      tester.getRect(_previewFinder),
+      tester.getRect(find.byType(SingleChildScrollView)),
+    ]) {
+      expect(rect.left, greaterThanOrEqualTo(728));
+      expect(rect.right, lessThanOrEqualTo(1440));
+    }
+  });
+
+  testWidgets('同一张图片跨过铰链时，从手指按住的半屏展开', (tester) async {
+    _size(tester, const Size(1440, 840));
+    tester.view.displayFeatures = const [
+      DisplayFeature(
+        bounds: Rect.fromLTWH(712, 0, 16, 840),
+        type: DisplayFeatureType.hinge,
+        state: DisplayFeatureState.unknown,
+      ),
+    ];
+    await tester.pumpWidget(
+      _wrap(SizedBox(width: 1000, height: 160, child: _host(onOpen: () {}))),
+    );
+    for (final x in [1040.0, 400.0]) {
+      await tester.longPressAt(Offset(x, 420));
+      await tester.pumpAndSettle();
+      for (final rect in [
+        tester.getRect(_previewFinder),
+        tester.getRect(find.byType(SingleChildScrollView)),
+      ]) {
+        if (x > 728) {
+          expect(rect.left, greaterThanOrEqualTo(728));
+        } else {
+          expect(rect.right, lessThanOrEqualTo(712));
+        }
+      }
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('窗口尺寸变化:预览与面板自适应新布局', (tester) async {
@@ -260,8 +529,8 @@ void main() {
         matching: find.byKey(const ValueKey('lift_preview')),
       ),
     );
-    // 竖屏:预览宽 = 390 - 48 = 342。
-    expect(rectBefore.width, closeTo(342, 1));
+    // 竖屏:预览宽 = 390 - 32 = 358。
+    expect(rectBefore.width, closeTo(358, 1));
 
     // 桌面宽窗口尺寸变化(模拟拖拽窗口边缘/旋转)。
     tester.view.physicalSize = const Size(1000, 800);
@@ -274,9 +543,10 @@ void main() {
         matching: find.byKey(const ValueKey('lift_preview')),
       ),
     );
-    // 宽窗口:预览宽 = min(1000-48, 480) = 480,且在新窗口内水平居中。
-    expect(rectAfter.width, closeTo(480, 1));
-    expect(rectAfter.left, closeTo((1000 - 480) / 2, 2));
+    final panel = tester.getRect(find.byType(SingleChildScrollView));
+    expect(rectAfter.width, greaterThan(480));
+    expect(rectAfter.right, lessThan(panel.left));
+    expect(rectAfter.overlaps(panel), isFalse);
     expect(runs, 0);
   });
 
@@ -406,17 +676,17 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
 
-    // 关闭:回落动画进行中,预览从目标位(居中,left=24)朝新源位
+    // 关闭:回落动画进行中,预览从目标位(居中,left=16)朝新源位
     // (left=60)移动且始终在窗口内。
     await tester.tapAt(const Offset(10, 10));
     await tester.pump(); // 首帧:回落动画启动(ticker 起点)
     await tester.pump(const Duration(milliseconds: 60));
     var mid = tester.getRect(_previewFinder);
-    expect(mid.left, greaterThan(24), reason: '应已离开目标位向源移动');
+    expect(mid.left, greaterThan(16), reason: '应已离开目标位向源移动');
     expect(mid.left, lessThan(60), reason: '尚未到达源位');
     expect(mid.right, lessThanOrEqualTo(390));
     // 近终点:贴近新源位置(窗口缩窄后的 left≈60)。
-    await tester.pump(const Duration(milliseconds: 240));
+    await tester.pump(const Duration(milliseconds: 145));
     mid = tester.getRect(_previewFinder);
     expect(mid.left, closeTo(60, 8));
     await tester.pumpAndSettle();
@@ -471,6 +741,16 @@ void main() {
     // 长按可见区域内一点(盒子中心在屏幕外,longPress(finder) 会落空)。
     await tester.longPressAt(const Offset(500, 500));
 
+    final original = tester.getRect(find.byKey(const ValueKey('lift_source')));
+    expect(
+      tester.getRect(_previewFinder),
+      original.intersect(const Rect.fromLTWH(0, 0, 1084, 800)),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('lift_preview'))),
+      original,
+    );
+
     // 动画全程逐帧断言:预览任何时刻都不越出窗口。
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -485,15 +765,16 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    // 稳态:按完整宽高比(1.5)居中,480×320。
     final rect = tester.getRect(_previewFinder);
-    expect(rect.width, closeTo(480, 1));
-    expect(rect.height, closeTo(320, 1));
-    expect(rect.left, closeTo((1084 - 480) / 2, 1));
+    expect(rect.width, greaterThan(480));
+    expect(rect.width / rect.height, closeTo(1.5, 0.01));
+    expect(
+      tester.getRect(find.byType(SingleChildScrollView)).right,
+      lessThan(rect.left),
+    );
 
     // 关闭:起点即 intersect 后的可见区,回落主体在窗口内。
-    // 弹簧过冲(liftT 微负 → source 端外推 ~2%)允许贴边侧 ~8px 的
-    // 瞬时越界——这是 damping 0.78 弹簧的自然回弹,量级与 iOS 一致。
+    // 回落时裁切边界也沿原路收回。
     await tester.tapAt(const Offset(10, 10));
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -501,12 +782,12 @@ void main() {
       final r = tester.getRect(_previewFinder);
       expect(
         r.left,
-        greaterThanOrEqualTo(-8),
+        greaterThanOrEqualTo(0),
         reason: '回落第 $i 帧 left=${r.left}',
       );
       expect(
         r.right,
-        lessThanOrEqualTo(1092),
+        lessThanOrEqualTo(1084),
         reason: '回落第 $i 帧 right=${r.right}',
       );
     }
@@ -541,10 +822,12 @@ void main() {
     await tester.longPress(find.byKey(const ValueKey('lift_source')));
     await tester.pumpAndSettle();
 
-    // 宽窗口稳态:480 宽居中。
     var rect = tester.getRect(_previewFinder);
-    expect(rect.width, closeTo(480, 1));
-    expect(rect.left, closeTo((1200 - 480) / 2, 1));
+    expect(rect.width, greaterThan(480));
+    expect(
+      rect.overlaps(tester.getRect(find.byType(SingleChildScrollView))),
+      isFalse,
+    );
 
     // 收窄:上方占位暴涨,源 element 被回收卸载。
     tester.view.physicalSize = const Size(390, 800);
@@ -560,7 +843,7 @@ void main() {
     rect = tester.getRect(_previewFinder);
     expect(rect.left, greaterThanOrEqualTo(0));
     expect(rect.right, lessThanOrEqualTo(390));
-    expect(rect.width, closeTo(390 - 48, 1));
+    expect(rect.width, closeTo(390 - 32, 1));
 
     // 关闭:源已卸载 → 原地淡出,菜单正常移除、源标记清理。
     await tester.tapAt(const Offset(10, 10));
@@ -588,21 +871,39 @@ void main() {
     expect(runs, 0);
   });
 
-  testWidgets('预测返回手势(handler 接线):跟手缩小并 commit 关菜单', (tester) async {
-    // 注:binding 的手势分发是私有链路,这里通过菜单挂到页面路由的
-    // PredictiveBackOverlayHandler 行为间接验证 —— handler 组件本身的
-    // 事件映射(isEnabled/isButtonEvent/进度 clamp/commit/cancel)由
-    // predictive_back_overlay_handler_test.dart 单元测试覆盖。
-    var runs = 0;
-    await _openMenu(tester, _host(onOpen: () => runs++));
-    await tester.pumpAndSettle();
+  testWidgets('预测返回的取消和提交都接续当前可见帧', (tester) async {
+    Future<void> back(String method, [double progress = 0]) =>
+        tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          'flutter/backgesture',
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall(method, {
+              'touchOffset': <double>[0, 300],
+              'progress': progress,
+              'swipeEdge': 0,
+            }),
+          ),
+          (_) {},
+        );
 
-    // 手势 commit 未被 handler 认领时,框架走 maybePop → history 消费。
-    // 认领路径(跟手动画)由 handler 组件单元测试 + 真机手测覆盖。
-    await navigatorKey.currentState!.maybePop();
+    await _openMenu(tester, _host(onOpen: () {}));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('lift_preview')), findsNothing);
-    expect(find.byKey(const ValueKey('lift_source')), findsOneWidget);
-    expect(runs, 0);
+    final open = tester.getRect(_previewFinder);
+    for (final finish in ['cancelBackGesture', 'commitBackGesture']) {
+      await back('startBackGesture');
+      await back('updateBackGestureProgress', 0.45);
+      await tester.pump();
+      final held = tester.getRect(_previewFinder);
+      expect(held.width, lessThan(open.width));
+      expect(held.width, greaterThan(100));
+      await back(finish);
+      await tester.pump();
+      expect(tester.getRect(_previewFinder), held);
+      await tester.pumpAndSettle();
+      if (finish == 'cancelBackGesture') {
+        expect(tester.getRect(_previewFinder), open);
+      }
+    }
+    expect(_previewFinder, findsNothing);
+    expect(ImageLiftMenu.activeSource.value, isNull);
   });
 }
