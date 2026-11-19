@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -68,7 +69,7 @@ enum TopicReplyEntryState {
 /// 左侧回复入口，右侧楼层计数 / 书签 / 筛选，顶边是阅读进度线。
 /// 整条栏是手势面（见 [TopicBarGestures]）：横向拖动定位楼层、上滑与
 /// 长按菜单触发可配置动作。
-class TopicBottomBar extends StatefulWidget {
+class TopicBottomBar extends ConsumerStatefulWidget {
   final ValueListenable<int> streamIndexListenable;
   final int totalCount;
   final TopicReplyEntryState replyEntryState;
@@ -113,10 +114,10 @@ class TopicBottomBar extends StatefulWidget {
   });
 
   @override
-  State<TopicBottomBar> createState() => _TopicBottomBarState();
+  ConsumerState<TopicBottomBar> createState() => _TopicBottomBarState();
 }
 
-class _TopicBottomBarState extends State<TopicBottomBar> {
+class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
   /// 拖动定位中的目标楼层；进度线与楼层计数优先显示它
   final ValueNotifier<int?> _scrubIndex = ValueNotifier<int?>(null);
 
@@ -229,8 +230,11 @@ class _TopicBottomBarState extends State<TopicBottomBar> {
     final theme = Theme.of(context);
     final floating = TopicBottomBarMetrics.isFloating(context);
     final showBookmark = widget.replyEntryState != TopicReplyEntryState.login;
+    final gestureBar =
+        _showsProgress &&
+        ref.watch(preferencesProvider.select((p) => p.progressGesturesEnabled));
 
-    Widget row = SizedBox(
+    final row = SizedBox(
       height: TopicBottomBarMetrics.contentHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -272,7 +276,10 @@ class _TopicBottomBarState extends State<TopicBottomBar> {
                         ? context.l10n.topicDetail_editBookmark
                         : context.l10n.common_addBookmark,
                   ),
-                TopicFilterButton(controls: widget.filter),
+                TopicFilterButton(
+                  controls: widget.filter,
+                  openOnPress: !gestureBar,
+                ),
               ],
             );
           },
@@ -280,34 +287,24 @@ class _TopicBottomBarState extends State<TopicBottomBar> {
       ),
     );
 
-    if (_showsProgress) {
-      row = TopicBarGestures(
-        onAction: widget.onGestureAction,
-        streamIndexListenable: widget.streamIndexListenable,
-        totalCount: widget.totalCount,
-        scrubIndexNotifier: _scrubIndex,
-        onScrubCommit: widget.onScrubCommit,
-        infoSource: widget.infoSource,
-        onScrubStart: widget.onScrubStart,
-        child: row,
-      );
-    }
-
-    final body = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_showsProgress)
-          TopicProgressLine(
+    final body = _showsProgress
+        ? TopicBarGestures(
+            onAction: widget.onGestureAction,
             streamIndexListenable: widget.streamIndexListenable,
-            scrubIndexListenable: _scrubIndex,
             totalCount: widget.totalCount,
+            scrubIndexNotifier: _scrubIndex,
+            onScrubCommit: widget.onScrubCommit,
+            infoSource: widget.infoSource,
+            onScrubStart: widget.onScrubStart,
             markerIndex: widget.lastReadIndex,
+            child: row,
           )
-        else
-          const SizedBox(height: TopicBottomBarMetrics.progressLineHeight),
-        row,
-      ],
-    );
+        : Padding(
+            padding: const EdgeInsets.only(
+              top: TopicBottomBarMetrics.progressLineHeight,
+            ),
+            child: row,
+          );
 
     final Widget content = body;
 
@@ -593,12 +590,17 @@ class TopicProgressLine extends StatelessWidget {
     required this.totalCount,
     this.scrubIndexListenable,
     this.markerIndex,
+    this.handleInsets,
   });
 
   final ValueListenable<int> streamIndexListenable;
   final ValueListenable<int?>? scrubIndexListenable;
   final int totalCount;
   final int? markerIndex;
+
+  /// 展开且可拖动时的轨道边距，握柄画在进度线与操作行的交界处。
+  final EdgeInsets? handleInsets;
+  static const double handleHeight = 6;
 
   @override
   Widget build(BuildContext context) {
@@ -609,13 +611,18 @@ class TopicProgressLine extends StatelessWidget {
         totalCount > 1 ? ((index - 1) / (totalCount - 1)).clamp(0.0, 1.0) : 1.0;
     return RepaintBoundary(
       child: SizedBox(
-        height: TopicBottomBarMetrics.progressLineHeight,
+        height: handleInsets == null
+            ? TopicBottomBarMetrics.progressLineHeight
+            : handleHeight,
         width: double.infinity,
         child: ListenableBuilder(
           listenable: scrub == null
               ? streamIndexListenable
               : Listenable.merge([streamIndexListenable, scrub]),
           builder: (context, _) {
+            if (handleInsets != null && scrub?.value != null) {
+              return const SizedBox.shrink();
+            }
             final index = scrub?.value ?? streamIndexListenable.value;
             return CustomPaint(
               painter: _ProgressLinePainter(
@@ -626,6 +633,7 @@ class TopicProgressLine extends StatelessWidget {
                     : null,
                 track: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
                 fill: theme.colorScheme.primary,
+                handleInsets: handleInsets,
               ),
             );
           },
@@ -641,6 +649,7 @@ class _ProgressLinePainter extends CustomPainter {
     required this.marker,
     required this.track,
     required this.fill,
+    required this.handleInsets,
   });
 
   final double progress;
@@ -649,22 +658,43 @@ class _ProgressLinePainter extends CustomPainter {
   final double? marker;
   final Color track;
   final Color fill;
+  final EdgeInsets? handleInsets;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = track);
+    final left = handleInsets?.left ?? 0;
+    final width = (size.width - left - (handleInsets?.right ?? 0)).clamp(
+      0.0,
+      size.width,
+    );
+    final y = size.height / 2;
+    final paint = Paint()
+      ..strokeWidth = TopicBottomBarMetrics.progressLineHeight;
+    final current = Offset(left + width * progress, y);
+    canvas.drawLine(
+      Offset(left, y),
+      Offset(left + width, y),
+      paint..color = track,
+    );
     final m = marker;
     if (m != null && m > progress) {
       // 与视频缓冲条同一种读法：浅色段 = 以前读到过这里
-      canvas.drawRect(
-        Rect.fromLTRB(size.width * progress, 0, size.width * m, size.height),
-        Paint()..color = fill.withValues(alpha: fill.a * 0.35),
+      canvas.drawLine(
+        current,
+        Offset(left + width * m, y),
+        paint..color = fill.withValues(alpha: fill.a * 0.35),
       );
     }
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width * progress, size.height),
-      Paint()..color = fill,
-    );
+    canvas.drawLine(Offset(left, y), current, paint..color = fill);
+    if (handleInsets != null) {
+      canvas.drawLine(
+        current - const Offset(4, 0),
+        current + const Offset(4, 0),
+        paint
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = 5,
+      );
+    }
   }
 
   @override
@@ -672,5 +702,6 @@ class _ProgressLinePainter extends CustomPainter {
       old.progress != progress ||
       old.marker != marker ||
       old.track != track ||
-      old.fill != fill;
+      old.fill != fill ||
+      old.handleInsets != handleInsets;
 }

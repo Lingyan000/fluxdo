@@ -125,23 +125,18 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
 class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
   /// 底栏手势引导已展示次数；达到上限或用户关闭 / 用过拖动后不再出现
   static const String _hintCountKey = 'topic_bar_gesture_hint_count';
-  static const int _hintMaxShows = 3;
+  static const int _hintMaxShows = 1;
   static const Duration _hintAutoHide = Duration(seconds: 6);
 
   static const Duration _motion = TopicBottomBarMetrics.motionDuration;
 
   final ValueNotifier<bool> _hintVisible = ValueNotifier<bool>(false);
+  bool _hintChecked = false;
 
   /// 底栏回复入口胶囊：快捷回复面板与完整编辑器的变形起点（页面持有，
   /// 直接打开完整编辑器时也从它长出）
   GlobalKey get _replyEntryKey => widget.replyEntryKey;
   Timer? _hintTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowHint());
-  }
 
   @override
   void dispose() {
@@ -151,8 +146,16 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
   }
 
   void _maybeShowHint() {
-    if (!mounted || widget.filter.isNestedMode) return;
+    if (!mounted ||
+        _hintChecked ||
+        widget.filter.isNestedMode ||
+        _composing ||
+        widget.totalCount <= 1 ||
+        !widget.showBottomBarListenable.value) {
+      return;
+    }
     if (!ref.read(preferencesProvider).progressGesturesEnabled) return;
+    _hintChecked = true;
     final prefs = ref.read(sharedPreferencesProvider);
     final count = prefs.getInt(_hintCountKey) ?? 0;
     if (count >= _hintMaxShows) return;
@@ -163,6 +166,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
 
   /// 用户关闭引导或已经用过拖动定位：不再展示
   void _finishHint() {
+    _hintChecked = true;
     _hintTimer?.cancel();
     if (_hintVisible.value) _hintVisible.value = false;
     final prefs = ref.read(sharedPreferencesProvider);
@@ -308,8 +312,12 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             ),
           ),
         ),
-        // 底栏手势首次引导
-        if (!widget.filter.isNestedMode)
+        // 底栏真正可见时才计入一次引导。
+        if (!widget.filter.isNestedMode &&
+            widget.totalCount > 1 &&
+            ref.watch(
+              preferencesProvider.select((p) => p.progressGesturesEnabled),
+            ))
           ListenableBuilder(
             listenable: Listenable.merge([
               widget.showBottomBarListenable,
@@ -321,6 +329,13 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
               Center(child: _GestureHintBubble(onClose: _finishHint)),
             ),
             builder: (context, child) {
+              if (!_hintChecked &&
+                  widget.showBottomBarListenable.value &&
+                  !_composing) {
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _maybeShowHint(),
+                );
+              }
               final visible =
                   _hintVisible.value &&
                   widget.showBottomBarListenable.value &&

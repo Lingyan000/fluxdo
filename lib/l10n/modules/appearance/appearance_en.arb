@@ -221,7 +221,7 @@
   "progressGesture_enable": "Enable gestures",
   "progressGesture_enableDesc": "Enable drag-to-locate, swipe up and long-press on the topic bottom bar",
   "progressGesture_dragToLocate": "Drag sideways to locate",
-  "progressGesture_dragToLocateDesc": "Drag along the bottom bar: short drags step post by post, longer drags jump quickly; release to go",
+  "progressGesture_dragToLocateDesc": "Drag along the bottom bar to find a post. Either end takes you to the first or last post. Slide up for finer control and release to jump.",
   "progressGesture_emptySelection": "No action selected yet",
   "progressGesture_longPressEnable": "Enable long-press menu",
   "progressGesture_longPressEnableDesc": "Long-press the bottom bar to reveal a fan-shaped menu",
