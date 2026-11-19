@@ -147,6 +147,27 @@ android {
     }
 }
 
+// 依赖包里只供 Web 端加载的资源（wasm 解码器、web worker、hls.js 等）也会被
+// 打进原生包。剔除 flutter_assets/packages/<包>/ 下名为 web 的目录；
+// iOS/macOS 见 scripts/strip_web_assets.sh，Windows/Linux 见各自 CMakeLists.txt。
+tasks.matching { it.name.startsWith("copyFlutterAssets") }.configureEach {
+    doLast {
+        outputs.files.forEach { output ->
+            File(output, "flutter_assets/packages").listFiles()?.forEach { pkg ->
+                pkg.walkTopDown()
+                    .filter { it.isDirectory && it.name == "web" }
+                    .toList()
+                    .forEach { dir ->
+                        if (dir.exists()) {
+                            logger.lifecycle("剔除 Web 专用资源: ${dir.relativeTo(output)}")
+                            dir.deleteRecursively()
+                        }
+                    }
+            }
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17

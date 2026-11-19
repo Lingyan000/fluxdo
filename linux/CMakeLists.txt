@@ -144,8 +144,12 @@ set(FLUTTER_ASSET_DIR_NAME "flutter_assets")
 install(CODE "
   file(REMOVE_RECURSE \"${INSTALL_BUNDLE_DATA_DIR}/${FLUTTER_ASSET_DIR_NAME}\")
   " COMPONENT Runtime)
+# 依赖包里只供 Web 端加载的资源（wasm 解码器、web worker、hls.js 等）也会被
+# 打进原生包。剔除 flutter_assets/packages/<包>/ 下名为 web 的目录；
+# Android 见 android/app/build.gradle.kts，iOS/macOS 见 scripts/strip_web_assets.sh。
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
-  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime
+  REGEX "/${FLUTTER_ASSET_DIR_NAME}/packages/[^/]+/(.+/)?web$" EXCLUDE)
 
 # Install the AOT library on non-Debug builds only.
 if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")

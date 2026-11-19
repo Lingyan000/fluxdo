@@ -215,6 +215,7 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				A7F3C2E1B9D84F6A0C5E1D27 /* Strip Web Assets */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				6DA6296E126996C619F63449 /* [CP] Embed Pods Frameworks */,
 			);
@@ -291,6 +292,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A7F3C2E1B9D84F6A0C5E1D27 /* Strip Web Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Web Assets";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$PROJECT_DIR/../scripts/strip_web_assets.sh\" \"$BUILT_PRODUCTS_DIR/App.framework\"\n";
+		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
