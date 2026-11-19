@@ -8,7 +8,7 @@
 //
 // 与每块玻璃各套一层 BackdropFilter 相比：
 // - 不打断当前渲染 pass、不拷贝屏幕，玻璃只是一次普通绘制；
-// - 截取按玻璃的模糊程度缩小（模糊 sigma 在截取图上约占两个像素，
+// - 截取按玻璃的模糊程度缩小（模糊 sigma 在截取图上约占四个像素，
 //   最多缩到 1/8），模糊在小图上做；
 // - 画面静止时沿用上一张截取，不重新截取也不重新模糊；
 // - 只用画笔 shader 与离屏图片，Skia 与 Impeller 都可用。
@@ -21,8 +21,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
-/// 截取的模糊在截取图上至少占的像素数：再缩小，深色玻璃下的文字会出现块状
-const double _captureFrost = 2;
+/// 截取的模糊在截取图上至少占的像素数。内容按截取像素整格落位（防止亚像素
+/// 滚动时闪烁），截取像素越大，滚动时玻璃里的背景越是一格一格地跳：两个
+/// 像素时导航胶囊的截取每格约 2.3dp（DPR 3），背景停住几帧再跳一下，看着
+/// 不跟手；四个像素时每格约 1dp、每次跳动减半，静态也更细腻
+const double _captureFrost = 4;
 const int _maxDivisor = 8;
 const double _maxCaptureSide = 2048;
 
