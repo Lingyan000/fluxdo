@@ -31,12 +31,25 @@ class FollowingFeedPage extends ConsumerStatefulWidget {
 
 class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
   final _scroll = ScrollController();
+  final _refreshIndicatorKey = GlobalKey<M3eRefreshIndicatorState>();
+  FollowingFeedNotifier? _refreshingNotifier;
   bool _activated = false;
   bool _wide = false;
   @override
   void dispose() {
     _scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> _refresh(FollowingFeedNotifier notifier) async {
+    setState(() => _refreshingNotifier = notifier);
+    try {
+      await notifier.refresh();
+    } finally {
+      if (mounted && _refreshingNotifier == notifier) {
+        setState(() => _refreshingNotifier = null);
+      }
+    }
   }
 
   void _openPost(FollowingPost post) {
@@ -80,7 +93,7 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
         return;
       }
       if (event.action == NavAction.refresh) {
-        ref.read(followingFeedProvider(username).notifier).refresh();
+        _refreshIndicatorKey.currentState?.show();
       } else if (_scroll.hasClients) {
         _scroll.animateTo(
           0,
@@ -91,6 +104,7 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
     });
     final state = ref.watch(followingFeedProvider(username));
     final notifier = ref.read(followingFeedProvider(username).notifier);
+    final refreshing = _refreshingNotifier == notifier;
     final migration = ref.watch(followingFeedMigrationProvider);
     _wide = MasterDetailLayout.canShowBothPanesFor(context);
     final page = Scaffold(
@@ -110,7 +124,9 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
           IconButton(
             tooltip: context.l10n.common_refresh,
             icon: const Icon(Symbols.refresh_rounded),
-            onPressed: state.loading ? null : notifier.refresh,
+            onPressed: state.loading
+                ? null
+                : () => _refreshIndicatorKey.currentState?.show(),
           ),
           if (migration.usedSeeking)
             IconButton(
@@ -132,8 +148,9 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
             return false;
           },
           child: DesktopRefreshIndicator(
+            refreshIndicatorKey: _refreshIndicatorKey,
             shouldRefresh: () => widget.isActive,
-            onRefresh: notifier.refresh,
+            onRefresh: () => _refresh(notifier),
             child: ListView.builder(
               key: PageStorageKey('following_feed_$username'),
               controller: _scroll,
@@ -145,30 +162,44 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
                   return Column(
                     children: [
                       if (migration.showGuide)
-                        _FollowingFeedMigrationCard(
-                          onOpen: () => _showMigration(context),
-                        ),
-                      if (state.loading)
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(child: LoadingSpinner()),
-                        ),
-                      if (state.error != null)
-                        ErrorView(
-                          error: state.error!,
-                          onRetry: notifier.refresh,
-                        ),
-                      if (!state.loading &&
-                          state.error == null &&
-                          state.posts.isEmpty)
                         Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: AppEmptyState(
-                            icon: const Icon(Symbols.group_rounded),
-                            title: context.l10n.followingFeed_empty,
-                            message: context.l10n.followingFeed_emptyHint,
+                          padding: EdgeInsets.only(
+                            left: ActivityCardList.gutter - padding.left,
+                            right: ActivityCardList.gutter - padding.right,
+                            bottom: 12,
+                          ),
+                          child: _FollowingFeedMigrationCard(
+                            onOpen: () => _showMigration(context),
                           ),
                         ),
+                      // 首次加载占位；刷新保留原状态，由下拉指示器反馈。
+                      AppLoadingSwitcher(
+                        identity: username,
+                        loading: state.loading,
+                        delay: Duration.zero,
+                        loadingBuilder: (_) => refreshing
+                            ? const SizedBox.shrink()
+                            : const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(child: LoadingSpinner()),
+                              ),
+                        child: state.error != null
+                            ? ErrorView(
+                                error: state.error!,
+                                onRetry: () =>
+                                    _refreshIndicatorKey.currentState?.show(),
+                              )
+                            : state.posts.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: AppEmptyState(
+                                  icon: const Icon(Symbols.group_rounded),
+                                  title: context.l10n.followingFeed_empty,
+                                  message: context.l10n.followingFeed_emptyHint,
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ],
                   );
                 }
@@ -238,6 +269,7 @@ class _FollowingFeedMigrationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       child: ListTile(
         leading: const Icon(Symbols.info_rounded),
         title: Text(context.l10n.followingFeed_migrationTitle),
