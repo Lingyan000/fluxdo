@@ -1,7 +1,9 @@
+import 'dart:ui' as ui;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -306,6 +308,14 @@ Future<T?> showAppMorphSheet<T>({
   double heightFactor = 0.95,
   MorphSheetAnchor? Function()? returnAnchor,
   VoidCallback? onHandoffComplete,
+
+  /// 起点元素的截图（与 [fromRect] 同尺寸）。入场时钉在起点位置随外形长大
+  /// 淡出，起点元素本身可在 [onHandoffStart] 里立即隐藏——看起来是它自己
+  /// 变成了弹层。路由接管后由路由释放
+  ui.Image? fromSnapshot,
+
+  /// 弹层首次真正画到屏上之后回调：在这里隐藏起点元素
+  VoidCallback? onHandoffStart,
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
 }) {
@@ -331,6 +341,8 @@ Future<T?> showAppMorphSheet<T>({
   route = _MorphSheetRoute<T>(
     constraints: sheetConstraints,
     onHandoffComplete: onHandoffComplete,
+    onHandoffStart: onHandoffStart,
+    snapshot: fromSnapshot,
     barrierColor: theme.bottomSheetTheme.modalBarrierColor ?? Colors.black54,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     pageBuilder: (context, _, _) => builder(context),
@@ -347,6 +359,9 @@ Future<T?> showAppMorphSheet<T>({
         );
       },
       followsDrag: () => route.followsDrag,
+      snapshot: () => route.expanded ? null : route.snapshot,
+      onFirstPaint: route.notifyShown,
+      snapshotRect: source.rect,
       toColor: theme.colorScheme.surface,
       toRadius: toRadius,
       heightFactor: heightFactor,
@@ -367,6 +382,8 @@ class _MorphSheetRoute<T> extends InteractionPageRouteBuilder<T> {
   _MorphSheetRoute({
     required this.constraints,
     required this.onHandoffComplete,
+    required this.onHandoffStart,
+    required this.snapshot,
     required super.barrierColor,
     required super.barrierLabel,
     required super.pageBuilder,
@@ -380,6 +397,8 @@ class _MorphSheetRoute<T> extends InteractionPageRouteBuilder<T> {
 
   final BoxConstraints constraints;
   final VoidCallback? onHandoffComplete;
+  final VoidCallback? onHandoffStart;
+  ui.Image? snapshot;
   bool expanded = false;
   bool followsDrag = false;
 
@@ -399,7 +418,24 @@ class _MorphSheetRoute<T> extends InteractionPageRouteBuilder<T> {
     followsDrag = false;
     if (expanded) return;
     expanded = true;
+    _releaseSnapshot();
     onHandoffComplete?.call();
+  }
+
+  bool _shown = false;
+
+  /// 弹层首次绘制后通知起点元素隐藏。不能在 install 里通知：PageRoute
+  /// 入场首帧会被 HeroController 置为 offstage 测量（不绘制），那一帧起点
+  /// 已隐藏、弹层却还没画，就是一帧空白闪烁
+  void notifyShown() {
+    if (_shown) return;
+    _shown = true;
+    onHandoffStart?.call();
+  }
+
+  void _releaseSnapshot() {
+    snapshot?.dispose();
+    snapshot = null;
   }
 
   Future<void> _requestClose() async {
@@ -435,6 +471,7 @@ class _MorphSheetRoute<T> extends InteractionPageRouteBuilder<T> {
   @override
   void dispose() {
     controller!.removeStatusListener(_onStatus);
+    _releaseSnapshot();
     super.dispose();
   }
 }
@@ -444,6 +481,9 @@ class _MorphSheetTransition extends StatelessWidget {
     required this.animation,
     required this.anchor,
     required this.followsDrag,
+    required this.snapshot,
+    required this.snapshotRect,
+    required this.onFirstPaint,
     required this.toColor,
     required this.toRadius,
     required this.heightFactor,
@@ -454,6 +494,9 @@ class _MorphSheetTransition extends StatelessWidget {
   final Animation<double> animation;
   final MorphSheetAnchor? Function() anchor;
   final bool Function() followsDrag;
+  final ui.Image? Function() snapshot;
+  final Rect snapshotRect;
+  final VoidCallback onFirstPaint;
   final Color toColor;
   final double toRadius;
   final double heightFactor;
@@ -463,6 +506,9 @@ class _MorphSheetTransition extends StatelessWidget {
   static const Curve _geometry = Curves.easeInOutCubicEmphasized;
   static const Curve _content = Interval(0.35, 1, curve: Curves.easeOut);
   static const Curve _fill = Interval(0.5, 1, curve: Curves.easeIn);
+
+  /// 起点截图淡出，与内容淡入首尾相接
+  static const Curve _snapshotFade = Interval(0, 0.35, curve: Curves.easeOut);
 
   @override
   Widget build(BuildContext context) {
@@ -504,37 +550,90 @@ class _MorphSheetTransition extends StatelessWidget {
               bottomRight: bottomRadius,
             );
             final fillOpacity = 1 - _fill.transform(animation.value);
-            return ClipPath(
-              clipper: _RRectClipper(shape),
-              child: Stack(
-                children: [
-                  if (fillOpacity > 0)
-                    Positioned.fromRect(
-                      rect: rect,
-                      child: ColoredBox(
-                        color: Color.lerp(
-                          target?.color ?? toColor,
-                          toColor,
-                          t,
-                        )!.withValues(alpha: fillOpacity),
+            final image = snapshot();
+            final snapshotOpacity = image == null
+                ? 0.0
+                : 1 - _snapshotFade.transform(animation.value);
+            return _FirstPaintNotifier(
+              onFirstPaint: onFirstPaint,
+              child: ClipPath(
+                clipper: _RRectClipper(shape),
+                child: Stack(
+                  children: [
+                    if (fillOpacity > 0)
+                      Positioned.fromRect(
+                        rect: rect,
+                        child: ColoredBox(
+                          color: Color.lerp(
+                            target?.color ?? toColor,
+                            toColor,
+                            t,
+                          )!.withValues(alpha: fillOpacity),
+                        ),
+                      ),
+                    // 起点元素的截图钉在原位，外形从它周围长大时淡出
+                    if (snapshotOpacity > 0)
+                      Positioned.fromRect(
+                        rect: snapshotRect,
+                        child: Opacity(
+                          opacity: snapshotOpacity,
+                          child: RawImage(image: image, fit: BoxFit.fill),
+                        ),
+                      ),
+                    Positioned.fill(
+                      child: Transform.translate(
+                        offset: Offset(0, dragging ? rect.top - toRect.top : 0),
+                        child: Opacity(
+                          opacity: _content.transform(animation.value),
+                          child: child,
+                        ),
                       ),
                     ),
-                  Positioned.fill(
-                    child: Transform.translate(
-                      offset: Offset(0, dragging ? rect.top - toRect.top : 0),
-                      child: Opacity(
-                        opacity: _content.transform(animation.value),
-                        child: child,
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
         );
       },
     );
+  }
+}
+
+/// 子树第一次真正绘制（不在 offstage 里）后，在该帧结束时回调一次。
+/// 回调晚于绘制一帧落地：起点元素与接替画面在同一帧里叠放过渡，
+/// 不会出现两者都不在屏上的空白帧
+class _FirstPaintNotifier extends SingleChildRenderObjectWidget {
+  const _FirstPaintNotifier({required this.onFirstPaint, super.child});
+
+  final VoidCallback onFirstPaint;
+
+  @override
+  _RenderFirstPaintNotifier createRenderObject(BuildContext context) =>
+      _RenderFirstPaintNotifier(onFirstPaint);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFirstPaintNotifier renderObject,
+  ) {
+    renderObject.onFirstPaint = onFirstPaint;
+  }
+}
+
+class _RenderFirstPaintNotifier extends RenderProxyBox {
+  _RenderFirstPaintNotifier(this.onFirstPaint);
+
+  VoidCallback onFirstPaint;
+  bool _fired = false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    if (_fired) return;
+    _fired = true;
+    final callback = onFirstPaint;
+    WidgetsBinding.instance.addPostFrameCallback((_) => callback());
   }
 }
 

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -52,11 +54,21 @@ class TopicQuickReplyLayer extends StatefulWidget {
   final VoidCallback onSend;
 
   /// 展开到完整编辑器：参数为面板当前的全局外形（矩形、圆角、底色）
-  final void Function(Rect rect, double radius, Color color) onExpand;
+  final ValueChanged<QuickReplyExpansion> onExpand;
 
   @override
   State<TopicQuickReplyLayer> createState() => _TopicQuickReplyLayerState();
 }
+
+/// 展开到完整编辑器时交给宿主的起点：面板的全局外形、底色、截图，以及
+/// 编辑器首帧回调（面板在这一帧隐藏，由截图接替）
+typedef QuickReplyExpansion = ({
+  Rect rect,
+  double radius,
+  Color color,
+  ui.Image? snapshot,
+  VoidCallback onShown,
+});
 
 /// 胶囊相对层底边的位置：键盘升起时层整体变矮，胶囊随之上移，
 /// 以底边为基准记录，变形起点就始终跟得上
@@ -68,7 +80,7 @@ typedef _SourceGeometry = ({
 });
 
 class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const double _panelRadius = 24;
   static const Curve _geometryCurve = Curves.easeInOutCubicEmphasized;
   static const Curve _contentCurve = Interval(0.35, 1, curve: Curves.easeOut);
@@ -79,7 +91,16 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     reverseDuration: const Duration(milliseconds: 260),
   )..addStatusListener(_onStatus);
 
-  final GlobalKey _panelKey = GlobalKey();
+  /// 整块面板（含底色与外形）的截图边界：展开时交给编辑器接替面板
+  final GlobalKey _snapshotKey = GlobalKey();
+
+  /// 展开到完整编辑器期间：面板已由编辑器接替（隐藏但保持挂载，输入框
+  /// 焦点与键盘不断），遮罩随编辑器自己的遮罩淡入而淡出
+  bool _handedOff = false;
+  late final AnimationController _handoffFade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
   _SourceGeometry? _source;
   List<String> _recentEmojis = const [];
   int? _minLength;
@@ -127,6 +148,7 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     WidgetsBinding.instance.removeObserver(this);
     _session.activeNotifier.removeListener(_onActiveChanged);
     _controller.dispose();
+    _handoffFade.dispose();
     super.dispose();
   }
 
@@ -136,6 +158,10 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
 
   void _onActiveChanged() {
     if (_session.active) {
+      if (_handedOff) {
+        _handedOff = false;
+        _handoffFade.value = 0;
+      }
       _captureSource();
       _loadRecentEmojis();
       _loadMinLength();
@@ -272,13 +298,31 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
   }
 
   void _expand() {
-    final panel = _panelKey.currentContext?.findRenderObject() as RenderBox?;
-    if (panel == null || !panel.hasSize) return;
-    widget.onExpand(
-      panel.localToGlobal(Offset.zero) & panel.size,
-      context.shapes.resolve(_panelRadius),
-      Theme.of(context).colorScheme.surfaceContainerLow,
-    );
+    final boundary =
+        _snapshotKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
+    if (boundary == null || !boundary.hasSize) return;
+    ui.Image? snapshot;
+    try {
+      snapshot = boundary.toImageSync(
+        pixelRatio: MediaQuery.devicePixelRatioOf(context),
+      );
+    } catch (_) {
+      // 截图失败只是少了接替画面，编辑器照常从面板外形长出
+    }
+    widget.onExpand((
+      rect: boundary.localToGlobal(Offset.zero) & boundary.size,
+      radius: context.shapes.resolve(_panelRadius),
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      snapshot: snapshot,
+      onShown: _onEditorShown,
+    ));
+  }
+
+  void _onEditorShown() {
+    if (!mounted) return;
+    setState(() => _handedOff = true);
+    _handoffFade.forward(from: 0);
   }
 
   @override
@@ -286,13 +330,15 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
     final theme = Theme.of(context);
     final floating = TopicBottomBarMetrics.isFloating(context);
     return AnimatedBuilder(
-      animation: _controller,
+      animation: Listenable.merge([_controller, _handoffFade]),
       child: _buildPanel(context, theme, floating),
       builder: (context, panel) {
         final raw = _controller.value;
         if (raw == 0) return const SizedBox.shrink();
         final t = _geometryCurve.transform(raw);
         final contentOpacity = _contentCurve.transform(raw);
+        // 编辑器接替后，本层遮罩随编辑器遮罩淡入而淡出，两者衔接不叠暗
+        final scrim = 0.32 * raw * (1 - _handoffFade.value);
         return Stack(
           children: [
             // 压暗页面，点按收起（未发内容留作草稿）
@@ -300,18 +346,30 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _session.close,
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.32 * raw),
-                ),
+                child: ColoredBox(color: Colors.black.withValues(alpha: scrim)),
               ),
             ),
-            _buildMorphingPanel(
-              context,
-              theme,
-              t,
-              contentOpacity,
-              floating,
-              panel!,
+            // 编辑器接替后面板只隐藏不卸载：输入框焦点与键盘保持，
+            // 由完整编辑器直接接过
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: _handedOff,
+                child: Opacity(
+                  opacity: _handedOff ? 0 : 1,
+                  child: Stack(
+                    children: [
+                      _buildMorphingPanel(
+                        context,
+                        theme,
+                        t,
+                        contentOpacity,
+                        floating,
+                        panel!,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         );
@@ -357,34 +415,38 @@ class _TopicQuickReplyLayerState extends State<TopicQuickReplyLayer>
                 left: panelLeft,
                 width: panelWidth,
                 bottom: panelBottom,
-                child: ClipPath(
-                  clipper: _MorphClipper(
-                    source: _source,
-                    panelLeft: panelLeft,
-                    panelBottom: panelBottom,
-                    t: t,
-                    topRadius: panelRadius,
-                    bottomRadius: floating ? panelRadius : 0,
-                  ),
-                  // 本层挂在 Scaffold 之外，面板自己提供 Material：输入框、
-                  // 水波纹与图标按钮都要求有 Material 祖先
-                  child: Material(
-                    color: Color.lerp(
-                      theme.colorScheme.surfaceContainerHighest,
-                      theme.colorScheme.surfaceContainerLow,
-                      t,
-                    )!,
-                    child: Opacity(
-                      opacity: contentOpacity,
-                      // 面板内的点按不算「点到输入框外」，不会先把焦点收走
-                      child: TextFieldTapRegion(
-                        // 发送快捷键与完整编辑器同一套（Cmd/Ctrl+Enter）
-                        child: CallbackShortcuts(
-                          bindings: {
-                            for (final activator in composerSubmitActivators())
-                              activator: _submitFromShortcut,
-                          },
-                          child: KeyedSubtree(key: _panelKey, child: panel),
+                child: RepaintBoundary(
+                  key: _snapshotKey,
+                  child: ClipPath(
+                    clipper: _MorphClipper(
+                      source: _source,
+                      panelLeft: panelLeft,
+                      panelBottom: panelBottom,
+                      t: t,
+                      topRadius: panelRadius,
+                      bottomRadius: floating ? panelRadius : 0,
+                    ),
+                    // 本层挂在 Scaffold 之外，面板自己提供 Material：输入框、
+                    // 水波纹与图标按钮都要求有 Material 祖先
+                    child: Material(
+                      color: Color.lerp(
+                        theme.colorScheme.surfaceContainerHighest,
+                        theme.colorScheme.surfaceContainerLow,
+                        t,
+                      )!,
+                      child: Opacity(
+                        opacity: contentOpacity,
+                        // 面板内的点按不算「点到输入框外」，不会先把焦点收走
+                        child: TextFieldTapRegion(
+                          // 发送快捷键与完整编辑器同一套（Cmd/Ctrl+Enter）
+                          child: CallbackShortcuts(
+                            bindings: {
+                              for (final activator
+                                  in composerSubmitActivators())
+                                activator: _submitFromShortcut,
+                            },
+                            child: panel,
+                          ),
                         ),
                       ),
                     ),

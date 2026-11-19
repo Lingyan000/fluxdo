@@ -51,6 +51,8 @@ extension _UserActions on _TopicDetailPageState {
     double morphFromRadius = 0,
     Color? morphFromColor,
     VoidCallback? onHandoffComplete,
+    ui.Image? morphFromSnapshot,
+    VoidCallback? onHandoffStart,
 
     /// 快捷回复交出的草稿保存落定后完成：编辑器的草稿核对先等它
     Future<void>? draftReleased,
@@ -107,6 +109,8 @@ extension _UserActions on _TopicDetailPageState {
       morphFromColor: morphFromColor,
       returnAnchor: _replyEntryMorphSource,
       onHandoffComplete: onHandoffComplete,
+      morphFromSnapshot: morphFromSnapshot,
+      onHandoffStart: onHandoffStart,
       topicTitle: detail?.title,
       preloadedDraftFuture: preloadedDraftFuture,
       isPrivateMessageTopic: detail?.isPrivateMessage ?? false,

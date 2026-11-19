@@ -127,4 +127,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(handoffs, 1);
   });
+
+  testWidgets('起点元素在弹层真正画出之后才隐藏，没有空白帧', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    var shownAt = -1;
+    var frame = 0;
+    showAppMorphSheet<void>(
+      context: tester.element(find.byType(Scaffold)),
+      fromRect: _source,
+      suspendDynamicContent: false,
+      onHandoffStart: () => shownAt = frame,
+      builder: (_) => const SizedBox.expand(),
+    );
+    // 入场首帧路由被 HeroController 置为 offstage 测量，不绘制：此时
+    // 起点元素必须还在
+    frame = 1;
+    await tester.pump();
+    expect(shownAt, -1);
+    // 之后弹层第一次绘制，帧尾才通知隐藏起点
+    for (frame = 2; frame < 5 && shownAt < 0; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(shownAt, greaterThan(1));
+    expect(find.byType(BottomSheet), findsOneWidget);
+    await tester.pumpAndSettle();
+  });
 }

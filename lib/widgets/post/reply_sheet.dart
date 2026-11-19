@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart';
@@ -112,6 +113,10 @@ Future<Post?> showReplySheet({
   Color? morphFromColor,
   MorphSheetAnchor? Function()? returnAnchor,
   VoidCallback? onHandoffComplete,
+
+  /// 起点元素截图与「弹层已接替起点」回调，见 [showAppMorphSheet]
+  ui.Image? morphFromSnapshot,
+  VoidCallback? onHandoffStart,
 }) async {
   final suspension = DynamicContentSuspensionService.instance.acquire(
     reason: 'reply_sheet',
@@ -143,6 +148,8 @@ Future<Post?> showReplySheet({
         fromColor: morphFromColor,
         returnAnchor: returnAnchor,
         onHandoffComplete: onHandoffComplete,
+        fromSnapshot: morphFromSnapshot,
+        onHandoffStart: onHandoffStart,
         shortcutSurface: shortcutSurface,
         builder: buildSheet,
       );

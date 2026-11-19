@@ -28,6 +28,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
 import 'package:uuid/uuid.dart';
 
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import '../../models/draft.dart';
@@ -2433,13 +2434,20 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     );
   }
 
-  /// 快捷回复展开成完整编辑器,一镜到底:编辑器从面板当前外形继续长大;
-  /// 交接期间快捷回复的输入框保持焦点,完整编辑器挂载后直接接过焦点,
-  /// 键盘不会先收起再弹出;面板被盖住后再静默撤掉
-  Future<void> _expandQuickReply(Rect rect, double radius, Color color) async {
-    if (_replySession.handingOff) return;
+  /// 快捷回复展开成完整编辑器,一镜到底:编辑器从面板当前外形继续长大,
+  /// 面板截图钉在原位随之淡出,面板本体在编辑器首帧同一帧隐藏——看起来
+  /// 是面板自己长成了编辑器。交接期间快捷回复的输入框保持焦点,完整
+  /// 编辑器挂载后直接接过焦点,键盘不会先收起再弹出
+  Future<void> _expandQuickReply(QuickReplyExpansion from) async {
+    if (_replySession.handingOff) {
+      from.snapshot?.dispose();
+      return;
+    }
     final handed = await _replySession.prepareHandOff();
-    if (!mounted) return;
+    if (!mounted) {
+      from.snapshot?.dispose();
+      return;
+    }
     // 草稿在后台交接:不等保存往返,编辑器立即展开
     final released = _replySession.releaseDraftInBackground();
     await _handleReply(
@@ -2447,16 +2455,17 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       initialContent: handed.content.trim().isEmpty ? null : handed.content,
       forceFullEditor: true,
       initialContentIsComplete: true,
-      morphFrom: rect,
-      morphFromRadius: radius,
-      morphFromColor: color,
+      morphFrom: from.rect,
+      morphFromRadius: from.radius,
+      morphFromColor: from.color,
+      morphFromSnapshot: from.snapshot,
+      onHandoffStart: from.onShown,
       onHandoffComplete: () {
         if (mounted) _replySession.finishHandOff();
       },
       draftReleased: released,
     );
   }
-
 
   TopicReplyEntryState _replyEntryState(TopicDetail detail, bool isLoggedIn) {
     if (!isLoggedIn) return TopicReplyEntryState.login;
