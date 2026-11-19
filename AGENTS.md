@@ -46,6 +46,7 @@ just run / build   # flutter run / build
 - **路由与弹窗**：使用 `InteractionPageRoute`、`showAppDialog`、`showAppBottomSheet` 等统一入口，不直接用 `MaterialPageRoute`、`showDialog`、`showModalBottomSheet`（[守卫](test/architecture/interaction_entry_points_test.dart)）。关闭根层弹框用 `Navigator.of(context, rootNavigator: true)` 或弹框自己的 context，裸 `pop` 会误关嵌套导航里的页面。
 - **主题 token**：颜色和圆角必须经过主题 token，同一块区域里的颜色、圆角保持一致。圆角用 `context.shapes`，图标强调色用 `context.emphasis`，分类色用 `ColorUtils.category`。细则与新增主题见 [fluxdo-theme](.agents/skills/fluxdo-theme/SKILL.md)，守卫见 `test/architecture/` 下的 ratchet 测试。
 - **国际化**：界面文案一律走 arb，以 `zh` 为基准语言；只用文本插入的方式改 arb。流程见 [fluxdo-l10n](.agents/skills/fluxdo-l10n/SKILL.md)。
+- 新增**内置静态 SVG** 时，将源文件直接放在 `assets/icons/`，AI 品牌和思考图标分别放在 `assets/ai_brands/`、`assets/icons/thinking/`。Flutter 构建时自动编译为 SI，界面用 `AppSvgAsset('assets/icons/my_icon.svg')` 按原路径加载。Flutter 只转换目录的直接子文件，新增子目录时在 `pubspec.yaml` 给该目录配置 `transformers: *svgToSi`。许可证等文本放在单独目录。
 - **视觉变化需确认**：颜色、字号、字重、间距、动效等用户能察觉的变化，要先经维护者确认；不要在性能优化或重构中顺带修改。
 - **不写硬编码白名单**：「需要处理哪些」从数据或类型推导，不靠手写常量列表。
 - **跨平台**：平台层改动要评估全部五个平台。

@@ -7,7 +7,7 @@ upstream sources, listed below.
 
 ## Icon collection: Lobe Icons
 
-The SVG files in this directory were obtained from
+The SVG files in the [AI brand assets directory](../) were obtained from
 [Lobe Icons](https://github.com/lobehub/lobe-icons), an open collection of
 AI/LLM brand logos. Lobe Icons is distributed under the MIT License, which
 applies to the project's code and the way the assets are packaged and served.

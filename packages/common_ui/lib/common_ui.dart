@@ -14,6 +14,7 @@ library;
 export 'src/app_content_state.dart' show AppEmptyState, AppLoadingSwitcher;
 export 'src/adaptive_surface_colors.dart';
 export 'src/app_sheet_scaffold.dart';
+export 'src/app_svg_asset.dart';
 export 'src/axis_stretch.dart';
 export 'src/dismissible_popup_menu.dart';
 export 'src/desktop_scroll_interaction.dart';

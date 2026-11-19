@@ -1,10 +1,8 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
-import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../constants.dart';
 import '../../l10n/s.dart';
@@ -134,16 +132,10 @@ class ShareImageWidget extends ConsumerWidget {
   Widget _buildLogo(Color textColor) {
     return Row(
       children: [
-        SizedBox(
+        const SizedBox(
           width: 28,
           height: 28,
-          child: ScalableImageWidget.fromSISource(
-            si: ScalableImageSource.fromSvg(
-              rootBundle,
-              'assets/logo.svg',
-              warnF: (_) {},
-            ),
-          ),
+          child: AppSvgAsset('assets/logo.svg'),
         ),
         const SizedBox(width: 8),
         Text(

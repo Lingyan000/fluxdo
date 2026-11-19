@@ -1379,12 +1379,9 @@ void main() {
         for (var index = 0; index < assets.length; index++) {
           final asset = assets[index];
           final url = 'https://mini-app.test/preview/${asset.split('/').last}';
-          final data = await rootBundle.load(asset);
-          await BlobImageCache.write(
-            BlobImageCache.contentBucket,
-            url,
-            data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-          );
+          // 模拟图片服务器返回源文件，应用资源包里的 SVG 已经编译成 SI。
+          final data = await File(asset).readAsBytes();
+          await BlobImageCache.write(BlobImageCache.contentBucket, url, data);
           api.apps[index] = MiniApp.fromJson({
             ...api.apps[index].toJson(),
             'icon_url': url,
