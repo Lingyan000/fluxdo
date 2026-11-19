@@ -120,6 +120,9 @@ struct Inner {
 
     /// early frame ctx
     early_frame_ctx: EarlyFrameStreamContext,
+
+    /// 参与优先级链的本端流（创建顺序，附权重），见 [`Inner::chain_priority`]
+    priority_chain: Vec<(StreamId, u8)>,
 }
 
 #[derive(Debug)]
@@ -472,6 +475,7 @@ where
         }
 
         let stream_id = me.actions.send.open()?;
+        let chain_weight = me.chain_priority(&request);
 
         // Convert the message
         let alt_svc_origin = me
@@ -542,6 +546,9 @@ where
         // closed state.
         debug_assert!(!stream.state.is_closed());
         me.counts.open_local(&mut stream);
+        if let Some(weight) = chain_weight {
+            me.priority_chain.push((stream_id, weight));
+        }
 
         // TODO: ideally, OpaqueStreamRefs::new would do this, but we're holding
         // the lock, so it can't.
@@ -700,7 +707,44 @@ impl Inner {
             refs: 1,
             headers_pseudo_order: config.headers_pseudo_order,
             early_frame_ctx: config.early_frame_ctx,
+            priority_chain: Vec::new(),
         })))
+    }
+
+    /// 与 Chromium `Http2PriorityDependencies::OnStreamCreation` 一致：排他挂根的请求改为
+    /// 排他依赖「优先级不低于自己的流里，离自己最近的那一档中最后创建、仍未关闭的流」，
+    /// 没有这样的流才挂根。同档请求因此按创建顺序先来先服务；若每个请求都排他挂根，
+    /// 新请求会把在途的请求全部压到自己身下，变成后来者优先。
+    /// 权重与 Chromium 的优先级档一一对应，权重越大档位越高。返回参与链的权重。
+    fn chain_priority(&mut self, request: &Request<()>) -> Option<u8> {
+        let extensions = request.extensions();
+        let dependency = extensions
+            .get_ref::<frame::StreamDependency>()
+            .cloned()
+            .or_else(|| {
+                extensions
+                    .get_ref::<frame::ReceivedStreamDependency>()
+                    .filter(|p| p.0.dependency_id == StreamId::zero())
+                    .map(|p| p.0.clone())
+            })?;
+        if !dependency.is_exclusive || dependency.dependency_id != StreamId::zero() {
+            return None;
+        }
+        let store = &mut self.store;
+        self.priority_chain
+            .retain(|(id, _)| store.find_mut(*id).is_some_and(|stream| !stream.state.is_closed()));
+        // 倒序遍历，同权重时 min_by_key 取到的是最后创建的流
+        if let Some(parent) = self
+            .priority_chain
+            .iter()
+            .rev()
+            .filter(|(_, weight)| *weight >= dependency.weight)
+            .min_by_key(|(_, weight)| *weight)
+            .map(|(id, _)| *id)
+        {
+            extensions.insert(frame::StreamDependency::new(parent, dependency.weight, true));
+        }
+        Some(dependency.weight)
     }
 
     /// Sets the target connection window and the DATA frame budget following it.

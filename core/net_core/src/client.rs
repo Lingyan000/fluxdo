@@ -1193,7 +1193,8 @@ fn build_request(
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
     // 仅默认 fetch 用途复用采样权重；显式优先级优先。采样依赖属于旧连接，
-    // 在新连接上挂到根节点，不能复制旧流号，也不能因此丢弃权重与排他标记。
+    // 不能复制旧流号：这里先挂根并保留权重与排他标记，由 HTTP/2 层在分配流号时
+    // 按 Chromium 规则改挂到同档在途的上一个流，形成先来先服务的链。
     if version == Version::HTTP_2
         && let Some(template) = template.filter(|t| t.is_calibrated())
         && request.uri().scheme_str() == Some("https")
@@ -2183,6 +2184,126 @@ mod tests {
             assert_eq!(response.status().as_u16(), 200);
             assert_eq!(captured.lock().as_ref().unwrap().2.as_ref().map(|p| p.weight), expected);
         }
+        client.reset_connections().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn concurrent_fetches_chain_priority_in_creation_order() {
+        use rama::{
+            http::proto::h2::frame::{ReceivedStreamDependency, StreamDependency, StreamId},
+            http::server::HttpServer,
+            service::service_fn,
+            tls::{
+                boring::server::TlsAcceptorLayer,
+                server::{ServerAuthData, TlsServerConfig},
+            },
+        };
+        use std::convert::Infallible;
+        let template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(ReceivedStreamDependency(
+            StreamDependency::new(StreamId::from(5), 219, true)));
+        templates.observe_probe_fetch(&sample);
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("localhost"),
+            ),
+        )
+        .unwrap();
+        let mut trust = TlsClientConfig::new()
+            .with_server_name(Host::from_static("localhost"))
+            .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+            .unwrap();
+        trust.set_alpn([ApplicationProtocol::HTTP_2].into_iter().collect());
+        let tls = TlsServerConfig::new()
+            .with_server_auth(ServerAuthData::new(chain, key))
+            .with_alpn_http_auto();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (sink, gate) = (seen.clone(), release.clone());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let http = HttpServer::auto(Executor::new()).service(service_fn(move |request: Request| {
+                let path = request
+                    .uri()
+                    .path()
+                    .map(|path| path.as_encoded_str().into_owned())
+                    .unwrap_or_default();
+                let slow = path == "/slow";
+                sink.lock().push((
+                    path,
+                    request.extensions().get_ref::<ReceivedStreamDependency>().map(|p| p.0.clone()),
+                ));
+                let gate = gate.clone();
+                async move {
+                    if slow {
+                        gate.notified().await;
+                    }
+                    Ok::<_, Infallible>(Response::new(Body::from("ok")))
+                }
+            }));
+            let _ = TlsAcceptorLayer::new(tls)
+                .into_layer(http)
+                .serve(ServiceInput::new(socket))
+                .await;
+        });
+        let client = Arc::new(HttpEgressClient::new(
+            Arc::new(EgressConnector::new(None, None, None, None, Duration::from_secs(3))),
+            Some(templates),
+        ));
+        *client.test_tls.lock() = Some(trust);
+        let get = |path: &'static str| {
+            let client = client.clone();
+            async move {
+                let response = client
+                    .send(
+                        Request::builder()
+                            .uri(format!("https://localhost:{port}{path}"))
+                            .header("user-agent", "priority-lab")
+                            .header("sec-fetch-mode", "cors")
+                            .body(Body::empty())
+                            .unwrap(),
+                        Some(Duration::from_secs(5)),
+                        Some(Duration::from_secs(5)),
+                    )
+                    .await
+                    .unwrap();
+                rama::http::body::util::BodyExt::collect(response.into_body()).await.unwrap();
+            }
+        };
+        let slow = tokio::spawn(get("/slow"));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while seen.lock().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        get("/fast").await;
+        release.notify_one();
+        slow.await.unwrap();
+        get("/after").await;
+        let seen = seen.lock().clone();
+        let dependency = |path: &str| {
+            seen.iter().find(|(p, _)| p == path).and_then(|(_, d)| d.clone()).unwrap()
+        };
+        // 在途的 /slow 是流 1：后发的 /fast 排他挂在它身下，而不是把它压到自己身下
+        assert_eq!(dependency("/slow"), StreamDependency::new(StreamId::zero(), 219, true));
+        assert_eq!(dependency("/fast"), StreamDependency::new(StreamId::from(1), 219, true));
+        // 前面的流都已结束，链从根重新开始
+        assert_eq!(dependency("/after"), StreamDependency::new(StreamId::zero(), 219, true));
         client.reset_connections().await;
         server.abort();
     }
