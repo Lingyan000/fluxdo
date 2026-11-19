@@ -214,6 +214,35 @@ void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
 
+  testWidgets('富文本导入中允许沿用原文关闭，提交仍等待导入完成', (tester) async {
+    final controller = TextEditingController(text: '尚在导入的原始正文');
+    final codec = _DelayedDraftCodec();
+    final key = GlobalKey<RichComposerEditorState>();
+    await _pump(
+      tester,
+      ProviderScope(
+        overrides: [currentUserProvider.overrideWith(_NoCurrentUser.new)],
+        child: RichComposerEditor(
+          key: key,
+          controller: controller,
+          semanticCodec: codec,
+        ),
+      ),
+    );
+    expect(key.currentState!.prepareToClose(), isTrue);
+    expect(key.currentState!.flushToController(), isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+    codec.loaded.complete(
+      ComposerImportResult.success(
+        SemanticNode('doc', content: [SemanticNode('paragraph')]),
+      ),
+    );
+    await tester.pump();
+    expect(controller.text, '尚在导入的原始正文');
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
+
   for (final missing in [false, true]) {
     for (final resolveFrame in [4, 16, 40]) {
       testWidgets('混合媒体草稿恢复后布局稳定 frame=$resolveFrame missing=$missing', (
@@ -238,7 +267,7 @@ void main() {
             .readAsStringSync()
             .replaceAll(
               'upload://',
-              'upload://case${resolveFrame}${missing ? 'missing' : 'loaded'}',
+              'upload://case$resolveFrame${missing ? 'missing' : 'loaded'}',
             );
         final controller = TextEditingController(text: raw);
         final codec = _DelayedDraftCodec();

@@ -21,6 +21,7 @@ import 'package:fluxdo/widgets/common/top_fade_scrim.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_close_confirmation.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
@@ -82,15 +83,35 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   /// 富文本导入失败时本次会话降级纯文本
   bool _richFallback = false;
   bool _allowClose = false;
+  bool _closePending = false;
   bool _richModeEnabled = false;
 
-  void _closeWithCurrentContent(dynamic result) {
-    if (!_submitted && !_discarded && !_flushRichContent()) return;
-    setState(() => _allowClose = true);
-    // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop(result);
-    });
+  Future<void> _closeWithCurrentContent(dynamic result) async {
+    if (_closePending || _allowClose) return;
+    _closePending = true;
+    try {
+      if (!_submitted && !_discarded && !_isSubmitting) {
+        final ready = _richKey.currentState?.prepareToClose() ?? true;
+        if (!ready) {
+          final discard = await confirmComposerDiscard(
+            context,
+            synchronizationFailed: true,
+          );
+          if (!mounted || !discard) return;
+          _discarded = true;
+          _draftController.disable();
+          _richKey.currentState?.prepareForDocumentReplacement();
+        }
+      }
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop(result);
+      });
+    } finally {
+      _closePending = false;
+    }
   }
 
   /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
@@ -102,7 +123,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               _richFallback ||
               !ref.read(preferencesProvider).useRichComposer);
     if (!ready) {
-      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+      ToastService.showError(S.current.composer_syncFailed);
     }
     return ready;
   }
@@ -173,6 +194,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       localStore: ref.read(localDraftStoreProvider),
       onRemoteDraftChanged: (data) {
         if (mounted &&
+            !_allowClose &&
             !_submitted &&
             !_discarded &&
             (!_isLoadingDraft || _reloadingDraft)) {
@@ -245,7 +267,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     setState(() => _isLoadingDraft = true);
     try {
       final draft = await _draftController.loadDraft();
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
 
       if (draft != null && draft.hasContent) {
         // 弹出恢复草稿对话框
@@ -259,7 +281,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         }
       }
     } finally {
-      if (mounted) {
+      if (mounted && !_allowClose) {
         setState(() => _isLoadingDraft = false);
         _applyCurrentFilter();
       }
@@ -895,7 +917,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   bool _submissionPending = false;
 
   Future<void> _submit() async {
-    if (_submissionPending || _isSubmitting) return;
+    if (_submissionPending || _isSubmitting || _closePending || _allowClose) {
+      return;
+    }
     _submissionPending = true;
     try {
       await _submitChecked();
@@ -1003,7 +1027,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       if (confirm != true) return;
     }
 
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (_draftController.hasConflict &&
         !await confirmComposerDraftOverwrite(
           context,
@@ -1011,8 +1035,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         )) {
       return;
     }
-    if (!mounted) return;
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (!approved.verify(
       synchronize: _flushRichContent,
       read: _submissionValues,
@@ -1039,13 +1062,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       await _draftController.deleteDraft();
       _submitted = true;
 
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       Navigator.of(context).pop(topicId);
     } on PostEnqueuedException {
       // 审核场景：删除草稿，提示用户（带「查看」入口），关闭编辑器
       await _draftController.deleteDraft();
       _submitted = true;
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       ToastService.show(
         S.current.createTopic_pendingReview,
         type: ToastType.info,

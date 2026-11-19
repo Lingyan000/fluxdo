@@ -15,6 +15,7 @@ import 'package:fluxdo/widgets/common/top_fade_scrim.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_close_confirmation.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
@@ -98,15 +99,41 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   /// 富文本降级态(导入门禁不过/用户主动切源码;可经工具栏切回)。
   bool _richFallback = false;
   bool _allowClose = false;
+  bool _closePending = false;
 
-  void _closeWithCurrentContent(dynamic result) {
-    if (!_flushRichContent()) return;
-    setState(() => _allowClose = true);
-    // 等待 PopScope 更新许可后再关闭，失败时保持当前编辑文档。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop(result);
-    });
+  Future<void> _closeWithCurrentContent(dynamic result) async {
+    if (_closePending || _allowClose) return;
+    _closePending = true;
+    try {
+      if (!_isSubmitting) {
+        final ready = _richKey.currentState?.prepareToClose() ?? true;
+        if (!ready || _hasUnsavedChanges) {
+          final discard = await confirmComposerDiscard(
+            context,
+            synchronizationFailed: !ready,
+          );
+          if (!mounted || !discard) return;
+          _richKey.currentState?.prepareForDocumentReplacement();
+        }
+      }
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop(result);
+      });
+    } finally {
+      _closePending = false;
+    }
   }
+
+  bool get _hasUnsavedChanges =>
+      (_canEditMetadata &&
+          (_titleController.text.trim() != _originalTitle ||
+              (!_isPrivateMessage &&
+                  ((_selectedCategory != null &&
+                          _selectedCategory!.id != _originalCategoryId) ||
+                      !_listEquals(_selectedTags, _originalTags ?? []))))) ||
+      (_canEditContent && _contentController.text != (_originalContent ?? ''));
 
   /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
   bool _flushRichContent() {
@@ -117,7 +144,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
               _richFallback ||
               !ref.read(preferencesProvider).useRichComposer);
     if (!ready) {
-      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+      ToastService.showError(S.current.composer_syncFailed);
     }
     return ready;
   }
@@ -347,7 +374,9 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   bool _submissionPending = false;
 
   Future<void> _submit() async {
-    if (_submissionPending || _isSubmitting) return;
+    if (_submissionPending || _isSubmitting || _closePending || _allowClose) {
+      return;
+    }
     _submissionPending = true;
     try {
       await _submitChecked();
@@ -426,7 +455,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       return;
     }
 
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (!approved.verify(
       synchronize: _flushRichContent,
       read: _submissionValues,
@@ -466,7 +495,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       }
 
       // 元数据请求也可能等待网络；正文写入前不能发送等待期间的旧快照。
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       if (!approved.verify(
         synchronize: _flushRichContent,
         read: _submissionValues,
@@ -483,7 +512,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         );
       }
 
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
 
       // 返回编辑结果
       Navigator.of(context).pop(

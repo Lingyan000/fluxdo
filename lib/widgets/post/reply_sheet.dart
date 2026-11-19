@@ -20,6 +20,7 @@ import '../../providers/draft_store_provider.dart';
 import 'pm_recipient_field.dart';
 import 'reply_submission.dart';
 import '../markdown_editor/composer_shortcuts.dart';
+import '../markdown_editor/composer_close_confirmation.dart';
 import '../markdown_editor/composer_switch_fade.dart';
 import '../markdown_editor/composer_workbench.dart';
 import '../markdown_editor/composer_header_actions.dart';
@@ -157,6 +158,7 @@ Future<Post?> showReplySheet({
     return await showAppBottomSheet<Post?>(
       context: context,
       isScrollControlled: true,
+      respectPopScopeOnDrag: true,
       useSafeArea: false,
       backgroundColor: Colors.transparent,
       shortcutSurface: shortcutSurface,
@@ -193,6 +195,7 @@ Future<Post?> showEditSheet({
     return await showAppBottomSheet<Post?>(
       context: context,
       isScrollControlled: true,
+      respectPopScopeOnDrag: true,
       useSafeArea: false,
       backgroundColor: Colors.transparent,
       shortcutSurface: shortcutSurface,
@@ -330,15 +333,38 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
   /// 富文本导入失败(cook 不可用)时本次会话降级纯文本
   bool _richFallback = false;
   bool _allowClose = false;
+  bool _closePending = false;
   bool _richModeEnabled = false;
 
-  void _closeWithCurrentContent(dynamic result) {
-    if (!_submitted && !_discarded && !_flushRichContent()) return;
-    setState(() => _allowClose = true);
-    // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _finish(result);
-    });
+  Future<void> _closeWithCurrentContent(dynamic result) async {
+    if (_closePending || _allowClose) return;
+    _closePending = true;
+    try {
+      if (!_submitted && !_discarded && !_isSubmitting) {
+        final ready = _richKey.currentState?.prepareToClose() ?? true;
+        final hasEdits =
+            _isEditMode && _contentController.text != (_originalContent ?? '');
+        if (!ready || hasEdits) {
+          final discard = await confirmComposerDiscard(
+            context,
+            synchronizationFailed: !ready,
+          );
+          if (!mounted || !discard) return;
+          // 放弃未保存的修改后，卸载不能再用旧镜像触发草稿保存。
+          _discarded = true;
+          _draftController?.disable();
+          _richKey.currentState?.prepareForDocumentReplacement();
+        }
+      }
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _finish(result);
+      });
+    } finally {
+      _closePending = false;
+    }
   }
 
   /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
@@ -350,7 +376,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
               _richFallback ||
               !ref.read(preferencesProvider).useRichComposer);
     if (!ready) {
-      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+      ToastService.showError(S.current.composer_syncFailed);
     }
     return ready;
   }
@@ -648,6 +674,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
   bool _discarded = false; // 用户明确舍弃，防止 dispose 重新保存草稿
   bool _showEmojiPanel = false;
   bool _isLoadingRaw = false; // 编辑模式：加载原始内容中
+  String? _originalContent;
   bool _isLoadingDraft = false; // 加载草稿中
 
   /// 草稿加载遮罩是否显示：加载很快结束（多数情况，点回复时已预取）时
@@ -788,6 +815,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
       localStore: ref.read(localDraftStoreProvider),
       onRemoteDraftChanged: (data) {
         if (mounted &&
+            !_allowClose &&
             !_submitted &&
             !_discarded &&
             (!_isLoadingDraft || _reloadingDraft)) {
@@ -823,7 +851,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
       final draft = await _draftController?.loadDraft(
         preloadedDraftFuture: widget.preloadedDraftFuture,
       );
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
 
       // 从快捷回复展开时正文已是最新，草稿只用于建立同步基线
       if (draft != null &&
@@ -834,7 +862,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
       }
     } finally {
       _loadingOverlayTimer?.cancel();
-      if (mounted) {
+      if (mounted && !_allowClose) {
         setState(() {
           _isLoadingDraft = false;
           _loadingOverlayVisible = false;
@@ -1009,10 +1037,12 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
     setState(() => _isLoadingRaw = true);
     try {
       final raw = await DiscourseService().getPostRaw(widget.editPost!.id);
-      if (mounted && raw != null) {
+      if (mounted && !_allowClose && raw != null) {
+        _originalContent = raw;
         _contentController.text = raw;
         // 加载完成后聚焦并将光标移到末尾
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _allowClose) return;
           _contentFocusNode.requestFocus();
           _contentController.selection = TextSelection.fromPosition(
             TextPosition(offset: _contentController.text.length),
@@ -1020,7 +1050,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !_allowClose) {
         _showError(
           S.current.post_loadContentFailed(
             e.toString().replaceAll('Exception: ', ''),
@@ -1107,7 +1137,9 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
   bool _submissionPending = false;
 
   Future<void> _submit() async {
-    if (_submissionPending || _isSubmitting) return;
+    if (_submissionPending || _isSubmitting || _closePending || _allowClose) {
+      return;
+    }
     _submissionPending = true;
     try {
       await _submitChecked();
@@ -1165,7 +1197,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
     )) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (!approved.verify(
       synchronize: _flushRichContent,
       read: _submissionValues,
@@ -1184,7 +1216,8 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
           postId: widget.editPost!.id,
           raw: content,
         );
-        if (!mounted) return;
+        _submitted = true;
+        if (!mounted || _allowClose) return;
         _finish(updatedPost);
       } else if (_isPrivateMessage) {
         await DiscourseService().createPrivateMessage(
@@ -1197,7 +1230,7 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
         // 发送成功后删除草稿
         await _draftController?.deleteDraft();
         _submitted = true;
-        if (!mounted) return;
+        if (!mounted || _allowClose) return;
         _finish(); // 私信模式不返回 Post
       } else {
         // 回复模式：返回创建的 Post 对象（送审时为 null）
@@ -1210,14 +1243,14 @@ class _ReplySheetState extends ConsumerState<ReplySheet>
         );
         if (!result.succeeded) return;
         _submitted = true;
-        if (!mounted) return;
+        if (!mounted || _allowClose) return;
         _finish(result.post);
       }
     } on PostEnqueuedException catch (e) {
       // 审核场景：删除草稿，提示用户，关闭编辑器
       await _draftController?.deleteDraft();
       _submitted = true;
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       ReplySubmission.announceEnqueued(
         e.pendingPost,
         replyToPostNumber: widget.replyToPost?.postNumber,
