@@ -66,7 +66,7 @@ import 'widgets/festival_greeting.dart';
 import 'services/update_checker_helper.dart';
 
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show FlattenCache, ParagraphLayoutCache, FluxdoRenderShapes, SpoilerShader;
+    show AiContentBadge, FlattenCache, ParagraphLayoutCache, FluxdoRenderShapes, SpoilerShader;
 
 import 'services/clipboard_topic_link_service.dart';
 import 'services/deep_link_service.dart';
@@ -506,6 +506,7 @@ Future<void> main() async {
 
   // 注入 hashtag 药丸的图标解析与点击导航(fluxdo_render 注入点)
   installHashtagHandlers();
+  AiContentBadge.descriptionOf = (context) => context.l10n.editor_aiDescription;
 
   // 注入 AI 模型管理包的消息提示实现
   AiToastDelegate.configure((message, {type = AiToastType.info}) {

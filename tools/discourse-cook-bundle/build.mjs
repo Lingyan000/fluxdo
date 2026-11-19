@@ -2,7 +2,7 @@
 //
 // 源码解析规则（resolve 插件）：
 //   discourse-markdown-it[/*]  → $DISCOURSE_SRC/frontend/discourse-markdown-it/src/*
-//   pretty-text/*              → $DISCOURSE_SRC/frontend/pretty-text/addon/*
+//   pretty-text/*              → $DISCOURSE_SRC/frontend/discourse/pretty-text/*
 //   $discourse/*               → $DISCOURSE_SRC/*            （entry 里引用插件文件）
 //   discourse/lib/{object,escape,case-converter} → 真实源码（无 Ember 依赖，直接用）
 //   discourse/lib/deprecated   → shims/deprecated.js         （真文件依赖 @ember/debug）
@@ -73,8 +73,8 @@ const resolvePlugin = {
     build.onResolve({ filter: /^pretty-text\// }, (args) => ({
       path: path.join(
         discourseSrc,
-        'frontend/pretty-text/addon',
-        `${args.path.slice('pretty-text/'.length)}.js`,
+        'frontend/discourse/pretty-text',
+        `${args.path.slice('pretty-text/'.length)}.ts`,
       ),
     }));
 

@@ -68,6 +68,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../../constants.dart';
 import '../../../l10n/s.dart';
+import '../ai_content_block.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../services/discourse_cache_manager.dart';
 import '../../../models/mention_user.dart';
@@ -1348,8 +1349,8 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   /// 候选:(关键字集, 标签, 图标, 动作)。关键字含中文与英文别名。
-  late final List<(List<String>, String, IconData, Future<void> Function())>
-  _blockCommands = [
+  List<(List<String>, String, IconData, Future<void> Function())>
+  get _blockCommands => [
     (
       ['paragraph', 'text', '正文', '段落'],
       '正文',
@@ -1411,6 +1412,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       Icons.code_rounded,
       () async => insertMarkdownSnippet('```dart\n// 代码\n```'),
     ),
+    for (final block in AiContentBlock.available)
+      (
+        ['ai-${block.name}', 'ai', block.name],
+        block.label(context.l10n),
+        block.icon,
+        () => _insertAiContent(block),
+      ),
     (
       ['math', '公式', 'gs'],
       '公式块',
@@ -2552,6 +2560,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     await insertMarkdownSnippet('[${text.isEmpty ? url : text}]($url)');
   }
 
+  Future<void> _insertAiContent(AiContentBlock block) {
+    final selected = _editor?.copySelectionAsMarkdown() ?? '';
+    return insertMarkdownSnippet(block.markdown(context.l10n, selected));
+  }
+
   /// "+"插入菜单:每项 = 一段模板 markdown(经 cook 变成对应块类型)。
   /// 覆盖编辑白名单外的全部常用块 —— 验证任何类型不再需要手写语法。
   List<ComposerToolAction> _buildInsertActions() {
@@ -2589,6 +2602,14 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       'quote',
     ];
     return [
+      for (final block in AiContentBlock.available)
+        ComposerToolAction(
+          group: ComposerToolGroup.insert,
+          label: block.label(context.l10n),
+          icon: Icon(block.icon),
+          searchText: 'ai ${block.name}',
+          run: () => _insertAiContent(block),
+        ),
       for (var i = 0; i < entries.length; i++)
         ComposerToolAction(
           group: ComposerToolGroup.insert,
@@ -2910,6 +2931,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
         id: island.node.id,
         code: code,
         language: language,
+        aiGenerated: (island.node as CodeBlockNode).aiGenerated,
         rawHtml: (island.node as CodeBlockNode).rawHtml,
         rawMarkdown: (island.node as CodeBlockNode).rawMarkdown,
       ),
@@ -3371,7 +3393,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   List<ComposerBlockChoice> _blockChoices({required bool transformOnly}) {
-    const order = [
+    final order = [
       'paragraph',
       'h1',
       'h2',
@@ -3385,6 +3407,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       'code',
       'hr',
       'details',
+      for (final block in AiContentBlock.values) 'ai-${block.name}',
       'callout',
       'spoiler',
       'math',
@@ -3672,7 +3695,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (text == null || text == frame.summary || !mounted) return;
     editor.updateContainerFrame(
       frame.groupId,
-      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open),
+      DetailsFrame(groupId: frame.groupId, summary: text, open: frame.open, aiGenerated: frame.aiGenerated),
     );
   }
 

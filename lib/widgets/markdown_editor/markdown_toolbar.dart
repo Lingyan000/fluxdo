@@ -34,6 +34,7 @@ import 'composer_tools_anchor.dart';
 import 'composer_view_mode_switcher.dart';
 import 'cursor_swipe_control.dart';
 import 'composer_shortcuts.dart';
+import 'ai_content_block.dart';
 import 'editor_tools.dart';
 import 'emoji_popover.dart';
 import 'media_upload_helper.dart';
@@ -1110,6 +1111,21 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       _uploadingCount--;
       if (!registered) _uploadAnchors.release(anchor);
     }
+  }
+
+  void insertAiContent(AiContentBlock block) {
+    final value = widget.controller.value;
+    final range = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    final before = range.textBefore(value.text);
+    final after = range.textAfter(value.text);
+    // 前后各留一个空行，避免相邻正文被 Markdown 的引用续行规则纳入标识。
+    final prefix = before.isEmpty || before.endsWith('\n\n')
+        ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+    final suffix = after.startsWith('\n\n')
+        ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+    insertText('$prefix${block.markdown(context.l10n, range.textInside(value.text))}$suffix');
   }
 
   /// 插入块级模板(表格/公式/分隔线/details):独占行语义,光标前
