@@ -78,6 +78,7 @@ enum TopicReplyEntryState {
 /// 长按菜单触发可配置动作。
 class TopicBottomBar extends ConsumerStatefulWidget {
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
   final TopicReplyEntryState replyEntryState;
   final ValueListenable<String?>? replyDraftListenable;
@@ -103,6 +104,7 @@ class TopicBottomBar extends ConsumerStatefulWidget {
   const TopicBottomBar({
     super.key,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     required this.replyEntryState,
     this.replyDraftListenable,
@@ -298,6 +300,7 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
         ? TopicBarGestures(
             onAction: widget.onGestureAction,
             streamIndexListenable: widget.streamIndexListenable,
+            readingPositionListenable: widget.readingPositionListenable,
             totalCount: widget.totalCount,
             scrubIndexNotifier: _scrubIndex,
             onScrubCommit: widget.onScrubCommit,
@@ -592,6 +595,7 @@ class TopicProgressLine extends StatelessWidget {
   const TopicProgressLine({
     super.key,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     this.markerIndex,
     this.handleInsets,
@@ -600,6 +604,7 @@ class TopicProgressLine extends StatelessWidget {
   });
 
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
   final int? markerIndex;
   final EdgeInsets? handleInsets;
@@ -613,6 +618,17 @@ class TopicProgressLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final insets = handleInsets ?? EdgeInsets.zero;
+    final reading = readingPositionListenable;
+    final progress = reading == null
+        ? null
+        : Animation<double>.fromValueListenable(
+            reading,
+            transformer: (value) => TopicProgressTrack.readingFraction(
+              streamIndexListenable.value,
+              totalCount,
+              value,
+            ),
+          );
     return SizedBox(
       height:
           floatingEdge?.size.height ??
@@ -625,6 +641,7 @@ class TopicProgressLine extends StatelessWidget {
               : TopicProgressSurface.docked,
           floatingEdge: floatingEdge,
           progress: TopicProgressTrack.fraction(index, totalCount),
+          readingProgress: progress,
           lastRead: markerIndex == null
               ? null
               : TopicProgressTrack.fraction(markerIndex!, totalCount),

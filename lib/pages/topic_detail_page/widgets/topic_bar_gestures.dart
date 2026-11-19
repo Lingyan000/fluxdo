@@ -38,6 +38,7 @@ class TopicBarGestures extends ConsumerStatefulWidget {
     required this.child,
     required this.onAction,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     required this.scrubIndexNotifier,
     required this.onScrubCommit,
@@ -53,6 +54,7 @@ class TopicBarGestures extends ConsumerStatefulWidget {
 
   /// 当前楼层（stream 索引，1 起），拖动起点
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
   final int? markerIndex;
 
@@ -249,9 +251,10 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
   }
 
   double _trackProgress(double expansion) {
-    final reading = TopicProgressTrack.fraction(
+    final reading = TopicProgressTrack.readingFraction(
       widget.streamIndexListenable.value,
       widget.totalCount,
+      widget.readingPositionListenable?.value,
     );
     final tracker = _tracker;
     if (tracker == null) return reading;
@@ -524,6 +527,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     final hasHandle = enabled && widget.totalCount > 1;
     Widget readingLine(TopicFloatingBarEdge? edge) => TopicProgressLine(
       streamIndexListenable: widget.streamIndexListenable,
+      readingPositionListenable: widget.readingPositionListenable,
       totalCount: widget.totalCount,
       markerIndex: widget.markerIndex,
       handleInsets: enabled || _floating ? _railInsets : null,

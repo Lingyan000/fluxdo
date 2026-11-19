@@ -63,6 +63,7 @@ class TopicProgressTrack extends StatelessWidget {
     super.key,
     required this.surface,
     required this.progress,
+    this.readingProgress,
     this.expansion = 0,
     this.startInset = 0,
     this.endInset = 0,
@@ -80,6 +81,10 @@ class TopicProgressTrack extends StatelessWidget {
 
   final TopicProgressSurface surface;
   final double progress, expansion, startInset, endInset;
+
+  /// 正文滚动只刷新绘制层，握柄和填充使用同一帧的读数。
+  final Animation<double>? readingProgress;
+
   final bool showHandle;
   final Animation<double> thumbTravel;
   final double? lastRead, current;
@@ -90,6 +95,11 @@ class TopicProgressTrack extends StatelessWidget {
 
   static double fraction(int index, int total) =>
       total > 1 ? ((index - 1) / (total - 1)).clamp(0.0, 1.0) : 1;
+
+  static double readingFraction(int index, int total, double? floorsRead) =>
+      floorsRead == null || total <= 0
+      ? fraction(index, total)
+      : (floorsRead / total).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +174,11 @@ class TopicProgressGradient extends StatelessWidget {
 
 class _TrackPainter extends CustomPainter {
   _TrackPainter(this.track, this.scheme, this.accent, this.radius)
-    : super(repaint: track.thumbTravel);
+    : super(
+        repaint: track.readingProgress == null
+            ? track.thumbTravel
+            : Listenable.merge([track.thumbTravel, track.readingProgress]),
+      );
   final TopicProgressTrack track;
   final ColorScheme scheme;
   final Color accent;
@@ -192,7 +206,8 @@ class _TrackPainter extends CustomPainter {
             Offset(xAt(f), style.openPaintHeight / 2),
             t,
           )!;
-    final tip = pointAt(track.progress);
+    final progress = track.readingProgress?.value ?? track.progress;
+    final tip = pointAt(progress);
     final thumb = tip.dx;
     final paint = Paint();
     final paper = scheme.surfaceContainerLowest;
@@ -270,7 +285,7 @@ class _TrackPainter extends CustomPainter {
     drawSegment(bed, 1);
 
     final last = track.lastRead;
-    if (!style.vertical && t < 1 && last != null && last > track.progress) {
+    if (!style.vertical && t < 1 && last != null && last > progress) {
       paint.color = accent.withValues(alpha: .34 * (1 - t));
       drawSegment(pill(left - h / 2, xAt(last) + h / 2, h), last);
     }
@@ -280,10 +295,7 @@ class _TrackPainter extends CustomPainter {
         colors: [Color.lerp(accent, paper, .16 * t)!, accent],
       ).createShader(bed.outerRect);
     }
-    drawSegment(
-      pill(left - h / 2, xAt(track.progress) + h / 2, h),
-      track.progress,
-    );
+    drawSegment(pill(left - h / 2, xAt(progress) + h / 2, h), progress);
     paint.shader = null;
 
     if (t > 0) {
@@ -321,7 +333,7 @@ class _TrackPainter extends CustomPainter {
         canvas.drawCircle(at, 3, paint..color = accent);
       }
       final current = track.current;
-      if (current != null && current != track.progress) {
+      if (current != null && current != progress) {
         final at = Offset(xAt(current), y);
         canvas.drawCircle(at, 4.5, paint..color = accent);
         canvas.drawCircle(at, 2.75, paint..color = scheme.surface);
@@ -367,6 +379,7 @@ class _TrackPainter extends CustomPainter {
       track.surface != old.track.surface ||
       track.floatingEdge != old.track.floatingEdge ||
       track.progress != old.track.progress ||
+      track.readingProgress != old.track.readingProgress ||
       track.expansion != old.track.expansion ||
       track.startInset != old.track.startInset ||
       track.endInset != old.track.endInset ||

@@ -2551,6 +2551,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       showBottomBarListenable: _controller.showBottomBarNotifier,
       showBackToTopListenable: _controller.showBackToTopNotifier,
       streamIndexListenable: _controller.streamIndexNotifier,
+      readingPositionListenable: _controller.readingPositionNotifier,
       totalCount: detail.postStream.stream.length,
       hasMoreBefore: notifier.hasMoreBefore,
       replyEntryState: replyEntryState,
@@ -3812,6 +3813,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               initialPostIndex: initialPostIndex,
               dividerPostIndex: dividerPostIndex,
               onFirstVisiblePostChanged: _updateStreamIndexForPostNumber,
+              onReadingProgress: _controller.updateReadingPosition,
               onVisiblePostsChanged: _updateVisiblePosts,
               onScrollIndexMappingChanged: (mapping) =>
                   _controller.updateScrollIndexMapping(mapping, posts),

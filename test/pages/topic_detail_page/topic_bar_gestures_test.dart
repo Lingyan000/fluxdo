@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
+import 'package:flutter/rendering.dart' show RenderCustomPaint;
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bar_gestures.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bottom_bar.dart';
@@ -45,13 +46,16 @@ void main() {
     Size viewport = const Size(390, 720),
     double? paneWidth,
     ThemeData? barTheme,
+    ValueNotifier<double>? readingPosition,
+    int totalCount = 10000,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = viewport;
     addTearDown(tester.view.reset);
     final bar = TopicBottomBar(
       streamIndexListenable: current,
-      totalCount: 10000,
+      readingPositionListenable: readingPosition,
+      totalCount: totalCount,
       replyEntryState: TopicReplyEntryState.reply,
       onReplyEntryTap: () => replyTaps++,
       onOpenTimeline: () {},
@@ -112,6 +116,55 @@ void main() {
       if (call.invocation.memberName == #drawRect)
         (call.invocation.positionalArguments.last as Paint).color.a,
   ];
+
+  testWidgets('阅读时同一楼内的细线与悬浮顶边按实际位置逐帧绘制', (tester) async {
+    current.value = 2;
+    final reading = ValueNotifier(1.0);
+    addTearDown(reading.dispose);
+    final trackFinder = find.byType(TopicProgressTrack);
+    final paint = find.descendant(
+      of: trackFinder,
+      matching: find.byType(CustomPaint),
+    );
+    for (final width in [390.0, 960.0]) {
+      await showBar(
+        tester,
+        viewport: Size(width, 720),
+        readingPosition: reading,
+        totalCount: 4,
+      );
+      final initialTrack = tester.widget<TopicProgressTrack>(trackFinder);
+      final render = tester.renderObject<RenderCustomPaint>(paint);
+      for (final amount in [1.25, 1.5, 1.75, 1.5]) {
+        reading.value = amount;
+        expect(render.debugNeedsPaint, isTrue);
+        await tester.pump();
+        final track = tester.widget<TopicProgressTrack>(trackFinder);
+        expect(track, same(initialTrack), reason: '楼内滚动只需重绘');
+        final fraction = amount / 4;
+        final edge = track.floatingEdge;
+        if (edge != null) {
+          final fill =
+              paintTrack(tester).invocations
+                      .lastWhere(
+                        (call) => call.invocation.memberName == #drawPath,
+                      )
+                      .invocation
+                      .positionalArguments
+                      .first
+                  as Path;
+          expect(fill.getBounds().right, closeTo(edge.at(fraction).dx, .15));
+        } else {
+          final fill = paintedCapsules(tester)[1];
+          expect(
+            fill.right - fill.height / 2,
+            closeTo(render.size.width * fraction, .01),
+          );
+        }
+        expect(current.value, 2);
+      }
+    }
+  });
 
   testWidgets('窄屏阅读线贴边，展开时两端淡出，松手后恢复整条分割线', (tester) async {
     final bar = await showBar(tester);
