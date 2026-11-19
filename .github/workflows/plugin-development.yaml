@@ -70,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: ecb31d9b92eacbd2eecd45b8091b56404be5b66c
+          ref: 9060c9dbe6b57dafbefcfb1231b64356cfbc3a63
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -105,6 +105,9 @@ jobs:
       - name: Run real QuickJS HMR regression
         working-directory: app
         run: node --test tool/plugin_tools/native.test.mjs
+      - name: Verify buyer workflows with simulated services
+        working-directory: app
+        run: node --test test/modules/metaverse/ld_store_buyer.test.mjs
       - name: Verify installed activity plugin with the native task dispatcher
         working-directory: app
         run: flutter test --reporter expanded test/modules/metaverse/metaverse_scheduled_tasks_test.dart test/modules/metaverse/metaverse_activity_ui_test.dart test/modules/metaverse/metaverse_pagination_test.dart
@@ -115,6 +118,8 @@ jobs:
           test/modules/metaverse/metaverse_registry_test.dart
           test/modules/metaverse/metaverse_capabilities_test.dart
           test/modules/metaverse/metaverse_plugin_contract_test.dart
+          test/modules/metaverse/metaverse_content_components_test.dart
+          test/modules/metaverse/ld_store_api2_checkout_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
