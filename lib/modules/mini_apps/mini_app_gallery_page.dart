@@ -5,6 +5,7 @@ import '../../services/toast_service.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -34,10 +35,14 @@ class MiniAppGalleryPage extends ConsumerStatefulWidget {
     super.key,
     this.onClose,
     this.active = true,
+    this.activity,
     this.workspace = false,
   });
   final VoidCallback? onClose;
   final bool active;
+
+  /// 优先于 [active]。首页层在下拉显隐时频繁切换，经此传入可避免整页重建。
+  final ValueListenable<bool>? activity;
   final bool workspace;
   static Future<void> open(BuildContext context) => Navigator.of(
     context,
@@ -66,13 +71,15 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
     _directory = MiniAppDirectoryController(
       ref.read(miniAppServiceProvider).directory,
     );
-    if (widget.active) _directory.refresh();
+    _wasActive = _active;
+    widget.activity?.addListener(_activityChanged);
+    if (_active) _directory.refresh();
     AuthSession().generationChanges.addListener(_accountChanged);
     _windowUpdates = MiniAppWindowBridge.updates.stream.listen((_) {
       _windowUpdatesPending = true;
       _windowRefresh?.cancel();
       _windowRefresh = Timer(const Duration(milliseconds: 250), () {
-        if (mounted && widget.active) {
+        if (mounted && _active) {
           _windowUpdatesPending = false;
           _directory.refresh();
         }
@@ -83,7 +90,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
       _shortcuts = ShortcutScopeBinding(
         ref: ref,
         scope: ShortcutScope.context,
-        enabled: () => mounted && widget.active,
+        enabled: () => mounted && _active,
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -130,17 +137,30 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
       );
     }
     return DesktopRefreshIndicator(
-      shouldRefresh: () => widget.active,
+      shouldRefresh: () => _active,
       onRefresh: _refresh,
       child: child,
     );
   }
 
+  bool get _active => widget.activity?.value ?? widget.active;
+  late bool _wasActive;
+
   @override
   void didUpdateWidget(MiniAppGalleryPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.active &&
-        !oldWidget.active &&
+    if (widget.activity != oldWidget.activity) {
+      oldWidget.activity?.removeListener(_activityChanged);
+      widget.activity?.addListener(_activityChanged);
+    }
+    _activityChanged();
+  }
+
+  void _activityChanged() {
+    final wasActive = _wasActive;
+    _wasActive = _active;
+    if (_active &&
+        !wasActive &&
         (_directory.apps.isEmpty ||
             _reloadOnActivate ||
             _windowUpdatesPending) &&
@@ -157,7 +177,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
 
   void _accountChanged() {
     _debounce?.cancel();
-    if (!widget.active) {
+    if (!_active) {
       _directory.invalidate();
       _reloadOnActivate = true;
       return;
@@ -166,7 +186,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
   }
 
   void _nearEnd() {
-    if (widget.active &&
+    if (_active &&
         _scroll.hasClients &&
         _scroll.position.extentAfter < 400 &&
         _directory.error == null) {
@@ -193,6 +213,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
 
   @override
   void dispose() {
+    widget.activity?.removeListener(_activityChanged);
     _windowUpdates?.cancel();
     _windowRefresh?.cancel();
     AuthSession().generationChanges.removeListener(_accountChanged);
@@ -209,7 +230,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
   Widget build(BuildContext context) {
     ref.listen(navActionBusProvider, (_, event) {
       if (!widget.workspace ||
-          !widget.active ||
+          !_active ||
           event?.targetId != NavEntryIds.miniApps) {
         return;
       }
@@ -594,7 +615,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
   }
 
   Future<void> _info(MiniApp app) async {
-    if (_showingInfo || _openingAppId != null || !widget.active) return;
+    if (_showingInfo || _openingAppId != null || !_active) return;
     _showingInfo = true;
     FocusScope.of(context).unfocus();
     if (!PlatformUtils.isDesktop) unawaited(HapticFeedback.selectionClick());
@@ -616,7 +637,7 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
     setState(() => _openingAppId = app.id);
     try {
       final details = await ref.read(miniAppServiceProvider).details(app.id);
-      if (!mounted || !widget.active || !AuthSession().isValid(generation)) {
+      if (!mounted || !_active || !AuthSession().isValid(generation)) {
         return;
       }
       await MiniAppRunnerPage.open(context, details);
