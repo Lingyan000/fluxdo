@@ -46,33 +46,6 @@ fn oid_ad_ocsp() -> ObjectIdentifier {
     ObjectIdentifier::from_slice(&[1, 3, 6, 1, 5, 5, 7, 48, 1])
 }
 
-/// 从已通过平台信任校验的证书读取 OCSP 入口；不能把 caIssuers 当作响应者。
-/// 解析失败必须返回错误，不能按“没有入口”处理。
-pub fn certificate_has_ocsp_responder(der: &[u8]) -> Result<bool, BoxError> {
-    use x509_parser::{
-        extensions::{GeneralName, ParsedExtension},
-        prelude::*,
-    };
-    let invalid = || BoxError::from_static_str("invalid certificate authority information access");
-    let (rest, cert) = X509Certificate::from_der(der).map_err(|_| invalid())?;
-    if !rest.is_empty() {
-        return Err(invalid());
-    }
-    let extension = cert
-        .get_extension_unique(&oid_registry::OID_PKIX_AUTHORITY_INFO_ACCESS)
-        .map_err(|_| invalid())?;
-    let Some(extension) = extension else {
-        return Ok(false);
-    };
-    let ParsedExtension::AuthorityInfoAccess(aia) = extension.parsed_extension() else {
-        return Err(invalid());
-    };
-    Ok(aia.iter().any(|access| {
-        access.access_method == oid_registry::OID_PKIX_ACCESS_DESCRIPTOR_OCSP
-            && matches!(access.access_location, GeneralName::URI(uri) if !uri.is_empty())
-    }))
-}
-
 /// DER of an `AuthorityInfoAccessSyntax` extension value with a single
 /// `id-ad-ocsp` responder URI, for embedding as the `1.3.6.1.5.5.7.1.1`
 /// extension on a re-signed leaf.

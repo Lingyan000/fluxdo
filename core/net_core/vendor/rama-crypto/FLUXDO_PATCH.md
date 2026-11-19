@@ -59,6 +59,21 @@ id-ad-ocsp URI，不把 caIssuers/CRL 地址当作 OCSP 入口，损坏或重复
 吊销 CRL、吊销/未知/错误签名/损坏 staple、过期证书仍被拒绝。CRL 由本地 CertStore 注入，
 证书/CRL/OCSP 由 OpenSSL 生成，测试不依赖网络。它不等同于用户设备/ROM 的现场复测。
 
+## 握手中不再在线查询吊销（2026-11-20）
+
+真机日志对照：同一设备完整握手 283–599 ms，会话恢复握手（跳过证书校验）222–229 ms，
+不做在线吊销查询的同类客户端完整握手均值 216 ms。linux.do（GTS WE1）与
+ldstatic（Let's Encrypt）证书已不提供 OCSP 地址，上一节的策略因此在每次完整握手中
+同步下载 CRL（明文 HTTP，实测 0.3–1.0 s）；该地址不可达时又回到 #433 的误拒绝来源。
+
+现策略：系统 TrustManager、名称、期限、用途校验不变；未装订 OCSP 时不再联网取
+CRL/OCSP，直接放行已通过系统校验的链（与 Android 系统 TLS、Chrome、Cronet 一致）；
+服务器装订的响应仍严格验证（ONLY_END_ENTITY + NO_FALLBACK，不软失败、不回退 CRL），
+提供者不支持检查器时走本地验证。随之删除系统根判定、OCSP 入口探测与 CRL-only 分支。
+上两节的「无 staple 时」描述仅为历史记录。
+Windows 同步改为 `CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY`（只用系统已缓存的吊销信息），
+与 Chromium `cert_verify_proc_win.cc` 未要求在线吊销检查时的做法一致。
+
 ## 可执行验证
 
 Linux 的 `cargo test --locked --lib` 包含真实 JVM/JNI 回归，需要 Java 运行时包含

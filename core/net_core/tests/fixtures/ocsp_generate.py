@@ -107,12 +107,6 @@ def change_single(data, change):
 root('issuer')
 root('foreign', subject='issuer')
 issue('leaf', '1', 'serverAuth')
-# 入口差异不依赖公网：CRL 由 Java CertStore 注入；空 OCSP 地址不能屏蔽 CRL 吊销。
-issue('aia_issuer', '11', 'serverAuth', extra='authorityInfoAccess=caIssuers;URI:http://issuer.invalid/ca\n')
-issue('aia_ocsp', '12', 'serverAuth', extra='authorityInfoAccess=OCSP;URI:http://ocsp.invalid/status\n')
-issue('crl_only', '13', 'serverAuth', extra='crlDistributionPoints=URI:http://crl.invalid/list\n')
-issue('aia_both', '14', 'serverAuth', extra='authorityInfoAccess=caIssuers;URI:http://issuer.invalid/ca,OCSP;URI:http://ocsp.invalid/status\n')
-issue('aia_invalid', '15', 'serverAuth', extra='1.3.6.1.5.5.7.1.1=DER:05:00\n')
 issue('other', '2', 'serverAuth')
 issue('delegate', '3', 'OCSPSigning')
 issue('unauthorized', '4', 'clientAuth')

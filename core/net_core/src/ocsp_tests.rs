@@ -7,7 +7,6 @@ pub(crate) struct Fixtures {
     pub leaf: Vec<u8>,
     pub issuer: Vec<u8>,
     pub responses: BTreeMap<String, Vec<u8>>,
-    pub certificates: BTreeMap<String, Vec<u8>>,
     pub crls: BTreeMap<String, Vec<u8>>,
     pub now: i64,
 }
@@ -52,36 +51,10 @@ pub(crate) fn fixtures() -> &'static Fixtures {
             issuer: std::fs::read(dir.0.join("issuer.der")).unwrap(),
             now: serde_json::from_slice(&std::fs::read(dir.0.join("now.json")).unwrap()).unwrap(),
             responses,
-            certificates: ["leaf", "aia_issuer", "aia_ocsp", "crl_only", "aia_both", "aia_invalid"]
-                .into_iter().map(|name| (name.to_owned(), std::fs::read(dir.0.join(format!("{name}.der"))).unwrap())).collect(),
             crls: ["valid", "revoked"].into_iter()
                 .map(|name| (name.to_owned(), std::fs::read(dir.0.join(format!("{name}.crl"))).unwrap())).collect(),
         }
     })
-}
-
-#[test]
-fn ocsp_responder_detection_distinguishes_ca_issuers_and_crls() {
-    use rama_crypto::ocsp::certificate_has_ocsp_responder;
-    let f = fixtures();
-    for (name, expected) in [
-        ("leaf", false),
-        ("aia_issuer", false),
-        ("crl_only", false),
-        ("aia_ocsp", true),
-        ("aia_both", true),
-    ] {
-        assert_eq!(
-            certificate_has_ocsp_responder(&f.certificates[name]).unwrap(),
-            expected,
-            "{name}"
-        );
-    }
-    assert!(certificate_has_ocsp_responder(&f.certificates["aia_invalid"]).is_err());
-    assert!(certificate_has_ocsp_responder(&f.leaf[..f.leaf.len() - 1]).is_err());
-    let mut trailing = f.leaf.clone();
-    trailing.push(0);
-    assert!(certificate_has_ocsp_responder(&trailing).is_err());
 }
 
 pub(crate) fn expected(name: &str) -> Result<(), Error> {

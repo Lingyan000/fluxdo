@@ -18,7 +18,7 @@ use crate::pki_types::CertificateDer;
 
 #[path = "android_revocation.rs"]
 mod revocation;
-use revocation::{RevocationChecker, allow_unsupported_revocation, revocation_checker};
+use revocation::{RevocationChecker, revocation_checker};
 
 #[cfg(feature = "boring")]
 use crate::ocsp::verify as native_ocsp;
@@ -36,10 +36,8 @@ const AUTH_TYPE: &str = "RSA";
 /// Android N: first release with `PKIXRevocationChecker`.
 const REVOCATION_CHECKER_SDK: i32 = 24;
 
-/// A trust manager and its root store (the Android store is for classification only).
 struct TrustManager {
     extensions: Global<JObject<'static>>,
-    key_store: Global<JObject<'static>>,
 }
 
 pub(super) struct Verifier {
@@ -128,7 +126,6 @@ impl Verifier {
             check_revocation(
                 env,
                 &factory,
-                system,
                 leaf,
                 &valid_chain,
                 ocsp_response,
@@ -528,7 +525,6 @@ fn trust_manager(
         )?;
         return Ok(TrustManager {
             extensions: env.new_global_ref(&extensions)?,
-            key_store: env.new_global_ref(&key_store)?,
         });
     }
     Err(PlatformVerifyError::new(
@@ -611,31 +607,6 @@ fn is_missing_anchor(
     Ok(message == "Trust anchor for certification path not found.")
 }
 
-/// Ask the active Android store, which includes Conscrypt APEX updates and
-/// excludes removed system roots. Reissued additional anchors are additional
-/// roots unless their certificate is also present in the system store.
-fn is_system_root(
-    env: &mut Env<'_>,
-    system: &TrustManager,
-    root: &JObject<'_>,
-) -> Result<bool, PlatformVerifyError> {
-    let alias = env
-        .call_method(
-            &system.key_store,
-            jni_str!("getCertificateAlias"),
-            jni_sig!("(Ljava/security/cert/Certificate;)Ljava/lang/String;"),
-            &[JValue::Object(root)],
-        )?
-        .l()?;
-    if alias.is_null() {
-        return Ok(false);
-    }
-    let alias = env
-        .cast_local::<jni::objects::JString<'_>>(alias)?
-        .try_to_string(env)?;
-    Ok(alias.starts_with("system:"))
-}
-
 fn list_get<'local>(
     env: &mut Env<'local>,
     list: &JObject<'_>,
@@ -657,15 +628,14 @@ fn list_len(env: &mut Env<'_>, list: &JObject<'_>) -> Result<i32, PlatformVerify
         .i()?)
 }
 
-/// Check the leaf for revocation, soft-failing when no information is available.
+/// 校验服务器装订（stapled）的 OCSP 响应。
 ///
-/// Revocation is only fetched for chains ending at a system root: user-added
-/// and additional roots usually belong to private PKIs without public
-/// revocation endpoints. A stapled response is always checked.
+/// 握手中不联网取 CRL/OCSP：同步下载会拖慢每次完整握手，地址不可达或证书不再提供
+/// OCSP 入口时还会误拒绝；Android 系统 TLS 与 Chrome 同样不在握手中在线查询吊销。
+/// 服务器主动装订的响应则必须严格验证，不能软失败或回退到 CRL。
 fn check_revocation(
     env: &mut Env<'_>,
     factory: &JObject<'_>,
-    system: &TrustManager,
     leaf: &JObject<'_>,
     valid_chain: &JObject<'_>,
     ocsp_response: Option<&[u8]>,
@@ -681,6 +651,9 @@ fn check_revocation(
     if sdk < REVOCATION_CHECKER_SDK {
         return Ok(());
     }
+    let Some(ocsp_response) = ocsp_response else {
+        return Ok(());
+    };
 
     let length = list_len(env, valid_chain)?;
     if length == 0 {
@@ -692,11 +665,6 @@ fn check_revocation(
     if length == 1 {
         return Ok(());
     }
-    let root = list_get(env, valid_chain, length - 1)?;
-    if ocsp_response.is_none() && !is_system_root(env, system, &root)? {
-        return Ok(());
-    }
-
     let algorithm = new_string(env, "PKIX")?;
     let validator = env
         .call_static_method(
@@ -709,23 +677,12 @@ fn check_revocation(
     let result = revocation_checker(env, &validator);
     let checker = match caught(env, result)? {
         Ok(RevocationChecker::Available(checker)) => checker,
-        Ok(RevocationChecker::Unsupported)
-            if allow_unsupported_revocation(ocsp_response.is_some()) =>
-        {
-            // TrustManager、名称、有效期和用途已校验成功；这里只跳过平台未实现的补充检查。
-            rama_core::telemetry::tracing::warn!(
-                event = "tls_revocation_check_unsupported",
-                "Android certificate provider has no supplementary revocation checker; platform trust verification passed"
-            );
-            return Ok(());
-        }
         Ok(RevocationChecker::Unsupported) => {
             #[cfg(feature = "boring")]
             {
                 // 只接受平台已经构建的链中的签发者，响应附带证书不能充当信任锚点。
                 let issuer = list_get(env, valid_chain, 1)?;
-                let response = ocsp_response.expect("未携带 staple 的分支已提前处理");
-                let result = native_bridge::verify_staple(env, leaf, &issuer, response, now_millis / 1000)?;
+                let result = native_bridge::verify_staple(env, leaf, &issuer, ocsp_response, now_millis / 1000)?;
                 if result.is_ok() {
                     rama_core::telemetry::tracing::debug!(
                         event = "tls_ocsp_native_verified",
@@ -751,21 +708,10 @@ fn check_revocation(
         }
     };
 
-    let leaf_der = env.call_method(leaf, jni_str!("getEncoded"), jni_sig!("()[B"), &[])?.l()?;
-    let leaf_der = env.cast_local::<JByteArray<'_>>(leaf_der)?;
-    let has_ocsp_responder = crate::ocsp::certificate_has_ocsp_responder(
-        &env.convert_byte_array(&leaf_der)?,
-    ).map_err(|err| PlatformVerifyError::with_source(PlatformVerifyErrorKind::BadEncoding, err))?;
-    revocation::configure_revocation_checker(env, &checker, ocsp_response.is_some(), has_ocsp_responder)?;
-    if ocsp_response.is_none() && !has_ocsp_responder {
-        rama_core::telemetry::tracing::info!(
-            event = "tls_revocation_crl_only",
-            "Platform trust verification passed; no OCSP responder advertised, checking CRLs with soft-fail for unavailable status"
-        );
-    }
+    revocation::configure_revocation_checker(env, &checker)?;
 
-    if let Some(response) = ocsp_response {
-        let response: JByteArray<'_> = env.byte_array_from_slice(response)?;
+    {
+        let response: JByteArray<'_> = env.byte_array_from_slice(ocsp_response)?;
         let responses = env.new_object(jni_str!("java/util/HashMap"), jni_sig!("()V"), &[])?;
         env.call_method(
             &responses,

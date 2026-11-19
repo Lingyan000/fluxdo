@@ -18,7 +18,8 @@ use windows_sys::Win32::{
         AUTHTYPE_SERVER, CERT_CHAIN_CACHE_END_CERT, CERT_CHAIN_CONTEXT, CERT_CHAIN_ENGINE_CONFIG,
         CERT_CHAIN_PARA, CERT_CHAIN_POLICY_IGNORE_ALL_REV_UNKNOWN_FLAGS, CERT_CHAIN_POLICY_PARA,
         CERT_CHAIN_POLICY_SSL, CERT_CHAIN_POLICY_STATUS,
-        CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT, CERT_CHAIN_REVOCATION_CHECK_END_CERT,
+        CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT, CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY,
+        CERT_CHAIN_REVOCATION_CHECK_END_CERT,
         CERT_CONTEXT, CERT_OCSP_RESPONSE_PROP_ID, CERT_SET_PROPERTY_IGNORE_PERSIST_ERROR_FLAG,
         CERT_STORE_ADD_ALWAYS, CERT_STORE_DEFER_CLOSE_UNTIL_LAST_FREE_FLAG, CERT_STORE_PROV_MEMORY,
         CERT_TRUST_IS_PARTIAL_CHAIN, CERT_TRUST_IS_UNTRUSTED_ROOT, CERT_USAGE_MATCH,
@@ -313,14 +314,16 @@ impl CertificateStore {
                     rgpszUsageIdentifier: ALLOWED_EKUS.as_ptr().cast_mut().cast(),
                 },
             },
-            // Below the 15s default: fetches are for revocation and intermediates.
+            // Below the 15s default: fetches are for intermediates.
             dwUrlRetrievalTimeout: 10_000,
             ..Default::default()
         };
 
-        // Revocation is checked for the leaf only, network time is bounded
-        // across all fetches, and repeated connections reuse the cached leaf.
+        // 只查叶子证书的吊销，且只用系统已缓存的吊销信息：握手中不联网取 CRL/OCSP，
+        // 与 Chromium 未要求在线吊销检查时的 CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY 一致。
+        // 缺失中间证书仍可经 AIA 获取，网络耗时在全部获取间累计限时；重复连接复用缓存的叶子。
         const FLAGS: u32 = CERT_CHAIN_REVOCATION_CHECK_END_CERT
+            | CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY
             | CERT_CHAIN_REVOCATION_ACCUMULATIVE_TIMEOUT
             | CERT_CHAIN_CACHE_END_CERT;
 
