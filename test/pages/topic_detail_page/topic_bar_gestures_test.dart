@@ -3,6 +3,7 @@ import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bar_gestures.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bottom_bar.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_overlay.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_filter_controls.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_progress_track.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_indicator.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
@@ -81,17 +82,156 @@ void main() {
     return tester.getRect(find.byType(TopicBarGestures));
   }
 
-  testWidgets('渐变留在帖子分栏下方，退场时再次横拖可接着操作', (tester) async {
+  TestRecordingCanvas paintTrack(WidgetTester tester) {
+    final paint = find.descendant(
+      of: find.byType(TopicProgressTrack),
+      matching: find.byType(CustomPaint),
+    );
+    final canvas = TestRecordingCanvas();
+    tester
+        .widget<CustomPaint>(paint)
+        .painter!
+        .paint(canvas, tester.getSize(paint));
+    return canvas;
+  }
+
+  List<RRect> paintedCapsules(WidgetTester tester) => [
+    for (final call in paintTrack(tester).invocations)
+      if (call.invocation.memberName == #drawRRect)
+        call.invocation.positionalArguments.first as RRect,
+  ];
+
+  List<double> dividerOpacities(WidgetTester tester) => [
+    for (final call in paintTrack(tester).invocations)
+      if (call.invocation.memberName == #drawRect)
+        (call.invocation.positionalArguments.last as Paint).color.a,
+  ];
+
+  testWidgets('窄屏阅读线贴边，展开时两端淡出，松手后恢复整条分割线', (tester) async {
+    final bar = await showBar(tester);
+    final track = find.byType(TopicProgressTrack);
+    for (final floor in [1, 5001, 10000]) {
+      current.value = floor;
+      await tester.pump();
+      final shapes = paintedCapsules(tester);
+      final bed = shapes.first, fill = shapes[1], grip = shapes.last;
+      expect(bed.left, lessThanOrEqualTo(0));
+      expect(bed.right, greaterThanOrEqualTo(bar.width));
+      expect(tester.getTopLeft(track).dy + bed.top, closeTo(bar.top, .01));
+      expect(fill.left, bed.left);
+      expect(
+        fill.right,
+        closeTo((floor - 1) / 9999 * bar.width + bed.height / 2, .01),
+      );
+      expect(grip.width, TopicProgressSurface.docked.gripLength);
+      if (floor == 1) expect(grip.left, 0);
+      if (floor == 10000) expect(grip.right, bar.width);
+    }
+    final finger = await tester.startGesture(bar.center);
+    await finger.moveBy(const Offset(35, 0));
+    await tester.pump();
+    expect(paintedCapsules(tester).first.left, lessThanOrEqualTo(0));
+    await tester.pump(TopicProgressTrack.openDuration ~/ 2);
+    final midLeft = paintedCapsules(tester)[1].left;
+    final fading = dividerOpacities(tester);
+    expect(fading, isNotEmpty);
+    expect(fading, everyElement(inExclusiveRange(0.0, 1.0)));
+    await tester.pump(TopicProgressTrack.openDuration);
+    final open = paintedCapsules(tester);
+    expect(midLeft, inExclusiveRange(0.0, open[1].left));
+    expect(
+      open.every((shape) => shape.left > 0 && shape.right < bar.width),
+      isTrue,
+    );
+    expect(dividerOpacities(tester), isEmpty);
+    expect(find.byType(TopicProgressLine), findsNothing);
+    await finger.up();
+    await tester.pump();
+    await tester.pump(TopicProgressTrack.closeDuration ~/ 2);
+    final returning = dividerOpacities(tester);
+    expect(returning, isNotEmpty);
+    expect(returning, everyElement(inExclusiveRange(0.0, 1.0)));
+    await tester.pumpAndSettle();
+    expect(find.byType(TopicProgressLine), findsOneWidget);
+    expect(paintedCapsules(tester).first.left, lessThanOrEqualTo(0));
+    expect(
+      paintedCapsules(tester).first.right,
+      greaterThanOrEqualTo(bar.width),
+    );
+  });
+
+  testWidgets('横向握柄随拖动方向留尾，慢移、换档和停手时恢复圆形', (tester) async {
+    final bar = await showBar(tester);
+    final track = find.byType(TopicProgressTrack);
+    final finger = await tester.startGesture(bar.center);
+    await finger.moveBy(const Offset(30, 0));
+    await tester.pumpAndSettle();
+    final size = paintedCapsules(tester).last;
+    Future<RRect> move(Offset offset) async {
+      await finger.moveBy(offset);
+      await tester.pump();
+      return paintedCapsules(tester).last;
+    }
+
+    double centerX() {
+      final widget = tester.widget<TopicProgressTrack>(track);
+      return widget.startInset +
+          widget.progress * (bar.width - widget.startInset - widget.endInset);
+    }
+
+    final right = await move(const Offset(45, 0));
+    expect(right.width, greaterThan(size.width));
+    expect(right.height, size.height);
+    expect(centerX() - right.left, greaterThan(right.right - centerX()));
+    final left = await move(const Offset(-70, 0));
+    expect(left.height, size.height);
+    expect(centerX() - left.left, lessThan(left.right - centerX()));
+    await tester.pumpAndSettle();
+    expect(paintedCapsules(tester).last.width, closeTo(size.width, .01));
+    final level = preview(tester);
+    final lifted = await move(const Offset(0, -80));
+    expect(preview(tester), level);
+    expect(lifted.width, closeTo(size.width, .01));
+    final slow = await move(const Offset(1, 0));
+    expect(slow.width - size.width, inInclusiveRange(0.0, .5));
+    await finger.cancel();
+    await tester.pumpAndSettle();
+    expect(commits, isEmpty);
+  });
+
+  testWidgets('悬浮渐变沿轨道从两端展开，读数与轨道相连，收回途中可以再拖', (tester) async {
     final bar = await showBar(
       tester,
       viewport: const Size(960, 720),
       paneWidth: 420,
     );
     final indicator = find.byType(TopicScrubIndicator);
+    final track = find.byType(TopicProgressTrack);
+    final rest = tester.widget<TopicProgressTrack>(track);
+    expect(rest.surface, TopicProgressSurface.floating);
+    expect(
+      rest.startInset,
+      greaterThanOrEqualTo(
+        TopicBottomBarMetrics.floatingRadius + rest.surface.openThickness / 2,
+      ),
+    );
+    expect(rest.endInset, rest.startInset);
+    final restY = tester.getCenter(track).dy;
     expect(indicator, findsNothing);
     final finger = await tester.startGesture(bar.center);
     await finger.moveBy(const Offset(-80, 0));
+    await tester.pump();
+    expect(track, findsOneWidget);
+    expect(tester.getCenter(track).dy, closeTo(restY, .01));
+    await tester.pump(const Duration(milliseconds: 85));
+    final mid = tester.widget<TopicProgressTrack>(track);
+    expect(mid.expansion, inExclusiveRange(0, 1));
+    expect(mid.startInset, rest.startInset);
+    final midY = tester.getCenter(track).dy;
+    expect(midY, lessThan(restY));
     await tester.pumpAndSettle();
+    expect(tester.getCenter(track).dy, lessThan(midY));
+    expect(tester.getRect(track).bottom, lessThanOrEqualTo(bar.top));
     final field = find.descendant(
       of: indicator,
       matching: find.byWidgetPredicate(
@@ -107,16 +247,25 @@ void main() {
       ),
     );
     final bounds = tester.getRect(field);
-    expect(bounds.left, closeTo(bar.left, 1));
-    expect(bounds.right, closeTo(bar.right, 1));
+    expect(bounds.left, closeTo(bar.left, .01));
+    expect(bounds.right, closeTo(bar.right, .01));
     expect(bounds.top, greaterThan(bar.top / 2));
-    expect(bounds.contains(bar.center), isTrue);
+    final axisY = tester.getCenter(track).dy;
+    expect(bounds.contains(Offset(bar.left + rest.startInset, axisY)), isTrue);
+    expect(bounds.contains(Offset(bar.right - rest.endInset, axisY)), isTrue);
+    expect(bounds.bottom, closeTo(restY, .01));
+    expect(bounds.bottom, lessThan(bar.center.dy));
     final target = preview(tester)!;
     await finger.up();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
     expect(commits, [target]);
     expect(preview(tester), isNull);
+    expect(track, findsOneWidget);
+    expect(
+      tester.widget<TopicProgressTrack>(track).expansion,
+      inExclusiveRange(0, 1),
+    );
     expect(
       tester.widget<TopicScrubIndicator>(indicator).visibility.value,
       inExclusiveRange(0, 1),
@@ -145,6 +294,16 @@ void main() {
     await tester.pump();
     final indicator = find.byType(TopicScrubIndicator);
     expect(tester.widget<TopicScrubIndicator>(indicator).visibility.value, 1);
+    expect(dividerOpacities(tester), isEmpty);
+    await finger.moveBy(const Offset(-60, 0));
+    await tester.pump();
+    expect(
+      tester
+          .widget<TopicProgressTrack>(find.byType(TopicProgressTrack))
+          .thumbTravel
+          .value,
+      0,
+    );
     await finger.up();
     await tester.pump();
     expect(indicator, findsNothing);

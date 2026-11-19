@@ -1,6 +1,7 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 
 import '../../../l10n/s.dart';
@@ -8,6 +9,7 @@ import '../../../utils/time_utils.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
+import 'topic_progress_track.dart';
 
 /// 竖向时间线轨道：两端标起止日期，中段按查找表标日期刻度，标出当前
 /// 位置与上次阅读位置；拖动手柄选择楼层（stream 索引，1 起）。
@@ -25,6 +27,8 @@ class TopicTimelineTrack extends StatefulWidget {
     this.dateAt,
     this.onSpeedChanged,
     this.onChangeEnd,
+    this.onChangeCancel,
+    this.dragPreviewBuilder,
     this.mirrored = false,
     this.width = 120,
   });
@@ -45,6 +49,14 @@ class TopicTimelineTrack extends StatefulWidget {
 
   /// 拖动松手或点按轨道后回调最终楼层（常驻轨道据此才真正跳转）
   final ValueChanged<int>? onChangeEnd;
+  final ValueChanged<int>? onChangeCancel;
+
+  /// 拖动时以轨道区域为锚点展示浮层，宿主提供内容。
+  final Widget Function(bool dragging, double opacity)? dragPreviewBuilder;
+
+  /// 首末楼的留白。渐变在两端留出更长的过渡。
+  static const double _endPadding = 26;
+  static const double endFeather = _endPadding * 2;
 
   /// 镜像：轨道靠左、标签在右（放在内容右侧时用），默认轨道靠右
   final bool mirrored;
@@ -54,15 +66,12 @@ class TopicTimelineTrack extends StatefulWidget {
   State<TopicTimelineTrack> createState() => _TopicTimelineTrackState();
 }
 
-class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
-  /// 轨道两端留白：手柄停在端点时完整露出
-  static const double _endPadding = 26;
-  static const double _trackInsetRight = 22;
-  static const double _handleSize = 40;
-
-  /// 标签到轨道一侧外沿的距离：轨道中线 + 拖动中手柄半径 + 间隙
-  static const double _labelOffset =
-      _trackInsetRight + (_handleSize + 8) / 2 + 8;
+class _TopicTimelineTrackState extends State<TopicTimelineTrack>
+    with SingleTickerProviderStateMixin {
+  static const double _trackInset = 22;
+  // 命中范围独立于视觉粗细，标签所在的整列也支持点按和拖动。
+  static const double _handleGrabRange = 40;
+  static const double _labelOffset = _trackInset + 16;
 
   /// 相邻标签的最小纵向间距
   static const double _labelMinGap = 18;
@@ -75,9 +84,18 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
   ];
 
   bool _dragging = false;
+  bool _hovering = false;
+  int _startIndex = 1;
   double _position = 1;
   double _speed = 1;
   int? _lastEmitted;
+  late final _thumbMotion = TopicThumbMotion(this);
+
+  @override
+  void dispose() {
+    _thumbMotion.dispose();
+    super.dispose();
+  }
 
   int get _total => widget.totalCount;
 
@@ -85,13 +103,17 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
       _total > 1 ? ((index - 1) / (_total - 1)).clamp(0.0, 1.0) : 0.0;
 
   double _trackHeight(double height) =>
-      (height - _endPadding * 2).clamp(1.0, double.infinity);
+      (height - TopicTimelineTrack._endPadding * 2).clamp(1.0, double.infinity);
 
   double _yFor(int index, double height) =>
-      _endPadding + _fraction(index) * _trackHeight(height);
+      TopicTimelineTrack._endPadding + _fraction(index) * _trackHeight(height);
 
   int _indexAt(double y, double height) {
-    final fraction = ((y - _endPadding) / _trackHeight(height)).clamp(0.0, 1.0);
+    final fraction =
+        ((y - TopicTimelineTrack._endPadding) / _trackHeight(height)).clamp(
+          0.0,
+          1.0,
+        );
     return (fraction * (_total - 1) + 1).round().clamp(1, _total);
   }
 
@@ -110,9 +132,11 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
   }
 
   void _handleDragStart(DragStartDetails details, double height) {
-    final handleY = _yFor(widget.selectedIndex, height);
+    _thumbMotion.reset();
+    _startIndex = widget.selectedIndex;
+    final handleY = _yFor(_startIndex, height);
     // 从手柄附近起手为相对拖动；在轨道别处起手先跳到该处再相对拖动
-    if ((details.localPosition.dy - handleY).abs() > _handleSize) {
+    if ((details.localPosition.dy - handleY).abs() > _handleGrabRange) {
       final index = _indexAt(details.localPosition.dy, height);
       _emit(index);
       _position = index.toDouble();
@@ -123,22 +147,44 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
     _updateSpeed(details.localPosition.dx);
   }
 
-  void _handleDragUpdate(DragUpdateDetails details, double height) {
+  void _handleDragUpdate(
+    DragUpdateDetails details,
+    double height,
+    bool reduceMotion,
+  ) {
     _updateSpeed(details.localPosition.dx);
+    final previous = _position;
     final unitsPerPx = (_total - 1) / _trackHeight(height);
     _position = (_position + details.delta.dy * unitsPerPx * _speed).clamp(
       1.0,
       _total.toDouble(),
     );
+    if (_speed == 1) {
+      final y = details.localPosition.dy;
+      if (y <= TopicTimelineTrack._endPadding && details.delta.dy < 0) {
+        _position = 1;
+      } else if (y >= height - TopicTimelineTrack._endPadding &&
+          details.delta.dy > 0) {
+        _position = _total.toDouble();
+      }
+    }
+    if (!reduceMotion && unitsPerPx > 0) {
+      _thumbMotion.moveBy((_position - previous) / unitsPerPx);
+    }
     _emit(_position.round());
   }
 
-  void _handleDragEnd() {
+  void _handleDragEnd({bool canceled = false}) {
+    if (!_dragging) return;
     setState(() => _dragging = false);
     _speed = 1;
     widget.onSpeedChanged?.call(null);
     final last = _lastEmitted;
-    if (last != null) widget.onChangeEnd?.call(last);
+    if (canceled) {
+      (widget.onChangeCancel ?? widget.onChanged)(_startIndex);
+    } else if (last != null) {
+      widget.onChangeEnd?.call(last);
+    }
     _lastEmitted = null;
   }
 
@@ -148,7 +194,6 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
     double? top,
     double? bottom,
     double? width,
-    double? height,
     required Widget child,
   }) {
     return widget.mirrored
@@ -157,7 +202,6 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
             top: top,
             bottom: bottom,
             width: width,
-            height: height,
             child: child,
           )
         : Positioned(
@@ -165,15 +209,12 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
             top: top,
             bottom: bottom,
             width: width,
-            height: height,
             child: child,
           );
   }
 
   void _updateSpeed(double localX) {
-    final trackX = widget.mirrored
-        ? _trackInsetRight
-        : widget.width - _trackInsetRight;
+    final trackX = widget.mirrored ? _trackInset : widget.width - _trackInset;
     final distance = (localX - trackX).abs();
     final speed = _speedSteps.firstWhere((s) => distance < s.$1).$2;
     if (speed != _speed) {
@@ -203,9 +244,54 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
   String? _label(DateTime? date) =>
       date == null ? null : TimeUtils.formatSmartDate(date);
 
+  Widget _buildTrack(bool reduceMotion) {
+    final surface = widget.mirrored
+        ? TopicProgressSurface.sidebar
+        : TopicProgressSurface.sheet;
+    final current = widget.currentIndex;
+    final lastRead = widget.lastReadIndex;
+    final hover = widget.mirrored && _total > 1 && _hovering;
+    final expansion = _dragging ? 1.0 : (hover ? .35 : 0.0);
+    final duration = _dragging
+        ? TopicProgressTrack.openDuration
+        : TopicProgressTrack.closeDuration;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: expansion),
+      duration: reduceMotion ? Duration.zero : duration,
+      curve: TopicProgressTrack.curve,
+      builder: (context, opening, _) => TweenAnimationBuilder<double>(
+        // 点按日期或输入楼层时，填充和握柄一起滑到目标；拖动时直接跟手。
+        tween: Tween(end: _fraction(widget.selectedIndex)),
+        duration: _dragging || reduceMotion
+            ? Duration.zero
+            : TopicProgressTrack.closeDuration,
+        curve: Curves.easeOutCubic,
+        builder: (context, progress, _) => TopicProgressTrack(
+          surface: surface,
+          thumbTravel: reduceMotion
+              ? kAlwaysDismissedAnimation
+              : _thumbMotion.travel,
+          startInset: TopicTimelineTrack._endPadding,
+          endInset: TopicTimelineTrack._endPadding,
+          progress: progress,
+          current: current == null || current == widget.selectedIndex
+              ? null
+              : _fraction(current),
+          lastRead: lastRead != null && lastRead > 1 && lastRead < _total
+              ? _fraction(lastRead)
+              : null,
+          expansion: opening,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context);
     final labelStyle = theme.textTheme.labelSmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
@@ -214,13 +300,8 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final height = constraints.maxHeight;
-          final trackHeight = _trackHeight(height);
-          final trackRight = _trackInsetRight - 2;
-          final selectedY = _yFor(widget.selectedIndex, height);
-          final handleSize = _dragging ? _handleSize + 8 : _handleSize;
           final startDate = _label(widget.dateAt?.call(1));
           final endDate = _label(widget.dateAt?.call(_total));
-          final current = widget.currentIndex;
           final lastRead = widget.lastReadIndex;
 
           // 所有标签都放在轨道侧边，与轨道中线隔开手柄半径以上：手柄停在
@@ -229,20 +310,37 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
             return _place(
               end: _labelOffset,
               top: y,
+              width: (constraints.maxWidth - _labelOffset).clamp(
+                0.0,
+                constraints.maxWidth,
+              ),
               child: FractionalTranslation(
                 translation: const Offset(0, -0.5),
-                child: Text(text, style: style ?? labelStyle, maxLines: 1),
+                child: Text(
+                  text,
+                  style: style ?? labelStyle,
+                  maxLines: 1,
+                  textAlign: widget.mirrored ? TextAlign.left : TextAlign.right,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             );
           }
 
           // 按优先级放置，彼此太近的后者让位：起止日期 > 上次阅读 > 刻度
+          final labelHeight =
+              MediaQuery.textScalerOf(context)
+                  .scale(labelStyle?.fontSize ?? 11) *
+              (labelStyle?.height ?? 1.4);
+          final minGap = labelHeight < _labelMinGap
+              ? _labelMinGap
+              : labelHeight + 2;
           final occupied = <double>[];
           final labels = <Widget>[];
           void tryAdd(int index, String? text, {TextStyle? style}) {
             if (text == null) return;
             final y = _yFor(index, height);
-            if (occupied.any((o) => (o - y).abs() < _labelMinGap)) return;
+            if (occupied.any((o) => (o - y).abs() < minGap)) return;
             occupied.add(y);
             labels.add(sideLabel(y, text, style: style));
           }
@@ -255,7 +353,7 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
               lastRead,
               context.l10n.topic_timelineLastRead,
               style: labelStyle?.copyWith(
-                color: theme.colorScheme.primary,
+                color: context.emphasis.selected,
                 fontWeight: FontWeight.w600,
               ),
             );
@@ -264,133 +362,125 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack> {
             tryAdd(index, text);
           }
 
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (d) => _handleTap(d.localPosition.dy, height),
-            onVerticalDragStart: (d) => _handleDragStart(d, height),
-            onVerticalDragUpdate: (d) => _handleDragUpdate(d, height),
-            onVerticalDragEnd: (_) => _handleDragEnd(),
-            onVerticalDragCancel: _handleDragEnd,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 轨道底色与已选进度
-                _place(
-                  end: trackRight,
-                  top: _endPadding,
-                  height: trackHeight,
-                  width: 4,
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: context.shapes.borderRadius(2),
-                      ),
-                    ),
-                  ),
-                ),
-                _place(
-                  end: trackRight,
-                  top: _endPadding,
-                  height: selectedY - _endPadding,
-                  width: 4,
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                      shape: RoundedSuperellipseBorder(
-                        borderRadius: context.shapes.borderRadius(2),
-                      ),
-                    ),
-                  ),
-                ),
-                // 上次阅读：实心点
-                if (lastRead != null && lastRead > 1 && lastRead < _total)
-                  _dot(
-                    right: trackRight + 2,
-                    y: _yFor(lastRead, height),
-                    size: 8,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                // 当前阅读位置：空心环
-                if (current != null)
-                  _dot(
-                    right: trackRight + 2,
-                    y: _yFor(current, height),
-                    size: 12,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: theme.colorScheme.primary,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ...labels,
-                // 手柄
-                AnimatedPositioned(
-                  duration: _dragging
+          final interactive = _total > 1;
+          final showHover = widget.mirrored && interactive;
+          final preview = widget.dragPreviewBuilder;
+          final tint = TopicProgressGradient.tintOf(context);
+          final axis = constraints.maxWidth > _trackInset
+              ? _trackInset / constraints.maxWidth
+              : 1.0;
+          final clear = tint.withValues(alpha: 0);
+          // 宽屏左侧预览和轨道在阅读栏边缘相接，两侧共用颜色、羽化和逐帧透明度。
+          final backdrop = RepaintBoundary(
+            child: TopicProgressGradient(
+              axis: Axis.vertical,
+              startFeather: TopicTimelineTrack.endFeather,
+              endFeather: TopicTimelineTrack.endFeather,
+              gradient: LinearGradient(
+                begin: widget.mirrored
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                end: widget.mirrored
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                colors: [
+                  preview == null ? clear : tint,
+                  tint,
+                  tint.withValues(alpha: .48),
+                  clear,
+                ],
+                stops: [0, axis, axis + (1 - axis) * .48, 1],
+              ),
+            ),
+          );
+          return MouseRegion(
+            cursor: interactive
+                ? (_dragging
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab)
+                : MouseCursor.defer,
+            onEnter: showHover ? (_) => setState(() => _hovering = true) : null,
+            onExit: showHover ? (_) => setState(() => _hovering = false) : null,
+            child: Listener(
+              onPointerCancel: (_) => _handleDragEnd(canceled: true),
+              child: GestureDetector(
+                dragStartBehavior: DragStartBehavior.down,
+                behavior: HitTestBehavior.opaque,
+                onTapUp: interactive
+                    ? (d) => _handleTap(d.localPosition.dy, height)
+                    : null,
+                onVerticalDragStart: interactive
+                    ? (d) => _handleDragStart(d, height)
+                    : null,
+                onVerticalDragUpdate: interactive
+                    ? (d) => _handleDragUpdate(d, height, reduceMotion)
+                    : null,
+                onVerticalDragEnd: (_) => _handleDragEnd(),
+                onVerticalDragCancel: () => _handleDragEnd(canceled: true),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: _dragging ? 1 : 0),
+                  duration: reduceMotion
                       ? Duration.zero
-                      : const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  left: widget.mirrored
-                      ? trackRight + 2 - handleSize / 2
-                      : null,
-                  right: widget.mirrored
-                      ? null
-                      : trackRight + 2 - handleSize / 2,
-                  top: selectedY - handleSize / 2,
-                  width: handleSize,
-                  height: handleSize,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: theme.colorScheme.primary.withValues(
-                            alpha: 0.3,
-                          ),
-                          blurRadius: _dragging ? 12 : 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Symbols.unfold_more_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onPrimary,
-                    ),
+                      : TopicProgressTrack.closeDuration,
+                  curve: TopicProgressTrack.curve,
+                  child: Stack(
+                    children: [
+                      _place(
+                        end: _trackInset - 12,
+                        top: 0,
+                        bottom: 0,
+                        width: 24,
+                        child: _buildTrack(reduceMotion),
+                      ),
+                      ...labels,
+                    ],
+                  ),
+                  builder: (context, opacity, content) => Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      IgnorePointer(
+                        child: Opacity(opacity: opacity, child: backdrop),
+                      ),
+                      content!,
+                      if (preview != null && (_dragging || opacity > 0))
+                        IgnorePointer(child: preview(_dragging, opacity)),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           );
         },
       ),
     );
   }
+}
 
-  /// 以轨道中线为圆心摆放的标记
-  Widget _dot({
-    required double right,
-    required double y,
-    required double size,
-    required Widget child,
-  }) {
-    return _place(
-      end: right - size / 2,
-      top: y - size / 2,
-      width: size,
-      height: size,
-      child: child,
+/// 横向离开竖轨后，当前拖动倍率显示在预览楼号旁。
+class TopicTimelineSpeedLabel extends StatelessWidget {
+  const TopicTimelineSpeedLabel({super.key, required this.speed});
+
+  final double speed;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.emphasis.selected;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: .10),
+        borderRadius: context.shapes.borderRadius(UiShapes.fullThreshold),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        child: Text(
+          speed == 1 ? '×1' : '×1/${(1 / speed).round()}',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: accent,
+            fontWeight: FontWeight.w600,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -642,13 +732,7 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                 if (speed != null)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      speed == 1 ? '×1' : '×1/${(1 / speed).round()}',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: TopicTimelineSpeedLabel(speed: speed),
                   ),
               ],
             ),
@@ -724,12 +808,15 @@ class _TopicTimelineSheetState extends State<TopicTimelineSheet> {
                 ),
               ],
             ),
-            if (needsFineHint && speed == null)
-              Padding(
-                padding: const EdgeInsets.only(left: 8, top: 2),
-                child: Text(
-                  l10n.topic_timelineFineHint,
-                  style: theme.textTheme.labelSmall?.copyWith(color: muted),
+            if (needsFineHint)
+              Opacity(
+                opacity: speed == null ? 1 : 0,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 2),
+                  child: Text(
+                    l10n.topic_timelineFineHint,
+                    style: theme.textTheme.labelSmall?.copyWith(color: muted),
+                  ),
                 ),
               ),
           ],

@@ -13,6 +13,7 @@ import '../../../widgets/common/radial_long_press_menu.dart';
 import 'progress_gesture_action_meta.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_progress_track.dart';
 import 'topic_scrub_indicator.dart';
 import 'topic_scrub_mapping.dart';
 
@@ -71,7 +72,7 @@ class TopicBarGestures extends ConsumerStatefulWidget {
 }
 
 class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // 长按菜单会话（overlay 生命周期 + 高亮命中 + 触觉反馈）
   final RadialMenuSession _menuSession = RadialMenuSession();
 
@@ -84,17 +85,21 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
   double _edgeRight = _kEdgeGuardMin;
   double _screenWidth = 0;
   bool _reduceMotion = false;
+  bool _floating = false;
   EdgeInsets _railInsets = EdgeInsets.zero;
 
   // ===== 拖动定位状态 =====
   OverlayEntry? _scrubEntry;
   late final AnimationController _scrubFade;
+  late final _thumbMotion = TopicThumbMotion(this);
   TopicPositionInfoSource? _scrubSource;
   Rect? _barRect;
   int _scrubStartIndex = 1;
   int _scrubTarget = 1;
   TopicScrubTracker? _tracker;
   Axis? _scrubAxis;
+  double _anchorExpansion = 0;
+  double _anchorProgress = 0;
   Offset _scrubOrigin = Offset.zero;
   Offset _pointer = Offset.zero;
   Offset _verticalDown = Offset.zero;
@@ -121,8 +126,8 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     super.initState();
     _scrubFade = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 150),
-      reverseDuration: const Duration(milliseconds: 120),
+      duration: TopicProgressTrack.openDuration,
+      reverseDuration: TopicProgressTrack.closeDuration,
     );
   }
 
@@ -134,6 +139,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     _scrubAxis = null;
     _discardScrubEntry();
     _scrubFade.dispose();
+    _thumbMotion.dispose();
     _excerptTimer?.cancel();
     _removeSwipeOverlay();
     super.dispose();
@@ -207,16 +213,52 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
       math.max(1, rect.width - _railInsets.horizontal);
 
   bool _nearHandle(Rect rect, Offset point) {
-    final fraction =
-        (widget.streamIndexListenable.value - 1) / (widget.totalCount - 1);
-    final handleX =
-        rect.left + _railInsets.left + fraction.clamp(0, 1) * _railWidth(rect);
-    return (point.dx - handleX).abs() <= 22;
+    final surface = _floating
+        ? TopicProgressSurface.floating
+        : TopicProgressSurface.docked;
+    final t = TopicProgressTrack.curve.transform(_scrubFade.value);
+    final left = surface.insetAt(_railInsets.left, t);
+    final right = rect.width - surface.insetAt(_railInsets.right, t);
+    final handle = left + (right - left) * _trackProgress(t);
+    // 细线延伸到屏幕边缘，首末楼仍可从系统返回区以内抓住。
+    final reachable = handle.clamp(
+      _railInsets.left,
+      _railInsets.left + _railWidth(rect),
+    );
+    return (point.dx - rect.left - reachable).abs() <= 22;
+  }
+
+  double _trackProgress(double expansion) {
+    final reading = TopicProgressTrack.fraction(
+      widget.streamIndexListenable.value,
+      widget.totalCount,
+    );
+    final tracker = _tracker;
+    if (tracker == null) return reading;
+    final opening = _scrubAxis != null;
+    final target = opening ? tracker.thumbX / tracker.surfaceWidth : reading;
+    final remaining = opening ? 1 - _anchorExpansion : _anchorExpansion;
+    if (remaining == 0) return target;
+    final travel = ((expansion - _anchorExpansion).abs() / remaining).clamp(
+      0.0,
+      1.0,
+    );
+    return _anchorProgress + (target - _anchorProgress) * travel;
+  }
+
+  // 在动画中松手或重新抓住时，从屏上握柄的实际位置继续。
+  void _anchorTrack() {
+    final expansion = TopicProgressTrack.curve.transform(_scrubFade.value);
+    _anchorProgress = _trackProgress(expansion);
+    _anchorExpansion = expansion;
   }
 
   void _startScrub(Offset origin, Axis axis) {
     final rect = _globalRect();
     if (rect == null || widget.totalCount <= 1 || _scrubAxis != null) return;
+    final fromHandle = _nearHandle(rect, origin);
+    _anchorTrack();
+    _thumbMotion.reset();
     _barRect = rect;
     _scrubOrigin = _pointer = origin;
     _scrubAxis = axis;
@@ -229,7 +271,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
       totalCount: widget.totalCount,
       surfaceWidth: _railWidth(rect),
       startX: origin.dx - rect.left - _railInsets.left,
-      fromHandle: _nearHandle(rect, origin),
+      fromHandle: fromHandle,
     );
     _scrubTarget = _excerptIndex = _tracker!.index;
     _lastHapticTime = Duration.zero;
@@ -241,6 +283,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     if (_scrubEntry == null) {
       _scrubEntry = OverlayEntry(builder: (_) => _buildScrubOverlay());
       Overlay.of(context, rootOverlay: true).insert(_scrubEntry!);
+      setState(() {});
     } else {
       _scrubEntry!.markNeedsBuild();
     }
@@ -262,10 +305,14 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     }
     _pointer = details.globalPosition;
     final oldScale = tracker.scale;
+    final previousX = tracker.thumbX;
     tracker.update(
       _pointer.dx - rect.left - _railInsets.left,
       _scrubOrigin.dy - _pointer.dy,
     );
+    if (!_reduceMotion && tracker.scale == oldScale) {
+      _thumbMotion.moveBy(tracker.thumbX - previousX);
+    }
     final target = tracker.index;
     final now = details.sourceTimeStamp ?? Duration.zero;
     if (tracker.scale != oldScale) {
@@ -308,6 +355,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
 
   void _removeScrubOverlay() {
     if (_scrubAxis == null) return;
+    _anchorTrack();
     _scrubAxis = null;
     _excerptTimer?.cancel();
     _excerptTimer = null;
@@ -316,10 +364,10 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     // 立即结束手势并提交楼层，让最后一帧预览与渐变一起淡出。
     if (_reduceMotion || _scrubFade.isDismissed) {
       _scrubFade.value = 0;
-      _discardScrubEntry();
+      setState(_discardScrubEntry);
     } else {
       _scrubFade.reverse().then<void>((_) {
-        if (mounted && _scrubAxis == null) _discardScrubEntry();
+        if (mounted && _scrubAxis == null) setState(_discardScrubEntry);
       });
     }
   }
@@ -340,10 +388,14 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     final source = _scrubSource;
     return TopicScrubIndicator(
       visibility: _scrubFade,
+      thumbTravel: _thumbMotion.travel,
       barRect: rect,
-      railLeft: rect.left + _railInsets.left,
+      insets: _railInsets,
+      floating: _floating,
+      progressAt: _trackProgress,
+      markerIndex: widget.markerIndex,
       tracker: tracker,
-      pointerY: _pointer.dy,
+      pointer: _pointer,
       date: source?.dateAt(_scrubTarget),
       excerptIndex: _excerptIndex,
       excerpt: _excerptIndex == _scrubTarget
@@ -436,15 +488,20 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     _screenWidth = mq.size.width;
     _edgeLeft = math.max(mq.systemGestureInsets.left, _kEdgeGuardMin);
     _edgeRight = math.max(mq.systemGestureInsets.right, _kEdgeGuardMin);
-    final corner = TopicBottomBarMetrics.isFloating(context)
-        ? context.shapes.resolve(24)
+    _floating = TopicBottomBarMetrics.isFloating(context);
+    final corner = _floating
+        ? context.shapes.resolve(TopicBottomBarMetrics.floatingRadius) +
+              TopicProgressSurface.floating.openThickness / 2 +
+              2
         : 0.0;
     _railInsets = EdgeInsets.only(
       left: math.max(corner, _edgeLeft + 4),
       right: math.max(corner, _edgeRight + 4),
     );
     final enabled = prefs.progressGesturesEnabled;
+    final hasHandle = enabled && widget.totalCount > 1;
     final surface = Stack(
+      clipBehavior: Clip.none,
       children: [
         Padding(
           padding: const EdgeInsets.only(
@@ -452,22 +509,24 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
           ),
           child: widget.child,
         ),
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          child: IgnorePointer(
-            child: TopicProgressLine(
-              streamIndexListenable: widget.streamIndexListenable,
-              scrubIndexListenable: widget.scrubIndexNotifier,
-              totalCount: widget.totalCount,
-              markerIndex: widget.markerIndex,
-              handleInsets: enabled && widget.totalCount > 1
-                  ? _railInsets
-                  : null,
+        if (_scrubEntry == null)
+          Positioned(
+            left: 0,
+            right: 0,
+            top:
+                TopicProgressLine.centerFromBarTop(_floating, hasHandle) -
+                TopicProgressLine.heightFor(hasHandle) / 2,
+            child: IgnorePointer(
+              child: TopicProgressLine(
+                streamIndexListenable: widget.streamIndexListenable,
+                totalCount: widget.totalCount,
+                markerIndex: widget.markerIndex,
+                handleInsets: enabled || _floating ? _railInsets : null,
+                floating: _floating,
+                showHandle: hasHandle,
+              ),
             ),
           ),
-        ),
       ],
     );
     if (!enabled) return surface;

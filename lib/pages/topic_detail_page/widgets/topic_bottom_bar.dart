@@ -14,6 +14,7 @@ import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bar_gestures.dart';
 import 'topic_filter_controls.dart';
+import 'topic_progress_track.dart';
 
 /// 话题底栏尺寸：列表末尾留白、回顶 / 目录按钮定位都从这里推导，
 /// 不要在别处重复写数字
@@ -26,6 +27,8 @@ abstract final class TopicBottomBarMetrics {
 
   /// 悬浮形态（非手机宽度）离底边的距离
   static const double floatingMargin = 16;
+  static const double floatingRadius = 24;
+  static const double floatingLineTop = 3;
 
   /// 悬浮于栏上方的按钮与栏之间的间距
   static const double gap = 12;
@@ -118,7 +121,7 @@ class TopicBottomBar extends ConsumerStatefulWidget {
 }
 
 class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
-  /// 拖动定位中的目标楼层；进度线与楼层计数优先显示它
+  /// 拖动定位中的目标楼层，供栏内楼层计数预览。
   final ValueNotifier<int?> _scrubIndex = ValueNotifier<int?>(null);
 
   @override
@@ -312,7 +315,9 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
       return Material(
         color: theme.colorScheme.surfaceContainer,
         shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(24),
+          borderRadius: context.shapes.borderRadius(
+            TopicBottomBarMetrics.floatingRadius,
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         elevation: 3,
@@ -588,120 +593,46 @@ class TopicProgressLine extends StatelessWidget {
     super.key,
     required this.streamIndexListenable,
     required this.totalCount,
-    this.scrubIndexListenable,
     this.markerIndex,
     this.handleInsets,
+    this.floating = false,
+    this.showHandle = true,
   });
 
   final ValueListenable<int> streamIndexListenable;
-  final ValueListenable<int?>? scrubIndexListenable;
   final int totalCount;
   final int? markerIndex;
-
-  /// 展开且可拖动时的轨道边距，握柄画在进度线与操作行的交界处。
   final EdgeInsets? handleInsets;
+  final bool floating, showHandle;
   static const double handleHeight = 6;
+
+  static double heightFor(bool hasHandle) =>
+      hasHandle ? handleHeight : TopicBottomBarMetrics.progressLineHeight;
+
+  static double centerFromBarTop(bool floating, bool hasHandle) => floating
+      ? TopicBottomBarMetrics.floatingLineTop + heightFor(hasHandle) / 2
+      : TopicBottomBarMetrics.progressLineHeight / 2;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scrub = scrubIndexListenable;
-    final marker = markerIndex;
-    double fractionOf(int index) =>
-        totalCount > 1 ? ((index - 1) / (totalCount - 1)).clamp(0.0, 1.0) : 1.0;
-    return RepaintBoundary(
-      child: SizedBox(
-        height: handleInsets == null
-            ? TopicBottomBarMetrics.progressLineHeight
-            : handleHeight,
-        width: double.infinity,
-        child: ListenableBuilder(
-          listenable: scrub == null
-              ? streamIndexListenable
-              : Listenable.merge([streamIndexListenable, scrub]),
-          builder: (context, _) {
-            if (handleInsets != null && scrub?.value != null) {
-              return const SizedBox.shrink();
-            }
-            final index = scrub?.value ?? streamIndexListenable.value;
-            return CustomPaint(
-              painter: _ProgressLinePainter(
-                progress: fractionOf(index),
-                // 已读过上次位置后标记不再有意义
-                marker: marker != null && marker > index
-                    ? fractionOf(marker)
-                    : null,
-                track: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-                fill: theme.colorScheme.primary,
-                handleInsets: handleInsets,
-              ),
-            );
-          },
+    final insets = handleInsets ?? EdgeInsets.zero;
+    return SizedBox(
+      height: heightFor(showHandle && handleInsets != null),
+      child: ValueListenableBuilder<int>(
+        valueListenable: streamIndexListenable,
+        builder: (context, index, _) => TopicProgressTrack(
+          surface: floating
+              ? TopicProgressSurface.floating
+              : TopicProgressSurface.docked,
+          progress: TopicProgressTrack.fraction(index, totalCount),
+          lastRead: markerIndex == null
+              ? null
+              : TopicProgressTrack.fraction(markerIndex!, totalCount),
+          startInset: insets.left,
+          endInset: insets.right,
+          showHandle: showHandle && handleInsets != null,
         ),
       ),
     );
   }
-}
-
-class _ProgressLinePainter extends CustomPainter {
-  const _ProgressLinePainter({
-    required this.progress,
-    required this.marker,
-    required this.track,
-    required this.fill,
-    required this.handleInsets,
-  });
-
-  final double progress;
-
-  /// 上次阅读位置（比例），在其与当前进度之间画浅色「已读过」段
-  final double? marker;
-  final Color track;
-  final Color fill;
-  final EdgeInsets? handleInsets;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final left = handleInsets?.left ?? 0;
-    final width = (size.width - left - (handleInsets?.right ?? 0)).clamp(
-      0.0,
-      size.width,
-    );
-    final y = size.height / 2;
-    final paint = Paint()
-      ..strokeWidth = TopicBottomBarMetrics.progressLineHeight;
-    final current = Offset(left + width * progress, y);
-    canvas.drawLine(
-      Offset(left, y),
-      Offset(left + width, y),
-      paint..color = track,
-    );
-    final m = marker;
-    if (m != null && m > progress) {
-      // 与视频缓冲条同一种读法：浅色段 = 以前读到过这里
-      canvas.drawLine(
-        current,
-        Offset(left + width * m, y),
-        paint..color = fill.withValues(alpha: fill.a * 0.35),
-      );
-    }
-    canvas.drawLine(Offset(left, y), current, paint..color = fill);
-    if (handleInsets != null) {
-      canvas.drawLine(
-        current - const Offset(4, 0),
-        current + const Offset(4, 0),
-        paint
-          ..strokeCap = StrokeCap.round
-          ..strokeWidth = 5,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ProgressLinePainter old) =>
-      old.progress != progress ||
-      old.marker != marker ||
-      old.track != track ||
-      old.fill != fill ||
-      old.handleInsets != handleInsets;
 }

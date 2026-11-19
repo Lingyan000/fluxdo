@@ -8,6 +8,7 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_progress_track.dart';
 import 'topic_scrub_mapping.dart';
 
 /// 拖动时，正文在楼层预览和轨道周围逐渐淡入主题表面色。
@@ -15,25 +16,31 @@ class TopicScrubIndicator extends StatelessWidget {
   const TopicScrubIndicator({
     super.key,
     required this.visibility,
+    required this.thumbTravel,
     required this.barRect,
-    required this.railLeft,
+    required this.insets,
+    required this.floating,
+    required this.progressAt,
+    required this.markerIndex,
     required this.tracker,
-    required this.pointerY,
+    required this.pointer,
     required this.date,
     required this.excerptIndex,
     required this.excerpt,
   });
 
   final Animation<double> visibility;
+  final Animation<double> thumbTravel;
   final Rect barRect;
-  final double railLeft;
+  final EdgeInsets insets;
+  final bool floating;
+  final double Function(double expansion) progressAt;
+  final int? markerIndex;
   final TopicScrubTracker tracker;
-  final double pointerY;
+  final Offset pointer;
   final DateTime? date;
   final int excerptIndex;
   final TopicPositionInfo? excerpt;
-
-  static const double _railHeight = 28;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +48,12 @@ class TopicScrubIndicator extends StatelessWidget {
     final scheme = theme.colorScheme;
     final accent = context.emphasis.selected;
     final screen = MediaQuery.sizeOf(context);
-    final railY = barRect.top + TopicProgressLine.handleHeight / 2;
+    final style = floating
+        ? TopicProgressSurface.floating
+        : TopicProgressSurface.docked;
+    final restY =
+        barRect.top + TopicProgressLine.centerFromBarTop(floating, true);
+    final railY = floating ? barRect.top - style.openThickness / 2 - 5 : restY;
     // 旋屏或窗口缩小时，手势取消之前的旧轨道可能已经离开视口。
     if (!barRect.overlaps(Offset.zero & screen) || railY > screen.height) {
       return const SizedBox.shrink();
@@ -54,12 +66,25 @@ class TopicScrubIndicator extends StatelessWidget {
     );
     final belowRail = bottom - railY;
     final roomAbove = math.max(0.0, railY - MediaQuery.paddingOf(context).top);
-    final feather = math.min(100.0, roomAbove * .22);
-    final gap = math.min(
-      (railY - pointerY + 28).clamp(24.0, 92.0),
-      roomAbove * .35,
+    final feather = math.min(100.0, roomAbove * (floating ? .25 : .22));
+    final sideFeather = floating ? math.min(48.0, barRect.width * .10) : 0.0;
+    final available = floating
+        ? math.max(0.0, barRect.width - 2 * sideFeather - 24)
+        : barRect.width;
+    final infoWidth = math.min(
+      400.0,
+      math.min(available, tracker.surfaceWidth),
     );
-    final infoWidth = math.min(400.0, tracker.surfaceWidth);
+    // 宽轨两端的手指碰不到中间的读数，只有接近读数时才需要把它抬高。
+    final outside = (pointer.dx - barRect.center.dx).abs() - infoWidth / 2;
+    final proximity = floating
+        ? 1 - (outside / sideFeather).clamp(0.0, 1.0)
+        : 1.0;
+    final lift = (railY - pointer.dy + 4).clamp(0.0, 68.0);
+    final gap = math.min(24 + lift * proximity, roomAbove * .35);
+    // 悬浮底栏的渐变覆盖轨道与读数之间的整段距离，收在操作行上沿。
+    final fieldBottom = floating ? math.max(0.0, bottom - restY) : 0.0;
+    final paintHeight = style.openThickness + 6;
     final reduceMotion =
         MediaQuery.disableAnimationsOf(context) ||
         MediaQuery.reduceMotionOf(context);
@@ -69,27 +94,39 @@ class TopicScrubIndicator extends StatelessWidget {
       width: barRect.width,
       bottom: screen.height - bottom,
       child: IgnorePointer(
-        child: FadeTransition(
-          opacity: visibility,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              Positioned.fill(
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          children: [
+            Positioned(
+              top: 0,
+              bottom: fieldBottom,
+              left: 0,
+              right: 0,
+              child: FadeTransition(
+                opacity: visibility,
                 child: RepaintBoundary(
                   child: _ScrubBackdrop(
                     surface: scheme.surface,
                     accent: accent,
                     feather: feather,
-                    belowRail: belowRail,
-                    fadeLeft: barRect.left > 1,
-                    fadeRight: barRect.right < screen.width - 1,
+                    belowRail: belowRail - fieldBottom,
+                    floating: floating,
+                    leftFeather: floating
+                        ? insets.left * 1.5
+                        : (barRect.left > 1 ? 32 : 0),
+                    rightFeather: floating
+                        ? insets.right * 1.5
+                        : (barRect.right < screen.width - 1 ? 32 : 0),
                     atBottom: bottom >= screen.height - 1,
                   ),
                 ),
               ),
-              // 楼号在轨道上方保持稳定，上移换档时预览让开指尖。
-              Padding(
-                padding: EdgeInsets.only(top: feather, bottom: belowRail + gap),
+            ),
+            // 上移换档时，楼号和摘要给指尖留出空间。
+            Padding(
+              padding: EdgeInsets.only(top: feather, bottom: belowRail + gap),
+              child: FadeTransition(
+                opacity: visibility,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxHeight: math.max(0, roomAbove - feather - gap),
@@ -111,46 +148,49 @@ class TopicScrubIndicator extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                left: railLeft - barRect.left - _railHeight / 2,
-                width: tracker.surfaceWidth + _railHeight,
-                bottom: belowRail - _railHeight / 2,
-                height: _railHeight,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLowest,
-                    borderRadius: context.shapes.borderRadius(
-                      UiShapes.fullThreshold,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: scheme.shadow.withValues(alpha: .15),
-                        blurRadius: 13,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: CustomPaint(
-                    painter: _RailPainter(
-                      fill: tracker.thumbX,
-                      accent: accent,
-                      surface: scheme.surfaceContainerLowest,
-                      track: Color.alphaBlend(
-                        accent.withValues(alpha: .11),
-                        scheme.surfaceContainerHigh,
-                      ),
-                      radius: context.shapes.radius(UiShapes.fullThreshold),
-                      rate: tracker.scale == TopicScrubScale.whole
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: bottom - restY - paintHeight / 2,
+              height: paintHeight,
+              child: AnimatedBuilder(
+                animation: visibility,
+                builder: (context, _) {
+                  final t = TopicProgressTrack.curve.transform(
+                    visibility.value,
+                  );
+                  final marker = markerIndex;
+                  return Transform.translate(
+                    offset: Offset(0, (railY - restY) * t),
+                    child: TopicProgressTrack(
+                      surface: style,
+                      thumbTravel: reduceMotion
+                          ? kAlwaysDismissedAnimation
+                          : thumbTravel,
+                      expansion: t,
+                      progress: progressAt(t),
+                      startInset: insets.left,
+                      endInset: insets.right,
+                      lastRead: marker == null
                           ? null
-                          : tracker.floorsPerPixel,
-                      origin: tracker.rulerOrigin,
-                      total: tracker.totalCount,
+                          : TopicProgressTrack.fraction(
+                              marker,
+                              tracker.totalCount,
+                            ),
+                      ruler: tracker.scale == TopicScrubScale.whole
+                          ? null
+                          : (
+                              rate: tracker.floorsPerPixel,
+                              origin: tracker.rulerOrigin,
+                              total: tracker.totalCount,
+                            ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -365,8 +405,9 @@ class _ScrubBackdrop extends StatelessWidget {
     required this.accent,
     required this.feather,
     required this.belowRail,
-    required this.fadeLeft,
-    required this.fadeRight,
+    required this.floating,
+    required this.leftFeather,
+    required this.rightFeather,
     required this.atBottom,
   });
 
@@ -374,8 +415,8 @@ class _ScrubBackdrop extends StatelessWidget {
   final Color accent;
   final double feather;
   final double belowRail;
-  final bool fadeLeft;
-  final bool fadeRight;
+  final bool floating;
+  final double leftFeather, rightFeather;
   final bool atBottom;
 
   @override
@@ -387,135 +428,36 @@ class _ScrubBackdrop extends StatelessWidget {
         final rail = (1 - belowRail / height).clamp(0.0, 1.0);
         final top = (feather / height).clamp(0.0, rail);
         final clear = surface.withValues(alpha: 0);
-        final field = DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                clear,
-                surface.withValues(alpha: .20),
-                surface.withValues(alpha: .74),
-                surface.withValues(alpha: .98),
-                Color.alphaBlend(accent.withValues(alpha: .10), surface),
-                surface.withValues(alpha: .83),
-                surface.withValues(alpha: atBottom ? .44 : 0),
-              ],
-              stops: [
-                0,
-                top * .42,
-                top * .77,
-                top,
-                rail,
-                rail + (1 - rail) * .54,
-                1,
-              ],
-            ),
+        return TopicProgressGradient(
+          axis: Axis.horizontal,
+          startFeather: leftFeather,
+          endFeather: rightFeather,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              clear,
+              surface.withValues(alpha: .20),
+              surface.withValues(alpha: .74),
+              surface.withValues(alpha: .98),
+              floating
+                  ? TopicProgressGradient.tintOf(context)
+                  : Color.alphaBlend(accent.withValues(alpha: .10), surface),
+              surface.withValues(alpha: floating ? .46 : .83),
+              surface.withValues(alpha: !floating && atBottom ? .44 : 0),
+            ],
+            stops: [
+              0,
+              top * .42,
+              top * .77,
+              top,
+              rail,
+              rail + (1 - rail) * .54,
+              1,
+            ],
           ),
-        );
-        if (!fadeLeft && !fadeRight) return field;
-        // 悬浮底栏与分栏内缘横向收淡，渐变停在当前帖子栏内。
-        return ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (bounds) {
-            final edge = math.min(.18, 32 / bounds.width);
-            return LinearGradient(
-              colors: [
-                fadeLeft ? clear : surface,
-                surface,
-                surface,
-                fadeRight ? clear : surface,
-              ],
-              stops: [0, edge, 1 - edge, 1],
-            ).createShader(bounds);
-          },
-          child: field,
         );
       },
     );
   }
-}
-
-class _RailPainter extends CustomPainter {
-  const _RailPainter({
-    required this.fill,
-    required this.accent,
-    required this.surface,
-    required this.track,
-    required this.radius,
-    required this.rate,
-    required this.origin,
-    required this.total,
-  });
-
-  final double fill;
-  final Color accent;
-  final Color surface;
-  final Color track;
-  final Radius radius;
-  final double? rate;
-  final double origin;
-  final int total;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rail = (Offset.zero & size).deflate(4);
-    final center = size.height / 2;
-    final width = size.width - size.height;
-    final thumb = center + fill;
-    final paint = Paint()..color = track;
-    canvas.drawRRect(RRect.fromRectAndRadius(rail, radius), paint);
-    final filled = Rect.fromLTRB(
-      rail.left,
-      rail.top,
-      thumb + rail.height / 2,
-      rail.bottom,
-    );
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        colors: [Color.lerp(accent, surface, .16)!, accent],
-      ).createShader(rail);
-    canvas.drawRRect(RRect.fromRectAndRadius(filled, radius), fillPaint);
-
-    final units = rate;
-    if (units == null) {
-      for (var quarter = 1; quarter <= 3; quarter++) {
-        final x = center + width * quarter / 4;
-        paint.color = (x < thumb ? surface : accent).withValues(alpha: .48);
-        canvas.drawCircle(Offset(x, center), 1.6, paint);
-      }
-    } else {
-      final step = math.max(1, (units * 10).ceil());
-      final first = (math.max(1.0, origin) / step).ceil() * step;
-      final last = math.min(total.toDouble(), origin + width * units);
-      paint.strokeWidth = 1.3;
-      paint.strokeCap = StrokeCap.round;
-      for (var floor = first; floor <= last; floor += step) {
-        final x = center + (floor - origin) / units;
-        final half = (floor ~/ step) % 5 == 0 ? 4.0 : 2.0;
-        paint.color = (x < thumb ? surface : accent).withValues(alpha: .68);
-        canvas.drawLine(
-          Offset(x, center - half),
-          Offset(x, center + half),
-          paint,
-        );
-      }
-    }
-    canvas.drawCircle(
-      Offset(thumb, center),
-      rail.height / 2 - 2,
-      paint..color = surface,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_RailPainter old) =>
-      old.fill != fill ||
-      old.accent != accent ||
-      old.surface != surface ||
-      old.track != track ||
-      old.radius != radius ||
-      old.rate != rate ||
-      old.origin != origin ||
-      old.total != total;
 }
