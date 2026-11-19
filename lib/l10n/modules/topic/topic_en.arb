@@ -88,6 +88,8 @@
   "topicDetail_openInBrowser": "Open in browser",
   "topicDetail_readLaterFull": "Float is full (max {max})",
   "topicDetail_relatedTopics": "Related Topics",
+  "topicDetail_relatedMessages": "Related Messages",
+  "topicDetail_allMessagesFrom": "See all messages from @{username}",
   "topicDetail_removePrivateMessageParticipantConfirm": "Remove @{username} from this private message?",
   "@topicDetail_removePrivateMessageParticipantConfirm": {
     "placeholders": {

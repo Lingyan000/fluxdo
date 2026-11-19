@@ -119,6 +119,9 @@
     }
   },
   "topicDetail_relatedTopics": "相关话题",
+  "topicDetail_relatedMessages": "相关消息",
+  "topicDetail_allMessagesFrom": "查看来自 @{username} 的所有私信",
+  "@topicDetail_allMessagesFrom": {"placeholders": {"username": {"type": "String"}}},
   "topicDetail_removePrivateMessageParticipantConfirm": "确定要将 @{username} 移出此私信吗？",
   "@topicDetail_removePrivateMessageParticipantConfirm": {
     "placeholders": {

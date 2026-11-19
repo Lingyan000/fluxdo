@@ -710,13 +710,15 @@ PostStream _parsePostStreamJson(String body) {
   // 的请求才有;没有就原样返回,不必重建对象。
   final suggested = parseSuggestedTopicList(data['suggested_topics']);
   final related = parseSuggestedTopicList(data['related_topics']);
-  if (suggested.isEmpty && related.isEmpty) return postStream;
+  final messages = parseRelatedMessages(data);
+  if (suggested.isEmpty && related.isEmpty && messages == null) return postStream;
   return PostStream(
     posts: postStream.posts,
     stream: postStream.stream,
     gaps: postStream.gaps,
     suggestedTopics: suggested,
     relatedTopics: related,
+    relatedMessages: messages,
   );
 }
 

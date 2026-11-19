@@ -96,6 +96,8 @@
     }
   },
   "topicDetail_relatedTopics": "相關話題",
+  "topicDetail_relatedMessages": "相關訊息",
+  "topicDetail_allMessagesFrom": "查看來自 @{username} 的所有私訊",
   "topicDetail_removePrivateMessageParticipantConfirm": "確定要將 @{username} 移出此私信嗎？",
   "@topicDetail_removePrivateMessageParticipantConfirm": {
     "placeholders": {

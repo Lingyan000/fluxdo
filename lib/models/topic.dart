@@ -539,11 +539,10 @@ class Topic {
   }
 }
 
-/// 解析话题详情响应里的推荐话题数组(suggested_topics / related_topics)
+/// 解析详情响应里的话题或私信推荐条目。
 ///
-/// 这两组走 SuggestedTopicSerializer,字段比列表接口稀疏且随站点设置浮动
-/// (excerpt/tags/posters 都可能缺席),用户对象内嵌在 poster 里而非顶层
-/// users 表。单条解析失败只跳过该条,不能让整个话题详情解析失败。
+/// Discourse 的 SuggestedTopicSerializer 把用户对象放在 poster 里。
+/// 摘要、标签和参与者都可能缺失，单条数据解析失败时继续处理其余条目。
 List<Topic> parseSuggestedTopicList(dynamic raw) {
   if (raw is! List || raw.isEmpty) return const [];
   final result = <Topic>[];
@@ -556,6 +555,12 @@ List<Topic> parseSuggestedTopicList(dynamic raw) {
     }
   }
   return result;
+}
+
+/// 未下发时保留已加载的相关私信，明确返回空数组时清空列表。
+List<Topic>? parseRelatedMessages(Map<String, dynamic> json) {
+  final messages = json['related_messages'];
+  return messages is List ? parseSuggestedTopicList(messages) : null;
 }
 
 /// 链接点击统计
@@ -1636,11 +1641,11 @@ class PostStream {
   final List<int> stream; // 所有 post_id 的列表
   final PostStreamGaps? gaps; // 服务端过滤后被跳过的楼层，见 PostStreamGaps
 
-  /// 翻页响应(`/t/{id}/posts.json?include_suggested=true`)顶层带回的推荐
-  /// 话题。大话题首屏 `/t/{id}.json` 不返回这两组(服务端见 next_page 有值
-  /// 就关掉 include_suggested),只能靠翻页请求补,这里是回填通道。
+  /// 长话题或私信的首屏可能省略推荐列表，翻页时服务端通过
+  /// `/t/{id}/posts.json?include_suggested=true` 在顶层返回这些列表。
   final List<Topic> suggestedTopics;
   final List<Topic> relatedTopics;
+  final List<Topic>? relatedMessages;
 
   PostStream({
     required this.posts,
@@ -1648,6 +1653,7 @@ class PostStream {
     this.gaps,
     this.suggestedTopics = const [],
     this.relatedTopics = const [],
+    this.relatedMessages,
   });
 
   factory PostStream.fromJson(Map<String, dynamic> json) {
@@ -2020,6 +2026,9 @@ class TopicDetail {
   final List<Topic> suggestedTopics;
   final List<Topic> relatedTopics;
 
+  /// 私信末尾的相关会话。null 表示当前响应未携带该字段。
+  final List<Topic>? relatedMessages;
+
   // 指定(discourse-assign 插件)相关字段。站点未装插件时恒为 null。
   final TopicUser? assignedToUser;
   final String? assignedToGroupName;
@@ -2053,6 +2062,10 @@ class TopicDetail {
 
   /// 是否为私信
   bool get isPrivateMessage => archetype == 'private_message';
+
+  /// 下一次分页是否需要服务端附带页尾列表。
+  bool get needsFooterTopics =>
+      isPrivateMessage ? relatedMessages == null : suggestedTopics.isEmpty;
 
   TopicDetail({
     required this.id,
@@ -2112,6 +2125,7 @@ class TopicDetail {
     this.pendingPosts = const [],
     this.suggestedTopics = const [],
     this.relatedTopics = const [],
+    this.relatedMessages,
     this.assignedToUser,
     this.assignedToGroupName,
     this.assignmentNote,
@@ -2357,6 +2371,7 @@ class TopicDetail {
           .toList(),
       suggestedTopics: parseSuggestedTopicList(json['suggested_topics']),
       relatedTopics: parseSuggestedTopicList(json['related_topics']),
+      relatedMessages: parseRelatedMessages(json),
       assignedToUser: _tryParseAssignedToUser(json['assigned_to_user']),
       assignedToGroupName: _tryParseAssignedToGroupName(
         json['assigned_to_group'],
@@ -2492,6 +2507,7 @@ class TopicDetail {
     List<PendingPost>? pendingPosts,
     List<Topic>? suggestedTopics,
     List<Topic>? relatedTopics,
+    List<Topic>? relatedMessages,
   }) {
     return TopicDetail(
       id: id ?? this.id,
@@ -2559,6 +2575,7 @@ class TopicDetail {
       pendingPosts: pendingPosts ?? this.pendingPosts,
       suggestedTopics: suggestedTopics ?? this.suggestedTopics,
       relatedTopics: relatedTopics ?? this.relatedTopics,
+      relatedMessages: relatedMessages ?? this.relatedMessages,
       // 指定字段不提供 copyWith 覆写(始终透传旧值):指定/取消指定后
       // 一律整页重拉(assign_sheet _refetch),本地不拼状态。
       assignedToUser: assignedToUser,

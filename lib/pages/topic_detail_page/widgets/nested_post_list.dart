@@ -717,7 +717,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       if (!contextMode && !ns.hasMoreRoots)
         (
           key: 'suggested',
-          builder: (context) => MoreTopicsSection(detail: widget.detail),
+          builder: (context) => MoreTopicsSection(
+            detail: widget.detail,
+            relatedMessages: ns.relatedMessages,
+          ),
         ),
 
       (

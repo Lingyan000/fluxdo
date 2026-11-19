@@ -8,10 +8,12 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/providers/category_provider.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/providers/message_bus_providers.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_detail_controller.dart';
 import 'package:fluxdo/pages/topic_detail_page/controllers/topic_toc_controller.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_header.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_more_topics.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_status_notices.dart';
 import 'package:fluxdo/widgets/common/positioned_stream_list.dart';
@@ -955,6 +957,87 @@ void main() {
     details.value = details.value.copyWith(slowModeSeconds: 0);
     await tester.pumpAndSettle();
     expect(find.textContaining('两次发帖'), findsNothing);
+    await disposeList(tester);
+  });
+
+  testWidgets('私信读到底只显示相关消息，空结果或关闭推荐时隐藏', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = false;
+    final pm = TopicDetail.fromJson({
+      'id': 42,
+      'title': '读书会',
+      'archetype': 'private_message',
+      'posts_count': 1,
+      'post_stream': {'posts': [], 'stream': [1]},
+      'related_messages': [
+        {
+          'id': 43,
+          'title': '下次读什么',
+          'posts_count': 6,
+          'reply_count': 2,
+          'last_posted_at': '2026-11-15T08:00:00Z',
+        },
+      ],
+      'suggested_topics': [
+        {'id': 44, 'title': '另一条推荐'},
+      ],
+    }).copyWith(postStream: PostStream(posts: [post(1)], stream: [1]));
+    details.value = pm;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+
+    hasMoreAfter = false;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsOneWidget);
+    final title = tester.getRect(find.text('下次读什么'));
+    final stats = tester.getRect(find.textContaining('5 · '));
+    expect(stats.left, closeTo(title.left, 0.1));
+    expect(stats.top, greaterThanOrEqualTo(title.bottom));
+    expect(find.text('另一条推荐'), findsNothing);
+
+    details.value = pm.copyWith(relatedMessages: []);
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TopicPostList)),
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setShowSuggestedTopics(false);
+    details.value = pm;
+    await tester.pumpAndSettle();
+    expect(find.text('相关消息'), findsNothing);
+    await disposeList(tester);
+  });
+
+  testWidgets('推荐条目有标签时分列展示，回复图标随字号等比缩放', (tester) async {
+    final detail = topic([]).copyWith(
+      suggestedTopics: [
+        Topic.fromJson({
+          'id': 43,
+          'title': '读书交流',
+          'tags': ['阅读'],
+          'posts_count': 2,
+        }),
+      ],
+    );
+    final section = MoreTopicsSection(detail: detail);
+    await tester.pumpWidget(app(body: section));
+    await tester.pumpAndSettle();
+    final title = tester.getRect(find.text('读书交流'));
+    final row = tester.getRect(find.byType(MoreTopicsSection));
+    final stats = tester.getRect(metadataText('1'));
+    expect(tester.getRect(find.text('#阅读')).left, closeTo(title.left, 0.1));
+    expect(row.right - stats.right, closeTo(title.left - row.left, 0.1));
+
+    final icon = find.byIcon(Symbols.chat_bubble_rounded);
+    final iconWidth = tester.getRect(icon).width;
+    textScale = 2;
+    await tester.pumpWidget(app(body: section));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(icon).width, closeTo(iconWidth * 2, 0.1));
     await disposeList(tester);
   });
 

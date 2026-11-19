@@ -6,15 +6,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/mention_user.dart';
+import 'package:fluxdo/models/search_result.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/invite_private_message_dialog.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/private_message_participants.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_more_topics.dart';
 import 'package:fluxdo/providers/discourse_providers.dart';
+import 'package:fluxdo/providers/selected_topic_provider.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/dialog_utils.dart';
 import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/services/preloaded_data_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _params = TopicDetailParams(42);
 
@@ -54,6 +60,16 @@ class _Detail extends TopicDetailNotifier {
 
 class _Service extends Fake implements DiscourseService {
   final calls = <String>[];
+
+  @override
+  Future<SearchResult> search({
+    required String query,
+    int page = 1,
+    String? typeFilter,
+  }) async {
+    calls.add(query);
+    return SearchResult.fromJson({});
+  }
 
   @override
   Future<MentionSearchResult> searchUsers({
@@ -118,6 +134,56 @@ Widget _members(
     );
 
 void main() {
+  testWidgets('相关私信可点开，双人会话满五条可查看对方的所有私信', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    PreloadedDataService().debugSeed(loaded: true);
+    addTearDown(PreloadedDataService().reset);
+    final service = _Service();
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        currentUserProvider.overrideWith(_CurrentUser.new),
+        discourseServiceProvider.overrideWithValue(service),
+      ],
+    );
+    addTearDown(container.dispose);
+    Future<void> show(int count, {bool groups = false}) async {
+      final detail = _detail(groups: groups).copyWith(
+        relatedMessages: [
+          for (var id = 1; id <= count; id++)
+            Topic.fromJson({'id': id, 'title': '往来私信 $id'}),
+        ],
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _app(
+            EmbeddedStackScope(
+              stackProvider: selectedMessageProvider,
+              child: MoreTopicsSection(detail: detail),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    final all = find.text('查看来自 @alice 的所有私信');
+    await show(4);
+    expect(all, findsNothing);
+    await show(5, groups: true);
+    expect(all, findsNothing);
+    await show(5);
+    await tester.tap(find.text('往来私信 3'));
+    expect(container.read(selectedMessageProvider).topicId, 3);
+    await tester.tap(all);
+    await tester.pumpAndSettle();
+    expect(service.calls, ['@alice in:personal-direct']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('私信页头显示成员名字和群组，点按打开名单', (tester) async {
     var opened = false;
     Future<void> show(TopicDetail detail) => tester.pumpWidget(
