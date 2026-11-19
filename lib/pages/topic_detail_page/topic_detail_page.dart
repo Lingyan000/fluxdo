@@ -1452,7 +1452,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   shouldShowTitle: shouldShowTitle,
                   expandProgress: expandProgress,
                 ),
-                centerTitle: detail?.isPrivateMessage == true && !shouldShowTitle,
+                centerTitle: false,
                 actions: _buildAppBarActions(
                   detail: detail,
                   notifier: notifier,
@@ -1474,12 +1474,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     required bool shouldShowTitle,
     required double expandProgress,
   }) {
-    if (detail?.isPrivateMessage == true && !shouldShowTitle) {
-      return InkWell(
-        onTap: _toggleExpandedHeader,
-        child: Text(context.l10n.privateMessages_title),
-      );
-    }
     return Opacity(
       opacity: shouldShowTitle ? (1.0 - expandProgress).clamp(0.0, 1.0) : 0.0,
       child: GestureDetector(

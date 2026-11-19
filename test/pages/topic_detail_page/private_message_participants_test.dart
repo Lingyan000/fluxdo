@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -11,6 +12,7 @@ import 'package:fluxdo/pages/topic_detail_page/widgets/invite_private_message_di
 import 'package:fluxdo/pages/topic_detail_page/widgets/private_message_participants.dart';
 import 'package:fluxdo/providers/discourse_providers.dart';
 import 'package:fluxdo/utils/dialog_utils.dart';
+import 'package:fluxdo/widgets/common/smart_avatar.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 
@@ -127,8 +129,19 @@ void main() {
     final names = _detail().allowedUsers
         .map((user) => user.displayName)
         .join('、');
-    expect(find.text(names), findsOneWidget);
-    await tester.tap(find.text(names));
+    final avatars = find.byType(SmartAvatar);
+    final firstAvatar = tester.getRect(avatars.at(0));
+    final nextAvatar = tester.getRect(avatars.at(1));
+    expect(nextAvatar.left, greaterThan(firstAvatar.left));
+    expect(nextAvatar.left, lessThan(firstAvatar.right));
+    final namesRect = tester.getRect(find.text(names));
+    final arrow = tester.getRect(find.byIcon(Icons.chevron_right_rounded));
+    expect(namesRect.left, greaterThan(nextAvatar.right));
+    expect(arrow.left - namesRect.right, inInclusiveRange(0, 6));
+    final entry = tester.getRect(find.byTooltip('会话成员'));
+    expect(entry.height, greaterThanOrEqualTo(44));
+    expect(entry.right, greaterThan(arrow.right + 4));
+    await tester.tapAt(entry.centerRight - const Offset(4, 0));
     expect(opened, isTrue);
     await show(_detail(groups: true));
     expect(find.text('$names、管理组'), findsOneWidget);
@@ -143,6 +156,48 @@ void main() {
     expect(find.text('+1'), findsOneWidget);
     await show(_detail(groups: true).copyWith(allowedUsers: []));
     expect(find.text('管理组'), findsOneWidget);
+    await show(_detail(invite: true).copyWith(allowedUsers: []));
+    expect(find.text('会话成员'), findsOneWidget);
+    expect(find.byType(SmartAvatar), findsNothing);
+  });
+
+  testWidgets('窄栏双倍字号下私信成员名省略，额外成员数和箭头仍可见', (tester) async {
+    final detail = _detail().copyWith(
+      allowedUsers: [
+        for (var i = 0; i < 6; i++)
+          TopicUser(
+            id: i,
+            username: 'long_participant_name_$i',
+            avatarTemplate: '',
+          ),
+      ],
+    );
+    await tester.pumpWidget(
+      _app(
+        Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 240,
+            child: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: PrivateMessageMemberSummary(detail: detail, onTap: () {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    final names = find.textContaining('long_participant_name_');
+    expect(
+      tester.renderObject<RenderParagraph>(names).didExceedMaxLines,
+      isTrue,
+    );
+    final extra = tester.getRect(find.text('+3'));
+    final arrow = tester.getRect(find.byIcon(Icons.chevron_right_rounded));
+    final entry = tester.getRect(find.byTooltip('会话成员'));
+    expect(tester.getRect(names).right, lessThanOrEqualTo(extra.left));
+    expect(arrow.left - extra.right, inInclusiveRange(0, 6));
+    expect(arrow.right, lessThanOrEqualTo(entry.right));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('群组在前，普通成员只看到自己的退出操作', (tester) async {

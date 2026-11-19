@@ -12,8 +12,8 @@ import '../../../utils/link_launcher.dart';
 import '../../../utils/number_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/inline_icon_span.dart';
-import '../../../widgets/common/smart_avatar.dart';
 import '../../../widgets/user/user_card.dart';
+import 'topic_participant_avatars.dart';
 import 'topic_statistics_sheets.dart';
 
 /// 话题的参与者、点赞、阅读时长和链接汇总。
@@ -161,9 +161,8 @@ class _TopicStatisticsState extends State<TopicStatistics> {
       if (!detail.isPrivateMessage && count > 0)
         _StatItem(
           leading: showAvatars
-              ? _AvatarStack(
-                  users: participants.take(_maxStackedAvatars).toList(),
-                  ringColor: Theme.of(context).colorScheme.surface,
+              ? TopicParticipantAvatars(
+                  users: participants.take(_maxStackedAvatars),
                 )
               : null,
           icon: Symbols.group_rounded,
@@ -289,41 +288,6 @@ class _StatItem extends StatelessWidget {
               onTap: onTap,
               child: content,
             ),
-    );
-  }
-}
-
-/// 参与者头像叠放，后一个压在前一个之上。
-class _AvatarStack extends StatelessWidget {
-  const _AvatarStack({required this.users, required this.ringColor});
-
-  final List<TopicUser> users;
-  final Color ringColor;
-
-  static const double _radius = 9;
-  static const double _ring = 1.5;
-  static const double _step = 13;
-
-  @override
-  Widget build(BuildContext context) {
-    const size = (_radius + _ring) * 2;
-    return SizedBox(
-      width: size + (users.length - 1) * _step,
-      height: size,
-      child: Stack(
-        children: [
-          for (var i = 0; i < users.length; i++)
-            PositionedDirectional(
-              start: i * _step,
-              child: SmartAvatar(
-                imageUrl: users[i].getAvatarUrl(size: 48),
-                radius: _radius + _ring,
-                fallbackText: users[i].username,
-                border: Border.all(color: ringColor, width: _ring),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

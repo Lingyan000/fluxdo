@@ -12,6 +12,7 @@ import '../../../widgets/common/smart_avatar.dart';
 import '../../../widgets/common/error_view.dart';
 import '../../../widgets/user/user_card.dart';
 import 'invite_private_message_dialog.dart';
+import 'topic_participant_avatars.dart';
 
 class PrivateMessageMemberSummary extends StatelessWidget {
   static bool isAvailable(TopicDetail detail) =>
@@ -54,27 +55,17 @@ class PrivateMessageMemberSummary extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
-              for (final user in users)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 2),
-                  child: SmartAvatar(
-                    radius: 10,
-                    backgroundColor: theme.colorScheme.secondaryContainer,
-                    foregroundColor: theme.colorScheme.onSecondaryContainer,
-                    fallbackText: user.username,
-                    imageUrl: user.getAvatarUrl(size: 48),
-                  ),
+              if (names.isNotEmpty) ...[
+                TopicParticipantAvatars(
+                  users: users,
+                  groupCount: groups.length,
+                  size: 24,
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                  foregroundColor: theme.colorScheme.onSecondaryContainer,
                 ),
-              for (final _ in groups)
-                const Padding(
-                  padding: EdgeInsetsDirectional.only(end: 2),
-                  child: CircleAvatar(
-                    radius: 10,
-                    child: Icon(Icons.group_rounded, size: 14),
-                  ),
-                ),
-              if (names.isNotEmpty) const SizedBox(width: 6),
-              Expanded(
+                const SizedBox(width: 8),
+              ],
+              Flexible(
                 child: Text(
                   names.isEmpty
                       ? l10n.pm_conversationMembers
@@ -84,10 +75,14 @@ class PrivateMessageMemberSummary extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (remaining > 0) Text('+$remaining', style: style),
+              if (remaining > 0) ...[
+                const SizedBox(width: 4),
+                Text('+$remaining', style: style),
+              ],
+              const SizedBox(width: 2),
               Icon(
                 Icons.chevron_right_rounded,
-                size: 18,
+                size: 16,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ],

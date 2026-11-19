@@ -224,7 +224,10 @@ void main() {
     final entry = find.byTooltip('会话成员');
     expect(entry, findsOneWidget);
     final row = tester.getRect(entry);
-    expect(row.top, greaterThan(tester.getRect(find.text('私人讨论')).bottom));
+    expect(
+      row.top,
+      greaterThanOrEqualTo(tester.getRect(find.textContaining('私信')).bottom),
+    );
     expect(row.bottom, lessThanOrEqualTo(tester.getRect(firstPost).top));
   });
 

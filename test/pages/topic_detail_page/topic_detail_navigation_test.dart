@@ -42,7 +42,8 @@ TopicDetail _detail(int first, int last) => TopicDetail.fromJson({
 });
 
 class _DetailNotifier extends TopicDetailNotifier {
-  _DetailNotifier(super.arg);
+  _DetailNotifier(super.arg, this.initialDetail);
+  final TopicDetail initialDetail;
   bool previousEnabled = false;
   int get firstLoadedPost =>
       state.requireValue.postStream.posts.first.postNumber;
@@ -55,7 +56,7 @@ class _DetailNotifier extends TopicDetailNotifier {
       loadPreviousFailedListenable.dispose();
       loadMoreFailedListenable.dispose();
     });
-    return _detail(40, 99);
+    return initialDetail;
   }
 
   @override
@@ -109,6 +110,7 @@ void main() {
   late SharedPreferences prefs;
   late ProviderContainer container;
   late _PagingService service;
+  late TopicDetail initialDetail;
   var enablePrevious = false;
 
   setUp(() async {
@@ -116,6 +118,7 @@ void main() {
     prefs = await SharedPreferences.getInstance();
     LocaleSettings.setLocale(AppLocale.zh);
     service = _PagingService();
+    initialDetail = _detail(40, 99);
     enablePrevious = false;
     container = ProviderContainer(
       overrides: [
@@ -134,6 +137,7 @@ void main() {
         ).overrideWith(
           () => notifier = _DetailNotifier(
             const TopicDetailParams(42, instanceId: 'navigation-test'),
+            initialDetail,
           )..previousEnabled = enablePrevious,
         ),
       ],
@@ -142,7 +146,7 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  Widget app() => UncontrolledProviderScope(
+  Widget app({int initialFloor = 60}) => UncontrolledProviderScope(
     container: container,
     child: TranslationProvider(
       child: MaterialApp(
@@ -150,9 +154,9 @@ void main() {
         locale: const Locale('zh'),
         supportedLocales: AppLocaleUtils.supportedLocales,
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: const TopicDetailPage(
+        home: TopicDetailPage(
           topicId: 42,
-          scrollToPostNumber: 60,
+          scrollToPostNumber: initialFloor,
           embeddedMode: true,
           instanceId: 'navigation-test',
         ),
@@ -175,8 +179,33 @@ void main() {
 
   Future<void> disposePage(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
+    // 详情页销毁后，内联帖子缓存还有 30 秒的保活期。
+    await tester.pump(const Duration(seconds: 31));
   }
+
+  testWidgets('私信顶栏随滚动显示会话标题', (tester) async {
+    initialDetail = _detail(
+      1,
+      99,
+    ).copyWith(title: '读书会', archetype: 'private_message');
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    final bar = find.byType(AppBar);
+    expect(tester.widget<AppBar>(bar).centerTitle, isFalse);
+    expect(find.descendant(of: bar, matching: find.text('私信')), findsNothing);
+    final title = find.descendant(
+      of: bar,
+      matching: find.textContaining('读书会'),
+    );
+    final opacity = find
+        .ancestor(of: title, matching: find.byType(Opacity))
+        .first;
+    expect(tester.widget<Opacity>(opacity).opacity, 0);
+    tester.widget<TopicPostList>(find.byType(TopicPostList)).onJumpToPost(60);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(opacity).opacity, 1);
+    await disposePage(tester);
+  });
 
   testWidgets('详情页中间进入并通过真实跳楼回调定位', (tester) async {
     await tester.pumpWidget(app());

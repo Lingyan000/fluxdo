@@ -120,7 +120,7 @@
   "pm_newTitle": "New message",
   "pm_inviteParticipants": "Invite participants",
   "pm_conversationMembers": "Conversation members",
-  "pm_privateDiscussion": "Private discussion",
+  "pm_privateMessage": "Private message",
   "pm_memberSeparator": ", ",
   "pm_alreadyJoined": "Already joined",
   "pm_leaveConversation": "Leave conversation",
