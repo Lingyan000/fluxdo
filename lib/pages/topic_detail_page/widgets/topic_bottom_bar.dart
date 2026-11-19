@@ -14,6 +14,7 @@ import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bar_gestures.dart';
 import 'topic_filter_controls.dart';
+import 'topic_floating_bar_edge.dart';
 import 'topic_progress_track.dart';
 
 /// 话题底栏尺寸：列表末尾留白、回顶 / 目录按钮定位都从这里推导，
@@ -28,7 +29,10 @@ abstract final class TopicBottomBarMetrics {
   /// 悬浮形态（非手机宽度）离底边的距离
   static const double floatingMargin = 16;
   static const double floatingRadius = 24;
-  static const double floatingLineTop = 3;
+  static RoundedSuperellipseBorder floatingShape(BuildContext context) =>
+      RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(floatingRadius),
+      );
 
   /// 悬浮于栏上方的按钮与栏之间的间距
   static const double gap = 12;
@@ -314,11 +318,7 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
     if (floating) {
       return Material(
         color: theme.colorScheme.surfaceContainer,
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(
-            TopicBottomBarMetrics.floatingRadius,
-          ),
-        ),
+        shape: TopicBottomBarMetrics.floatingShape(context),
         clipBehavior: Clip.antiAlias,
         elevation: 3,
         shadowColor: Colors.black26,
@@ -595,7 +595,7 @@ class TopicProgressLine extends StatelessWidget {
     required this.totalCount,
     this.markerIndex,
     this.handleInsets,
-    this.floating = false,
+    this.floatingEdge,
     this.showHandle = true,
   });
 
@@ -603,27 +603,27 @@ class TopicProgressLine extends StatelessWidget {
   final int totalCount;
   final int? markerIndex;
   final EdgeInsets? handleInsets;
-  final bool floating, showHandle;
+  final TopicFloatingBarEdge? floatingEdge;
+  final bool showHandle;
   static const double handleHeight = 6;
 
   static double heightFor(bool hasHandle) =>
       hasHandle ? handleHeight : TopicBottomBarMetrics.progressLineHeight;
 
-  static double centerFromBarTop(bool floating, bool hasHandle) => floating
-      ? TopicBottomBarMetrics.floatingLineTop + heightFor(hasHandle) / 2
-      : TopicBottomBarMetrics.progressLineHeight / 2;
-
   @override
   Widget build(BuildContext context) {
     final insets = handleInsets ?? EdgeInsets.zero;
     return SizedBox(
-      height: heightFor(showHandle && handleInsets != null),
+      height:
+          floatingEdge?.size.height ??
+          heightFor(showHandle && handleInsets != null),
       child: ValueListenableBuilder<int>(
         valueListenable: streamIndexListenable,
         builder: (context, index, _) => TopicProgressTrack(
-          surface: floating
+          surface: floatingEdge != null
               ? TopicProgressSurface.floating
               : TopicProgressSurface.docked,
+          floatingEdge: floatingEdge,
           progress: TopicProgressTrack.fraction(index, totalCount),
           lastRead: markerIndex == null
               ? null

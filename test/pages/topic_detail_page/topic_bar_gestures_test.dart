@@ -1,8 +1,12 @@
+import 'dart:ui' as ui;
+
+import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bar_gestures.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bottom_bar.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_overlay.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_filter_controls.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_floating_bar_edge.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_progress_track.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_indicator.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
@@ -40,6 +44,7 @@ void main() {
     WidgetTester tester, {
     Size viewport = const Size(390, 720),
     double? paneWidth,
+    ThemeData? barTheme,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = viewport;
@@ -59,6 +64,7 @@ void main() {
       },
       filter: const TopicFilterControls(),
     );
+    final content = barTheme == null ? bar : Theme(data: barTheme, child: bar);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
@@ -67,11 +73,11 @@ void main() {
             navigatorKey: navigatorKey,
             home: Scaffold(
               bottomNavigationBar: paneWidth == null
-                  ? bar
+                  ? content
                   : Align(
                       alignment: Alignment.centerRight,
                       heightFactor: 1,
-                      child: SizedBox(width: paneWidth, child: bar),
+                      child: SizedBox(width: paneWidth, child: content),
                     ),
             ),
           ),
@@ -226,11 +232,12 @@ void main() {
     expect(commits, isEmpty);
   });
 
-  testWidgets('悬浮渐变沿轨道从两端展开，读数与轨道相连，收回途中可以再拖', (tester) async {
+  testWidgets('悬浮渐变从底栏同色的弧形上沿展开，收回途中可以再拖', (tester) async {
     final bar = await showBar(
       tester,
       viewport: const Size(960, 720),
       paneWidth: 420,
+      barTheme: ThemeData.dark(),
     );
     final indicator = find.byType(TopicScrubIndicator);
     final track = find.byType(TopicProgressTrack);
@@ -243,6 +250,30 @@ void main() {
       ),
     );
     expect(rest.endInset, rest.startInset);
+    final edge = rest.floatingEdge!;
+    expect(edge.size, bar.size);
+    expect(edge.at(0).dx, inExclusiveRange(2.0, rest.startInset));
+    expect(edge.at(1).dx, closeTo(bar.width - edge.at(0).dx, .2));
+    expect(edge.at(0).dy, closeTo(edge.at(1).dy, .2));
+    expect(edge.at(1).dy - edge.at(.5).dy, closeTo(2, .1));
+    expect(edge.at(.1).dy, closeTo(edge.at(.5).dy, .1));
+    expect(edge.at(.5).dx, closeTo(bar.width / 2, .15));
+    expect(edge.at(.5).dy, closeTo(rest.surface.restThickness / 2, .1));
+    final end =
+        (paintTrack(tester).invocations
+                    .lastWhere(
+                      (call) => call.invocation.memberName == #drawPath,
+                    )
+                    .invocation
+                    .positionalArguments
+                    .first
+                as Path)
+            .computeMetrics()
+            .first;
+    expect(
+      (end.getTangentForOffset(end.length)!.position - edge.at(1)).distance,
+      lessThan(.15),
+    );
     final restY = tester.getCenter(track).dy;
     expect(indicator, findsNothing);
     final finger = await tester.startGesture(bar.center);
@@ -253,24 +284,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 85));
     final mid = tester.widget<TopicProgressTrack>(track);
     expect(mid.expansion, inExclusiveRange(0, 1));
+    final readoutFade = find
+        .descendant(of: indicator, matching: find.byType(FadeTransition))
+        .first;
+    expect(tester.widget<FadeTransition>(readoutFade).opacity.value, 0);
     expect(mid.startInset, rest.startInset);
     final midY = tester.getCenter(track).dy;
     expect(midY, lessThan(restY));
     await tester.pumpAndSettle();
     expect(tester.getCenter(track).dy, lessThan(midY));
+    expect(tester.widget<FadeTransition>(readoutFade).opacity.value, 1);
     expect(tester.getRect(track).bottom, lessThanOrEqualTo(bar.top));
     final field = find.descendant(
       of: indicator,
       matching: find.byWidgetPredicate(
-        (widget) => switch (widget) {
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topCenter),
-            ),
-          ) =>
-            true,
-          _ => false,
-        },
+        (w) => w is CustomPaint && w.painter is TopicFloatingScrubBackdrop,
       ),
     );
     final bounds = tester.getRect(field);
@@ -280,8 +308,59 @@ void main() {
     final axisY = tester.getCenter(track).dy;
     expect(bounds.contains(Offset(bar.left + rest.startInset, axisY)), isTrue);
     expect(bounds.contains(Offset(bar.right - rest.endInset, axisY)), isTrue);
-    expect(bounds.bottom, closeTo(restY, .01));
-    expect(bounds.bottom, lessThan(bar.center.dy));
+    expect(bounds.bottom, closeTo(bar.center.dy, .01));
+    final backdrop =
+        tester.widget<CustomPaint>(field).painter!
+            as TopicFloatingScrubBackdrop;
+    expect(backdrop.edge, same(edge));
+    final material = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byType(TopicBarGestures),
+            matching: find.byWidgetPredicate(
+              (w) => w is Material && w.shape == edge.shape,
+            ),
+          )
+          .first,
+    );
+    expect(backdrop.container, material.color);
+    // 黑底、图片和回帖行都可能出现在栏后，直接校验渐变的实际像素。
+    await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      backdrop.paint(Canvas(recorder), bounds.size);
+      final picture = recorder.endRecording();
+      final img = await picture.toImage(
+        bounds.width.ceil(),
+        bounds.height.ceil(),
+      );
+      final bytes = (await img.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      Color pixel(int x, int y) {
+        final offset = (y * img.width + x) * 4;
+        return Color.fromARGB(
+          bytes.getUint8(offset + 3),
+          bytes.getUint8(offset),
+          bytes.getUint8(offset + 1),
+          bytes.getUint8(offset + 2),
+        );
+      }
+
+      final centerX = (bounds.width / 2).floor();
+      final rootY = (bar.top - bounds.top).floor();
+      final atRoot = pixel(centerX, rootY - 1);
+      expect(atRoot.a, 1);
+      expect((atRoot.r - backdrop.container.r).abs(), lessThan(.015));
+      expect(pixel(centerX, 0).a, lessThan(.02));
+      const shoulderX = 6;
+      final outline = edge.shape.getOuterPath(Offset.zero & edge.size);
+      final shoulderY = Iterable<int>.generate(bar.height.ceil())
+          .firstWhere((y) => outline.contains(Offset(shoulderX + .5, y + .5)));
+      expect(shoulderY, greaterThan(edge.at(0).dy));
+      expect(pixel(shoulderX, rootY + shoulderY - 3).a, greaterThan(.02));
+      expect(pixel(shoulderX, rootY + shoulderY + 3).a, 0);
+      expect(pixel(centerX, rootY + 6).a, 0);
+      img.dispose();
+      picture.dispose();
+    });
     final target = preview(tester)!;
     await finger.up();
     await tester.pump();
@@ -309,6 +388,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(commits, [target]);
     expect(indicator, findsNothing);
+  });
+
+  testWidgets('从悬浮底栏左侧圆角可向上逐楼，方正主题沿顶边收头', (tester) async {
+    current.value = 1;
+    final bar = await showBar(
+      tester,
+      viewport: const Size(960, 720),
+      paneWidth: 420,
+    );
+    final edge = tester
+        .widget<TopicProgressTrack>(find.byType(TopicProgressTrack))
+        .floatingEdge!;
+    final finger = await tester.startGesture(
+      bar.topLeft + edge.at(0) + const Offset(2, 0),
+    );
+    await finger.moveBy(const Offset(0, -80));
+    await tester.pumpAndSettle();
+    expect(find.text('逐楼'), findsOneWidget);
+    expect(preview(tester), 1);
+    await finger.moveBy(const Offset(14, 0));
+    await finger.up();
+    await tester.pumpAndSettle();
+    expect(commits, [2]);
+
+    final square = TopicFloatingBarEdge(
+      bar.size,
+      RoundedSuperellipseBorder(
+        borderRadius: const UiShapes(max: 0)
+            .borderRadius(TopicBottomBarMetrics.floatingRadius),
+      ),
+    );
+    for (final progress in [0.0, .1, .5, .9, 1.0]) {
+      const inset = TopicFloatingBarEdge.inset;
+      expect(square.at(progress).dy, inset);
+      expect(
+        square.at(progress).dx,
+        closeTo(inset + (bar.width - 2 * inset) * progress, .01),
+      );
+    }
   });
 
   testWidgets('开启减少动效时渐变直接显隐', (tester) async {

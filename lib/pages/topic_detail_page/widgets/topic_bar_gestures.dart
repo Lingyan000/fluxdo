@@ -13,6 +13,7 @@ import '../../../widgets/common/radial_long_press_menu.dart';
 import 'progress_gesture_action_meta.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_floating_bar_edge.dart';
 import 'topic_progress_track.dart';
 import 'topic_scrub_indicator.dart';
 import 'topic_scrub_mapping.dart';
@@ -87,6 +88,16 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
   bool _reduceMotion = false;
   bool _floating = false;
   EdgeInsets _railInsets = EdgeInsets.zero;
+  TopicFloatingBarEdge? _floatingEdge;
+
+  TopicFloatingBarEdge _edgeFor(Size size) {
+    final shape = TopicBottomBarMetrics.floatingShape(context);
+    final cached = _floatingEdge;
+    if (cached != null && cached.size == size && cached.shape == shape) {
+      return cached;
+    }
+    return _floatingEdge = TopicFloatingBarEdge(size, shape);
+  }
 
   // ===== 拖动定位状态 =====
   OverlayEntry? _scrubEntry;
@@ -219,7 +230,16 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     final t = TopicProgressTrack.curve.transform(_scrubFade.value);
     final left = surface.insetAt(_railInsets.left, t);
     final right = rect.width - surface.insetAt(_railInsets.right, t);
-    final handle = left + (right - left) * _trackProgress(t);
+    final progress = _trackProgress(t);
+    final handle = left + (right - left) * progress;
+    if (_floating) {
+      final x =
+          rect.left +
+          (1 - t) * _edgeFor(rect.size).at(progress).dx +
+          t * handle;
+      return (point.dx - x.clamp(_edgeLeft, _screenWidth - _edgeRight)).abs() <=
+          22;
+    }
     // 细线延伸到屏幕边缘，首末楼仍可从系统返回区以内抓住。
     final reachable = handle.clamp(
       _railInsets.left,
@@ -384,21 +404,24 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     final tracker = _tracker;
     if (rect == null || tracker == null) return const SizedBox.shrink();
     final source = _scrubSource;
-    return TopicScrubIndicator(
-      visibility: _scrubFade,
-      thumbTravel: _thumbMotion.travel,
-      barRect: rect,
-      insets: _railInsets,
-      floating: _floating,
-      progressAt: _trackProgress,
-      markerIndex: widget.markerIndex,
-      tracker: tracker,
-      pointer: _pointer,
-      date: source?.dateAt(_scrubTarget),
-      excerptIndex: _excerptIndex,
-      excerpt: _excerptIndex == _scrubTarget
-          ? source?.infoAt(_excerptIndex, loadExcerpt: _scrubAxis != null)
-          : null,
+    return Theme(
+      data: Theme.of(context),
+      child: TopicScrubIndicator(
+        visibility: _scrubFade,
+        thumbTravel: _thumbMotion.travel,
+        barRect: rect,
+        insets: _railInsets,
+        floatingEdge: _floating ? _edgeFor(rect.size) : null,
+        progressAt: _trackProgress,
+        markerIndex: widget.markerIndex,
+        tracker: tracker,
+        pointer: _pointer,
+        date: source?.dateAt(_scrubTarget),
+        excerptIndex: _excerptIndex,
+        excerpt: _excerptIndex == _scrubTarget
+            ? source?.infoAt(_excerptIndex, loadExcerpt: _scrubAxis != null)
+            : null,
+      ),
     );
   }
 
@@ -499,6 +522,14 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
     );
     final enabled = prefs.progressGesturesEnabled;
     final hasHandle = enabled && widget.totalCount > 1;
+    Widget readingLine(TopicFloatingBarEdge? edge) => TopicProgressLine(
+      streamIndexListenable: widget.streamIndexListenable,
+      totalCount: widget.totalCount,
+      markerIndex: widget.markerIndex,
+      handleInsets: enabled || _floating ? _railInsets : null,
+      floatingEdge: edge,
+      showHandle: hasHandle,
+    );
     final surface = Stack(
       clipBehavior: Clip.none,
       children: [
@@ -512,18 +543,19 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
           Positioned(
             left: 0,
             right: 0,
-            top:
-                TopicProgressLine.centerFromBarTop(_floating, hasHandle) -
-                TopicProgressLine.heightFor(hasHandle) / 2,
+            top: _floating
+                ? 0
+                : (TopicBottomBarMetrics.progressLineHeight -
+                          TopicProgressLine.heightFor(hasHandle)) /
+                      2,
+            bottom: _floating ? 0 : null,
             child: IgnorePointer(
-              child: TopicProgressLine(
-                streamIndexListenable: widget.streamIndexListenable,
-                totalCount: widget.totalCount,
-                markerIndex: widget.markerIndex,
-                handleInsets: enabled || _floating ? _railInsets : null,
-                floating: _floating,
-                showHandle: hasHandle,
-              ),
+              child: _floating
+                  ? LayoutBuilder(
+                      builder: (_, constraints) =>
+                          readingLine(_edgeFor(constraints.biggest)),
+                    )
+                  : readingLine(null),
             ),
           ),
       ],

@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show lerpDouble;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -8,6 +9,7 @@ import '../../../utils/time_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_floating_bar_edge.dart';
 import 'topic_progress_track.dart';
 import 'topic_scrub_mapping.dart';
 
@@ -19,7 +21,7 @@ class TopicScrubIndicator extends StatelessWidget {
     required this.thumbTravel,
     required this.barRect,
     required this.insets,
-    required this.floating,
+    this.floatingEdge,
     required this.progressAt,
     required this.markerIndex,
     required this.tracker,
@@ -33,7 +35,7 @@ class TopicScrubIndicator extends StatelessWidget {
   final Animation<double> thumbTravel;
   final Rect barRect;
   final EdgeInsets insets;
-  final bool floating;
+  final TopicFloatingBarEdge? floatingEdge;
   final double Function(double expansion) progressAt;
   final int? markerIndex;
   final TopicScrubTracker tracker;
@@ -48,11 +50,12 @@ class TopicScrubIndicator extends StatelessWidget {
     final scheme = theme.colorScheme;
     final accent = context.emphasis.selected;
     final screen = MediaQuery.sizeOf(context);
+    final edge = floatingEdge;
+    final floating = edge != null;
     final style = floating
         ? TopicProgressSurface.floating
         : TopicProgressSurface.docked;
-    final restY =
-        barRect.top + TopicProgressLine.centerFromBarTop(floating, true);
+    final restY = barRect.top + TopicBottomBarMetrics.progressLineHeight / 2;
     final railY = floating ? barRect.top - style.openThickness / 2 - 5 : restY;
     // 旋屏或窗口缩小时，手势取消之前的旧轨道可能已经离开视口。
     if (!barRect.overlaps(Offset.zero & screen) || railY > screen.height) {
@@ -83,9 +86,13 @@ class TopicScrubIndicator extends StatelessWidget {
     final gap = math.min(24 + lift * proximity, roomAbove * .35);
     final readoutRoom = math.max(0.0, roomAbove - gap);
     final feather = math.min(232.0, readoutRoom * (floating ? .28 : .36));
-    // 悬浮底栏的渐变覆盖轨道与读数之间的整段距离，收在操作行上沿。
-    final fieldBottom = floating ? math.max(0.0, bottom - restY) : 0.0;
-    final paintHeight = style.openThickness + 6;
+    final paintHeight = style.openPaintHeight;
+    // 先让底栏的底色铺到读数下方，收回时则先隐去文字，避免两个楼层叠在一起。
+    final readoutOpacity = floating
+        ? visibility.drive(
+            CurveTween(curve: const Interval(.5, 1, curve: Curves.easeInOut)),
+          )
+        : visibility;
     final reduceMotion =
         MediaQuery.disableAnimationsOf(context) ||
         MediaQuery.reduceMotionOf(context);
@@ -100,34 +107,44 @@ class TopicScrubIndicator extends StatelessWidget {
           children: [
             Positioned(
               top: 0,
-              bottom: fieldBottom,
+              bottom: floating ? bottom - barRect.center.dy : 0,
               left: 0,
               right: 0,
-              child: FadeTransition(
-                opacity: visibility,
-                child: RepaintBoundary(
-                  child: _ScrubBackdrop(
-                    surface: scheme.surface,
-                    accent: accent,
-                    feather: feather,
-                    belowRail: belowRail - fieldBottom,
-                    floating: floating,
-                    leftFeather: floating
-                        ? insets.left * 1.5
-                        : (barRect.left > 1 ? 32 : 0),
-                    rightFeather: floating
-                        ? insets.right * 1.5
-                        : (barRect.right < screen.width - 1 ? 32 : 0),
-                    atBottom: bottom >= screen.height - 1,
-                  ),
-                ),
-              ),
+              child: edge != null
+                  ? RepaintBoundary(
+                      child: CustomPaint(
+                        painter: TopicFloatingScrubBackdrop(
+                          edge: edge,
+                          visibility: visibility,
+                          feather: feather,
+                          container: scheme.surfaceContainer,
+                          surface: scheme.surface,
+                          accent: accent,
+                        ),
+                      ),
+                    )
+                  : FadeTransition(
+                      opacity: visibility,
+                      child: RepaintBoundary(
+                        child: _ScrubBackdrop(
+                          surface: scheme.surface,
+                          accent: accent,
+                          feather: feather,
+                          belowRail: belowRail,
+                          leftFeather: barRect.left > 1 ? 32 : 0,
+                          rightFeather: barRect.right < screen.width - 1
+                              ? 32
+                              : 0,
+                          atBottom: bottom >= screen.height - 1,
+                        ),
+                      ),
+                    ),
             ),
             // 上移换档时，楼号和摘要给指尖留出空间。
             Padding(
               padding: EdgeInsets.only(top: feather, bottom: belowRail + gap),
               child: FadeTransition(
-                opacity: visibility,
+                opacity: readoutOpacity,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxHeight: readoutRoom - feather),
                   child: FittedBox(
@@ -148,46 +165,48 @@ class TopicScrubIndicator extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: bottom - restY - paintHeight / 2,
-              height: paintHeight,
-              child: AnimatedBuilder(
-                animation: visibility,
-                builder: (context, _) {
-                  final t = TopicProgressTrack.curve.transform(
-                    visibility.value,
-                  );
-                  final marker = markerIndex;
-                  return Transform.translate(
-                    offset: Offset(0, (railY - restY) * t),
-                    child: TopicProgressTrack(
-                      surface: style,
-                      thumbTravel: reduceMotion
-                          ? kAlwaysDismissedAnimation
-                          : thumbTravel,
-                      expansion: t,
-                      progress: progressAt(t),
-                      startInset: insets.left,
-                      endInset: insets.right,
-                      lastRead: marker == null
-                          ? null
-                          : TopicProgressTrack.fraction(
-                              marker,
-                              tracker.totalCount,
-                            ),
-                      ruler: tracker.scale == TopicScrubScale.whole
-                          ? null
-                          : (
-                              rate: tracker.floorsPerPixel,
-                              origin: tracker.rulerOrigin,
-                              total: tracker.totalCount,
-                            ),
-                    ),
-                  );
-                },
-              ),
+            AnimatedBuilder(
+              animation: visibility,
+              builder: (context, _) {
+                final t = TopicProgressTrack.curve.transform(visibility.value);
+                final marker = markerIndex;
+                final height = floating
+                    ? lerpDouble(barRect.height, paintHeight, t)!
+                    : paintHeight;
+                final top = floating
+                    ? lerpDouble(barRect.top, railY - paintHeight / 2, t)!
+                    : restY - paintHeight / 2;
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottom - top - height,
+                  height: height,
+                  child: TopicProgressTrack(
+                    surface: style,
+                    floatingEdge: edge,
+                    thumbTravel: reduceMotion
+                        ? kAlwaysDismissedAnimation
+                        : thumbTravel,
+                    expansion: t,
+                    progress: progressAt(t),
+                    startInset: insets.left,
+                    endInset: insets.right,
+                    lastRead: marker == null
+                        ? null
+                        : TopicProgressTrack.fraction(
+                            marker,
+                            tracker.totalCount,
+                          ),
+                    ruler: tracker.scale == TopicScrubScale.whole
+                        ? null
+                        : (
+                            rate: tracker.floorsPerPixel,
+                            origin: tracker.rulerOrigin,
+                            total: tracker.totalCount,
+                          ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -404,7 +423,6 @@ class _ScrubBackdrop extends StatelessWidget {
     required this.accent,
     required this.feather,
     required this.belowRail,
-    required this.floating,
     required this.leftFeather,
     required this.rightFeather,
     required this.atBottom,
@@ -414,7 +432,6 @@ class _ScrubBackdrop extends StatelessWidget {
   final Color accent;
   final double feather;
   final double belowRail;
-  final bool floating;
   final double leftFeather, rightFeather;
   final bool atBottom;
 
@@ -442,11 +459,9 @@ class _ScrubBackdrop extends StatelessWidget {
             colors: [
               for (final sample in _fade)
                 surface.withValues(alpha: sample.opacity),
-              floating
-                  ? TopicProgressGradient.tintOf(context)
-                  : Color.alphaBlend(accent.withValues(alpha: .10), surface),
-              surface.withValues(alpha: floating ? .46 : .83),
-              surface.withValues(alpha: !floating && atBottom ? .44 : 0),
+              Color.alphaBlend(accent.withValues(alpha: .10), surface),
+              surface.withValues(alpha: .83),
+              surface.withValues(alpha: atBottom ? .44 : 0),
             ],
             stops: [
               for (final sample in _fade) top * sample.stop,
