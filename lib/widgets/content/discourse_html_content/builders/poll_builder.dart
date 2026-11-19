@@ -1066,6 +1066,7 @@ class _PieChartInteractiveState extends State<_PieChartInteractive> {
     tipLeft = tipLeft.clamp(-20.0, _size - 60);
     tipTop = tipTop.clamp(-20.0, _size - 30);
     return MouseRegion(
+      cursor: _hovered == null ? MouseCursor.defer : SystemMouseCursors.click,
       onHover: (e) {
         final local = _toLocal(e.position);
         final hit = _hitTest(local);

@@ -44,9 +44,11 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    ImageZoomCursor.register(with: flutterViewController.engine)
     MacOSUpdateHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
+      ImageZoomCursor.register(with: controller.engine)
       let channel = FlutterMethodChannel(name: "com.fluxdo/mini_app_window_controls",
                                          binaryMessenger: controller.engine.binaryMessenger)
       channel.setMethodCallHandler { [weak controller] call, result in

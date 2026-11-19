@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -519,7 +520,7 @@ class _PolicyWidgetState extends ConsumerState<_PolicyWidget> {
         itemBuilder: (context, index) {
           if (index < users.length) {
             final u = users[index];
-            return GestureDetector(
+            return ContentTapTarget(
               onTap: () => EmbeddedStackScope.openProfile(context, u.username),
               child: SmartAvatar(
                 imageUrl: u.getAvatarUrl(size: 48),

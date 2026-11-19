@@ -38,6 +38,7 @@ import '../services/media_compat_service.dart';
 import '../services/toast_service.dart';
 import '../utils/discourse_url_parser.dart';
 import '../utils/html_to_markdown.dart';
+import '../utils/image_zoom_cursor.dart';
 import '../utils/link_launcher.dart';
 import '../utils/svg_utils.dart';
 import '../utils/url_helper.dart';
@@ -1205,6 +1206,7 @@ class FluxdoRenderCallbacks {
         // 落点正确(配合查看器/HeroImage 的裁切插值 shuttle,飞行中
         // 裁切窗口随缩放连续张合,两端像素级对齐)。
         final bool inGridTile = GridTileScope.of(lbCtx);
+        final linkTap = ImageLinkScope.maybeOf(lbCtx);
         final (dispW, dispH) = _imageDisplayDimensions(
           lbCtx,
           lbc,
@@ -1241,8 +1243,8 @@ class FluxdoRenderCallbacks {
               press,
               (_) => DiscourseSvgView(url: resolvedUrl),
             ),
-            child: GestureDetector(
-              onTap: ImageLinkScope.maybeOf(lbCtx),
+            child: ContentTapTarget(
+              onTap: linkTap,
               child: SizedBox(
                 width: dispW,
                 height: dispH,
@@ -1312,7 +1314,6 @@ class FluxdoRenderCallbacks {
                   SelectionScope.clearAt(ctx);
                   // 链接内图片(`<a href><img></a>`):单击打开外层链接,
                   // 对齐网页端,不放大图片。
-                  final linkTap = ImageLinkScope.maybeOf(ctx);
                   if (linkTap != null) {
                     linkTap();
                     return;
@@ -1396,7 +1397,13 @@ class FluxdoRenderCallbacks {
                   ],
                 );
               }
-              return img;
+              return MouseRegion(
+                cursor: linkTap == null
+                    ? imageZoomCursor
+                    : SystemMouseCursors.click,
+                hitTestBehavior: HitTestBehavior.deferToChild,
+                child: img,
+              );
             },
           ),
         );
@@ -1816,7 +1823,8 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     final imageUrl = onInk
         ? _buildMermaidInkUrl(widget.code, isDark)
         : _buildKrokiUrl(widget.code, isDark);
-    return GestureDetector(
+    return ContentTapTarget(
+      cursor: imageZoomCursor,
       onTap: () {
         // 点图 = 位图查看器(手势/保存/分享体验成熟)。高清:ink 可达时
         // width=2000;kroki 只有 1x(公共实例 scale/width 不生效),大图
