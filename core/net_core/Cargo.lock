@@ -829,6 +829,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shadowsocks",
+ "socket2",
  "thiserror 2.0.21",
  "tokio",
  "tokio-stream",

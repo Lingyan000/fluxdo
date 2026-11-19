@@ -45,6 +45,30 @@ const EGRESS_BUDGET: Duration = Duration::from_secs(25);
 const ATTEMPT_STAGGER: Duration = Duration::from_millis(250);
 /// 客户端 TLS 握手卡住多久后起备用握手，见 [`EgressConnector::connect_client`]。
 const CLIENT_TLS_BACKUP_DELAY: Duration = Duration::from_millis(1500);
+/// 出站 TCP 保活间隔。移动端不开，避免周期性唤醒射频。
+pub(crate) const CLIENT_KEEPALIVE: Option<Duration> =
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        None
+    } else {
+        Some(Duration::from_secs(45))
+    };
+
+/// 出站 TCP 连接的通用选项，与 Chromium `SetDefaultOptionsForClient` 一致：
+/// 关闭 Nagle，HTTP/2 帧与 TLS 记录这类小写入不必等上一段的 ACK；
+/// 桌面端开 TCP 保活，防止中间设备静默丢弃空闲连接的映射后，复用时要等重传超时才发现。
+pub(crate) fn configure_client_socket(stream: &TcpStream) {
+    if let Err(error) = stream.set_nodelay(true) {
+        warn!("Set TCP_NODELAY failed: {error}");
+    }
+    if let Some(interval) = CLIENT_KEEPALIVE {
+        let keepalive = socket2::TcpKeepalive::new()
+            .with_time(interval)
+            .with_interval(interval);
+        if let Err(error) = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive) {
+            warn!("Set TCP keepalive failed: {error}");
+        }
+    }
+}
 /// 一个候选上游。代理项自带要用的配置：出口可能来自应用内代理，也可能来自
 /// 按目标求值的系统代理（含 PAC），两者在这里统一。
 #[derive(Debug, Clone)]
@@ -614,6 +638,7 @@ async fn open_target(
                 .await
                 .map_err(|_| NetError::Timeout)?
                 .map_err(NetError::Io)?;
+            configure_client_socket(&stream);
             Ok(Box::new(stream))
         }
     }
