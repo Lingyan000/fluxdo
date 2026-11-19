@@ -152,7 +152,7 @@ void main() {
     await tester.pump();
     await tester.pump(_enter);
     expect(find.text('实色'), findsOneWidget);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(_exit);
 
@@ -160,7 +160,7 @@ void main() {
     ToastService.showSuccess('玻璃');
     await tester.pump();
     await tester.pump(_enter);
-    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(find.byType(GlassBackdrop), findsWidgets);
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(_exit);
   });

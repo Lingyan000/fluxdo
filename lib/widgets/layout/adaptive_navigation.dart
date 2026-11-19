@@ -621,11 +621,11 @@ class _FloatingBottomBarShell extends StatelessWidget {
       child: child,
     );
 
-    // 柔光玻璃材质：局部背景模糊 + 折射 + 方向性边缘光。
-    // 不支持 shader 时才使用均匀模糊与降级描边。
-    // 材质统一遵循全局玻璃策略；关闭时直接出实色，不建离屏层。
+    // 柔光玻璃材质：根部统一截取的背景模糊 + 折射 + 方向性边缘光，
+    // 各平台一致；shader 加载完成前与基础档使用均匀模糊与降级描边。
+    // 材质统一遵循全局玻璃策略；关闭时直接出实色。
     //
-    // 外壳 ClipRSuperellipse 只限制可见范围，不保证背景纹理原点归零。
+    // 外壳 ClipRSuperellipse 只限制可见范围。
     // tintColor 不传：用配方里的中性灰阶（浅 0.99 / 深 0.12）。传
     // surfaceContainer 会被主题色染成彩色塑料板，失去玻璃的中性感。
     final body = GlassSurfaceFrame(
