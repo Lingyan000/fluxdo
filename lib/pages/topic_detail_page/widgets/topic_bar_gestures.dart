@@ -256,7 +256,6 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
   void _startScrub(Offset origin, Axis axis) {
     final rect = _globalRect();
     if (rect == null || widget.totalCount <= 1 || _scrubAxis != null) return;
-    final fromHandle = _nearHandle(rect, origin);
     _anchorTrack();
     _thumbMotion.reset();
     _barRect = rect;
@@ -271,7 +270,6 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
       totalCount: widget.totalCount,
       surfaceWidth: _railWidth(rect),
       startX: origin.dx - rect.left - _railInsets.left,
-      fromHandle: fromHandle,
     );
     _scrubTarget = _excerptIndex = _tracker!.index;
     _lastHapticTime = Duration.zero;
@@ -413,7 +411,8 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
         _isOutsideEdgeZones(_verticalDown) &&
         _verticalDown.dy <= rect.top + 22 &&
         details.globalPosition.dy < _verticalDown.dy &&
-        _nearHandle(rect, _verticalDown)) {
+        (_verticalDown.dy <= rect.top + TopicProgressLine.handleHeight ||
+            _nearHandle(rect, _verticalDown))) {
       _startScrub(_verticalDown, Axis.vertical);
       _handleScrubUpdate(
         DragUpdateDetails(

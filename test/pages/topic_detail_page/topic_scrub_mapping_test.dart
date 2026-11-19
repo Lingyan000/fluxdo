@@ -5,26 +5,50 @@ void main() {
   TopicScrubTracker tracker({
     int start = 6686,
     int total = 10000,
-    bool fromHandle = true,
+    double startX = 210,
   }) => TopicScrubTracker(
     startIndex: start,
     totalCount: total,
     surfaceWidth: 320,
-    startX: 210,
-    fromHandle: fromHandle,
+    startX: startX,
   );
 
-  test('全帖按位置定位，两端直达，落点与采样次数无关', () {
+  test('从不同位置起手，同样的短拖相对当前楼层移动相同距离', () {
+    for (final x in [64.0, 256.0]) {
+      final t = tracker(start: 5001, total: 10001, startX: x);
+      expect(t.index, 5001);
+      expect(t.thumbX, 160);
+      t.update(x + 16, 0);
+      expect(t.index, 5501);
+      expect(t.thumbX, 176);
+      t.update(x - 16, 0);
+      expect(t.index, 4501);
+      t.update(x - 16, 76);
+      expect(t.index, 4501);
+      t.update(x - 2, 76);
+      expect(t.index, 4502);
+      expect(t.rulerOrigin + t.thumbX * t.floorsPerPixel, closeTo(4502, .001));
+    }
+    final edge = tracker(start: 5001, total: 10001, startX: 4)..update(0, 0);
+    expect(edge.index, 4876);
+  });
+
+  test('全帖长扫直达首末楼，落点与采样次数无关，到边可立刻反向', () {
+    int? expected;
     for (final samples in [1, 8, 120]) {
-      final t = tracker(fromHandle: false);
+      final t = tracker(start: 8001, total: 10001, startX: 110);
       for (var i = 1; i <= samples; i++) {
-        t.update(210 - 130 * i / samples, 0);
+        t.update(110 - 86 * i / samples, 0);
       }
-      expect(t.index, 2501);
-      t.update(321, 0);
-      expect(t.index, 10000);
-      t.update(-4, 0);
+      expected ??= t.index;
+      expect(t.index, expected);
+      expect(t.index, inExclusiveRange(1, 5314));
+      t.update(0, 0);
       expect(t.index, 1);
+      t.update(3, 0);
+      expect(t.index, greaterThan(1));
+      t.update(320, 0);
+      expect(t.index, 10001);
     }
   });
 

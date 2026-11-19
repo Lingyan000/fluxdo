@@ -218,6 +218,30 @@ void main() {
     expect(travel.value, 0);
   });
 
+  testWidgets('竖轨远离握柄起拖按位移选楼，原地点按仍按位置跳转', (tester) async {
+    await showRail(tester);
+    final bounds = tester.getRect(track);
+    final idle = tester.widget<TopicProgressTrack>(track);
+    final extent = bounds.height - idle.startInset - idle.endInset;
+    final down = Offset(
+      bounds.center.dx,
+      bounds.top + idle.startInset + extent * .15,
+    );
+    final finger = await tester.startGesture(down);
+    await finger.moveBy(const Offset(0, 26));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TopicTimelineTrack>(timeline).selectedIndex,
+      (51 + 26 / extent * 100).round(),
+    );
+    await finger.cancel();
+    await tester.pumpAndSettle();
+    expect(jumps, isEmpty);
+    await tester.tapAt(down);
+    await tester.pumpAndSettle();
+    expect(jumps, [16]);
+  });
+
   testWidgets('快扫和点按不取摘要，滑过或松手后晚到的摘要不会串楼', (tester) async {
     final calls = <Completer<List<TopicPostExcerpt>>>[];
     fetch = (_, ids) {

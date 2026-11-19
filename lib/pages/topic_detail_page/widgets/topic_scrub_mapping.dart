@@ -1,21 +1,43 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kTouchSlop;
+
 enum TopicScrubScale { whole, nearby, single }
 
-/// 底栏的横坐标选楼，上移距离选精度。坐标以可用轨道的左端为原点。
+/// 从当前握柄位置按位移选楼。短拖一比一跟手，长扫后半程才补足到端点的行程。
+double relativeScrubPosition({
+  required double startPosition,
+  required double pointerStart,
+  required double pointer,
+  required double extent,
+}) {
+  final delta = pointer - pointerStart;
+  final room = delta > 0 ? extent - pointerStart : pointerStart;
+  final travel = delta > 0 ? extent - startPosition : startPosition;
+  // 起手就在端点附近时，轻轻向外拖也应基于当前楼层微调。
+  if (room < 2 * kTouchSlop || travel <= room) {
+    return (startPosition + delta).clamp(0.0, extent);
+  }
+  final tail = (2 * delta.abs() / room - 1).clamp(0.0, 1.0);
+  final extra = (travel - room) * tail * tail * (3 - 2 * tail);
+  return (startPosition + delta + delta.sign * extra).clamp(0.0, extent);
+}
+
+/// 底栏的横向位移选楼，上移距离选精度。坐标以可用轨道的左端为原点。
 class TopicScrubTracker {
   TopicScrubTracker({
     required int startIndex,
     required int totalCount,
     required double surfaceWidth,
     required double startX,
-    required bool fromHandle,
   }) : totalCount = math.max(1, totalCount),
        surfaceWidth = math.max(1, surfaceWidth),
-       _x = startX {
-    _position = fromHandle
-        ? startIndex.clamp(1, this.totalCount).toDouble()
-        : 1 + thumbX * _wholeRate;
+       _pointerX = startX {
+    _position = startIndex.clamp(1, this.totalCount).toDouble();
+    final fraction = this.totalCount > 1
+        ? (_position - 1) / (this.totalCount - 1)
+        : 1.0;
+    _thumbX = fraction * this.surfaceWidth;
     _anchor();
   }
 
@@ -35,7 +57,9 @@ class TopicScrubTracker {
   ];
 
   int _level = 0;
-  double _x;
+  double _pointerX;
+  late double _thumbX;
+  late double _anchorPointerX;
   double _lift = 0;
   late double _position;
   late double _anchorX;
@@ -44,7 +68,7 @@ class TopicScrubTracker {
 
   int get index => _position.round().clamp(1, totalCount);
   TopicScrubScale get scale => scales[_level];
-  double get thumbX => _x.clamp(0.0, surfaceWidth);
+  double get thumbX => _thumbX;
 
   double get floorsPerPixel => switch (scale) {
     TopicScrubScale.whole => _wholeRate,
@@ -53,10 +77,11 @@ class TopicScrubTracker {
   };
 
   /// 局部刻度在轨道左端对应的楼层，可位于首末楼之外。
-  double get rulerOrigin => _anchorFloor - _anchorX * floorsPerPixel;
+  double get rulerOrigin => _position - thumbX * floorsPerPixel;
 
   void _anchor() {
-    _anchorX = scale == TopicScrubScale.whole ? thumbX : _x;
+    _anchorPointerX = _pointerX;
+    _anchorX = thumbX;
     _anchorFloor = _position;
   }
 
@@ -75,9 +100,9 @@ class TopicScrubTracker {
   }
 
   void update(double x, double lift) {
-    final dx = x - _x;
+    final dx = x - _pointerX;
     final dy = lift - _lift;
-    _x = x;
+    _pointerX = x;
     _lift = lift;
     var next = _level;
     while (next + 1 < scales.length &&
@@ -95,12 +120,27 @@ class TopicScrubTracker {
       _turning = true;
       return;
     }
-    if (dx == 0 || (_turning && (x - _anchorX).abs() < 2)) return;
+    final delta = x - _anchorPointerX;
+    if (dx == 0 || (_turning && delta.abs() < 2)) return;
     _turning = false;
-    final value = scale == TopicScrubScale.whole
-        ? _overviewAt(x)
-        : _anchorFloor + (x - _anchorX) * floorsPerPixel;
-    _position = value.clamp(1.0, totalCount.toDouble());
+    if (scale == TopicScrubScale.whole) {
+      _thumbX = relativeScrubPosition(
+        startPosition: _anchorX,
+        pointerStart: _anchorPointerX,
+        pointer: x,
+        extent: surfaceWidth,
+      );
+      _position = _overviewAt(thumbX);
+    } else {
+      _position = (_anchorFloor + delta * floorsPerPixel).clamp(
+        1.0,
+        totalCount.toDouble(),
+      );
+      _thumbX = (_anchorX + (_position - _anchorFloor) / floorsPerPixel).clamp(
+        0.0,
+        surfaceWidth,
+      );
+    }
     if ((_position == 1 && dx < 0) || (_position == totalCount && dx > 0)) {
       _anchor();
     }

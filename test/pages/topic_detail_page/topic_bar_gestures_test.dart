@@ -187,6 +187,7 @@ void main() {
   });
 
   testWidgets('横向握柄随拖动方向留尾，慢移、换档和停手时恢复圆形', (tester) async {
+    current.value = 5001;
     final bar = await showBar(tester);
     final track = find.byType(TopicProgressTrack);
     final finger = await tester.startGesture(bar.center);
@@ -359,6 +360,35 @@ void main() {
     expect(commits, [2]);
     expect(actions, isEmpty);
     expect(find.text('逐楼'), findsNothing);
+  });
+
+  testWidgets('远离握柄起拖仍基于当前楼层，沿顶边上移可直接逐楼', (tester) async {
+    current.value = 5001;
+    final bar = await showBar(tester);
+    final track = find.byType(TopicProgressTrack);
+    final idle = tester.widget<TopicProgressTrack>(track);
+    final width = bar.width - idle.startInset - idle.endInset;
+    final x = bar.left + 66;
+    final drag = await tester.startGesture(Offset(x, bar.center.dy));
+    await drag.moveBy(const Offset(24, 0));
+    await tester.pumpAndSettle();
+    final target = (5001 + 24 / width * 9999).round();
+    expect(preview(tester), target);
+    expect(
+      tester.widget<TopicProgressTrack>(track).progress,
+      closeTo(idle.progress + 24 / width, .0001),
+    );
+    await drag.cancel();
+    await tester.pumpAndSettle();
+    final fine = await tester.startGesture(Offset(x, bar.top + 3));
+    await fine.moveBy(const Offset(0, -76));
+    await tester.pump();
+    expect(find.text('逐楼'), findsOneWidget);
+    expect(preview(tester), 5001);
+    await fine.moveBy(const Offset(14, 0));
+    await fine.up();
+    await tester.pumpAndSettle();
+    expect(commits, [5002]);
   });
 
   testWidgets('从握柄上移可直接逐楼，系统取消会收起预览', (tester) async {

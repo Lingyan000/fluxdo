@@ -10,6 +10,7 @@ import '../../../utils/dialog_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_progress_track.dart';
+import 'topic_scrub_mapping.dart';
 
 /// 竖向时间线轨道：两端标起止日期，中段按查找表标日期刻度，标出当前
 /// 位置与上次阅读位置；拖动手柄选择楼层（stream 索引，1 起）。
@@ -69,8 +70,6 @@ class TopicTimelineTrack extends StatefulWidget {
 class _TopicTimelineTrackState extends State<TopicTimelineTrack>
     with SingleTickerProviderStateMixin {
   static const double _trackInset = 22;
-  // 命中范围独立于视觉粗细，标签所在的整列也支持点按和拖动。
-  static const double _handleGrabRange = 40;
   static const double _labelOffset = _trackInset + 16;
 
   /// 相邻标签的最小纵向间距
@@ -87,6 +86,8 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack>
   bool _hovering = false;
   int _startIndex = 1;
   double _position = 1;
+  double _anchorFloor = 1;
+  double _anchorY = 0;
   double _speed = 1;
   int? _lastEmitted;
   late final _thumbMotion = TopicThumbMotion(this);
@@ -131,18 +132,16 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack>
     _lastEmitted = null;
   }
 
-  void _handleDragStart(DragStartDetails details, double height) {
+  void _anchorDrag(double localY) {
+    _anchorY = localY - TopicTimelineTrack._endPadding;
+    _anchorFloor = _position;
+  }
+
+  void _handleDragStart(DragStartDetails details) {
     _thumbMotion.reset();
     _startIndex = widget.selectedIndex;
-    final handleY = _yFor(_startIndex, height);
-    // 从手柄附近起手为相对拖动；在轨道别处起手先跳到该处再相对拖动
-    if ((details.localPosition.dy - handleY).abs() > _handleGrabRange) {
-      final index = _indexAt(details.localPosition.dy, height);
-      _emit(index);
-      _position = index.toDouble();
-    } else {
-      _position = widget.selectedIndex.toDouble();
-    }
+    _position = _startIndex.toDouble();
+    _anchorDrag(details.localPosition.dy);
     setState(() => _dragging = true);
     _updateSpeed(details.localPosition.dx);
   }
@@ -152,23 +151,32 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack>
     double height,
     bool reduceMotion,
   ) {
+    final extent = _trackHeight(height);
+    final unitsPerPx = (_total - 1) / extent;
+    if (unitsPerPx <= 0) return;
+    final oldSpeed = _speed;
     _updateSpeed(details.localPosition.dx);
+    final y = details.localPosition.dy;
+    if (oldSpeed != _speed) _anchorDrag(y - details.delta.dy);
     final previous = _position;
-    final unitsPerPx = (_total - 1) / _trackHeight(height);
-    _position = (_position + details.delta.dy * unitsPerPx * _speed).clamp(
-      1.0,
-      _total.toDouble(),
-    );
+    final pointer = y - TopicTimelineTrack._endPadding;
     if (_speed == 1) {
-      final y = details.localPosition.dy;
-      if (y <= TopicTimelineTrack._endPadding && details.delta.dy < 0) {
-        _position = 1;
-      } else if (y >= height - TopicTimelineTrack._endPadding &&
-          details.delta.dy > 0) {
-        _position = _total.toDouble();
-      }
+      final at = relativeScrubPosition(
+        startPosition: (_anchorFloor - 1) / (_total - 1) * extent,
+        pointerStart: _anchorY,
+        pointer: pointer,
+        extent: extent,
+      );
+      _position = 1 + at / extent * (_total - 1);
+    } else {
+      _position = (_anchorFloor + (pointer - _anchorY) * unitsPerPx * _speed)
+          .clamp(1.0, _total.toDouble());
     }
-    if (!reduceMotion && unitsPerPx > 0) {
+    if ((_position == 1 && details.delta.dy < 0) ||
+        (_position == _total && details.delta.dy > 0)) {
+      _anchorDrag(y);
+    }
+    if (!reduceMotion) {
       _thumbMotion.moveBy((_position - previous) / unitsPerPx);
     }
     _emit(_position.round());
@@ -409,9 +417,7 @@ class _TopicTimelineTrackState extends State<TopicTimelineTrack>
                 onTapUp: interactive
                     ? (d) => _handleTap(d.localPosition.dy, height)
                     : null,
-                onVerticalDragStart: interactive
-                    ? (d) => _handleDragStart(d, height)
-                    : null,
+                onVerticalDragStart: interactive ? _handleDragStart : null,
                 onVerticalDragUpdate: interactive
                     ? (d) => _handleDragUpdate(d, height, reduceMotion)
                     : null,
