@@ -110,7 +110,10 @@ jobs:
         run: node --test test/modules/metaverse/ld_store_buyer.test.mjs
       - name: Verify installed activity plugin with the native task dispatcher
         working-directory: app
-        run: flutter test --reporter expanded test/modules/metaverse/metaverse_scheduled_tasks_test.dart test/modules/metaverse/metaverse_activity_ui_test.dart test/modules/metaverse/metaverse_pagination_test.dart
+        timeout-minutes: 10
+        run: |
+          flutter test --verbose --reporter expanded --file-reporter json:plugin-activity-tests.json test/modules/metaverse/metaverse_scheduled_tasks_test.dart test/modules/metaverse/metaverse_activity_ui_test.dart test/modules/metaverse/metaverse_pagination_test.dart 2>&1 | Tee-Object -FilePath plugin-activity-build.log
+          exit $LASTEXITCODE
       - name: Verify per-plugin permissions, installation and revocation
         working-directory: app
         run: >-
@@ -129,5 +132,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: plugin-test-events
-          path: app/plugin-tests.json
+          path: |
+            app/plugin-tests.json
+            app/plugin-activity-tests.json
+            app/plugin-activity-build.log
           if-no-files-found: ignore
