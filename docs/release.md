@@ -123,7 +123,7 @@ macOS Release 构建通过 Sparkle 2.10.1 完成下载、签名校验、安装�
 Debug 构建点击更新会打开发布页。
 
 - Sparkle 依赖通过 Swift Package Manager 锁定，原生桥位于 `macos/Runner/MacOSUpdateHandler.swift`。
-- 当前进程按 arm64 或 x86_64 选择对应 appcast，Rosetta 进程继续使用 x86_64 更新包。
+- 应用按选中的版本和当前进程架构获取 appcast，Rosetta 进程使用 x86_64 更新包。
 - 更新源与 DMG 下载接入 GitHub 反代设置。原生请求受 macOS App Transport Security 约束，反代使用 HTTPS。
 - 首次安装包含 Sparkle 的版本后，后续版本才能通过应用内更新安装。
 
@@ -133,11 +133,11 @@ Debug 构建点击更新会打开发布页。
 Sparkle 条目中，账户名为 `com.github.lingyan000.fluxdo`。发布仓库的 GitHub Actions Secret
 使用 `SPARKLE_PRIVATE_KEY`。私钥长期保留，常规发版复用现有密钥。
 
-稳定版构建在 DMG 打包完成后运行 `scripts/ci/macos/generate_appcast.py`。脚本校验 tag 与应用版本，
+正式版和预发布构建在 DMG 打包完成后运行 `scripts/ci/macos/generate_appcast.py`。脚本校验 tag 的核心版本与应用版本，
 签名 DMG，验证签名与包内公钥配对，再生成并签名两个架构各自的 appcast。Sparkle 使用
-`CFBundleVersion` 比较构建版本，使用 `CFBundleShortVersionString` 展示版本号。
+`CFBundleVersion` 比较构建版本，使用 appcast 中完整的 tag 版本号展示更新。
 
-GitHub Release 随安装包发布以下文件，应用通过 `releases/latest/download/` 获取对应更新源。
+GitHub Release 随安装包发布以下文件。
 
 - `appcast-macos-arm64.xml`
 - `appcast-macos-x86_64.xml`

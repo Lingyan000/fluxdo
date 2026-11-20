@@ -18,6 +18,7 @@ Future<void> main(List<String> args) async {
 
   final command = _firstFlutterCommand(args);
   if (command != null && _commandsRequiringAppPrep.contains(command)) {
+    _addReleaseVersion(args);
     await runOrExit(
       title: '执行项目预处理',
       executable: Platform.resolvedExecutable,
@@ -36,6 +37,23 @@ Future<void> main(List<String> args) async {
     title: '执行 flutter ${args.join(' ')}',
     arguments: args,
   );
+}
+
+void _addReleaseVersion(List<String> args) {
+  const key = 'FLUXDO_RELEASE_VERSION';
+  if (args.any(
+    (arg) => arg.startsWith('--dart-define=$key=') || arg.startsWith('$key='),
+  )) {
+    return;
+  }
+  final version =
+      _extractOptionValue(args, '--build-name', '--build-name') ??
+      RegExp(r'^version:[ \t]*(\S+)', multiLine: true)
+          .firstMatch(File('pubspec.yaml').readAsStringSync())
+          ?.group(1)
+          ?.split('+')
+          .first;
+  if (version != null) args.add('--dart-define=$key=$version');
 }
 
 Future<void> _runNativePrepIfNeeded(String command, List<String> args) async {

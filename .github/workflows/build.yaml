@@ -183,7 +183,9 @@ jobs:
       - name: Build iOS
         if: matrix.platform == 'ios'
         run: |
-          dart tool/flutterw.dart build ios --release --no-codesign
+          version="${GITHUB_REF_NAME#v}"
+          dart tool/flutterw.dart build ios --release --no-codesign \
+            --build-name="${version%%-*}" --dart-define="FLUXDO_RELEASE_VERSION=$version"
           nm -gU build/ios/iphoneos/Runner.app/Runner | grep "_fluxdo_net_request_start"
           mkdir -p dist
           cd build/ios/iphoneos
@@ -219,7 +221,9 @@ jobs:
           FLUTTER_XCODE_EXCLUDED_ARCHS: ${{ matrix.excluded-arch }}
           HAS_CODESIGN_CERT: ${{ secrets.MACOS_CODESIGN_P12_BASE64 != '' }}
         run: |
-          dart tool/flutterw.dart build macos --release --verbose
+          version="${GITHUB_REF_NAME#v}"
+          dart tool/flutterw.dart build macos --release --verbose \
+            --build-name="${version%%-*}" --dart-define="FLUXDO_RELEASE_VERSION=$version"
           mkdir -p dist
           APP_PATH="build/macos/Build/Products/Release/fluxdo.app"
           test -f "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib"
@@ -253,7 +257,7 @@ jobs:
           appdmg dmg-config.json "dist/fluxdo-macos-${{ matrix.arch }}.dmg"
 
       - name: Sign macOS update and generate Sparkle appcast
-        if: matrix.platform == 'macos' && env.IS_STABLE == 'true'
+        if: matrix.platform == 'macos'
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -663,7 +667,6 @@ jobs:
             --version "${{ steps.version.outputs.VERSION }}"
 
       - name: Generate SHA256 checksums
-        if: env.IS_STABLE == 'true'
         run: |
           cd ./dist
           for file in $(find . -type f -not -name "*.sha256"); do

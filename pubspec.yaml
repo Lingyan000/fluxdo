@@ -40,6 +40,7 @@ dependencies:
   slang: 4.19.2
   slang_flutter: 4.19.0
   collection: ^1.19.1
+  pub_semver: ^2.2.1
   synchronized: ^3.6.1+1
   dio: ^5.11.1
   http: ^1.6.0

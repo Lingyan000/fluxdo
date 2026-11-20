@@ -48,6 +48,151 @@ void main() {
     );
   });
 
+  group('update versions and channels', () {
+    void installVersion(String version) {
+      PackageInfo.setMockInitialValues(
+        appName: 'FluxDO',
+        packageName: 'fluxdo',
+        version: version,
+        buildNumber: '1',
+        buildSignature: '',
+      );
+    }
+
+    Map<String, Object?> release(String tag, {bool draft = false}) => {
+      'tag_name': tag,
+      'html_url': 'https://github.com/Lingyan000/fluxdo/releases/tag/$tag',
+      'draft': draft,
+    };
+
+    ResponseBody response(Object releases, {String? link, String? etag}) =>
+        ResponseBody.fromString(
+          jsonEncode(releases),
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['application/json'],
+            if (link != null) 'link': [link],
+            if (etag != null) 'etag': [etag],
+          },
+        );
+
+    test(
+      'beta defaults on and selects the highest version across pages',
+      () async {
+        installVersion('2.0.0-beta.9+123');
+        final adapter = _Adapter((request) {
+          expect(request.uri.path, endsWith('/releases'));
+          if (request.queryParameters['page'] == 1) {
+            return response([
+              release('v2.0.0-beta.8'),
+              release('v3.0.0', draft: true),
+              release('flatpak-wpe-layer-4.0.0'),
+            ], link: '<https://api.github.com/releases?page=2>; rel="next"');
+          }
+          return response([
+            release('v2.0.0-beta.10'),
+            release('v2.0.0-beta.2'),
+            release('v1.9.9'),
+          ]);
+        });
+        final service = UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+        expect(await service.getCheckBetaUpdates(), isTrue);
+        final info = await service.autoCheckUpdate();
+        expect(info?.remoteVersion, '2.0.0-beta.10');
+        expect(adapter.urls, hasLength(2));
+      },
+    );
+
+    test('beta cache is revalidated after a release is replaced', () async {
+      installVersion('2.0.0-beta.9');
+      var tag = 'v2.0.0-beta.10';
+      final adapter = _Adapter((request) {
+        if (tag == 'v2.0.0-beta.11') {
+          expect(request.headers['If-None-Match'], 'v2.0.0-beta.10');
+        }
+        return response([release(tag)], etag: tag);
+      });
+      final service = UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+      expect((await service.autoCheckUpdate())?.remoteVersion, '2.0.0-beta.10');
+      tag = 'v2.0.0-beta.11';
+      expect((await service.autoCheckUpdate())?.remoteVersion, '2.0.0-beta.11');
+      expect(adapter.urls, hasLength(2));
+    });
+
+    test('rate limiting does not reuse replaced beta download links', () async {
+      installVersion('2.0.0-beta.9');
+      var rateLimited = false;
+      final adapter = _Adapter(
+        (_) => rateLimited
+            ? ResponseBody.fromString('', 429)
+            : response([release('v2.0.0-beta.10')], etag: 'beta'),
+      );
+      final service = UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+      expect((await service.autoCheckUpdate())?.remoteVersion, '2.0.0-beta.10');
+      rateLimited = true;
+      expect(await service.autoCheckUpdate(), isNull);
+    });
+
+    test('switching channels uses the corresponding cache and ETag', () async {
+      final adapter = _Adapter((request) {
+        if (request.uri.path.endsWith('/latest')) {
+          expect(request.headers['If-None-Match'], isNull);
+          return response(release('v1.0.0'), etag: 'stable');
+        }
+        final etag = request.headers['If-None-Match'];
+        if (etag != null) {
+          expect(etag, 'beta');
+          return ResponseBody.fromString('', 304);
+        }
+        return response([release('v1.1.0-beta.1')], etag: 'beta');
+      });
+      final service = UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+      expect(await service.getCheckBetaUpdates(), isFalse);
+      expect((await service.checkForUpdate()).hasUpdate, isFalse);
+
+      await service.setCheckBetaUpdates(true);
+      expect((await service.checkForUpdate(useCache: true)).hasUpdate, isTrue);
+      expect((await service.checkForUpdate()).remoteVersion, '1.1.0-beta.1');
+
+      await service.setCheckBetaUpdates(false);
+      expect((await service.checkForUpdate(useCache: true)).hasUpdate, isFalse);
+      expect(adapter.urls, hasLength(3));
+    });
+
+    test(
+      'same core stable outranks beta and builds have equal precedence',
+      () async {
+        installVersion('2.0.0-beta.10+123');
+        var stablePublished = false;
+        final adapter = _Adapter((request) {
+          if (request.uri.path.endsWith('/latest')) {
+            return response(release('v2.0.1'));
+          }
+          return response([
+            release('v2.0.0-beta.10+456'),
+            if (stablePublished) release('v2.0.0'),
+          ]);
+        });
+        final service = UpdateService(dio: Dio()..httpClientAdapter = adapter);
+
+        expect((await service.checkForUpdate()).hasUpdate, isFalse);
+        stablePublished = true;
+        final stable = await service.checkForUpdate();
+        expect(stable.remoteVersion, '2.0.0');
+        expect(stable.hasUpdate, isTrue);
+
+        installVersion('2.0.0');
+        expect(await service.getCheckBetaUpdates(), isTrue);
+        await service.setCheckBetaUpdates(false);
+        expect((await service.checkForUpdate()).remoteVersion, '2.0.1');
+      },
+    );
+  });
+
   group('release assets', () {
     Map<String, Object?> release({bool digest = true}) => {
       'tag_name': 'v2.0.0',

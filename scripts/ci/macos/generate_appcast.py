@@ -30,8 +30,9 @@ def generate_feed(app, dmg, architecture, tag, output, tool, private_key):
         info = plistlib.load(source)
     if info["CFBundleIdentifier"] != "com.github.lingyan000.fluxdo":
         raise ValueError("Unexpected application bundle identifier")
-    version = info["CFBundleShortVersionString"]
-    if tag != f"v{version}":
+    version = tag.removeprefix("v")
+    core_version = version.split("-", 1)[0]
+    if not tag.startswith("v") or core_version != info["CFBundleShortVersionString"]:
         raise ValueError("Release tag does not match the built application")
     if len(base64.b64decode(info["SUPublicEDKey"], validate=True)) != 32:
         raise ValueError("Missing or invalid Sparkle public key")

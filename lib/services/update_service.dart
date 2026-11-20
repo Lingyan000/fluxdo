@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:pub_semver/pub_semver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/app_localizations.dart';
@@ -130,12 +131,15 @@ class UpdateInfo {
 class UpdateService {
   static const String _repository = 'Lingyan000/fluxdo';
   static const String _apiUrl =
-      'https://api.github.com/repos/$_repository/releases/latest';
+      'https://api.github.com/repos/$_repository/releases';
   static const String _autoCheckUpdateKey = 'auto_check_update';
+  static const String _checkBetaUpdatesKey = 'check_beta_updates';
   static const String _githubProxyKey = 'github_proxy_url';
   static const String _cacheKey = 'update_cache';
-  static const String _cacheTimeKey = 'update_cache_time';
-  static const String _etagKey = 'update_etag';
+  static const String _betaCacheKey = 'update_cache_with_beta';
+  static const String _releaseVersion = String.fromEnvironment(
+    'FLUXDO_RELEASE_VERSION',
+  );
 
   // 缓存有效期（1 小时）
   static const Duration _cacheValidDuration = Duration(hours: 1);
@@ -143,13 +147,32 @@ class UpdateService {
   final Dio _dio;
   final SharedPreferences? _prefs;
 
-  UpdateService({Dio? dio, SharedPreferences? prefs})
-    : _dio = dio ?? Dio(),
-      _prefs = prefs;
+  UpdateService({Dio? dio, this._prefs}) : _dio = dio ?? Dio();
 
   /// 获取自动检查更新设置
   bool getAutoCheckUpdate() {
     return _prefs?.getBool(_autoCheckUpdateKey) ?? true;
+  }
+
+  Future<bool> getCheckBetaUpdates() async {
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    final version = _tryParseVersion(await getCurrentVersion());
+    return _getOrSetCheckBetaUpdates(prefs, version?.isPreRelease ?? false);
+  }
+
+  Future<void> setCheckBetaUpdates(bool value) async {
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    await prefs.setBool(_checkBetaUpdatesKey, value);
+  }
+
+  Future<bool> _getOrSetCheckBetaUpdates(
+    SharedPreferences prefs,
+    bool defaultValue,
+  ) async {
+    final saved = prefs.getBool(_checkBetaUpdatesKey);
+    if (saved != null) return saved;
+    await prefs.setBool(_checkBetaUpdatesKey, defaultValue);
+    return defaultValue;
   }
 
   /// 获取自定义 GitHub 反代前缀（空字符串表示未配置，直连）
@@ -201,6 +224,8 @@ class UpdateService {
 
   /// 获取当前应用版本号
   Future<String> getCurrentVersion() async {
+    // Apple 平台的系统版本号会移除预发布标识，发版构建注入完整版本。
+    if (_releaseVersion.isNotEmpty) return _releaseVersion;
     final packageInfo = await PackageInfo.fromPlatform();
     return packageInfo.version;
   }
@@ -265,135 +290,173 @@ class UpdateService {
   /// 抛出异常如果检查失败
   Future<UpdateInfo> checkForUpdate({bool useCache = false}) async {
     final currentVersion = await getCurrentVersion();
+    final current = _parseVersion(currentVersion);
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    final includeBeta = await _getOrSetCheckBetaUpdates(
+      prefs,
+      current.isPreRelease,
+    );
+    final cacheKey = includeBeta ? _betaCacheKey : _cacheKey;
+    final cache = _readCache(prefs, cacheKey, currentVersion, current);
+    // Beta 的 Release 会被后续版本复用，旧下载地址需要向服务器重新验证。
+    final canReuseCache =
+        cache != null && !_parseVersion(cache.info.remoteVersion).isPreRelease;
 
-    // 检查缓存是否有效
-    if (useCache && _prefs != null) {
-      final cachedInfo = _getCachedUpdateInfo(currentVersion);
-      if (cachedInfo != null) {
-        return cachedInfo;
-      }
+    if (useCache &&
+        canReuseCache &&
+        DateTime.now().difference(cache.checkedAt) <= _cacheValidDuration) {
+      return cache.info;
     }
 
-    // 获取存储的 ETag
-    final storedEtag = _prefs?.getString(_etagKey);
-
     try {
-      final response = await _dio.get(
-        _apiUrl,
-        options: Options(
-          responseType: ResponseType.json,
-          headers: {
-            'User-Agent': 'FluxDO-App',
-            'Accept': 'application/vnd.github.v3+json',
-            if (storedEtag != null) 'If-None-Match': storedEtag,
-          },
-          validateStatus: (status) =>
-              status != null && (status == 200 || status == 304),
-        ),
+      final response = await _fetchReleases(
+        includeBeta: includeBeta,
+        etag: cache?.etag,
       );
 
-      // 304 Not Modified - 使用缓存
       if (response.statusCode == 304) {
-        final cachedInfo = _getCachedUpdateInfo(
-          currentVersion,
-          ignoreExpiry: true,
+        await _writeCache(prefs, cacheKey, cache!.info, cache.etag);
+        return cache.info;
+      }
+
+      final release = includeBeta
+          ? await _findLatestRelease(response)
+          : response.data as Map<String, dynamic>;
+      if (release == null) {
+        return UpdateInfo(
+          currentVersion: currentVersion,
+          remoteVersion: currentVersion,
+          releaseUrl: 'https://github.com/$_repository/releases',
+          releaseNotes: '',
+          hasUpdate: false,
         );
-        if (cachedInfo != null) {
-          // 更新缓存时间
-          await _prefs?.setInt(
-            _cacheTimeKey,
-            DateTime.now().millisecondsSinceEpoch,
-          );
-          return cachedInfo;
-        }
       }
 
-      // 保存 ETag
-      final newEtag = response.headers.value('etag');
-      if (newEtag != null) {
-        await _prefs?.setString(_etagKey, newEtag);
-      }
-
-      final data = response.data as Map<String, dynamic>;
-      final updateInfo = _parseUpdateInfo(data, currentVersion);
-
-      // 缓存结果
-      await _cacheUpdateInfo(updateInfo);
-
+      final updateInfo = _parseUpdateInfo(release, currentVersion, current);
+      // 多页结果不能只用第一页的 ETag 验证。
+      final etag = _hasNextPage(response)
+          ? null
+          : response.headers.value('etag');
+      await _writeCache(prefs, cacheKey, updateInfo, etag);
       return updateInfo;
     } on DioException catch (e) {
       // 403/429 速率限制时尝试使用缓存
       if (e.response?.statusCode == 403 || e.response?.statusCode == 429) {
-        final cachedInfo = _getCachedUpdateInfo(
-          currentVersion,
-          ignoreExpiry: true,
-        );
-        if (cachedInfo != null) {
-          return cachedInfo;
-        }
+        if (canReuseCache) return cache.info;
         throw Exception(t.update_rateLimited);
       }
       rethrow;
     }
   }
 
-  /// 从缓存获取更新信息
-  UpdateInfo? _getCachedUpdateInfo(
-    String currentVersion, {
-    bool ignoreExpiry = false,
+  Future<Response<dynamic>> _fetchReleases({
+    required bool includeBeta,
+    int page = 1,
+    String? etag,
   }) {
-    if (_prefs == null) return null;
+    return _dio.get(
+      includeBeta ? _apiUrl : '$_apiUrl/latest',
+      queryParameters: includeBeta ? {'per_page': 100, 'page': page} : null,
+      options: Options(
+        responseType: ResponseType.json,
+        headers: {
+          'User-Agent': 'FluxDO-App',
+          'Accept': 'application/vnd.github.v3+json',
+          'If-None-Match': ?etag,
+        },
+        validateStatus: (status) =>
+            status == 200 || (etag != null && status == 304),
+      ),
+    );
+  }
 
-    final cacheJson = _prefs.getString(_cacheKey);
-    final cacheTime = _prefs.getInt(_cacheTimeKey);
+  bool _hasNextPage(Response<dynamic> response) =>
+      response.headers.value('link')?.contains('rel="next"') ?? false;
 
-    if (cacheJson == null || cacheTime == null) return null;
+  Future<Map<String, dynamic>?> _findLatestRelease(
+    Response<dynamic> firstPage,
+  ) async {
+    var response = firstPage;
+    var page = 1;
+    Map<String, dynamic>? latest;
+    Version? latestVersion;
 
-    // 检查缓存是否过期
-    if (!ignoreExpiry) {
-      final cacheDate = DateTime.fromMillisecondsSinceEpoch(cacheTime);
-      if (DateTime.now().difference(cacheDate) > _cacheValidDuration) {
-        return null;
+    while (true) {
+      for (final release
+          in (response.data as List).cast<Map<String, dynamic>>()) {
+        final tag = release['tag_name'];
+        if (release['draft'] == true || tag is! String) continue;
+
+        // Releases 中也有 Flatpak 预构建层等非应用产物。
+        final version = _tryParseVersion(tag);
+        if (version == null) continue;
+        if (latestVersion == null || version > latestVersion) {
+          latest = release;
+          latestVersion = version;
+        }
       }
+      if (!_hasNextPage(response)) return latest;
+      response = await _fetchReleases(includeBeta: true, page: ++page);
     }
+  }
 
+  ({UpdateInfo info, DateTime checkedAt, String? etag})? _readCache(
+    SharedPreferences prefs,
+    String cacheKey,
+    String currentVersion,
+    Version current,
+  ) {
+    final cacheJson = prefs.getString(cacheKey);
+    if (cacheJson == null) return null;
     try {
-      final cached = UpdateInfo.fromJson(
-        jsonDecode(cacheJson) as Map<String, dynamic>,
+      final json = jsonDecode(cacheJson) as Map<String, dynamic>;
+      final checkedAt =
+          json['checkedAt'] as int? ??
+          (cacheKey == _cacheKey ? prefs.getInt('update_cache_time') : null);
+      if (checkedAt == null) return null;
+      final cached = UpdateInfo.fromJson(json);
+      return (
+        info: UpdateInfo(
+          currentVersion: currentVersion,
+          remoteVersion: cached.remoteVersion,
+          releaseUrl: cached.releaseUrl,
+          releaseNotes: cached.releaseNotes,
+          hasUpdate: _parseVersion(cached.remoteVersion) > current,
+          apkAssets: cached.apkAssets,
+          windowsAsset: cached.windowsAsset,
+        ),
+        checkedAt: DateTime.fromMillisecondsSinceEpoch(checkedAt),
+        etag: json['etag'] as String?,
       );
-
-      // 重新计算 hasUpdate（因为当前版本可能已变化）
-      final hasUpdate =
-          _compareVersions(cached.remoteVersion, currentVersion) > 0;
-
-      return UpdateInfo(
-        currentVersion: currentVersion,
-        remoteVersion: cached.remoteVersion,
-        releaseUrl: cached.releaseUrl,
-        releaseNotes: cached.releaseNotes,
-        hasUpdate: hasUpdate,
-        apkAssets: cached.apkAssets,
-        windowsAsset: cached.windowsAsset,
-      );
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   }
 
   /// 缓存更新信息
-  Future<void> _cacheUpdateInfo(UpdateInfo info) async {
-    if (_prefs == null) return;
-
-    await _prefs.setString(_cacheKey, jsonEncode(info.toJson()));
-    await _prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+  Future<void> _writeCache(
+    SharedPreferences prefs,
+    String cacheKey,
+    UpdateInfo info,
+    String? etag,
+  ) async {
+    await prefs.setString(
+      cacheKey,
+      jsonEncode({
+        ...info.toJson(),
+        'checkedAt': DateTime.now().millisecondsSinceEpoch,
+        'etag': etag,
+      }),
+    );
   }
 
   /// 解析更新信息
   UpdateInfo _parseUpdateInfo(
     Map<String, dynamic> data,
     String currentVersion,
+    Version current,
   ) {
-    final remoteVersion = (data['tag_name'] as String).replaceAll('v', '');
+    final remoteVersion = _withoutTagPrefix(data['tag_name'] as String);
     final releaseUrl = data['html_url'] as String;
     var releaseNotes = data['body'] as String? ?? '';
 
@@ -405,7 +468,7 @@ class UpdateService {
       releaseNotes = releaseNotes.substring(0, markerIndex).trim();
     }
 
-    final hasUpdate = _compareVersions(remoteVersion, currentVersion) > 0;
+    final hasUpdate = _parseVersion(remoteVersion) > current;
 
     // 解析 APK 资源
     final assets = data['assets'] as List<dynamic>? ?? [];
@@ -509,21 +572,26 @@ class UpdateService {
     return null;
   }
 
-  /// 比较两个版本号
-  ///
-  /// 返回值:
-  /// - 正数: v1 > v2
-  /// - 0: v1 == v2
-  /// - 负数: v1 < v2
-  int _compareVersions(String v1, String v2) {
-    final parts1 = v1.split('.').map(int.parse).toList();
-    final parts2 = v2.split('.').map(int.parse).toList();
+  static String _withoutTagPrefix(String version) =>
+      version.startsWith('v') ? version.substring(1) : version;
 
-    for (int i = 0; i < 3; i++) {
-      final p1 = i < parts1.length ? parts1[i] : 0;
-      final p2 = i < parts2.length ? parts2[i] : 0;
-      if (p1 != p2) return p1.compareTo(p2);
+  static Version _parseVersion(String version) {
+    // pub_semver 默认也比较构建元数据；更新顺序只比较核心版本和预发布标识。
+    final parsed = Version.parse(_withoutTagPrefix(version));
+    if (parsed.build.isEmpty) return parsed;
+    return Version(
+      parsed.major,
+      parsed.minor,
+      parsed.patch,
+      pre: parsed.preRelease.isEmpty ? null : parsed.preRelease.join('.'),
+    );
+  }
+
+  static Version? _tryParseVersion(String tag) {
+    try {
+      return _parseVersion(tag);
+    } on FormatException {
+      return null;
     }
-    return 0;
   }
 }
