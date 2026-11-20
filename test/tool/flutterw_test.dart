@@ -46,9 +46,12 @@ void main() {
   late Directory workspace;
   late File callsFile;
   late Map<String, String> environment;
+  const releaseVersion = '--dart-define=FLUXDO_RELEASE_VERSION=1.2.3-beta.4';
 
   setUp(() async {
     workspace = await Directory.systemTemp.createTemp('fluxdo_flutterw_test_');
+    File('${workspace.path}/pubspec.yaml')
+        .writeAsStringSync('name: fixture\nversion: 1.2.3-beta.4+5\n');
     for (final directory in ['tool', 'android', 'windows', 'web']) {
       Directory('${workspace.path}/$directory').createSync();
     }
@@ -146,7 +149,10 @@ void main(List<String> args) {
           '--profile',
           '--target-platform=android-arm64',
         ],
-        ['fake_flutter.dart', 'run', '--profile', '--no-tree-shake-icons', '-d', 'phone-1234'],
+        [
+          'fake_flutter.dart', 'run', '--profile', releaseVersion,
+          '--no-tree-shake-icons', '-d', 'phone-1234',
+        ],
       ]);
     },
   );
@@ -183,7 +189,9 @@ void main(List<String> args) {
       final result = await run(['run']);
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
       expect(calls()[1], contains('--target-platform=android-x64'));
-      expect(calls().last, ['fake_flutter.dart', 'run', '-d', 'emulator-5554']);
+      expect(calls().last, [
+        'fake_flutter.dart', 'run', releaseVersion, '-d', 'emulator-5554',
+      ]);
     },
   );
 
@@ -207,7 +215,7 @@ void main(List<String> args) {
         'windows',
         '--debug',
       ]);
-      expect(calls().last, ['fake_flutter.dart', 'run', '-d', 'all']);
+      expect(calls().last, ['fake_flutter.dart', 'run', '-d', 'all', releaseVersion]);
     },
   );
 
@@ -233,7 +241,7 @@ void main(List<String> args) {
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(calls(), [
       ['project_prep.dart', 'app'],
-      ['fake_flutter.dart', 'run', '-d', 'chrome'],
+      ['fake_flutter.dart', 'run', '-d', 'chrome', releaseVersion],
     ]);
   });
 
@@ -263,7 +271,9 @@ void main(List<String> args) {
     test('$target 默认构建保留动态组件图标', () async {
       final result = await run(['build', target]);
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(calls().last, ['fake_flutter.dart', 'build', target, '--no-tree-shake-icons']);
+      expect(calls().last, [
+        'fake_flutter.dart', 'build', target, releaseVersion, '--no-tree-shake-icons',
+      ]);
     });
   }
 
@@ -271,14 +281,14 @@ void main(List<String> args) {
     test('保留显式图标裁剪选项 $explicit', () async {
       final result = await run(['build', 'apk', explicit]);
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-      expect(calls().last, ['fake_flutter.dart', 'build', 'apk', explicit]);
+      expect(calls().last, ['fake_flutter.dart', 'build', 'apk', explicit, releaseVersion]);
     });
   }
 
-  test('debug 构建和测试命令沿用原参数', () async {
+  test('debug 构建保留发布版本，测试命令不附加构建参数', () async {
     final debug = await run(['build', 'apk', '--debug']);
     expect(debug.exitCode, 0, reason: '${debug.stdout}\n${debug.stderr}');
-    expect(calls().last, ['fake_flutter.dart', 'build', 'apk', '--debug']);
+    expect(calls().last, ['fake_flutter.dart', 'build', 'apk', '--debug', releaseVersion]);
     final tests = await run(['test', 'test/example_test.dart']);
     expect(tests.exitCode, 0, reason: '${tests.stdout}\n${tests.stderr}');
     expect(calls().last, ['fake_flutter.dart', 'test', 'test/example_test.dart']);
