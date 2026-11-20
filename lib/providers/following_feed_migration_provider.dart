@@ -51,9 +51,14 @@ class FollowingFeedMigrationNotifier
   FollowingFeedMigrationNotifier(this.prefs)
     : super(FollowingFeedMigration.read(prefs));
   final SharedPreferences prefs;
-  Future<void> dismiss() async {
+  Future<void> markSeen() async {
+    // 同步更新，多个动态入口在同一帧打开时也只展示一次。
+    state = FollowingFeedMigration(
+      usedSeeking: state.usedSeeking,
+      users: state.users,
+      dismissed: true,
+    );
     await prefs.setBool('following_feed_migration_seen', true);
-    if (mounted) state = FollowingFeedMigration.read(prefs);
   }
 }
 

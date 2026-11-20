@@ -8,10 +8,12 @@
   "followingFeed_posted": "created a topic",
   "followingFeed_replied": "replied",
   "followingFeed_loadMore": "Load more",
-  "followingFeed_migrationTitle": "Seeking has been replaced",
-  "followingFeed_migrationHint": "Seeking migration guide",
-  "followingFeed_migrationSummary": "Review the changes and your old watch list.",
-  "followingFeed_migrationBody": "Built-in Seeking has been removed. Activity shows topics and replies from people you follow on the website, with refresh and history pagination.\n\nMonitoring likes, reactions and boosts, and background alerts have stopped. These features are planned for plugins.\n\nYour Seeking navigation entry now opens Activity. You can also open it from Me → Following activity without adding it to the navigation bar.\n\nYour old watch list will not automatically become follows. Open a profile below to follow someone manually. This guide remains available from the information button in Activity.",
+  "followingFeed_migrationTitle": "From Seeking to following activity",
+  "followingFeed_migrationSummary": "See topics and replies from people you follow on the website. Pull to refresh or scroll through earlier posts.",
+  "followingFeed_migrationChanges": "Seeking's monitoring of likes, reactions and boosts, and background alerts have ended.",
+  "followingFeed_migrationListHint": "Your previous watch list is saved under Following. Open it anytime to visit profiles and choose whom to follow.",
+  "followingFeed_migrationContinue": "Start browsing",
+  "followingFeed_viewLegacyUsers": "View previous watch list",
   "followingFeed_legacyUsers": "Previous watch list",
-  "followingFeed_legacyHint": "This list was saved on this device and may include people added while using another account. Review it before following anyone."
+  "followingFeed_legacyHint": "This list was saved on this device and may include people added while using another account. Open each person's profile to choose whether to follow them."
 }
