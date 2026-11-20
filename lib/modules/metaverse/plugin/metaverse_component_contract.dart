@@ -3,7 +3,12 @@ const metaverseComponentContract = {
   "ActionBar": {
     "parameters": [
       "actions"
-    ]
+    ],
+    "types": {
+      "actions": [
+        "list"
+      ]
+    }
   },
   "AdaptivePane": {
     "parameters": [
@@ -12,7 +17,26 @@ const metaverseComponentContract = {
       "masterWidth",
       "minDetailWidth",
       "sidebar"
-    ]
+    ],
+    "types": {
+      "body": [
+        "widget"
+      ],
+      "compactHeader": [
+        "widget"
+      ],
+      "masterWidth": [
+        "integer",
+        "number"
+      ],
+      "minDetailWidth": [
+        "integer",
+        "number"
+      ],
+      "sidebar": [
+        "widget"
+      ]
+    }
   },
   "Align": {
     "parameters": [
@@ -23,7 +47,21 @@ const metaverseComponentContract = {
       "heightFactor",
       "onEnd",
       "widthFactor"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
   },
   "Amount": {
     "parameters": [
@@ -32,13 +70,56 @@ const metaverseComponentContract = {
       "style",
       "unit",
       "value"
-    ]
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "original": [
+        "list",
+        "string"
+      ],
+      "original.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "style": [
+        "string"
+      ],
+      "unit": [
+        "list",
+        "string"
+      ],
+      "unit.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "value": [
+        "list",
+        "string"
+      ],
+      "value.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "AspectRatio": {
     "parameters": [
       "aspectRatio",
       "child"
-    ]
+    ],
+    "types": {
+      "aspectRatio": [
+        "number"
+      ],
+      "child": [
+        "widget"
+      ]
+    }
   },
   "Avatar": {
     "parameters": [
@@ -46,7 +127,28 @@ const metaverseComponentContract = {
       "label",
       "size",
       "url"
-    ]
+    ],
+    "types": {
+      "count": [
+        "integer"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "size": [
+        "integer",
+        "number"
+      ],
+      "url": [
+        "string"
+      ]
+    }
   },
   "Button": {
     "parameters": [
@@ -56,21 +158,75 @@ const metaverseComponentContract = {
       "loading",
       "onPressed",
       "variant"
-    ]
+    ],
+    "types": {
+      "enabled": [
+        "boolean"
+      ],
+      "icon": [
+        "string"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onPressed": [
+        "event"
+      ],
+      "variant": [
+        "string"
+      ]
+    }
   },
   "Center": {
     "parameters": [
       "child",
       "heightFactor",
       "widthFactor"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
   },
   "Chip": {
     "parameters": [
       "color",
       "label",
       "textColor"
-    ]
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "textColor": [
+        "string"
+      ]
+    }
   },
   "Choice": {
     "parameters": [
@@ -79,20 +235,53 @@ const metaverseComponentContract = {
       "leading",
       "onSelected",
       "selected"
-    ]
+    ],
+    "types": {
+      "label": [
+        "list",
+        "string"
+      ],
+      "label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "layout": [
+        "string"
+      ],
+      "leading": [
+        "widget"
+      ],
+      "onSelected": [
+        "event"
+      ],
+      "selected": [
+        "boolean"
+      ]
+    }
   },
   "ClipRRect": {
     "parameters": [
       "borderRadius",
       "child",
       "clipBehavior"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "ColoredBox": {
     "parameters": [
       "child",
       "color"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "Column": {
     "parameters": [
@@ -103,7 +292,12 @@ const metaverseComponentContract = {
       "textBaseline",
       "textDirection",
       "verticalDirection"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
   },
   "ContentRow": {
     "parameters": [
@@ -114,13 +308,68 @@ const metaverseComponentContract = {
       "summary",
       "summaryLines",
       "title"
-    ]
+    ],
+    "types": {
+      "detail": [
+        "widget"
+      ],
+      "leading": [
+        "widget"
+      ],
+      "meta": [
+        "list",
+        "string"
+      ],
+      "meta.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "summary": [
+        "list",
+        "string"
+      ],
+      "summary.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "summaryLines": [
+        "integer"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "CopyButton": {
     "parameters": [
       "label",
       "text"
-    ]
+    ],
+    "types": {
+      "label": [
+        "string"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "DefaultTextStyle": {
     "parameters": [
@@ -135,7 +384,21 @@ const metaverseComponentContract = {
       "textAlign",
       "textHeightBehavior",
       "textWidthBasis"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "softWrap": [
+        "boolean"
+      ]
+    }
   },
   "DetailPage": {
     "parameters": [
@@ -148,16 +411,51 @@ const metaverseComponentContract = {
       "onRetry",
       "sections",
       "toolbar"
-    ]
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "header": [
+        "widget"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "sections": [
+        "list"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
   },
   "Directionality": {
     "parameters": [
       "child",
       "textDirection"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "Divider": {
-    "parameters": []
+    "parameters": [],
+    "types": {}
   },
   "EmptyState": {
     "parameters": [
@@ -165,13 +463,41 @@ const metaverseComponentContract = {
       "icon",
       "message",
       "title"
-    ]
+    ],
+    "types": {
+      "action": [
+        "widget"
+      ],
+      "icon": [
+        "string"
+      ],
+      "message": [
+        "string"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "Expanded": {
     "parameters": [
       "child",
       "flex"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "flex": [
+        "integer"
+      ]
+    }
   },
   "FittedBox": {
     "parameters": [
@@ -179,14 +505,27 @@ const metaverseComponentContract = {
       "child",
       "clipBehavior",
       "fit"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "Flexible": {
     "parameters": [
       "child",
       "fit",
       "flex"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "flex": [
+        "integer"
+      ]
+    }
   },
   "FormPage": {
     "parameters": [
@@ -198,7 +537,67 @@ const metaverseComponentContract = {
       "onSubmit",
       "resetKey",
       "submitLabel"
-    ]
+    ],
+    "types": {
+      "actions": [
+        "list"
+      ],
+      "fields": [
+        "list"
+      ],
+      "fields.*.error": [
+        "string"
+      ],
+      "fields.*.hint": [
+        "string"
+      ],
+      "fields.*.label": [
+        "string"
+      ],
+      "fields.*.maxLength": [
+        "integer"
+      ],
+      "fields.*.name": [
+        "string"
+      ],
+      "fields.*.options": [
+        "list"
+      ],
+      "fields.*.options.*.label": [
+        "string"
+      ],
+      "fields.*.options.*.value": [
+        "string"
+      ],
+      "fields.*.required": [
+        "boolean"
+      ],
+      "fields.*.type": [
+        "string"
+      ],
+      "fields.*.value": [
+        "boolean",
+        "string"
+      ],
+      "header": [
+        "widget"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmit": [
+        "event"
+      ],
+      "resetKey": [
+        "string"
+      ],
+      "submitLabel": [
+        "string"
+      ]
+    }
   },
   "FractionallySizedBox": {
     "parameters": [
@@ -206,12 +605,29 @@ const metaverseComponentContract = {
       "child",
       "heightFactor",
       "widthFactor"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "heightFactor": [
+        "number"
+      ],
+      "widthFactor": [
+        "number"
+      ]
+    }
   },
   "Gap": {
     "parameters": [
       "size"
-    ]
+    ],
+    "types": {
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "GestureDetector": {
     "parameters": [
@@ -223,7 +639,30 @@ const metaverseComponentContract = {
       "onTapCancel",
       "onTapDown",
       "onTapUp"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onDoubleTap": [
+        "event"
+      ],
+      "onLongPress": [
+        "event"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "onTapCancel": [
+        "event"
+      ],
+      "onTapDown": [
+        "event"
+      ],
+      "onTapUp": [
+        "event"
+      ]
+    }
   },
   "GridPage": {
     "parameters": [
@@ -245,7 +684,63 @@ const metaverseComponentContract = {
       "runSpacing",
       "spacing",
       "toolbar"
-    ]
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "columns": [
+        "integer"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "minTileWidth": [
+        "integer",
+        "number"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "runSpacing": [
+        "integer",
+        "number"
+      ],
+      "spacing": [
+        "integer",
+        "number"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
   },
   "GridView": {
     "parameters": [
@@ -265,14 +760,60 @@ const metaverseComponentContract = {
       "scrollDirection",
       "semanticChildCount",
       "shrinkWrap"
-    ]
+    ],
+    "types": {
+      "addAutomaticKeepAlives": [
+        "boolean"
+      ],
+      "addRepaintBoundaries": [
+        "boolean"
+      ],
+      "addSemanticIndexes": [
+        "boolean"
+      ],
+      "cacheExtent": [
+        "number"
+      ],
+      "children": [
+        "list"
+      ],
+      "children.*": [
+        "widget"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ],
+      "semanticChildCount": [
+        "integer"
+      ],
+      "shrinkWrap": [
+        "boolean"
+      ]
+    }
   },
   "IconButton": {
     "parameters": [
       "icon",
       "onPressed",
       "tooltip"
-    ]
+    ],
+    "types": {
+      "icon": [
+        "string"
+      ],
+      "onPressed": [
+        "event"
+      ],
+      "tooltip": [
+        "string"
+      ]
+    }
   },
   "Image": {
     "parameters": [
@@ -282,19 +823,55 @@ const metaverseComponentContract = {
       "radius",
       "url",
       "width"
-    ]
+    ],
+    "types": {
+      "height": [
+        "integer",
+        "number"
+      ],
+      "preview": [
+        "boolean"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ],
+      "url": [
+        "string"
+      ],
+      "width": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "IntrinsicHeight": {
     "parameters": [
       "child"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "IntrinsicWidth": {
     "parameters": [
       "child",
       "height",
       "width"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "height": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
   },
   "Label": {
     "parameters": [
@@ -304,14 +881,45 @@ const metaverseComponentContract = {
       "maxLines",
       "style",
       "text"
-    ]
+    ],
+    "types": {
+      "bold": [
+        "boolean"
+      ],
+      "color": [
+        "string"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "style": [
+        "string"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "ListBody": {
     "parameters": [
       "children",
       "mainAxis",
       "reverse"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "reverse": [
+        "boolean"
+      ]
+    }
   },
   "ListItem": {
     "parameters": [
@@ -320,7 +928,36 @@ const metaverseComponentContract = {
       "subtitle",
       "title",
       "trailing"
-    ]
+    ],
+    "types": {
+      "leading": [
+        "widget"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "subtitle": [
+        "list",
+        "string"
+      ],
+      "subtitle.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "title": [
+        "list",
+        "string"
+      ],
+      "title.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "trailing": [
+        "widget"
+      ]
+    }
   },
   "ListPage": {
     "parameters": [
@@ -339,7 +976,54 @@ const metaverseComponentContract = {
       "onRetry",
       "search",
       "toolbar"
-    ]
+    ],
+    "types": {
+      "actions": [
+        "widget"
+      ],
+      "empty": [
+        "widget"
+      ],
+      "emptyTitle": [
+        "string"
+      ],
+      "error": [
+        "string"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
+      ],
+      "search": [
+        "widget"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
   },
   "ListView": {
     "parameters": [
@@ -360,13 +1044,68 @@ const metaverseComponentContract = {
       "scrollDirection",
       "semanticChildCount",
       "shrinkWrap"
-    ]
+    ],
+    "types": {
+      "addAutomaticKeepAlives": [
+        "boolean"
+      ],
+      "addRepaintBoundaries": [
+        "boolean"
+      ],
+      "addSemanticIndexes": [
+        "boolean"
+      ],
+      "cacheExtent": [
+        "number"
+      ],
+      "children": [
+        "list"
+      ],
+      "children.*": [
+        "widget"
+      ],
+      "itemExtent": [
+        "number"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "prototypeItem": [
+        "widget"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ],
+      "semanticChildCount": [
+        "integer"
+      ],
+      "shrinkWrap": [
+        "boolean"
+      ]
+    }
   },
   "Markdown": {
     "parameters": [
       "onLink",
       "text"
-    ]
+    ],
+    "types": {
+      "onLink": [
+        "event"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "Opacity": {
     "parameters": [
@@ -376,7 +1115,21 @@ const metaverseComponentContract = {
       "duration",
       "onEnd",
       "opacity"
-    ]
+    ],
+    "types": {
+      "alwaysIncludeSemantics": [
+        "boolean"
+      ],
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "opacity": [
+        "number"
+      ]
+    }
   },
   "Padding": {
     "parameters": [
@@ -385,7 +1138,15 @@ const metaverseComponentContract = {
       "duration",
       "onEnd",
       "padding"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ]
+    }
   },
   "PageLayout": {
     "parameters": [
@@ -398,7 +1159,36 @@ const metaverseComponentContract = {
       "onLoadMore",
       "onRefresh",
       "toolbar"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "footer": [
+        "widget"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "loadMoreError": [
+        "string"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRefresh": [
+        "event"
+      ],
+      "toolbar": [
+        "widget"
+      ]
+    }
   },
   "Positioned": {
     "parameters": [
@@ -412,12 +1202,44 @@ const metaverseComponentContract = {
       "start",
       "top",
       "width"
-    ]
+    ],
+    "types": {
+      "bottom": [
+        "number"
+      ],
+      "child": [
+        "widget"
+      ],
+      "end": [
+        "number"
+      ],
+      "height": [
+        "number"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "start": [
+        "number"
+      ],
+      "top": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
   },
   "ProgressBar": {
     "parameters": [
       "value"
-    ]
+    ],
+    "types": {
+      "value": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "QuantityInput": {
     "parameters": [
@@ -426,12 +1248,34 @@ const metaverseComponentContract = {
       "min",
       "onChanged",
       "value"
-    ]
+    ],
+    "types": {
+      "enabled": [
+        "boolean"
+      ],
+      "max": [
+        "integer"
+      ],
+      "min": [
+        "integer"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "value": [
+        "integer"
+      ]
+    }
   },
   "RelativeTime": {
     "parameters": [
       "value"
-    ]
+    ],
+    "types": {
+      "value": [
+        "string"
+      ]
+    }
   },
   "Rotation": {
     "parameters": [
@@ -442,7 +1286,18 @@ const metaverseComponentContract = {
       "filterQuality",
       "onEnd",
       "turns"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "turns": [
+        "number"
+      ]
+    }
   },
   "Row": {
     "parameters": [
@@ -453,7 +1308,12 @@ const metaverseComponentContract = {
       "textBaseline",
       "textDirection",
       "verticalDirection"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
   },
   "SafeArea": {
     "parameters": [
@@ -464,7 +1324,27 @@ const metaverseComponentContract = {
       "minimum",
       "right",
       "top"
-    ]
+    ],
+    "types": {
+      "bottom": [
+        "boolean"
+      ],
+      "child": [
+        "widget"
+      ],
+      "left": [
+        "boolean"
+      ],
+      "maintainBottomViewPadding": [
+        "boolean"
+      ],
+      "right": [
+        "boolean"
+      ],
+      "top": [
+        "boolean"
+      ]
+    }
   },
   "Scale": {
     "parameters": [
@@ -475,7 +1355,18 @@ const metaverseComponentContract = {
       "filterQuality",
       "onEnd",
       "scale"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "onEnd": [
+        "event"
+      ],
+      "scale": [
+        "number"
+      ]
+    }
   },
   "SearchInput": {
     "parameters": [
@@ -483,12 +1374,37 @@ const metaverseComponentContract = {
       "onChanged",
       "onSubmitted",
       "value"
-    ]
+    ],
+    "types": {
+      "hint": [
+        "string"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmitted": [
+        "event"
+      ],
+      "value": [
+        "string"
+      ]
+    }
   },
   "SelectableLabel": {
     "parameters": [
       "text"
-    ]
+    ],
+    "types": {
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "SingleChildScrollView": {
     "parameters": [
@@ -501,34 +1417,80 @@ const metaverseComponentContract = {
       "restorationId",
       "reverse",
       "scrollDirection"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "primary": [
+        "boolean"
+      ],
+      "restorationId": [
+        "string"
+      ],
+      "reverse": [
+        "boolean"
+      ]
+    }
   },
   "SizedBox": {
     "parameters": [
       "child",
       "height",
       "width"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "height": [
+        "number"
+      ],
+      "width": [
+        "number"
+      ]
+    }
   },
   "SizedBoxExpand": {
     "parameters": [
       "child"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "SizedBoxShrink": {
     "parameters": [
       "child"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
   },
   "Spacer": {
     "parameters": [
       "flex"
-    ]
+    ],
+    "types": {
+      "flex": [
+        "integer"
+      ]
+    }
   },
   "Spinner": {
     "parameters": [
       "size"
-    ]
+    ],
+    "types": {
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "Stack": {
     "parameters": [
@@ -537,12 +1499,40 @@ const metaverseComponentContract = {
       "clipBehavior",
       "fit",
       "textDirection"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ]
+    }
   },
   "Statistics": {
     "parameters": [
       "items"
-    ]
+    ],
+    "types": {
+      "items": [
+        "list"
+      ],
+      "items.*.label": [
+        "list",
+        "string"
+      ],
+      "items.*.label.*": [
+        "integer",
+        "number",
+        "string"
+      ],
+      "items.*.value": [
+        "list",
+        "string"
+      ],
+      "items.*.value.*": [
+        "integer",
+        "number",
+        "string"
+      ]
+    }
   },
   "Surface": {
     "parameters": [
@@ -551,14 +1541,41 @@ const metaverseComponentContract = {
       "onTap",
       "padding",
       "radius"
-    ]
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ],
+      "color": [
+        "string"
+      ],
+      "onTap": [
+        "event"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "Symbol": {
     "parameters": [
       "color",
       "name",
       "size"
-    ]
+    ],
+    "types": {
+      "color": [
+        "string"
+      ],
+      "name": [
+        "string"
+      ],
+      "size": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "Text": {
     "parameters": [
@@ -575,7 +1592,28 @@ const metaverseComponentContract = {
       "textHeightBehavior",
       "textScaleFactor",
       "textWidthBasis"
-    ]
+    ],
+    "types": {
+      "maxLines": [
+        "integer"
+      ],
+      "semanticsLabel": [
+        "string"
+      ],
+      "softWrap": [
+        "boolean"
+      ],
+      "text": [
+        "list",
+        "string"
+      ],
+      "text.*": [
+        "string"
+      ],
+      "textScaleFactor": [
+        "number"
+      ]
+    }
   },
   "TextInput": {
     "parameters": [
@@ -586,7 +1624,30 @@ const metaverseComponentContract = {
       "onChanged",
       "onSubmitted",
       "value"
-    ]
+    ],
+    "types": {
+      "hint": [
+        "string"
+      ],
+      "label": [
+        "string"
+      ],
+      "maxLines": [
+        "integer"
+      ],
+      "obscure": [
+        "boolean"
+      ],
+      "onChanged": [
+        "event"
+      ],
+      "onSubmitted": [
+        "event"
+      ],
+      "value": [
+        "string"
+      ]
+    }
   },
   "TileGrid": {
     "parameters": [
@@ -596,13 +1657,41 @@ const metaverseComponentContract = {
       "minTileWidth",
       "runSpacing",
       "spacing"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "columns": [
+        "integer"
+      ],
+      "minTileWidth": [
+        "integer",
+        "number"
+      ],
+      "runSpacing": [
+        "integer",
+        "number"
+      ],
+      "spacing": [
+        "integer",
+        "number"
+      ]
+    }
   },
   "Toggle": {
     "parameters": [
       "onChanged",
       "value"
-    ]
+    ],
+    "types": {
+      "onChanged": [
+        "event"
+      ],
+      "value": [
+        "boolean"
+      ]
+    }
   },
   "Wrap": {
     "parameters": [
@@ -616,7 +1705,18 @@ const metaverseComponentContract = {
       "spacing",
       "textDirection",
       "verticalDirection"
-    ]
+    ],
+    "types": {
+      "children": [
+        "list"
+      ],
+      "runSpacing": [
+        "number"
+      ],
+      "spacing": [
+        "number"
+      ]
+    }
   }
 }
 ;

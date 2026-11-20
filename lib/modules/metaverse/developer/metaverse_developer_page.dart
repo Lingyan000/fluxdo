@@ -300,7 +300,7 @@ class _ComponentPreviewState extends State<MetaverseComponentPreviewPage> {
             title: Text(l.metaverse_developerAllParameters),
             subtitle: Text(l.metaverse_developerContractHint),
             children: [Padding(padding: const EdgeInsets.all(16),
-              child: SelectableText((metaverseComponentContract[widget.example.name]?['parameters'] ?? const <String>[]).join(', ')),
+              child: SelectableText((metaverseComponentContract[widget.example.name]?['parameters'] as List? ?? const <String>[]).join(', ')),
             )],
           )]),
           const SizedBox(height: 20),

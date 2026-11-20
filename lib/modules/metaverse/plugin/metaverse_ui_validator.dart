@@ -29,6 +29,38 @@ Map<String, Object?> validatePluginUiContract(String source, Map contract) {
                 );
               }
             }
+            // 只检查静态值；数据引用、分支及循环仍由 RFW 在渲染时解析。
+            bool matches(Object value, String kind) => switch (kind) {
+              'string' => value is String,
+              'boolean' => value is bool,
+              'integer' => value is int,
+              'number' => value is num,
+              'list' => value is List,
+              'widget' => value is ConstructorCall || value is WidgetBuilderDeclaration,
+              'event' => value is EventHandler || value is SetStateHandler,
+              _ => true,
+            };
+            void check(Object? value, List<String> path, List<String> kinds, String field) {
+              if (value == null) return;
+              if (path.isNotEmpty) {
+                if (path.first == '*' && value is List) {
+                  for (var i = 0; i < value.length; i++) {
+                    check(value[i], path.sublist(1), kinds, '$field[$i]');
+                  }
+                } else if (value is Map && path.first != '*') {
+                  check(value[path.first], path.sublist(1), kinds, field.isEmpty ? path.first : '$field.${path.first}');
+                }
+                return;
+              }
+              if (value is! String && value is! bool && value is! num && value is! List && value is! Map &&
+                  value is! ConstructorCall && value is! EventHandler && value is! SetStateHandler && value is! WidgetBuilderDeclaration) { return; }
+              if (!kinds.any((kind) => matches(value, kind))) {
+                diagnostics.add('ui.rfwtxt:$line:$column ${node.name}.$field 应为 ${kinds.join(" / ")}');
+              }
+            }
+            for (final entry in (spec['types'] as Map? ?? const {}).entries) {
+              check(node.arguments, (entry.key as String).split('.'), (entry.value as List).cast<String>(), '');
+            }
           }
         }
         walk(node.arguments);

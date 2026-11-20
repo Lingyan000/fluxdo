@@ -22,7 +22,7 @@ Future<void> main(List<String> args) async {
         .where((f) => f.path.endsWith('.dart')),
     File.fromUri(base.resolve('lib/src/flutter/core_widgets.dart')),
   ];
-  final functions = <String, AstNode>{};
+  final functions = <String, FunctionDeclaration>{};
   final definitions = <String, Expression>{};
   final allowed = <String>{};
   for (final file in files) {
@@ -32,8 +32,7 @@ Future<void> main(List<String> args) async {
     ).unit;
     for (final declaration in unit.declarations) {
       if (declaration is FunctionDeclaration) {
-        functions[declaration.name.lexeme] =
-            declaration.functionExpression.body;
+        functions[declaration.name.lexeme] = declaration;
       }
     }
     unit.accept(
@@ -76,45 +75,82 @@ Future<void> main(List<String> args) async {
       continue;
     }
     final fields = <String>{};
-    final visited = <String>{};
-    void scan(AstNode node) {
-      if (node is SimpleIdentifier &&
-          functions.containsKey(node.name) &&
-          visited.add(node.name)) {
-        scan(functions[node.name]!);
+    final types = <String, Set<String>>{};
+    final visiting = <String>{};
+    void scan(AstNode node, [Map<String, List<String>> bindings = const {}]) {
+      final variables = <String, Expression>{};
+      node.accept(_Visitor((value) {
+        if (value is VariableDeclaration && value.initializer != null) variables[value.name.lexeme] = value.initializer!;
+      }));
+      List<String>? path(Expression? expression, [Set<String> seen = const {}]) {
+        if (expression is SimpleStringLiteral) return [expression.value];
+        if (expression is SimpleIdentifier) {
+          if (bindings.containsKey(expression.name)) return bindings[expression.name];
+          if (seen.contains(expression.name)) return null;
+          return path(variables[expression.name], {...seen, expression.name});
+        }
+        if (expression is! ListLiteral) return null;
+        final result = <String>[];
+        for (final element in expression.elements) {
+          if (element is SpreadElement) {
+            final prefix = path(element.expression, seen);
+            if (prefix == null) return null;
+            result.addAll(prefix);
+          } else if (element is SimpleStringLiteral) {
+            result.addAll(bindings[element.value] ?? [element.value]);
+          } else if (element is SimpleIdentifier && bindings.containsKey(element.name)) {
+            result.addAll(bindings[element.name]!);
+          } else { result.add('*'); }
+        }
+        return result.isEmpty || result.first == '*' ? null : result;
       }
-      node.accept(
-        _Visitor((value) {
-          if (value is! MethodInvocation) return;
-          final args = value.argumentList.arguments
-              .map((a) => a.argumentExpression)
-              .toList();
-          Expression? path;
-          if (value.target?.toSource() == 'source' && args.isNotEmpty) {
-            path = args.first;
-          }
+      void helper(String name, List<Expression> args) {
+        final function = functions[name];
+        if (function == null || !visiting.add(name)) return;
+        final parameters = function.functionExpression.parameters?.parameters ?? [];
+        final values = <String, List<String>>{};
+        for (var i = 0; i < parameters.length && i < args.length; i++) {
+          final name = parameters[i].name?.lexeme;
+          final resolved = path(args[i]);
+          if (name != null && resolved != null) values[name] = resolved;
+        }
+        scan(function.functionExpression.body, values);
+        visiting.remove(name);
+      }
+      if (node is SimpleIdentifier) { helper(node.name, []); return; }
+      node.accept(_Visitor((value) {
+        if (value is! MethodInvocation) return;
+        final args = value.argumentList.arguments.map((a) => a.argumentExpression).toList();
+        final name = value.methodName.name;
+        if (value.target?.toSource() == 'source' && args.isNotEmpty) {
+          final resolved = path(args.first);
+          if (resolved == null) return;
+          fields.add(resolved.first);
+          final kind = switch (name) {
+            'v' => switch (value.typeArguments?.arguments.firstOrNull?.toSource()) {
+              'String' => 'string', 'bool' => 'boolean', 'int' => 'integer', 'double' => 'number', _ => null,
+            },
+            'length' || 'childList' => 'list',
+            'child' || 'optionalChild' => 'widget',
+            'handler' || 'voidHandler' => 'event',
+            _ => null,
+          };
+          if (kind != null) (types[resolved.join('.')] ??= {}).add(kind);
+        } else if (args.any((a) => a.toSource() == 'source')) {
           for (var i = 0; i < args.length - 1; i++) {
-            if (args[i].toSource() == 'source') path = args[i + 1];
+            if (args[i].toSource() == 'source') {
+              final resolved = path(args[i + 1]);
+              if (resolved != null) fields.add(resolved.first);
+            }
           }
-          if (path is ListLiteral &&
-              path.elements.isNotEmpty &&
-              path.elements.first is SimpleStringLiteral) {
-            fields.add((path.elements.first as SimpleStringLiteral).value);
-          } else if (path is SimpleStringLiteral) {
-            fields.add(path.value);
-          }
-          final name = value.methodName.name;
-          if (args.any((a) => a.toSource() == 'source') &&
-              functions.containsKey(name) &&
-              visited.add(name)) {
-            scan(functions[name]!);
-          }
-        }),
-      );
+          helper(name, args);
+        }
+      }));
     }
-
     scan(entry.value);
-    result[entry.key] = {'parameters': fields.toList()..sort()};
+    result[entry.key] = {'parameters': fields.toList()..sort(), 'types': {
+      for (final key in types.keys.toList()..sort()) key: types[key]!.toList()..sort(),
+    }};
   }
   final sorted = {
     for (final name in result.keys.toList()..sort()) name: result[name],
