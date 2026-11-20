@@ -21,6 +21,7 @@ enum PluginFeature {
   dataMigrations,
   hostEnvironment,
   pluginPreferences,
+  pageChrome,
 }
 
 class PluginFeatures {

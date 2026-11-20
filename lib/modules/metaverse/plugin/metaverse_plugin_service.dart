@@ -261,8 +261,6 @@ class MetaversePluginCard extends ConsumerWidget {
               ],
             ),
           ),
-          if (manifest.cardPage != null)
-            Icon(Symbols.chevron_right_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
           _menu(context, ref, manifest),
         ],
       ),

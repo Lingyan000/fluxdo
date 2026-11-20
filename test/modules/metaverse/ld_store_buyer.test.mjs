@@ -44,6 +44,27 @@ test('不同意士多协议时不初始化授权也不调用 Connect',async()=>{
   await t.handlers.get('login')(ctx);
   assert.equal(t.calls.length,0);assert.equal(t.confirmations[0].agreement.url,'https://ldcstore.com/docs/terms');
 });
+test('商品列表保留折扣、原价和已售，非折扣商品不伪造优惠',async()=>{
+  const t=setup({respond:r=>r.url.pathname.endsWith('/categories')?{categories:[]}:{products:[
+    {id:'p1',name:'折扣商品',price:20,discount:0.75,sold_count:12,stock:8},
+    {id:'p2',name:'原价商品',price:6,sold_count:0,stock:-1}],pagination:{total:2}}});
+  const p=await t.page('market');
+  assert.equal(p.data.rows[0].discount,'25% 优惠');assert.equal(p.data.rows[0].sold,'已售 12');
+  assert.equal(p.data.rows[0].originalLabel,'原价 20.00');assert.equal(p.data.rows[0].value,'15.00');
+  assert.equal(p.data.rows[1].discount,'');assert.equal(p.data.rows[1].sold,'已售 0');
+});
+test('服务卡片取数有明确加载状态，刷新失败保留上次统计',async()=>{
+  let resolve,failed=false;
+  const hold=new Promise(r=>resolve=r);
+  const t=setup({respond:async r=>{await hold;if(failed)throw Error('offline');return r.url.pathname.endsWith('/attention')?{pendingPaymentCount:3,awaitingDeliveryCount:2,unusedCouponCount:4}:{totalUnread:5};}});
+  const data={},ctx={surface:'card',params:{},api:t.api,setData:(k,v)=>data[k]=v};
+  const loading=t.handlers.get('card.load')(ctx);
+  assert.equal(data.overviewLoading,true);assert.equal(data.stats,undefined);
+  resolve();await loading;
+  assert.equal(data.overviewLoading,false);assert.equal(data.stats[0].value,'3');
+  failed=true;await t.handlers.get('card.refresh')(ctx);
+  assert.equal(data.overviewLoading,false);assert.equal(data.stats[0].value,'3');assert.ok(data.overviewError);
+});
 test('Connect 取消后不访问回调、不交换令牌',async()=>{
   const t=setup({respond:()=>({state:'s',auth_url:'https://connect.linux.do/oauth2/authorize?redirect_uri=https%3A%2F%2Fapi.ldspro.qzz.io%2Fapi%2Fauth%2Fcallback&state=s'})});
   const data={};await t.handlers.get('login')({api:t.api,setData:(k,v)=>data[k]=v});

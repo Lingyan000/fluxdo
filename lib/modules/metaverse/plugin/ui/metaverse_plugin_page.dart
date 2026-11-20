@@ -12,8 +12,7 @@ import 'metaverse_plugin_surface_view.dart';
 
 /// 插件声明的一个独立页面。
 ///
-/// 页面外壳（标题栏、返回）由宿主提供，插件只负责内容：导航行为和应用其它
-/// 页面一致，插件出问题时也总能返回。
+/// 返回、关闭及安全区由宿主提供，插件可向标题栏提供标题与操作组件。
 class MetaversePluginPage extends ConsumerStatefulWidget {
   const MetaversePluginPage({
     super.key,
@@ -108,7 +107,6 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final plugin = ref.watch(
       metaversePluginsProvider.select((plugins) {
         for (final item in plugins) {
@@ -120,6 +118,20 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
     final spec = plugin?.manifest.page(page);
     // 由帖内链接打开时带着原始地址，给用户留一条"用浏览器打开"的退路。
     final sourceUrl = params['url'];
+    Widget frame(Widget body, [Widget Function(String name)? render]) {
+      final content = spec?.scroll == false
+          ? body
+          : SingleChildScrollView(controller: _scroll, padding: const EdgeInsets.all(16), child: body);
+      return MetaversePluginPageFrame(
+          title: spec?.title ?? plugin?.manifest.name ?? pluginId,
+          customTitle: render != null && spec?.appBarTitle != null ? render(spec!.appBarTitle!) : null,
+          actions: render != null && spec?.appBarActions != null ? render(spec!.appBarActions!) : null,
+          sourceUrl: sourceUrl is String ? sourceUrl : null,
+          modal: modal,
+          workspace: workspace,
+          child: content,
+      );
+    }
 
     final Widget body;
     if (plugin == null || spec == null || !plugin.enabled) {
@@ -133,10 +145,15 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
         onRetry: reason == 'rollback_review_required' ? null : () => ref.read(metaversePluginsProvider.notifier).resume(pluginId));
     } else {
       final host = ref.watch(metaversePluginHostsProvider).hostFor(plugin);
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ValueListenableBuilder<String?>(
+      return PrimaryScrollController(controller: _scroll, child: MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: page,
+        params: params,
+        navigationId: workspace ? pluginNavigationId(pluginId, page) : null,
+        builder: (context, content, render) => frame(Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [ValueListenableBuilder<String?>(
             valueListenable: host.dnsRetryHost,
             builder: (context, name, _) => name == null
                 ? const SizedBox.shrink()
@@ -145,61 +162,65 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
                     child: Text(context.l10n.metaverse_pluginUseDoh(name)),
                   ),
           ),
-          if (!spec.scroll)
-            Expanded(
-              child: MetaversePluginSurfaceView(
-                host: host,
-                kind: MetaversePluginSurfaceKind.page,
-                page: page,
-                params: params,
-                navigationId: workspace ? pluginNavigationId(pluginId, page) : null,
-              ),
-            )
-          else
-            MetaversePluginSurfaceView(
-              host: host,
-              kind: MetaversePluginSurfaceKind.page,
-              page: page,
-              params: params,
-              navigationId: workspace ? pluginNavigationId(pluginId, page) : null,
-            ),
-        ],
-      );
+          if (!spec.scroll) Expanded(child: content) else content,
+          ],
+        ), render),
+      ));
     }
+    return PrimaryScrollController(controller: _scroll, child: frame(body));
+  }
+}
 
-    final title = Text(
-      spec?.title ?? plugin?.manifest.name ?? pluginId,
-      style: theme.textTheme.titleMedium,
+/// 普通页和弹层共用标题栏插槽；返回与关闭始终由宿主保留。
+class MetaversePluginPageFrame extends StatelessWidget {
+  const MetaversePluginPageFrame({super.key, required this.title, required this.child,
+    this.customTitle, this.actions, this.sourceUrl, this.modal = false, this.workspace = false});
+  final String title;
+  final Widget child;
+  final Widget? customTitle;
+  final Widget? actions;
+  final String? sourceUrl;
+  final bool modal;
+  final bool workspace;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => _build(context, constraints.maxWidth),
+  );
+
+  Widget _build(BuildContext context, double width) {
+    final titleWidget = customTitle == null ? Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-    );
-    final actions = <Widget>[
-      if (sourceUrl is String)
+    ) : ClipRect(child: ConstrainedBox(constraints: const BoxConstraints(maxHeight: kToolbarHeight), child: customTitle));
+    final buttons = <Widget>[
+      if (actions != null)
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: width * .5, maxHeight: kToolbarHeight),
+          child: SingleChildScrollView(primary: false, scrollDirection: Axis.horizontal, child: actions),
+        ),
+      if (sourceUrl != null && actions == null)
         IconButton(
           tooltip: context.l10n.metaverse_pluginOpen,
           icon: const Icon(Symbols.open_in_new_rounded),
-          onPressed: () => launchExternalLink(context, sourceUrl),
+          onPressed: () => launchExternalLink(context, sourceUrl!),
         ),
     ];
-    final content = spec?.scroll == false
-        ? body
-        : SingleChildScrollView(controller: _scroll, padding: const EdgeInsets.all(16), child: body);
     if (modal) {
-      return PrimaryScrollController(controller: _scroll, child: AppSheetScaffold(
-        titleWidget: title,
-        actions: actions,
+      return AppSheetScaffold(
+        titleWidget: titleWidget,
+        actions: buttons,
         showDragHandle: MediaQuery.sizeOf(context).width < 600,
         expandToFill: true,
         contentPadding: EdgeInsets.zero,
-        child: content,
-      ));
+        child: child,
+      );
     }
-    return PrimaryScrollController(
-      controller: _scroll,
-      child: Scaffold(
-        appBar: AppBar(title: title, actions: actions, automaticallyImplyLeading: !workspace),
-        body: SafeArea(child: content),
-      ),
+    return Scaffold(
+      appBar: AppBar(title: titleWidget, actions: buttons, automaticallyImplyLeading: !workspace),
+      body: SafeArea(child: child),
     );
   }
 }

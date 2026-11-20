@@ -31,8 +31,8 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
   return [
     MetaverseComponentExample('CopyButton', 'CopyButton(text: data.text, label: data.label)',
       {'text':text, 'label':l.common_copy}, description: l.metaverse_componentCopyButton),
-    MetaverseComponentExample('Statistics', 'Statistics(items: [{value: data.value, label: data.label}, {value: "8", label: data.title}])',
-      {...title, ...label, 'value': '24'}, description: l.metaverse_componentStatistics),
+    MetaverseComponentExample('Statistics', 'Statistics(loading: data.loading, items: [{value: data.value, label: data.label}, {value: "8", label: data.title}])',
+      {...title, ...label, 'value': '24', 'loading': false}, description: l.metaverse_componentStatistics),
     MetaverseComponentExample('Amount', 'Amount(value: data.value, unit: data.unit, original: data.original, style: data.style)',
       {'value':'12.50', 'unit':'LDC', 'original':'20.00', 'style':'headlineSmall'}, description: l.metaverse_componentAmount,
       options: {'style':['titleMedium','titleLarge','headlineSmall','headlineMedium']}),
@@ -184,13 +184,14 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'Button',
       description: l.metaverse_componentButton,
-      'Button(label: data.label, icon: data.icon, variant: data.variant, enabled: data.enabled, loading: data.loading, onPressed: event "press" {})',
+      'Button(label: data.label, icon: data.icon, variant: data.variant, enabled: data.enabled, loading: data.loading, fullWidth: data.fullWidth, onPressed: event "press" {})',
       {
         ...label,
         'icon': 'check',
         'variant': 'filled',
         'enabled': true,
         'loading': false,
+        'fullWidth': false,
       },
       options: {
         'variant': ['filled', 'tonal', 'outlined', 'text'],
@@ -199,8 +200,8 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'IconButton',
       description: l.metaverse_componentIconButton,
-      'IconButton(icon: data.icon, tooltip: data.label, onPressed: event "press" {})',
-      {...label, 'icon': 'favorite'},
+      'IconButton(icon: data.icon, tooltip: data.label, enabled: data.enabled, loading: data.loading, selected: data.selected, onPressed: event "press" {})',
+      {...label, 'icon': 'favorite', 'enabled': true, 'loading': false, 'selected': false},
     ),
     MetaverseComponentExample(
       'Symbol',

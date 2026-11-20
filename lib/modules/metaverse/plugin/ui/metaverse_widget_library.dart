@@ -19,6 +19,7 @@ import '../../../../l10n/s.dart';
 import '../../../../utils/svg_utils.dart';
 import '../../../../widgets/common/image_placeholder.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
+import '../../../../widgets/common/skeleton.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../../widgets/common/relative_time_text.dart';
 import '../../../../widgets/layout/master_detail_layout.dart';
@@ -113,6 +114,7 @@ const metaverseIcons = <String, IconData>{
   'credit_card': Symbols.credit_card_rounded,
   'delete': Symbols.delete_rounded,
   'download': Symbols.download_rounded,
+  'done_all': Symbols.done_all_rounded,
   'edit': Symbols.edit_rounded,
   'error': Symbols.error_rounded,
   'extension': Symbols.extension_rounded,
@@ -437,7 +439,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     final icon = loading
         ? const LoadingSpinner(size: 16)
         : _icon(context, source, ['icon']);
-    return switch (source.v<String>(['variant'])) {
+    final button = switch (source.v<String>(['variant'])) {
       'tonal' => FilledButton.tonalIcon(
         onPressed: onPressed,
         icon: icon,
@@ -451,15 +453,23 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
       'text' => TextButton.icon(onPressed: onPressed, icon: icon, label: label),
       _ => FilledButton.icon(onPressed: onPressed, icon: icon, label: label),
     };
+    return source.v<bool>(['fullWidth']) == true
+        ? SizedBox(width: double.infinity, child: button)
+        : button;
   },
 
-  'IconButton': (context, source) => IconButton(
-    onPressed: source.voidHandler(['onPressed']),
-    tooltip: source.v<String>(['tooltip']),
-    icon:
-        _icon(context, source, ['icon']) ??
-        const Icon(Symbols.extension_rounded),
-  ),
+  'IconButton': (context, source) {
+    final loading = source.v<bool>(['loading']) == true;
+    final icon = metaversePluginIcon(source.v<String>(['icon']));
+    return IconButton(
+      onPressed: source.v<bool>(['enabled']) == false || loading
+          ? null : source.voidHandler(['onPressed']),
+      tooltip: source.v<String>(['tooltip']),
+      isSelected: source.v<bool>(['selected']),
+      selectedIcon: loading ? const LoadingSpinner(size: 20) : Icon(icon, fill: 1),
+      icon: loading ? const LoadingSpinner(size: 20) : Icon(icon),
+    );
+  },
 
   'Symbol': (context, source) => Icon(
     metaverseIcons[source.v<String>(['name'])] ?? Symbols.extension_rounded,

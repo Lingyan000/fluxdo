@@ -16,6 +16,8 @@ import '../../support/material_ui_finders.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/metaverse_page.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
+import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -44,6 +46,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/ldc_payment_service.dart';
 import 'package:fluxdo/services/ldc_biometric_payment.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
+import 'package:fluxdo/utils/dialog_utils.dart';
 import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_theme.dart';
 import 'package:rfw/rfw.dart';
@@ -201,6 +204,7 @@ void main() {
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reducedMotion = false,
+    Widget? barActions,
     _FixtureCodeStore? pluginStore,
   }) {
     const seed = Colors.indigo;
@@ -251,10 +255,7 @@ void main() {
               ),
               child: child!,
             ),
-            home: Scaffold(
-              appBar: AppBar(title: Text(title)),
-              body: child,
-            ),
+            home: MetaversePluginPageFrame(title: title, actions: barActions, child: child),
           ),
         ),
       ),
@@ -337,9 +338,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  Future<void> snapshot(WidgetTester tester, String name) async {
+  Future<void> snapshot(WidgetTester tester, String name, {bool settle = true}) async {
     if (!snapshots) return;
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     await tester.runAsync(() async {
       final boundary = tester.renderObject<RenderRepaintBoundary>(
         find.byKey(captureKey),
@@ -1263,6 +1268,94 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     });
   }
 
+  for (final brightness in Brightness.values) {
+    testWidgets('服务卡片移除入口箭头，统计加载与完成可见 ${brightness.name}', (tester) async {
+      await preferences.clear();
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = _FixtureCodeStore(preferences)..written = (
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: '''fluxdo.on('card.load',ctx=>ctx.setData('overviewLoading',true));
+fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'},{value:'2',label:'待发货'},{value:'4',label:'优惠券'},{value:'5',label:'未读消息'}]);ctx.setData('overviewLoading',false);});''',
+      );
+      final plugin = InstalledMetaversePlugin(
+        manifest: MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync())),
+        source: 'fixture:ld-store', enabled:true,
+      );
+      await store.saveIndex([plugin]);
+      try {
+      await tester.pumpWidget(app(
+        Padding(padding:const EdgeInsets.all(16), child: SingleChildScrollView(child: MetaversePluginCard(
+          service: MetaversePluginService(plugin),
+          host: MetaverseCardHost(isProcessing:false,onDisable:(){},onReauthorize:(){}),
+        ))), pluginStore:store, brightness:brightness, scale:brightness==Brightness.dark ? 1.4 : 1,
+      ));
+      for (var i=0; i<80 && find.byType(SkeletonBox).evaluate().isEmpty; i++) {
+        await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:25))); await tester.pump();
+      }
+      expect(find.byType(SkeletonBox),findsWidgets);
+      expect(find.byIcon(Symbols.chevron_right_rounded),findsNothing);
+      await snapshot(tester,'service-card-loading-${brightness.name}',settle:false);
+      final container = ProviderScope.containerOf(tester.element(find.byType(MetaversePluginCard)));
+      container.read(metaversePluginHostsProvider).refreshVisibleCards();
+      for (var i=0; i<80 && find.text('待付款').evaluate().isEmpty; i++) {
+        await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:25))); await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('3'),findsOneWidget);
+      expect(find.byType(SkeletonBox),findsNothing);
+      await snapshot(tester,'service-card-${brightness.name}');
+      expect(tester.takeException(),isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 2));
+      }
+    });
+  }
+
+  for (final width in [320.0, 800.0]) {
+    testWidgets('标题栏多操作横向滚动，窄弹层仍可关闭 $width', (tester) async {
+      tester.view.physicalSize = Size(width, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var invoked = false;
+      await tester.pumpWidget(app(Builder(builder: (context) => TextButton(
+        onPressed: () => showAppDialog<void>(context: context, builder: (_) => Dialog(
+          child: SizedBox(width: 560, height: 420, child: MetaversePluginPageFrame(
+            title: '页面', modal: true,
+            customTitle: const Text('一个较长的自定义标题', maxLines: 1, overflow: TextOverflow.ellipsis),
+            actions: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (var i = 0; i < 8; i++) IconButton(
+                tooltip: '操作 $i', icon: const Icon(Symbols.favorite_rounded),
+                onPressed: () => invoked = true,
+              ),
+            ]),
+            child: const Text('弹层正文'),
+          )),
+        )), child: const Text('打开测试弹层'),
+      )), scale: 1.4));
+      await tester.tap(find.text('打开测试弹层'));
+      await tester.pumpAndSettle();
+      final scroll = find.descendant(of: find.byType(AppSheetScaffold), matching: find.byWidgetPredicate(
+        (widget) => widget is SingleChildScrollView && widget.scrollDirection == Axis.horizontal,
+      ));
+      expect(tester.getSize(scroll).width, lessThanOrEqualTo(tester.getSize(find.byType(AppSheetScaffold)).width / 2));
+      expect(findMaterialTooltip('操作 7').hitTestable(), findsNothing);
+      await tester.drag(scroll, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(findMaterialTooltip('操作 7').hitTestable());
+      expect(invoked, isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byIcon(Symbols.close_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('弹层正文'), findsNothing);
+      expect(find.text('打开测试弹层'), findsOneWidget);
+    });
+  }
+
   for (final enabled in [true, false]) {
     testWidgets('应用更新保留原有插件 enabled=$enabled', (tester) async {
       await preferences.clear();
@@ -1469,7 +1562,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
   });
 
   final data = <String, Object?>{
-    'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
+    'overviewLoading':false,'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
     'accountName':'','usage':'','tradeNo':'','refundHint':'','couponHint':'','sellerProfileAvailable':true,'overviewError':'','value':'12.50','original':'20.00','discount':'38% 优惠','buyLabel':'立即兑换',
     'typeLabel':'自动发卡','category':'开发工具','sellerName':'tester','sellerAvatar':'',
     'rules':['每人累计限购 2 件','需要信任等级 TL1'],'metrics':[{'label':'库存','value':'18'},{'label':'已售','value':'32'},{'label':'浏览','value':'128'}],
@@ -1541,6 +1634,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         'title': '开发者工具包',
         'price': '12.50 LDC',
         'stock': '库存 18',
+        'sold': '已售 32', 'discount': '38% 优惠', 'originalLabel': '原价 20.00',
         'image': 'https://images.example.org/unavailable.png',
         'no': 'LD202611120042',
         'state': '待支付',
@@ -1552,6 +1646,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
         'title': '社区数字纪念卡与开发者工具兑换套装',
         'price': '3.00 LDC',
         'stock': '库存 不限',
+        'sold': '已售 8', 'discount': '', 'originalLabel': '',
         'image': '',
         'no': 'LD202611110039',
         'state': '已完成',
@@ -1588,6 +1683,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
           'BuyerOrders',
           'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant','Filters','Account','Messages',
         ]) {
+          final actionWidget = {'Market':'MarketActions','Product':'ProductActions','BuyerOrder':'OrderActions','Messages':'MessageActions'}[name];
           await tester.pumpWidget(
             app(
               Padding(
@@ -1642,6 +1738,10 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
               },
               brightness: brightness,
               scale: width == 320 ? 1.4 : 1,
+              barActions: actionWidget == null ? null : RemoteWidget(
+                runtime: runtime, widget: FullyQualifiedWidgetName(metaversePluginLibraryName, actionWidget),
+                data: DynamicContent({...data, 'favoriteLabel':'收藏商品','buyerBusy':false,'favorited':false,'unread':true}),
+              ),
             ),
           );
           await tester.pumpAndSettle();
@@ -1650,6 +1750,9 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
             await snapshot(tester, '${name.toLowerCase()}-${brightness.name}');
           }
           if (name == 'Product') {
+            final buy = find.widgetWithText(FilledButton, '立即兑换');
+            expect(tester.getRect(buy).center.dx, greaterThan(width / 2));
+            expect(tester.getRect(buy).right, closeTo(width - 16, 1));
             for (final failed in [false, true]) {
               await tester.pumpWidget(app(
                 RemoteWidget(
@@ -1677,6 +1780,11 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
                 await snapshot(tester, 'product-link-$failed-${brightness.name}');
               }
             }
+          }
+          if (name == 'Review') {
+            final confirm = find.widgetWithText(FilledButton, '确认兑换');
+            expect(tester.getRect(confirm).left, closeTo(16, 1));
+            expect(tester.getRect(confirm).right, closeTo(width - 16, 1));
           }
         }
       });

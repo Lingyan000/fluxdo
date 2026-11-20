@@ -40,6 +40,7 @@ class MetaversePluginSurfaceView extends StatefulWidget {
     required this.kind,
     this.page,
     this.navigationId,
+    this.builder,
     this.params = const {},
   });
 
@@ -48,6 +49,8 @@ class MetaversePluginSurfaceView extends StatefulWidget {
   final String? page;
   final String? navigationId;
   final Map<String, Object?> params;
+  /// 外壳与内容共用一个 surface，标题栏不会重复启动脚本或派发 page.open。
+  final Widget Function(BuildContext context, Widget content, Widget Function(String name)? render)? builder;
 
   @override
   State<MetaversePluginSurfaceView> createState() =>
@@ -212,34 +215,37 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
 
   @override
   Widget build(BuildContext context) {
+    Widget wrap(Widget content, [Widget Function(String name)? render]) =>
+        widget.builder?.call(context, content, render) ?? content;
     final surface = _surface;
     final widgets = _widgets;
     final error = _error;
-    if (error != null) { return MetaversePluginErrorView(message: '$error', pluginId: widget.host.id, onRetry: () {
+    if (error != null) { return wrap(MetaversePluginErrorView(message: '$error', pluginId: widget.host.id, onRetry: () {
       setState(() => _error = null);
       _syncForeground();
-    }); }
+    })); }
     if (surface == null || widgets == null) {
-      return const Padding(
+      return wrap(const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
         child: Center(child: LoadingSpinner(size: 28)),
-      );
+      ));
     }
     final manifest = widget.host.manifest;
     final widgetName = widget.kind == MetaversePluginSurfaceKind.card
         ? manifest.cardWidget
         : manifest.page(widget.page ?? '')?.widget;
     if (widgetName == null) {
-      return MetaversePluginErrorView(message: '${widget.page}');
+      return wrap(MetaversePluginErrorView(message: '${widget.page}'));
     }
     final data = widget.host.attachSurface(surface, context);
-    return RemoteWidget(
+    Widget render(String name) => RemoteWidget(
       runtime: widgets,
-      widget: FullyQualifiedWidgetName(metaversePluginLibraryName, widgetName),
+      widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
       data: data,
       onEvent: (name, arguments) =>
           widget.host.dispatchUserEvent(surface, name, arguments),
     );
+    return wrap(render(widgetName), render);
   }
 }
 

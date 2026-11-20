@@ -68,6 +68,8 @@ class MetaversePluginPageSpec {
     this.modal = false,
     this.scroll = true,
     this.navigation,
+    this.appBarTitle,
+    this.appBarActions,
   });
 
   final String id;
@@ -78,6 +80,9 @@ class MetaversePluginPageSpec {
   final bool modal;
   final bool scroll;
   final MetaverseNavigationSpec? navigation;
+  /// 与页面内容共享数据和点击上下文的标题栏组件。
+  final String? appBarTitle;
+  final String? appBarActions;
 }
 
 @immutable
@@ -344,6 +349,18 @@ class MetaversePluginManifest {
         throw MetaverseManifestException('$field.scroll', '需要 schema 6 和布尔值');
       }
       MetaverseNavigationSpec? navigation;
+      String? appBarTitle;
+      String? appBarActions;
+      if (item.containsKey('appBar')) {
+        final bar = item['appBar'];
+        if (bar is! Map<String, dynamic> || bar.isEmpty ||
+            bar.keys.any((key) => key != 'title' && key != 'actions') ||
+            !requiredFeatures.contains(PluginFeature.pageChrome.name)) {
+          throw MetaverseManifestException('$field.appBar', '标题栏须声明 pageChrome，并提供 title 或 actions 组件');
+        }
+        if (bar.containsKey('title')) appBarTitle = _widgetName(bar, 'title', '$field.appBar');
+        if (bar.containsKey('actions')) appBarActions = _widgetName(bar, 'actions', '$field.appBar');
+      }
       if (item['navigation'] case final raw?) {
         if (schema < 11 || raw is! Map<String, dynamic> || presentation == 'modal') {
           throw MetaverseManifestException('$field.navigation', '导航入口需要 schema 11 的普通页面');
@@ -361,6 +378,8 @@ class MetaversePluginManifest {
           modal: presentation == 'modal',
           scroll: item['scroll'] != false,
           navigation: navigation,
+          appBarTitle: appBarTitle,
+          appBarActions: appBarActions,
         ),
       );
     }

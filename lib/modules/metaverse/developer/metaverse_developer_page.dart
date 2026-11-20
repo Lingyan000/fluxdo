@@ -24,6 +24,7 @@ import '../plugin/ui/metaverse_plugin_dialogs.dart';
 import '../plugin/ui/metaverse_confirmation_sheet.dart';
 import '../plugin/runtime/flutter_js_script_engine.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
+import '../plugin/ui/metaverse_plugin_page.dart';
 import '../plugin/metaverse_component_contract.dart';
 import 'metaverse_api_examples.dart';
 import 'metaverse_development_page.dart';
@@ -481,6 +482,12 @@ class _DeveloperGuides extends StatelessWidget {
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),
+        Text(l.metaverse_pageChromeTitle, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(l.metaverse_pageChromeGuide),
+        const SizedBox(height: 12),
+        const SizedBox(height: 240, child: _PageChromePreview()),
+        const SizedBox(height: 24),
         SegmentedCardGroup(
           color: PageBackgroundScope.contentColor(
             context,
@@ -522,4 +529,27 @@ class _DeveloperGuides extends StatelessWidget {
       ],
     );
   }
+}
+
+class _PageChromePreview extends StatefulWidget {
+  const _PageChromePreview();
+  @override
+  State<_PageChromePreview> createState() => _PageChromePreviewState();
+}
+
+class _PageChromePreviewState extends State<_PageChromePreview> {
+  bool _selected = false;
+  @override
+  Widget build(BuildContext context) => MetaversePluginPageFrame(
+    title: context.l10n.metaverse_pageChromeTitle,
+    workspace: true,
+    actions: IconButton(
+      tooltip: context.l10n.common_confirm,
+      isSelected: _selected,
+      icon: const Icon(Symbols.bookmark_rounded),
+      selectedIcon: const Icon(Symbols.bookmark_rounded, fill: 1),
+      onPressed: () => setState(() => _selected = !_selected),
+    ),
+    child: Center(child: Icon(Symbols.bookmark_rounded, size: 48, fill: _selected ? 1 : 0)),
+  );
 }

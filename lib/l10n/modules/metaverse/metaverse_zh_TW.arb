@@ -1,4 +1,6 @@
 {
+  "metaverse_pageChromeTitle": "頁面標題列",
+  "metaverse_pageChromeGuide": "宣告 pageChrome，並在 pages[].appBar 以 title、actions 引用元件。插槽與內文共用資料和事件；返回、關閉由宿主保留。點擊下方書籤可體驗標題列操作與內容連動。",
   "metaverse_autoUpdates": "外掛程式自動更新",
   "metaverse_updateFrequency": "更新頻率",
   "metaverse_updateOff": "關閉",

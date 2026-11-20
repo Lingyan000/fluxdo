@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -66,13 +66,19 @@
       "widget": "BuyerOrder",
       "scroll": false,
       "title": "订单详情",
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "actions": "OrderActions"
+      }
     },
     {
       "id": "market",
       "widget": "Market",
       "scroll": false,
-      "title": "LD士多"
+      "title": "LD士多",
+      "appBar": {
+        "actions": "MarketActions"
+      }
     },
     {
       "id": "review",
@@ -85,7 +91,10 @@
       "widget": "Product",
       "scroll": false,
       "title": "商品详情",
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "actions": "ProductActions"
+      }
     },
     {
       "id": "favorites",
@@ -143,7 +152,10 @@
       "id": "messages",
       "widget": "Messages",
       "title": "士多消息",
-      "scroll": false
+      "scroll": false,
+      "appBar": {
+        "actions": "MessageActions"
+      }
     }
   ],
   "links": [
@@ -166,6 +178,7 @@
     "contentPresentation",
     "runtimePermissions",
     "modalDismiss",
-    "eventStreams"
+    "eventStreams",
+    "pageChrome"
   ]
 }

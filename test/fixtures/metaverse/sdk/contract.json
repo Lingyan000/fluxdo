@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.8.0",
+  "sdkVersion": "0.9.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
@@ -29,7 +29,8 @@
     "eventStreams",
     "dataMigrations",
     "hostEnvironment",
-    "pluginPreferences"
+    "pluginPreferences",
+    "pageChrome"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -41,5 +42,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "b8e1502fc93696f867cac44a8fbbea32b8f49ba7"
   },
-  "typesSha256": "79bae0ca236cb74ba4e72fb39223449a270b94c4b4537efd6b5a383d4fd562b8"
+  "typesSha256": "7c76608782c8fb2502f40ca5e844034a7f708402c17e14e369e4b7e7fb583579"
 }

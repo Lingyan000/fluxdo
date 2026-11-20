@@ -2,7 +2,9 @@ part of 'metaverse_widget_library.dart';
 
 /// 数据由插件提供；窄屏和大字下自动换行，不要求插件计算像素宽度。
 Widget _buildStatistics(BuildContext context, DataSource source) {
-  final count = source.length(['items']).clamp(0, 12);
+  final loading = source.v<bool>(['loading']) == true;
+  final itemCount = source.length(['items']).clamp(0, 12);
+  final count = loading && itemCount == 0 ? 4 : itemCount;
   // RFW 数据订阅必须在组件构建时建立，不能延迟到布局阶段。
   final items = [
     for (var i = 0; i < count; i++)
@@ -21,7 +23,7 @@ Widget _buildStatistics(BuildContext context, DataSource source) {
       );
       final rows = math.max(1, (count / capacity).ceil());
       final columns = math.max(1, (count / rows).ceil());
-      return Wrap(
+      final content = Wrap(
         spacing: 12,
         runSpacing: 16,
         children: [
@@ -31,13 +33,13 @@ Widget _buildStatistics(BuildContext context, DataSource source) {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  if (loading) const SkeletonBox(width: 56, height: 28) else Text(
                     item.value,
                     style: Theme.of(context).textTheme.headlineSmall
                         ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  if (loading) const SkeletonBox(width: 72, height: 16) else Text(
                     item.label,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -48,6 +50,11 @@ Widget _buildStatistics(BuildContext context, DataSource source) {
             ),
         ],
       );
+      return loading
+          ? Semantics(label: context.l10n.common_loadingData, liveRegion: true,
+              child: ExcludeSemantics(child: MediaQuery.disableAnimationsOf(context)
+                ? content : Skeleton(child: content)))
+          : content;
     },
   );
 }

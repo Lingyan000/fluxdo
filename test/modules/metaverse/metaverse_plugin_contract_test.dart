@@ -51,6 +51,22 @@ class _Adapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('标题栏插槽须声明能力、合法组件，安装时确认组件存在', () {
+    final raw = {..._example(), 'schema': 12, 'apiVersion': 1, 'requiredFeatures': ['pageChrome'], 'links': <Object?>[],
+      'pages': [{'id':'test','widget':'Body','title':'页面','appBar':{'title':'Title','actions':'Actions'}}]};
+    final manifest = _parse(raw);
+    expect(manifest.page('test')!.appBarTitle, 'Title');
+    expect(manifest.page('test')!.appBarActions, 'Actions');
+    expect(() => _parse({...raw, 'requiredFeatures': <String>[]}), throwsA(isA<MetaverseManifestException>()));
+    for (final bar in [{}, {'leading':'Back'}, {'actions':3}, {'title':'bad.name'}]) {
+      expect(() => _parse({...raw,'pages':[{'id':'test','widget':'Body','title':'页面','appBar':bar}]}), throwsA(isA<MetaverseManifestException>()));
+    }
+    expect(() => MetaversePluginInstaller.validateUi(manifest,
+      'import fluxdo; widget ${manifest.cardWidget} = SizedBoxShrink(); widget Body = SizedBoxShrink();'),
+      throwsA(isA<MetaversePluginInstallException>()));
+    expect(() => MetaversePluginInstaller.validateUi(manifest,
+      'import fluxdo; widget ${manifest.cardWidget} = SizedBoxShrink(); widget Body = SizedBoxShrink(); widget Title = Label(text:"标题"); widget Actions = SizedBoxShrink();'), returnsNormally);
+  });
   test('整卡入口必须声明能力且指向普通页面，旧卡片仍兼容', () {
     final raw=jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()) as Map<String,dynamic>;
     expect(_parse(raw).cardPage,'market');

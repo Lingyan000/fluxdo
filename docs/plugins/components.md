@@ -51,11 +51,11 @@ widget SearchPage = PageLayout(
 | `SelectableLabel` | `text` | 可选择复制的 bodyMedium 文本 |
 | `Label` | `text`、`style: bodyMedium`、`color`、`bold: false`、`maxLines`、`align` | bold 使用 w600，指定 maxLines 后溢出显示省略号 |
 | `Surface` | `child`、`radius: 16`、`padding: [16.0]`、`color` | `onTap`。圆角经过应用形状 token，默认颜色结合当前页面背景 |
-| `Button` | `label`、`icon`、`variant`、`enabled: true`、`loading: false` | `onPressed`。variant 支持 tonal、outlined、text，默认填充按钮。loading 时显示进度并禁用 |
-| `IconButton` | `icon`、`tooltip` | `onPressed`。未知图标使用 extension，省略回调时禁用 |
+| `Button` | `label`、`icon`、`variant`、`enabled: true`、`loading: false`、`fullWidth: false` | `onPressed`。variant 支持 tonal、outlined、text，默认填充按钮。loading 时显示进度并禁用；fullWidth 填满父级分配的宽度，在 Row 中应包入 Expanded |
+| `IconButton` | `icon`、`tooltip`、`enabled: true`、`loading: false`、可选 `selected` | `onPressed`。加载或禁用时不能点击；选中图标使用实心填充。未知图标使用 extension，省略回调时禁用 |
 | `Symbol` | `name`、`size`、`color` | 未知图标使用 extension |
 | `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0`、`preview: false` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
-| `Statistics` | `items: [{value, label}]`，最多 12 项 | 数字与标签自动分列，大字与窄屏换行。无内置点击行为，可放在整卡入口中 |
+| `Statistics` | `items: [{value, label}]`，最多 12 项；`loading: false` | 数字与标签自动分列，大字与窄屏换行。加载期间显示骨架，不把未知值当作 0。无内置点击行为，可放在整卡入口中 |
 | `Amount` | `value`、`unit`、`original`、`style: titleLarge`、`color` | 主题金额，原值删除线，空间不足时换行；值由插件格式化 |
 | `QuantityInput` | `value`、`min: 1`、`max: 9999`、`enabled: true` | `onChanged` 回传 `{value: number}`，边界禁用增减；脚本回写 value |
 | `Markdown` | `text`，最多 131072 字符 | 标题、列表、表格、代码、强调与链接，原始 HTML 作为文本。图片通过插件图片出口；`onLink` 仅在点击时回传 `{url}` |
@@ -74,7 +74,28 @@ widget SearchPage = PageLayout(
 
 颜色 token 支持 primary、secondary、tertiary、error 及其 onX、XContainer、onXContainer，另有 surface、onSurface、onSurfaceVariant、surfaceContainerLowest、surfaceContainerLow、surfaceContainer、surfaceContainerHigh、surfaceContainerHighest、outline、outlineVariant。
 
-图标名支持 add、arrow_forward、bolt、bookmark、calendar、chart、check、check_circle、chevron_right、close、cloud、code、copy、credit_card、delete、download、edit、error、extension、favorite、gift、group、history、home、hub、image、info、key、link、lock、mail、notifications、open_in_new、payments、person、public、refresh、schedule、search、settings、share、shopping_cart、star、storefront、sync、tag、token、trending_up、verified、visibility、wallet、warning。
+图标名支持 add、arrow_forward、bolt、bookmark、calendar、chart、check、check_circle、chevron_right、close、cloud、code、copy、credit_card、delete、done_all、download、edit、error、extension、favorite、gift、group、history、home、hub、image、info、key、link、lock、mail、notifications、open_in_new、payments、person、public、refresh、schedule、search、settings、share、shopping_cart、star、storefront、sync、tag、token、trending_up、verified、visibility、wallet、warning。
+
+## 页面标题栏
+
+声明 `pageChrome` 后，`pages[].appBar` 可用 `title`、`actions` 引用界面文件内的组件。普通页、底栏页和弹层使用同一契约；标题栏和正文共享 `data`、`ctx.surface` 与用户事件，不会额外触发 `page.open`。省略 title 时使用清单的页面标题。
+
+```json
+{"id":"items","widget":"Items","title":"列表","scroll":false,
+ "appBar":{"title":"PageTitle","actions":"PageActions"}}
+```
+
+```text
+widget PageTitle = Label(text: data.title, maxLines: 1);
+widget PageActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "favorite", tooltip: "收藏", selected: data.saved,
+    loading: data.saving, onPressed: event "save" {}),
+]);
+```
+
+返回、关闭、拖柄及安全区由宿主保留，插件不能覆盖。操作区域最多占当前页面宽度的一半，超出后横向滚动；标题栏组件高度受标准栏高约束。标题组件应控制行数，操作组件使用内容宽度的 Row。搜索、分类等较高内容可继续放到 `toolbar`，底部主操作放 `footer` / `actions`。应用开发中心提供可点击的标题栏演示。
+
+从链接打开的页面，未提供自定义操作区时由宿主显示浏览器入口。声明 `appBar.actions` 后由插件决定操作区内容，需要网页入口时调用 `browser.open`，宿主不再重复添加同类按钮。
 
 ## 网格布局
 

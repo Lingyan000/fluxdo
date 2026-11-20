@@ -152,6 +152,7 @@
   "Button": {
     "parameters": [
       "enabled",
+      "fullWidth",
       "icon",
       "label",
       "loading",
@@ -160,6 +161,9 @@
     ],
     "types": {
       "enabled": [
+        "boolean"
+      ],
+      "fullWidth": [
         "boolean"
       ],
       "icon": [
@@ -798,16 +802,28 @@
   },
   "IconButton": {
     "parameters": [
+      "enabled",
       "icon",
+      "loading",
       "onPressed",
+      "selected",
       "tooltip"
     ],
     "types": {
+      "enabled": [
+        "boolean"
+      ],
       "icon": [
         "string"
       ],
+      "loading": [
+        "boolean"
+      ],
       "onPressed": [
         "event"
+      ],
+      "selected": [
+        "boolean"
       ],
       "tooltip": [
         "string"
@@ -1507,7 +1523,8 @@
   },
   "Statistics": {
     "parameters": [
-      "items"
+      "items",
+      "loading"
     ],
     "types": {
       "items": [
@@ -1530,6 +1547,9 @@
         "integer",
         "number",
         "string"
+      ],
+      "loading": [
+        "boolean"
       ]
     }
   },

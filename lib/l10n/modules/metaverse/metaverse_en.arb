@@ -1,4 +1,6 @@
 {
+  "metaverse_pageChromeTitle": "Page title bar",
+  "metaverse_pageChromeGuide": "Declare pageChrome and reference widgets with title and actions in pages[].appBar. Slots share page data and events; the host keeps back and close controls. Tap the bookmark below to try an action that updates the content.",
   "metaverse_autoUpdates": "Plugin auto-updates",
   "metaverse_updateFrequency": "Update frequency",
   "metaverse_updateOff": "Off",

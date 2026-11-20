@@ -153,6 +153,7 @@ const metaverseComponentContract = {
   "Button": {
     "parameters": [
       "enabled",
+      "fullWidth",
       "icon",
       "label",
       "loading",
@@ -161,6 +162,9 @@ const metaverseComponentContract = {
     ],
     "types": {
       "enabled": [
+        "boolean"
+      ],
+      "fullWidth": [
         "boolean"
       ],
       "icon": [
@@ -799,16 +803,28 @@ const metaverseComponentContract = {
   },
   "IconButton": {
     "parameters": [
+      "enabled",
       "icon",
+      "loading",
       "onPressed",
+      "selected",
       "tooltip"
     ],
     "types": {
+      "enabled": [
+        "boolean"
+      ],
       "icon": [
         "string"
       ],
+      "loading": [
+        "boolean"
+      ],
       "onPressed": [
         "event"
+      ],
+      "selected": [
+        "boolean"
       ],
       "tooltip": [
         "string"
@@ -1508,7 +1524,8 @@ const metaverseComponentContract = {
   },
   "Statistics": {
     "parameters": [
-      "items"
+      "items",
+      "loading"
     ],
     "types": {
       "items": [
@@ -1531,6 +1548,9 @@ const metaverseComponentContract = {
         "integer",
         "number",
         "string"
+      ],
+      "loading": [
+        "boolean"
       ]
     }
   },

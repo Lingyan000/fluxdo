@@ -169,6 +169,7 @@ class MetaversePluginInstaller {
     final required = {
       ?manifest.cardWidget,
       for (final page in manifest.pages) page.widget,
+      for (final page in manifest.pages) ...[?page.appBarTitle, ?page.appBarActions],
     };
     final missing = required.difference(defined);
     if (missing.isNotEmpty) {

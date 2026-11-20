@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
@@ -102,6 +103,36 @@ void main() {
     expect(find.text('9'), findsOneWidget);
     expect(find.text('统计项目0'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('统计加载不展示旧数字，完成后恢复数据且不残留动画', (tester) async {
+    data.updateAll({'loading':false,'stats':[{'value':'24','label':'订单'}]});
+    await show(tester, 'Statistics(loading:data.loading,items:data.stats)');
+    data.update('loading', true);
+    await tester.pump();
+    expect(find.text('24'), findsNothing);
+    expect(find.byType(SkeletonBox), findsWidgets);
+    data.update('stats', [{'value':'26','label':'订单'}]);
+    data.update('loading', false);
+    await tester.pumpAndSettle();
+    expect(find.text('26'), findsOneWidget);
+    expect(find.byType(Skeleton), findsNothing);
+  });
+
+  testWidgets('全宽按钮填满底栏，图标操作的加载与禁用阻止点击', (tester) async {
+    data.updateAll({'loading':false,'enabled':true,'selected':false});
+    await show(tester, 'PageLayout(loading:false,children:[IconButton(icon:"favorite",selected:data.selected,loading:data.loading,enabled:data.enabled,onPressed:event "save" {})],footer:Button(label:"确认",fullWidth:true,onPressed:event "confirm" {}))');
+    final button = find.byType(FilledButton);
+    expect(tester.getRect(button).left, 16);
+    expect(tester.getRect(button).right, 784);
+    await tester.tap(find.byType(IconButton));
+    expect(events.single.name, 'save');
+    data.update('loading', true); await tester.pump();
+    expect(tester.widget<IconButton>(find.byType(IconButton)).onPressed, isNull);
+    data.updateAll({'loading':false,'enabled':false,'selected':true}); await tester.pumpAndSettle();
+    expect(tester.widget<IconButton>(find.byType(IconButton)).isSelected, isTrue);
+    expect(tester.widget<IconButton>(find.byType(IconButton)).onPressed, isNull);
+    expect(events.length, 1);
   });
 
   testWidgets('数量输入遵守边界和禁用状态，回传受控值', (tester) async {

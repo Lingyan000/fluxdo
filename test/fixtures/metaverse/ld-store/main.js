@@ -524,7 +524,7 @@ function productView(raw) {
   const type=p.productType || p.type || 'normal';
   return {id:display(p.id),title:display(p.name),image:display(p.imageUrl),
     price:money(value),value:Number.isFinite(value) ? value.toFixed(2) : '—',original,
-    discount:original ? Math.round((1-value/base)*100)+'% 优惠' : '',
+    discount:original ? Math.round((1-value/base)*100)+'% 优惠' : '',originalLabel:original ? '原价 '+original : '',
     type, typeLabel:({cdk:'自动发卡',normal:flag(p.autoDelivery) ? '自动发货' : '手动发货',link:'外链商品',store:'小店'})[type] || '商品',
     typeIcon:({cdk:'key',normal:'gift',link:'link',store:'storefront'})[type] || 'gift',
     category:display(p.categoryName), stock:'库存 '+stockLabel(p),sold:'已售 '+display(p.soldCount ?? 0),
@@ -621,7 +621,7 @@ async function detail(ctx) {
     if (!p || p.id == null || String(p.id) !== String(ctx.params.id)) throw Error('找不到这件商品');
     s.id = String(p.id);
     s.favorited = p.isFavorited === true;
-    write(ctx,{favoriteLabel:s.favorited ? '已收藏' : '收藏商品',buyerError:''});
+    write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? '已收藏' : '收藏商品',buyerError:''});
     s.product=p;
     s.linkProduct = ['link','store'].includes(p.productType || p.type);
     ctx.setData('linkProduct',s.linkProduct);
@@ -841,7 +841,7 @@ function showOrderFilters(ctx) {
   ctx.setData('orderFilters',orderFilters.map(filter => ({...filter,selected:filter.status === status})));
 }
 async function loadOverview(ctx) {
-  write(ctx,{refundHint:"",couponHint:"",accountName:""});
+  write(ctx,{refundHint:'',couponHint:'',accountName:'',overviewLoading:true,overviewError:''});
   const s=market(ctx);
   const revision=s ? s.overviewRevision=(s.overviewRevision || 0)+1 : 0;
   const current=()=>!s || (market(ctx)===s && s.overviewRevision===revision);
@@ -863,7 +863,8 @@ async function loadOverview(ctx) {
       ctx.setData('stats',[{label:'在售商品',value:display(data.products?.online ?? '—')},{label:'今日订单',value:display(data.orders?.today ?? '—')},{label:'店铺',value:display(data.stores ?? '—')}]);
     }
     ctx.setData('overviewError','');
-  } catch (_) {if(current())write(ctx,{stats:[],overviewError:'暂时无法更新统计，仍可进入浏览'});}
+  } catch (_) {if(current())write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});}
+  finally {if(current())ctx.setData('overviewLoading',false);}
 }
 fluxdo.on('card.load',ctx=>{views.set(ctx.surface,{ctx,seq:0,visibility:0});syncNotifications();return loadOverview(ctx);});
 fluxdo.on('card.hide',ctx=>{const s=market(ctx);if(s)s.hidden=true;return syncNotifications();});
@@ -1357,7 +1358,7 @@ fluxdo.on('favorite',ctx=>buyerAction(ctx,async s=>{
   if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error('请先登录士多');}
   await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/favorite',s.favorited ? 'DELETE' : 'POST');
   s.favorited=!s.favorited;invalidateViews(s);
-  write(ctx,{favoriteLabel:s.favorited ? '已收藏' : '收藏商品'});
+  write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? '已收藏' : '收藏商品'});
 }));
 fluxdo.on('comment',ctx=>fluxdo.navigate('comment',{id:ctx.params.id}));
 fluxdo.on('postComment',(ctx,a)=>buyerAction(ctx,async s=>{

@@ -1,4 +1,6 @@
 {
+  "metaverse_pageChromeTitle": "页面标题栏",
+  "metaverse_pageChromeGuide": "声明 pageChrome，并在 pages[].appBar 用 title、actions 引用组件。插槽与正文共享数据和事件；返回、关闭由宿主保留。点击下方书签可体验标题栏操作与内容联动。",
   "metaverse_autoUpdates": "插件自动更新",
   "metaverse_updateFrequency": "更新频率",
   "metaverse_updateOff": "关闭",

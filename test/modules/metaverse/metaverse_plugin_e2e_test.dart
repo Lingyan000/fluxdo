@@ -25,6 +25,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -497,12 +498,24 @@ Future<void> main() async {
       }
     });
 
-    Widget app(Widget child) => TranslationProvider(
+    Widget app(Widget child) {
+      if (child is MetaversePluginSurfaceView && child.page != null && child.builder == null) {
+        final source = child;
+        final page = source.host.manifest.page(source.page!);
+        child = MetaversePluginSurfaceView(key:source.key, host:source.host, kind:source.kind,
+          page:source.page,params:source.params,navigationId:source.navigationId,
+          builder:(context,content,render)=>MetaversePluginPageFrame(title:page!.title,workspace:true,
+            actions:render!=null && page.appBarActions!=null ? render(page.appBarActions!) : null,
+            child:content),
+        );
+      }
+      return TranslationProvider(
       child: MaterialApp(
         navigatorObservers: [appRouteObserver],
         home: Scaffold(body: child is MetaversePluginSurfaceView && child.page != null ? child : SingleChildScrollView(child: child)),
       ),
-    );
+      );
+    }
 
     /// 等插件界面到达某个状态。
     ///
@@ -524,10 +537,12 @@ Future<void> main() async {
     /// 框架不允许测试结束时还留着未触发的定时器。
     void pluginTest(String name, Future<void> Function(WidgetTester) body) {
       testWidgets(name, (tester) async {
-        await body(tester);
-        await tester.pumpWidget(const SizedBox.shrink());
-        host.shutdown();
-        await tester.pump(const Duration(seconds: 3));
+        try { await body(tester); }
+        finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          host.shutdown();
+          await tester.pump(const Duration(seconds: 3));
+        }
       });
     }
 
@@ -573,6 +588,36 @@ Future<void> main() async {
       expect(find.text('已发货'), findsOneWidget);
       expect(find.text('¥59'), findsOneWidget);
       expect(api.requests.single.uri.path, '/v1/orders/42');
+    });
+
+    pluginTest('标题栏和正文共用数据与点击来源，页面只初始化一次', (tester) async {
+      await tester.runAsync(() => store.writeCode(manifest.id, (
+        ui: '''import fluxdo;
+widget Card = SizedBoxShrink();
+widget OrderPage = Label(text:data.count);
+widget PageTitle = Label(text:data.title);
+widget PageActions = IconButton(icon:"add",tooltip:"增加",onPressed:event "increase" {});
+''',
+        script: '''let opens=0;
+fluxdo.on('page.open',ctx=>{ctx.setData('count',String(++opens));ctx.setData('title','标题 '+opens);});
+fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','标题 2');await ctx.api.navigate('order',{id:'bar'});});''',
+      )));
+      await tester.pumpWidget(app(MetaversePluginSurfaceView(
+        host: host, kind: MetaversePluginSurfaceKind.page, page: 'order',
+        builder: (context, content, render) => MetaversePluginPageFrame(
+          title: '页面', workspace:true, customTitle: render?.call('PageTitle'),
+          actions: render?.call('PageActions'), child: content,
+        ),
+      )));
+      await settle(tester, () => find.text('标题 1').evaluate().isNotEmpty);
+      expect(find.text('1'), findsOneWidget);
+      await tester.tap(findMaterialTooltip('增加'));
+      await settle(tester, () => delegate.pages.isNotEmpty);
+      expect(find.text('标题 2'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(delegate.pages, ['order']);
+      expect(delegate.pageArguments.single['id'], 'bar');
+      expect(tester.takeException(), isNull);
     });
 
     Future<void> authorizeShop() => store.writeCredential(
@@ -1491,8 +1536,7 @@ Future<void> main() async {
           () => find.text('仅用于离线测试的交付说明').evaluate().isNotEmpty,
         );
         service.expired = true;
-        await tester.ensureVisible(find.text('刷新订单'));
-        await tester.tap(find.text('刷新订单'));
+        await tester.tap(findMaterialTooltip('刷新订单'));
         await settle(tester, () => find.text('士多会话已失效。').evaluate().isNotEmpty);
         expect(find.text('FIX-1'), findsNothing);
         expect(find.text('仅用于离线测试的交付说明'), findsNothing);
@@ -1534,22 +1578,25 @@ Future<void> main() async {
           .hostFor(installed!);
       const link =
           'https://ldcstore.com/product/d553779c-83ef-48e4-98c5-a8446c78d5ec';
+      try {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
           child: app(
-            Builder(
-              builder: (context) => Column(
+            MetaversePluginSurfaceView(
+              host: pluginHost,
+              kind: MetaversePluginSurfaceKind.page,
+              page: 'market',
+              builder: (context, content, render) => Column(
                 children: [
                   TextButton(
                     onPressed: () => openMetaverseLink(context, link),
                     child: const Text('帖子链接'),
                   ),
-                  MetaversePluginSurfaceView(
-                    host: pluginHost,
-                    kind: MetaversePluginSurfaceKind.page,
-                    page: 'market',
-                  ),
+                  Expanded(child: MetaversePluginPageFrame(
+                    title: 'LD士多', workspace: true,
+                    actions: render?.call('MarketActions'), child: content,
+                  )),
                 ],
               ),
             ),
@@ -1561,7 +1608,7 @@ Future<void> main() async {
         shop.requests.where((r) => r.uri.host == 'packages.example.org'),
         hasLength(3),
       );
-      await tester.tap(find.text('筛选'));
+      await tester.tap(findMaterialTooltip('筛选商品'));
       final low = find.text('低价');
       await settle(tester, () => low.evaluate().isNotEmpty);
       await tester.pumpAndSettle();
@@ -1618,8 +1665,11 @@ Future<void> main() async {
         shop.requests.where((r) => r.uri.path == '/api/shop/products'),
         hasLength(productReads),
       );
-      await tester.pumpWidget(const SizedBox.shrink());
-      container.dispose();
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(() async => container.dispose());
+        await tester.pump(const Duration(seconds: 2));
+      }
     });
 
     pluginTest('脚本不能自行跳转：没有用户点击时 openUrl / navigate / credentials.request 被拒', (
