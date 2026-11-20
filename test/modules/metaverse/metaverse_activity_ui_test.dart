@@ -25,6 +25,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/services/navigation/app_route_observer.dart';
+import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
@@ -33,7 +34,6 @@ import 'package:rfw/rfw.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/preview_fonts.dart';
-import 'metaverse_navigation_forum_test.dart' show Secrets;
 
 const _bundle = 'test/fixtures/metaverse/activity-feed-1.2.0.fluxplugin';
 const _plugin = 'community.fluxdo.activity';
@@ -272,7 +272,7 @@ void main() {
       overrides: [
         currentUserProvider.overrideWith(_Account.new),
         sharedPreferencesProvider.overrideWithValue(prefs),
-        secretStoreProvider.overrideWithValue(Secrets()),
+        secretStoreProvider.overrideWithValue(InMemorySecretStore()),
         metaversePluginDirectoryProvider.overrideWith((_) async => root),
         metaverseScriptEngineFactoryProvider.overrideWithValue(
           () async => engine = await IsolateScriptEngine.spawn(),

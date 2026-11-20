@@ -90,23 +90,29 @@ class _NoReward extends LdcRewardCredentialsNotifier {
   Future<LdcRewardCredentials?> build() async => null;
 }
 
-class _MemoryCodeStore extends MetaversePluginStore {
-  _MemoryCodeStore(SharedPreferences preferences)
+class _FixtureCodeStore extends MetaversePluginStore {
+  factory _FixtureCodeStore(SharedPreferences preferences) {
+    final root = Directory.systemTemp.createTempSync('plugin-native-ui-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    return _FixtureCodeStore._(preferences, root);
+  }
+  _FixtureCodeStore._(SharedPreferences preferences, this.root)
     : super(
         preferences: preferences,
         secretStore: InMemorySecretStore(),
-        rootDirectory: () => throw StateError('测试不读写文件'),
+        rootDirectory: () async => root,
       );
+  final Directory root;
   MetaversePluginCode? written;
   @override
   Future<void> writeCode(String id, MetaversePluginCode code) async {
+    await super.writeCode(id, code);
     written = code;
   }
 
   @override
-  Future<MetaversePluginCode> readCode(String id) async => written!;
-  @override
-  Future<Map<String, Object?>> readStorage(String id) async => {};
+  Future<MetaversePluginCode> readCode(String id) async =>
+      written ?? await super.readCode(id);
 }
 
 class _EmptyPlugins extends MetaversePluginsController {
@@ -195,7 +201,7 @@ void main() {
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reducedMotion = false,
-    MetaversePluginStore? pluginStore,
+    _FixtureCodeStore? pluginStore,
   }) {
     const seed = Colors.indigo;
     final theme = buildAppTheme(
@@ -209,6 +215,7 @@ void main() {
     return ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
+        currentUserProvider.overrideWith(_FixtureUser.new),
         metaversePluginsProvider.overrideWith(
           pluginStore == null
               ? _EmptyPlugins.new
@@ -216,6 +223,8 @@ void main() {
         ),
         if (pluginStore != null) ...[
           metaversePluginStoreProvider.overrideWithValue(pluginStore),
+          metaversePluginDirectoryProvider.overrideWith((_) async => pluginStore.root),
+          metaverseTaskDriverProvider.overrideWithValue(null),
           metaverseServicesProvider.overrideWith(
             (ref) => [
               for (final plugin in ref.watch(metaversePluginsProvider))
@@ -254,7 +263,7 @@ void main() {
 
   testWidgets('系统文件打开先确认，取消保留现状，再次打开可安装', (tester) async {
     await preferences.clear();
-    final store = _MemoryCodeStore(preferences);
+    final store = _FixtureCodeStore(preferences);
     final manifest = jsonDecode(File('docs/examples/metaverse-plugin/plugin.json').readAsStringSync());
     final bundle = jsonEncode({
       'manifest': manifest,
@@ -312,7 +321,13 @@ void main() {
     await activateFile();
     await waitForSheet();
     await tester.tap(find.widgetWithText(FilledButton, l.metaverse_pluginInstall));
+    final success = find.text(l.metaverse_pluginInstalled(manifest['name'] as String));
+    for (var attempt = 0; attempt < 100 && success.evaluate().isEmpty; attempt++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
     await tester.pumpAndSettle();
+    expect(success, findsOneWidget);
     expect(store.loadIndex().single.id, manifest['id']);
     expect(store.loadIndex().single.enabled, isFalse);
     expect(store.written?.script, (jsonDecode(bundle)['files'] as Map)['main.js']);
@@ -944,7 +959,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     final manifest = MetaversePluginManifest.parse(
       jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
     );
-    final store = _MemoryCodeStore(preferences);
+    final store = _FixtureCodeStore(preferences);
     await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file')]);
     await tester.pumpWidget(app(MetaversePluginPermissionsPage(pluginId: manifest.id),
       pluginStore: store, scale: 1.4));
@@ -969,7 +984,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
     final manifest = MetaversePluginManifest.parse(
       jsonDecode(File('test/fixtures/metaverse/api1_token.json').readAsStringSync()),
     );
-    final store = _MemoryCodeStore(preferences);
+    final store = _FixtureCodeStore(preferences);
     await store.saveIndex([InstalledMetaversePlugin(manifest: manifest, source: 'file', enabled: true)]);
     bool? result;
     late MetaversePluginsController controller;
@@ -1173,7 +1188,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       const error = '登录在「服务回调」阶段收到异常响应（HTTP 403），请重试。';
-      final store = _MemoryCodeStore(preferences)
+      final store = _FixtureCodeStore(preferences)
         ..written = (
           ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
           script:
@@ -1253,7 +1268,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       await preferences.clear();
       final oldJson = jsonDecode(File('test/fixtures/metaverse/api1_shop.json').readAsStringSync()) as Map<String, dynamic>;
       oldJson['version'] = '1.6.0';
-      final store = _MemoryCodeStore(preferences);
+      final store = _FixtureCodeStore(preferences);
       await store.saveIndex([
         InstalledMetaversePlugin(
           manifest: MetaversePluginManifest.parse(oldJson, allowLegacyMetadata: true),
