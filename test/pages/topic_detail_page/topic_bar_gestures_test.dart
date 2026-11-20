@@ -117,6 +117,76 @@ void main() {
         (call.invocation.positionalArguments.last as Paint).color.a,
   ];
 
+  Future<void> expectReadingColors(
+    WidgetTester tester,
+    Finder trackFinder,
+    double fraction,
+  ) async {
+    final context = tester.element(trackFinder);
+    final track = tester.widget<TopicProgressTrack>(trackFinder);
+    final render = tester.renderObject<RenderCustomPaint>(
+      find.descendant(of: trackFinder, matching: find.byType(CustomPaint)),
+    );
+    final size = render.size;
+    final scheme = Theme.of(context).colorScheme;
+    final read = Color.alphaBlend(context.emphasis.selected, scheme.surface);
+    final unread = Color.alphaBlend(
+      scheme.outlineVariant.withValues(alpha: .55),
+      scheme.surface,
+    );
+    await tester.runAsync(() async {
+      const scale = 3.0;
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder)..scale(scale);
+      canvas.drawColor(scheme.surface, BlendMode.src);
+      render.painter!.paint(canvas, size);
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(
+        (size.width * scale).ceil(),
+        (size.height * scale).ceil(),
+      );
+      final bytes = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final step = 1 / size.width;
+      final split =
+          track.floatingEdge?.at(fraction).dx ?? size.width * fraction;
+      // 在分界两侧各取一个逻辑像素，也检查以前读过、现在已回滑的那段。
+      for (final f in [
+        step / 4,
+        .25,
+        .5,
+        .75,
+        1 - step / 4,
+        fraction - step,
+        fraction + step,
+      ]) {
+        if (f <= 0 || f >= 1 || f == fraction) continue;
+        final p =
+            track.floatingEdge?.at(f) ??
+            Offset(size.width * f, size.height / 2);
+        final x = (p.dx * scale).floor();
+        final offset = ((p.dy * scale).floor() * image.width + x) * 4;
+        final pixel = Color.fromARGB(
+          bytes.getUint8(offset + 3),
+          bytes.getUint8(offset),
+          bytes.getUint8(offset + 1),
+          bytes.getUint8(offset + 2),
+        );
+        expect(
+          pixel,
+          isSameColorAs(
+            (x + .5) / scale < split ? read : unread,
+            threshold: .008,
+          ),
+          reason: '进度 $fraction，采样位置 $f',
+        );
+      }
+      image.dispose();
+      picture.dispose();
+    });
+  }
+
   testWidgets('阅读时同一楼内的细线与悬浮顶边按实际位置逐帧绘制', (tester) async {
     current.value = 2;
     final reading = ValueNotifier(1.0);
@@ -135,32 +205,13 @@ void main() {
       );
       final initialTrack = tester.widget<TopicProgressTrack>(trackFinder);
       final render = tester.renderObject<RenderCustomPaint>(paint);
-      for (final amount in [1.25, 1.5, 1.75, 1.5]) {
+      for (final amount in [0.0, .04, 1.25, 1.5, 1.75, 1.5, 3.96, 4.0]) {
         reading.value = amount;
         expect(render.debugNeedsPaint, isTrue);
         await tester.pump();
         final track = tester.widget<TopicProgressTrack>(trackFinder);
         expect(track, same(initialTrack), reason: '楼内滚动只需重绘');
-        final fraction = amount / 4;
-        final edge = track.floatingEdge;
-        if (edge != null) {
-          final fill =
-              paintTrack(tester).invocations
-                      .lastWhere(
-                        (call) => call.invocation.memberName == #drawPath,
-                      )
-                      .invocation
-                      .positionalArguments
-                      .first
-                  as Path;
-          expect(fill.getBounds().right, closeTo(edge.at(fraction).dx, .15));
-        } else {
-          final fill = paintedCapsules(tester)[1];
-          expect(
-            fill.right - fill.height / 2,
-            closeTo(render.size.width * fraction, .01),
-          );
-        }
+        await expectReadingColors(tester, trackFinder, amount / 4);
         expect(current.value, 2);
       }
     }
@@ -172,19 +223,12 @@ void main() {
     for (final floor in [1, 5001, 10000]) {
       current.value = floor;
       await tester.pump();
-      final shapes = paintedCapsules(tester);
-      final bed = shapes.first, fill = shapes[1], grip = shapes.last;
+      final bed = paintedCapsules(tester).single;
       expect(bed.left, lessThanOrEqualTo(0));
       expect(bed.right, greaterThanOrEqualTo(bar.width));
       expect(tester.getTopLeft(track).dy + bed.top, closeTo(bar.top, .01));
-      expect(fill.left, bed.left);
-      expect(
-        fill.right,
-        closeTo((floor - 1) / 9999 * bar.width + bed.height / 2, .01),
-      );
-      expect(grip.width, TopicProgressSurface.docked.gripLength);
-      if (floor == 1) expect(grip.left, 0);
-      if (floor == 10000) expect(grip.right, bar.width);
+      expect(bed.height, TopicBottomBarMetrics.progressLineHeight);
+      await expectReadingColors(tester, track, (floor - 1) / 9999);
     }
     final finger = await tester.startGesture(bar.center);
     await finger.moveBy(const Offset(35, 0));
@@ -296,16 +340,12 @@ void main() {
     final track = find.byType(TopicProgressTrack);
     final rest = tester.widget<TopicProgressTrack>(track);
     expect(rest.surface, TopicProgressSurface.floating);
-    expect(
-      rest.startInset,
-      greaterThanOrEqualTo(
-        TopicBottomBarMetrics.floatingRadius + rest.surface.openThickness / 2,
-      ),
-    );
-    expect(rest.endInset, rest.startInset);
     final edge = rest.floatingEdge!;
     expect(edge.size, bar.size);
-    expect(edge.at(0).dx, inExclusiveRange(2.0, rest.startInset));
+    expect(
+      edge.at(0).dx,
+      inExclusiveRange(2.0, TopicBottomBarMetrics.floatingRadius),
+    );
     expect(edge.at(1).dx, closeTo(bar.width - edge.at(0).dx, .2));
     expect(edge.at(0).dy, closeTo(edge.at(1).dy, .2));
     expect(edge.at(1).dy - edge.at(.5).dy, closeTo(2, .1));
@@ -341,7 +381,13 @@ void main() {
         .descendant(of: indicator, matching: find.byType(FadeTransition))
         .first;
     expect(tester.widget<FadeTransition>(readoutFade).opacity.value, 0);
-    expect(mid.startInset, rest.startInset);
+    expect(
+      mid.startInset,
+      greaterThanOrEqualTo(
+        TopicBottomBarMetrics.floatingRadius + mid.surface.openThickness / 2,
+      ),
+    );
+    expect(mid.endInset, mid.startInset);
     final midY = tester.getCenter(track).dy;
     expect(midY, lessThan(restY));
     await tester.pumpAndSettle();
@@ -359,8 +405,8 @@ void main() {
     expect(bounds.right, closeTo(bar.right, .01));
     expect(bounds.top, greaterThan(bar.top / 2));
     final axisY = tester.getCenter(track).dy;
-    expect(bounds.contains(Offset(bar.left + rest.startInset, axisY)), isTrue);
-    expect(bounds.contains(Offset(bar.right - rest.endInset, axisY)), isTrue);
+    expect(bounds.contains(Offset(bar.left + mid.startInset, axisY)), isTrue);
+    expect(bounds.contains(Offset(bar.right - mid.endInset, axisY)), isTrue);
     expect(bounds.bottom, closeTo(bar.center.dy, .01));
     final backdrop =
         tester.widget<CustomPaint>(field).painter!
@@ -533,22 +579,20 @@ void main() {
     expect(find.text('逐楼'), findsNothing);
   });
 
-  testWidgets('远离握柄起拖仍基于当前楼层，沿顶边上移可直接逐楼', (tester) async {
+  testWidgets('远离当前阅读位置起拖仍基于当前楼层，沿顶边上移可直接逐楼', (tester) async {
     current.value = 5001;
     final bar = await showBar(tester);
     final track = find.byType(TopicProgressTrack);
     final idle = tester.widget<TopicProgressTrack>(track);
-    final width = bar.width - idle.startInset - idle.endInset;
     final x = bar.left + 66;
     final drag = await tester.startGesture(Offset(x, bar.center.dy));
     await drag.moveBy(const Offset(24, 0));
     await tester.pumpAndSettle();
+    final open = tester.widget<TopicProgressTrack>(track);
+    final width = bar.width - open.startInset - open.endInset;
     final target = (5001 + 24 / width * 9999).round();
     expect(preview(tester), target);
-    expect(
-      tester.widget<TopicProgressTrack>(track).progress,
-      closeTo(idle.progress + 24 / width, .0001),
-    );
+    expect(open.progress, closeTo(idle.progress + 24 / width, .0001));
     await drag.cancel();
     await tester.pumpAndSettle();
     final fine = await tester.startGesture(Offset(x, bar.top + 3));
@@ -659,6 +703,17 @@ void main() {
     double opacity() => tester.widget<AnimatedOpacity>(hint).opacity;
     await showTopic(1);
     expect(opacity(), 0);
+    final collapsed = find.descendant(
+      of: find.byKey(const ValueKey('collapsed_progress_line')),
+      matching: find.byType(TopicProgressTrack),
+    );
+    current.value = 5001;
+    await tester.pump();
+    expect(
+      tester.getSize(collapsed).height,
+      TopicBottomBarMetrics.progressLineHeight,
+    );
+    await expectReadingColors(tester, collapsed, 5000 / 9999);
     visible.value = true;
     await tester.pumpAndSettle();
     expect(opacity(), 1);

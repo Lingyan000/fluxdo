@@ -50,8 +50,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   final ValueChanged<int> onScrubCommit;
   final TopicPositionInfoSource? infoSource;
 
-  /// 上次阅读位置（stream 索引），进度线上标出
-  final int? lastReadIndex;
   final TopicFilterControls filter;
 
   /// 快捷回复会话（null 时底栏回复入口走完整编辑器）
@@ -80,7 +78,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     required this.onGestureAction,
     required this.onScrubCommit,
     this.infoSource,
-    this.lastReadIndex,
     required this.filter,
     this.replySession,
     required this.replyEntryKey,
@@ -194,7 +191,6 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
       onGestureAction: widget.onGestureAction,
       onScrubCommit: widget.onScrubCommit,
       infoSource: widget.infoSource,
-      lastReadIndex: widget.lastReadIndex,
       onScrubStart: _finishHint,
       filter: widget.filter,
       replyEntryKey: _replyEntryKey,
@@ -212,7 +208,6 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                 streamIndexListenable: widget.streamIndexListenable,
                 readingPositionListenable: widget.readingPositionListenable,
                 totalCount: widget.totalCount,
-                markerIndex: widget.lastReadIndex,
               ),
             ),
             builder: (context, showBottomBar, child) => Positioned(
