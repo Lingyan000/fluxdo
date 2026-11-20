@@ -127,8 +127,22 @@ class StickerItem {
     'groupId': groupId,
   };
 
+  /// 发送时的默认显示比例(百分比),可在设置里调整。
+  static const int defaultScale = 30;
+
   /// 转换为 Markdown 图片格式
-  String toMarkdown() => '![$name|${width}x$height,30%]($url)';
+  String toMarkdown({int scale = defaultScale}) =>
+      '![$name|${width}x$height,$scale%]($url)';
+
+  StickerItem copyWith({String? url, int? width, int? height}) => StickerItem(
+    id: id,
+    name: name,
+    url: url ?? this.url,
+    displayUrl: displayUrl,
+    width: width ?? this.width,
+    height: height ?? this.height,
+    groupId: groupId,
+  );
 }
 
 /// 表情包分组详情（包含所有表情）

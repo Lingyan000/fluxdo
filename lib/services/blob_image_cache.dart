@@ -1,5 +1,6 @@
 import 'request_cancellation.dart';
 import '../utils/image_format.dart';
+import 'android_avif_decoder.dart';
 
 import 'dart:async';
 import 'dart:convert' show utf8;
@@ -603,6 +604,15 @@ class BlobImageProvider extends ImageProvider<BlobImageProvider> {
         },
       );
       cancellation.throwIfCancellationRequested();
+      // 内容其实是 AVIF(后缀不是 .avif 的地址也可能返回 AVIF):Android
+      // 上交给原生 libavif,不走会让 UI 线程等 IO 线程的系统解码器。
+      if (bytesLookLikeAvif(bytes) && AndroidAvifDecoder.isAvailable) {
+        final codec = await AndroidAvifDecoder.instantiateCodec(
+          bytes,
+          maxDim: AndroidAvifDecoder.maxDisplayDim,
+        );
+        if (codec != null) return codec;
+      }
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
       if (cancellation.isCancelled) {
         buffer.dispose();

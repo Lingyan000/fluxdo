@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_avif/flutter_avif.dart' as fa;
 import '../l10n/s.dart';
 import '../utils/scroll_busy_signal.dart';
+import 'android_avif_decoder.dart';
 import 'avif_fast_bridge.dart';
 import 'blob_image_cache.dart';
 
@@ -23,10 +24,20 @@ int _avifCodecKeySeq = 0;
 /// 平台(引擎内置)AVIF 解码是否已探明不可用。
 ///
 /// 引擎的 ImageGeneratorRegistry 有平台兜底 codec:iOS 16+/macOS 13+ 走
-/// ImageIO、Android 12+ 走 ImageDecoder,能直接解 AVIF;Windows/Linux/
-/// 老系统没有。首次「引擎失败 + Rust 成功」(静态图)即断定平台不支持,
+/// ImageIO,能直接解 AVIF;Android 改走原生 libavif 通道(见
+/// [_tryPlatformAvifCodec]);Windows/Linux/老系统没有。首次「引擎失败 + Rust 成功」(静态图)即断定平台不支持,
 /// 后续不再白试(省一次 bytes 拷贝 + 探测异常)。
 bool _avifPlatformCodecUnavailable = false;
+
+/// Android 上的「平台 codec」是原生 libavif 通道([AndroidAvifDecoder]),
+/// 不是引擎的系统解码路径(那条会让 UI 线程等 IO 线程)。
+bool get _usesAndroidChannel =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+/// 平台解码失败能否断定「平台不支持」:Android 原生通道可用时,失败只说明
+/// 这张图本身有问题,不能因此关掉整条通道。
+bool get _platformFailureIsFinal =>
+    !_usesAndroidChannel || !AndroidAvifDecoder.isAvailable;
 
 /// 尝试用引擎内置 codec(平台兜底 ImageIO/ImageDecoder)解码 AVIF。
 ///
@@ -37,6 +48,15 @@ bool _avifPlatformCodecUnavailable = false;
 /// 要在主 isolate 上做 protobuf 解析拷贝 + `Uint8List.fromList` +
 /// `decodeImageFromPixels` 三次 MB 级搬运,静态大图首次解码卡顿的大头在此。
 Future<ui.Codec?> _tryPlatformAvifCodec(Uint8List bytes, {int? maxDim}) async {
+  if (_usesAndroidChannel) {
+    // 通道不可用时宁可回落 Rust,也不走系统解码器
+    if (!AndroidAvifDecoder.isAvailable) return null;
+    try {
+      return await AndroidAvifDecoder.instantiateCodec(bytes, maxDim: maxDim);
+    } catch (_) {
+      return null;
+    }
+  }
   ui.ImmutableBuffer? buffer;
   try {
     buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
@@ -229,7 +249,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
       }
       // 静态 AVIF 平台解不了 → 断定平台无 AVIF 支持,后续不再白试。
       // (即使是文件损坏导致的误判,效果也只是回到全 Rust 现状。)
-      _avifPlatformCodecUnavailable = true;
+      if (_platformFailureIsFinal) _avifPlatformCodecUnavailable = true;
     }
     if (AvifFastBridge.available) {
       final codec = _FastAvifCodec(
@@ -272,7 +292,7 @@ class AvifImageProvider extends ImageProvider<AvifImageProvider> {
           platformCodec.dispose();
         }
       }
-      if (!_looksAnimatedAvif(bytes)) {
+      if (!_looksAnimatedAvif(bytes) && _platformFailureIsFinal) {
         _avifPlatformCodecUnavailable = true;
       }
     }

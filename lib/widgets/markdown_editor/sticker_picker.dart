@@ -11,6 +11,7 @@ import '../../models/sticker.dart';
 import '../../providers/sticker_favorites_provider.dart';
 import '../../providers/sticker_provider.dart';
 import '../../services/sticker_favorites_service.dart';
+import '../../services/toast_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
@@ -26,6 +27,7 @@ import 'sticker_group_preview_sheet.dart';
 import 'sticker_manage_sheet.dart';
 import 'sticker_market_sheet.dart';
 import 'sticker_preview.dart';
+import 'sticker_search_view.dart';
 import '../../../../../l10n/s.dart';
 
 /// 表情包选择器
@@ -45,12 +47,17 @@ class StickerPicker extends ConsumerStatefulWidget {
   /// sheet 走 Navigator 路由层,会被 root overlay 的弹层压住)
   final VoidCallback? onDismissRequested;
 
+  /// 搜索在面板内联显示(桌面悬浮面板);否则用底部弹层(移动端面板占着
+  /// 键盘的位置,不能在面板里弹键盘)。
+  final bool inlineSearch;
+
   const StickerPicker({
     super.key,
     required this.onStickerSelected,
     this.bottomPadding = 0,
     this.compact = false,
     this.onDismissRequested,
+    this.inlineSearch = false,
   });
 
   @override
@@ -73,6 +80,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   final GlobalKey _contentAreaKey = GlobalKey();
   List<GlobalKey> _groupKeys = [];
 
+  /// 每个分区对应的订阅分组 id(最近使用、收藏分区为 null),与
+  /// [_groupKeys] / tab 一一对应。
+  List<String?> _sectionGroupIds = const [];
+
   /// 当前激活的 group index。**用 ValueNotifier 不用 setState** ——
   /// 滚动时这个值频繁变,如果走 setState 会 rebuild 整个 panel(含 30 张
   /// sticker grid),开销巨大。改成 notifier 后只让 40px 高的 TabBar
@@ -82,6 +93,12 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   /// 面板打开时快照，避免实时刷新影响体验
   List<StickerItem>? _recentSnapshot;
   bool _isProgrammaticScroll = false;
+
+  /// 内联搜索态(仅 [StickerPicker.inlineSearch])。
+  bool _searching = false;
+
+  /// 正在转存的外站表情,防止连点重复上传。
+  final _transferring = <String>{};
   bool _scrollThrottled = false;
   bool _sheetOpen = false;
 
@@ -292,14 +309,104 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     });
   }
 
-  void _onStickerTap(StickerItem sticker) {
+  Future<void> _onStickerTap(StickerItem sticker) async {
     ref.read(recentStickersProvider.notifier).add(sticker);
     if (sticker.groupId.isNotEmpty) {
       _usedGroupIds
         ..remove(sticker.groupId)
         ..add(sticker.groupId);
     }
-    widget.onStickerSelected(sticker.toMarkdown());
+    final scale = ref.read(stickerInsertScaleProvider);
+    var toSend = sticker;
+    final transfer = ref.read(stickerTransferServiceProvider);
+    if (ref.read(stickerTransferExternalProvider) &&
+        transfer.needsTransfer(sticker.url)) {
+      final cached = transfer.cached(sticker);
+      if (cached != null) {
+        toSend = cached;
+      } else {
+        if (!_transferring.add(sticker.url)) return;
+        ToastService.showInfo(S.current.sticker_transferring);
+        try {
+          toSend = await transfer.transfer(sticker);
+        } catch (e) {
+          debugPrint('[StickerPicker] 转存失败 ${sticker.url}: $e');
+          ToastService.showError(S.current.sticker_transferFailed);
+        } finally {
+          _transferring.remove(sticker.url);
+        }
+        // 面板已关闭时宿主编辑器可能也没了,不再插入
+        if (!mounted) return;
+      }
+    }
+    widget.onStickerSelected(toSend.toMarkdown(scale: scale));
+  }
+
+  // ==================== 搜索 ====================
+
+  /// 按表情名或分区名过滤面板内容;分区名命中时整个分区都算命中
+  /// (多数表情名是文件名,只靠表情名几乎搜不到)。同一张图只出现一次。
+  List<StickerSearchSection> _search(String raw) {
+    final q = raw.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    bool matches(StickerItem s) =>
+        StickerSearchView.plainName(s.name).toLowerCase().contains(q);
+    final seen = <String>{};
+    final sections = <StickerSearchSection>[];
+    void add(String title, Iterable<StickerItem> items) {
+      final hits = [
+        for (final item in items)
+          if (seen.add(item.url)) item,
+      ];
+      if (hits.isNotEmpty) sections.add(StickerSearchSection(title, hits));
+    }
+
+    add(
+      S.current.common_recentlyUsed,
+      (_recentSnapshot ?? const <StickerItem>[]).where(matches),
+    );
+    for (final category in ref.read(stickerFavoritesProvider)) {
+      final label = stickerFavoriteCategoryLabel(category);
+      add(
+        label,
+        label.toLowerCase().contains(q)
+            ? category.items
+            : category.items.where(matches),
+      );
+    }
+    for (final group in ref.read(subscribedStickerGroupsProvider)) {
+      final emojis = ref
+          .read(stickerGroupDetailProvider(group.id))
+          .value
+          ?.emojis;
+      if (emojis == null) continue;
+      add(
+        group.name,
+        group.name.toLowerCase().contains(q) ? emojis : emojis.where(matches),
+      );
+    }
+    return sections;
+  }
+
+  void _openSearch() {
+    if (widget.inlineSearch) {
+      setState(() => _searching = true);
+      return;
+    }
+    _openForegroundSheet(
+      (context) => AppBottomSheet.showDraggable(
+        context: context,
+        initialSize: 0.9,
+        bodyBuilder: (sheetContext, scrollController) => StickerSearchView(
+          search: _search,
+          scrollController: scrollController,
+          onSelected: (sticker) {
+            Navigator.of(sheetContext).pop();
+            _onStickerTap(sticker);
+          },
+        ),
+      ),
+    );
   }
 
   // ==================== 滚动锚点 ====================
@@ -343,6 +450,16 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     _isProgrammaticScroll = true;
     _activeGroupIndex.value = index;
     _ensureTabVisible(index);
+    // 跳转动画期间就开始预热目标分组的首屏缩略图
+    final groupId = index < _sectionGroupIds.length
+        ? _sectionGroupIds[index]
+        : null;
+    final emojis = groupId == null
+        ? null
+        : ref.read(stickerGroupDetailProvider(groupId)).value?.emojis;
+    if (groupId != null && emojis != null) {
+      prefetchStickerGroupThumbnails(groupId, emojis);
+    }
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0.0,
@@ -438,10 +555,23 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       ref.read(stickerGroupDetailProvider(group.id));
     }
 
+    if (_searching) {
+      return StickerSearchView(
+        search: _search,
+        onSelected: _onStickerTap,
+        onClose: () => setState(() => _searching = false),
+        bottomPadding: widget.bottomPadding,
+      );
+    }
+
     final hasRecent = recentStickers.isNotEmpty;
     // 分区顺序:最近使用 → 收藏分类 → 已订阅分组;tab 与分区一一对应
     final totalGroups = (hasRecent ? 1 : 0) + favorites.length + groups.length;
 
+    _sectionGroupIds = [
+      for (var i = 0; i < totalGroups - groups.length; i++) null,
+      for (final group in groups) group.id,
+    ];
     while (_groupKeys.length < totalGroups) {
       _groupKeys.add(GlobalKey());
     }
@@ -592,6 +722,12 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             color: theme.colorScheme.outlineVariant,
           ),
           IconButton(
+            icon: const Icon(Symbols.search_rounded, size: 20),
+            visualDensity: compact ? VisualDensity.compact : null,
+            onPressed: _openSearch,
+            tooltip: S.current.sticker_searchTooltip,
+          ),
+          IconButton(
             icon: const Icon(Symbols.tune_rounded, size: 20),
             visualDensity: compact ? VisualDensity.compact : null,
             onPressed: () => _openForegroundSheet(StickerManageSheet.show),
@@ -674,9 +810,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     _stopTabAutoScroll();
     if (direction == 0) return;
     _tabAutoScrollDirection = direction;
-    _tabAutoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (
-      _,
-    ) {
+    _tabAutoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!_tabScrollController.hasClients) return;
       final position = _tabScrollController.position;
       position.jumpTo(

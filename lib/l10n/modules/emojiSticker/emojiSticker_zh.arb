@@ -97,6 +97,11 @@
     }
   },
   "sticker_deleteSelectedConfirm": "删除选中的 {count} 个表情？",
+  "sticker_transferring": "正在转存表情…",
+  "sticker_transferFailed": "转存失败，已插入原链接",
+  "sticker_searchHint": "搜索表情或表情包",
+  "sticker_searchEmpty": "没有匹配的表情",
+  "sticker_searchTooltip": "搜索表情",
   "@sticker_deleteSelectedConfirm": {
     "placeholders": {
       "count": {

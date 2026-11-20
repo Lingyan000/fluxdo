@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:isolate';
 import 'dart:ui' as ui;
 
@@ -7,6 +8,10 @@ import 'package:flutter/painting.dart';
 import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageFfi, NativeAnimatedImageException;
 
+import '../utils/image_format.dart';
+import '../utils/scroll_busy_signal.dart';
+import 'android_avif_decoder.dart';
+import 'app_logger.dart';
 import 'avif_image_provider.dart';
 import 'blob_image_cache.dart';
 import 'dio_http_client.dart';
@@ -16,33 +21,21 @@ import 'sticker_thumbnail_source.dart';
 // dart 端没单独 export 这个常量,我们直接复用数字 — 这是 stable FFI contract。
 const int _kErrUnsupported = -2;
 
-/// 按 magic bytes 判断是不是 AVIF(ISO BMFF `ftyp` box,brand avif/avis/mif1/msf1)。
+/// 按 magic bytes 判断是不是 AVIF(见 [bytesLookLikeAvif])。
 ///
 /// 必须用 magic 而不是 URL 后缀分流:Discourse / CDN 可能给 `.gif` `.webp` 后缀
 /// 的 URL 实际内容是 AVIF,这种情况 URL 分流会让 AVIF bytes 进 Rust pipeline,
 /// 内部 magic bytes dispatch 会送到 zenavif (rav1d-safe),触发 ARM SIMD panic
 /// (mc_arm.rs:5905)整个 app crash。
-bool _bytesLookLikeAvif(Uint8List bytes) {
-  if (bytes.length < 12) return false;
-  // 'ftyp' at offset 4
-  if (bytes[4] != 0x66 ||
-      bytes[5] != 0x74 ||
-      bytes[6] != 0x79 ||
-      bytes[7] != 0x70) {
-    return false;
-  }
-  // brand at 8..12: avif | avis | mif1 | msf1
-  final b8 = bytes[8], b9 = bytes[9], b10 = bytes[10], b11 = bytes[11];
-  // 'avif'
-  if (b8 == 0x61 && b9 == 0x76 && b10 == 0x69 && b11 == 0x66) return true;
-  // 'avis'
-  if (b8 == 0x61 && b9 == 0x76 && b10 == 0x69 && b11 == 0x73) return true;
-  // 'mif1'
-  if (b8 == 0x6D && b9 == 0x69 && b10 == 0x66 && b11 == 0x31) return true;
-  // 'msf1'
-  if (b8 == 0x6D && b9 == 0x73 && b10 == 0x66 && b11 == 0x31) return true;
-  return false;
-}
+bool _bytesLookLikeAvif(Uint8List bytes) => bytesLookLikeAvif(bytes);
+
+bool _bytesLookLikePngOrJpeg(Uint8List bytes) =>
+    bytes.length >= 4 &&
+    ((bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47) ||
+        (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF));
 
 /// 通用 sticker thumbnail provider — 单帧解码 + 缩放 + PNG cache。
 ///
@@ -272,7 +265,12 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
 /// (配合 [AvifImageProvider.decodeFirstFrame] 单帧解码,每张就一次,
 /// 毫秒级)。早期"method channel 全帧 marshal 阻塞主线程必须限 1 并发"
 /// 的约束已不存在,放开到 4 让首开 30 张 AVIF 从串行 3-9s 变成秒级。
-final _avifSemaphore = _Semaphore(4);
+///
+/// Android 走原生 libavif 通道(每张单线程),同时只解 2 张:AV1 解码吃 CPU,
+/// 留出核给 UI / 光栅线程,一屏几十张冷图时滚动不至于被挤掉帧。
+final _avifSemaphore = _Semaphore(
+  !kIsWeb && defaultTargetPlatform == TargetPlatform.android ? 2 : 4,
+);
 
 /// 非 AVIF (GIF / WebP / APNG) 解码并发。decode 走 `_DecoderWorkerPool`
 /// (long-lived worker isolate)在后台串行,主 isolate 只做轻量 ui.Image
@@ -420,6 +418,7 @@ Future<ui.Image> _acquireThumbnail({
     }
   }
   var cold = false;
+  Uint8List? coldEncoded;
   _SharedThumbnailFrame? sharedTask;
   bool canContinue() =>
       (sharedTask?.hasVisibleRequest ?? visible) ||
@@ -442,7 +441,7 @@ Future<ui.Image> _acquireThumbnail({
       checkCancel();
       if (bytes != null) return _decodeFirstFrameViaFlutterCodec(bytes);
       cold = true;
-      return _decodeFirstFrameImage(
+      final result = await _decodeFirstFrameImage(
         bucket: bucket,
         url: url,
         displayUrl: displayUrl,
@@ -450,18 +449,47 @@ Future<ui.Image> _acquireThumbnail({
         shouldContinue: canContinue,
         priority: () => sharedTask!.priority,
       );
+      coldEncoded = result.encoded;
+      return result.image;
     },
     cache: (image) async {
-      if (cold) await _cacheThumbnail(thumbKey, image);
+      if (!cold) return;
+      final encoded = coldEncoded;
+      if (encoded != null) {
+        // 手里已有编码好的小图,原样写盘:不碰 GPU、不重新编码
+        await BlobImageCache.write(
+          BlobImageCache.stickerThumbBucket,
+          thumbKey,
+          encoded,
+        );
+      } else {
+        // 只能把纹理从 GPU 读回再编码 PNG:放到滚动停下后一张张做
+        await _deferredThumbnailWrites.enqueue(
+          () => _cacheThumbnail(thumbKey, image),
+        );
+      }
     },
   );
 }
+
+/// 冷路径解码结果:图像 + 可原样写进缩略图缓存的已编码小图。
+///
+/// [encoded] 为空时只能把纹理从 GPU 读回再编码 PNG(要占光栅线程)。
+class _ColdThumbnail {
+  const _ColdThumbnail(this.image, this.encoded);
+  final ui.Image image;
+  final Uint8List? encoded;
+}
+
+/// 源字节本身就是合格缩略图(不超过目标尺寸的非 AVIF 小文件,例如缩放
+/// 代理返回的 WebP)时直接当缓存,超过这个大小宁可重新编码。
+const int _maxDirectCacheBytes = 96 * 1024;
 
 /// 从 cache 拿 bytes → backend dispatch 解第一帧 → 必要时缩放到 targetSize。
 ///
 /// 用 magic bytes 决定走 AVIF semaphore 还是非 AVIF semaphore。两者**独立**
 /// 限流,AVIF 慢不阻塞 GIF/WebP/APNG。
-Future<ui.Image> _decodeFirstFrameImage({
+Future<_ColdThumbnail> _decodeFirstFrameImage({
   required String bucket,
   required String url,
   String? displayUrl,
@@ -481,19 +509,34 @@ Future<ui.Image> _decodeFirstFrameImage({
   // 给 `.gif/.webp` 后缀但实际是 AVIF)。bytes 读取本身是 IO async,不占
   // semaphore 配额。贴纸走缩略图取源链路(缩放代理 / 动画首帧),其它
   // bucket 照旧取原文件。
-  final bytes = bucket == BlobImageCache.stickerOriginalBucket
-      ? await StickerThumbnailSource.fetch(
+  final stopwatch = Stopwatch()..start();
+  final fetched = bucket == BlobImageCache.stickerOriginalBucket
+      ? await StickerThumbnailSource.fetchWithSource(
           bucket: bucket,
           url: url,
           displayUrl: displayUrl,
           targetSize: targetSize,
           priority: priority,
         )
-      : await BlobImageCache.fetch(bucket, url, priority: priority());
+      : (
+          bytes: await BlobImageCache.fetch(bucket, url, priority: priority()),
+          source: 'original',
+        );
+  final bytes = fetched.bytes;
+  final fetchMs = stopwatch.elapsedMilliseconds;
   checkCancel();
 
   final isAvif = _bytesLookLikeAvif(bytes);
   final semaphore = isAvif ? _avifSemaphore : _nonAvifSemaphore;
+  var decoder = isAvif ? 'avif' : 'generic';
+  void report() => _reportSlowThumbnail(
+    url: url,
+    source: fetched.source,
+    decoder: decoder,
+    bytes: bytes.length,
+    fetchMs: fetchMs,
+    totalMs: stopwatch.elapsedMilliseconds,
+  );
 
   await semaphore.acquire(priority: priority);
   // 拿到 semaphore 槽后再检查 — 关 panel 后排队中的任务在这里立即
@@ -505,8 +548,25 @@ Future<ui.Image> _decodeFirstFrameImage({
     rethrow;
   }
   ui.Image srcImage;
+  Uint8List? encoded;
+  var sourceExceedsTarget = true;
   try {
-    srcImage = await _decodeFirstFrame(url, bytes, targetSize: targetSize);
+    // Android 上 AVIF 由原生 libavif 在后台线程解成目标尺寸的 PNG:不让
+    // UI 线程等 IO 线程,也省掉之后从 GPU 读回编码;解不了再走老路。
+    final png = isAvif && AndroidAvifDecoder.isAvailable
+        ? await AndroidAvifDecoder.decodePng(bytes, maxDim: targetSize)
+        : null;
+    if (png != null) {
+      decoder = 'androidAvif';
+      encoded = png.png;
+      srcImage = await _decodeFirstFrameViaFlutterCodec(png.png);
+    } else {
+      (srcImage, sourceExceedsTarget) = await _decodeFirstFrame(
+        url,
+        bytes,
+        targetSize: targetSize,
+      );
+    }
   } finally {
     semaphore.release();
   }
@@ -517,11 +577,88 @@ Future<ui.Image> _decodeFirstFrameImage({
       srcImage.dispose();
       srcImage = resized;
       checkCancel();
+    } else if (encoded == null &&
+        !isAvif &&
+        !sourceExceedsTarget &&
+        bytes.length <= _maxDirectCacheBytes) {
+      // 源文件本身就是合格的小图(例如缩放代理的 WebP),原样当缓存
+      encoded = bytes;
     }
-    return srcImage;
+    report();
+    return _ColdThumbnail(srcImage, encoded);
   } catch (_) {
     srcImage.dispose();
     rethrow;
+  }
+}
+
+/// 冷加载慢(或开了详细日志)时记录取图来源与各段耗时,用于定位卡顿。
+/// 只记域名与数值,不记录完整地址。
+void _reportSlowThumbnail({
+  required String url,
+  required String source,
+  required String decoder,
+  required int bytes,
+  required int fetchMs,
+  required int totalMs,
+}) {
+  if (totalMs < 1000 && !AppLogger.verboseNotifier.value) return;
+  AppLogger.info(
+    '表情缩略图冷加载耗时',
+    tag: 'StickerThumb',
+    fields: {
+      'host': Uri.tryParse(url)?.host,
+      'source': source,
+      'decoder': decoder,
+      'bytes': bytes,
+      'fetchMs': fetchMs,
+      'decodeMs': totalMs - fetchMs,
+      'totalMs': totalMs,
+    },
+  );
+}
+
+/// 需要从 GPU 读回再编码的缩略图缓存写入:滚动中不做(读回要占光栅线程),
+/// 停下后一次一张。只是推迟落盘,不影响显示;积压过多时丢掉最早的
+/// (下次再冷加载即可)。
+final _deferredThumbnailWrites = _DeferredWriteQueue();
+
+class _DeferredWriteQueue {
+  static const int _maxPending = 60;
+  static const Duration _busyPoll = Duration(milliseconds: 300);
+
+  final _queue = Queue<(Future<void> Function(), Completer<void>)>();
+  bool _running = false;
+
+  Future<void> enqueue(Future<void> Function() write) {
+    final done = Completer<void>();
+    if (_queue.length >= _maxPending) _queue.removeFirst().$2.complete();
+    _queue.add((write, done));
+    unawaited(_pump());
+    return done.future;
+  }
+
+  Future<void> _pump() async {
+    if (_running) return;
+    _running = true;
+    try {
+      while (_queue.isNotEmpty) {
+        while (ScrollBusySignal.isBusy) {
+          await Future<void>.delayed(_busyPoll);
+        }
+        if (_queue.isEmpty) break;
+        final (write, done) = _queue.removeFirst();
+        try {
+          await write();
+        } catch (_) {
+          // 缓存写入失败不影响显示
+        } finally {
+          done.complete();
+        }
+      }
+    } finally {
+      _running = false;
+    }
   }
 }
 
@@ -534,14 +671,29 @@ Future<ui.Image> _decodeFirstFrameImage({
 ///   isolate),解码在 background isolate 串行,**主线程零 spawn 开销**。
 ///
 /// - **其它 / 静态格式**:worker 返 unsupported → Flutter 内置 codec fallback。
-Future<ui.Image> _decodeFirstFrame(
+///
+/// 返回首帧以及**源图**是否超过 [targetSize](解码期缩小后的图本身看不出
+/// 来,决定源文件能否原样当缓存要用它)。
+Future<(ui.Image, bool)> _decodeFirstFrame(
   String url,
   Uint8List bytes, {
-  int? targetSize,
+  required int targetSize,
 }) async {
+  bool exceeds(int w, int h) => w > targetSize || h > targetSize;
   // 必须按 magic 判,不能信 URL 后缀(CDN 可能给 .webp/.gif 后缀但实际是 AVIF)
   if (_bytesLookLikeAvif(bytes)) {
-    return _decodeAvifFirstFrame(bytes, url, targetSize: targetSize);
+    final image = await _decodeAvifFirstFrame(
+      bytes,
+      url,
+      targetSize: targetSize,
+    );
+    // AVIF 源文件从不原样当缓存,是否超限无所谓
+    return (image, true);
+  }
+  // PNG / JPEG 必然是静态首帧(APNG 的默认图就是首帧),worker 只会回
+  // unsupported,白走一趟 isolate 往返:直接交给引擎解码并在解码期缩小。
+  if (_bytesLookLikePngOrJpeg(bytes)) {
+    return _decodeFirstFrameViaFlutterCodecSized(bytes, targetSize);
   }
 
   final reply = await _DecoderWorkerPool.instance.decode(bytes);
@@ -549,12 +701,18 @@ Future<ui.Image> _decodeFirstFrame(
     throw StateError('decode cancelled: $url');
   }
   if (reply.unsupported) {
-    return _decodeFirstFrameViaFlutterCodec(bytes, targetSize: targetSize);
+    return _decodeFirstFrameViaFlutterCodecSized(bytes, targetSize);
   }
   if (reply.rgba == null) {
     throw StateError('decode failed: $url (${reply.error})');
   }
-  return _rgbaToUiImage(reply.rgba!, reply.width, reply.height);
+  final image = await _rgbaToUiImage(
+    reply.rgba!,
+    reply.width,
+    reply.height,
+    maxDim: targetSize,
+  );
+  return (image, exceeds(reply.width, reply.height));
 }
 
 Future<ui.Image> _decodeAvifFirstFrame(
@@ -578,7 +736,18 @@ Future<ui.Image> _decodeAvifFirstFrame(
 Future<ui.Image> _decodeFirstFrameViaFlutterCodec(
   Uint8List bytes, {
   int? targetSize,
-}) async {
+}) async => (await _decodeViaFlutterCodec(bytes, targetSize)).$1;
+
+Future<(ui.Image, bool)> _decodeFirstFrameViaFlutterCodecSized(
+  Uint8List bytes,
+  int targetSize,
+) => _decodeViaFlutterCodec(bytes, targetSize);
+
+/// 返回首帧以及源图是否超过 [targetSize]。
+Future<(ui.Image, bool)> _decodeViaFlutterCodec(
+  Uint8List bytes,
+  int? targetSize,
+) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
   final descriptor = await ui.ImageDescriptor.encoded(buffer);
   buffer.dispose();
@@ -598,13 +767,31 @@ Future<ui.Image> _decodeFirstFrameViaFlutterCodec(
   );
   try {
     final frame = await codec.getNextFrame();
-    return frame.image;
+    return (frame.image, targetWidth != null || targetHeight != null);
   } finally {
     codec.dispose();
   }
 }
 
-Future<ui.Image> _rgbaToUiImage(Uint8List rgba, int width, int height) {
+/// RGBA → ui.Image;给了 [maxDim] 时按长边在解码期缩小(引擎在后台线程
+/// 缩放),不再全尺寸建纹理后走 [_resize] 在光栅线程重画。
+Future<ui.Image> _rgbaToUiImage(
+  Uint8List rgba,
+  int width,
+  int height, {
+  int? maxDim,
+}) {
+  int? targetWidth;
+  int? targetHeight;
+  if (maxDim != null && (width > maxDim || height > maxDim)) {
+    if (width >= height) {
+      targetWidth = maxDim;
+      targetHeight = (height * maxDim / width).round().clamp(1, maxDim);
+    } else {
+      targetHeight = maxDim;
+      targetWidth = (width * maxDim / height).round().clamp(1, maxDim);
+    }
+  }
   final completer = Completer<ui.Image>();
   ui.decodeImageFromPixels(
     rgba,
@@ -612,6 +799,8 @@ Future<ui.Image> _rgbaToUiImage(Uint8List rgba, int width, int height) {
     height,
     ui.PixelFormat.rgba8888,
     (image) => completer.complete(image),
+    targetWidth: targetWidth,
+    targetHeight: targetHeight,
   );
   return completer.future;
 }

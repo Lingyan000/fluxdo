@@ -49,6 +49,11 @@
   "sticker_moveTo": "移動到…",
   "sticker_selectedCount": "已選 {count} 個",
   "sticker_deleteSelectedConfirm": "刪除選取的 {count} 個表情？",
+  "sticker_transferring": "正在轉存表情…",
+  "sticker_transferFailed": "轉存失敗，已插入原始連結",
+  "sticker_searchHint": "搜尋表情或表情包",
+  "sticker_searchEmpty": "沒有符合的表情",
+  "sticker_searchTooltip": "搜尋表情",
   "sticker_emojiCount": "{count} 個表情",
   "@sticker_emojiCount": {
     "placeholders": {
