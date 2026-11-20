@@ -71,6 +71,10 @@ dart run tool/build_ipa_nosign.dart 0.2.3
 - 本地人工预发布发版使用 `just prerelease`
 - 自动化或 CI 场景直接使用 `dart run tool/release.dart ...`
 - 预发布版本通过 `--preid` 指定 `beta` / `rc`
+- 同一核心版本共用一个 GitHub Release。例如 `0.2.31-beta.1`、`0.2.31-beta.2` 和 `0.2.31` 依次更新同一条 Release 的完整标签、标题、说明和安装包。
+- Release 标题保留完整版本号，例如 `FluxDO v0.2.31-beta.10`，关联标签为 `v0.2.31-beta.10`。Beta / RC 显示 `Pre-release` 标识，正式版发布时标题变为 `FluxDO v0.2.31` 并取消该标识。应用通过完整标签比较版本，开启「检查 Beta 更新」后可发现预发布。
+- 发布流程按核心版本串行执行。较旧版本的构建晚完成时会跳过发布，产物上传失败时保留草稿，可重跑恢复。
+- Release 公开前会核验产物上传完整。替换后旧 Beta 下载链接失效，Git 标签保留用于源码追溯。客户端检查 Beta 更新时会重新验证服务器状态。
 - iOS 无签名 IPA 只能在 macOS 上打包
 - `ios:ipa-nosign` 不传版本号时，会默认读取 `pubspec.yaml` 当前版本并进入确认
 
