@@ -8,10 +8,12 @@
   "followingFeed_posted": "发布了话题",
   "followingFeed_replied": "回复了",
   "followingFeed_loadMore": "加载更多",
-  "followingFeed_migrationTitle": "追觅已升级为关注动态",
-  "followingFeed_migrationHint": "追觅迁移说明",
-  "followingFeed_migrationSummary": "查看变化与旧名单，选择你想继续关注的人。",
-  "followingFeed_migrationBody": "内置追觅已移除，动态现在展示你在网站上关注的用户发布的话题和回复，支持刷新和翻阅历史。\n\n点赞、回应、Boost 监控和后台提醒已停止，后续计划由插件提供。\n\n旧追觅入口已替换为动态。即使没有配置底栏入口，也可以从「我的 → 关注动态」进入。\n\n旧监控名单不会自动转成关注关系。你可以在下方打开用户主页，手动选择关注。确认后，此说明仍可从动态页右上角查看。",
+  "followingFeed_migrationTitle": "从追觅到关注动态",
+  "followingFeed_migrationSummary": "在这里查看你在网站上关注的人发布的话题和回复，支持下拉刷新和翻阅历史。",
+  "followingFeed_migrationChanges": "原追觅的点赞、回应、Boost 监控和后台提醒已停止。",
+  "followingFeed_migrationListHint": "旧名单已保存在「我的关注」中，可随时查看并前往用户主页选择关注。",
+  "followingFeed_migrationContinue": "开始浏览",
+  "followingFeed_viewLegacyUsers": "查看旧名单",
   "followingFeed_legacyUsers": "旧追觅名单",
-  "followingFeed_legacyHint": "这是本机保存的旧名单，可能包含其他账号使用时添加的用户。请确认后再关注。"
+  "followingFeed_legacyHint": "这是本机保存的旧名单，可能包含其他账号添加的用户。打开用户主页后，可逐个选择关注。"
 }

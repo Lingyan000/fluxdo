@@ -5,8 +5,8 @@
 //!   WebView，请求头按 WebView fetch 请求的顺序重排；
 //! - DoH 查询（[`crate::dns`]）：不带模板，用标准 BoringSSL 配置即可。
 //!
-//! 连接按「站点 + 模板版本」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
-//! 与浏览器的连接行为一致；模板换代（WebView 升级）后旧指纹的连接不再复用。
+//! 连接按「站点 + 模板的建连特征」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
+//! 与浏览器的连接行为一致；WebView 升级使握手或 HTTP/2 设置变化后，旧指纹的连接不再复用。
 
 use std::{
     collections::{HashMap, HashSet},
@@ -252,12 +252,12 @@ impl PoolState {
         None
     }
 
-    /// 收下新建的连接。`generation` 为当前模板版本，旧版本的站点整体淘汰。
-    fn admit(&self, key: &str, conn: &Sender, generation: Option<u64>) {
+    /// 收下新建的连接。`identity` 为当前模板的连接身份，其他身份的站点整体淘汰。
+    fn admit(&self, key: &str, conn: &Sender, identity: Option<u64>) {
         let mut hosts = self.hosts.lock();
-        if let Some(generation) = generation {
-            // 模板换代后旧指纹的连接不再复用
-            let suffix = format!("#{generation}");
+        if let Some(identity) = identity {
+            // 模板的建连特征变了，旧指纹的连接不再复用
+            let suffix = format!("#{identity}");
             hosts.retain(|existing, _| existing.ends_with(&suffix));
         }
         let new = !hosts.contains_key(key);
@@ -757,18 +757,16 @@ impl HttpEgressClient {
         self.established.fetch_add(1, Ordering::Relaxed);
 
         // 切网清池之前开始的连接仍可完成原请求，但不能污染新连接池；
-        // 模板在建连期间换代时同理
-        let current_generation = self
+        // 模板的建连特征在建连期间变化时同理
+        let current_identity = self
             .templates
             .as_ref()
             .and_then(|t| t.snapshot())
-            .map(|current| current.generation);
-        let stale_generation = target
-            .template
-            .is_some_and(|template| current_generation != Some(template.generation));
-        if self.pool.epoch() == epoch && !stale_generation {
-            self.pool
-                .admit(target.key, &conn, target.template.map(|t| t.generation));
+            .map(|current| current.connection_identity());
+        let identity = target.template.map(FingerprintTemplate::connection_identity);
+        let stale_identity = identity.is_some() && current_identity != identity;
+        if self.pool.epoch() == epoch && !stale_identity {
+            self.pool.admit(target.key, &conn, identity);
         }
         if matches!(conn.version, Version::HTTP_2 | Version::HTTP_3) {
             return Ok(Checkout {
@@ -1154,11 +1152,11 @@ fn authority_of<B>(request: &Request<B>) -> Result<(String, u16), BoxError> {
 }
 
 fn pool_key(template: Option<&FingerprintTemplate>, host: &str, port: u16) -> String {
-    let generation = template.map_or(0, |template| template.generation);
+    let identity = template.map_or(0, FingerprintTemplate::connection_identity);
     if host.contains(':') && !host.starts_with('[') {
-        format!("[{host}]:{port}#{generation}")
+        format!("[{host}]:{port}#{identity}")
     } else {
-        format!("{host}:{port}#{generation}")
+        format!("{host}:{port}#{identity}")
     }
 }
 
@@ -1198,7 +1196,8 @@ fn build_request(
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
     // 仅默认 fetch 用途复用采样权重；显式优先级优先。采样依赖属于旧连接，
-    // 在新连接上挂到根节点，不能复制旧流号，也不能因此丢弃权重与排他标记。
+    // 不能复制旧流号：这里先挂根并保留权重与排他标记，由 HTTP/2 层在分配流号时
+    // 按 Chromium 规则改挂到同档在途的上一个流，形成先来先服务的链。
     if version == Version::HTTP_2
         && let Some(template) = template.filter(|t| t.is_calibrated())
         && request.uri().scheme_str() == Some("https")
@@ -2188,6 +2187,126 @@ mod tests {
             assert_eq!(response.status().as_u16(), 200);
             assert_eq!(captured.lock().as_ref().unwrap().2.as_ref().map(|p| p.weight), expected);
         }
+        client.reset_connections().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn concurrent_fetches_chain_priority_in_creation_order() {
+        use rama::{
+            http::proto::h2::frame::{ReceivedStreamDependency, StreamDependency, StreamId},
+            http::server::HttpServer,
+            service::service_fn,
+            tls::{
+                boring::server::TlsAcceptorLayer,
+                server::{ServerAuthData, TlsServerConfig},
+            },
+        };
+        use std::convert::Infallible;
+        let template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(ReceivedStreamDependency(
+            StreamDependency::new(StreamId::from(5), 219, true)));
+        templates.observe_probe_fetch(&sample);
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("localhost"),
+            ),
+        )
+        .unwrap();
+        let mut trust = TlsClientConfig::new()
+            .with_server_name(Host::from_static("localhost"))
+            .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+            .unwrap();
+        trust.set_alpn([ApplicationProtocol::HTTP_2].into_iter().collect());
+        let tls = TlsServerConfig::new()
+            .with_server_auth(ServerAuthData::new(chain, key))
+            .with_alpn_http_auto();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (sink, gate) = (seen.clone(), release.clone());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let http = HttpServer::auto(Executor::new()).service(service_fn(move |request: Request| {
+                let path = request
+                    .uri()
+                    .path()
+                    .map(|path| path.as_encoded_str().into_owned())
+                    .unwrap_or_default();
+                let slow = path == "/slow";
+                sink.lock().push((
+                    path,
+                    request.extensions().get_ref::<ReceivedStreamDependency>().map(|p| p.0.clone()),
+                ));
+                let gate = gate.clone();
+                async move {
+                    if slow {
+                        gate.notified().await;
+                    }
+                    Ok::<_, Infallible>(Response::new(Body::from("ok")))
+                }
+            }));
+            let _ = TlsAcceptorLayer::new(tls)
+                .into_layer(http)
+                .serve(ServiceInput::new(socket))
+                .await;
+        });
+        let client = Arc::new(HttpEgressClient::new(
+            Arc::new(EgressConnector::new(None, None, None, None, Duration::from_secs(3))),
+            Some(templates),
+        ));
+        *client.test_tls.lock() = Some(trust);
+        let get = |path: &'static str| {
+            let client = client.clone();
+            async move {
+                let response = client
+                    .send(
+                        Request::builder()
+                            .uri(format!("https://localhost:{port}{path}"))
+                            .header("user-agent", "priority-lab")
+                            .header("sec-fetch-mode", "cors")
+                            .body(Body::empty())
+                            .unwrap(),
+                        Some(Duration::from_secs(5)),
+                        Some(Duration::from_secs(5)),
+                    )
+                    .await
+                    .unwrap();
+                rama::http::body::util::BodyExt::collect(response.into_body()).await.unwrap();
+            }
+        };
+        let slow = tokio::spawn(get("/slow"));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while seen.lock().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        get("/fast").await;
+        release.notify_one();
+        slow.await.unwrap();
+        get("/after").await;
+        let seen = seen.lock().clone();
+        let dependency = |path: &str| {
+            seen.iter().find(|(p, _)| p == path).and_then(|(_, d)| d.clone()).unwrap()
+        };
+        // 在途的 /slow 是流 1：后发的 /fast 排他挂在它身下，而不是把它压到自己身下
+        assert_eq!(dependency("/slow"), StreamDependency::new(StreamId::zero(), 219, true));
+        assert_eq!(dependency("/fast"), StreamDependency::new(StreamId::from(1), 219, true));
+        // 前面的流都已结束，链从根重新开始
+        assert_eq!(dependency("/after"), StreamDependency::new(StreamId::zero(), 219, true));
         client.reset_connections().await;
         server.abort();
     }

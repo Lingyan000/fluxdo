@@ -8,8 +8,8 @@ import 'topic_floating_bar_edge.dart';
 
 /// 四种摆放位置共用端点、握柄和展开曲线，粗细随可用空间调整。
 enum TopicProgressSurface {
-  docked(2, 18, 13, 5),
-  floating(TopicFloatingBarEdge.strokeWidth, 12, 13, 5),
+  docked(2, 18, 0, 0),
+  floating(TopicFloatingBarEdge.strokeWidth, 12, 0, 0),
   sidebar(3, 10, 17, 8),
   sheet(4, 13, 19, 10);
 
@@ -63,10 +63,10 @@ class TopicProgressTrack extends StatelessWidget {
     super.key,
     required this.surface,
     required this.progress,
+    this.readingProgress,
     this.expansion = 0,
     this.startInset = 0,
     this.endInset = 0,
-    this.showHandle = true,
     this.thumbTravel = kAlwaysDismissedAnimation,
     this.lastRead,
     this.current,
@@ -80,7 +80,10 @@ class TopicProgressTrack extends StatelessWidget {
 
   final TopicProgressSurface surface;
   final double progress, expansion, startInset, endInset;
-  final bool showHandle;
+
+  /// 正文滚动只刷新绘制层，握柄和填充使用同一帧的读数。
+  final Animation<double>? readingProgress;
+
   final Animation<double> thumbTravel;
   final double? lastRead, current;
   final TopicFloatingBarEdge? floatingEdge;
@@ -90,6 +93,11 @@ class TopicProgressTrack extends StatelessWidget {
 
   static double fraction(int index, int total) =>
       total > 1 ? ((index - 1) / (total - 1)).clamp(0.0, 1.0) : 1;
+
+  static double readingFraction(int index, int total, double? floorsRead) =>
+      floorsRead == null || total <= 0
+      ? fraction(index, total)
+      : (floorsRead / total).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +172,11 @@ class TopicProgressGradient extends StatelessWidget {
 
 class _TrackPainter extends CustomPainter {
   _TrackPainter(this.track, this.scheme, this.accent, this.radius)
-    : super(repaint: track.thumbTravel);
+    : super(
+        repaint: track.readingProgress == null
+            ? track.thumbTravel
+            : Listenable.merge([track.thumbTravel, track.readingProgress]),
+      );
   final TopicProgressTrack track;
   final ColorScheme scheme;
   final Color accent;
@@ -192,7 +204,8 @@ class _TrackPainter extends CustomPainter {
             Offset(xAt(f), style.openPaintHeight / 2),
             t,
           )!;
-    final tip = pointAt(track.progress);
+    final progress = track.readingProgress?.value ?? track.progress;
+    final tip = pointAt(progress);
     final thumb = tip.dx;
     final paint = Paint();
     final paper = scheme.surfaceContainerLowest;
@@ -254,13 +267,31 @@ class _TrackPainter extends CustomPainter {
     // 贴底的收起进度线可以铺到屏幕边缘，其他形态的圆头留在容器以内。
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    if (!style.vertical && t > 0) {
+    final railColor = scheme.outlineVariant.withValues(
+      alpha: style.vertical ? .8 : .55,
+    );
+    if (!style.vertical && t == 0) {
+      if (progress <= 0 || progress >= 1) {
+        paint.color = progress <= 0 ? railColor : accent;
+      } else {
+        // 两个色标落在同一位置，整条顶边只画一次，分界处也保持原来的线宽。
+        final split = thumb / size.width;
+        paint.shader = LinearGradient(
+          colors: [accent, accent, railColor, railColor],
+          stops: [0, split, split, 1],
+        ).createShader(Offset.zero & size);
+      }
+      drawSegment(bed, 1);
+      canvas.restore();
+      return;
+    }
+    if (!style.vertical) {
       final rim = (style == TopicProgressSurface.floating ? 1.5 : 2.5) * t;
       paint.color = paper;
       drawSegment(bed.inflate(rim), 1, divider: false);
     }
     paint.color = Color.lerp(
-      scheme.outlineVariant.withValues(alpha: style.vertical ? .8 : .55),
+      railColor,
       Color.alphaBlend(
         accent.withValues(alpha: .09),
         scheme.surfaceContainerHigh,
@@ -269,21 +300,13 @@ class _TrackPainter extends CustomPainter {
     )!;
     drawSegment(bed, 1);
 
-    final last = track.lastRead;
-    if (!style.vertical && t < 1 && last != null && last > track.progress) {
-      paint.color = accent.withValues(alpha: .34 * (1 - t));
-      drawSegment(pill(left - h / 2, xAt(last) + h / 2, h), last);
-    }
     paint.color = accent;
     if (t > 0) {
       paint.shader = LinearGradient(
         colors: [Color.lerp(accent, paper, .16 * t)!, accent],
       ).createShader(bed.outerRect);
     }
-    drawSegment(
-      pill(left - h / 2, xAt(track.progress) + h / 2, h),
-      track.progress,
-    );
+    drawSegment(pill(left - h / 2, xAt(progress) + h / 2, h), progress);
     paint.shader = null;
 
     if (t > 0) {
@@ -315,50 +338,49 @@ class _TrackPainter extends CustomPainter {
       }
     }
     if (style.vertical) {
+      final last = track.lastRead;
       if (last != null) {
         final at = Offset(xAt(last), y);
         canvas.drawCircle(at, 4.25, paint..color = scheme.surface);
         canvas.drawCircle(at, 3, paint..color = accent);
       }
       final current = track.current;
-      if (current != null && current != track.progress) {
+      if (current != null && current != progress) {
         final at = Offset(xAt(current), y);
         canvas.drawCircle(at, 4.5, paint..color = accent);
         canvas.drawCircle(at, 2.75, paint..color = scheme.surface);
       }
     }
-    if (track.showHandle && (edge == null || t > 0)) {
-      final open = style.openThickness;
-      final length = lerpDouble(
-        edge == null ? style.gripLength : style.restThickness,
-        style.vertical ? open + 8 : open - 3,
-        t,
-      )!;
-      final thickness = lerpDouble(
-        edge == null ? style.gripThickness : style.restThickness,
-        style.vertical ? open + 3 : open - 3,
-        t,
-      )!;
-      final half = math.min(length, size.width) / 2;
-      final center = thumb.clamp(half, size.width - half);
-      final stretch = axisStretch(track.thumbTravel.value * t, maxStretch: .5);
-      final extra = length * stretch.amount;
-      // 首末楼的圆头留在画布内，只有朝轨道内侧的尾部可以继续伸长。
-      final start = math.max(
-        math.max(0.0, pointAt(0).dx - half),
-        center - half - extra * stretch.origin,
-      );
-      final end = math.min(
-        math.min(size.width, pointAt(1).dx + half),
-        center + half + extra * (1 - stretch.origin),
-      );
-      final grip = pill(start, end, thickness).shift(Offset(0, tip.dy - y));
-      if (style.vertical) canvas.drawRRect(grip, paint..color = accent);
-      canvas.drawRRect(
-        style.vertical ? grip.deflate(1.75 * t) : grip,
-        paint..color = Color.lerp(accent, paper, t)!,
-      );
-    }
+    final open = style.openThickness;
+    final length = lerpDouble(
+      style.gripLength,
+      style.vertical ? open + 8 : open - 3,
+      t,
+    )!;
+    final thickness = lerpDouble(
+      style.gripThickness,
+      style.vertical ? open + 3 : open - 3,
+      t,
+    )!;
+    final half = math.min(length, size.width) / 2;
+    final center = thumb.clamp(half, size.width - half);
+    final stretch = axisStretch(track.thumbTravel.value * t, maxStretch: .5);
+    final extra = length * stretch.amount;
+    // 首末楼的圆头留在画布内，只有朝轨道内侧的尾部可以继续伸长。
+    final start = math.max(
+      math.max(0.0, pointAt(0).dx - half),
+      center - half - extra * stretch.origin,
+    );
+    final end = math.min(
+      math.min(size.width, pointAt(1).dx + half),
+      center + half + extra * (1 - stretch.origin),
+    );
+    final grip = pill(start, end, thickness).shift(Offset(0, tip.dy - y));
+    if (style.vertical) canvas.drawRRect(grip, paint..color = accent);
+    canvas.drawRRect(
+      style.vertical ? grip.deflate(1.75 * t) : grip,
+      paint..color = Color.lerp(accent, paper, t)!,
+    );
     canvas.restore();
   }
 
@@ -367,10 +389,10 @@ class _TrackPainter extends CustomPainter {
       track.surface != old.track.surface ||
       track.floatingEdge != old.track.floatingEdge ||
       track.progress != old.track.progress ||
+      track.readingProgress != old.track.readingProgress ||
       track.expansion != old.track.expansion ||
       track.startInset != old.track.startInset ||
       track.endInset != old.track.endInset ||
-      track.showHandle != old.track.showHandle ||
       track.thumbTravel != old.track.thumbTravel ||
       track.lastRead != old.track.lastRead ||
       track.current != old.track.current ||

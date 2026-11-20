@@ -1151,6 +1151,13 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     return b.content.length == 0 && b.isParagraph && b.containers.isEmpty;
   }
 
+  /// 导入期间尚未产生编辑，关闭可沿用原文；已有文档必须先回写最新内容。
+  /// 提交和切换视图仍使用 flushToController，等待导入及校验完成。
+  bool prepareToClose() {
+    if (_importing && !_documentReplaced && _rawMirror.isCurrent) return true;
+    return flushToController();
+  }
+
   /// 立即序列化(宿主提交前调用,确保 controller 是最新;镜像 debounce
   /// 窗口内提交也不丢内容)。
   bool flushToController() {

@@ -9,6 +9,7 @@ import 'package:fluxdo/widgets/markdown_editor/composer_submission_snapshot.dart
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
@@ -18,6 +19,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
+import 'package:fluxdo/models/draft.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/pages/create_topic_page.dart';
 import 'package:fluxdo/pages/edit_topic_page.dart';
@@ -30,6 +32,8 @@ import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/utils/dialog_utils.dart';
+import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -54,7 +58,7 @@ final _postJson = <String, dynamic>{
   'can_edit': true,
 };
 
-Widget _editPage() => EditTopicPage(
+Widget _editPage({bool canEditContent = true}) => EditTopicPage(
   topicDetail: TopicDetail(
     id: 11,
     title: _title,
@@ -66,7 +70,7 @@ Widget _editPage() => EditTopicPage(
     archived: false,
     canEdit: true,
   ),
-  firstPost: Post.fromJson(_postJson),
+  firstPost: Post.fromJson({..._postJson, 'can_edit': canEditContent}),
 );
 
 Future<void> _pumpPage(
@@ -74,16 +78,28 @@ Future<void> _pumpPage(
   Widget page,
   List<RequestOptions> requests, {
   String expectedRaw = _raw,
+  bool openRoute = false,
+  bool waitForEditor = true,
+  bool rich = true,
+  MemoryDraftStore? draftStore,
+  Future<void>? postLoad,
+  Future<void>? draftLoad,
 }) async {
   PlatformUtils.debugDesktopOverride = false;
   addTearDown(() => PlatformUtils.debugDesktopOverride = null);
-  SharedPreferences.setMockInitialValues({'pref_use_rich_composer': true});
+  SharedPreferences.setMockInitialValues({'pref_use_rich_composer': rich});
   FlutterSecureStorage.setMockInitialValues({'linux_do_username': 'tester'});
   final prefs = await SharedPreferences.getInstance();
   final dio = DiscourseService().dio;
   final mock = InterceptorsWrapper(
-    onRequest: (request, handler) {
+    onRequest: (request, handler) async {
       requests.add(request);
+      if (request.method == 'GET' && request.path == '/posts/21.json') {
+        await postLoad;
+      }
+      if (request.method == 'GET' && request.path.startsWith('/drafts/')) {
+        await draftLoad;
+      }
       // 所有请求均在 Dio 边界终止，保存返回真实 API 的 post 包装结构。
       handler.resolve(
         Response(
@@ -118,7 +134,9 @@ Future<void> _pumpPage(
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
-      localDraftStoreProvider.overrideWithValue(MemoryDraftStore()),
+      localDraftStoreProvider.overrideWithValue(
+        draftStore ?? MemoryDraftStore(),
+      ),
       categoriesProvider.overrideWith(
         (_) async => [
           Category.fromJson({
@@ -143,22 +161,61 @@ Future<void> _pumpPage(
           locale: const Locale('zh'),
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
-          home: page,
+          home: openRoute
+              ? Scaffold(
+                  body: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () {
+                        if (page is ReplySheet) {
+                          showAppBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            respectPopScopeOnDrag: true,
+                            useSafeArea: false,
+                            builder: (_) => page,
+                          );
+                        } else {
+                          Navigator.of(context).push(
+                            InteractionPageRoute<void>(builder: (_) => page),
+                          );
+                        }
+                      },
+                      child: const Text('打开编辑器'),
+                    ),
+                  ),
+                )
+              : page,
         ),
       ),
     ),
   );
+  if (openRoute) {
+    await tester.tap(find.text('打开编辑器'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+  }
+  if (!waitForEditor) return;
   for (var i = 0; i < 100; i++) {
     await tester.runAsync(
       () async => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
     await tester.pump(const Duration(milliseconds: 20));
+    if (!rich) {
+      final editors = find.byType(MarkdownEditor).evaluate();
+      if (editors.length == 1 &&
+          (editors.single.widget as MarkdownEditor).controller.text ==
+              expectedRaw) {
+        return;
+      }
+      continue;
+    }
     final editors = find.byType(FluxdoEditor).evaluate();
     if (editors.length == 1 &&
         docToMarkdown((editors.single.widget as FluxdoEditor).state.blocks)
                 .trim() ==
-            expectedRaw)
+            expectedRaw) {
       return;
+    }
   }
   fail('真实页面未加载预期富文本文档');
 }
@@ -188,6 +245,296 @@ class _DelayedSubmitPlugin extends SitePlugin {
 }
 
 void main() {
+  for (final editTopic in [false, true]) {
+    Widget page() => editTopic
+        ? _editPage()
+        : ReplySheet(topicId: 11, editPost: Post.fromJson(_postJson));
+
+    testWidgets('${editTopic ? '编辑话题' : '编辑帖子'}加载原文期间可以返回', (tester) async {
+      final loading = Completer<void>();
+      final requests = <RequestOptions>[];
+      await _pumpPage(
+        tester,
+        page(),
+        requests,
+        openRoute: true,
+        waitForEditor: false,
+        postLoad: loading.future,
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('打开编辑器'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(ReplySheet), findsNothing);
+      expect(find.byType(EditTopicPage), findsNothing);
+      loading.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final rich in [false, true]) {
+      testWidgets('${editTopic ? '编辑话题' : '编辑帖子'}未修改直接关闭 rich=$rich', (
+        tester,
+      ) async {
+        await _pumpPage(tester, page(), [], openRoute: true, rich: rich);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('打开编辑器'), findsOneWidget);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(find.byType(ReplySheet), findsNothing);
+        expect(find.byType(EditTopicPage), findsNothing);
+      });
+
+      testWidgets('${editTopic ? '编辑话题' : '编辑帖子'}修改后关闭可继续编辑或放弃 rich=$rich', (
+        tester,
+      ) async {
+        final requests = <RequestOptions>[];
+        await _pumpPage(tester, page(), requests, openRoute: true, rich: rich);
+        if (rich) {
+          _append(tester, '未保存修改');
+        } else {
+          tester
+                  .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+                  .controller
+                  .text +=
+              '未保存修改';
+        }
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(
+          find.text(S.current.composer_discardChangesBody),
+          findsOneWidget,
+        );
+        await tester.tap(find.text(S.current.createTopic_continueEditing));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing);
+        final content = rich
+            ? tester
+                  .widget<RichComposerEditor>(find.byType(RichComposerEditor))
+                  .controller
+                  .text
+            : tester
+                  .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+                  .controller
+                  .text;
+        expect(content, contains('未保存修改'));
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(S.current.composer_discardAndClose));
+        await tester.pumpAndSettle();
+        expect(find.text('打开编辑器'), findsOneWidget);
+        expect(find.byType(ReplySheet), findsNothing);
+        expect(find.byType(EditTopicPage), findsNothing);
+        expect(requests.where((r) => r.method == 'PUT'), isEmpty);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  for (final (name, page) in [
+    ('编辑帖子', ReplySheet(topicId: 11, editPost: Post.fromJson(_postJson))),
+    ('编辑话题', _editPage()),
+    ('新建话题', const CreateTopicPage(initialTitle: _title, initialContent: _raw)),
+    (
+      '回复',
+      const ReplySheet(
+        topicId: 11,
+        initialContent: _raw,
+        initialContentIsComplete: true,
+      ),
+    ),
+  ]) {
+    testWidgets('$name导出失败可以继续编辑或确认关闭，保留已有草稿', (tester) async {
+      final requests = <RequestOptions>[];
+      final store = MemoryDraftStore();
+      await _pumpPage(
+        tester,
+        page,
+        requests,
+        openRoute: true,
+        draftStore: store,
+      );
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      final saved = store.entry?.data.reply;
+      final writes = store.writes;
+      _append(tester, '尚未同步的最后一段');
+      RichComposerEditorState.debugBeforeExport = () =>
+          throw StateError('关闭测试注入导出失败');
+      addTearDown(() => RichComposerEditorState.debugBeforeExport = null);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.composer_closeSyncFailed), findsOneWidget);
+      await tester.tap(find.text(S.current.createTopic_continueEditing));
+      await tester.pumpAndSettle();
+      expect(find.byType(RichComposerEditor), findsOneWidget);
+      final editor = tester
+          .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+          .state;
+      expect(docToMarkdown(editor.blocks), contains('尚未同步的最后一段'));
+      expect(store.entry?.data.reply, saved);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.composer_discardAndClose));
+      await tester.pumpAndSettle();
+      expect(find.byType(RichComposerEditor), findsNothing);
+      expect(find.text('打开编辑器'), findsOneWidget);
+      expect(store.entry?.data.reply, saved);
+      expect(store.writes, writes);
+      expect(requests.where((r) => r.method == 'PUT'), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final changed in [false, true]) {
+    testWidgets('仅可编辑话题属性时正常关闭 changed=$changed', (tester) async {
+      await _pumpPage(
+        tester,
+        _editPage(canEditContent: false),
+        [],
+        openRoute: true,
+        waitForEditor: false,
+      );
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(find.byType(RichComposerEditor), findsNothing);
+      if (changed) {
+        await tester.enterText(find.byType(TextFormField), '修改后的话题标题');
+      }
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      if (changed) {
+        expect(
+          find.text(S.current.composer_discardChangesBody),
+          findsOneWidget,
+        );
+        await tester.tap(find.text(S.current.composer_discardAndClose));
+        await tester.pumpAndSettle();
+      }
+      expect(find.byType(EditTopicPage), findsNothing);
+      expect(find.text('打开编辑器'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('编辑弹框保存成功直接关闭并返回更新后的帖子', (tester) async {
+    await _pumpPage(
+      tester,
+      ReplySheet(topicId: 11, editPost: Post.fromJson(_postJson)),
+      [],
+      openRoute: true,
+    );
+    final route = ModalRoute.of(tester.element(find.byType(ReplySheet)))!;
+    _append(tester, '保存修改');
+    await tester.tap(find.byKey(const ValueKey('composer-header-submit')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReplySheet), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(await route.popped, isA<Post>());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('真实回复弹框关闭前保存最后一次输入', (tester) async {
+    final store = MemoryDraftStore();
+    await _pumpPage(
+      tester,
+      const ReplySheet(
+        topicId: 11,
+        initialContent: _raw,
+        initialContentIsComplete: true,
+      ),
+      [],
+      openRoute: true,
+      draftStore: store,
+    );
+    _append(tester, '关闭前最后一次输入');
+    await tester.tap(find.byType(CloseButton));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    expect(find.byType(ReplySheet), findsNothing);
+    expect(store.entry?.data.reply, contains('关闭前最后一次输入'));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final drag in [false, true]) {
+    testWidgets('编辑弹框${drag ? '下拉' : '点击遮罩'}关闭也确认未保存的修改', (tester) async {
+      await _pumpPage(
+        tester,
+        ReplySheet(topicId: 11, editPost: Post.fromJson(_postJson)),
+        [],
+        openRoute: true,
+      );
+      _append(tester, '尚未保存的改动');
+      if (drag) {
+        final header = tester.getRect(
+          find.byKey(const ValueKey('reply-composer-header')),
+        );
+        await tester.flingFrom(header.center, const Offset(0, 500), 1600);
+      } else {
+        await tester.tapAt(const Offset(10, 10));
+      }
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.composer_discardChangesBody), findsOneWidget);
+      await tester.tap(find.text(S.current.createTopic_continueEditing));
+      await tester.pumpAndSettle();
+      expect(find.byType(CloseButton).hitTestable(), findsOneWidget);
+      expect(find.byType(RichComposerEditor), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for (final page in [const CreateTopicPage(), const ReplySheet(topicId: 11)]) {
+    testWidgets('${page.runtimeType}草稿加载中退出不会删除或覆盖已有草稿', (tester) async {
+      final loading = Completer<void>();
+      final requests = <RequestOptions>[];
+      final store = MemoryDraftStore();
+      await store.write(
+        accountId: 'tester',
+        draftKey: page is CreateTopicPage
+            ? Draft.newTopicKey
+            : Draft.replyKey(11),
+        data: const DraftData(reply: _raw),
+        sequence: 0,
+        synced: true,
+      );
+      await _pumpPage(
+        tester,
+        page,
+        requests,
+        openRoute: true,
+        waitForEditor: false,
+        draftLoad: loading.future,
+        draftStore: store,
+      );
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('打开编辑器'), findsOneWidget);
+      expect(find.byType(ReplySheet), findsNothing);
+      expect(find.byType(CreateTopicPage), findsNothing);
+      loading.complete();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        requests.where(
+          (r) => r.path.startsWith('/drafts') && r.method != 'GET',
+        ),
+        isEmpty,
+      );
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(store.entry?.data.reply, _raw);
+      expect(store.writes, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   for (final body in ['', _raw]) {
     testWidgets('空标题未聚焦正文也能选择并上传图片，上传不挤动标题 body=$body', (tester) async {
       tester.view.physicalSize = const Size(390, 844);

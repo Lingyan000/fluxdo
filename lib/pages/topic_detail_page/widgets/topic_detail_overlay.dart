@@ -20,7 +20,7 @@ import '../controllers/topic_reply_session.dart';
 ///
 /// 滚动中高频变化的状态一律走 ValueListenable 细粒度下沉,不要提升为
 /// 本组件的构造参数(那会整棵重建底栏,实测单次 6~7ms):
-/// - 楼层号([streamIndexListenable])→ 只重建楼层计数与进度线
+/// - 整数楼层更新计数，楼内的连续阅读位置只更新进度线
 /// - 底栏显隐([showBottomBarListenable],滚动方向切换即翻转)/ 回顶显隐
 ///   ([showBackToTopListenable])→ 只重建定位包装,内容经 VLB child 缓存
 ///   整棵短路
@@ -28,6 +28,7 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   final ValueListenable<bool> showBottomBarListenable;
   final ValueListenable<bool> showBackToTopListenable;
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
 
   /// 当前加载窗口之前是否还有楼层：此时已加载内容的顶并非话题的顶
@@ -49,8 +50,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   final ValueChanged<int> onScrubCommit;
   final TopicPositionInfoSource? infoSource;
 
-  /// 上次阅读位置（stream 索引），进度线上标出
-  final int? lastReadIndex;
   final TopicFilterControls filter;
 
   /// 快捷回复会话（null 时底栏回复入口走完整编辑器）
@@ -64,6 +63,7 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     required this.showBottomBarListenable,
     required this.showBackToTopListenable,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     required this.hasMoreBefore,
     required this.replyEntryState,
@@ -78,7 +78,6 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     required this.onGestureAction,
     required this.onScrubCommit,
     this.infoSource,
-    this.lastReadIndex,
     required this.filter,
     this.replySession,
     required this.replyEntryKey,
@@ -181,6 +180,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
 
     final bar = TopicBottomBar(
       streamIndexListenable: widget.streamIndexListenable,
+      readingPositionListenable: widget.readingPositionListenable,
       totalCount: widget.totalCount,
       replyEntryState: widget.replyEntryState,
       replyDraftListenable: widget.replyDraftListenable,
@@ -191,7 +191,6 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
       onGestureAction: widget.onGestureAction,
       onScrubCommit: widget.onScrubCommit,
       infoSource: widget.infoSource,
-      lastReadIndex: widget.lastReadIndex,
       onScrubStart: _finishHint,
       filter: widget.filter,
       replyEntryKey: _replyEntryKey,
@@ -207,8 +206,8 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             child: IgnorePointer(
               child: TopicProgressLine(
                 streamIndexListenable: widget.streamIndexListenable,
+                readingPositionListenable: widget.readingPositionListenable,
                 totalCount: widget.totalCount,
-                markerIndex: widget.lastReadIndex,
               ),
             ),
             builder: (context, showBottomBar, child) => Positioned(

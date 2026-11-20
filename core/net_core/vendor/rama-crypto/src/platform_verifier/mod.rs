@@ -25,17 +25,17 @@
 //! and do not inherit Network Security Config pins. Explicit platform rejections
 //! (including pin failures) are never overridden by additional roots.
 //!
-//! Revocation follows the platform's capabilities. Windows checks the leaf and
-//! soft-fails unavailable revocation information. Android API 24+ does the same,
-//! fetching only for system-rooted chains unless a staple is supplied; API 23
-//! has no supplementary revocation check. For a chain with an issuer, a supplied
+//! Revocation never fetches CRL/OCSP during the handshake. Windows checks the
+//! leaf against cached revocation data only and soft-fails unavailable
+//! information. Android API 24+ checks only a supplied staple; API 23 has no
+//! supplementary revocation check. For a chain with an issuer, a supplied
 //! Android staple must validate; malformed or invalid staples are rejected.
 //! BoringSSL builds validate staples locally if the Android provider does not
 //! implement the optional revocation checker, after platform trust succeeds.
 //! Apple uses Security framework policy.
 //! These checks do not promise hard-fail revocation or revocation of every CA.
 //!
-//! Native verification may fetch intermediates or revocation data and cannot
+//! Native verification may fetch intermediates and cannot
 //! be cancelled after it starts. Applications must bound connection concurrency
 //! and size executor blocking pools for this work, especially when peers can
 //! choose upstream destinations. A timeout alone does not bound native work.
@@ -162,8 +162,8 @@ impl PlatformVerifier {
     /// the platform built is returned, leaf first and ending at the trust
     /// anchor.
     ///
-    /// This may block on network access, e.g. to fetch revocation information
-    /// or missing intermediates, so do not call it on an async executor thread.
+    /// This may block on network access, e.g. to fetch missing intermediates,
+    /// so do not call it on an async executor thread.
     /// A timeout cannot interrupt a running native call. Callers must bound
     /// concurrent work independently of handshake deadlines.
     pub fn verify_server_chain(

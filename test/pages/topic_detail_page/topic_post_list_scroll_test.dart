@@ -189,6 +189,7 @@ void main() {
               ),
               dividerPostIndex: null,
               onFirstVisiblePostChanged: reported.add,
+              onReadingProgress: controller.updateReadingPosition,
               onVisiblePostsChanged: (posts) {
                 visiblePosts = posts;
                 visibleReportCount++;
@@ -230,6 +231,68 @@ void main() {
     await tester.pumpAndSettle();
     expect(await done, isTrue);
   }
+
+  testWidgets('同一楼内慢滚和反向立即更新进度，跨楼时连续', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final progress = controller.readingPositionNotifier;
+    expect(progress.value, 0, reason: '初始定位只在完成后接入视线位置');
+    controller.markPositioned();
+    final scroll = controller.scrollController;
+    final start = scroll.offset;
+    final initial = tester.getRect(floor(60));
+    double expected(Rect rect) => 59 + (kToolbarHeight - rect.top) / rect.height;
+    expect(progress.value, closeTo(expected(initial), .001));
+    final reports = reported.length;
+    for (final dy in [4.0, 8.0, 12.0, 8.0, 4.0]) {
+      scroll.jumpTo(start + dy);
+      await tester.pump();
+      expect(progress.value, closeTo(expected(tester.getRect(floor(60))), .001));
+      expect(reported.length, reports, reason: '楼内移动不重复上报楼号');
+    }
+    final boundary = start + initial.bottom - kToolbarHeight;
+    scroll.jumpTo(boundary - 1);
+    await tester.pump();
+    final before = progress.value;
+    scroll.jumpTo(boundary + 1);
+    await tester.pump();
+    expect(reported.last, 61);
+    expect(before, inExclusiveRange(59.97, 60.0));
+    expect(progress.value, inExclusiveRange(60.0, 60.03));
+    await disposeList(tester);
+  });
+
+  testWidgets('只有一楼的长正文也能从零连续读到满进度', (tester) async {
+    initialFloor = 1;
+    hasMoreBefore = hasMoreAfter = false;
+    final only = post(
+      1,
+      cooked: '<p>${List.filled(90, '正文').join('<br>')}</p>',
+    );
+    details.value = topic([only]).copyWith(
+      postStream: PostStream(posts: [only], stream: [only.id]),
+    );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    controller.markPositioned();
+    final progress = controller.readingPositionNotifier;
+    final scroll = controller.scrollController;
+    expect(progress.value, 0);
+    scroll.jumpTo(200);
+    await tester.pump();
+    final middle = progress.value;
+    expect(middle, inExclusiveRange(0.0, 1.0));
+    scroll.jumpTo(204);
+    await tester.pump();
+    expect(progress.value, inExclusiveRange(middle, 1.0));
+    scroll.jumpTo(scroll.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(progress.value, 1);
+    scroll.jumpTo(scroll.position.minScrollExtent);
+    await tester.pumpAndSettle();
+    expect(progress.value, 0);
+    await disposeList(tester);
+  });
 
   testWidgets('持续滚动每帧只测量和上报一次可见帖子', (tester) async {
     await tester.pumpWidget(app());
@@ -469,6 +532,18 @@ void main() {
           widget.key == const ValueKey('long-chunk-60-1'),
     );
     expect(tester.getTopLeft(chunk).dy, closeTo(0, 0.5));
+    controller.markPositioned();
+    final boundary = controller.scrollController.offset - kToolbarHeight;
+    final readings = <double>[];
+    for (final dy in [-4.0, -1.0, 1.0, 4.0]) {
+      controller.scrollController.jumpTo(boundary + dy);
+      await tester.pump();
+      readings.add(controller.readingPositionNotifier.value);
+    }
+    expect(readings, everyElement(inExclusiveRange(59.0, 60.0)));
+    for (var i = 1; i < readings.length; i++) {
+      expect(readings[i] - readings[i - 1], inExclusiveRange(0.0, .05));
+    }
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 20));
   });
@@ -677,11 +752,22 @@ void main() {
     await jumpToFloor(tester, 75);
     expect(tester.getTopLeft(floor(75)).dy, closeTo(0, 0.5));
     expect(reported.last, 75);
+    controller.markPositioned();
+    final progress = controller.readingPositionNotifier;
+    // 下一篇可见帖子是 80 楼，这一段覆盖完整帖子流中的五格。
+    expect(
+      progress.value,
+      closeTo(74 + 5 * kToolbarHeight / tester.getSize(floor(75)).height, .001),
+    );
     details.value = topic([for (var i = 1; i < 100; i++) post(i)]);
     await tester.pump();
     expect(tester.getTopLeft(floor(75)).dy, closeTo(0, 0.5));
     await jumpToFloor(tester, 45);
     expect(tester.getTopLeft(floor(45)).dy, closeTo(0, 0.5));
+    expect(
+      progress.value,
+      closeTo(44 + kToolbarHeight / tester.getSize(floor(45)).height, .001),
+    );
     await disposeList(tester);
   });
 

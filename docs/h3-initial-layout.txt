@@ -1,4 +1,4 @@
-H3 Initial 布局续查（2026-11-15）
+H3 Initial 包布局依据（2026-11-15）
 
 已证实的问题
 1. Chromium 156 的原生首包携带 ClientHello 头部及尾部，中段在后续包；旧 Core 只能包内乱序。
@@ -37,24 +37,4 @@ H3 Initial 布局续查（2026-11-15）
 
 范围限制
 两条连接的随机样本不能证明完整分布，短 ClientHello 的现代单包路径与历史单包策略仍可能歧义。
-本轮未推断所有 Chromium 分支/实验开关的切换版本；不能把结构检查通过称为全指纹等价。
-iOS/macOS 的修复已用下述新云端抓包复核；真机、WiFi/蜂窝切换、生产 CF 结果仍另行验证。
-QPACK 全部请求用途矩阵、Android/Windows 默认原生 H3 证书信任、真机网络场景仍不因本补丁完成。
-CSRF 业务逻辑和字段值未修改；本轮 BrowserStack 新会话数为 0。
-
-本轮本地结果
-- Chromium 99/110/156 三组通过加强后的 Initial 布局及三阶段 QPACK 检查。
-- 10 项 Initial 回放/恢复测试、5 项包内细分测试、4 项模板测试通过。
-- 六项生产网络场景通过：Initial 丢包、Retry、UDP 阻断、reset、扩展请求、POST 响应丢失不重放。
-- 比对器 13 项通过，包含原始 iOS 26.2 元数据的漏检回归和 CRYPTO 重复/缺失负对照。
-- 首轮 Apple 云端 43718742877：两组 macOS 通过，iOS 26.2 在 simctl 预热启动超时，未运行网络验证。
-  artifact 14163578528，SHA-256 9c34e73cfca14e4bbf926422f661641d9ea8112ba372f2afca221743ac976657。
-
-Apple 最终复验
-- Actions https://github.com/Lingyan000/fluxdo/actions/runs/43720046188，提交 2e85dc08e7dc6dbc6c27671840e1129e1f699cae。
-- artifact 14163813278，SHA-256 0f17f378f531bb6007c9c2329cf3d15f26c707d9a7d23c74bc6bea8ca264c9d2。
-- macos-native、macos-app、ios-26.2-native、ios-26.2-app 四组 TCP/H2 和生产 H3 全部通过。
-- iOS 两组实际 CRYPTO 均为 999 + 483，原生 WKWebView 与 Core 一致；此前 Core 为 1161 + 321。
-- 本轮模拟器预热第一次成功，未执行恢复重试。前一轮超时保留为环境失败，不计为网络测试。
-- app 表示采用应用 UA 配置的原生诊断宿主，不是完整 Flutter 应用；iOS 在模拟器中采样，Core 在 macOS 上回放。
-- 本次不重跑已通过的 iOS 15.5 全套环境；其先前证据与当前 26.2 实测分别陈列，不能合称所有 iOS 版本通过。
+未推断所有 Chromium 分支/实验开关的切换版本；不能把结构检查通过称为全指纹等价。

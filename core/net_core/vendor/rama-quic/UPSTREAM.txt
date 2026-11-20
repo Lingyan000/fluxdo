@@ -6,7 +6,7 @@ Initial 分片补丁：新连接生成跨包 CRYPTO 布局，沿用普通重传�
 - bb8ac619a1e6563a94cf2abd0e59df9d795fa8a3（Chromium 110.0.5481.100 DEPS）
 - 51a950dba2100da7e7977aa97759470507d1ebb8（现代实现）
 涉及 packet_builder/chaos.rs、initial_replay/chaos_flight.rs，保留 QUICHE-LICENSE。
-采样策略判定的范围与不能证明的随机分布见 docs/diagnostics/h3-initial-layout-20261115.txt。
+采样策略判定的范围与不能证明的随机分布见 docs/h3-initial-layout.txt。
 
 已按实际运行版本复核：99.0.4812.0 → cb6ab3eb3fdf36c5db3a4a845f4af1c7c5d68b7e；
 110.0.5481.38 → bb8ac619a1e6563a94cf2abd0e59df9d795fa8a3；

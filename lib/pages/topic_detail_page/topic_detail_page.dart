@@ -2525,13 +2525,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   ) {
     final replyEntryState = _replyEntryState(detail, isLoggedIn);
     final bookmarked = _bookmarkEditTarget(detail) != null || detail.bookmarked;
-    final lastReadIndex = _positionInfo.lastReadIndex;
     // Overlay 及其子树实际消费的全部低频输入;detail 对象本身不入签名
     // (它每次更新都是新实例),只取 Overlay 用到的字段。
     final signature = (
       replyEntryState: replyEntryState,
       bookmarked: bookmarked,
-      lastReadIndex: lastReadIndex,
       totalCount: detail.postStream.stream.length,
       hasMoreBefore: notifier.hasMoreBefore,
       hasSummary: detail.hasSummary,
@@ -2551,6 +2549,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       showBottomBarListenable: _controller.showBottomBarNotifier,
       showBackToTopListenable: _controller.showBackToTopNotifier,
       streamIndexListenable: _controller.streamIndexNotifier,
+      readingPositionListenable: _controller.readingPositionNotifier,
       totalCount: detail.postStream.stream.length,
       hasMoreBefore: notifier.hasMoreBefore,
       replyEntryState: replyEntryState,
@@ -2571,7 +2570,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       onGestureAction: _handleProgressGestureForCurrent,
       onScrubCommit: _jumpToStreamIndex,
       infoSource: _positionInfo,
-      lastReadIndex: lastReadIndex,
       filter: _filterControls(detail, notifier),
     );
     _overlayCache = (signature: signature, widget: overlay);
@@ -3812,6 +3810,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               initialPostIndex: initialPostIndex,
               dividerPostIndex: dividerPostIndex,
               onFirstVisiblePostChanged: _updateStreamIndexForPostNumber,
+              onReadingProgress: _controller.updateReadingPosition,
               onVisiblePostsChanged: _updateVisiblePosts,
               onScrollIndexMappingChanged: (mapping) =>
                   _controller.updateScrollIndexMapping(mapping, posts),

@@ -2,26 +2,14 @@
 
 use jni::{Env, jni_sig, jni_str, objects::{JObject, JValue}};
 
-/// 无 OCSP 入口时只检查 CRL，避免提供者把“没有响应地址”当成硬失败。
-/// CRL 的撤销结果仍会拒绝；缺少/无法获取 CRL 才由平台 SOFT_FAIL 处理。
-/// 携带 staple 时必须严格校验它，不能回退到 CRL 或软失败。
+/// 只校验叶子证书的装订响应：不软失败，也不回退到联网取 CRL。
 pub(super) fn configure_revocation_checker(
     env: &mut Env<'_>,
     checker: &JObject<'_>,
-    has_staple: bool,
-    has_ocsp_responder: bool,
 ) -> jni::errors::Result<()> {
     let class = jni_str!("java/security/cert/PKIXRevocationChecker$Option");
     let options = env.new_object(jni_str!("java/util/HashSet"), jni_sig!("()V"), &[])?;
-    for (name, enabled) in [
-        (jni_str!("ONLY_END_ENTITY"), true),
-        (jni_str!("SOFT_FAIL"), !has_staple),
-        (jni_str!("NO_FALLBACK"), has_staple || !has_ocsp_responder),
-        (jni_str!("PREFER_CRLS"), !has_staple && !has_ocsp_responder),
-    ] {
-        if !enabled {
-            continue;
-        }
+    for name in [jni_str!("ONLY_END_ENTITY"), jni_str!("NO_FALLBACK")] {
         let option = env
             .get_static_field(
                 class,
@@ -77,9 +65,4 @@ pub(super) fn revocation_checker<'local>(
         }
         Err(err) => Err(err),
     }
-}
-
-/// 已通过系统校验的连接，只有未携带 staple 时才允许跳过不支持的补充检查。
-pub(super) fn allow_unsupported_revocation(has_staple: bool) -> bool {
-    !has_staple
 }

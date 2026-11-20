@@ -8,10 +8,12 @@
   "followingFeed_posted": "發佈了話題",
   "followingFeed_replied": "回覆了",
   "followingFeed_loadMore": "載入更多",
-  "followingFeed_migrationTitle": "追覓已升級為關注動態",
-  "followingFeed_migrationHint": "追覓遷移說明",
-  "followingFeed_migrationSummary": "查看變更與舊名單，選擇你想繼續關注的人。",
-  "followingFeed_migrationBody": "內置追覓已移除，動態現在展示你在網站上關注的用戶發佈的話題和回覆，支援重新整理和翻閱歷史。\n\n讚好、回應、Boost 監控和背景提醒已停止，後續計劃由插件提供。\n\n舊追覓入口已替換為動態。即使沒有設定底欄入口，也可以從「我的 → 關注動態」進入。\n\n舊監控名單不會自動轉成關注關係。你可以在下方開啟用戶個人頁面，手動選擇關注。確認後，此說明仍可從動態頁右上角查看。",
+  "followingFeed_migrationTitle": "從追覓到關注動態",
+  "followingFeed_migrationSummary": "在這裏查看你在網站上關注的人發佈的話題和回覆，支援下拉重新整理和翻閱歷史。",
+  "followingFeed_migrationChanges": "原追覓的讚好、回應、Boost 監控和背景提醒已停止。",
+  "followingFeed_migrationListHint": "舊名單已儲存在「我的關注」中，可隨時查看並前往用戶個人頁面選擇關注。",
+  "followingFeed_migrationContinue": "開始瀏覽",
+  "followingFeed_viewLegacyUsers": "查看舊名單",
   "followingFeed_legacyUsers": "舊追覓名單",
-  "followingFeed_legacyHint": "這是本機儲存的舊名單，可能包含其他帳號使用時加入的用戶。請確認後再關注。"
+  "followingFeed_legacyHint": "這是本機儲存的舊名單，可能包含其他帳號加入的用戶。開啟用戶個人頁面後，可逐一選擇關注。"
 }

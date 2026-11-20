@@ -138,6 +138,10 @@ class TopicDetailController extends ChangeNotifier {
   /// stream 索引
   final ValueNotifier<int> streamIndexNotifier = ValueNotifier<int>(1);
 
+  /// 底栏专用，从 0 到总楼数，包含当前楼层内已经滚过的部分。
+  final ValueNotifier<double> readingPositionNotifier = ValueNotifier(0.0);
+  double? _pendingReadingPosition;
+
   /// 视口当前帖号(eyeline 上报)的细粒度通知 —— TOC 显隐门控等用;
   /// 独立 ValueNotifier 是因为滚动期它高频变化,不能走 ChangeNotifier
   /// 的 notifyListeners(会整树 rebuild)。
@@ -450,6 +454,7 @@ class TopicDetailController extends ChangeNotifier {
   /// 准备跳转到帖子（重新加载数据）
   void prepareJumpToPost(int postNumber) {
     _cancelPostScroll();
+    _pendingReadingPosition = null;
     positionRevision++;
     _updateScrollState(
       TopicScrollState(
@@ -504,6 +509,9 @@ class TopicDetailController extends ChangeNotifier {
   void markPositioned() {
     if (!_scrollState.isPositioned) {
       _scrollState = _scrollState.copyWith(isPositioned: true);
+      final pending = _pendingReadingPosition;
+      if (pending != null) readingPositionNotifier.value = pending;
+      _pendingReadingPosition = null;
       isPositionedNotifier.value = true;
     }
   }
@@ -539,6 +547,7 @@ class TopicDetailController extends ChangeNotifier {
   /// 当前列表尚未应用目标帖子时，发起一次新的首帧定位。
   void jumpToPostLocally(int postNumber) {
     _cancelPostScroll();
+    _pendingReadingPosition = null;
     positionRevision++;
     // 重置可见性数据
     resetVisibility();
@@ -653,6 +662,15 @@ class TopicDetailController extends ChangeNotifier {
     }
   }
 
+  void updateReadingPosition(double floorsRead) {
+    if (isPositioned) {
+      readingPositionNotifier.value = floorsRead;
+    } else {
+      // 首次定位期间保留目标楼层，完成后再接上最后一次实际布局的位置。
+      _pendingReadingPosition = floorsRead;
+    }
+  }
+
   /// 更新滚动索引到帖子号的映射（长帖子分段导航使用）
   void updateScrollIndexToPostNumber(Map<int, int> mapping) {
     _scrollIndexToPostNumber = mapping;
@@ -695,6 +713,7 @@ class TopicDetailController extends ChangeNotifier {
     // 可见性相关
     _screenTrackThrottleTimer?.cancel();
     streamIndexNotifier.dispose();
+    readingPositionNotifier.dispose();
     viewportPostNumberNotifier.dispose();
 
     super.dispose();

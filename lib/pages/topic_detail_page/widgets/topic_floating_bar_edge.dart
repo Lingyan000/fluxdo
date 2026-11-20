@@ -102,7 +102,12 @@ class TopicFloatingBarEdge {
       (fraction: f, point: at(f)),
   ];
 
+  /// 阅读时只有分界位置在变，整条顶边的路径可逐帧复用。
+  late final Path _readingPath = Path()
+    ..addPolygon([for (final knot in _knots) knot.point], false);
+
   Path trace(double fraction, double expansion, Offset start, Offset end) {
+    if (expansion == 0 && fraction == 1) return _readingPath;
     Offset morph(Offset point, double f) =>
         Offset.lerp(point, Offset.lerp(start, end, f)!, expansion)!;
     final first = morph(_knots.first.point, 0);

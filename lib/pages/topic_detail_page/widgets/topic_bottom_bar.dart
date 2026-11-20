@@ -78,6 +78,7 @@ enum TopicReplyEntryState {
 /// 长按菜单触发可配置动作。
 class TopicBottomBar extends ConsumerStatefulWidget {
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
   final TopicReplyEntryState replyEntryState;
   final ValueListenable<String?>? replyDraftListenable;
@@ -89,8 +90,6 @@ class TopicBottomBar extends ConsumerStatefulWidget {
   final ValueChanged<int> onScrubCommit;
   final TopicPositionInfoSource? infoSource;
 
-  /// 上次阅读位置（stream 索引），在进度线上标出
-  final int? lastReadIndex;
   final VoidCallback? onScrubStart;
   final TopicFilterControls filter;
 
@@ -103,6 +102,7 @@ class TopicBottomBar extends ConsumerStatefulWidget {
   const TopicBottomBar({
     super.key,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     required this.replyEntryState,
     this.replyDraftListenable,
@@ -113,7 +113,6 @@ class TopicBottomBar extends ConsumerStatefulWidget {
     required this.onGestureAction,
     required this.onScrubCommit,
     this.infoSource,
-    this.lastReadIndex,
     this.onScrubStart,
     required this.filter,
     this.replyEntryKey,
@@ -298,12 +297,12 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
         ? TopicBarGestures(
             onAction: widget.onGestureAction,
             streamIndexListenable: widget.streamIndexListenable,
+            readingPositionListenable: widget.readingPositionListenable,
             totalCount: widget.totalCount,
             scrubIndexNotifier: _scrubIndex,
             onScrubCommit: widget.onScrubCommit,
             infoSource: widget.infoSource,
             onScrubStart: widget.onScrubStart,
-            markerIndex: widget.lastReadIndex,
             child: row,
           )
         : Padding(
@@ -586,37 +585,37 @@ class _FloorCounter extends StatelessWidget {
   }
 }
 
-/// 阅读进度线：栏的顶边，收起后单独贴在页面底边。
-/// 当前进度与 [markerIndex]（上次阅读位置）之间画浅色段，标出以前读过的范围。
+/// 已读色和未读色沿底栏顶边相接，底栏收起后沿页面底边显示。
 class TopicProgressLine extends StatelessWidget {
   const TopicProgressLine({
     super.key,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
-    this.markerIndex,
-    this.handleInsets,
     this.floatingEdge,
-    this.showHandle = true,
   });
 
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
-  final int? markerIndex;
-  final EdgeInsets? handleInsets;
   final TopicFloatingBarEdge? floatingEdge;
-  final bool showHandle;
-  static const double handleHeight = 6;
-
-  static double heightFor(bool hasHandle) =>
-      hasHandle ? handleHeight : TopicBottomBarMetrics.progressLineHeight;
 
   @override
   Widget build(BuildContext context) {
-    final insets = handleInsets ?? EdgeInsets.zero;
+    final reading = readingPositionListenable;
+    final progress = reading == null
+        ? null
+        : Animation<double>.fromValueListenable(
+            reading,
+            transformer: (value) => TopicProgressTrack.readingFraction(
+              streamIndexListenable.value,
+              totalCount,
+              value,
+            ),
+          );
     return SizedBox(
       height:
-          floatingEdge?.size.height ??
-          heightFor(showHandle && handleInsets != null),
+          floatingEdge?.size.height ?? TopicBottomBarMetrics.progressLineHeight,
       child: ValueListenableBuilder<int>(
         valueListenable: streamIndexListenable,
         builder: (context, index, _) => TopicProgressTrack(
@@ -625,12 +624,7 @@ class TopicProgressLine extends StatelessWidget {
               : TopicProgressSurface.docked,
           floatingEdge: floatingEdge,
           progress: TopicProgressTrack.fraction(index, totalCount),
-          lastRead: markerIndex == null
-              ? null
-              : TopicProgressTrack.fraction(markerIndex!, totalCount),
-          startInset: insets.left,
-          endInset: insets.right,
-          showHandle: showHandle && handleInsets != null,
+          readingProgress: progress,
         ),
       ),
     );

@@ -26,6 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
+# 出站 TCP 保活（tokio 未暴露该选项）
+socket2 = "0.6"
 
 # DNS 报文编解码；DoH 查询经本库的出口发出
 hickory-proto = { version = "0.24", default-features = false }

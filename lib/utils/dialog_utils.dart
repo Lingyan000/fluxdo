@@ -664,6 +664,9 @@ Future<T?> showAppBottomSheet<T>({
   bool useRootNavigator = false,
   bool isDismissible = true,
   bool enableDrag = true,
+
+  /// 下拉关闭也遵守内容中的 PopScope。
+  bool respectPopScopeOnDrag = false,
   bool? showDragHandle,
   bool useSafeArea = false,
   RouteSettings? routeSettings,
@@ -706,6 +709,7 @@ Future<T?> showAppBottomSheet<T>({
             : Theme.of(context).bottomSheetTheme.modalBarrierColor),
     isDismissible: isDismissible,
     enableDrag: enableDrag,
+    respectPopScopeOnDrag: respectPopScopeOnDrag,
     showDragHandle: showDragHandle,
     backgroundColor: backgroundColor,
     elevation: elevation,
@@ -771,6 +775,7 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
   final ValueListenable<bool>? blurReady;
   final bool filterBackdrop;
   final VoidCallback? onDisposed;
+  final bool respectPopScopeOnDrag;
   @override
   ModalBlurScene get blurScene => ModalBlurScene.sheet;
 
@@ -798,7 +803,23 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
     this.blurReady,
     this.filterBackdrop = true,
     this.onDisposed,
+    this.respectPopScopeOnDrag = false,
   });
+
+  @override
+  bool didPop(T? result) {
+    if (respectPopScopeOnDrag &&
+        controller?.status == AnimationStatus.reverse &&
+        popDisposition == RoutePopDisposition.doNotPop) {
+      // 下拉关闭已经启动退场，恢复高度并在导航锁释放后通知内容确认。
+      controller?.forward();
+      Future.microtask(() {
+        if (isCurrent) onPopInvokedWithResult(false, result);
+      });
+      return false;
+    }
+    return super.didPop(result);
+  }
 
   @override
   void dispose() {

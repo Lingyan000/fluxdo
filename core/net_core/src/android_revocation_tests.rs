@@ -10,7 +10,7 @@ mod native_bridge;
 #[test]
 fn optional_revocation_checker_distinguishes_unsupported_from_rejection() {
     use jni::{InitArgsBuilder, JavaVM, jni_sig, jni_str, objects::JValue};
-    use production::{RevocationChecker, allow_unsupported_revocation, revocation_checker};
+    use production::{RevocationChecker, revocation_checker};
 
     let dir = std::env::temp_dir().join(format!("fluxdo-revocation-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -37,8 +37,6 @@ fn optional_revocation_checker_distinguishes_unsupported_from_rejection() {
                 0 | 3 => {
                     assert!(matches!(result, Ok(RevocationChecker::Unsupported)));
                     assert!(!env.exception_check());
-                    assert!(allow_unsupported_revocation(false));
-                    assert!(!allow_unsupported_revocation(true), "携带 staple 必须验证，不能跳过");
                     let f = crate::ocsp_tests::fixtures();
                     let leaf_bytes = env.byte_array_from_slice(&f.leaf)?;
                     let issuer_bytes = env.byte_array_from_slice(&f.issuer)?;
@@ -85,53 +83,14 @@ fn check_available_provider_policy(env: &mut jni::Env<'_>) -> jni::errors::Resul
     };
     use production::{RevocationChecker, configure_revocation_checker, revocation_checker};
     let f = crate::ocsp_tests::fixtures();
-    // 第一项复现旧选项的同名异常，其余项执行修复后的生产 JNI 配置。
-    for (name, has_ocsp, staple, crl, age, expected) in [
-        (
-            "旧策略复现",
-            true,
-            None,
-            None,
-            0,
-            "UNSPECIFIED: Certificate does not specify OCSP responder",
-        ),
-        ("无撤销入口", false, None, None, 0, "OK"),
-        ("有效 CRL", false, None, Some("valid"), 0, "OK"),
-        ("CRL 已吊销", false, None, Some("revoked"), 0, "REVOKED:"),
-        ("有效 staple", false, Some("good"), None, 0, "OK"),
-        (
-            "staple 已吊销",
-            false,
-            Some("revoked"),
-            Some("valid"),
-            0,
-            "REVOKED:",
-        ),
-        (
-            "staple 签名错误",
-            false,
-            Some("bad_signature"),
-            Some("valid"),
-            0,
-            "!OK",
-        ),
-        (
-            "staple 状态未知",
-            false,
-            Some("unknown"),
-            Some("valid"),
-            0,
-            "!OK",
-        ),
-        (
-            "staple 编码损坏",
-            false,
-            Some("truncated"),
-            Some("valid"),
-            0,
-            "!OK",
-        ),
-        ("过期证书", false, None, None, 40 * 86400, "EXPIRED:"),
+    // 生产路径只在服务器装订了 OCSP 响应时到这里：必须严格验证，可用的 CRL 不能覆盖拒绝。
+    for (name, staple, crl, age, expected) in [
+        ("有效 staple", "good", None, 0, "OK"),
+        ("staple 已吊销", "revoked", Some("valid"), 0, "REVOKED:"),
+        ("staple 签名错误", "bad_signature", Some("valid"), 0, "!OK"),
+        ("staple 状态未知", "unknown", Some("valid"), 0, "!OK"),
+        ("staple 编码损坏", "truncated", Some("valid"), 0, "!OK"),
+        ("过期证书", "good", None, 40 * 86400, "EXPIRED:"),
     ] {
         let validator = env
             .call_static_method(
@@ -144,13 +103,10 @@ fn check_available_provider_policy(env: &mut jni::Env<'_>) -> jni::errors::Resul
         let RevocationChecker::Available(checker) = revocation_checker(env, &validator)? else {
             panic!("需要真实可用校验器");
         };
-        configure_revocation_checker(env, &checker, staple.is_some(), has_ocsp)?;
+        configure_revocation_checker(env, &checker)?;
         let leaf = env.byte_array_from_slice(&f.leaf)?;
         let issuer = env.byte_array_from_slice(&f.issuer)?;
-        let response: JObject = match staple {
-            Some(key) => env.byte_array_from_slice(&f.responses[key])?.into(),
-            None => JObject::null(),
-        };
+        let response: JObject = env.byte_array_from_slice(&f.responses[staple])?.into();
         let crl: JObject = match crl {
             Some(key) => env.byte_array_from_slice(&f.crls[key])?.into(),
             None => JObject::null(),

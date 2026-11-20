@@ -23,7 +23,6 @@ class TopicScrubIndicator extends StatelessWidget {
     required this.insets,
     this.floatingEdge,
     required this.progressAt,
-    required this.markerIndex,
     required this.tracker,
     required this.pointer,
     required this.date,
@@ -37,7 +36,6 @@ class TopicScrubIndicator extends StatelessWidget {
   final EdgeInsets insets;
   final TopicFloatingBarEdge? floatingEdge;
   final double Function(double expansion) progressAt;
-  final int? markerIndex;
   final TopicScrubTracker tracker;
   final Offset pointer;
   final DateTime? date;
@@ -169,7 +167,6 @@ class TopicScrubIndicator extends StatelessWidget {
               animation: visibility,
               builder: (context, _) {
                 final t = TopicProgressTrack.curve.transform(visibility.value);
-                final marker = markerIndex;
                 final height = floating
                     ? lerpDouble(barRect.height, paintHeight, t)!
                     : paintHeight;
@@ -191,12 +188,6 @@ class TopicScrubIndicator extends StatelessWidget {
                     progress: progressAt(t),
                     startInset: insets.left,
                     endInset: insets.right,
-                    lastRead: marker == null
-                        ? null
-                        : TopicProgressTrack.fraction(
-                            marker,
-                            tracker.totalCount,
-                          ),
                     ruler: tracker.scale == TopicScrubScale.whole
                         ? null
                         : (

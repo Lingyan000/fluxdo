@@ -20,7 +20,7 @@ void main() {
       'profile',
     ]);
   });
-  test('旧名单保留，确认后隐藏引导，仍可重新查看名单', () async {
+  test('展示时同步结束引导，旧名单仍可读取', () async {
     SharedPreferences.setMockInitialValues({
       'seeking_config': '{"users":["alice","bob"]}',
     });
@@ -28,8 +28,9 @@ void main() {
     final notifier = FollowingFeedMigrationNotifier(prefs);
     addTearDown(notifier.dispose);
     expect(notifier.state.showGuide, true);
-    await notifier.dismiss();
+    final saving = notifier.markSeen();
     expect(notifier.state.showGuide, false);
+    await saving;
     expect(notifier.state.users, ['alice', 'bob']);
     expect(prefs.getString('seeking_config'), '{"users":["alice","bob"]}');
     expect(FollowingFeedMigration.read(prefs).dismissed, true);

@@ -25,6 +25,9 @@ const double _kSwipeTriggerDistance = 56.0;
 /// 起手区约 20）；系统声明的手势区更宽时以系统为准
 const double _kEdgeGuardMin = 20.0;
 
+/// 从顶边向上滑进入逐楼定位的起手范围。
+const double _kTopEdgeHitHeight = 6;
+
 /// 话题底栏手势层：整条栏都是手势面，不绑定某个具体控件，布局不受约束。
 ///
 /// - 横向拖动：拖动定位楼层（映射见 [TopicScrubTracker]），跟手气泡
@@ -38,12 +41,12 @@ class TopicBarGestures extends ConsumerStatefulWidget {
     required this.child,
     required this.onAction,
     required this.streamIndexListenable,
+    this.readingPositionListenable,
     required this.totalCount,
     required this.scrubIndexNotifier,
     required this.onScrubCommit,
     this.infoSource,
     this.onScrubStart,
-    this.markerIndex,
   });
 
   final Widget child;
@@ -53,8 +56,8 @@ class TopicBarGestures extends ConsumerStatefulWidget {
 
   /// 当前楼层（stream 索引，1 起），拖动起点
   final ValueListenable<int> streamIndexListenable;
+  final ValueListenable<double>? readingPositionListenable;
   final int totalCount;
-  final int? markerIndex;
 
   /// 拖动中的目标楼层，由本组件写入（null = 未在拖动），栏内进度读取
   final ValueNotifier<int?> scrubIndexNotifier;
@@ -249,9 +252,10 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
   }
 
   double _trackProgress(double expansion) {
-    final reading = TopicProgressTrack.fraction(
+    final reading = TopicProgressTrack.readingFraction(
       widget.streamIndexListenable.value,
       widget.totalCount,
+      widget.readingPositionListenable?.value,
     );
     final tracker = _tracker;
     if (tracker == null) return reading;
@@ -413,7 +417,6 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
         insets: _railInsets,
         floatingEdge: _floating ? _edgeFor(rect.size) : null,
         progressAt: _trackProgress,
-        markerIndex: widget.markerIndex,
         tracker: tracker,
         pointer: _pointer,
         date: source?.dateAt(_scrubTarget),
@@ -434,7 +437,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
         _isOutsideEdgeZones(_verticalDown) &&
         _verticalDown.dy <= rect.top + 22 &&
         details.globalPosition.dy < _verticalDown.dy &&
-        (_verticalDown.dy <= rect.top + TopicProgressLine.handleHeight ||
+        (_verticalDown.dy <= rect.top + _kTopEdgeHitHeight ||
             _nearHandle(rect, _verticalDown))) {
       _startScrub(_verticalDown, Axis.vertical);
       _handleScrubUpdate(
@@ -521,14 +524,11 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
       right: math.max(corner, _edgeRight + 4),
     );
     final enabled = prefs.progressGesturesEnabled;
-    final hasHandle = enabled && widget.totalCount > 1;
     Widget readingLine(TopicFloatingBarEdge? edge) => TopicProgressLine(
       streamIndexListenable: widget.streamIndexListenable,
+      readingPositionListenable: widget.readingPositionListenable,
       totalCount: widget.totalCount,
-      markerIndex: widget.markerIndex,
-      handleInsets: enabled || _floating ? _railInsets : null,
       floatingEdge: edge,
-      showHandle: hasHandle,
     );
     final surface = Stack(
       clipBehavior: Clip.none,
@@ -543,11 +543,7 @@ class _TopicBarGesturesState extends ConsumerState<TopicBarGestures>
           Positioned(
             left: 0,
             right: 0,
-            top: _floating
-                ? 0
-                : (TopicBottomBarMetrics.progressLineHeight -
-                          TopicProgressLine.heightFor(hasHandle)) /
-                      2,
+            top: 0,
             bottom: _floating ? 0 : null,
             child: IgnorePointer(
               child: _floating
