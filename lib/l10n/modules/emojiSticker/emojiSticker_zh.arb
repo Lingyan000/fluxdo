@@ -29,6 +29,11 @@
     }
   },
   "sticker_removeGroup": "移除表情包",
+  "sticker_viewGroup": "查看所属表情包",
+  "sticker_removeFromRecent": "从最近使用中删除",
+  "sticker_manageTitle": "我的表情包",
+  "sticker_manageTooltip": "管理表情包",
+  "sticker_manageReorderHint": "拖动调整顺序，表情面板按此顺序显示",
   "sticker_emojiCount": "{count} 个表情",
   "@sticker_emojiCount": {
     "placeholders": {

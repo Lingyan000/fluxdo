@@ -118,6 +118,8 @@
   "preferences_stickerSource": "Sticker source",
   "preferences_stickerThumbnailProxy": "Sticker thumbnail acceleration",
   "preferences_stickerThumbnailProxyDesc": "Load small sticker previews through an image resizing service, falling back to the original image on failure",
+  "preferences_stickerDynamicOrder": "Order sticker packs by recent use",
+  "preferences_stickerDynamicOrderDesc": "After sending a sticker, move its pack to the front of the panel",
   "preferences_title": "Preferences",
   "settings_about": "About FluxDO",
   "settings_appearance": "Appearance",

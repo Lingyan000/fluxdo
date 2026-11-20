@@ -285,6 +285,15 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(stickerThumbnailProxyProvider.notifier).set(v),
         ),
+        SwitchModel(
+          id: 'stickerDynamicOrder',
+          title: l10n.preferences_stickerDynamicOrder,
+          subtitle: l10n.preferences_stickerDynamicOrderDesc,
+          icon: Symbols.swap_vert_rounded,
+          getValue: (ref) => ref.watch(stickerDynamicOrderProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerDynamicOrderProvider.notifier).set(v),
+        ),
       ],
     ),
     SettingsGroup(

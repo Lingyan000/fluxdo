@@ -39,6 +39,9 @@ class StickerMarketService {
   /// 缩略图走缩放代理的开关(用户设置,不能用 [_cachePrefix] 前缀:
   /// 那是可清的缓存,备份也会排除)。
   static const String _thumbnailProxyKey = 'sticker_thumbnail_proxy';
+
+  /// 发送表情后把所在分组移到最前(用户设置,默认关闭)。
+  static const String _dynamicOrderKey = 'sticker_dynamic_order';
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
 
@@ -79,6 +82,11 @@ class StickerMarketService {
     StickerThumbnailSource.proxyEnabled = enabled;
     await _prefs.setBool(_thumbnailProxyKey, enabled);
   }
+
+  bool get dynamicOrderEnabled => _prefs.getBool(_dynamicOrderKey) ?? false;
+
+  Future<void> setDynamicOrderEnabled(bool enabled) =>
+      _prefs.setBool(_dynamicOrderKey, enabled);
 
   /// 当前 baseUrl
   String get baseUrl => _prefs.getString(_baseUrlKey) ?? defaultBaseUrl;
@@ -230,6 +238,23 @@ class StickerMarketService {
     }
   }
 
+  /// 按给定顺序重排已订阅分组。只调整顺序:不在 [orderedIds] 里的已订阅
+  /// 分组按原顺序接在后面,[orderedIds] 里未订阅的 id 忽略。
+  Future<void> reorderSubscribed(List<String> orderedIds) async {
+    final current = getSubscribedGroupIds();
+    final known = current.toSet();
+    final head = [
+      for (final id in orderedIds)
+        if (known.contains(id)) id,
+    ];
+    final headSet = head.toSet();
+    await _prefs.setStringList(_subscribedKey, [
+      ...head,
+      for (final id in current)
+        if (!headSet.contains(id)) id,
+    ]);
+  }
+
   /// 是否已订阅
   bool isSubscribed(String groupId) {
     return getSubscribedGroupIds().contains(groupId);
@@ -313,6 +338,19 @@ class StickerMarketService {
         ? list.sublist(0, _maxRecentStickers)
         : list;
     await _prefs.setStringList(_recentStickersKey, trimmed);
+  }
+
+  /// 从最近使用中删除一个表情
+  Future<void> removeRecentSticker(String stickerId) async {
+    final list = _prefs.getStringList(_recentStickersKey) ?? [];
+    list.removeWhere((s) {
+      try {
+        return (json.decode(s) as Map<String, dynamic>)['id'] == stickerId;
+      } catch (_) {
+        return false;
+      }
+    });
+    await _prefs.setStringList(_recentStickersKey, list);
   }
 
   /// 带缓存的网络请求。[inFile] 为 true 时缓存存文件，否则存 prefs。

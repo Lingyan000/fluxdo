@@ -17,6 +17,25 @@ final stickerMarketServiceProvider = Provider<StickerMarketService>((ref) {
   return StickerMarketService(prefs);
 });
 
+/// 发送表情后把所在分组移到最前的开关（设置页用）
+final stickerDynamicOrderProvider =
+    StateNotifierProvider<StickerDynamicOrderNotifier, bool>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerDynamicOrderNotifier(service);
+    });
+
+class StickerDynamicOrderNotifier extends StateNotifier<bool> {
+  StickerDynamicOrderNotifier(this._service)
+    : super(_service.dynamicOrderEnabled);
+
+  final StickerMarketService _service;
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    await _service.setDynamicOrderEnabled(enabled);
+  }
+}
+
 /// 表情缩略图走缩放代理的开关（设置页用）
 final stickerThumbnailProxyProvider =
     StateNotifierProvider<StickerThumbnailProxyNotifier, bool>((ref) {
@@ -442,6 +461,24 @@ class SubscribedStickerGroupsNotifier
 
   bool isSubscribed(String groupId) => state.any((g) => g.id == groupId);
 
+  /// 拖拽排序:把 [oldIndex] 处的分组移到最终位置 [newIndex]
+  /// (与 ReorderableListView.onReorderItem 的下标语义一致)。
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    final ids = [for (final g in state) g.id];
+    if (oldIndex < 0 || oldIndex >= ids.length) return;
+    final id = ids.removeAt(oldIndex);
+    ids.insert(newIndex.clamp(0, ids.length), id);
+    await _service.reorderSubscribed(ids);
+    state = _service.getSubscribedGroups();
+  }
+
+  /// 把分组按给定顺序移到最前(动态排序,第一个最靠前)。未订阅的忽略。
+  Future<void> moveToFrontAll(List<String> groupIds) async {
+    await _service.reorderSubscribed(groupIds);
+    if (!mounted) return;
+    state = _service.getSubscribedGroups();
+  }
+
   /// 从分组详情回填元信息（升级迁移 + 改名换图自愈）。
   ///
   /// 详情只带 id/name/icon，order/topic/isArchived 沿用已有缓存值；
@@ -489,6 +526,11 @@ class RecentStickersNotifier extends StateNotifier<List<StickerItem>> {
 
   Future<void> add(StickerItem sticker) async {
     await _service.addRecentSticker(sticker);
+    state = _service.getRecentStickers();
+  }
+
+  Future<void> remove(String stickerId) async {
+    await _service.removeRecentSticker(stickerId);
     state = _service.getRecentStickers();
   }
 }

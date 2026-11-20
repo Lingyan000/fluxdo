@@ -118,6 +118,8 @@
   "preferences_stickerSource": "表情包數據源",
   "preferences_stickerThumbnailProxy": "表情縮圖加速",
   "preferences_stickerThumbnailProxyDesc": "透過圖片縮放服務載入表情面板的小圖，失敗時自動改用原圖",
+  "preferences_stickerDynamicOrder": "按最近使用排序表情包",
+  "preferences_stickerDynamicOrderDesc": "發送表情後，把它所在的表情包移到面板最前面",
   "preferences_title": "功能設置",
   "settings_about": "關於 FluxDO",
   "settings_appearance": "外觀設定",

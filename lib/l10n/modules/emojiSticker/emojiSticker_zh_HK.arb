@@ -22,6 +22,11 @@
   "sticker_added": "已添加",
   "sticker_addGroupCount": "加入 {count} 個表情",
   "sticker_removeGroup": "移除表情包",
+  "sticker_viewGroup": "查看所屬表情包",
+  "sticker_removeFromRecent": "從最近使用中刪除",
+  "sticker_manageTitle": "我的表情包",
+  "sticker_manageTooltip": "管理表情包",
+  "sticker_manageReorderHint": "拖動調整順序，表情面板按此順序顯示",
   "sticker_emojiCount": "{count} 個表情",
   "@sticker_emojiCount": {
     "placeholders": {
