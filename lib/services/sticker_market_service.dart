@@ -12,9 +12,12 @@ import '../models/sticker.dart';
 import 'app_logger.dart';
 import 'sticker_thumbnail_source.dart';
 
-/// 顶层函数，供 compute() 在后台 Isolate 中解析分组详情
-StickerGroupDetail _parseGroupDetail(Map<String, dynamic> data) {
-  return StickerGroupDetail.fromJson(data);
+/// 顶层函数,供 compute() 在后台 Isolate 中解析分组详情。
+///
+/// 直接传原始 JSON 文本:文本跨 isolate 只是一次拷贝,而先在主线程 decode
+/// 成 Map 再传过去,既占主线程又要深拷贝整棵 Map(详情最大约 230KB)。
+StickerGroupDetail _parseGroupDetailJson(String body) {
+  return StickerGroupDetail.fromJson(json.decode(body) as Map<String, dynamic>);
 }
 
 /// 表情包市场 API 服务
@@ -200,12 +203,42 @@ class StickerMarketService {
       _swept = true;
       unawaited(_sweepGroupFiles());
     }
-    final data = await _fetchWithCache(
-      'group_$groupId',
-      '$baseUrl/assets/market/$groupFileName',
-      inFile: true,
-    );
-    return compute(_parseGroupDetail, data);
+    final cacheKey = 'group_$groupId';
+    final url = '$baseUrl/assets/market/$groupFileName';
+    final cached = await _readFileCache(cacheKey);
+    if (cached != null &&
+        DateTime.now().difference(cached.time) < _cacheDuration) {
+      return compute(_parseGroupDetailJson, cached.body);
+    }
+    try {
+      final response = await _dio.get<String>(
+        url,
+        options: Options(responseType: ResponseType.plain),
+      );
+      final body = response.data!;
+      // 先解析再落盘:资产站对不存在的路径返回 200 + HTML,解析失败的
+      // 内容不能写进缓存
+      final detail = await compute(_parseGroupDetailJson, body);
+      await _writeFileCache(cacheKey, body);
+      return detail;
+    } catch (e, st) {
+      if (cached != null) {
+        AppLogger.warning(
+          '表情包市场请求失败，已回退过期缓存',
+          tag: 'StickerMarket',
+          fields: {'url': url, 'cacheKey': cacheKey, 'error': e.toString()},
+        );
+        return compute(_parseGroupDetailJson, cached.body);
+      }
+      AppLogger.error(
+        '表情包市场请求失败且无缓存可用',
+        tag: 'StickerMarket',
+        error: e,
+        stackTrace: st,
+        fields: {'url': url, 'cacheKey': cacheKey},
+      );
+      rethrow;
+    }
   }
 
   // ==================== 订阅管理 ====================
@@ -374,15 +407,13 @@ class StickerMarketService {
     await _prefs.setStringList(_recentStickersKey, list);
   }
 
-  /// 带缓存的网络请求。[inFile] 为 true 时缓存存文件，否则存 prefs。
+  /// 带缓存的网络请求(分类、分页、概要这类小文件,缓存存 prefs)。
+  /// 分组详情走文件缓存,见 [getGroupDetail]。
   Future<Map<String, dynamic>> _fetchWithCache(
     String cacheKey,
-    String url, {
-    bool inFile = false,
-  }) async {
-    final cached = inFile
-        ? await _readFileCache(cacheKey)
-        : _readPrefsCache(cacheKey);
+    String url,
+  ) async {
+    final cached = _readPrefsCache(cacheKey);
     if (cached != null &&
         DateTime.now().difference(cached.time) < _cacheDuration) {
       return json.decode(cached.body) as Map<String, dynamic>;
@@ -392,16 +423,11 @@ class StickerMarketService {
     try {
       final response = await _dio.get<Map<String, dynamic>>(url);
       final data = response.data!;
-      final body = json.encode(data);
-      if (inFile) {
-        await _writeFileCache(cacheKey, body);
-      } else {
-        await _prefs.setString('$_cachePrefix$cacheKey', body);
-        await _prefs.setInt(
-          '$_cachePrefix${cacheKey}_ts',
-          DateTime.now().millisecondsSinceEpoch,
-        );
-      }
+      await _prefs.setString('$_cachePrefix$cacheKey', json.encode(data));
+      await _prefs.setInt(
+        '$_cachePrefix${cacheKey}_ts',
+        DateTime.now().millisecondsSinceEpoch,
+      );
       return data;
     } catch (e, st) {
       // 网络失败时尝试使用过期缓存

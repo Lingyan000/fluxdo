@@ -82,6 +82,23 @@ void main() {
       expect(cacheDir.listSync().whereType<File>(), hasLength(1));
     });
 
+    test('资产站返回 HTML 回退页时报错且不落盘', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = StickerMarketService(
+        await SharedPreferences.getInstance(),
+        dio: Dio()..httpClientAdapter = _HtmlAdapter(),
+        cacheDirectory: () async => cacheDir,
+      );
+
+      await expectLater(service.getGroupDetail('group-404'), throwsA(anything));
+      expect(
+        cacheDir.existsSync()
+            ? cacheDir.listSync().whereType<File>().toList()
+            : const <File>[],
+        isEmpty,
+      );
+    });
+
     test('切换市场地址时清掉文件缓存', () async {
       final service = await newService(_RecordingAdapter());
       await service.getGroupDetail('group-123');
@@ -206,6 +223,27 @@ class _RecordingAdapter implements HttpClientAdapter {
       200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// 模拟资产站对不存在路径的 200 + SPA 首页 HTML。
+class _HtmlAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      '<!doctype html><html><title>视频转 GIF</title></html>',
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=UTF-8'],
       },
     );
   }

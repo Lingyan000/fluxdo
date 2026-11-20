@@ -80,6 +80,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   final GlobalKey _contentAreaKey = GlobalKey();
   List<GlobalKey> _groupKeys = [];
 
+  /// 每个分区对应的订阅分组 id(最近使用、收藏分区为 null),与
+  /// [_groupKeys] / tab 一一对应。
+  List<String?> _sectionGroupIds = const [];
+
   /// 当前激活的 group index。**用 ValueNotifier 不用 setState** ——
   /// 滚动时这个值频繁变,如果走 setState 会 rebuild 整个 panel(含 30 张
   /// sticker grid),开销巨大。改成 notifier 后只让 40px 高的 TabBar
@@ -371,7 +375,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       );
     }
     for (final group in ref.read(subscribedStickerGroupsProvider)) {
-      final emojis = ref.read(stickerGroupDetailProvider(group.id)).value?.emojis;
+      final emojis = ref
+          .read(stickerGroupDetailProvider(group.id))
+          .value
+          ?.emojis;
       if (emojis == null) continue;
       add(
         group.name,
@@ -443,6 +450,16 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     _isProgrammaticScroll = true;
     _activeGroupIndex.value = index;
     _ensureTabVisible(index);
+    // 跳转动画期间就开始预热目标分组的首屏缩略图
+    final groupId = index < _sectionGroupIds.length
+        ? _sectionGroupIds[index]
+        : null;
+    final emojis = groupId == null
+        ? null
+        : ref.read(stickerGroupDetailProvider(groupId)).value?.emojis;
+    if (groupId != null && emojis != null) {
+      prefetchStickerGroupThumbnails(groupId, emojis);
+    }
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0.0,
@@ -551,6 +568,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     // 分区顺序:最近使用 → 收藏分类 → 已订阅分组;tab 与分区一一对应
     final totalGroups = (hasRecent ? 1 : 0) + favorites.length + groups.length;
 
+    _sectionGroupIds = [
+      for (var i = 0; i < totalGroups - groups.length; i++) null,
+      for (final group in groups) group.id,
+    ];
     while (_groupKeys.length < totalGroups) {
       _groupKeys.add(GlobalKey());
     }
@@ -789,9 +810,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     _stopTabAutoScroll();
     if (direction == 0) return;
     _tabAutoScrollDirection = direction;
-    _tabAutoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (
-      _,
-    ) {
+    _tabAutoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!_tabScrollController.hasClients) return;
       final position = _tabScrollController.position;
       position.jumpTo(

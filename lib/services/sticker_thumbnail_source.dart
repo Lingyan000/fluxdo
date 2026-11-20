@@ -54,6 +54,22 @@ class StickerThumbnailSource {
     String? displayUrl,
     required int targetSize,
     required DownloadPriority Function() priority,
+  }) async => (await fetchWithSource(
+    bucket: bucket,
+    url: url,
+    displayUrl: displayUrl,
+    targetSize: targetSize,
+    priority: priority,
+  )).bytes;
+
+  /// 同 [fetch],并给出字节来自哪一级(诊断日志用):
+  /// `cache` / `proxy` / `avifRange` / `original`。
+  static Future<({Uint8List bytes, String source})> fetchWithSource({
+    required String bucket,
+    required String url,
+    String? displayUrl,
+    required int targetSize,
+    required DownloadPriority Function() priority,
   }) async {
     final source =
         (displayUrl != null && displayUrl.isNotEmpty && displayUrl != url)
@@ -62,7 +78,7 @@ class StickerThumbnailSource {
 
     // 原图已在缓存里(例如长按预览过)就直接用,不再走网络。
     final cached = await BlobImageCache.read(bucket, source);
-    if (cached != null) return cached;
+    if (cached != null) return (bytes: cached, source: 'cache');
 
     if (_proxyUsable(source)) {
       try {
@@ -74,7 +90,7 @@ class StickerThumbnailSource {
           callTimeout: const Duration(seconds: 8),
         );
         _proxyServiceFailures = 0;
-        if (_looksLikeWebp(bytes)) return bytes;
+        if (_looksLikeWebp(bytes)) return (bytes: bytes, source: 'proxy');
         // 200 但不是图片(例如错误页):按单张失败处理,继续往下取
         _proxyFailedUrls.add(source);
       } catch (e) {
@@ -84,9 +100,12 @@ class StickerThumbnailSource {
 
     if (_isAvifUrl(source)) {
       final bytes = await _fetchAvifSmart(bucket, source, priority);
-      if (bytes != null) return bytes;
+      if (bytes != null) return (bytes: bytes, source: 'avifRange');
     }
-    return BlobImageCache.fetch(bucket, source, priority: priority());
+    return (
+      bytes: await BlobImageCache.fetch(bucket, source, priority: priority()),
+      source: 'original',
+    );
   }
 
   /// 把排队中的取源请求提到前台(同一张图先被预览条以普通优先级请求、

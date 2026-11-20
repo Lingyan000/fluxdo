@@ -100,11 +100,11 @@ class StickerThumbnailProxyNotifier extends StateNotifier<bool> {
 
 /// 分组详情（按 groupId 懒加载）
 ///
-/// 加载完成后,异步批量 precache 第一屏 sticker 的 thumbnail —
-/// 这样用户实际打开 sticker panel / 切到这个 group 时,首屏多数 sticker 已经
-/// 在 PNG cache,只需 Flutter 内置 codec 几 ms 解出,不用等动图解码。
+/// 不在这里预热缩略图:面板打开时会加载全部订阅分组的详情,逐个预热等于
+/// 一开面板就排几百张缩略图,和真正在看的格子抢下载与解码。预热只在点
+/// tab 跳转时针对目标分组做,见 [prefetchStickerGroupThumbnails]。
 ///
-/// 同时把 name/icon 回填到已订阅分组的元信息缓存:老版本升级上来的订阅只有
+/// 把 name/icon 回填到已订阅分组的元信息缓存:老版本升级上来的订阅只有
 /// id、没有元信息,tab 栏先显示占位,详情到手即自愈;分组在市场侧改了名字
 /// 或图标也从这里跟上。
 final stickerGroupDetailProvider =
@@ -112,7 +112,6 @@ final stickerGroupDetailProvider =
       final service = ref.watch(stickerMarketServiceProvider);
       try {
         final detail = await service.getGroupDetail(groupId);
-        unawaited(_prefetchFirstScreenThumbnails(groupId, detail.emojis));
         unawaited(
           ref
               .read(subscribedStickerGroupsProvider.notifier)
@@ -177,6 +176,11 @@ void stickerPanelClosed() {
   _stickerPanelOpen = false;
   // 同时主动 "作废" 所有正在跑的 prefetch group(即使 groupId 没变)
   _activePrefetchGroupId = null;
+}
+
+/// 点 tab 跳到某个分组时预热它的首屏缩略图:滚动动画期间就开始下载解码。
+void prefetchStickerGroupThumbnails(String groupId, List<StickerItem> emojis) {
+  unawaited(_prefetchFirstScreenThumbnails(groupId, emojis));
 }
 
 /// 后台异步批量预解 sticker thumbnail。
