@@ -1,6 +1,6 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。通用能力清单使用 schema 12、apiVersion 2，兼容 schema 9–11。士多 2.2 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+本目录面向 FluxDO 插件作者。通用能力清单使用 schema 12、apiVersion 2，兼容 schema 9–11。士多 2.3 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
 
 开发工具的选型、热更新验证及当前接入范围见 [开发工具与热更新](development-tooling.md)。
 
@@ -17,6 +17,8 @@ TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 
 [论坛动态示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/forum-activity)展示声明入口、读取用户动态和点击打开原生话题。安装、启用后，在「设置 → 外观 → 底栏」中添加页面。宿主提供导航、生命周期、只读数据与权限；名单管理、聚合、轮询策略和缓存由插件维护。详情见 [API 参考](api.md#论坛只读接口与原生导航)。
 
 ## 文档导航
+
+- [定时更新、备份与发布者信任](automatic-updates.md)说明恢复、数据迁移、发布渠道和签名连续性。
 
 - [API 参考](api.md)覆盖脚本环境、事件、网络、存储、账号、导航和应用支付接口。
 - [组件参考](components.md)覆盖当前注册的宿主组件及 rfw 布局组件。

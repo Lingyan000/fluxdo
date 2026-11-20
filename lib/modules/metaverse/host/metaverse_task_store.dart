@@ -199,6 +199,7 @@ class MetaverseTaskStore {
               'background',
               'nextAt',
               'lastAt',
+              'lastSuccessAt',
               'error',
             ])
               key: v[key],
@@ -287,6 +288,7 @@ class MetaverseTaskStore {
     job.remove('lease');
     job.remove('leaseUntil');
     job['lastAt'] = now;
+    if (error == null) job['lastSuccessAt'] = now;
     job['error'] = error;
     final failures = error == null
         ? 0

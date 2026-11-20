@@ -1,4 +1,6 @@
-import 'package:app_icons/app_icons.dart';
+import '../../../../pages/app_logs_page.dart';
+import 'metaverse_plugin_management_page.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -11,6 +13,7 @@ import '../../../../services/navigation/app_route_observer.dart';
 import '../metaverse_plugin_host.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'metaverse_widget_library.dart';
+import '../../../../widgets/common/error_view.dart';
 
 /// 一块插件界面：元宇宙页里的卡片，或一个独立页面。
 ///
@@ -212,7 +215,10 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
     final surface = _surface;
     final widgets = _widgets;
     final error = _error;
-    if (error != null) return MetaversePluginErrorView(message: '$error');
+    if (error != null) { return MetaversePluginErrorView(message: '$error', pluginId: widget.host.id, onRetry: () {
+      setState(() => _error = null);
+      _syncForeground();
+    }); }
     if (surface == null || widgets == null) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
@@ -238,35 +244,21 @@ class _MetaversePluginSurfaceViewState extends State<MetaversePluginSurfaceView>
 }
 
 class MetaversePluginErrorView extends StatelessWidget {
-  const MetaversePluginErrorView({super.key, required this.message});
+  const MetaversePluginErrorView({super.key, required this.message, this.onRetry, this.pluginId});
 
   final String message;
+  final String? pluginId;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.error_rounded, color: theme.colorScheme.error),
-          const SizedBox(height: 8),
-          Text(
-            context.l10n.metaverse_pluginLoadFailed,
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      ErrorView(error: message, title: context.l10n.metaverse_runtimeFailed, onRetry: onRetry),
+      if (pluginId != null) TextButton(onPressed: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => AppLogsPage(pluginId: pluginId))),
+        child: Text(context.l10n.metaverse_diagnostics)),
+      if (pluginId != null) TextButton(onPressed: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => MetaversePluginSettingsPage(pluginId: pluginId!))),
+        child: Text(context.l10n.metaverse_pluginManage)),
+    ]);
   }
 }
 

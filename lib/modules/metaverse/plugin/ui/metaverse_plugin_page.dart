@@ -123,9 +123,14 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
 
     final Widget body;
     if (plugin == null || spec == null || !plugin.enabled) {
-      body = MetaversePluginErrorView(message: '$pluginId/$page');
+      body = MetaversePluginErrorView(pluginId: pluginId, message: '$pluginId/$page', onRetry: plugin == null ? null : () async {
+        await ref.read(metaversePluginsProvider.notifier).resume(pluginId);
+        await ref.read(metaversePluginsProvider.notifier).setEnabled(pluginId, enabled: true);
+      });
     } else if (plugin.suspendedReason case final String reason) {
-      body = MetaversePluginErrorView(message: reason);
+      body = MetaversePluginErrorView(pluginId: pluginId,
+        message: reason == 'rollback_review_required' ? context.l10n.metaverse_rollbackReview : reason,
+        onRetry: reason == 'rollback_review_required' ? null : () => ref.read(metaversePluginsProvider.notifier).resume(pluginId));
     } else {
       final host = ref.watch(metaversePluginHostsProvider).hostFor(plugin);
       body = Column(

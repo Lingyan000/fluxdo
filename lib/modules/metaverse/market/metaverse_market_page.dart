@@ -66,8 +66,14 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
           entry.newerThan(plugin.manifest.version);
     }
 
+    final preview = ref.watch(metaverseUpdatesProvider).value?.preview ?? false;
+    final visible = <String, MetaverseMarketEntry>{};
+    for (final entry in market.entries.where((e) => !e.withdrawn && (e.channel == 'stable' || preview))) {
+      final key = '${entry.source.id}/${entry.id}';
+      if (visible[key] == null || entry.newerThan(visible[key]!.version)) visible[key] = entry;
+    }
     final query = _query.trim().toLowerCase();
-    final entries = market.entries
+    final entries = visible.values
         .where(
           (entry) =>
               (_category == null || entry.categories.contains(_category)) &&
@@ -253,6 +259,11 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
     if (_installing) return;
     setState(() => _installing = true);
     try {
+      await ref.read(metaverseMarketProvider.notifier).refresh(force: true);
+      final market = ref.read(metaverseMarketProvider);
+      final current = market.entries.where((e) => e.id == widget.entry.id && e.source.id == widget.entry.source.id &&
+          e.version == widget.entry.version && e.sha256 == widget.entry.sha256 && e.compatible).firstOrNull;
+      if (market.errors.containsKey(widget.entry.source.id) || current == null) throw StateError(S.current.metaverse_updateFailed);
       final package = await ref
           .read(metaverseMarketProvider.notifier)
           .download(widget.entry);
@@ -287,6 +298,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
       final choices = await showMetaversePluginInstallSheet(
         context,
         package.manifest,
+        package: package, previous: previous,
         isUpdate: previous != null,
         initialBlocked: controller.reviewPermissions(package),
       );
@@ -374,7 +386,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             children: [
               ListTile(
                 title: Text(l.metaverse_marketCompatibility),
-                subtitle: Text(entry.compatible ? 'SDK ${entry.apiVersion}' : l.metaverse_marketRequiresUpdate),
+                subtitle: Text(entry.withdrawn ? '${l.metaverse_updateWithdrawn}\n${entry.reason}' : entry.compatible ? 'SDK ${entry.apiVersion}${entry.channel == 'preview' ? ' · ${l.metaverse_updatePreview}' : ''}' : l.metaverse_marketRequiresUpdate),
               ),
               ListTile(
                 title: Text(l.metaverse_pluginSource),

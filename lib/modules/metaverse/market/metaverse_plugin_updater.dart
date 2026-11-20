@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import '../plugin/metaverse_plugin_installer.dart';
 import '../plugin/metaverse_plugin_store.dart';
+import '../plugin/metaverse_approval_change.dart';
 import 'metaverse_market_catalog.dart';
 import 'metaverse_market_provider.dart';
 import 'metaverse_update_store.dart';
@@ -49,14 +51,28 @@ class MetaversePluginUpdater {
         if (!active()) return;
         if (!eligible(original)) continue;
         final entry = market.entries
-            .where((e) => e.id == original.id && e.source.id == original.source)
-            .firstOrNull;
+            .where((e) => e.id == original.id && e.source.id == original.source &&
+              (e.channel == 'stable' || store.snapshot().preview))
+            .fold<MetaverseMarketEntry?>(null, (latest, candidate) => latest == null || candidate.newerThan(latest.version) ? candidate : latest);
         if (market.errors.containsKey(original.source)) {
           store.report(token, original, original.manifest.version, 'failed');
           continue;
         }
         if (entry == null || !entry.newerThan(original.manifest.version)) {
+          store.report(token, original, original.manifest.version,
+            entry?.withdrawn == true || entry?.withdrawnVersions.contains(original.manifest.version) == true ? 'withdrawn' : 'current');
+          continue;
+        }
+        if (entry.withdrawn) {
+          store.report(token, original, entry.version, 'withdrawn', reason: entry.reason);
+          continue;
+        }
+        if (entry.channel == 'preview' && !store.snapshot().preview) {
           store.report(token, original, original.manifest.version, 'current');
+          continue;
+        }
+        if (store.rejected(original, entry.sha256)) {
+          store.report(token, original, entry.version, 'rejected');
           continue;
         }
         if (!entry.compatible) {
@@ -82,9 +98,9 @@ class MetaversePluginUpdater {
             continue;
           }
           final status =
-              result.package.manifest.sameApprovalAs(current.manifest) &&
-                  result.package.manifest.apiVersion ==
-                      current.manifest.apiVersion
+              result.package.manifest.canUpdateWithoutApproval(current.manifest) &&
+              (result.package.signature?.fingerprint == current.publisherKey ||
+                (current.publisherKey != null && result.package.signature?.previousFingerprint == current.publisherKey))
               ? 'ready'
               : 'review';
           store.report(
@@ -93,7 +109,8 @@ class MetaversePluginUpdater {
             entry.version,
             status,
             bytes: result.bytes,
-            digest: entry.sha256,
+            digest: entry.sha256, reason: entry.reason,
+            installedWithdrawn: entry.withdrawnVersions.contains(current.manifest.version),
           );
           _log(current, status, version: entry.version);
         } catch (_) {
@@ -126,13 +143,23 @@ class MetaversePluginUpdater {
     )
     install,
   }) async {
-    for (final plugin in installed()) {
+    final applicable = installed().where((p) => eligible(p) && idle(p.id) && store.pending(p.id) != null).toList();
+    if (applicable.isEmpty || !available() || !store.snapshot().enabled) return;
+    final market = await refresh();
+    for (final plugin in applicable) {
       if (!available() || !store.snapshot().enabled) return;
       if (!eligible(plugin) || !idle(plugin.id)) continue;
       final candidate = store.pending(plugin.id);
       if (candidate == null) continue;
       if (candidate.base != MetaverseUpdateStore.baseOf(plugin)) {
         store.discard(plugin.id);
+        continue;
+      }
+      if (market.errors.containsKey(plugin.source)) continue;
+      final entry = market.entries.where((e) => e.source.id == plugin.source && e.id == plugin.id &&
+          e.sha256 == candidate.digest && (e.channel == 'stable' || store.snapshot().preview)).firstOrNull;
+      if (entry == null || !entry.compatible) {
+        store.discard(plugin.id, status: entry?.withdrawn == true ? 'withdrawn' : 'failed');
         continue;
       }
       bool allowed() =>
@@ -148,8 +175,13 @@ class MetaversePluginUpdater {
           expectedDigest: candidate.digest,
         );
         if (!allowed()) continue;
-        if (!package.manifest.sameApprovalAs(plugin.manifest) ||
-            package.manifest.apiVersion != plugin.manifest.apiVersion) {
+        if (package.manifest.id != plugin.id || package.manifest.version != entry.version ||
+            package.manifest.apiVersion != entry.apiVersion ||
+            !package.manifest.requiredFeatures.toSet().containsAll(entry.requiredFeatures) ||
+            !entry.requiredFeatures.toSet().containsAll(package.manifest.requiredFeatures)) {
+          throw const FormatException('待更新包与市场记录不一致');
+        }
+        if (!package.manifest.canUpdateWithoutApproval(plugin.manifest)) {
           continue;
         }
         if (await install(package, plugin, allowed)) {
@@ -161,7 +193,11 @@ class MetaversePluginUpdater {
             _log(updated, 'updated');
           }
         }
-      } catch (_) {
+      } catch (error) {
+        if (error is MetaversePluginCallException && error.message == 'update_rejected_version') {
+          store.reject(plugin, candidate.digest);
+          continue;
+        }
         // 安装或校验失败保留旧版本，清掉候选让下一轮重新校验下载。
         store.discard(plugin.id, status: 'failed');
         _log(plugin, 'install_failed');

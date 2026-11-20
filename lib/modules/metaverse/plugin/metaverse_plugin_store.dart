@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
@@ -15,6 +16,8 @@ import 'metaverse_plugin_permission.dart';
 import 'metaverse_credential.dart';
 import 'migrations/metaverse_legacy_storage.dart';
 
+part 'metaverse_plugin_recovery.dart';
+
 /// 已安装的第三方插件。
 @immutable
 class InstalledMetaversePlugin {
@@ -25,6 +28,8 @@ class InstalledMetaversePlugin {
     this.suspendedReason,
     this.codeRevision,
     this.blockedPermissions = const {},
+    this.publisherKey,
+    this.installationId,
   });
 
   final MetaversePluginManifest manifest;
@@ -32,6 +37,9 @@ class InstalledMetaversePlugin {
   /// 清单地址，也是更新来源。
   final String source;
   final String? codeRevision;
+  final String? publisherKey;
+  final String? installationId;
+  static String newInstallationId() => "${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}";
   final Set<MetaversePluginPermission> blockedPermissions;
   List<String> get blockedPermissionNames => blockedPermissions.map((p) => p.name).toList()..sort();
 
@@ -65,6 +73,8 @@ class InstalledMetaversePlugin {
     manifest: manifest,
     source: source,
     codeRevision: codeRevision,
+    publisherKey: publisherKey,
+    installationId: installationId,
     enabled: enabled ?? this.enabled,
     blockedPermissions: blockedPermissions ?? this.blockedPermissions,
     suspendedReason: clearSuspended
@@ -75,11 +85,23 @@ class InstalledMetaversePlugin {
   Map<String, dynamic> toJson() => {
     'source': source,
     'codeRevision': ?codeRevision,
+    'publisherKey': ?publisherKey,
+    'installationId': ?installationId,
     'enabled': enabled,
     'blockedPermissions': blockedPermissionNames,
     'suspended': ?suspendedReason,
     'manifest': manifest.raw,
   };
+
+  static InstalledMetaversePlugin fromJson(Map<String, dynamic> value, {List<String> reservedHosts = const []}) {
+    final manifest = MetaversePluginManifest.parse(value['manifest'], reservedHosts: reservedHosts, allowLegacyMetadata: true);
+    return InstalledMetaversePlugin(manifest: manifest, source: value['source'] as String,
+      installationId: value['installationId'] as String?, codeRevision: value['codeRevision'] as String?, publisherKey: value['publisherKey'] as String?, enabled: value['enabled'] == true,
+      suspendedReason: value['suspended'] as String?, blockedPermissions: Set.unmodifiable({
+        for (final p in MetaversePluginPermission.values)
+          if (p.manageable && (value['blockedPermissions'] is! List || (value['blockedPermissions'] as List).contains(p.name))) p,
+      }));
+  }
 }
 
 /// 插件包的两个代码文件。
@@ -152,6 +174,8 @@ class MetaversePluginStore {
           InstalledMetaversePlugin(
             manifest: manifest,
             source: source,
+            publisherKey: item['publisherKey'] as String?,
+            installationId: item['installationId'] as String?,
             codeRevision: item['codeRevision'] is String
                 ? item['codeRevision'] as String
                 : null,
@@ -166,7 +190,7 @@ class MetaversePluginStore {
                 : null,
           ),
         );
-      } on MetaverseManifestException catch (error) {
+      } on Object catch (error) {
         debugPrint('[Metaverse] 跳过不合法的已安装插件: $error');
       }
     }

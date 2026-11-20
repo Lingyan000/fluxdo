@@ -28,6 +28,10 @@ import 'ui/metaverse_widget_library.dart';
 
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
+  Map<String, Object?> environment() => const {'locale':'zh', 'platform':'unknown'};
+  Future<void> prepareStart() async {}
+  void onHealthy() {}
+  void onStartFailed() {}
   void onShutdown() {}
   bool dismissModal(BuildContext context, String page) => false;
   Future<bool> requestPermissions(BuildContext context, Set<MetaversePluginPermission> missing,
@@ -191,6 +195,16 @@ class MetaversePluginHost implements MetaversePluginBridge {
   bool get hasUpdateBlocker => _uiBusy || _preparedNavigation != null ||
       (_starting != null && _runtime == null) || (_runtime != null && !_runtime!.isIdle) ||
       (_runtime?.surfaces.any((s) => s.kind != 'card' || s.foreground) ?? false);
+  bool get hasPendingInteraction => _uiBusy || _preparedNavigation != null ||
+      (_runtime != null && !_runtime!.isIdle) || (_starting != null && _runtime == null);
+
+  void notifyConfiguration(String event) {
+    final runtime = _runtime;
+    if (runtime == null) return;
+    for (final surface in runtime.surfaces.where((s) => s.foreground)) {
+      runtime.dispatch(surface, event, const {});
+    }
+  }
 
   MetaversePluginRuntime? _runtime;
   Runtime? _widgets;
@@ -405,6 +419,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   Future<void> _start(int generation) async {
     _accountAtStart = _delegate.currentAccountId();
     try {
+      await _delegate.prepareStart();
       if (!manifest.runtimeSupported) {
         throw const MetaversePluginCallException('plugin_api_upgrade_required');
       }
@@ -416,6 +431,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
         script: code.script,
         bridge: this,
         executionContext: PluginExecutionContext(pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId),
+        onSurfaceReady: () {
+          if (generation == _generation) _delegate.onHealthy();
+        },
         onFatal: (reason) {
           if (generation != _generation) return;
           shutdown();
@@ -447,7 +465,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         )
         ..update(metaversePluginLibraryName, library);
     } catch (_) {
-      if (generation == _generation) _starting = null;
+      if (generation == _generation) { _starting = null; _delegate.onStartFailed(); }
       rethrow;
     }
   }
@@ -622,7 +640,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     if (_taskActive != null && !_taskActive!()) throw const MetaversePluginCallException('task_cancelled');
     if (_taskActive != null && !const {
       'forum.read', 'storage.get', 'storage.set', 'storage.setMany', 'storage.remove', 'storage.compareAndSet',
-      'host.features', 'user.get', 'tasks.list', 'navigation.setBadge',
+      'host.features', 'host.environment', 'preferences.get', 'user.get', 'tasks.list', 'navigation.setBadge',
       'notifications.show', 'notifications.cancel', 'notifications.isAllowed', 'crypto.uuid', 'crypto.sha256', 'fetch',
     }.contains(method)) {
       throw const MetaversePluginCallException('task_has_no_ui');
@@ -882,6 +900,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return sha256.convert(utf8.encode(input)).toString();
       case 'host.features':
         return PluginFeatures.supported.toList();
+      case 'host.environment': return _delegate.environment();
+      case 'preferences.get': return _store.preferences(manifest);
       case 'dialogs.confirm':
         for (final key in ['title', 'message', 'confirmLabel']) {
           if (params[key] is! String || (params[key] as String).isEmpty || (params[key] as String).length > 4096) {

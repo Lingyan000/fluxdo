@@ -8,6 +8,7 @@ import 'package:rfw/formats.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_network.dart';
 import 'metaverse_plugin_store.dart';
+import 'metaverse_package_signature.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 /// 下载并校验完毕、等待用户确认的插件包。
@@ -17,11 +18,13 @@ class MetaversePluginPackage {
     required this.manifest,
     required this.source,
     required this.code,
+    this.signature,
   });
 
   final MetaversePluginManifest manifest;
   final String source;
   final MetaversePluginCode code;
+  final MetaversePackageSignature? signature;
 }
 
 class MetaversePluginInstallException implements Exception {
@@ -76,7 +79,9 @@ class MetaversePluginInstaller {
       reservedHosts: reservedHosts,
     );
     final files = bundle['files'] as Map<String, dynamic>;
-    return _checkedFiles(manifest, files, source ?? 'file:${manifest.id}');
+    final package = _checkedFiles(manifest, files, source ?? 'file:${manifest.id}');
+    return MetaversePluginPackage(manifest: package.manifest, source: package.source, code: package.code,
+      signature: MetaversePackageSignature.verify(bundle));
   }
 
   MetaversePluginPackage _checkedFiles(

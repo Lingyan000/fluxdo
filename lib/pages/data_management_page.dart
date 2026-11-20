@@ -2,6 +2,8 @@ import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import '../modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
+import '../modules/metaverse/plugin/metaverse_plugin_backup.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cross_file/cross_file.dart';
@@ -586,7 +588,10 @@ class DataBackupSection extends ConsumerWidget {
 
     try {
       final prefs = ref.read(sharedPreferencesProvider);
-      final filePath = await DataBackupService.exportToFile(prefs);
+      final plugins = await ref.read(metaversePluginBackupProvider.future);
+      final filePath = await DataBackupService.exportToFile(prefs, sections: {
+        MetaversePluginBackup.section: await plugins.export(ref.read(metaversePluginStoreProvider)),
+      });
       // 只保存、不走分享面板:备份里是明文 API Key / 代理密码 / Notion Token,
       // 分享面板一手滑就发进聊天软件了。
       final outcome = await ShareUtils.saveFile(
@@ -615,6 +620,9 @@ class DataBackupSection extends ConsumerWidget {
       if (filePath == null) return;
 
       final backup = await DataBackupService.parseBackupFile(filePath);
+      final pluginBackup = await ref.read(metaversePluginBackupProvider.future);
+      final pluginSection = pluginBackup.sectionFrom(backup);
+      final restore = pluginBackup.validate(pluginSection);
       final data = backup['data'] as Map<String, dynamic>;
       final apiKeys = backup['apiKeys'] as Map<String, dynamic>?;
       final appVersion =
@@ -632,6 +640,7 @@ class DataBackupSection extends ConsumerWidget {
         details.writeln(S.current.dataManagement_apiKeysCount(apiKeys.length));
       }
       details.write('\n${S.current.dataManagement_importWarning}');
+      if (restore.isNotEmpty) details.write('\n${S.current.metaverse_restoreNote}');
 
       final confirmed = await showAppDialog<bool>(
         context: context,
@@ -654,6 +663,8 @@ class DataBackupSection extends ConsumerWidget {
 
       final prefs = ref.read(sharedPreferencesProvider);
       await DataBackupService.importData(prefs, backup);
+      pluginBackup.stage(pluginSection);
+      ref.invalidate(metaversePendingRestoreProvider);
       ToastService.showSuccess(S.current.dataManagement_importSuccess);
     } on FormatException catch (e) {
       ToastService.showError(e.message);

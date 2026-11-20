@@ -217,10 +217,10 @@ void main() {
     expect(await plugins.readCode(old.id), latest.code);
     expect(updates.snapshot().reports[old.id]!['status'], 'updated');
     await updater.check();
-    expect(refreshes, 1);
+    expect(refreshes, 2);
     clock = clock.add(const Duration(days: 1));
     await updater.check();
-    expect(refreshes, 2);
+    expect(refreshes, 3);
   });
   test('后台或仍在使用的插件只准备候选，空闲后安装', () async {
     await updater.check();
@@ -402,7 +402,7 @@ void main() {
       (container.read(
         metaverseMarketProvider.notifier,
       ) as _DriverMarket).requests,
-      1,
+      2,
     );
     subscription.close();
   });
@@ -497,4 +497,34 @@ void main() {
     );
     expect(controller.byId(expected.id)!.manifest.version, '1.0.0');
   });
+  test('缓存包安装前复核撤回和网络状态，不能使用过期目录', () async {
+    await updater.check();
+    errors = {updateSource.id:'unavailable'};
+    await apply();
+    expect(controller.byId('example.updates')!.manifest.version,'1.0.0');
+    errors = {};
+    entries = [];
+    await apply();
+    expect(updates.pending('example.updates'),isNull);
+    expect(controller.byId('example.updates')!.manifest.version,'1.0.0');
+  });
+  test('故障版本回退后只下载一次以确认摘要，后续检查跳过相同包', () async {
+    await updater.check(); await apply();
+    await controller.rollback('example.updates',automatic:true);
+    await updater.check(force:true); await apply();
+    expect(updates.snapshot().reports['example.updates']!['status'],'rejected');
+    final count = downloads;
+    await updater.check(force:true);
+    expect(downloads,count);
+    expect(controller.byId('example.updates')!.manifest.version,'1.0.0');
+  });
+  test('稳定渠道默认排除测试版本，明确选择后才准备候选', () async {
+    latest=updatePackage('2.0.0-beta.1'); entries=[updateEntry(latest)];
+    await updater.check();expect(updates.pending('example.updates'),isNull);
+    updates.setPreview(true);await updater.check(force:true);
+    expect(updates.pending('example.updates'),isNotNull);
+    updates.setPreview(false);await apply();
+    expect(controller.byId('example.updates')!.manifest.version,'1.0.0');
+  });
+
 }

@@ -399,3 +399,11 @@ fluxdo.on('stream.state', (ctx, state) => {
 - 重连携带最后成功交付的 `Last-Event-ID`；服务端是否重放取决于自身协议，插件仍应补查快照及去重。未以空行结束的残缺帧丢弃。凭证不交给脚本，日志只记插件、界面、目标域名、连接状态和错误码，不记录 URL 参数或事件正文。
 
 应用内开发中心提供动态 `streams.open` 演示，用模拟消息展示连接、消息到达与重连，无真实账号请求。Android、iOS 和三种桌面平台共用此实现；后台长连接与远程推送不在此 API 的保证范围。
+
+## 宿主环境、偏好与迁移
+
+声明 hostEnvironment 后，ctx.api.host.environment() 返回当前应用语言标签、平台和时区偏移分钟数。语言来自应用选择，未选择时跟随系统；host.environmentChanged 事件通知可见界面重新读取。隐藏期间不重放变化，恢复可见时应重新读取。后台任务可以读取当时环境，但不会收到页面事件。
+
+声明 pluginPreferences 并在清单 preferences 配置普通偏好，支持 toggle、text 和 choice。宿主管理页负责校验与保存，ctx.api.preferences.get() 返回当前清单的有效值或默认值；插件不能直接修改这些宿主设置。preferences.changed 通知可见页面。每插件最多 24 项、选项至多 32 项、文本值最多 512 字符；密码和令牌仍使用凭证接口，不放在普通偏好里。
+
+声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐账号进行，失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。

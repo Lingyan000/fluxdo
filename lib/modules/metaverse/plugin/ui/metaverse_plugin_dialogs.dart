@@ -12,6 +12,8 @@ import '../../../../utils/dialog_utils.dart';
 import '../../../../utils/link_launcher.dart';
 import '../../../../widgets/common/app_bottom_sheet.dart';
 import '../metaverse_plugin_manifest.dart';
+import '../metaverse_plugin_installer.dart';
+import '../metaverse_approval_change.dart';
 import 'metaverse_widget_library.dart';
 
 /// 输入清单地址。
@@ -127,6 +129,9 @@ Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
   MetaversePluginManifest manifest, {
   required bool isUpdate,
   String? confirmLabel,
+  String? reviewNote,
+  MetaversePluginPackage? package,
+  InstalledMetaversePlugin? previous,
   Set<MetaversePluginPermission>? initialBlocked,
 }) {
   final initial = initialBlocked ?? InstalledMetaversePlugin.reviewPermissions(manifest, null);
@@ -172,6 +177,15 @@ Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
     bodyBuilder: (ctx, controller) => StatefulBuilder(
       builder: (_, update) => _InstallReview(
         manifest: manifest,
+        reviewNote: [
+          ?reviewNote,
+          if (package != null) package.signature == null ? ctx.l10n.metaverse_publisherUnsigned
+            : '${ctx.l10n.metaverse_publisherKey}\n${package.signature!.fingerprint}',
+          if (package != null && previous?.publisherKey != null && package.signature?.fingerprint != previous!.publisherKey &&
+              package.signature?.previousFingerprint != previous.publisherKey) ctx.l10n.metaverse_publisherChanged,
+          if (previous != null && manifest.expandedApprovalFrom(previous.manifest).isNotEmpty)
+            '${ctx.l10n.metaverse_updateChanges}\n${_approvalLabels(ctx, manifest.expandedApprovalFrom(previous.manifest)).join('、')}',
+        ].join('\n\n'),
         controller: controller,
         blocked: manifest.applyPermissionChoices(initial, choices),
         onChanged: (permission, allowed) => update(() {
@@ -193,12 +207,14 @@ class _InstallReview extends StatelessWidget {
     required this.controller,
     required this.blocked,
     required this.onChanged,
+    this.reviewNote,
   });
   final Set<MetaversePluginPermission> blocked;
   final void Function(MetaversePluginPermission, bool) onChanged;
 
   final MetaversePluginManifest manifest;
   final ScrollController controller;
+  final String? reviewNote;
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +251,7 @@ class _InstallReview extends StatelessWidget {
           Text(manifest.description, style: theme.textTheme.bodyMedium),
         ],
         const SizedBox(height: 24),
+        if (reviewNote != null) ...[Text(reviewNote!), const SizedBox(height: 16)],
         MetaversePermissionList(manifest: manifest, blocked: blocked, onChanged: onChanged),
         const SizedBox(height: 20),
         Text(
@@ -347,4 +364,21 @@ void showMetaversePluginToast(String pluginName, String message, String type) {
     case _:
       ToastService.showInfo(text);
   }
+}
+
+List<String> _approvalLabels(BuildContext context, List<String> changes) {
+  final l = context.l10n;
+  return changes.map((change) => switch (change.split('.').first) {
+    'network' => l.metaverse_permissionNetwork,
+    'identity' => l.metaverse_permissionIdentity,
+    'publicImages' => l.metaverse_permissionImages,
+    'credentials' || 'connect' || 'webLogin' || 'auth' => l.metaverse_permissionAccount,
+    'payments' => l.metaverse_nativePayTitle,
+    'forum' => l.metaverse_forumActivity,
+    'background' => l.metaverse_backgroundTasks,
+    'notifications' => l.metaverse_pluginNotifications,
+    'tasks' => l.metaverse_foregroundTasks,
+    'links' => l.metaverse_permissionLinks,
+    _ => l.metaverse_permissionScopes,
+  }).toSet().toList();
 }

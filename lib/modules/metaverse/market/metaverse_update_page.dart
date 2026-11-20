@@ -8,6 +8,7 @@ import '../../../l10n/s.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
+import '../../../utils/dialog_utils.dart';
 import '../plugin/providers/metaverse_plugin_providers.dart';
 import 'metaverse_market_page.dart';
 import 'metaverse_market_provider.dart';
@@ -107,6 +108,8 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
           children: [
             SegmentedCardGroup(
               children: [
+                M3eSwitchListTile(title: Text(l.metaverse_updatePreview), subtitle: Text(l.metaverse_updatePreviewNote),
+                  value: state.preview, onChanged: _busy ? null : (value) => _run(() => ref.read(metaverseUpdatesProvider.notifier).setPreview(value))),
                 ListTile(
                   leading: const Icon(Symbols.schedule_rounded),
                   title: Text(l.metaverse_updateFrequency),
@@ -187,6 +190,8 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
                         'incompatible' => l.metaverse_marketRequiresUpdate,
                         'updated' => l.metaverse_updateApplied,
                         'failed' => l.metaverse_updateFailed,
+                        'withdrawn' => l.metaverse_updateWithdrawn,
+                        'rejected' => l.metaverse_updateRejected,
                         _ => l.metaverse_updateCurrent,
                       };
                       final entry = market.entries
@@ -194,7 +199,7 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
                             (e) =>
                                 e.id == plugin.id &&
                                 e.source.id == plugin.source &&
-                                e.newerThan(plugin.manifest.version),
+                                e.newerThan(plugin.manifest.version) && (e.channel == 'stable' || state.preview),
                           )
                           .firstOrNull;
                       return Column(
@@ -220,6 +225,8 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
                                         .setAllowed(plugin, value),
                                   ),
                           ),
+                          if (report?['installedWithdrawn'] == true) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(l.metaverse_updateWithdrawn)),
+                          if ((report?['reason'] as String? ?? '').isNotEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(report!['reason'] as String)),
                           if (entry != null && report != null)
                             Align(
                               alignment: AlignmentDirectional.centerEnd,
@@ -233,6 +240,18 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
                                 child: Text(l.metaverse_updateView),
                               ),
                             ),
+                          if (report?['status'] == 'ready' && state.enabled && state.allows(plugin))
+                            Align(alignment: AlignmentDirectional.centerEnd, child: TextButton(
+                              onPressed: _busy || driver == null ? null : () async {
+                                final yes = await showAppDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+                                  title: Text(l.metaverse_updateClose), content: Text(l.metaverse_updateCloseNote), actions: [
+                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l.common_cancel)),
+                                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l.common_confirm)),
+                                  ]));
+                                if (yes == true && mounted) await _run(() => driver.applyNow(plugin.id));
+                              },
+                              child: Text(l.metaverse_updateClose),
+                            )),
                         ],
                       );
                     },

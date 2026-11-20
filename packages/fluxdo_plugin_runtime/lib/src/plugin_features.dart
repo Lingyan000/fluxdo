@@ -18,6 +18,9 @@ enum PluginFeature {
   cardNavigation,
   contentPresentation,
   eventStreams,
+  dataMigrations,
+  hostEnvironment,
+  pluginPreferences,
 }
 
 class PluginFeatures {

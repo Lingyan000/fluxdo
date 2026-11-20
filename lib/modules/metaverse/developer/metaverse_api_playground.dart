@@ -226,6 +226,8 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
           }),
         ];
         return id;
+      case 'host.environment':
+        return {'locale': Localizations.localeOf(context).toLanguageTag(), 'platform': Theme.of(context).platform.name, 'timeZoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes};
       case 'host.features':
         return PluginFeatures.supported.toList();
       case 'permissions.status':

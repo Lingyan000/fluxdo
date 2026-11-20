@@ -84,6 +84,10 @@ class MetaverseMarketEntry {
     required this.source,
     this.icon,
     this.requiredFeatures = const [],
+    this.channel = 'stable',
+    this.withdrawn = false,
+    this.withdrawnVersions = const [],
+    this.reason = '',
   });
   final String id,
       name,
@@ -99,8 +103,11 @@ class MetaverseMarketEntry {
   final int apiVersion;
   final List<String> requiredFeatures;
   final List<String> categories, screenshots;
+  final String channel, reason;
+  final bool withdrawn;
+  final List<String> withdrawnVersions;
   final MetaverseMarketSource source;
-  bool get compatible => MetaversePluginManifest.supportedApiVersions.contains(apiVersion) && PluginFeatures.missing(requiredFeatures).isEmpty;
+  bool get compatible => !withdrawn && MetaversePluginManifest.supportedApiVersions.contains(apiVersion) && PluginFeatures.missing(requiredFeatures).isEmpty;
   bool newerThan(String installed) =>
       PluginVersion.parse(version).compareTo(PluginVersion.parse(installed)) >
       0;
@@ -135,6 +142,12 @@ class MetaverseMarketEntry {
     }
     final version = text('version', max: 64);
     PluginVersion.parse(version);
+    final channel = value['channel'] ?? (PluginVersion.parse(version).prerelease.isEmpty ? 'stable' : 'preview');
+    if (channel != 'stable' && channel != 'preview') throw const FormatException('发布渠道无效');
+    if (channel == 'stable' && PluginVersion.parse(version).prerelease.isNotEmpty) throw const FormatException('测试版本不能声明稳定渠道');
+    final withdrawnVersions = strings('withdrawnVersions', max: 128);
+    for (final v in withdrawnVersions) { PluginVersion.parse(v); }
+    if (value.containsKey('withdrawn') && value['withdrawn'] is! bool) throw const FormatException('撤回标记无效');
     final digest = text('sha256', max: 64);
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(digest)) {
       throw const FormatException('插件摘要无效');
@@ -149,6 +162,10 @@ class MetaverseMarketEntry {
       id: id,
       name: text('name', max: 100),
       version: version,
+      channel: channel as String,
+      withdrawn: value['withdrawn'] == true || withdrawnVersions.contains(version),
+      withdrawnVersions: withdrawnVersions,
+      reason: text('reason', max: 1024, optional: true),
       summary: text('summary', max: 512),
       description: text('description', max: 65536, optional: true),
       author: text('author', max: 100),
@@ -186,7 +203,7 @@ class MetaverseMarketCatalog {
     final entries = raw
         .map((v) => MetaverseMarketEntry.parse(v, source))
         .toList();
-    if (entries.map((e) => e.id).toSet().length != entries.length) {
+    if (entries.map((e) => '${e.id}:${e.channel}').toSet().length != entries.length) {
       throw const FormatException('市场包含重复插件 ID');
     }
     return MetaverseMarketCatalog(

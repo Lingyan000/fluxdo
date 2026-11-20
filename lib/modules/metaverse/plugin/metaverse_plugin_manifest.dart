@@ -1,4 +1,5 @@
 import 'metaverse_task.dart';
+import 'metaverse_plugin_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:collection/collection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
@@ -198,6 +199,9 @@ class MetaversePluginManifest {
   bool sameApprovalAs(MetaversePluginManifest other) =>
       const DeepCollectionEquality().equals(_approval, other._approval);
 
+  int get dataVersion => raw['dataVersion'] as int? ?? 1;
+  List<MetaversePreference> get preferences => MetaversePreference.parse(raw['preferences']);
+
   MetaversePluginPageSpec? page(String id) {
     for (final page in pages) {
       if (page.id == id) return page;
@@ -239,6 +243,16 @@ class MetaversePluginManifest {
       throw const MetaverseManifestException('schema', '宿主能力声明需要 schema 10');
     }
     final missing = PluginFeatures.missing(requiredFeatures);
+    try { MetaversePreference.parse(json['preferences']); }
+    on FormatException catch (error) { throw MetaverseManifestException('preferences', error.message); }
+    if (json.containsKey('preferences') && !requiredFeatures.contains('pluginPreferences')) {
+      throw const MetaverseManifestException('preferences', '请声明 pluginPreferences');
+    }
+    if (json.containsKey('dataVersion') && (json['dataVersion'] is! int ||
+        (json['dataVersion'] as int) < 1 || (json['dataVersion'] as int) > 1000000 ||
+        !requiredFeatures.contains('dataMigrations'))) {
+      throw const MetaverseManifestException('dataVersion', '数据版本须为正整数并声明 dataMigrations');
+    }
     if (missing.isNotEmpty && !allowLegacyMetadata) {
       throw MetaverseManifestException('requiredFeatures', '请更新应用，缺少能力 ${missing.join(', ')}');
     }

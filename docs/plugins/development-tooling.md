@@ -35,7 +35,7 @@ Vite 用于开发期的模块依赖图、TypeScript 转换缓存、文件监听�
 5. 不新增 `process`、`require`、`fetch`、`document` 全局能力。
 6. Vite 要求整模块图重载时交回宿主，不自动重新执行入口。
 
-Windows 本机的小型回归样例在加入文件写入稳定等待后约 137 ms 更新；这是本地验证记录，不是手机端延迟承诺。开发运行器压缩后约 79 KiB；兼容层补齐 URL、UTF-8 和 base64 纯计算对象。
+开发运行器由独立 CLI 构建；兼容层提供 URL、UTF-8 和 base64 纯计算对象。
 
 ## CLI 和宿主接入边界
 
@@ -66,8 +66,16 @@ Windows 本机的小型回归样例在加入文件写入稳定等待后约 137 m
 5. 退出开发会话销毁临时文件与内存凭证，正式插件索引和存储不受影响。日志按 runtimeId/pluginId 筛选且脱敏后回传。
 6. fluxdo market-entry --repository URL --tag TAG 构建并生成 GitHub 市场草稿，作者填写变更说明和截图。
 
-CLI 的完整 RFW 解析器来自官方 Dart 实现；组件参数名从生产注册代码导出，SDK、CLI、宿主用同一契约。检查顶层参数名，动态类型及嵌套字段仍由运行时校验。模块顶层已完成的外部副作用无法回滚；开发应使用测试服务或模拟宿主。
+CLI 的完整 RFW 解析器来自官方 Dart 实现；组件参数名从生产注册代码导出，SDK、CLI、宿主用同一契约。检查顶层参数名，以及能从组件读取位置推导的静态参数类型和嵌套路径；诊断给出组件、字段与行列。动态引用、循环结果及不能可靠推导的类型仍须在原生预览中验证。模块顶层已完成的外部副作用无法回滚；开发应使用测试服务或模拟宿主。
 
 SDK 0.6.0 增加 `cardNavigation` 与 `contentPresentation`，CLI 同时校验默认卡片页面、统计、金额、数量输入、Markdown、复制和固定工具区参数。插件需声明必需能力，旧宿主会提示升级而不会静默丢弃交互。
 
 SDK 0.7.0 增加 `eventStreams`、SSE 订阅与状态事件。开发中心的实时连接示例可动态查看消息、断线与重连，测试宿主通过 `dispatch("stream.event", ...)` 注入事件，不依赖真实服务。
+
+## 模拟场景和发布
+
+SDK 0.8.0 的 createScenario 提供可显式控制的权限、账号、离线、凭证失效、宿主环境和设置响应；createPluginHarness 的 virtualTimers 与 advance 可推进重试计时。事件流通过 dispatch 注入帧和状态。测试替身不会模拟真实认证、网络栈或系统调度，也不等于设备端安全验收。
+
+[data-migration 示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/data-migration)包含隔离存储迁移、语言选择及声明式设置。插件可在 preferences.changed、host.environmentChanged 和恢复可见时重新读取宿主环境。
+
+脚手架包含手动触发的 GitHub Actions 发布模板，完成类型检查、模拟测试、打包和 SHA-256，再创建草稿 Release。作者可配置 PLUGIN_SIGNING_KEY 与轮换时的 PLUGIN_PREVIOUS_SIGNING_KEY；临时私钥文件受限权限且退出步骤即删除，不进入包或产物。作者审阅草稿后自行发布，再提交生成的市场条目。发布信任与撤回规则见[定时更新](automatic-updates.md)。

@@ -157,7 +157,8 @@ const metaversePluginPrelude = r'''
       read: function (options) { return call('forum.read', options); },
       open: function (destination) { return call('forum.open', destination); }
     }),
-    host: Object.freeze({features: function () { return call('host.features'); }}),
+    host: Object.freeze({features: function () { return call('host.features'); }, environment: function () { return call('host.environment'); }}),
+    preferences: Object.freeze({get: function () { return call('preferences.get'); }}),
     permissions: Object.freeze({
       status: function () { return call('permissions.status'); },
       request: function (names) { return call('permissions.request', {names: names}); }
@@ -231,6 +232,7 @@ const metaversePluginPrelude = r'''
         var eventId = ++seq;
         post({t: 'event', phase: 'start', id: eventId});
         function done(error) {
+          if (name === 'page.open' || name === 'card.load') post({t:'surface.ready', ok:!error});
           if (delivery) post({t: 'delivery.done', d: delivery});
           post({t: 'event', phase: 'end', id: eventId});
           if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : ''});

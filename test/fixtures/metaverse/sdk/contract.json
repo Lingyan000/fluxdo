@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.7.0",
+  "sdkVersion": "0.8.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
@@ -26,7 +26,10 @@
     "modalDismiss",
     "cardNavigation",
     "contentPresentation",
-    "eventStreams"
+    "eventStreams",
+    "dataMigrations",
+    "hostEnvironment",
+    "pluginPreferences"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -38,5 +41,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "6af7254f919c4c01bbace4be1ae51a818def22f9"
   },
-  "typesSha256": "0cc741ab0462fd2754e1e10a054c8c2c100e325d089753eea642c878718b60df"
+  "typesSha256": "79bae0ca236cb74ba4e72fb39223449a270b94c4b4537efd6b5a383d4fd562b8"
 }

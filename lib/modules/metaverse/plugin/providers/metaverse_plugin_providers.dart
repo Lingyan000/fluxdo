@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:common_ui/common_ui.dart';
 import '../../host/metaverse_forum_adapter.dart';
+import '../../market/metaverse_update_store.dart';
 import '../../host/metaverse_task_actions.dart';
 import '../../host/metaverse_task_store.dart';
 import '../../host/metaverse_task_dispatcher.dart';
@@ -28,6 +29,7 @@ import '../../../../services/network/discourse_dio.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/secret_store_provider.dart';
 import '../../../../providers/theme_provider.dart';
+import '../../../../providers/locale_provider.dart';
 import '../../../../services/network/doh/network_settings_service.dart';
 import '../../../../services/network/core/net_core_bindings.dart';
 import '../../../../services/network/vpn_auto_toggle_service.dart';
@@ -41,6 +43,9 @@ import '../metaverse_plugin_permission.dart';
 import '../metaverse_plugin_capabilities.dart';
 import '../metaverse_plugin_network.dart';
 import '../metaverse_plugin_store.dart';
+import '../metaverse_data_migration.dart';
+import '../metaverse_approval_change.dart';
+import '../metaverse_plugin_backup.dart';
 import '../runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import '../ui/metaverse_plugin_dialogs.dart';
@@ -57,6 +62,11 @@ final metaversePluginDirectoryProvider = FutureProvider<Directory>((ref) async {
   final support = await getApplicationSupportDirectory();
   return Directory(p.join(support.path, 'metaverse_plugins'));
 });
+
+final metaversePluginBackupProvider = FutureProvider((ref) async => MetaversePluginBackup(
+  await ref.watch(metaversePluginDirectoryProvider.future), reservedHosts: [Uri.parse(AppConstants.baseUrl).host]));
+final metaversePendingRestoreProvider = FutureProvider((ref) async =>
+  (await ref.watch(metaversePluginBackupProvider.future)).pending());
 
 final metaversePluginStoreProvider = Provider<MetaversePluginStore>((ref) {
   return MetaversePluginStore(
@@ -127,7 +137,8 @@ final metaverseForumAdapterProvider = Provider((ref) => MetaverseForumAdapter(
 final metaversePluginHostsProvider = Provider<MetaversePluginHosts>((ref) {
   ref.watch(currentUserProvider.select((value) => value.value?.id));
   final hosts = MetaversePluginHosts(ref);
-  ref.onDispose(hosts.shutdownAll);
+  ref.listen(localeProvider, (_, _) => hosts.notifyConfiguration('host.environmentChanged'));
+  ref.onDispose(hosts.dispose);
   return hosts;
 });
 
@@ -140,7 +151,8 @@ class MetaversePluginsController
     final previous = byId(package.manifest.id);
     return InstalledMetaversePlugin.reviewPermissions(
       package.manifest,
-      previous?.source == package.source ? previous : null,
+      previous?.source == package.source && (previous?.publisherKey == null ||
+        previous?.publisherKey == package.signature?.fingerprint || previous?.publisherKey == package.signature?.previousFingerprint) ? previous : null,
     );
   }
 
@@ -152,13 +164,21 @@ class MetaversePluginsController
       InstalledMetaversePlugin expected, bool Function() canApply) => _mutations.run('index', () async {
     bool valid() => identical(byId(expected.id), expected) && canApply() &&
         package.manifest.id == expected.id && package.source == expected.source &&
-        package.manifest.runtimeSupported && package.manifest.sameApprovalAs(expected.manifest) &&
+        package.manifest.runtimeSupported && package.manifest.canUpdateWithoutApproval(expected.manifest) &&
+        (package.signature?.fingerprint == expected.publisherKey ||
+          (expected.publisherKey != null && package.signature?.previousFingerprint == expected.publisherKey)) &&
         package.manifest.apiVersion == expected.manifest.apiVersion &&
         PluginVersion.parse(package.manifest.version).compareTo(PluginVersion.parse(expected.manifest.version)) > 0;
     if (!valid()) return false;
+    final status = await _store.releaseStatus(expected.id);
+    if ((status['rejected'] as List? ?? []).contains(MetaversePluginStore.revisionOf(package.code))) {
+      throw const MetaversePluginCallException('update_rejected_version');
+    }
     await _store.writeCode(expected.id, package.code);
     if (!valid()) return false;
     final next = InstalledMetaversePlugin(manifest: package.manifest, source: expected.source,
+      publisherKey: package.signature?.fingerprint,
+      installationId: InstalledMetaversePlugin.newInstallationId(),
       codeRevision: MetaversePluginStore.revisionOf(package.code), enabled: expected.enabled,
       suspendedReason: expected.suspendedReason, blockedPermissions: expected.blockedPermissions);
     final control = expected.manifest.tasks.isEmpty ? null : await ref.read(metaverseTaskStoreProvider.future);
@@ -166,13 +186,22 @@ class MetaversePluginsController
     final hold = control?.holdForUpdate(expected.id);
     if (control != null && hold == null) return false;
     try {
+      await _prepareRelease(expected, next, package);
       await _replace(next, publishGuard: () {
         if (!valid() || (control != null && !control.updateHeld(expected.id, hold!))) throw const PluginOperationCancelled();
       });
+      await _store.settleRelease(next);
+      await _store.pruneCode(next);
+      await _pruneCredentials(expected.manifest, next.manifest);
       control?.applyPermissions(next);
       return true;
     } on PluginOperationCancelled { return false; }
-    finally { if (hold != null) control!.releaseUpdate(expected.id, hold); }
+    finally {
+      try {
+        final installed = byId(expected.id);
+        if (installed != null) await _store.settleRelease(installed);
+      } finally { if (hold != null) control!.releaseUpdate(expected.id, hold); }
+    }
   });
 
   Future<void> setPermission(
@@ -187,6 +216,22 @@ class MetaversePluginsController
     );
     if (plugin.allows(permission) == allowed) return;
     await _replacePermissions(plugin, plugin.copyWith(blockedPermissions: blocked));
+  });
+
+  Future<void> restoreBackup(MetaversePluginPackage package, Map<String, dynamic> backup,
+      Map<MetaversePluginPermission, bool> choices) => _mutations.run('index', () async {
+    final old = MetaversePluginManifest.parse(backup['manifest'], reservedHosts: _store.reservedHosts, allowLegacyMetadata: true);
+    if (package.manifest.id != old.id || package.source != backup['source'] ||
+        PluginVersion.parse(package.manifest.version).compareTo(PluginVersion.parse(old.version)) < 0) {
+      throw const MetaversePluginCallException('restore_source_mismatch');
+    }
+    final data = await migrateMetaverseData(package: package, fromVersion: old.dataVersion,
+      data: (backup['data'] as Map).cast<String, Object?>(), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    await _install(package, choices, restoreData: data,
+      restorePreferences: (backup['preferences'] as Map? ?? const {}).cast<String, Object?>());
+    MetaverseUpdateStore(await ref.read(metaversePluginDirectoryProvider.future)).setAllowed(byId(old.id)!, backup['autoUpdate'] != false);
+    (await ref.read(metaversePluginBackupProvider.future)).remove(old.id);
+    ref.invalidate(metaversePendingRestoreProvider);
   });
   Future<void> setEnabled(String id, {required bool enabled}) =>
       _mutations.run('index', () => _setEnabled(id, enabled: enabled));
@@ -210,6 +255,46 @@ class MetaversePluginsController
   Future<void> suspend(String id, String reason) =>
       _mutations.run('index', () => _suspend(id, reason));
   Future<void> resume(String id) => _mutations.run('index', () => _resume(id));
+  Future<void> rollback(String id, {bool automatic = false, MetaversePluginManifest? expected, bool reviewed = false, Map<MetaversePluginPermission, bool> choices = const {}}) => _mutations.run('index', () async {
+    final current = byId(id);
+    if (current == null || (expected != null && !identical(expected, current.manifest))) return;
+    final previous = await _store.previousRelease(current, probationOnly: automatic);
+    if (previous == null) {
+      if (automatic) await _suspend(id, 'plugin_start_failed');
+      return;
+    }
+    ref.read(metaversePluginHostsProvider).shutdown(id);
+    await _revokeTasks(current);
+    // 回退版本不能重新取得新版本已删除的能力。
+    final requiresReview = !previous.manifest.canUpdateWithoutApproval(current.manifest) || previous.publisherKey != current.publisherKey;
+    if (requiresReview && !reviewed) {
+      if (automatic) { await _suspend(id, 'rollback_review_required'); return; }
+      throw const MetaversePluginCallException('rollback_review_required');
+    }
+    final restored = previous.copyWith(enabled: current.enabled && !requiresReview && !automatic,
+      clearSuspended: true, blockedPermissions: previous.manifest.applyPermissionChoices(
+        {...previous.blockedPermissions, ...current.blockedPermissions,
+          if (requiresReview) ...previous.manifest.declaredPermissions.where((p) => p.manageable)}, choices));
+    final control = _usesTaskControl(current) ? await ref.read(metaverseTaskStoreProvider.future) : null;
+    final hold = control?.holdForUpdate(id);
+    if (control != null && hold == null) throw const MetaversePluginCallException('update_busy');
+    try {
+      await _store.prepareRollback(current, restored);
+      await _pruneCredentials(current.manifest, restored.manifest);
+      await _replace(restored, publishGuard: () {
+        if (control != null && !control.updateHeld(id, hold!)) throw const PluginOperationCancelled();
+      });
+    } finally {
+      try { await _store.settleRelease(byId(id)!); }
+      finally { if (hold != null) control!.releaseUpdate(id, hold); }
+    }
+    await _store.finishRollback(restored, 'rollback');
+    await _pruneCredentials(current.manifest, restored.manifest);
+  });
+  Future<void> reloadHost(String id) => _mutations.run('index', () async {
+    final plugin = byId(id);
+    if (plugin != null) await _replace(plugin.copyWith());
+  });
   Future<void> remove(String id) => _mutations.run('index', () => _remove(id));
   Future<void> resetData(String id) => _mutations.run('index', () => _resetData(id));
   Future<void> signOutAll() => _mutations.run('index', _signOutAll);
@@ -233,8 +318,9 @@ class MetaversePluginsController
   /// 避免新清单继承旧插件的授权。
   Future<InstalledMetaversePlugin> _install(
     MetaversePluginPackage package,
-    Map<MetaversePluginPermission, bool> choices,
-  ) async {
+    Map<MetaversePluginPermission, bool> choices, {
+    Map<String, Object?>? restoreData, Map<String, Object?>? restorePreferences,
+  }) async {
     final manifest = package.manifest;
     if (!manifest.runtimeSupported) {
       throw MetaversePluginInstallException(
@@ -245,8 +331,11 @@ class MetaversePluginsController
     if (previous == null && state.length >= maxPlugins) {
       throw const MetaversePluginInstallException('已达到插件数量上限');
     }
-    final changedSource = previous != null && previous.source != package.source;
-    final blocked = manifest.applyPermissionChoices(reviewPermissions(package), choices);
+    final changedSource = previous != null && (previous.source != package.source ||
+      (previous.publisherKey != null && package.signature?.fingerprint != previous.publisherKey &&
+        package.signature?.previousFingerprint != previous.publisherKey));
+    final blocked = manifest.applyPermissionChoices(
+      restoreData == null ? reviewPermissions(package) : InstalledMetaversePlugin.reviewPermissions(manifest, null), choices);
     final changedPermissions =
         previous != null && !manifest.sameApprovalAs(previous.manifest);
     if (previous != null) {
@@ -255,33 +344,79 @@ class MetaversePluginsController
     if (!changedSource && previous?.manifest.apiVersion == 1 && manifest.apiVersion == 2) {
       await _store.importLegacyStorage(manifest.id);
     }
-    if (changedSource || changedPermissions) {
-      await _revokeTasks(previous);
-      await _store.deleteToken(manifest.id);
-      if (changedSource) {
-        await _store.clearStorage(manifest.id);
-        await _store.clearLegacyRecords(manifest.id);
-      }
-    }
     await _store.writeCode(manifest.id, package.code);
     final next = InstalledMetaversePlugin(
       manifest: manifest,
+      publisherKey: package.signature?.fingerprint,
+      installationId: InstalledMetaversePlugin.newInstallationId(),
       source: package.source,
       codeRevision: MetaversePluginStore.revisionOf(package.code),
-      enabled: !changedSource && (previous?.enabled ?? false),
+      enabled: restoreData == null && !changedSource && (previous?.enabled ?? false),
       blockedPermissions: blocked,
     );
-    if (previous != null && !changedSource && !changedPermissions) {
-      await _replacePermissions(previous, next);
-    } else {
-      await _replace(next);
+    final control = previous != null && _usesTaskControl(previous)
+        ? await ref.read(metaverseTaskStoreProvider.future) : null;
+    final hold = control?.holdForUpdate(manifest.id);
+    if (control != null && hold == null) throw const MetaversePluginCallException('update_busy');
+    try {
+      if (restoreData != null || changedSource || previous == null) {
+        await _store.prepareRelease(previous, next, restoreData ?? {}, reset: true,
+          preferences: {for (final field in manifest.preferences)
+            if (field.accepts(restorePreferences?[field.key])) field.key: restorePreferences![field.key]});
+      } else {
+        await _prepareRelease(previous, next, package);
+      }
+      void guard() {
+        if (control != null && !control.updateHeld(manifest.id, hold!)) {
+          throw const MetaversePluginCallException('update_busy');
+        }
+      }
+      if (previous != null && !changedSource && changedPermissions) await _pruneCredentials(previous.manifest, manifest);
+      if (previous != null && previous.allows(MetaversePluginPermission.serviceAccount) != next.allows(MetaversePluginPermission.serviceAccount)) {
+        await _store.deleteToken(manifest.id);
+      }
+      await _replace(next, publishGuard: guard);
+      await _store.settleRelease(next);
+      if (previous != null && (changedSource || changedPermissions || restoreData != null)) {
+        await _revokeTasks(previous);
+      }
+      control?.applyPermissions(next);
+    } finally {
+      try {
+        final installed = byId(manifest.id);
+        if (installed != null) await _store.settleRelease(installed);
+      } finally { if (hold != null) control!.releaseUpdate(manifest.id, hold); }
     }
+    if (previous != null && !changedSource) await _pruneCredentials(previous.manifest, manifest);
+    await _store.pruneCode(next);
     return byId(manifest.id)!;
+  }
+
+  Future<void> _prepareRelease(InstalledMetaversePlugin previous, InstalledMetaversePlugin next,
+      MetaversePluginPackage package) async {
+    await _store.settleRelease(previous);
+    final data = await migrateMetaverseData(package: package, fromVersion: previous.manifest.dataVersion,
+      data: await _store.readStorage(previous.id), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    await _store.prepareRelease(previous, next, data);
+  }
+
+  Future<void> _pruneCredentials(MetaversePluginManifest old, MetaversePluginManifest next) async {
+    if (old.auth.type != next.auth.type || old.auth.header != next.auth.header || old.auth.scheme != next.auth.scheme ||
+        (old.auth.canAttachCredential && !next.canUpdateWithoutApproval(old)) ||
+        !old.capabilities.connectCallbacks.toSet().containsAll(next.capabilities.connectCallbacks)) {
+      await _store.deleteToken(next.id);
+      return;
+    }
+    for (final entry in old.capabilities.credentials.entries) {
+      final spec = next.capabilities.credentials[entry.key];
+      if (spec == null || !spec.isWithin(entry.value)) await _store.removeCredential(next.id, entry.key);
+    }
   }
 
   Future<void> _setEnabled(String id, {required bool enabled}) async {
     final plugin = byId(id);
     if (plugin == null) return;
+    if (enabled && plugin.suspendedReason == 'rollback_review_required') throw const MetaversePluginCallException('rollback_review_required');
     if (!enabled) {
       // 停用即撤销授权：凭证不留在设备上。
       ref.read(metaversePluginHostsProvider).shutdown(id);
@@ -317,6 +452,7 @@ class MetaversePluginsController
   Future<void> _resume(String id) async {
     final plugin = byId(id);
     if (plugin == null || plugin.suspendedReason == null) return;
+    if (plugin.suspendedReason == 'rollback_review_required') throw const MetaversePluginCallException('rollback_review_required');
     await _replace(plugin.copyWith(clearSuspended: true));
   }
 
@@ -338,6 +474,7 @@ class MetaversePluginsController
     ref.read(metaversePluginHostsProvider).shutdown(id);
     await _revokeTasks(plugin);
     await _store.resetData(id);
+    await _store.clearReleaseHistory(id);
     await _replace(plugin.copyWith(enabled: false, clearSuspended: true));
   }
 
@@ -431,11 +568,17 @@ class MetaversePluginsController
 ///
 /// 是普通对象而不是 Notifier：实例的创建发生在 widget build 里，不能在那时
 /// 改 provider 状态；界面也不需要随实例的创建/销毁重建。
-class MetaversePluginHosts {
-  MetaversePluginHosts(this._ref);
+class MetaversePluginHosts with WidgetsBindingObserver {
+  MetaversePluginHosts(this._ref) { WidgetsBinding.instance.addObserver(this); }
 
+  @override
+  void didChangeLocales(List<Locale>? locales) => notifyConfiguration('host.environmentChanged');
+  void dispose() { WidgetsBinding.instance.removeObserver(this); shutdownAll(); }
   final Ref _ref;
   final _hosts = <String, MetaversePluginHost>{};
+  void notifyConfiguration(String event, {String? pluginId}) {
+    for (final host in _hosts.values.where((h) => pluginId == null || h.id == pluginId)) { host.notifyConfiguration(event); }
+  }
 
   /// 取（必要时创建）某个插件的运行实例。
   MetaversePluginHost hostFor(InstalledMetaversePlugin requested) {
@@ -467,6 +610,11 @@ class MetaversePluginHosts {
     );
 
   bool isInUse(String id) => _hosts[id]?.hasUpdateBlocker ?? false;
+  bool closeForUpdate(String id) {
+    if (_hosts[id]?.hasPendingInteraction == true) return false;
+    shutdown(id);
+    return true;
+  }
 
   void notifyTaskUpdated(String id) => _hosts[id]?.notifyTaskUpdated();
   void applyGrant(InstalledMetaversePlugin plugin) => _hosts[plugin.id]?.applyGrantedPermissions(plugin.blockedPermissions);
@@ -486,6 +634,12 @@ class MetaversePluginHosts {
 }
 
 class _HostDelegate extends MetaversePluginHostDelegate {
+  @override
+  Map<String, Object?> environment() => {
+    'locale': (_ref.read(localeProvider) ?? WidgetsBinding.instance.platformDispatcher.locale).toLanguageTag(),
+    'platform': Platform.operatingSystem,
+    'timeZoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+  };
   _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentSuspended, this.worker = false});
   final bool worker;
   final MetaversePluginStore? developmentStore;
@@ -496,6 +650,31 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   final Ref _ref;
   final MetaversePluginManifest _manifest;
   int _generation = 0;
+
+  @override
+  Future<void> prepareStart() async {
+    if (developmentStore != null) return;
+    final plugin = _ref.read(metaversePluginsProvider.notifier).byId(_manifest.id);
+    if (plugin == null || !identical(plugin.manifest, _manifest)) throw const PluginOperationCancelled();
+    await _ref.read(metaversePluginStoreProvider).settleRelease(plugin);
+  }
+
+  @override
+  void onHealthy() {
+    if (developmentStore != null || worker) return;
+    final plugin = _ref.read(metaversePluginsProvider.notifier).byId(_manifest.id);
+    if (plugin != null && identical(plugin.manifest, _manifest)) {
+      unawaited(_ref.read(metaversePluginStoreProvider).markHealthy(plugin.id, plugin.codeRevision)
+        .catchError((Object error) => debugPrint('插件运行确认失败：$error')));
+    }
+  }
+
+  @override
+  void onStartFailed() {
+    if (developmentStore != null || worker) return;
+    unawaited(_ref.read(metaversePluginsProvider.notifier).rollback(_manifest.id,
+      automatic: true, expected: _manifest).catchError((Object error) => debugPrint('插件版本恢复失败：$error')));
+  }
 
   @override
   void onShutdown() => _generation++;
@@ -767,7 +946,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     if (developmentSuspended != null) {
       developmentSuspended!(reason);
     } else {
-      _ref.read(metaversePluginsProvider.notifier).suspend(pluginId, reason);
+      onStartFailed();
     }
   }
 }

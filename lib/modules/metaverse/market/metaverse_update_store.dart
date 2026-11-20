@@ -26,6 +26,7 @@ class MetaverseUpdateState {
     this.retryAt = 0,
     this.checking = false,
     this.failed = false,
+    this.preview = false,
   });
   final MetaverseUpdateFrequency frequency;
   final Set<String> excluded;
@@ -33,6 +34,7 @@ class MetaverseUpdateState {
   final int? lastCheck;
   final int nextCheck, retryAt;
   final bool checking, failed;
+  final bool preview;
   bool get enabled => frequency != MetaverseUpdateFrequency.disabled;
   bool allows(InstalledMetaversePlugin plugin) =>
       !excluded.contains(keyFor(plugin));
@@ -89,7 +91,7 @@ class MetaverseUpdateStore {
   }
 
   static String baseOf(InstalledMetaversePlugin plugin) =>
-      jsonEncode([plugin.source, plugin.manifest.version, plugin.codeRevision]);
+      jsonEncode([plugin.source, plugin.manifest.version, plugin.codeRevision, plugin.installationId]);
   static MetaverseUpdateFrequency _frequency(Map<String, dynamic> s) =>
       MetaverseUpdateFrequency.values
           .where((v) => v.name == s['frequency'])
@@ -111,9 +113,18 @@ class MetaverseUpdateStore {
       retryAt: s['retryAt'] as int? ?? 0,
       checking: (s['leaseUntil'] as int? ?? 0) > now,
       failed: s['failed'] == true,
+      preview: s['preview'] == true,
     ),
     readOnly: true,
   );
+
+  void setPreview(bool value) => _transaction((db, s) {
+    s['preview'] = value;
+    _cancel(s);
+    db.execute('DELETE FROM pending');
+    _reports(s).clear();
+    s['nextCheck'] = s['retryAt'] as int? ?? 0;
+  });
 
   void setFrequency(MetaverseUpdateFrequency value) => _transaction((db, s) {
     if (_frequency(s) == value) return;
@@ -162,6 +173,7 @@ class MetaverseUpdateStore {
               plugins[id] == null || plugins[id]!.source != report['source'],
         );
         final valid = installed.map(MetaverseUpdateState.keyFor).toSet();
+        (s['rejected'] as Map?)?.removeWhere((key, _) => !valid.contains(key));
         s['excluded'] = (s['excluded'] as List? ?? [])
             .where(valid.contains)
             .toList();
@@ -193,13 +205,14 @@ class MetaverseUpdateStore {
     String status, {
     Uint8List? bytes,
     String? digest,
+    String? reason, bool installedWithdrawn = false,
   }) => _transaction((db, s) {
     if (!_active(s, token)) return;
     _reports(s)[plugin.id] = {
       'source': plugin.source,
       'version': version,
       'status': status,
-      'at': now,
+      'at': now, 'reason': ?reason, 'installedWithdrawn': installedWithdrawn,
     };
     if (bytes != null && digest != null) {
       db.execute('INSERT OR REPLACE INTO pending VALUES (?, ?, ?, ?)', [
@@ -245,6 +258,16 @@ class MetaverseUpdateStore {
           bytes: row['body'] as Uint8List,
         );
       }, readOnly: true);
+  bool rejected(InstalledMetaversePlugin plugin, String digest) => _transaction((db, s) =>
+      ((s['rejected'] as Map?)?[MetaverseUpdateState.keyFor(plugin)] as List? ?? []).contains(digest), readOnly: true);
+  void reject(InstalledMetaversePlugin plugin, String digest) => _transaction((db, s) {
+    final map = s['rejected'] as Map? ?? <String, Object?>{};
+    final key = MetaverseUpdateState.keyFor(plugin);
+    map[key] = <String>{...List<String>.from(map[key] as List? ?? []), digest}.toList().reversed.take(16).toList();
+    s['rejected'] = map;
+    db.execute('DELETE FROM pending WHERE id = ?', [plugin.id]);
+    if (_reports(s)[plugin.id] case final Map report) report['status'] = 'rejected';
+  });
   void applied(InstalledMetaversePlugin plugin) => _transaction((db, s) {
     db.execute('DELETE FROM pending WHERE id = ?', [plugin.id]);
     _reports(s)[plugin.id] = {

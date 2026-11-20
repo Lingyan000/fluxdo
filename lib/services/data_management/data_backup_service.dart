@@ -41,6 +41,9 @@ class DataBackupService {
     'sticker_market_', // 贴纸市场缓存(真配置 base_url 在下面精确回捞)
     'bookmark_last_full_sync_',
     'blob_image_cache_last_sweep',
+    // 插件通过独立备份段恢复，不能把安装索引当作已安装代码。
+    'metaverse_plugins_v1',
+    'metaverse_market_cache_v1_',
     // ── 会话 / 凭证(跨设备无效或有害)──
     'linux_do_', // csrf_token / username
     'cookie_',
@@ -81,7 +84,7 @@ class DataBackupService {
 
   /// 导出数据为 Map
   static Future<Map<String, dynamic>> exportData(
-    SharedPreferences prefs,
+    SharedPreferences prefs, {Map<String, Object?> sections = const {}}
   ) async {
     final pkg = await PackageInfo.fromPlatform();
     final data = <String, Map<String, dynamic>>{};
@@ -128,6 +131,7 @@ class DataBackupService {
       'exportTime': DateTime.now().toIso8601String(),
       'data': data,
       if (apiKeys.isNotEmpty) 'apiKeys': apiKeys,
+      if (sections.isNotEmpty) 'sections': sections,
     };
   }
 
@@ -156,8 +160,8 @@ class DataBackupService {
   }
 
   /// 将导出数据写入临时文件，返回文件路径
-  static Future<String> exportToFile(SharedPreferences prefs) async {
-    final exportData = await DataBackupService.exportData(prefs);
+  static Future<String> exportToFile(SharedPreferences prefs, {Map<String, Object?> sections = const {}}) async {
+    final exportData = await DataBackupService.exportData(prefs, sections: sections);
     final jsonStr = const JsonEncoder.withIndent('  ').convert(exportData);
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;

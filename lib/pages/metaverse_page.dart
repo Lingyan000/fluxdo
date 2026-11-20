@@ -135,6 +135,7 @@ class _MetaversePageState extends ConsumerState<MetaversePage> {
       final choices = await showMetaversePluginInstallSheet(
         context,
         package.manifest,
+        package: package, previous: controller.byId(package.manifest.id),
         isUpdate: controller.byId(package.manifest.id) != null,
         initialBlocked: controller.reviewPermissions(package),
       );

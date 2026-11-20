@@ -87,6 +87,7 @@ class MetaversePluginRuntime {
     required String script,
     required MetaversePluginBridge bridge,
     void Function(String reason)? onFatal,
+    void Function()? onSurfaceReady,
     PluginExecutionContext? executionContext,
   }) async {
     final engine = await engineFactory();
@@ -96,6 +97,7 @@ class MetaversePluginRuntime {
       onFatal,
       executionContext,
     );
+    runtime._onSurfaceReady = onSurfaceReady;
     try {
       await engine.evaluate(metaversePluginPrelude, name: 'fluxdo-prelude.js');
       await engine.evaluate(script, name: 'main.js');
@@ -110,6 +112,7 @@ class MetaversePluginRuntime {
   final MetaversePluginBridge _bridge;
   final void Function(String reason)? _onFatal;
   final PluginExecutionContext? _executionContext;
+  void Function()? _onSurfaceReady;
 
   final _surfaces = <String, MetaversePluginSurface>{};
   final _tasks = <String, Completer<void>>{};
@@ -167,14 +170,15 @@ class MetaversePluginRuntime {
   }
 
   /// 任务拥有受限上下文，无界面与用户点击激活，超时由宿主中断实例。
-  Future<void> runTask(String id, {required bool background, Duration timeout = const Duration(seconds: 20)}) async {
+  Future<void> runTask(String id, {required bool background, Duration timeout = const Duration(seconds: 20),
+      String event = 'task.run', Map<String, Object?>? arguments}) async {
     if (_tasks.isNotEmpty) throw StateError('已有执行中的任务');
     final surface = MetaversePluginSurface._('t${++_surfaceSeq}', 'task', null, {'id': id, 'background': background});
     final done = Completer<void>();
     _surfaces[surface.id] = surface;
     _tasks[surface.id] = done;
     try {
-      _dispatchRaw(surface, 'task.run', {'id': id, 'background': background});
+      _dispatchRaw(surface, event, arguments ?? {'id': id, 'background': background});
       await done.future.timeout(timeout);
     } finally {
       _tasks.remove(surface.id);
@@ -291,6 +295,8 @@ class MetaversePluginRuntime {
 
   void _processMessage(Map message) {
     switch (message['t']) {
+      case 'surface.ready':
+        if (message['ok'] == true) { _onSurfaceReady?.call(); _onSurfaceReady = null; }
       case 'delivery.done':
         final delivery = _deliveries[message['d']];
         if (delivery != null && !delivery.done.isCompleted) delivery.done.complete();

@@ -37,6 +37,10 @@ class MetaverseUpdatesController extends AsyncNotifier<MetaverseUpdateState> {
     (await ref.read(metaverseUpdateStoreProvider.future)).setFrequency(value);
     await reload();
   }
+  Future<void> setPreview(bool value) async {
+    (await ref.read(metaverseUpdateStoreProvider.future)).setPreview(value);
+    await reload();
+  }
 
   Future<void> setAllowed(InstalledMetaversePlugin plugin, bool allowed) async {
     (await ref.read(metaverseUpdateStoreProvider.future))
@@ -81,6 +85,7 @@ class MetaverseUpdateDriver with WidgetsBindingObserver {
   final MetaverseUpdateStore store;
   Timer? _timer;
   bool _open = true, _busy = false, _queued = false;
+  Completer<void>? _finished;
   bool get _foreground =>
       WidgetsBinding.instance.lifecycleState == null ||
       WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed ||
@@ -162,7 +167,9 @@ class MetaverseUpdateDriver with WidgetsBindingObserver {
   }
 
   Future<void> check({bool force = false}) async {
-    if (!_open || _busy || (!_foreground && !_desktop)) return;
+    if (_busy) return _finished?.future;
+    if (!_open || (!_foreground && !_desktop)) return;
+    final finished = _finished = Completer<void>();
     _busy = true;
     _timer?.cancel();
     try {
@@ -185,10 +192,32 @@ class MetaverseUpdateDriver with WidgetsBindingObserver {
       debugPrint('插件自动更新未完成：$error');
     } finally {
       _busy = false;
-      if (_open) {
-        await ref.read(metaverseUpdatesProvider.notifier).reload();
-        schedule();
-      }
+      try {
+        if (_open) { await ref.read(metaverseUpdatesProvider.notifier).reload(); schedule(); }
+      } finally { finished.complete(); }
+    }
+  }
+
+  Future<void> applyNow(String id) async {
+    if (_busy || !_foreground || !_open) return;
+    final hosts = ref.read(metaversePluginHostsProvider);
+    if (!hosts.closeForUpdate(id)) throw StateError('update_busy');
+    _busy = true;
+    final finished = _finished = Completer<void>();
+    try {
+      await updater.apply(installer: MetaversePluginInstaller(
+        network: ref.read(metaversePluginNetworkProvider), reservedHosts: ref.read(metaversePluginStoreProvider).reservedHosts),
+        available: () => _open && _foreground, idle: (candidate) => candidate == id && _idle(id),
+        install: ref.read(metaversePluginsProvider.notifier).installAutomatic);
+    } finally {
+      _busy = false;
+      try {
+        if (_open) {
+          await ref.read(metaversePluginsProvider.notifier).reloadHost(id);
+          await ref.read(metaverseUpdatesProvider.notifier).reload();
+          schedule();
+        }
+      } finally { finished.complete(); }
     }
   }
 

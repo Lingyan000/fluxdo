@@ -53,6 +53,8 @@ class MetaverseApiExample {
     'forum.read' => l.metaverse_apiForumRead,
     'forum.open' => l.metaverse_apiForumOpen,
     'host.features' => l.metaverse_apiHostFeatures,
+    'host.environment' => l.metaverse_apiEnvironment,
+    'preferences.get' => l.metaverse_pluginPreferences,
     'permissions.status' || 'permissions.request' => l.metaverse_apiRuntimePermissions,
     'dialogs.confirm' => l.metaverse_apiConfirm,
     'auth.status' || 'auth.request' || 'auth.signOut' => l.metaverse_apiLegacyAuth,
@@ -73,6 +75,8 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('host.environment', '', {'locale':'zh', 'platform':'android', 'timeZoneOffsetMinutes':480}, apiVersion: 2),
+  MetaverseApiExample('preferences.get', '', {'compact':true, 'sort':'latest'}, apiVersion: 2),
   MetaverseApiExample('streams.open', "{id: 'updates', url: 'https://api.example.org/events'}", 'updates',
     permission: 'network', apiVersion: 2, afterCall: "console.log(result); fluxdo.on('stream.state', (_, state) => console.log(state)); fluxdo.on('stream.event', (_, frame) => console.log(JSON.parse(frame.data)));"),
   MetaverseApiExample('streams.close', "'updates'", null, permission: 'network', apiVersion: 2),
