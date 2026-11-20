@@ -315,7 +315,9 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
+          # 离线沙箱依赖整份 SDK 与 flutter_tools 依赖一并打进源树；命中缓存时
+          # flutter_tools 的依赖不在暂存的 pub cache 里，沙箱内会触发联网解析而失败。
+          cache: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
