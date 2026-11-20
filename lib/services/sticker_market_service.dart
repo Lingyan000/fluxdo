@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/sticker.dart';
@@ -16,7 +20,9 @@ StickerGroupDetail _parseGroupDetail(Map<String, dynamic> data) {
 /// 表情包市场 API 服务
 ///
 /// 使用独立的 Dio 实例（非 DiscourseDio），因为这是外部 API，
-/// 不需要 Discourse 认证。支持 SharedPreferences 缓存（24 小时过期）。
+/// 不需要 Discourse 认证。缓存 24 小时过期：分类与分页这类小文件存
+/// SharedPreferences；分组详情（单个 20～230KB，市场卡片的预览条会按需
+/// 拉取）存文件，避免 prefs 随浏览膨胀、启动时整份读进内存。
 class StickerMarketService {
   static const String defaultBaseUrl = 'https://s.pwsh.us.kg';
   static const String _baseUrlKey = 'sticker_market_base_url';
@@ -36,10 +42,19 @@ class StickerMarketService {
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
 
+  /// 未订阅分组的详情文件超过这个时长未访问就清理（订阅的长期保留）。
+  static const Duration _groupFileRetention = Duration(days: 14);
+
   final SharedPreferences _prefs;
   late final Dio _dio;
+  final Future<Directory> Function() _cacheRoot;
+  bool _swept = false;
 
-  StickerMarketService(this._prefs, {Dio? dio}) {
+  StickerMarketService(
+    this._prefs, {
+    Dio? dio,
+    Future<Directory> Function()? cacheDirectory,
+  }) : _cacheRoot = cacheDirectory ?? _defaultCacheRoot {
     // 缩略图取源在 ImageProvider 里静态读开关;服务是表情面板与市场的
     // 共同依赖,构造时同步一次即可覆盖所有取图路径。
     StickerThumbnailSource.proxyEnabled = thumbnailProxyEnabled;
@@ -52,6 +67,10 @@ class StickerMarketService {
           ),
         );
   }
+
+  static Future<Directory> _defaultCacheRoot() async => Directory(
+    '${(await getApplicationSupportDirectory()).path}/sticker_market',
+  );
 
   /// 表情缩略图是否走缩放代理(默认开启)
   bool get thumbnailProxyEnabled => _prefs.getBool(_thumbnailProxyKey) ?? true;
@@ -148,9 +167,14 @@ class StickerMarketService {
     final groupFileName = groupId.startsWith('group-')
         ? '$groupId.json'
         : 'group-$groupId.json';
+    if (!_swept) {
+      _swept = true;
+      unawaited(_sweepGroupFiles());
+    }
     final data = await _fetchWithCache(
       'group_$groupId',
       '$baseUrl/assets/market/$groupFileName',
+      inFile: true,
     );
     return compute(_parseGroupDetail, data);
   }
@@ -291,33 +315,34 @@ class StickerMarketService {
     await _prefs.setStringList(_recentStickersKey, trimmed);
   }
 
-  /// 带缓存的网络请求
+  /// 带缓存的网络请求。[inFile] 为 true 时缓存存文件，否则存 prefs。
   Future<Map<String, dynamic>> _fetchWithCache(
     String cacheKey,
-    String url,
-  ) async {
-    final fullKey = '$_cachePrefix$cacheKey';
-    final timestampKey = '${fullKey}_ts';
-
-    // 检查缓存
-    final cached = _prefs.getString(fullKey);
-    final timestamp = _prefs.getInt(timestampKey);
-    if (cached != null && timestamp != null) {
-      final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
-      if (DateTime.now().difference(cacheTime) < _cacheDuration) {
-        return json.decode(cached) as Map<String, dynamic>;
-      }
+    String url, {
+    bool inFile = false,
+  }) async {
+    final cached = inFile
+        ? await _readFileCache(cacheKey)
+        : _readPrefsCache(cacheKey);
+    if (cached != null &&
+        DateTime.now().difference(cached.time) < _cacheDuration) {
+      return json.decode(cached.body) as Map<String, dynamic>;
     }
 
     // 请求网络
     try {
       final response = await _dio.get<Map<String, dynamic>>(url);
       final data = response.data!;
-
-      // 保存缓存
-      await _prefs.setString(fullKey, json.encode(data));
-      await _prefs.setInt(timestampKey, DateTime.now().millisecondsSinceEpoch);
-
+      final body = json.encode(data);
+      if (inFile) {
+        await _writeFileCache(cacheKey, body);
+      } else {
+        await _prefs.setString('$_cachePrefix$cacheKey', body);
+        await _prefs.setInt(
+          '$_cachePrefix${cacheKey}_ts',
+          DateTime.now().millisecondsSinceEpoch,
+        );
+      }
       return data;
     } catch (e, st) {
       // 网络失败时尝试使用过期缓存
@@ -327,7 +352,7 @@ class StickerMarketService {
           tag: 'StickerMarket',
           fields: {'url': url, 'cacheKey': cacheKey, 'error': e.toString()},
         );
-        return json.decode(cached) as Map<String, dynamic>;
+        return json.decode(cached.body) as Map<String, dynamic>;
       }
       AppLogger.error(
         '表情包市场请求失败且无缓存可用',
@@ -340,6 +365,84 @@ class StickerMarketService {
     }
   }
 
+  ({String body, DateTime time})? _readPrefsCache(String cacheKey) {
+    final body = _prefs.getString('$_cachePrefix$cacheKey');
+    final timestamp = _prefs.getInt('$_cachePrefix${cacheKey}_ts');
+    if (body == null || timestamp == null) return null;
+    return (body: body, time: DateTime.fromMillisecondsSinceEpoch(timestamp));
+  }
+
+  Future<File> _cacheFile(String cacheKey) async {
+    final root = await _cacheRoot();
+    return File('${root.path}/${md5.convert(utf8.encode(cacheKey))}.json');
+  }
+
+  /// 读文件缓存；文件不存在时把旧版本存在 prefs 里的同 key 缓存迁过来。
+  Future<({String body, DateTime time})?> _readFileCache(
+    String cacheKey,
+  ) async {
+    try {
+      final file = await _cacheFile(cacheKey);
+      if (await file.exists()) {
+        return (
+          body: await file.readAsString(),
+          time: await file.lastModified(),
+        );
+      }
+      final legacy = _readPrefsCache(cacheKey);
+      if (legacy == null) return null;
+      await _writeFileCache(cacheKey, legacy.body, time: legacy.time);
+      await _prefs.remove('$_cachePrefix$cacheKey');
+      await _prefs.remove('$_cachePrefix${cacheKey}_ts');
+      return legacy;
+    } catch (e) {
+      debugPrint('[StickerMarket] 读取文件缓存失败 $cacheKey: $e');
+      return null;
+    }
+  }
+
+  Future<void> _writeFileCache(
+    String cacheKey,
+    String body, {
+    DateTime? time,
+  }) async {
+    try {
+      final file = await _cacheFile(cacheKey);
+      await file.parent.create(recursive: true);
+      // 先写临时文件再改名，读到的不会是写了一半的 JSON
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(body, flush: true);
+      await tmp.rename(file.path);
+      if (time != null) await file.setLastModified(time);
+    } catch (e) {
+      debugPrint('[StickerMarket] 写入文件缓存失败 $cacheKey: $e');
+    }
+  }
+
+  /// 清理长时间没刷新过的未订阅分组详情（每个服务实例只扫一次）。
+  /// 详情每 24 小时随访问刷新一次，修改时间即最近一次使用。
+  Future<void> _sweepGroupFiles() async {
+    try {
+      final root = await _cacheRoot();
+      if (!await root.exists()) return;
+      final keep = {
+        for (final id in getSubscribedGroupIds())
+          '${md5.convert(utf8.encode('group_$id'))}.json',
+      };
+      final deadline = DateTime.now().subtract(_groupFileRetention);
+      await for (final entity in root.list()) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        if (keep.contains(name)) continue;
+        if ((await entity.lastModified()).isBefore(deadline)) {
+          await entity.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('[StickerMarket] 清理分组详情缓存失败: $e');
+    }
+  }
+
   /// 清除全部缓存
   Future<void> _clearAllCache() async {
     // 地址键与缓存同前缀，必须跳过，否则刚设置的地址会被一并删掉
@@ -348,6 +451,12 @@ class StickerMarketService {
     );
     for (final key in keys.toList()) {
       await _prefs.remove(key);
+    }
+    try {
+      final root = await _cacheRoot();
+      if (await root.exists()) await root.delete(recursive: true);
+    } catch (e) {
+      debugPrint('[StickerMarket] 清除文件缓存失败: $e');
     }
   }
 }
