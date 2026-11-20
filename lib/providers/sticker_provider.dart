@@ -17,6 +17,25 @@ final stickerMarketServiceProvider = Provider<StickerMarketService>((ref) {
   return StickerMarketService(prefs);
 });
 
+/// 表情缩略图走缩放代理的开关（设置页用）
+final stickerThumbnailProxyProvider =
+    StateNotifierProvider<StickerThumbnailProxyNotifier, bool>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerThumbnailProxyNotifier(service);
+    });
+
+class StickerThumbnailProxyNotifier extends StateNotifier<bool> {
+  StickerThumbnailProxyNotifier(this._service)
+    : super(_service.thumbnailProxyEnabled);
+
+  final StickerMarketService _service;
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    await _service.setThumbnailProxyEnabled(enabled);
+  }
+}
+
 /// 分组详情（按 groupId 懒加载）
 ///
 /// 加载完成后,异步批量 precache 第一屏 sticker 的 thumbnail —
@@ -100,6 +119,7 @@ Future<void> _prefetchFirstScreenThumbnails(
   try {
     await StickerThumbnailProvider.precacheBatch(
       visible.map((s) => s.url).toList(growable: false),
+      displayUrls: visible.map((s) => s.displayUrl).toList(growable: false),
       targetSize: targetSize,
       shouldContinue: () =>
           _stickerPanelOpen && _activePrefetchGroupId == groupId,
@@ -211,12 +231,33 @@ class MarketGroupsNotifier
     }
   }
 
-  /// 补齐当前分类剩余页。搜索要在全量数据上过滤才不会漏结果；
-  /// 全市场 ~300 组、页数据本就有 24h 缓存，全量拉取代价可忽略。
+  /// 补齐当前分类剩余页。搜索要在全量数据上过滤才不会漏结果。
+  ///
+  /// 优先取单文件 metadata.json(按分类过滤),取不到(旧版服务端 /
+  /// 请求失败)再逐页补齐;两者都有 24h 缓存。
   Future<void> _ensureAllPagesLoaded() async {
     if (_loadedPages == 0 || _loadedPages >= _totalPages) return;
     final dataSeq = _dataSeq;
     final querySeq = ++_querySeq;
+    try {
+      final all = await _service.getAllGroups();
+      if (dataSeq != _dataSeq || querySeq != _querySeq || !mounted) return;
+      if (all.isNotEmpty) {
+        _groups = _topic == 'all'
+            ? all
+            : all.where((g) => g.topic == _topic).toList();
+        _loadedPages = _totalPages;
+        _emit(_applyQuery());
+        return;
+      }
+    } catch (e) {
+      if (dataSeq != _dataSeq || querySeq != _querySeq || !mounted) return;
+      AppLogger.warning(
+        '表情包市场全量概要获取失败，改为逐页补齐',
+        tag: 'Sticker',
+        fields: {'topic': _topic, 'error': e.toString()},
+      );
+    }
     try {
       final missingPages = [
         for (var p = _loadedPages + 1; p <= _totalPages; p++) p,

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/sticker.dart';
 import 'app_logger.dart';
+import 'sticker_thumbnail_source.dart';
 
 /// 顶层函数，供 compute() 在后台 Isolate 中解析分组详情
 StickerGroupDetail _parseGroupDetail(Map<String, dynamic> data) {
@@ -28,6 +29,10 @@ class StickerMarketService {
   /// 是用户数据、要能被旧版本读懂（降级不丢订阅），元信息只是可重建的缓存。
   static const String _subscribedMetaKey = 'sticker_subscribed_group_meta';
   static const String _recentStickersKey = 'sticker_recent_items';
+
+  /// 缩略图走缩放代理的开关(用户设置,不能用 [_cachePrefix] 前缀:
+  /// 那是可清的缓存,备份也会排除)。
+  static const String _thumbnailProxyKey = 'sticker_thumbnail_proxy';
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
 
@@ -35,6 +40,9 @@ class StickerMarketService {
   late final Dio _dio;
 
   StickerMarketService(this._prefs, {Dio? dio}) {
+    // 缩略图取源在 ImageProvider 里静态读开关;服务是表情面板与市场的
+    // 共同依赖,构造时同步一次即可覆盖所有取图路径。
+    StickerThumbnailSource.proxyEnabled = thumbnailProxyEnabled;
     _dio =
         dio ??
         Dio(
@@ -43,6 +51,14 @@ class StickerMarketService {
             receiveTimeout: const Duration(seconds: 15),
           ),
         );
+  }
+
+  /// 表情缩略图是否走缩放代理(默认开启)
+  bool get thumbnailProxyEnabled => _prefs.getBool(_thumbnailProxyKey) ?? true;
+
+  Future<void> setThumbnailProxyEnabled(bool enabled) async {
+    StickerThumbnailSource.proxyEnabled = enabled;
+    await _prefs.setBool(_thumbnailProxyKey, enabled);
   }
 
   /// 当前 baseUrl
@@ -107,6 +123,22 @@ class StickerMarketService {
         .map((item) => StickerGroup.fromJson(item as Map<String, dynamic>))
         .toList();
     return (groups, data['totalPages'] as int? ?? 1);
+  }
+
+  /// 全市场分组概要(单文件 metadata.json,约 90KB)。
+  ///
+  /// 与各页文件同源导出、内容一致;分类成员即按 [StickerGroup.topic] 过滤。
+  /// 搜索要在全量上过滤,一次取全比逐页补齐少六七次请求。
+  Future<List<StickerGroup>> getAllGroups() async {
+    final data = await _fetchWithCache(
+      'metadata',
+      '$baseUrl/assets/market/metadata.json',
+    );
+    final list = data['groups'] as List<dynamic>? ?? [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(StickerGroup.fromJson)
+        .toList();
   }
 
   /// 获取分组详情

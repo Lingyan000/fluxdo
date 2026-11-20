@@ -736,6 +736,7 @@ class _StickerItemWidget extends StatelessWidget {
               memCacheWidth: 160,
               memCacheHeight: 160,
               thumbnailMode: true,
+              thumbnailDisplayUrl: sticker.displayUrl,
               bucket: BlobImageCache.stickerOriginalBucket,
               // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
               // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。

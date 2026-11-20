@@ -10,6 +10,7 @@ import 'package:native_animated_image/native_animated_image.dart'
 import 'avif_image_provider.dart';
 import 'blob_image_cache.dart';
 import 'dio_http_client.dart';
+import 'sticker_thumbnail_source.dart';
 
 // 与 native_animated_image 内部定义的错误码保持一致(Rust 端 ERR_UNSUPPORTED = -2),
 // dart 端没单独 export 这个常量,我们直接复用数字 — 这是 stable FFI contract。
@@ -61,6 +62,7 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
   const StickerThumbnailProvider(
     this.url, {
     required this.targetSize,
+    this.displayUrl,
     this.scale = 1.0,
     this.bucket = BlobImageCache.stickerOriginalBucket,
     this.priority = DownloadPriority.normal,
@@ -69,6 +71,7 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
   const StickerThumbnailProvider._key(
     this.url,
     this.targetSize,
+    this.displayUrl,
     this.scale,
     this.bucket,
     this.priority,
@@ -90,6 +93,10 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
 
   final String url;
 
+  /// 市场条目的展示地址;与 [url] 不同时优先用它取缩略图源
+  /// (见 [StickerThumbnailSource])。缩略图缓存仍以 [url] 为键。
+  final String? displayUrl;
+
   /// 缩略图目标像素尺寸(长边)。首次解码后缩放到这个尺寸再存 PNG。
   final int targetSize;
 
@@ -98,8 +105,15 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
   /// 原文件所在 blob bucket(贴纸默认 stickerOriginal)。
   final String bucket;
 
-  /// URL 是否走得通这个 provider(AVIF / GIF / animated WebP / APNG)。
-  /// 静态图(PNG/JPEG)和其它格式应该走 `CachedNetworkImageProvider`。
+  /// 是否交给这个 provider 出缩略图。
+  ///
+  /// 贴纸 bucket 的任何格式都走这里:市场里的 JPEG/PNG 同样是 2000px 级
+  /// 原图,也要经 [StickerThumbnailSource] 取小图。其它 bucket 只接动态格式
+  /// (AVIF / GIF / animated WebP / APNG),静态图走 `BlobImageProvider`。
+  static bool handles(String url, String bucket) =>
+      bucket == BlobImageCache.stickerOriginalBucket || supports(url);
+
+  /// URL 是否是动态格式(AVIF / GIF / animated WebP / APNG)。
   static bool supports(String url) {
     try {
       final path = Uri.parse(url).path.toLowerCase();
@@ -117,18 +131,22 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
   }
 
   /// 批量预热与可见请求共用首帧任务，下载及各后端仍各自限流。
+  ///
+  /// [displayUrls] 与 [urls] 按下标对应(可省略)。
   static Future<void> precacheBatch(
     List<String> urls, {
     required int targetSize,
+    List<String?>? displayUrls,
     String bucket = BlobImageCache.stickerOriginalBucket,
     bool Function()? shouldContinue,
   }) async {
     await Future.wait([
-      for (final url in urls)
+      for (var i = 0; i < urls.length; i++)
         if (shouldContinue == null || shouldContinue())
           precache(
-            url,
+            urls[i],
             targetSize: targetSize,
+            displayUrl: displayUrls?[i],
             bucket: bucket,
             shouldContinue: shouldContinue,
           ),
@@ -139,14 +157,16 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
   static Future<void> precache(
     String url, {
     required int targetSize,
+    String? displayUrl,
     String bucket = BlobImageCache.stickerOriginalBucket,
     bool Function()? shouldContinue,
   }) async {
-    if (!supports(url)) return;
+    if (!handles(url, bucket)) return;
     try {
       final image = await _acquireThumbnail(
         bucket: bucket,
         url: url,
+        displayUrl: displayUrl,
         targetSize: targetSize,
         shouldContinue: shouldContinue,
         visible: false,
@@ -165,6 +185,7 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
       StickerThumbnailProvider._key(
         url,
         targetSize,
+        displayUrl,
         scale,
         bucket,
         priority,
@@ -197,6 +218,7 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
     Future<ui.Image> acquire() => _acquireThumbnail(
       bucket: key.bucket,
       url: key.url,
+      displayUrl: key.displayUrl,
       targetSize: key.targetSize,
       priority: key.priority,
     );
@@ -216,6 +238,7 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
     if (identical(this, other)) return true;
     return other is StickerThumbnailProvider &&
         other.url == url &&
+        other.displayUrl == displayUrl &&
         other.bucket == bucket &&
         other.targetSize == targetSize &&
         other.scale == scale &&
@@ -225,7 +248,15 @@ class StickerThumbnailProvider extends ImageProvider<StickerThumbnailProvider> {
 
   @override
   int get hashCode =>
-      Object.hash(url, bucket, targetSize, scale, priority, _keyGeneration);
+      Object.hash(
+        url,
+        displayUrl,
+        bucket,
+        targetSize,
+        scale,
+        priority,
+        _keyGeneration,
+      );
 
   @override
   String toString() =>
@@ -373,6 +404,7 @@ class _SharedThumbnailFrame {
 Future<ui.Image> _acquireThumbnail({
   required String bucket,
   required String url,
+  String? displayUrl,
   required int targetSize,
   bool Function()? shouldContinue,
   DownloadPriority priority = DownloadPriority.normal,
@@ -408,6 +440,7 @@ Future<ui.Image> _acquireThumbnail({
       return _decodeFirstFrameImage(
         bucket: bucket,
         url: url,
+        displayUrl: displayUrl,
         targetSize: targetSize,
         shouldContinue: canContinue,
         priority: () => sharedTask!.priority,
@@ -426,6 +459,7 @@ Future<ui.Image> _acquireThumbnail({
 Future<ui.Image> _decodeFirstFrameImage({
   required String bucket,
   required String url,
+  String? displayUrl,
   required int targetSize,
   bool Function()? shouldContinue,
   required DownloadPriority Function() priority,
@@ -440,8 +474,17 @@ Future<ui.Image> _decodeFirstFrameImage({
 
   // 先把 bytes 拉出来,根据 magic 选 semaphore(不能用 URL 后缀 — CDN 可能
   // 给 `.gif/.webp` 后缀但实际是 AVIF)。bytes 读取本身是 IO async,不占
-  // semaphore 配额。
-  final bytes = await BlobImageCache.fetch(bucket, url, priority: priority());
+  // semaphore 配额。贴纸走缩略图取源链路(缩放代理 / 动画首帧),其它
+  // bucket 照旧取原文件。
+  final bytes = bucket == BlobImageCache.stickerOriginalBucket
+      ? await StickerThumbnailSource.fetch(
+          bucket: bucket,
+          url: url,
+          displayUrl: displayUrl,
+          targetSize: targetSize,
+          priority: priority,
+        )
+      : await BlobImageCache.fetch(bucket, url, priority: priority());
   checkCancel();
 
   final isAvif = _bytesLookLikeAvif(bytes);
@@ -501,7 +544,7 @@ Future<ui.Image> _decodeFirstFrame(
     throw StateError('decode cancelled: $url');
   }
   if (reply.unsupported) {
-    return _decodeFirstFrameViaFlutterCodec(bytes);
+    return _decodeFirstFrameViaFlutterCodec(bytes, targetSize: targetSize);
   }
   if (reply.rgba == null) {
     throw StateError('decode failed: $url (${reply.error})');
@@ -522,9 +565,32 @@ Future<ui.Image> _decodeAvifFirstFrame(
 
 /// Flutter 内置 codec fallback:Rust pipeline 不识别的格式走这条
 /// (主要是静态 webp / png / jpeg)。只取第一帧,丢弃多余 codec 资源。
-Future<ui.Image> _decodeFirstFrameViaFlutterCodec(Uint8List bytes) async {
+///
+/// 给了 [targetSize] 时按长边 decode-time 降采样:市场里的 JPEG 多是
+/// 2000px 级,先全尺寸解码再缩放既费内存又慢。descriptor 在 codec 存活期
+/// 不能 dispose(codec 引用 generator),与引擎 `instantiateImageCodecWithSize`
+/// 一样只释放 buffer。
+Future<ui.Image> _decodeFirstFrameViaFlutterCodec(
+  Uint8List bytes, {
+  int? targetSize,
+}) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-  final codec = await ui.instantiateImageCodecFromBuffer(buffer);
+  final descriptor = await ui.ImageDescriptor.encoded(buffer);
+  buffer.dispose();
+  int? targetWidth;
+  int? targetHeight;
+  if (targetSize != null &&
+      (descriptor.width > targetSize || descriptor.height > targetSize)) {
+    if (descriptor.width >= descriptor.height) {
+      targetWidth = targetSize;
+    } else {
+      targetHeight = targetSize;
+    }
+  }
+  final codec = await descriptor.instantiateCodec(
+    targetWidth: targetWidth,
+    targetHeight: targetHeight,
+  );
   try {
     final frame = await codec.getNextFrame();
     return frame.image;

@@ -276,6 +276,15 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
               ref.watch(stickerMarketServiceProvider).baseUrl,
           onTap: (context, ref) => _showStickerBaseUrlDialog(context, ref),
         ),
+        SwitchModel(
+          id: 'stickerThumbnailProxy',
+          title: l10n.preferences_stickerThumbnailProxy,
+          subtitle: l10n.preferences_stickerThumbnailProxyDesc,
+          icon: Symbols.bolt_rounded,
+          getValue: (ref) => ref.watch(stickerThumbnailProxyProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerThumbnailProxyProvider.notifier).set(v),
+        ),
       ],
     ),
     SettingsGroup(

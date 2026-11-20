@@ -116,6 +116,8 @@
   "preferences_renderGlesRestartBody": "The setting has been saved. The rendering backend will switch the next time you open FluxDO. Close and reopen the app for the change to take effect.",
   "preferences_renderGlesRestartTitle": "Restart Required",
   "preferences_stickerSource": "Sticker source",
+  "preferences_stickerThumbnailProxy": "Sticker thumbnail acceleration",
+  "preferences_stickerThumbnailProxyDesc": "Load small sticker previews through an image resizing service, falling back to the original image on failure",
   "preferences_title": "Preferences",
   "settings_about": "About FluxDO",
   "settings_appearance": "Appearance",
