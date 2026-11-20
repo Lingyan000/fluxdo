@@ -381,7 +381,13 @@ void main() {
       old(const CdkVerificationEvent('challenge'));
       await tester.pumpAndSettle();
       expect(tester.getSize(panel).height, greaterThan(loadingHeight));
-      expect(find.text(S.current.cdk_verifyHint), findsOneWidget);
+      expect(find.bySemanticsLabel(S.current.cdk_verifyHint), findsOneWidget);
+      old(const CdkVerificationEvent('height', '360'));
+      await tester.pump();
+      final measured = tester.getSize(panel).height;
+      old(const CdkVerificationEvent('height', '392'));
+      await tester.pump();
+      expect(tester.getSize(panel).height, measured + 32);
       await snapshot(tester, 'verification-challenge-${brightness.name}');
       old(const CdkVerificationEvent('error', 'expired'));
       await tester.pumpAndSettle();

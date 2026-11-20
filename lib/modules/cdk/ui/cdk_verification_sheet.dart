@@ -13,6 +13,7 @@ import '../../../services/webview_settings.dart';
 import '../../../services/windows_webview_environment_service.dart';
 import '../../../utils/link_launcher.dart';
 import '../../../widgets/common/captcha_panel.dart';
+import '../../../widgets/common/hcaptcha_layout_script.dart';
 import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import 'cdk_project_widgets.dart';
@@ -69,6 +70,7 @@ class CdkClaimContent extends StatefulWidget {
 
 class _CdkClaimContentState extends State<CdkClaimContent> {
   CdkVerificationPhase _phase = CdkVerificationPhase.confirmation;
+  double? _challengeHeight;
   String _failure = '';
   int _attempt = 0;
   bool _finished = false;
@@ -129,7 +131,10 @@ class _CdkClaimContentState extends State<CdkClaimContent> {
   Future<void> _begin() async {
     if (_running || _finished) return;
     final attempt = ++_attempt;
-    setState(() => _phase = CdkVerificationPhase.preparing);
+    setState(() {
+      _challengeHeight = null;
+      _phase = CdkVerificationPhase.preparing;
+    });
     _timeout = Timer(const Duration(seconds: 45), () {
       if (mounted && attempt == _attempt) _fail('timeout');
     });
@@ -155,6 +160,14 @@ class _CdkClaimContentState extends State<CdkClaimContent> {
     if (event.type == 'challenge') {
       _timeout?.cancel(); // 做题时遵循验证服务的有效期，不用加载超时打断用户。
       setState(() => _phase = CdkVerificationPhase.challenge);
+    } else if (event.type == 'height') {
+      final height = double.tryParse(event.value);
+      if (height != null &&
+          height.isFinite &&
+          height > 0 &&
+          height != _challengeHeight) {
+        setState(() => _challengeHeight = height);
+      }
     } else if (event.type == 'error') {
       _fail(event.value);
     } else if (event.type == 'token' &&
@@ -207,6 +220,7 @@ class _CdkClaimContentState extends State<CdkClaimContent> {
                     phase: challenge
                         ? CaptchaPanelPhase.challenge
                         : CaptchaPanelPhase.loading,
+                    contentHeight: challenge ? _challengeHeight : null,
                     message: challenge
                         ? l.cdk_verifyHint
                         : l.cdk_verifyPreparing,
@@ -490,6 +504,7 @@ String cdkVerificationScript({
 (() => {
   if (window.__fluxdoCdkCaptcha) return;
   window.__fluxdoCdkCaptcha = true;
+  $hCaptchaLayoutScript
   const send = (type, value) => window.flutter_inappwebview.callHandler('cdkCaptcha', type, value);
   // 隐藏既有业务页面，新建的验证题目仍由 hCaptcha 自己排版和处理交互。
   for (const node of document.body.children) {
@@ -503,9 +518,11 @@ String cdkVerificationScript({
   document.body.appendChild(panel);
   let attempts = 0;
   let settled = false;
+  let stopLayout;
   const fail = reason => {
     if (settled) return;
     settled = true;
+    stopLayout?.();
     send('error', reason);
   };
   const timer = setInterval(() => {
@@ -528,9 +545,15 @@ String cdkVerificationScript({
         callback: token => {
           if (settled) return;
           settled = true;
+          stopLayout?.();
           send('token', token);
         },
-        'open-callback': () => { if (!settled) send('challenge', ''); },
+        'open-callback': () => {
+          if (settled) return;
+          send('challenge', '');
+          stopLayout?.();
+          stopLayout = watchHCaptchaLayout(panel, height => send('height', String(height)));
+        },
         'close-callback': () => fail('closed'),
         'expired-callback': () => fail('expired'),
         'chalexpired-callback': () => fail('expired'),
