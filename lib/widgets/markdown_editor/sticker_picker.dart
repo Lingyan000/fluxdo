@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/sticker.dart';
+import '../../providers/sticker_favorites_provider.dart';
 import '../../providers/sticker_provider.dart';
+import '../../services/sticker_favorites_service.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 import '../../utils/dialog_utils.dart';
@@ -19,6 +21,7 @@ import '../common/error_view.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
 
+import 'sticker_favorite_ui.dart';
 import 'sticker_group_preview_sheet.dart';
 import 'sticker_manage_sheet.dart';
 import 'sticker_market_sheet.dart';
@@ -213,12 +216,40 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 
   List<StickerPreviewAction> _previewActions(StickerPreviewTarget target) {
     final sticker = target.sticker;
+    final favorites = ref.read(stickerFavoritesProvider.notifier);
+    final favoriteCategory = favorites.categoryOf(sticker.url);
+    final hasOtherCategories = ref
+        .read(stickerFavoritesProvider)
+        .any((c) => c.id != favoriteCategory && !c.isDefault);
     return [
       StickerPreviewAction(
         icon: Symbols.send_rounded,
         label: S.current.common_send,
         onSelected: () => _onStickerTap(sticker),
       ),
+      if (favoriteCategory == null)
+        StickerPreviewAction(
+          icon: Symbols.star_rounded,
+          label: S.current.sticker_favoriteAction,
+          onSelected: () => _favorite(sticker),
+        )
+      else ...[
+        if (hasOtherCategories ||
+            favoriteCategory != StickerFavoriteCategory.defaultId)
+          StickerPreviewAction(
+            icon: Symbols.drive_file_move_rounded,
+            label: S.current.sticker_favoriteMove,
+            onSelected: () => _openForegroundSheet(
+              (context) => showFavoriteCategoryPicker(context, sticker),
+            ),
+          ),
+        StickerPreviewAction(
+          icon: Symbols.star_rounded,
+          label: S.current.sticker_unfavorite,
+          destructive: true,
+          onSelected: () => favorites.remove({sticker.url}),
+        ),
+      ],
       if (sticker.groupId.isNotEmpty)
         StickerPreviewAction(
           icon: Symbols.photo_library_rounded,
@@ -233,6 +264,21 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           onSelected: () => _removeRecent(sticker),
         ),
     ];
+  }
+
+  /// 收藏:没有自定义分类时直接收进默认分类,否则弹出分类选择
+  /// (选择弹层要走前景弹层流程,桌面悬浮面板会压住路由层)。
+  void _favorite(StickerItem sticker) {
+    final hasCustom = ref
+        .read(stickerFavoritesProvider)
+        .any((c) => !c.isDefault);
+    if (hasCustom) {
+      _openForegroundSheet(
+        (context) => showFavoriteCategoryPicker(context, sticker),
+      );
+    } else {
+      favoriteSticker(context, sticker);
+    }
   }
 
   void _removeRecent(StickerItem sticker) {
@@ -330,6 +376,11 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     // 已订阅分组含 tab 栏所需的 name/icon,prefs 同步读 —— 首帧就能画,
     // 不再为了拿这几个字段去拉全市场 288 组的分页索引。
     final subscribedGroups = ref.watch(subscribedStickerGroupsProvider);
+    // 收藏实时跟随(收藏/移出立即可见);空分类不占面板位置
+    final favorites = ref
+        .watch(stickerFavoritesProvider)
+        .where((c) => c.items.isNotEmpty)
+        .toList(growable: false);
     _recentSnapshot ??= ref.read(recentStickersProvider);
     final recentStickers = _recentSnapshot!;
 
@@ -343,9 +394,9 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
                 : BorderRadius.vertical(top: context.shapes.radius(16)),
           ),
         ),
-        child: subscribedGroups.isEmpty
+        child: subscribedGroups.isEmpty && favorites.isEmpty
             ? _buildEmptyState()
-            : _buildContent(subscribedGroups, recentStickers),
+            : _buildContent(subscribedGroups, recentStickers, favorites),
       ),
     );
   }
@@ -380,16 +431,16 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   Widget _buildContent(
     List<StickerGroup> groups,
     List<StickerItem> recentStickers,
+    List<StickerFavoriteCategory> favorites,
   ) {
-    if (groups.isEmpty) return _buildEmptyState();
-
     // 预加载所有已订阅分组的详情，避免滚动时逐个 loading
     for (final group in groups) {
       ref.read(stickerGroupDetailProvider(group.id));
     }
 
     final hasRecent = recentStickers.isNotEmpty;
-    final totalGroups = (hasRecent ? 1 : 0) + groups.length;
+    // 分区顺序:最近使用 → 收藏分类 → 已订阅分组;tab 与分区一一对应
+    final totalGroups = (hasRecent ? 1 : 0) + favorites.length + groups.length;
 
     while (_groupKeys.length < totalGroups) {
       _groupKeys.add(GlobalKey());
@@ -400,7 +451,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 
     return Column(
       children: [
-        _buildTabBar(groups, hasRecent),
+        _buildTabBar(groups, hasRecent, favorites),
         Expanded(
           key: _contentAreaKey,
           child: CustomScrollView(
@@ -409,17 +460,28 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             // enter viewport 才开始 _loadThumbnail。1500px ≈ 3 屏,提前 build +
             // 提前进 worker pool 解码,滚动到时 widget tree 已 ready、图也好或在解。
             scrollCacheExtent: ScrollCacheExtent.pixels(1500),
-            slivers: _buildSlivers(groups, hasRecent, recentStickers),
+            slivers: _buildSlivers(
+              groups,
+              hasRecent,
+              recentStickers,
+              favorites,
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildTabBar(List<StickerGroup> groups, bool hasRecent) {
+  Widget _buildTabBar(
+    List<StickerGroup> groups,
+    bool hasRecent,
+    List<StickerFavoriteCategory> favorites,
+  ) {
     final theme = Theme.of(context);
     final compact = widget.compact;
-    final totalTabs = (hasRecent ? 1 : 0) + groups.length;
+    // 排在分组前面的固定分区数(最近使用 + 收藏分类),它们不参与拖拽排序
+    final leading = (hasRecent ? 1 : 0) + favorites.length;
+    final totalTabs = leading + groups.length;
     final tabSlotWidth = compact ? 34.0 : 40.0;
     final tabWidth = compact ? 30.0 : 36.0;
     const tabMargin = 2.0;
@@ -486,9 +548,14 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
                                 );
                               },
                             );
+                          } else if (index < leading) {
+                            icon = _buildFavoriteTabIcon(
+                              favorites[index - (hasRecent ? 1 : 0)],
+                              index,
+                              totalTabs,
+                            );
                           } else {
-                            final group = groups[hasRecent ? index - 1 : index];
-                            icon = _buildGroupTabIcon(group);
+                            icon = _buildGroupTabIcon(groups[index - leading]);
                           }
                           final tab = GestureDetector(
                             onTap: () => _scrollToGroup(index),
@@ -503,9 +570,9 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
                               ),
                             ),
                           );
-                          if (hasRecent && index == 0) return tab;
+                          if (index < leading) return tab;
                           return _buildDraggableTab(
-                            groupIndex: hasRecent ? index - 1 : index,
+                            groupIndex: index - leading,
                             tab: tab,
                             icon: icon,
                             slotWidth: tabSlotWidth,
@@ -627,6 +694,33 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     _tabAutoScrollDirection = 0;
   }
 
+  /// 收藏分类的 tab 图标:默认分类是星标(选中时着色,与「最近使用」一致),
+  /// 自定义分类用第一张表情。
+  Widget _buildFavoriteTabIcon(
+    StickerFavoriteCategory category,
+    int index,
+    int totalTabs,
+  ) {
+    if (category.isDefault) {
+      final theme = Theme.of(context);
+      return ValueListenableBuilder<int>(
+        valueListenable: _activeGroupIndex,
+        builder: (_, raw, _) => Icon(
+          Symbols.star_rounded,
+          size: 20,
+          fill: 1,
+          color: raw.clamp(0, totalTabs - 1) == index
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return SizedBox.square(
+      dimension: 24,
+      child: StickerThumbnail(sticker: category.items.first),
+    );
+  }
+
   Widget _buildGroupTabIcon(StickerGroup group) {
     final icon = group.icon;
     if (icon.startsWith('http://') || icon.startsWith('https://')) {
@@ -668,6 +762,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     List<StickerGroup> groups,
     bool hasRecent,
     List<StickerItem> recentStickers,
+    List<StickerFavoriteCategory> favorites,
   ) {
     final slivers = <Widget>[];
     int keyIndex = 0;
@@ -681,7 +776,22 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           ),
         ),
       );
-      slivers.add(_buildStickerSliverGrid(recentStickers));
+      slivers.add(_buildStickerSliverGrid(recentStickers, _recentOrigin));
+      keyIndex++;
+    }
+
+    for (final category in favorites) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: _buildSectionHeader(
+            stickerFavoriteCategoryLabel(category),
+            _groupKeys[keyIndex],
+          ),
+        ),
+      );
+      slivers.add(
+        _buildStickerSliverGrid(category.items, _FavoriteOrigin(category.id)),
+      );
       keyIndex++;
     }
 
@@ -726,7 +836,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     );
   }
 
-  Widget _buildStickerSliverGrid(List<StickerItem> stickers) {
+  Widget _buildStickerSliverGrid(List<StickerItem> stickers, Object origin) {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       sliver: SliverGrid(
@@ -734,7 +844,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
           (_, index) => StickerGridCell(
             sticker: stickers[index],
             preview: _preview,
-            origin: _recentOrigin,
+            origin: origin,
             onTap: () => _onStickerTap(stickers[index]),
           ),
           childCount: stickers.length,
@@ -747,6 +857,19 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       ),
     );
   }
+}
+
+/// 收藏分区里格子的来源标记。
+class _FavoriteOrigin {
+  const _FavoriteOrigin(this.categoryId);
+  final String categoryId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _FavoriteOrigin && other.categoryId == categoryId;
+
+  @override
+  int get hashCode => categoryId.hashCode;
 }
 
 /// 单个分组的 Sliver 内容（懒加载）
