@@ -156,6 +156,7 @@ extension FilterMethods on TopicDetailNotifier {
   /// 过滤模式下根据 stream ID 加载更多帖子
   Future<void> _loadMoreByStreamIds() async {
     if (_isLoadMoreFailed) return; // 失败后需手动重试
+    final revision = _postWindowRevision;
     _isLoadingMore = true;
 
     try {
@@ -180,7 +181,9 @@ extension FilterMethods on TopicDetailNotifier {
 
         final nextIds = stream.sublist(
           lastIndex + 1,
-          (lastIndex + 21).clamp(0, stream.length),
+          (lastIndex + 1 + TopicDetailNotifier.postPageSize).clamp(
+            0, stream.length,
+          ),
         );
 
         if (nextIds.isEmpty) {
@@ -195,6 +198,7 @@ extension FilterMethods on TopicDetailNotifier {
           // 过滤模式下服务端同样不下发推荐话题,靠这一次翻页补
           includeSuggested: currentDetail.needsFooterTopics,
         );
+        if (!_isCurrentWindow(revision)) return currentDetail;
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
         final newPosts = newPostStream.posts
@@ -225,7 +229,7 @@ extension FilterMethods on TopicDetailNotifier {
           relatedMessages: newPostStream.relatedMessages,
         ));
       });
-      if (!ref.mounted) return;
+      if (!_isCurrentWindow(revision)) return;
       if (result.hasError) {
         // 未发射过 AsyncLoading,state 仍是原 AsyncData,无需恢复
         _isLoadMoreFailed = true;
@@ -233,13 +237,14 @@ extension FilterMethods on TopicDetailNotifier {
         state = result;
       }
     } finally {
-      _isLoadingMore = false;
+      if (_isCurrentWindow(revision)) _isLoadingMore = false;
     }
   }
 
   /// 过滤模式下根据 stream ID 加载更早的帖子
   Future<void> _loadPreviousByStreamIds() async {
     if (_isLoadPreviousFailed) return; // 失败后需手动重试
+    final revision = _postWindowRevision;
     _isLoadingPrevious = true;
 
     try {
@@ -262,7 +267,9 @@ extension FilterMethods on TopicDetailNotifier {
           return currentDetail;
         }
 
-        final start = (firstIndex - 20).clamp(0, firstIndex);
+        final start = (firstIndex - TopicDetailNotifier.postPageSize).clamp(
+          0, firstIndex,
+        );
         final prevIds = stream.sublist(start, firstIndex);
 
         if (prevIds.isEmpty) {
@@ -272,6 +279,7 @@ extension FilterMethods on TopicDetailNotifier {
 
         final service = ref.read(discourseServiceProvider);
         final newPostStream = await service.getPosts(arg.topicId, prevIds);
+        if (!_isCurrentWindow(revision)) return currentDetail;
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
         final newPosts = newPostStream.posts
@@ -299,7 +307,7 @@ extension FilterMethods on TopicDetailNotifier {
           ),
         );
       });
-      if (!ref.mounted) return;
+      if (!_isCurrentWindow(revision)) return;
       if (result.hasError) {
         // 未发射过 AsyncLoading,state 仍是原 AsyncData,无需恢复
         _isLoadPreviousFailed = true;
@@ -307,7 +315,7 @@ extension FilterMethods on TopicDetailNotifier {
         state = result;
       }
     } finally {
-      _isLoadingPrevious = false;
+      if (_isCurrentWindow(revision)) _isLoadingPrevious = false;
     }
   }
 }

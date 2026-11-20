@@ -18,11 +18,12 @@ class MacOSUpdateService {
     }
   }
 
-  static Future<bool> checkForUpdates() async {
+  static Future<bool> checkForUpdates(String version) async {
     final proxy = await UpdateService.getGithubProxy();
     try {
       return await _channel.invokeMethod<bool>('checkForUpdates', {
             'githubProxy': proxy,
+            'version': version,
           }) ??
           false;
     } on MissingPluginException {

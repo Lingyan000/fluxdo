@@ -49,7 +49,7 @@ class UpdateCheckerHelper {
     } else if (Platform.isWindows) {
       await _startWindowsUpdate(context, updateInfo);
     } else if (Platform.isMacOS) {
-      if (!await MacOSUpdateService.checkForUpdates()) {
+      if (!await MacOSUpdateService.checkForUpdates(updateInfo.remoteVersion)) {
         _openInBrowser(updateInfo.releaseUrl);
       }
     } else {

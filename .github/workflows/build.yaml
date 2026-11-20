@@ -11,7 +11,22 @@ env:
   ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
+  release_metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      core_version: ${{ steps.version.outputs.core_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release publication
+        run: python3 -m unittest discover -s scripts/ci -p test_publish_release.py
+      - name: Read core version
+        id: version
+        run: |
+          core_version=$(python3 scripts/ci/publish_release.py --tag "$GITHUB_REF_NAME" --print-core)
+          echo "core_version=$core_version" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: release_metadata
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -183,7 +198,9 @@ jobs:
       - name: Build iOS
         if: matrix.platform == 'ios'
         run: |
-          dart tool/flutterw.dart build ios --release --no-codesign
+          version="${GITHUB_REF_NAME#v}"
+          dart tool/flutterw.dart build ios --release --no-codesign \
+            --build-name="${version%%-*}" --dart-define="FLUXDO_RELEASE_VERSION=$version"
           nm -gU build/ios/iphoneos/Runner.app/Runner | grep "_fluxdo_net_request_start"
           mkdir -p dist
           cd build/ios/iphoneos
@@ -219,7 +236,9 @@ jobs:
           FLUTTER_XCODE_EXCLUDED_ARCHS: ${{ matrix.excluded-arch }}
           HAS_CODESIGN_CERT: ${{ secrets.MACOS_CODESIGN_P12_BASE64 != '' }}
         run: |
-          dart tool/flutterw.dart build macos --release --verbose
+          version="${GITHUB_REF_NAME#v}"
+          dart tool/flutterw.dart build macos --release --verbose \
+            --build-name="${version%%-*}" --dart-define="FLUXDO_RELEASE_VERSION=$version"
           mkdir -p dist
           APP_PATH="build/macos/Build/Products/Release/fluxdo.app"
           test -f "$APP_PATH/Contents/Frameworks/libfluxdo_net.dylib"
@@ -253,7 +272,7 @@ jobs:
           appdmg dmg-config.json "dist/fluxdo-macos-${{ matrix.arch }}.dmg"
 
       - name: Sign macOS update and generate Sparkle appcast
-        if: matrix.platform == 'macos' && env.IS_STABLE == 'true'
+        if: matrix.platform == 'macos'
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -553,9 +572,15 @@ jobs:
 
   upload:
     needs:
+      - release_metadata
       - build
       - flatpak_package
     runs-on: ubuntu-latest
+    concurrency:
+      group: github-release-${{ needs.release_metadata.outputs.core_version }}
+      cancel-in-progress: false
+      # 保留排队中的发布任务，避免连续推标签时取消尚未执行的版本。
+      queue: max
     permissions: write-all
     services:
       telegram-bot-api:
@@ -663,26 +688,20 @@ jobs:
             --version "${{ steps.version.outputs.VERSION }}"
 
       - name: Generate SHA256 checksums
-        if: env.IS_STABLE == 'true'
         run: |
           cd ./dist
           for file in $(find . -type f -not -name "*.sha256"); do
             sha256sum "$file" > "${file}.sha256"
           done
 
-      - name: Create Release
-        if: env.IS_STABLE == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./dist/*
-          body_path: release_notes.md
-          draft: false
-          prerelease: false
+      - name: Publish release for core version
+        id: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/publish_release.py --tag "$GITHUB_REF_NAME"
 
       - name: Update AltStore Source
-        if: env.IS_STABLE == 'true'
+        if: env.IS_STABLE == 'true' && steps.release.outputs.published == 'true'
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           VERSION_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -733,7 +752,7 @@ jobs:
           fi
 
       - name: Prepare GitHub Pages
-        if: env.IS_STABLE == 'true'
+        if: env.IS_STABLE == 'true' && steps.release.outputs.published == 'true'
         run: |
           mkdir -p gh-pages-deploy
           cp altstore/source.json gh-pages-deploy/
@@ -748,21 +767,19 @@ jobs:
           cp "$icon_src" gh-pages-deploy/icon.png
 
       - name: Deploy to GitHub Pages
-        if: env.IS_STABLE == 'true'
+        if: env.IS_STABLE == 'true' && steps.release.outputs.published == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages-deploy
           keep_files: false
 
-      # TG 通知放在 job 最后：beta 没有 GitHub Release，TG 是唯一发布渠道，
-      # 失败必须让 CI 红（不能 continue-on-error 吞掉）。放最后保证 TG 失败
-      # 不挡 stable 的 Release/AltStore/Pages，且重跑时前面步骤均幂等不会重复发布。
+      # TG 通知放在发布步骤之后。重跑时可以复用已发布的 Release。
       # 脚本内部失败会回收已发出的消息，重跑不产生重复。
       - name: Wait for telegram-bot-api
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        if: env.TELEGRAM_BOT_TOKEN
+        if: env.TELEGRAM_BOT_TOKEN && steps.release.outputs.published == 'true'
         run: |
           for i in {1..20}; do
             if curl -sf "http://localhost:8081/bot${TELEGRAM_BOT_TOKEN}/getMe" > /dev/null; then
@@ -783,7 +800,7 @@ jobs:
           IS_PRERELEASE: ${{ contains(github.ref, '-') }}
           TELEGRAM_API_BASE: http://localhost:8081
           RELEASE_NOTES_FILE: release_notes_tg.md
-        if: env.TELEGRAM_BOT_TOKEN
+        if: env.TELEGRAM_BOT_TOKEN && steps.release.outputs.published == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install requests

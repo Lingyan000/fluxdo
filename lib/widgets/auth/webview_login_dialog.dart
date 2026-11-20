@@ -1,14 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:common_ui/common_ui.dart'
-    show showInteractionDialog, UiShapesContext, UiEmphasisContext;
-import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../constants.dart';
+import '../../l10n/s.dart';
 import '../../services/auth_session.dart';
 import '../../services/cf_challenge_service.dart';
 import '../../services/discourse/discourse_service.dart';
@@ -20,6 +18,8 @@ import '../../services/toast_service.dart';
 import '../../services/webview_session_cookie_refresh_service.dart';
 import '../../services/webview_settings.dart';
 import '../../services/windows_webview_environment_service.dart';
+import '../common/captcha_panel.dart';
+import '../common/hcaptcha_layout_script.dart';
 
 /// 登录对话框结果状态。
 enum WebViewLoginStatus { success, failure, canceled }
@@ -80,10 +80,11 @@ Future<WebViewLoginDialogResult?> showWebViewLoginDialog(
   required Future<String?> Function(WebViewLoginNeed2FA need)
   onNeedSecondFactor,
   String? hcaptchaCreateEndpoint,
-}) {
-  return showInteractionDialog<WebViewLoginDialogResult>(
+}) async {
+  final result = await showCaptchaSheet<WebViewLoginDialogResult>(
     context: context,
-    barrierColor: Colors.black54,
+    title: context.l10n.login_captchaTitle,
+    useRootNavigator: true,
     barrierDismissible: false,
     builder: (_) => _WebViewLoginDialog(
       siteKey: siteKey,
@@ -93,6 +94,7 @@ Future<WebViewLoginDialogResult?> showWebViewLoginDialog(
       hcaptchaCreateEndpoint: hcaptchaCreateEndpoint,
     ),
   );
+  return result ?? const WebViewLoginDialogResult.canceled();
 }
 
 class _WebViewLoginDialog extends StatefulWidget {
@@ -116,8 +118,14 @@ class _WebViewLoginDialog extends StatefulWidget {
 
 class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   InAppWebViewController? _controller;
-  bool _loading = true;
-  bool _processing = false; // hcaptcha 通过后登录请求进行中
+  Widget? _attemptWebView;
+  CaptchaPanelPhase _phase = CaptchaPanelPhase.loading;
+  double? _checkboxHeight;
+  double? _challengeHeight;
+  Timer? _loadTimeout;
+  int _attempt = 0;
+  bool _expired = false;
+  bool _routeClosed = false;
   bool _finished = false; // 防止重复 pop / 回调重入
   bool _cookiesPrimed = false; // 方案 A: 是否已从 jar 预灌 cookie
   bool _windowsInlineHtmlInjected = false;
@@ -131,7 +139,52 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   String? _lastSecondFactorToken;
 
   @override
+  void initState() {
+    super.initState();
+    _startLoadTimeout();
+  }
+
+  void _startLoadTimeout() {
+    _loadTimeout?.cancel();
+    _loadTimeout = Timer(const Duration(seconds: 45), () {
+      if (_phase == CaptchaPanelPhase.loading) _failVerification();
+    });
+  }
+
+  bool get _verifying =>
+      mounted &&
+      !_finished &&
+      _phase != CaptchaPanelPhase.failed &&
+      _phase != CaptchaPanelPhase.submitting;
+
+  void _failVerification({bool expired = false}) {
+    if (!_verifying) return;
+    _loadTimeout?.cancel();
+    setState(() {
+      _expired = expired;
+      _phase = CaptchaPanelPhase.failed;
+      _attemptWebView = null;
+      _controller = null;
+    });
+  }
+
+  void _retryVerification() {
+    if (_finished || _phase != CaptchaPanelPhase.failed) return;
+    setState(() {
+      _attempt++;
+      _checkboxHeight = null;
+      _challengeHeight = null;
+      _controller = null;
+      _windowsInlineHtmlInjected = false;
+      _phase = CaptchaPanelPhase.loading;
+    });
+    _startLoadTimeout();
+  }
+
+  @override
   void dispose() {
+    _finished = true;
+    _loadTimeout?.cancel();
     // 对话框关闭后立即释放 WebView2 原生控制器，避免不可见的平台视图
     // 继续参与外部视图合成并长期占用资源。
     _controller?.dispose();
@@ -159,65 +212,74 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   WebUri get _windowsBootstrapUrl =>
       WebUri('${AppConstants.baseUrl}/robots.txt');
 
-  String get _inlineHtml {
-    final scheme = Theme.of(context).colorScheme;
-    String hex(Color c) =>
-        '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-    final titleColor = hex(scheme.onSurface);
-    final subColor = hex(scheme.onSurfaceVariant);
-    final accent = hex(scheme.primary);
+  String _inlineHtml({required bool compact}) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = Theme.of(context).colorScheme.surface
+        .toARGB32()
+        .toRadixString(16)
+        .padLeft(8, '0')
+        .substring(2);
+    final locale = Localizations.localeOf(context);
+    final language =
+        locale.languageCode == 'zh' &&
+            (locale.scriptCode == 'Hant' ||
+                locale.countryCode == 'HK' ||
+                locale.countryCode == 'TW')
+        ? 'zh-TW'
+        : locale.languageCode;
     final endpointsJson = jsonEncode(_hcaptchaCreateEndpoints);
     return '''
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: transparent;
-      font-family: -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
-    body { overflow: hidden; }
-    .wrap { box-sizing: border-box; min-height: 100vh; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 22px; padding: 24px; text-align: center; }
-    .badge { width: 60px; height: 60px; border-radius: 50%; display: flex;
-      align-items: center; justify-content: center; background: ${accent}1f; font-size: 30px; }
-    .tip { font-size: 14px; line-height: 1.6; color: $subColor; margin: 0; max-width: 260px; }
-    .tip b { color: $titleColor; font-weight: 600; }
-    .h-captcha { min-height: 78px; }
+    html, body { margin: 0; min-height: 100%; background: #$surface; color-scheme: ${dark ? 'dark' : 'light'}; }
+    main { min-height: 100vh; display: grid; align-items: center; justify-content: center; justify-content: safe center; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="badge">🛡️</div>
-    <p class="tip">勾选下方方框，<b>确认你不是机器人</b>即可继续登录</p>
-    <div id="cap" class="h-captcha"
-      data-sitekey="${widget.siteKey}"
-      data-callback="onPass"
-      data-error-callback="onErr"
-      data-expired-callback="onExp"
-      data-size="normal"></div>
-  </div>
+  <main><div id="cap" data-sitekey="${const HtmlEscape().convert(widget.siteKey)}"></div></main>
   <script>
+    $hCaptchaLayoutScript
     function call(name, payload) {
-      try { window.flutter_inappwebview.callHandler(name, payload); } catch (e) {}
+      const send = () => window.flutter_inappwebview.callHandler(name, payload);
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) send();
+      else window.addEventListener('flutterInAppWebViewPlatformReady', send, { once: true });
     }
-    function notifyPageReady() {
+    function renderCheckbox() {
       try {
-        requestAnimationFrame(function() {
-          requestAnimationFrame(function() { call('hcaptcha_page_ready', null); });
+        const container = document.getElementById('cap');
+        let stopLayout;
+        function finish(name, value) {
+          stopLayout?.();
+          stopLayout = null;
+          call(name, value);
+        }
+        hcaptcha.render(container, {
+          sitekey: container.dataset.sitekey,
+          theme: '${dark ? 'dark' : 'light'}',
+          hl: ${jsonEncode(language)},
+          size: '${compact ? 'compact' : 'normal'}',
+          callback: token => finish('hcaptcha_pass', token),
+          'open-callback': () => {
+            call('hcaptcha_open', null);
+            stopLayout?.();
+            stopLayout = watchHCaptchaLayout(container, height => call('hcaptcha_height', height));
+          },
+          'close-callback': () => finish('hcaptcha_close', null),
+          'expired-callback': () => finish('hcaptcha_expired', null),
+          'chalexpired-callback': () => finish('hcaptcha_expired', null),
+          'error-callback': () => finish('hcaptcha_error', null)
         });
+        const ready = () => call('hcaptcha_ready', Math.ceil(container.getBoundingClientRect().height));
+        if (typeof ResizeObserver === 'function') new ResizeObserver(ready).observe(container);
+        ready();
       } catch (e) {
-        setTimeout(function() { call('hcaptcha_page_ready', null); }, 80);
+        call('hcaptcha_error', null);
       }
     }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', notifyPageReady, { once: true });
-    } else {
-      notifyPageReady();
-    }
-    function onPass(token) { call('hcaptcha_pass', token); }
-    function onErr(err)    { call('hcaptcha_error', String(err || 'unknown')); }
-    function onExp()       { call('hcaptcha_expired', null); }
 
     // WebView 内核同源全流程登录。所有请求 credentials:'include' 带 store cookie。
     // 只设 X-CSRF-Token / X-Requested-With / Content-Type / Accept;
@@ -292,46 +354,84 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
       }
     };
   </script>
-  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  <script src="https://js.hcaptcha.com/1/api.js?onload=renderCheckbox&amp;render=explicit"
+    onerror="call('hcaptcha_error', null)" async defer></script>
 </body>
 </html>
 ''';
   }
 
-  void _setupHandlers(InAppWebViewController controller) {
+  void _setupHandlers(InAppWebViewController controller, int attempt) {
+    bool current() => attempt == _attempt && _verifying;
+    void onCaptcha(String name, VoidCallback accept) {
+      controller.addJavaScriptHandler(
+        handlerName: name,
+        callback: (args) {
+          if (current()) accept();
+          return null;
+        },
+      );
+    }
+
+    void show(CaptchaPanelPhase phase) {
+      _loadTimeout?.cancel();
+      setState(() {
+        if (_phase != phase) _challengeHeight = null;
+        _phase = phase;
+      });
+    }
+
     controller.addJavaScriptHandler(
-      handlerName: 'hcaptcha_page_ready',
+      handlerName: 'hcaptcha_ready',
       callback: (args) {
-        if (mounted && _loading) {
-          setState(() => _loading = false);
+        if (!current() ||
+            (_phase != CaptchaPanelPhase.loading &&
+                _phase != CaptchaPanelPhase.checkbox)) {
+          return null;
+        }
+        final height = args is List && args.isNotEmpty ? args.first : null;
+        final measured = height is num && height.isFinite && height > 0
+            ? height.toDouble()
+            : null;
+        if (_phase == CaptchaPanelPhase.loading ||
+            (measured != null && measured != _checkboxHeight)) {
+          _loadTimeout?.cancel();
+          setState(() {
+            _phase = CaptchaPanelPhase.checkbox;
+            _checkboxHeight = measured ?? _checkboxHeight;
+          });
         }
         return null;
       },
     );
+    onCaptcha('hcaptcha_open', () => show(CaptchaPanelPhase.challenge));
+    controller.addJavaScriptHandler(
+      handlerName: 'hcaptcha_height',
+      callback: (args) {
+        final height = args is List && args.isNotEmpty ? args.first : null;
+        if (current() &&
+            _phase == CaptchaPanelPhase.challenge &&
+            height is num &&
+            height.isFinite &&
+            height > 0 &&
+            height != _challengeHeight) {
+          setState(() => _challengeHeight = height.toDouble());
+        }
+        return null;
+      },
+    );
+    onCaptcha('hcaptcha_close', () => show(CaptchaPanelPhase.checkbox));
+    onCaptcha('hcaptcha_error', _failVerification);
+    onCaptcha('hcaptcha_expired', () => _failVerification(expired: true));
     // hcaptcha 通过 → 首次驱动登录 (带 hcaptcha token)
     controller.addJavaScriptHandler(
       handlerName: 'hcaptcha_pass',
       callback: (args) {
-        final token = args.isNotEmpty ? args.first?.toString() : null;
-        if (token != null && token.isNotEmpty) {
-          _runLogin(hcaptchaToken: token, secondFactorToken: null);
+        final token = args.isNotEmpty ? args.first : null;
+        if (current() && token is String && token.isNotEmpty) {
+          show(CaptchaPanelPhase.submitting);
+          unawaited(_runLogin(hcaptchaToken: token, secondFactorToken: null));
         }
-        return null;
-      },
-    );
-    controller.addJavaScriptHandler(
-      handlerName: 'hcaptcha_error',
-      callback: (args) {
-        debugPrint(
-          '[WebViewLogin] hcaptcha error: ${args.isNotEmpty ? args.first : ""}',
-        );
-        return null;
-      },
-    );
-    controller.addJavaScriptHandler(
-      handlerName: 'hcaptcha_expired',
-      callback: (args) {
-        debugPrint('[WebViewLogin] hcaptcha expired');
         return null;
       },
     );
@@ -339,6 +439,9 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     controller.addJavaScriptHandler(
       handlerName: 'login_result',
       callback: (args) {
+        if (attempt != _attempt || _phase != CaptchaPanelPhase.submitting) {
+          return null;
+        }
         final raw = args.isNotEmpty ? args.first?.toString() : null;
         if (raw != null) _onLoginResult(raw);
         return null;
@@ -371,9 +474,10 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   /// linux.do 的轻量静态资源拿真实 origin, 再写入同一份内嵌登录页。
   Future<void> _injectWindowsInlineHtml(
     InAppWebViewController controller,
+    int attempt,
+    String document,
   ) async {
-    if (_finished) return;
-    if (_windowsInlineHtmlInjected) {
+    if (!_verifying || attempt != _attempt || _windowsInlineHtmlInjected) {
       return;
     }
     try {
@@ -388,12 +492,15 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
 ''',
       );
       final origin = probe is Map ? probe['origin']?.toString() : null;
+      if (!_verifying || attempt != _attempt || _windowsInlineHtmlInjected) {
+        return;
+      }
       if (origin != AppConstants.baseUrl) {
         debugPrint('[WebViewLogin] Windows bootstrap origin not ready: $probe');
         return;
       }
 
-      final html = jsonEncode(_inlineHtml);
+      final html = jsonEncode(document);
       _windowsInlineHtmlInjected = true;
       await controller.evaluateJavascript(
         source:
@@ -405,7 +512,7 @@ document.close();
       );
     } catch (e) {
       debugPrint('[WebViewLogin] Windows hcaptcha bootstrap 失败: $e');
-      _finishFailure(LoginErrorKind.unknown, '人机验证页面初始化失败');
+      if (attempt == _attempt) _failVerification();
     }
   }
 
@@ -416,7 +523,6 @@ document.close();
   }) async {
     final controller = _controller;
     if (controller == null || _finished) return;
-    if (mounted) setState(() => _processing = true);
 
     // 记录参数, CSRF 403 自动重验证后用同样参数重跑
     _lastHcaptchaToken = hcaptchaToken;
@@ -425,6 +531,10 @@ document.close();
     // 方案 A: fetch 发出前确保登录 WebView store 有 cf_clearance (只灌一次)
     await _primeCookiesFromJar();
     if (_finished) return;
+    if (!AuthSession().isValid(_flowGeneration)) {
+      _finishCanceled();
+      return;
+    }
 
     final id = jsonEncode(widget.identifier);
     final pwd = jsonEncode(widget.password);
@@ -581,9 +691,7 @@ document.close();
     _finished = true;
     if (!AuthSession().isValid(_flowGeneration)) {
       debugPrint('[WebViewLogin] 登录对话框流程已过期，跳过会话同步');
-      if (mounted) {
-        Navigator.of(context).pop(const WebViewLoginDialogResult.canceled());
-      }
+      _returnResult(const WebViewLoginDialogResult.canceled());
       return;
     }
     // pop 前在同源轻量页里跑站点 session bootstrap，再把 cookie 落 jar。
@@ -632,245 +740,135 @@ document.close();
     } catch (e) {
       debugPrint('[WebViewLogin] syncFromWebView 失败: $e');
     }
-    if (mounted) {
-      Navigator.of(context).pop(const WebViewLoginDialogResult.success());
-    }
+    _returnResult(const WebViewLoginDialogResult.success());
   }
 
   void _finishFailure(LoginErrorKind kind, String? message) {
     if (_finished) return;
     _finished = true;
-    if (mounted) {
-      Navigator.of(context)
-          .pop(WebViewLoginDialogResult.failure(kind, message));
-    }
+    _returnResult(WebViewLoginDialogResult.failure(kind, message));
   }
 
   void _finishCanceled() {
     if (_finished) return;
     _finished = true;
-    if (mounted) {
-      Navigator.of(context).pop(const WebViewLoginDialogResult.canceled());
+    _returnResult(const WebViewLoginDialogResult.canceled());
+  }
+
+  void _returnResult(WebViewLoginDialogResult result) {
+    if (!mounted || _routeClosed) return;
+    final route = ModalRoute.of<WebViewLoginDialogResult>(context);
+    if (route == null || !route.isActive) return;
+    if (route.isCurrent) {
+      route.navigator!.pop(result);
+    } else {
+      route.navigator!.removeRoute(route, result);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Material(
-      type: MaterialType.transparency,
-      child: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isCompact = constraints.maxWidth < 640;
-            final horizontalMargin = isCompact ? 12.0 : 24.0;
-            final verticalMargin = isCompact ? 12.0 : 24.0;
-            final availableHeight = math.max(
-              360.0,
-              constraints.maxHeight - verticalMargin * 2,
-            );
-            // hcaptcha 的 challenge 九宫格弹层约需 ~600px 高, 面板给足高度避免
-            // 出滚动条; 小屏则占满可用高度。
-            final panelHeight = math.min(availableHeight, 640.0);
-
-            return Align(
-              alignment: isCompact ? Alignment.bottomCenter : Alignment.center,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: horizontalMargin,
-                  vertical: verticalMargin,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: panelHeight,
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: scheme.surface,
-                        shadows: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        shape: RoundedSuperellipseBorder(
-                          borderRadius: context.shapes.borderRadius(20),
-                        ),
-                      ),
-                      child: ClipRSuperellipse(
-                        borderRadius: context.shapes.borderRadius(20),
-                        child: Column(
-                          children: [
-                            _Header(onClose: _finishCanceled, scheme: scheme),
-                            Expanded(
-                              child: Stack(
-                                children: [
-                                  Positioned.fill(
-                                    child: InAppWebView(
-                                      webViewEnvironment: Platform.isWindows
-                                          ? WindowsWebViewEnvironmentService
-                                                .instance
-                                                .environment
-                                          : null,
-                                      initialUrlRequest: Platform.isWindows
-                                          ? URLRequest(
-                                              url: _windowsBootstrapUrl,
-                                            )
-                                          : null,
-                                      initialData: Platform.isWindows
-                                          ? null
-                                          : InAppWebViewInitialData(
-                                              data: _inlineHtml,
-                                              baseUrl: WebUri(
-                                                AppConstants.baseUrl,
-                                              ),
-                                              mimeType: 'text/html',
-                                              encoding: 'utf-8',
-                                            ),
-                                      initialSettings: InAppWebViewSettings(
-                                        javaScriptEnabled: true,
-                                        transparentBackground: true,
-                                        supportZoom: false,
-                                        sharedCookiesEnabled: true,
-                                        thirdPartyCookiesEnabled: true,
-                                        userAgent: AppConstants
-                                            .webViewUserAgentOverride,
-                                      ),
-                                      initialUserScripts:
-                                          WebViewSettings.compatPolyfillScripts,
-                                      onReceivedServerTrustAuthRequest:
-                                          (_, challenge) =>
-                                              WebViewSettings.handleServerTrustAuthRequest(
-                                                challenge,
-                                              ),
-                                      onWebViewCreated: (controller) {
-                                        _controller = controller;
-                                        WebViewSettings.registerJsErrorReporter(
-                                          controller,
-                                        );
-                                        _setupHandlers(controller);
-                                      },
-                                      onLoadStop: (controller, _) async {
-                                        if (Platform.isWindows) {
-                                          await _injectWindowsInlineHtml(
-                                            controller,
-                                          );
-                                          return;
-                                        }
-                                        if (mounted) {
-                                          setState(() => _loading = false);
-                                        }
-                                      },
-                                      onProgressChanged:
-                                          (controller, progress) async {
-                                            if (Platform.isWindows &&
-                                                progress >= 100) {
-                                              await _injectWindowsInlineHtml(
-                                                controller,
-                                              );
-                                            }
-                                          },
-                                      onReceivedError:
-                                          (controller, request, error) async {
-                                            if (Platform.isWindows &&
-                                                request.isForMainFrame ==
-                                                    true) {
-                                              await _injectWindowsInlineHtml(
-                                                controller,
-                                              );
-                                            }
-                                          },
-                                    ),
-                                  ),
-                                  if (_loading)
-                                    Positioned.fill(
-                                      child: ColoredBox(
-                                        color: scheme.surface,
-                                        child: const Center(
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      ),
-                                    ),
-                                  if (_processing)
-                                    Positioned.fill(
-                                      child: ColoredBox(
-                                        color: scheme.surface.withValues(
-                                          alpha: 0.92,
-                                        ),
-                                        child: Center(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const CircularProgressIndicator(),
-                                              const SizedBox(height: 16),
-                                              Text(
-                                                '正在登录…',
-                                                style:
-                                                    theme.textTheme.bodyMedium,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+    final l = context.l10n;
+    final message = switch (_phase) {
+      CaptchaPanelPhase.loading => l.captcha_loading,
+      CaptchaPanelPhase.checkbox => l.login_captchaCheckbox,
+      CaptchaPanelPhase.challenge => l.captcha_challengeHint,
+      CaptchaPanelPhase.submitting => l.login_captchaSubmitting,
+      CaptchaPanelPhase.failed =>
+        _expired ? l.captcha_expired : l.captcha_unavailable,
+    };
+    return PopScope<WebViewLoginDialogResult>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          _routeClosed = true;
+          _finished = true;
+          _loadTimeout?.cancel();
+        }
+      },
+      child: CaptchaPanel(
+        phase: _phase,
+        contentHeight: _phase == CaptchaPanelPhase.checkbox
+            ? _checkboxHeight
+            : _challengeHeight,
+        message: message,
+        onRetry: _retryVerification,
+        child: _phase == CaptchaPanelPhase.failed
+            ? null
+            : LayoutBuilder(
+                builder: (context, bounds) {
+                  if (bounds.maxWidth <= 0) return const SizedBox.shrink();
+                  return _attemptWebView ??= _webView(
+                    _attempt,
+                    _inlineHtml(
+                      compact:
+                          bounds.maxWidth < CaptchaPanel.normalCheckboxWidth,
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
-            );
-          },
-        ),
       ),
     );
   }
-}
 
-class _Header extends StatelessWidget {
-  const _Header({required this.onClose, required this.scheme});
-
-  final VoidCallback onClose;
-  final ColorScheme scheme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.5),
+  Widget _webView(int attempt, String document) => InAppWebView(
+    key: ValueKey(attempt),
+    webViewEnvironment: Platform.isWindows
+        ? WindowsWebViewEnvironmentService.instance.environment
+        : null,
+    initialUrlRequest: Platform.isWindows
+        ? URLRequest(url: _windowsBootstrapUrl)
+        : null,
+    initialData: Platform.isWindows
+        ? null
+        : InAppWebViewInitialData(
+            data: document,
+            baseUrl: WebUri(AppConstants.baseUrl),
+            mimeType: 'text/html',
+            encoding: 'utf-8',
           ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(Symbols.verified_user_rounded, size: 20, color: context.emphasis.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '完成人机验证',
-              style: Theme.of(context).textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.close_rounded, size: 22),
-            tooltip: '取消',
-            onPressed: onClose,
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
-      ),
-    );
-  }
+    initialSettings: InAppWebViewSettings(
+      javaScriptEnabled: true,
+      transparentBackground: true,
+      supportZoom: false,
+      sharedCookiesEnabled: true,
+      thirdPartyCookiesEnabled: true,
+      userAgent: AppConstants.webViewUserAgentOverride,
+      javaScriptHandlersForMainFrameOnly: true,
+      javaScriptHandlersOriginAllowList: {
+        '^${RegExp.escape(AppConstants.baseUrl)}\$',
+      },
+    ),
+    initialUserScripts: WebViewSettings.compatPolyfillScripts,
+    onReceivedServerTrustAuthRequest: (_, challenge) =>
+        WebViewSettings.handleServerTrustAuthRequest(challenge),
+    onWebViewCreated: (controller) {
+      if (attempt != _attempt || !_verifying) return;
+      _controller = controller;
+      WebViewSettings.registerJsErrorReporter(controller);
+      _setupHandlers(controller, attempt);
+    },
+    onLoadStop: (controller, _) async {
+      if (Platform.isWindows) {
+        await _injectWindowsInlineHtml(controller, attempt, document);
+      }
+    },
+    onProgressChanged: (controller, progress) async {
+      if (Platform.isWindows && progress >= 100) {
+        await _injectWindowsInlineHtml(controller, attempt, document);
+      }
+    },
+    onReceivedError: (controller, request, _) async {
+      if (request.isForMainFrame != true || attempt != _attempt) return;
+      if (Platform.isWindows) {
+        await _injectWindowsInlineHtml(controller, attempt, document);
+      } else {
+        _failVerification();
+      }
+    },
+    onReceivedHttpError: (controller, request, _) {
+      if (request.isForMainFrame == true && attempt == _attempt) {
+        _failVerification();
+      }
+    },
+  );
 }

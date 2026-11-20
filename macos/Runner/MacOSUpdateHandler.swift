@@ -7,6 +7,7 @@ final class MacOSUpdateHandler: NSObject, SPUUpdaterDelegate {
   private let skippedVersionKey = "FluxDOSkippedUpdateVersion"
   private var controller: SPUStandardUpdaterController?
   private var githubProxy = ""
+  private var releaseVersion = ""
 
   func register(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "com.fluxdo/macos_update", binaryMessenger: messenger)
@@ -29,6 +30,13 @@ final class MacOSUpdateHandler: NSObject, SPUUpdaterDelegate {
         return
       }
       let args = call.arguments as? [String: String]
+      guard let version = args?["version"],
+            version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.+-]+)?$"#,
+                          options: .regularExpression) != nil else {
+        result(false)
+        return
+      }
+      releaseVersion = version
       githubProxy = (args?["githubProxy"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       if !githubProxy.isEmpty {
         guard let proxy = URL(string: githubProxy),
@@ -62,7 +70,7 @@ final class MacOSUpdateHandler: NSObject, SPUUpdaterDelegate {
     #else
     let architecture = "x86_64"
     #endif
-    return proxied("https://github.com/Lingyan000/fluxdo/releases/latest/download/appcast-macos-\(architecture).xml")
+    return proxied("https://github.com/Lingyan000/fluxdo/releases/download/v\(releaseVersion)/appcast-macos-\(architecture).xml")
   }
 
   func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem,

@@ -2,6 +2,7 @@
   "@@locale": "zh",
   "about_appLogs": "应用日志",
   "about_checkUpdate": "检查更新",
+  "about_checkBetaUpdates": "检查 Beta 更新",
   "about_checkUpdateError": "无法检查更新，请稍后重试。\n错误信息: {error}",
   "@about_checkUpdateError": {
     "placeholders": {

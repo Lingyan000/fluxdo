@@ -1286,6 +1286,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     int postNumber, {
     NestedReadingPosition? restorePosition,
   }) async {
+    _controller.cancelProgressLoad();
     if (_isNestedView) {
       if (postNumber <= 1) {
         // OP 恒在树形视图顶部区域，直接回顶
@@ -1308,30 +1309,27 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     await _scrollToPost(postNumber);
   }
 
-  /// 按 postId 跳转的树形感知版本（时间线 sheet 等只有 postId 的入口）。
-  /// 树形下平铺流窗口未必含该帖：先本地查，查不到拉取帖子拿真实楼层号。
-  Future<void> _jumpToPostByIdInTopic(int postId) async {
-    if (!_isNestedView) {
-      await _scrollToPostById(postId);
+  /// 底栏、侧栏和时间线共用过滤后的进度索引。
+  Future<void> _jumpToStreamIndex(int streamIndex) async {
+    final detail = _positionInfo.detail;
+    if (detail == null ||
+        streamIndex < 1 ||
+        streamIndex > detail.postStream.stream.length) {
       return;
     }
-    final detail = ref.read(topicDetailProvider(_params)).value;
-    final posts = detail?.postStream.posts ?? const <Post>[];
+    final postId = detail.postStream.stream[streamIndex - 1];
+    if (!_isNestedView) {
+      await _scrollToPostById(postId, streamIndex: streamIndex);
+      return;
+    }
+    // 树形视图按真实楼层号定位，平铺窗口中可能没有这篇帖子。
+    final posts = detail.postStream.posts;
     final local = posts.where((p) => p.id == postId).firstOrNull;
     if (local != null) {
       await _jumpToPostInTopic(local.postNumber);
       return;
     }
-    try {
-      final postStream = await DiscourseService().getPosts(widget.topicId, [
-        postId,
-      ]);
-      if (postStream.posts.isEmpty) return;
-      if (!mounted) return;
-      await _jumpToPostInTopic(postStream.posts.first.postNumber);
-    } catch (e) {
-      debugPrint('[TopicDetail] 树形跳转取帖子 $postId 失败: $e');
-    }
+    await _loadProgressWindow(detail, streamIndex);
   }
 
   Future<void> _handleExternalScrollTargetUpdate(int postNumber) async {
@@ -2107,14 +2105,19 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   Icons.assignment_ind_outlined,
                   size: 20,
                   color: detail.isAssigned
-                      ? Theme.of(context).colorScheme.primary
+                      ? context.emphasis.selected
                       : Theme.of(context).colorScheme.onSurface,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  detail.isAssigned
-                      ? '已指定 · ${detail.assignedToUser?.displayName ?? detail.assignedToGroupName ?? ''}'
-                      : '指定',
+                Flexible(
+                  child: Text(
+                    detail.isAssigned
+                        ? context.l10n.topicAssign_assignedTo(
+                            detail.assignedToUser?.displayName ??
+                                detail.assignedToGroupName ?? '',
+                          )
+                        : context.l10n.topicAssign_title,
+                  ),
                 ),
               ],
             ),
@@ -2162,7 +2165,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     showTopicTimelineSheet(
       context: context,
       infoSource: _positionInfo,
-      currentIndex: _controller.currentVisibleStreamIndex,
+      currentIndex: _controller.streamIndexNotifier.value,
       onJumpToIndex: _jumpToStreamIndex,
       title: detail.title,
     );
@@ -2180,16 +2183,6 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (detail == null) return;
     final notifier = ref.read(topicDetailProvider(_params).notifier);
     _handleProgressGesture(action, detail, notifier);
-  }
-
-  /// 跳到 stream 索引(底栏拖动定位、时间线共用):索引 → 帖子 id 再跳。
-  /// 索引口径与列表一致(屏蔽用户过滤后)
-  void _jumpToStreamIndex(int streamIndex) {
-    final detail = _positionInfo.detail;
-    if (detail == null) return;
-    final stream = detail.postStream.stream;
-    if (streamIndex < 1 || streamIndex > stream.length) return;
-    unawaited(_jumpToPostByIdInTopic(stream[streamIndex - 1]));
   }
 
   /// 底栏书签按钮:与更多菜单同一条编辑书签链路
@@ -3400,8 +3393,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       // 检查目标帖子是否在当前加载的范围内
       final hasTarget =
           posts.isNotEmpty &&
-          posts.first.postNumber <= jumpTarget &&
-          posts.last.postNumber >= jumpTarget;
+          ((posts.first.postNumber <= jumpTarget &&
+                  posts.last.postNumber >= jumpTarget) ||
+              posts.any((post) => post.postNumber == jumpTarget));
       if (!hasTarget) {
         return _wrapWithConstraint(const PostListSkeleton(withHeader: false));
       }
@@ -3434,7 +3428,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     return Stack(
       children: [
         // 使用 Offstage 保持帖子列表存在但在搜索模式下隐藏，保留滚动位置
-        Offstage(offstage: isSearchMode, child: content),
+        ValueListenableBuilder<TopicProgressLoad?>(
+          valueListenable: _controller.progressLoad,
+          child: content,
+          builder: (context, load, child) => Stack(
+            fit: StackFit.expand,
+            children: [
+              Offstage(offstage: isSearchMode || load != null, child: child),
+              if (load != null && !isSearchMode)
+                _wrapWithConstraint(const PostListSkeleton(withHeader: false)),
+            ],
+          ),
+        ),
 
         // 搜索视图
         if (isSearchMode)

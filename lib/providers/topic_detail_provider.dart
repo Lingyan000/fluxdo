@@ -45,6 +45,11 @@ class TopicDetailParams {
 class TopicDetailNotifier extends AsyncNotifier<TopicDetail> {
   TopicDetailNotifier(this.arg);
   final TopicDetailParams arg;
+  static const postPageSize = 20;
+  int _postWindowRevision = 0;
+
+  bool _isCurrentWindow(int revision) =>
+      ref.mounted && revision == _postWindowRevision;
 
   /// 活跃实例注册表:topicId → 该话题当前存活的 provider 参数(后注册在后)。
   ///

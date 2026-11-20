@@ -11,7 +11,7 @@ extension _ScrollActions on _TopicDetailPageState {
     _controller.handleScroll();
     // TOC scroll-spy(内部节流;无目录时零开销)
     _tocController.scheduleSpyUpdate();
-    if (_isNestedView) return;
+    if (_isNestedView || _controller.progressLoad.value != null) return;
 
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));
@@ -101,25 +101,17 @@ extension _ScrollActions on _TopicDetailPageState {
     final gate = jumpTarget ?? initialPostNumber;
     if (gate == null || gate == 0) return null;
 
-    if (jumpTarget != null) {
-      for (int i = 0; i < posts.length; i++) {
-        if (posts[i].postNumber >= jumpTarget) {
-          return (
-            index: i,
-            shouldHighlight: !_controller.skipNextJumpHighlight,
-          );
-        }
-      }
-    } else if (dividerPostIndex != null && dividerPostIndex < posts.length) {
+    if (jumpTarget == null &&
+        dividerPostIndex != null &&
+        dividerPostIndex < posts.length) {
       return (index: dividerPostIndex, shouldHighlight: true);
-    } else if (initialPostNumber != null && initialPostNumber > 0) {
-      for (int i = 0; i < posts.length; i++) {
-        if (posts[i].postNumber >= initialPostNumber) {
-          return (index: i, shouldHighlight: true);
-        }
-      }
     }
-    return null;
+    final index = TopicDetailController.postIndexAtOrAfter(posts, gate);
+    if (index == null) return null;
+    return (
+      index: index,
+      shouldHighlight: jumpTarget == null || !_controller.skipNextJumpHighlight,
+    );
   }
 
   /// 初始定位前预置进度条楼层
@@ -458,7 +450,7 @@ extension _ScrollActions on _TopicDetailPageState {
     _controller.triggerHighlight(postNumber);
   }
 
-  Future<void> _scrollToPostById(int postId) async {
+  Future<void> _scrollToPostById(int postId, {required int streamIndex}) async {
     final params = _params;
     final rawDetail = ref.read(topicDetailProvider(params)).value;
     if (rawDetail == null) return;
@@ -473,13 +465,22 @@ extension _ScrollActions on _TopicDetailPageState {
       _controller.selectKeyboardPostNumber(post.postNumber);
 
       final positionRevision = _controller.positionRevision;
-      final positioned = await _controller.scrollToPost(post.postNumber, posts);
+      final positioned = await _controller.scrollToPost(
+        post.postNumber,
+        posts,
+        confirmedStreamIndex: streamIndex,
+      );
       if (!mounted ||
           _controller.keyboardSelectedPostNumber != post.postNumber ||
           _controller.positionRevision != positionRevision) {
         return;
       }
       if (!positioned) {
+        final currentPosts = _positionInfo.detail?.postStream.posts;
+        if (currentPosts == null || !currentPosts.any((p) => p.id == postId)) {
+          _controller.selectKeyboardPostNumber(null);
+          return;
+        }
         _controller.jumpToPostLocally(post.postNumber);
         setState(() {});
       }
@@ -487,43 +488,64 @@ extension _ScrollActions on _TopicDetailPageState {
       return;
     }
 
-    debugPrint(
-      '[TopicDetail] Post ID $postId not in loaded posts, fetching post info...',
-    );
+    await _loadProgressWindow(detail, streamIndex);
+  }
 
+  Future<void> _loadProgressWindow(TopicDetail detail, int streamIndex) async {
+    final stream = detail.postStream.stream;
+    final targetIndex = streamIndex - 1;
+    final postId = stream[targetIndex];
+    if (_controller.progressLoad.value?.postId == postId) return;
+    final load = _controller.beginProgressLoad(postId, streamIndex);
+    final nested = _isNestedView;
+    // 与服务端按楼号取窗口的做法一致，留四分之一页在目标前面。
+    final count = math.min(TopicDetailNotifier.postPageSize, stream.length);
+    final start = (targetIndex - count ~/ 4).clamp(0, stream.length - count);
+    final end = start + count;
+    final ids = nested ? [postId] : stream.sublist(start, end);
+    final loadedIds = detail.postStream.posts.map((post) => post.id).toSet();
+    final missing = ids.where((id) => !loadedIds.contains(id)).toList();
+    final PostStream window;
     try {
-      final service = DiscourseService();
-      final postStream = await service.getPosts(widget.topicId, [postId]);
-
-      if (postStream.posts.isEmpty) {
-        debugPrint('[TopicDetail] Failed to fetch post $postId');
-        return;
-      }
-
-      final targetPost = postStream.posts.first;
-      final realPostNumber = targetPost.postNumber;
-      debugPrint(
-        '[TopicDetail] Got real post_number: $realPostNumber for post ID $postId',
+      window = await ref.read(discourseServiceProvider).getPosts(
+        widget.topicId,
+        missing,
+        includeSuggested:
+            !nested && end == stream.length && detail.needsFooterTopics,
       );
-
-      _controller.prepareJumpToPost(realPostNumber);
-      _controller.skipNextJumpHighlight = false;
-
-      final notifier = ref.read(topicDetailProvider(params).notifier);
-
-      if (notifier.isSummaryMode ||
-          notifier.isAuthorOnlyMode ||
-          notifier.isTopLevelMode) {
-        await _reloadWithFilterFallback(
-          postNumber: realPostNumber,
-          postId: postId,
-        );
-      } else {
-        await notifier.reloadWithPostNumber(realPostNumber);
+    } catch (error) {
+      if (mounted && _controller.progressLoad.value == load) {
+        _controller.cancelProgressLoad();
+        ToastService.showError(context.l10n.common_loadFailedRetry);
+        debugPrint('[TopicDetail] 加载目标帖子 $postId 失败: $error');
       }
-    } catch (e) {
-      debugPrint('[TopicDetail] Error fetching post $postId: $e');
+      return;
     }
+    if (!mounted || _controller.progressLoad.value != load) return;
+    final target = window.posts.where((post) => post.id == postId).firstOrNull;
+    final latest = _positionInfo.detail;
+    if (target == null ||
+        latest == null ||
+        !latest.postStream.stream.contains(postId)) {
+      _controller.cancelProgressLoad();
+      ToastService.showInfo(context.l10n.error_notFoundOrDeleted);
+      return;
+    }
+    if (BlockedUserFilter.isBlockedUsername(
+      target.username,
+      ref.read(preferencesProvider).normalizedBlockedUsernames,
+    )) {
+      _controller.cancelProgressLoad();
+      ToastService.showInfo(context.l10n.common_loadFailed);
+      return;
+    }
+    if (nested) {
+      await _jumpToPostInTopic(target.postNumber);
+      return;
+    }
+    _controller.prepareJumpToPost(target.postNumber, load: load);
+    _controller.skipNextJumpHighlight = false;
+    ref.read(topicDetailProvider(_params).notifier).replacePostWindow(ids, window);
   }
 
   /// 列表在布局期完成初始定位，帧后揭开内容并恢复阅读上报。
@@ -531,8 +553,9 @@ extension _ScrollActions on _TopicDetailPageState {
     int? highlightPostNumber,
     int retryCount = 0,
   }) {
+    final revision = _controller.positionRevision;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || revision != _controller.positionRevision) return;
       if (!_controller.postListController.isAttached && retryCount < 5) {
         _finalizeInitialPosition(
           highlightPostNumber: highlightPostNumber,
@@ -551,12 +574,13 @@ extension _ScrollActions on _TopicDetailPageState {
       _controller.pendingHighlightPostNumber = highlightPostNumber;
     }
 
+    final wasPositioned = _controller.isPositioned;
+    _controller.markPositioned();
     // 定位是构造性的，没有滚动事件；落点可能正处于增量加载触发区
     // （如目标帖靠近窗口尾部），主动评估一次，否则要等用户滚动才补载
     _onScroll();
 
-    if (_controller.isPositioned) return;
-    _controller.markPositioned();
+    if (wasPositioned) return;
 
     if (_controller.pendingHighlightPostNumber != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
