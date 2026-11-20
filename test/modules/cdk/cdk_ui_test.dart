@@ -14,6 +14,9 @@ import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/modules/cdk/ui/cdk_home_page.dart';
 import 'package:fluxdo/modules/cdk/ui/cdk_project_page.dart';
 import 'package:fluxdo/modules/cdk/ui/cdk_widgets.dart';
+import 'package:fluxdo/modules/cdk/ui/cdk_verification_sheet.dart';
+import 'package:fluxdo/modules/cdk/models/cdk_models.dart';
+import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
 import 'package:fluxdo/providers/cdk_providers.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
@@ -49,6 +52,8 @@ void main() {
   late SharedPreferences preferences;
   late CdkFixture api;
   setUpAll(() async {
+    await LocaleSettings.setLocale(AppLocale.en);
+    await LocaleSettings.setLocale(AppLocale.zh);
     SharedPreferences.setMockInitialValues({});
     preferences = await SharedPreferences.getInstance();
     await (FontLoader('packages/material_symbols_icons/MaterialSymbolsRounded')
@@ -117,9 +122,9 @@ void main() {
     );
   }
 
-  void size(WidgetTester tester, double width) {
+  void size(WidgetTester tester, double width, {double height = 820}) {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = Size(width, 820);
+    tester.view.physicalSize = Size(width, height);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
   }
@@ -179,7 +184,7 @@ void main() {
       await tester.pumpAndSettle();
       final action = find.widgetWithText(
         FilledButton,
-        S.current.cdk_payAndReceive('12.50'),
+        S.current.cdk_verifyAndContinue,
       );
       expect(tester.widget<FilledButton>(action).onPressed, isNotNull);
       expect(
@@ -188,6 +193,14 @@ void main() {
       );
       await snapshot(tester, 'detail-${brightness.name}');
       expect(tester.takeException(), isNull);
+      await tester.tap(action);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await snapshot(tester, 'confirm-${brightness.name}');
+      expect(tester.takeException(), isNull);
+      expect(api.requests.every((r) => r.method == 'GET'), isTrue);
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
     });
   }
 
@@ -213,6 +226,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, S.current.cdk_receive));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text(S.current.common_cancel));
     await tester.pumpAndSettle();
@@ -222,6 +236,7 @@ void main() {
       await tester.tap(
         find.widgetWithText(FilledButton, S.current.cdk_receive),
       );
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text(S.current.common_confirm));
       await tester.pumpAndSettle();
@@ -317,4 +332,157 @@ void main() {
     expect(find.text('SAMPLE-ONLY-1234'), findsNothing);
     expect(find.text(S.current.common_authExpired), findsOneWidget);
   });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('同一原生面板完成确认、做题、过期重试与取消 ${brightness.name}', (tester) async {
+      size(tester, brightness == Brightness.dark ? 320 : 390);
+      final callbacks = <ValueChanged<CdkVerificationEvent>>[];
+      String? result;
+      var closed = 0;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await AppBottomSheet.show<String>(
+                  context: context,
+                  title: S.current.cdk_confirmReceive,
+                  showDragHandle: true,
+                  contentPadding: EdgeInsets.zero,
+                  maxHeightFactor: 0.95,
+                  builder: (_) => CdkSessionContent(
+                    client: api.client,
+                    builder: (_) => CdkClaimContent(
+                      client: api.client,
+                      project: CdkProject.fromJson(cdkProject()),
+                      challengeBuilder: (context, onEvent) {
+                        callbacks.add(onEvent);
+                        return const Center(child: Text('模拟验证码区域'));
+                      },
+                    ),
+                  ),
+                );
+                closed++;
+              },
+              child: const Text('打开领取'),
+            ),
+          ),
+          brightness: brightness,
+          scale: brightness == Brightness.dark ? 1.4 : 1,
+        ),
+      );
+      await tester.tap(find.text('打开领取'));
+      await tester.pumpAndSettle();
+      expect(callbacks, isEmpty);
+      await tester.tap(find.text(S.current.common_confirm));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(S.current.cdk_verifyPreparing), findsOneWidget);
+      await snapshot(tester, 'verification-loading-${brightness.name}');
+      final old = callbacks.last;
+      old(const CdkVerificationEvent('challenge'));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.cdk_verifyHint), findsOneWidget);
+      await snapshot(tester, 'verification-challenge-${brightness.name}');
+      old(const CdkVerificationEvent('error', 'expired'));
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.cdk_verifyExpired), findsOneWidget);
+      await snapshot(tester, 'verification-expired-${brightness.name}');
+      await tester.tap(find.text(S.current.common_retry));
+      await tester.pump();
+      old(const CdkVerificationEvent('token', 'stale'));
+      await tester.pump();
+      expect(closed, 0);
+      final current = callbacks.last;
+      // 系统返回/外壳关闭也应立即废弃结果，不能在退场动画中误关详情页。
+      Navigator.of(tester.element(find.text(S.current.common_cancel))).pop();
+      current(const CdkVerificationEvent('token', 'late'));
+      await tester.pumpAndSettle();
+      expect(result, isNull);
+      expect(closed, 1);
+      expect(find.text('打开领取'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(api.requests, isEmpty);
+    });
+  }
+
+  testWidgets('验证加载超时可原地重试，后台回调失效，会话结束移除挑战', (tester) async {
+    size(tester, 390);
+    late ValueChanged<CdkVerificationEvent> event;
+    await tester.pumpWidget(
+      app(
+        CdkSessionContent(
+          client: api.client,
+          builder: (_) => CdkClaimContent(
+            client: api.client,
+            project: CdkProject.fromJson(cdkProject()),
+            challengeBuilder: (_, onEvent) {
+              event = onEvent;
+              return const Text('模拟验证码区域');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text(S.current.common_confirm));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 46));
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.cdk_verifyFailed), findsOneWidget);
+    await tester.tap(find.text(S.current.common_retry));
+    await tester.pump();
+    event(const CdkVerificationEvent('challenge'));
+    await tester.pumpAndSettle();
+    final stale = event;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    stale(const CdkVerificationEvent('token', 'background'));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.cdk_verifyInterrupted), findsOneWidget);
+    await tester.tap(find.text(S.current.common_retry));
+    await tester.pump();
+    api.client.dispose();
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.common_authExpired), findsOneWidget);
+    expect(find.text('模拟验证码区域'), findsNothing);
+    expect(api.requests, isEmpty);
+  });
+
+  for (final viewport in [
+    (320.0, 820.0, 2.0),
+    (800.0, 420.0, 1.0),
+    (1200.0, 850.0, 1.0),
+  ]) {
+    testWidgets('英文领取与确认适配 ${viewport.$1} / ${viewport.$3}', (tester) async {
+      LocaleSettings.setLocaleSync(AppLocale.en);
+      addTearDown(() => LocaleSettings.setLocaleSync(AppLocale.zh));
+      size(tester, viewport.$1, height: viewport.$2);
+      api.paid = true;
+      await tester.pumpWidget(
+        app(
+          CdkProjectContent(client: api.client, projectId: 'project-1'),
+          scale: viewport.$3,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await snapshot(tester, 'detail-en-${viewport.$1.toInt()}');
+      await tester.tap(
+        find.widgetWithText(FilledButton, S.current.cdk_verifyAndContinue),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final confirm = find.widgetWithText(
+        FilledButton,
+        S.current.common_confirm,
+      );
+      expect(tester.getRect(confirm).bottom, lessThanOrEqualTo(viewport.$2));
+      await snapshot(tester, 'confirm-en-${viewport.$1.toInt()}');
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text(S.current.common_cancel));
+      await tester.pumpAndSettle();
+      expect(api.requests.every((r) => r.method == 'GET'), isTrue);
+    });
+  }
 }

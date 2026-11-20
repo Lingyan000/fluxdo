@@ -8,12 +8,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
+import '../../../models/cdk_user_info.dart';
 import '../../../pages/webview_page.dart';
 import '../../../providers/cdk_providers.dart';
 import '../../../services/network/exceptions/oauth_exception.dart';
 import '../../../services/toast_service.dart';
 import '../providers/cdk_providers.dart';
 import '../services/cdk_client.dart';
+import 'cdk_project_widgets.dart';
 
 String cdkErrorText(BuildContext context, Object? error) {
   if (error is OAuthExpiredException) return context.l10n.common_authExpired;
@@ -152,21 +154,108 @@ class CdkMetrics extends StatelessWidget {
         for (final (label, value) in values)
           SizedBox(
             width: (box.maxWidth - 12) / 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(value, style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 4),
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                ],
+            child: SegmentedCardItem(
+              index: 0,
+              count: 1,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: 10),
+                    Text(
+                      value,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
       ],
     ),
   );
+}
+
+class CdkAccountCard extends StatelessWidget {
+  const CdkAccountCard({super.key, required this.account});
+  final CdkUserInfo account;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    return Material(
+      color: cs.tertiaryContainer,
+      shape: RoundedSuperellipseBorder(
+        borderRadius: context.shapes.borderRadius(28),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: DefaultTextStyle.merge(
+          style: TextStyle(color: cs.onTertiaryContainer),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '@${account.username}',
+                style: t.textTheme.labelLarge?.copyWith(
+                  color: cs.onTertiaryContainer,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 36,
+                runSpacing: 16,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${account.score}',
+                        style: t.textTheme.displayMedium?.copyWith(
+                          color: cs.onTertiaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(context.l10n.cdk_balance),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Lv.${account.trustLevel}',
+                        style: t.textTheme.headlineSmall?.copyWith(
+                          color: cs.onTertiaryContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(context.l10n.cdk_requiredTrust),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              CdkPerforation(
+                color: cs.onTertiaryContainer.withValues(alpha: 0.3),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                context.l10n.cdk_scoreHint,
+                style: t.textTheme.bodySmall?.copyWith(
+                  color: cs.onTertiaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 兑换内容只留在页面内存中；复制由用户触发，切后台后重新遮蔽。
@@ -209,31 +298,71 @@ class _CdkSecretContentState extends State<CdkSecretContent> {
   Widget build(BuildContext context) => SegmentedCardGroup(
     children: [
       Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                Icon(Symbols.key_rounded, color: context.emphasis.accent),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     context.l10n.cdk_receivedContent,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                IconButton(
-                  tooltip: _revealed
+              ],
+            ),
+            const SizedBox(height: 20),
+            CdkPerforation(color: Theme.of(context).colorScheme.outlineVariant),
+            const SizedBox(height: 20),
+            if (_revealed)
+              SelectableText(
+                widget.content.replaceAll('\$\n*', '\n\n'),
+                style: Theme.of(context).textTheme.bodyLarge
+                    ?.copyWith(fontFamily: 'monospace', height: 1.6),
+              )
+            else ...[
+              const ExcludeSemantics(
+                child: Text(
+                  '••••  ••••  ••••',
+                  style: TextStyle(letterSpacing: 3),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                context.l10n.cdk_contentHidden,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Tooltip(
+                  message: _revealed
                       ? context.l10n.cdk_hideContent
                       : context.l10n.cdk_showContent,
-                  onPressed: () => setState(() => _revealed = !_revealed),
-                  icon: Icon(
-                    _revealed
-                        ? Symbols.visibility_off_rounded
-                        : Symbols.visibility_rounded,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _revealed = !_revealed),
+                    label: Text(
+                      _revealed
+                          ? context.l10n.cdk_hideContent
+                          : context.l10n.cdk_showContent,
+                    ),
+                    icon: Icon(
+                      _revealed
+                          ? Symbols.visibility_off_rounded
+                          : Symbols.visibility_rounded,
+                    ),
                   ),
                 ),
-                IconButton(
-                  tooltip: context.l10n.common_copy,
+                TextButton.icon(
+                  label: Text(context.l10n.common_copy),
                   onPressed: () async {
                     await Clipboard.setData(
                       ClipboardData(text: widget.content),
@@ -248,16 +377,6 @@ class _CdkSecretContentState extends State<CdkSecretContent> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            if (_revealed)
-              SelectableText(widget.content.replaceAll('\$\n*', '\n\n'))
-            else
-              Text(
-                context.l10n.cdk_contentHidden,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
           ],
         ),
       ),

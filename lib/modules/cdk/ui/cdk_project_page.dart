@@ -7,10 +7,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
+import '../../../providers/cdk_providers.dart';
 import '../../../providers/core_providers.dart';
 import '../../../providers/secret_store_provider.dart';
 import '../../../providers/theme_provider.dart';
-import '../../../utils/dialog_utils.dart';
 import '../../../utils/link_launcher.dart';
 import '../../../utils/time_utils.dart';
 import '../../ldc_payment/ldc_payment_flow.dart';
@@ -18,6 +18,7 @@ import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import '../services/cdk_redemption.dart';
 import 'cdk_verification_sheet.dart';
+import 'cdk_project_widgets.dart';
 import 'cdk_widgets.dart';
 
 class CdkProjectPage extends StatelessWidget {
@@ -103,33 +104,12 @@ class _CdkProjectContentState extends ConsumerState<CdkProjectContent> {
     });
     try {
       final p = _redemption.project!;
-      final confirmed = await showAppDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(
-            p.paid ? ctx.l10n.cdk_confirmPaid : ctx.l10n.cdk_confirmReceive,
-          ),
-          content: Text(
-            p.paid
-                ? ctx.l10n.cdk_paidHint(p.name, p.price)
-                : ctx.l10n.cdk_freeHint(p.name),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(ctx.l10n.common_cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(ctx.l10n.common_confirm),
-            ),
-          ],
-        ),
+      final token = await showCdkVerification(
+        context,
+        widget.client,
+        p,
+        verify: widget.verify,
       );
-      if (!mounted || confirmed != true) return;
-      final token =
-          await (widget.verify?.call() ??
-              showCdkVerification(context, widget.client, widget.projectId));
       if (!mounted || token == null) return;
       await _redemption.receive(token);
       if (!mounted) return;
@@ -220,11 +200,16 @@ class _CdkProjectContentState extends ConsumerState<CdkProjectContent> {
       final r = _redemption;
       final p = r.project;
       final l = context.l10n;
+      final account = ref.watch(cdkUserInfoProvider).value;
       if (p == null) {
         return r.loading
             ? const Center(child: LoadingSpinner())
             : CdkError(error: r.error, retry: r.load);
       }
+      final eligible =
+          account == null ||
+          (account.trustLevel >= p.trustLevel &&
+              account.score >= p.minimumScore);
       final message = r.delivered
           ? l.cdk_received
           : r.paymentSubmitted
@@ -237,147 +222,185 @@ class _CdkProjectContentState extends ConsumerState<CdkProjectContent> {
           ? l.cdk_outsideWindow
           : p.available == 0
           ? l.cdk_noStock
+          : !eligible
+          ? l.cdk_notEligible
           : null;
-      return Column(
-        children: [
-          Expanded(
-            child: M3eRefreshIndicator(
-              onRefresh: r.load,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (r.loading) const M3eLinearProgress(),
-                  Text(
-                    p.name,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  if (p.creator.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('@${p.creator}'),
-                    ),
-                  if (p.tags.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Column(
+            children: [
+              Expanded(
+                child: M3eRefreshIndicator(
+                  onRefresh: r.load,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (r.loading) const M3eLinearProgress(),
+                      CdkProjectHero(project: p),
+                      if (message != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: Semantics(
+                            liveRegion: true,
+                            child: SegmentedCardGroup(
+                              children: [
+                                ListTile(
+                                  leading: Icon(
+                                    r.delivered
+                                        ? Symbols.check_circle_rounded
+                                        : Symbols.info_rounded,
+                                    color: context.emphasis.accent,
+                                  ),
+                                  title: Text(message),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (r.delivered) ...[
+                        const SizedBox(height: 12),
+                        CdkSecretContent(content: r.content ?? p.content),
+                      ],
+                      if (p.tags.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final tag in p.tags) Chip(label: Text(tag)),
+                            ],
+                          ),
+                        ),
+                      CdkSectionTitle(l.cdk_eligibility),
+                      CdkEligibility(project: p, account: account),
+                      CdkSectionTitle(l.cdk_receiveRules),
+                      SegmentedCardGroup(
                         children: [
-                          for (final tag in p.tags) Chip(label: Text(tag)),
+                          ListTile(
+                            title: Text(l.cdk_start),
+                            subtitle: Text(TimeUtils.formatDetailTime(p.start)),
+                          ),
+                          ListTile(
+                            title: Text(l.cdk_end),
+                            subtitle: Text(TimeUtils.formatDetailTime(p.end)),
+                          ),
+                          ListTile(
+                            title: Text(l.cdk_distribution),
+                            subtitle: Text(
+                              cdkDistribution(context, p.distribution),
+                            ),
+                          ),
+                          if (!p.allowSameIp)
+                            ListTile(title: Text(l.cdk_sameIpLimit)),
                         ],
                       ),
-                    ),
-                  CdkMetrics(
-                    values: [
-                      (l.cdk_price, p.paid ? '${p.price} LDC' : l.cdk_free),
-                      (l.cdk_stock, '${p.available ?? '—'} / ${p.total}'),
-                      (l.cdk_requiredTrust, 'Lv.${p.trustLevel}'),
-                      (l.cdk_requiredScore, '${p.minimumScore}'),
+                      if (p.description.isNotEmpty) ...[
+                        CdkSectionTitle(l.cdk_description),
+                        SelectableText(
+                          p.description,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
+                      if (r.error != null || _flowError != null)
+                        CdkError(
+                          error: _flowError ?? r.error,
+                          retry: () async {
+                            setState(() => _flowError = null);
+                            await r.load();
+                          },
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  SegmentedCardGroup(
-                    children: [
-                      ListTile(
-                        title: Text(l.cdk_start),
-                        subtitle: Text(TimeUtils.formatDetailTime(p.start)),
-                      ),
-                      ListTile(
-                        title: Text(l.cdk_end),
-                        subtitle: Text(TimeUtils.formatDetailTime(p.end)),
-                      ),
-                      ListTile(
-                        title: Text(l.cdk_distribution),
-                        subtitle: Text(switch (p.distribution) {
-                          0 => l.cdk_oneEach,
-                          1 => l.cdk_lottery,
-                          2 => l.cdk_invitation,
-                          _ => l.cdk_distribution,
-                        }),
-                      ),
-                      if (!p.allowSameIp)
-                        ListTile(title: Text(l.cdk_sameIpLimit)),
-                    ],
-                  ),
-                  if (p.description.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: SelectableText(
-                        p.description,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                    ),
-                  if (message != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        message,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                  if (r.delivered)
-                    CdkSecretContent(content: r.content ?? p.content),
-                  if (r.error != null || _flowError != null)
-                    CdkError(
-                      error: _flowError ?? r.error,
-                      retry: () async {
-                        setState(() => _flowError = null);
-                        await r.load();
+                ),
+              ),
+              PageBackdrop(
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        final compact =
+                            box.maxWidth <
+                            MediaQuery.textScalerOf(context).scale(340);
+                        final refresh = IconButton(
+                          tooltip: l.common_refresh,
+                          onPressed: _busy || r.loading
+                              ? null
+                              : () {
+                                  _poll?.cancel();
+                                  setState(() => _flowError = null);
+                                  unawaited(r.load());
+                                },
+                          icon: const Icon(Symbols.refresh_rounded),
+                        );
+                        final price = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l.cdk_price,
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                            CdkPrice(project: p),
+                          ],
+                        );
+                        final action = FilledButton(
+                          onPressed:
+                              _busy ||
+                                  r.loading ||
+                                  r.delivered ||
+                                  r.paymentSubmitted
+                              ? null
+                              : r.payment != null
+                              ? _continuePayment
+                              : r.canReceive && eligible
+                              ? _receive
+                              : null,
+                          child: _busy
+                              ? const LoadingSpinner(size: 20)
+                              : Text(
+                                  r.delivered
+                                      ? l.cdk_received
+                                      : r.payment != null
+                                      ? l.cdk_continuePayment
+                                      : p.paid
+                                      ? l.cdk_verifyAndContinue
+                                      : l.cdk_receive,
+                                ),
+                        );
+                        if (compact) {
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(child: price),
+                                  refresh,
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(width: double.infinity, child: action),
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            refresh,
+                            Expanded(child: price),
+                            const SizedBox(width: 12),
+                            Expanded(child: action),
+                          ],
+                        );
                       },
                     ),
-                ],
-              ),
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: l.common_refresh,
-                    onPressed: _busy || r.loading
-                        ? null
-                        : () {
-                            _poll?.cancel();
-                            setState(() => _flowError = null);
-                            unawaited(r.load());
-                          },
-                    icon: const Icon(Symbols.refresh_rounded),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed:
-                          _busy ||
-                              r.loading ||
-                              r.delivered ||
-                              r.paymentSubmitted
-                          ? null
-                          : r.payment != null
-                          ? _continuePayment
-                          : r.canReceive
-                          ? _receive
-                          : null,
-                      child: _busy
-                          ? const LoadingSpinner(size: 20)
-                          : Text(
-                              r.delivered
-                                  ? l.cdk_received
-                                  : r.payment != null
-                                  ? l.cdk_continuePayment
-                                  : p.paid
-                                  ? l.cdk_payAndReceive(p.price)
-                                  : l.cdk_receive,
-                            ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       );
     },
   );

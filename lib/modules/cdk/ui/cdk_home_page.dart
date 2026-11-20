@@ -16,6 +16,7 @@ import '../../../widgets/common/paged_list_footer.dart';
 import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import 'cdk_project_page.dart';
+import 'cdk_project_widgets.dart';
 import 'cdk_widgets.dart';
 
 class CdkHomePage extends StatelessWidget {
@@ -53,30 +54,35 @@ class _CdkHomeContentState extends ConsumerState<CdkHomeContent> {
   @override
   Widget build(BuildContext context) {
     final l = context.l10n;
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          TabBar(
-            isScrollable:
-                MediaQuery.textScalerOf(context).scale(14) > 17 ||
-                MediaQuery.sizeOf(context).width < 360,
-            tabs: [
-              Tab(text: l.cdk_explore),
-              Tab(text: l.cdk_myReceipts),
-              Tab(text: l.cdk_overview),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: DefaultTabController(
+          length: 3,
+          child: Column(
+            children: [
+              TabBar(
+                isScrollable:
+                    MediaQuery.textScalerOf(context).scale(14) > 17 ||
+                    MediaQuery.sizeOf(context).width < 360,
+                tabs: [
+                  Tab(text: l.cdk_explore),
+                  Tab(text: l.cdk_myReceipts),
+                  Tab(text: l.cdk_overview),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _Explore(client: widget.client),
+                    _Receipts(client: widget.client),
+                    _Overview(client: widget.client),
+                  ],
+                ),
+              ),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _Explore(client: widget.client),
-                _Receipts(client: widget.client),
-                _Overview(client: widget.client),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -111,74 +117,33 @@ class _ExploreState extends State<_Explore> with AutomaticKeepAliveClientMixin {
     return Column(
       children: [
         if (_tags.isNotEmpty)
-          SizedBox(
-            height: 56,
-            child: ListView(
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                for (final tag in <String?>[null, ..._tags])
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(tag ?? context.l10n.common_all),
-                      selected: _tag == tag,
-                      onSelected: (_) => setState(() => _tag = tag),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(
+                children: [
+                  for (final tag in <String?>[null, ..._tags])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(tag ?? context.l10n.common_all),
+                        selected: _tag == tag,
+                        onSelected: (_) => setState(() => _tag = tag),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         Expanded(
           child: _Paged<CdkProject>(
             key: ValueKey(_tag),
             load: (page) => widget.client.projects(page: page, tag: _tag),
-            item: (p) => ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
+            item: (p) => CdkProjectTile(
+              project: p,
               onTap: () => CdkProjectPage.open(context, p.id),
-              title: Text(p.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (p.description.isNotEmpty)
-                      Text(
-                        p.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        Text(
-                          p.paid ? '${p.price} LDC' : context.l10n.cdk_free,
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                        ),
-                        Text('Lv.${p.trustLevel}'),
-                        Text(context.l10n.cdk_projectTotal(p.total)),
-                      ],
-                    ),
-                    if (p.tags.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          p.tags.join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),
@@ -238,10 +203,20 @@ class _ReceiptsState extends State<_Receipts>
             key: ValueKey(_query),
             load: (page) => widget.client.receipts(page: page, search: _query),
             item: (receipt) => ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 12,
+              ),
+              leading: Icon(
+                Symbols.key_rounded,
+                color: context.emphasis.accent,
+              ),
               title: Text(
                 receipt.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               subtitle: Text(
                 '@${receipt.creator}\n${TimeUtils.formatDetailTime(receipt.receivedAt)}',
@@ -364,10 +339,13 @@ class _PagedState<T> extends State<_Paged<T>> {
               onRetry: () => _load(),
             );
           }
-          return SegmentedCardItem(
-            index: index,
-            count: _items.length,
-            child: widget.item(_items[index]),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: SegmentedCardItem(
+              index: 0,
+              count: 1,
+              child: widget.item(_items[index]),
+            ),
           );
         },
       ),
@@ -409,13 +387,7 @@ class _OverviewState extends ConsumerState<_Overview>
       padding: const EdgeInsets.all(16),
       children: [
         if (account != null) ...[
-          CdkMetrics(
-            values: [
-              (l.cdk_balance, '${account.score}'),
-              (l.cdk_requiredTrust, 'Lv.${account.trustLevel}'),
-            ],
-          ),
-          Text(l.cdk_scoreHint, style: Theme.of(context).textTheme.bodySmall),
+          CdkAccountCard(account: account),
           const SizedBox(height: 20),
         ],
         Row(
@@ -444,11 +416,7 @@ class _OverviewState extends ConsumerState<_Overview>
           ],
         ),
         const SizedBox(height: 16),
-        Text(
-          l.cdk_personalTrend,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 12),
+        CdkSectionTitle(l.cdk_personalTrend),
         FutureBuilder(
           future: _history,
           builder: (context, snapshot) {
@@ -468,11 +436,7 @@ class _OverviewState extends ConsumerState<_Overview>
             );
           },
         ),
-        const SizedBox(height: 24),
-        Text(
-          l.cdk_platformStats,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
+        CdkSectionTitle(l.cdk_platformStats),
         FutureBuilder(
           future: _stats,
           builder: (context, snapshot) {
@@ -519,12 +483,7 @@ class _OverviewState extends ConsumerState<_Overview>
                   countKey: 'value',
                 ),
                 if (stats.tags.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    l.cdk_popularTags,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
+                  CdkSectionTitle(l.cdk_popularTags),
                   Wrap(
                     spacing: 8,
                     runSpacing: 4,
@@ -559,7 +518,7 @@ class _Trend extends StatelessWidget {
       (max, row) => math.max(max, (row[countKey] as num? ?? 0).toDouble()),
     );
     return SizedBox(
-      height: 125,
+      height: 100 + MediaQuery.textScalerOf(context).scale(32),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: points.length,

@@ -6,7 +6,11 @@ CDK 是有独立业务会话的分发服务。原生界面复用 CDK Connect 登
 
 项目列表按服务端资格过滤，列表的 `total_items` 是总量，不能当作剩余库存。详情中的 `available_items_count` 才表示当前剩余。资格包括信任等级、评分、时间、库存、IP 限制和抽奖获奖身份，最终以服务端校验为准。CDK `score` 是资格评分，并非消费余额，不能和 LDC 金额互换。
 
-用户确认领取后，应用在 CDK 原站页面上显示验证层，由用户完成官网配置的 hCaptcha。验证层从站点已有的 hCaptcha iframe 读取公开 sitekey，不固化部署配置，不触发网页领取按钮，也不绕过官网前端的验证中间件。令牌只用于一次原生领取请求。验证码服务需要网页运行环境；它不是一个可由原生界面自行替代的验证码协议。
+用户在原生领取面板确认项目和金额后，应用在 CDK 原站页面运行官网配置的 hCaptcha。确认、加载、取消、错误与重试共用同一个面板；验证采用官网的 invisible 模式，只有服务端要求做题时才显示内嵌挑战。验证层从站点已有的 hCaptcha iframe 读取公开 sitekey，使用独立 widget 的 `render/execute` 和回调，不固化部署配置，不触发网页领取按钮，也不绕过官网前端的验证中间件。令牌只用于一次原生领取请求。
+
+加载阶段有 45 秒上限，开始做题后由 hCaptcha 管理挑战过期。关闭、过期、切后台和重新验证都会废弃旧尝试，旧回调不能提交领取或关闭后续页面。账号变化时移除验证内容。主框架导航与原生回调仅接受当前项目的 HTTPS 原站地址；加载失败可原地重试，或显式打开 CDK 网站处理登录。挑战内部交互和证书验证保持原平台行为。
+
+验证码题目需要服务商的网页运行环境。复用应用的跨平台 WebView 可保持官网 origin、业务 Cookie 和现有证书/代理配置，同时让领取与支付主体保持 Flutter 原生界面。移动端独立 SDK 不能替代 CDK 的网站会话和原站配置，也不能覆盖全部桌面平台；因此没有为同一验证引入多套 SDK。实现依据包括 [hCaptcha invisible 接入](https://docs.hcaptcha.com/invisible)、[公开回调协议](https://docs.hcaptcha.com/configuration)和[内嵌 WebView 支持](https://docs.hcaptcha.com/mobile_app_sdks)。
 
 免费项目直接返回 `itemContent`。付费项目返回签名的 `pay_url`、`out_trade_no` 和 `amount`；原生收银台独立查询 LDC 订单，核对订单号、金额和付款账号后才允许确认付款。支持 LDC 的 `/epay/pay/submit.php` 与已有商户使用的 `/epay/submit.php`。不在客户端签名，也不要求买家保存卖家的 Client Secret。
 
