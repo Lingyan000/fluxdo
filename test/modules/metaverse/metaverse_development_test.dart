@@ -14,6 +14,7 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_component_contract.dar
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_ui_validator.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_development_page.dart';
+import 'package:fluxdo/modules/metaverse/developer/session/development_session.dart';
 import 'package:fluxdo/modules/metaverse/developer/session/development_connection.dart';
 import 'package:fluxdo/modules/metaverse/developer/session/development_engine.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
@@ -22,7 +23,9 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../support/material_ui_finders.dart';
 
 class _Delegate extends MetaversePluginHostDelegate {
   @override
@@ -202,6 +205,77 @@ globalThis.__devReceive = payload => {
     expect(() => host.updateDevelopmentUi('broken'), throwsA(isA<Exception>()));
     expect(surface.data['value'], 'ready');
     host.close(surface);
+  });
+
+  testWidgets('开发预览显示标题栏并热更新，待确认时阻止操作且可返回', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final root = await tester.runAsync(() => Directory.systemTemp.createTemp('dev-chrome-'));
+    final network = MetaversePluginNetwork();
+    const source = '''import fluxdo;
+widget Card = SizedBoxShrink();
+widget Body = Column(children:[Label(text:data.initialized),Label(text:data.clicks)]);
+widget PageTitle = Label(text:data.title);
+widget PageActions = IconButton(icon:"add",tooltip:"旧操作",onPressed:event "increase" {});
+''';
+    final host = MetaversePluginHost(
+      manifest: MetaversePluginManifest.parse({...manifest, 'requiredFeatures':['pageChrome'],
+        'pages':[{'id':'preview','title':'预览页面','widget':'Body','scroll':false,
+          'appBar':{'title':'PageTitle','actions':'PageActions'}}]}),
+      store: MetaversePluginStore(preferences:prefs,secretStore:InMemorySecretStore(),
+        rootDirectory:() async => root!,isolated:true),
+      network:network,engineFactory:() async => await IsolateScriptEngine.spawn(),
+      delegate:_Delegate(), codeLoader:() async => (ui:source,script:'''let opens=0,clicks=0;
+fluxdo.on('page.open',ctx=>{ctx.setData('initialized','初始化 '+(++opens));ctx.setData('clicks','点击 0');ctx.setData('title','动态标题');});
+fluxdo.on('increase',ctx=>ctx.setData('clicks','点击 '+(++clicks)));'''),
+    );
+    late DevelopmentSession session;
+    Future<void> settleUntil(bool Function() ready) async {
+      for(var i=0;i<100&&!ready();i++) {
+        await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:20)));
+        await tester.pump(const Duration(milliseconds:20));
+      }
+      expect(ready(),isTrue);
+    }
+    try {
+      await tester.pumpWidget(ProviderScope(overrides:[
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        metaverseDevelopmentSessionProvider.overrideWith((ref){
+          session=DevelopmentSession(ref)..host=host..state='connected';
+          ref.onDispose(session.dispose);return session;
+        }),
+      ],child:TranslationProvider(child:MaterialApp(home:const MetaverseDevelopmentPage()))));
+      await tester.pump();
+      await tester.tap(find.text('预览页面'));
+      await settleUntil(()=>find.text('动态标题').evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      expect(find.text('初始化 1'),findsOneWidget);
+      await tester.tap(findMaterialTooltip('旧操作'));
+      await settleUntil(()=>find.text('点击 1').evaluate().isNotEmpty);
+      host.updateDevelopmentUi(source.replaceAll('旧操作','新操作'));
+      await tester.pumpAndSettle();
+      expect(findMaterialTooltip('新操作'),findsOneWidget);
+      expect(find.text('初始化 1'),findsOneWidget);
+      await tester.tap(findMaterialTooltip('新操作'));
+      await settleUntil(()=>find.text('点击 2').evaluate().isNotEmpty);
+      session.restartRequired=true;
+      session.diagnostic('等待重新确认');
+      await tester.pumpAndSettle();
+      expect(findMaterialTooltip('新操作').hitTestable(),findsNothing);
+      expect(find.text('点击 2'),findsOneWidget);
+      final backLabel = MaterialLocalizations.of(tester.element(find.text('动态标题'))).backButtonTooltip;
+      await tester.tap(findMaterialTooltip(backLabel));
+      await tester.pumpAndSettle();
+      expect(find.text('预览页面'),findsOneWidget);
+      expect(tester.takeException(),isNull);
+    } finally {
+      await tester.runAsync(() async {
+        session.dispose();host.shutdown();network.dispose();
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds:2));
+      await tester.runAsync(()=>root!.delete(recursive:true));
+    }
   });
 
   for (final brightness in [Brightness.light, Brightness.dark]) {

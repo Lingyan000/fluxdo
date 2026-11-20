@@ -8,6 +8,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../plugin/ui/metaverse_plugin_dialogs.dart';
+import '../plugin/ui/metaverse_plugin_page.dart';
 import '../plugin/ui/metaverse_plugin_surface_view.dart';
 import 'session/development_session.dart';
 
@@ -327,32 +328,25 @@ class _DevelopmentPreviewPage extends StatelessWidget {
     builder: (context, _) {
       final host = session.host;
       final spec = host?.manifest.page(page);
-      final child = host == null || spec == null
-          ? const SizedBox.shrink()
-          : MetaversePluginSurfaceView(
-              host: host,
-              kind: MetaversePluginSurfaceKind.page,
-              page: page,
-              params: params,
-            );
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(spec?.title ?? context.l10n.metaverse_devTitle),
-        ),
-        body: SafeArea(
-          child: AbsorbPointer(
-            absorbing:
-                session.state != 'connected' ||
-                session.updating ||
-                session.restartRequired,
-            child: spec?.scroll == false
-                ? child
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: child,
-                  ),
-          ),
-        ),
+      final blocked = session.state != 'connected' ||
+          session.updating || session.restartRequired;
+      Widget frame(Widget child, [Widget Function(String)? render]) => MetaversePluginPageFrame(
+        title: spec?.title ?? context.l10n.metaverse_devTitle,
+        customTitle: render != null && spec?.appBarTitle != null
+            ? AbsorbPointer(absorbing: blocked, child: render(spec!.appBarTitle!)) : null,
+        actions: render != null && spec?.appBarActions != null
+            ? AbsorbPointer(absorbing: blocked, child: render(spec!.appBarActions!)) : null,
+        child: AbsorbPointer(absorbing: blocked, child: spec?.scroll == false
+            ? child
+            : SingleChildScrollView(padding: const EdgeInsets.all(16), child: child)),
+      );
+      if (host == null || spec == null) return frame(const SizedBox.shrink());
+      return MetaversePluginSurfaceView(
+        host: host,
+        kind: MetaversePluginSurfaceKind.page,
+        page: page,
+        params: params,
+        builder: (context, content, render) => frame(content, render),
       );
     },
   );
