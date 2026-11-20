@@ -68,7 +68,7 @@
   "login_captchaTitle": "登入驗證",
   "login_captchaCheckbox": "勾選下方的 hCaptcha 即可繼續登入。",
   "login_captchaSubmitting": "正在登入…",
-  "login_confirmingVerification": "正在確認驗證結果…",
+  "login_confirmingVerification": "正在驗證…",
   "captcha_loading": "正在載入驗證…",
   "captcha_challengeHint": "請完成下方驗證。",
   "captcha_expired": "驗證已過期，請重新驗證。",

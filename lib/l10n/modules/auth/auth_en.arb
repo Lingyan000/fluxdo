@@ -61,7 +61,7 @@
   "login_captchaTitle": "Sign-in verification",
   "login_captchaCheckbox": "Select the hCaptcha checkbox to continue signing in.",
   "login_captchaSubmitting": "Signing in…",
-  "login_confirmingVerification": "Checking verification…",
+  "login_confirmingVerification": "Verifying…",
   "captcha_loading": "Loading verification…",
   "captcha_challengeHint": "Complete the challenge below.",
   "captcha_expired": "Verification expired. Please try again.",

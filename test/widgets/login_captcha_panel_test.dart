@@ -14,6 +14,7 @@ import 'package:fluxdo/widgets/auth/login_form.dart';
 import 'package:fluxdo/widgets/auth/webview_login_dialog.dart';
 import 'package:fluxdo/widgets/common/captcha_panel.dart';
 import 'package:fluxdo/widgets/common/skeleton.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -283,6 +284,17 @@ void main() {
       },
     );
     final firstView = platform.webView;
+    final button = find.descendant(
+      of: find.byType(LoginForm),
+      matching: find.byType(FilledButton),
+    );
+    final spinner = find.descendant(
+      of: button,
+      matching: find.byType(LoadingSpinner),
+    );
+    final bounds = tester.getRect(button);
+    expect(tester.getSize(spinner), const Size.square(24));
+    expect(tester.getCenter(spinner), bounds.center);
     send('hcaptcha_ready');
     final element = tester.element(find.byType(InAppWebView));
     send('hcaptcha_pass', 'sample');
@@ -292,17 +304,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text(l.login_captchaTitle), findsNothing);
     expect(find.byType(CaptchaPanel), findsNothing);
-    expect(find.text(l.login_confirmingVerification), findsOneWidget);
+    final hint = find.text(l.login_confirmingVerification);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-      isNull,
+      find.bySemanticsLabel(l.login_confirmingVerification),
+      findsOneWidget,
     );
+    expect(tester.getRect(button), bounds);
+    expect(tester.getCenter(spinner).dy, tester.getCenter(hint).dy);
+    expect(
+      tester.getRect(spinner).expandToInclude(tester.getRect(hint)).center,
+      bounds.center,
+    );
+    expect(tester.widget<FilledButton>(button).onPressed, isNull);
     expect(platform.controller.submissions, 1);
+    final spinnerBeforeSignIn = tester.element(spinner);
     send('login_submitting');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 260));
     expect(find.text(l.login_captchaSubmitting), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(tester.element(spinner), same(spinnerBeforeSignIn));
+    expect(tester.getRect(button), bounds);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
     send(
       'login_result',
       jsonEncode({
@@ -364,7 +386,7 @@ void main() {
     expect(result?.status, WebViewLoginStatus.failure);
     expect(find.text(l.login_confirmingVerification), findsNothing);
     expect(find.text(l.login_captchaSubmitting), findsNothing);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(LoadingSpinner), findsNothing);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNotNull,
@@ -422,7 +444,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(l.login_confirmingVerification), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(LoadingSpinner), findsNothing);
     send(
       'login_result',
       jsonEncode({
