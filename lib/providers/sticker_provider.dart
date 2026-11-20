@@ -17,6 +17,44 @@ final stickerMarketServiceProvider = Provider<StickerMarketService>((ref) {
   return StickerMarketService(prefs);
 });
 
+/// 发送表情后把所在分组移到最前的开关（设置页用）
+final stickerDynamicOrderProvider =
+    StateNotifierProvider<StickerDynamicOrderNotifier, bool>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerDynamicOrderNotifier(service);
+    });
+
+class StickerDynamicOrderNotifier extends StateNotifier<bool> {
+  StickerDynamicOrderNotifier(this._service)
+    : super(_service.dynamicOrderEnabled);
+
+  final StickerMarketService _service;
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    await _service.setDynamicOrderEnabled(enabled);
+  }
+}
+
+/// 表情缩略图走缩放代理的开关（设置页用）
+final stickerThumbnailProxyProvider =
+    StateNotifierProvider<StickerThumbnailProxyNotifier, bool>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerThumbnailProxyNotifier(service);
+    });
+
+class StickerThumbnailProxyNotifier extends StateNotifier<bool> {
+  StickerThumbnailProxyNotifier(this._service)
+    : super(_service.thumbnailProxyEnabled);
+
+  final StickerMarketService _service;
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    await _service.setThumbnailProxyEnabled(enabled);
+  }
+}
+
 /// 分组详情（按 groupId 懒加载）
 ///
 /// 加载完成后,异步批量 precache 第一屏 sticker 的 thumbnail —
@@ -48,6 +86,30 @@ final stickerGroupDetailProvider =
         );
         rethrow;
       }
+    });
+
+/// 市场卡片预览条:分组的前几张表情。
+///
+/// 卡片进视口才拉详情(文件缓存 24h),只保留前 [marketPreviewCount] 张,
+/// 完整详情随即释放;离开视口后保留一会儿,来回滚动不重复解析。
+const int marketPreviewCount = 5;
+
+final marketGroupPreviewProvider = FutureProvider.autoDispose
+    .family<List<StickerItem>, String>((ref, groupId) async {
+      final link = ref.keepAlive();
+      final timer = Timer(const Duration(minutes: 2), link.close);
+      ref.onDispose(timer.cancel);
+      final service = ref.watch(stickerMarketServiceProvider);
+      final detail = await service.getGroupDetail(groupId);
+      return detail.emojis.take(marketPreviewCount).toList(growable: false);
+    });
+
+/// 市场分组预览页的完整详情。与 [stickerGroupDetailProvider] 分开:那个常驻
+/// 内存并带面板预热,只给已订阅分组;这里随预览页关闭释放。
+final marketGroupDetailProvider = FutureProvider.autoDispose
+    .family<StickerGroupDetail, String>((ref, groupId) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return service.getGroupDetail(groupId);
     });
 
 /// 当前活跃 prefetch 的 groupId。每次新组进来就覆盖,旧组 task 通过
@@ -100,6 +162,7 @@ Future<void> _prefetchFirstScreenThumbnails(
   try {
     await StickerThumbnailProvider.precacheBatch(
       visible.map((s) => s.url).toList(growable: false),
+      displayUrls: visible.map((s) => s.displayUrl).toList(growable: false),
       targetSize: targetSize,
       shouldContinue: () =>
           _stickerPanelOpen && _activePrefetchGroupId == groupId,
@@ -211,12 +274,33 @@ class MarketGroupsNotifier
     }
   }
 
-  /// 补齐当前分类剩余页。搜索要在全量数据上过滤才不会漏结果；
-  /// 全市场 ~300 组、页数据本就有 24h 缓存，全量拉取代价可忽略。
+  /// 补齐当前分类剩余页。搜索要在全量数据上过滤才不会漏结果。
+  ///
+  /// 优先取单文件 metadata.json(按分类过滤),取不到(旧版服务端 /
+  /// 请求失败)再逐页补齐;两者都有 24h 缓存。
   Future<void> _ensureAllPagesLoaded() async {
     if (_loadedPages == 0 || _loadedPages >= _totalPages) return;
     final dataSeq = _dataSeq;
     final querySeq = ++_querySeq;
+    try {
+      final all = await _service.getAllGroups();
+      if (dataSeq != _dataSeq || querySeq != _querySeq || !mounted) return;
+      if (all.isNotEmpty) {
+        _groups = _topic == 'all'
+            ? all
+            : all.where((g) => g.topic == _topic).toList();
+        _loadedPages = _totalPages;
+        _emit(_applyQuery());
+        return;
+      }
+    } catch (e) {
+      if (dataSeq != _dataSeq || querySeq != _querySeq || !mounted) return;
+      AppLogger.warning(
+        '表情包市场全量概要获取失败，改为逐页补齐',
+        tag: 'Sticker',
+        fields: {'topic': _topic, 'error': e.toString()},
+      );
+    }
     try {
       final missingPages = [
         for (var p = _loadedPages + 1; p <= _totalPages; p++) p,
@@ -377,6 +461,24 @@ class SubscribedStickerGroupsNotifier
 
   bool isSubscribed(String groupId) => state.any((g) => g.id == groupId);
 
+  /// 拖拽排序:把 [oldIndex] 处的分组移到最终位置 [newIndex]
+  /// (与 ReorderableListView.onReorderItem 的下标语义一致)。
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    final ids = [for (final g in state) g.id];
+    if (oldIndex < 0 || oldIndex >= ids.length) return;
+    final id = ids.removeAt(oldIndex);
+    ids.insert(newIndex.clamp(0, ids.length), id);
+    await _service.reorderSubscribed(ids);
+    state = _service.getSubscribedGroups();
+  }
+
+  /// 把分组按给定顺序移到最前(动态排序,第一个最靠前)。未订阅的忽略。
+  Future<void> moveToFrontAll(List<String> groupIds) async {
+    await _service.reorderSubscribed(groupIds);
+    if (!mounted) return;
+    state = _service.getSubscribedGroups();
+  }
+
   /// 从分组详情回填元信息（升级迁移 + 改名换图自愈）。
   ///
   /// 详情只带 id/name/icon，order/topic/isArchived 沿用已有缓存值；
@@ -424,6 +526,11 @@ class RecentStickersNotifier extends StateNotifier<List<StickerItem>> {
 
   Future<void> add(StickerItem sticker) async {
     await _service.addRecentSticker(sticker);
+    state = _service.getRecentStickers();
+  }
+
+  Future<void> remove(String stickerId) async {
+    await _service.removeRecentSticker(stickerId);
     state = _service.getRecentStickers();
   }
 }

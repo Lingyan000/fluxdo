@@ -22,13 +22,25 @@ class _ExtendedPagePosition extends _PagePosition {
     }
   }
 
+  double get _viewportWithoutSpacing => super.viewportDimension;
+
   // 翻页吸附使用含页间距的距离。
   @override
-  double get viewportDimension => super.viewportDimension + pageSpacing;
+  double get viewportDimension => _viewportWithoutSpacing + pageSpacing;
+
+  @override
+  void absorb(ScrollPosition other) {
+    super.absorb(other);
+    if (other is _ExtendedPagePosition && other.hasViewportDimension) {
+      // ScrollPosition.absorb 通过公开的 viewportDimension 复制尺寸，已包含旧页间距。
+      // 底层布局只存实际视口，否则重建后会重复加间距，让非首页的图片向右移。
+      super.applyViewportDimension(other._viewportWithoutSpacing);
+    }
+  }
 
   @override
   bool applyViewportDimension(double viewportDimension) {
-    final oldViewport = hasViewportDimension ? super.viewportDimension : null;
+    final oldViewport = hasViewportDimension ? _viewportWithoutSpacing : null;
     if (viewportDimension == oldViewport) {
       return true;
     }

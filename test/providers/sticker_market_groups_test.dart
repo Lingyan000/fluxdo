@@ -86,9 +86,40 @@ void main() {
       'alphabet',
     ], reason: '第 2 页的命中不能因为搜索发生在首屏之前就漏掉');
   });
+
+  test('搜索优先用 metadata.json 一次取全，并按当前分类过滤', () async {
+    final adapter = _FakeMarketAdapter({
+      '/assets/market/index/page-1.json': _page(['alpha'], 1),
+      '/assets/market/index/x-page-1.json': _page(['alpha'], 3),
+      '/assets/market/metadata.json': {
+        'groups': [
+          ..._page(['alpha'], 1, topic: 'x')['groups'],
+          ..._page(['alpine'], 1, topic: 'y')['groups'],
+          ..._page(['alps', 'beta'], 1, topic: 'x')['groups'],
+        ],
+      },
+    });
+
+    final notifier = await newNotifier(adapter);
+    await pumpEventQueue();
+    await notifier.setTopic('x');
+    await notifier.setQuery('al');
+
+    expect(namesOf(notifier), ['alpha', 'alps']);
+    expect(
+      adapter.requested.where((p) => p.contains('x-page-')),
+      ['/assets/market/index/x-page-1.json'],
+      reason: '有 metadata.json 时不再逐页补齐',
+    );
+    expect(notifier.hasMore, isFalse);
+  });
 }
 
-Map<String, dynamic> _page(List<String> names, int totalPages) => {
+Map<String, dynamic> _page(
+  List<String> names,
+  int totalPages, {
+  String topic = '',
+}) => {
   'totalPages': totalPages,
   'groups': [
     for (final name in names)
@@ -99,6 +130,7 @@ Map<String, dynamic> _page(List<String> names, int totalPages) => {
         'order': 0,
         'emojiCount': 1,
         'isArchived': false,
+        'topic': topic,
       },
   ],
 };
@@ -109,6 +141,7 @@ class _FakeMarketAdapter implements HttpClientAdapter {
 
   final Map<String, Map<String, dynamic>> bodies;
   final Map<String, Completer<void>> _gates = {};
+  final List<String> requested = [];
 
   void hold(String path) => _gates[path] = Completer<void>();
 
@@ -121,6 +154,7 @@ class _FakeMarketAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     final path = options.uri.path;
+    requested.add(path);
     await _gates[path]?.future;
     final body = bodies[path];
     if (body == null) {

@@ -1,9 +1,13 @@
+import 'dart:ui' as ui;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
 import '../../l10n/s.dart';
+import '../../models/sticker.dart';
+import '../markdown_editor/sticker_favorite_ui.dart';
 import '../../utils/image_save_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../models/topic.dart';
@@ -175,6 +179,17 @@ class ImageContextMenu {
         ImageSaveUtils.actionLabel,
         () => _saveImage(originalUrl, fileName: fileName),
       ),
+      _ImageAction(
+        'favoriteSticker',
+        Symbols.add_reaction_rounded,
+        S.current.sticker_saveImageAsSticker,
+        () => _saveAsSticker(
+          context,
+          originalUrl: originalUrl,
+          displayUrl: imageUrl,
+          fileName: fileName,
+        ),
+      ),
       if (ShareUtils.canShareFiles)
         _ImageAction(
           'share',
@@ -290,6 +305,47 @@ class ImageContextMenu {
     } catch (e) {
       debugPrint('[ImageContextMenu] saveImage error: $e');
       ToastService.showError(S.current.share_saveFailed);
+    }
+  }
+
+  /// 收藏为表情:图片本来就在论坛 CDN 上,只记录地址与尺寸,不重新上传。
+  /// 尺寸从原图字节读(通常已在缓存里),发送时生成带尺寸的图片语法。
+  static Future<void> _saveAsSticker(
+    BuildContext context, {
+    required String originalUrl,
+    required String displayUrl,
+    String? fileName,
+  }) async {
+    try {
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.contentBucket,
+        originalUrl,
+      );
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final width = descriptor.width;
+      final height = descriptor.height;
+      descriptor.dispose();
+      buffer.dispose();
+      final name =
+          ShareUtils.safeFileBaseName(fileName) ??
+          Uri.tryParse(originalUrl)?.pathSegments.lastOrNull?.split('.').first ??
+          'sticker';
+      final item = StickerItem(
+        id: 'fav:$originalUrl',
+        name: name,
+        url: originalUrl,
+        // 帖子里显示的是压缩版,缩略图优先用它
+        displayUrl: displayUrl != originalUrl ? displayUrl : null,
+        width: width,
+        height: height,
+        groupId: '',
+      );
+      if (!context.mounted) return;
+      await favoriteSticker(context, item);
+    } catch (e) {
+      debugPrint('[ImageContextMenu] saveAsSticker error: $e');
+      ToastService.showError(S.current.sticker_favoriteFailed);
     }
   }
 
