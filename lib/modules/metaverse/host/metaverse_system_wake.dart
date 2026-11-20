@@ -14,6 +14,7 @@ import '../../../services/network/doh/network_settings_service.dart';
 import '../plugin/providers/metaverse_plugin_providers.dart';
 import 'metaverse_task_dispatcher.dart';
 import 'metaverse_task_store.dart';
+import '../market/metaverse_update_provider.dart';
 
 class _WakeAccount extends CurrentUserNotifier {
   _WakeAccount(this.user);
@@ -30,6 +31,16 @@ Future<bool> runMetaverseSystemWake() async {
     overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
   );
   try {
+    final updates = await bootstrap.read(metaverseUpdateStoreProvider.future);
+    final plan = updates.snapshot();
+    final updater = createMetaverseUpdater(bootstrap, updates);
+    if (plan.enabled && plan.nextCheck <= updates.now && plan.retryAt <= updates.now &&
+        bootstrap.read(metaversePluginsProvider).any(updater.eligible)) {
+      await NetworkSettingsService.instance.initialize(prefs);
+      // 系统给出的运行时间有限，一次唤醒只准备更新；安装留给前台确认空闲后执行。
+      await updater.check(timeout: const Duration(seconds: 22));
+      return true;
+    }
     final control = await bootstrap.read(metaverseTaskStoreProvider.future);
     final snapshot = control.snapshot();
     final owner = (snapshot['account'] as Map?)?['id'];

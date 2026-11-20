@@ -120,10 +120,20 @@ class BackgroundNotificationService {
   Future<void>? _workmanagerReady;
   Future<void> _pluginWakeQueue = Future.value();
   bool? _pluginWake;
+  bool _pluginTasksRequested = false, _pluginUpdatesRequested = false;
 
   Future<void> setPluginWake(bool enabled) {
+    _pluginTasksRequested = enabled;
+    return _syncPluginWake();
+  }
+  Future<void> setPluginUpdateWake(bool enabled) {
+    _pluginUpdatesRequested = enabled;
+    return _syncPluginWake();
+  }
+  Future<void> _syncPluginWake() {
     if (!Platform.isIOS && !Platform.isAndroid) return Future.value();
     final next = _pluginWakeQueue.then((_) async {
+      final enabled = _pluginTasksRequested || _pluginUpdatesRequested;
       if (_pluginWake == enabled) return;
       await initialize();
       if (enabled) {

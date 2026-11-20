@@ -16,6 +16,8 @@ import 'package:fluxdo/modules/metaverse/developer/metaverse_component_examples.
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_catalog.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_page.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_provider.dart';
+import 'package:fluxdo/modules/metaverse/market/metaverse_update_provider.dart';
+import 'package:fluxdo/modules/metaverse/market/metaverse_update_store.dart';
 import 'package:fluxdo/modules/metaverse/developer/metaverse_developer_page.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
@@ -29,6 +31,8 @@ import 'package:fluxdo/theme/app_theme.dart';
 import '../../helpers/preview_fonts.dart';
 
 class _Catalog extends MetaverseMarketController {
+  @override
+  Future<void> refresh({bool force = false}) async {}
   @override
   Future<void> addSource(String input) async {
     state = MetaverseMarketState(
@@ -65,6 +69,11 @@ class _Catalog extends MetaverseMarketController {
       ],
     );
   }
+}
+
+class _Updates extends MetaverseUpdatesController {
+  @override
+  Future<MetaverseUpdateState> build() async => const MetaverseUpdateState();
 }
 
 class _Plugins extends MetaversePluginsController {
@@ -109,6 +118,7 @@ void main() {
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
         metaverseMarketProvider.overrideWith(_Catalog.new),
+        metaverseUpdatesProvider.overrideWith(_Updates.new),
         metaversePluginsProvider.overrideWith(_Plugins.new),
       ],
       child: RepaintBoundary(

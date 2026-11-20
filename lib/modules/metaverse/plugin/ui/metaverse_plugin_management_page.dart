@@ -9,6 +9,9 @@ import '../../../../pages/app_logs_page.dart';
 import '../../../../services/toast_service.dart';
 import '../../../../utils/dialog_utils.dart';
 import '../../developer/metaverse_developer_page.dart';
+import '../../market/metaverse_update_page.dart';
+import '../../market/metaverse_update_provider.dart';
+import '../../market/metaverse_market_provider.dart';
 import '../providers/metaverse_plugin_providers.dart';
 import 'metaverse_plugin_dialogs.dart';
 import 'metaverse_plugin_tile.dart';
@@ -28,6 +31,8 @@ class MetaversePluginManagementPage extends ConsumerWidget {
           SwipeDismissiblePopupMenuButton<VoidCallback>(
             onSelected: (action) => action(),
             itemBuilder: (context) => [
+              PopupMenuItem(value: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseUpdatePage())),
+                child: Text(context.l10n.metaverse_autoUpdates)),
               PopupMenuItem(
                 value: () => Navigator.of(context).push(
                   InteractionPageRoute(
@@ -199,6 +204,15 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                       title: Text(l.metaverse_pluginSource),
                       subtitle: SelectableText(plugin.source),
                     ),
+                    Consumer(builder: (context, ref, _) {
+                      final updates = ref.watch(metaverseUpdatesProvider).value;
+                      final supported = ref.watch(metaverseMarketProvider).sources.any((s) => s.enabled && s.id == plugin.source);
+                      return M3eSwitchListTile(title: Text(l.metaverse_updateParticipation),
+                        subtitle: !supported ? Text(l.metaverse_updateNoSource) : null,
+                        value: supported && (updates?.allows(plugin) ?? true),
+                        onChanged: _busy || !supported || updates == null ? null : (value) => _run(() =>
+                          ref.read(metaverseUpdatesProvider.notifier).setAllowed(plugin, value)));
+                    }),
                     ListTile(
                       leading: const Icon(Symbols.shield_rounded),
                       title: Text(l.metaverse_permissionSettings),

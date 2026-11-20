@@ -147,6 +147,34 @@ class MetaversePluginsController
   Future<InstalledMetaversePlugin> install(MetaversePluginPackage package, {
     Map<MetaversePluginPermission, bool> choices = const {},
   }) => _mutations.run('index', () => _install(package, choices));
+  /// 自动更新只发布仍在原来源、授权未变化且没有使用中界面的候选。
+  Future<bool> installAutomatic(MetaversePluginPackage package,
+      InstalledMetaversePlugin expected, bool Function() canApply) => _mutations.run('index', () async {
+    bool valid() => identical(byId(expected.id), expected) && canApply() &&
+        package.manifest.id == expected.id && package.source == expected.source &&
+        package.manifest.runtimeSupported && package.manifest.sameApprovalAs(expected.manifest) &&
+        package.manifest.apiVersion == expected.manifest.apiVersion &&
+        PluginVersion.parse(package.manifest.version).compareTo(PluginVersion.parse(expected.manifest.version)) > 0;
+    if (!valid()) return false;
+    await _store.writeCode(expected.id, package.code);
+    if (!valid()) return false;
+    final next = InstalledMetaversePlugin(manifest: package.manifest, source: expected.source,
+      codeRevision: MetaversePluginStore.revisionOf(package.code), enabled: expected.enabled,
+      suspendedReason: expected.suspendedReason, blockedPermissions: expected.blockedPermissions);
+    final control = expected.manifest.tasks.isEmpty ? null : await ref.read(metaverseTaskStoreProvider.future);
+    if (!valid()) return false;
+    final hold = control?.holdForUpdate(expected.id);
+    if (control != null && hold == null) return false;
+    try {
+      await _replace(next, publishGuard: () {
+        if (!valid() || (control != null && !control.updateHeld(expected.id, hold!))) throw const PluginOperationCancelled();
+      });
+      control?.applyPermissions(next);
+      return true;
+    } on PluginOperationCancelled { return false; }
+    finally { if (hold != null) control!.releaseUpdate(expected.id, hold); }
+  });
+
   Future<void> setPermission(
     String id,
     MetaversePluginPermission permission,
@@ -365,6 +393,7 @@ class MetaversePluginsController
     InstalledMetaversePlugin plugin, {
     bool remove = false,
     void Function()? grantGuard,
+    void Function()? publishGuard,
   }) async {
     final next = [...state];
     final index = next.indexWhere((item) => item.id == plugin.id);
@@ -375,7 +404,10 @@ class MetaversePluginsController
     } else {
       next.add(plugin);
     }
+    publishGuard?.call();
     await _store.saveIndex(next);
+    try { publishGuard?.call(); }
+    catch (_) { await _store.saveIndex(state); rethrow; }
     if (grantGuard != null) {
       try {
         grantGuard();
@@ -433,6 +465,8 @@ class MetaversePluginHosts {
       engineFactory: _ref.read(metaverseScriptEngineFactoryProvider),
       delegate: _HostDelegate(_ref, plugin.manifest, worker: worker),
     );
+
+  bool isInUse(String id) => _hosts[id]?.hasUpdateBlocker ?? false;
 
   void notifyTaskUpdated(String id) => _hosts[id]?.notifyTaskUpdated();
   void applyGrant(InstalledMetaversePlugin plugin) => _hosts[plugin.id]?.applyGrantedPermissions(plugin.blockedPermissions);

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,11 +17,13 @@ class MetaverseMarketState {
     this.entries = const [],
     this.errors = const {},
     this.refreshing = false,
+    this.retryAt = 0,
   });
   final List<MetaverseMarketSource> sources;
   final List<MetaverseMarketEntry> entries;
   final Map<String, String> errors;
   final bool refreshing;
+  final int retryAt;
 }
 
 final metaverseMarketProvider =
@@ -66,7 +69,6 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
       }
     }
     final initial = _cachedState(sources);
-    Future<void>.microtask(refresh);
     return initial;
   }
 
@@ -178,6 +180,7 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
       sources: sources,
       entries: loaded.entries,
       errors: errors,
+      retryAt: _retryAfter.values.fold(0, (a, b) => a > b ? a : b),
     );
   }
 
@@ -222,7 +225,10 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
     await refresh();
   }
 
-  Future<MetaversePluginPackage> download(MetaverseMarketEntry entry) async {
+  Future<MetaversePluginPackage> download(MetaverseMarketEntry entry) async =>
+      (await downloadBundle(entry)).package;
+
+  Future<({MetaversePluginPackage package, Uint8List bytes})> downloadBundle(MetaverseMarketEntry entry) async {
     if (!entry.compatible) {
       throw const MetaversePluginInstallException('插件需要其他版本的 SDK');
     }
@@ -250,6 +256,6 @@ class MetaverseMarketController extends Notifier<MetaverseMarketState> {
         entry.requiredFeatures.toSet().difference(package.manifest.requiredFeatures.toSet()).isNotEmpty) {
       throw const MetaversePluginInstallException('插件包身份或版本与市场记录不匹配');
     }
-    return package;
+    return (package: package, bytes: response.bytes);
   }
 }

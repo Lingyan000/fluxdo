@@ -102,3 +102,5 @@ schema 10 可声明 `requiredFeatures`，市场索引必须同步声明同一集
 插件使用每实例独立的 QuickJS isolate。每次同步执行及其 Promise 微任务有 5 秒原生截止时间，JS 堆上限 64 MiB，JS 栈 512 KiB。停止运行会中断正在执行的原生代码并释放上下文。JS 堆上限不包括宿主 Flutter 图片、插件普通存储或 Dart 堆；这些分别有自己的限额。原生引擎不提供网络、文件系统、Node 或 DOM。
 
 长商品墙使用 `GridPage`，仅构建可见区域及预取范围；少量嵌套内容使用 `TileGrid`。二者提供 natural、equalHeight、masonry 三种布局。
+
+插件的宿主更新计划、同源校验、权限审阅和跨平台执行边界见 [插件定时更新](automatic-updates.md)。

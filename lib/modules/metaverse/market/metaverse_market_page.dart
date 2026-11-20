@@ -18,6 +18,9 @@ import '../plugin/ui/metaverse_plugin_tile.dart';
 import '../plugin/ui/metaverse_widget_library.dart';
 import 'metaverse_market_catalog.dart';
 import 'metaverse_market_provider.dart';
+import 'metaverse_update_page.dart';
+import 'metaverse_update_provider.dart';
+import 'metaverse_update_store.dart';
 
 class MetaverseMarketPage extends ConsumerStatefulWidget {
   const MetaverseMarketPage({super.key, this.scrollController});
@@ -34,6 +37,12 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
   bool _updatesOnly = false;
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(() { if (mounted) return ref.read(metaverseMarketProvider.notifier).refresh(); });
+  }
 
   @override
   void dispose() {
@@ -516,6 +525,13 @@ class _MarketSourcesState extends ConsumerState<MetaverseMarketSourcesPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          SegmentedCardGroup(children: [ListTile(
+            leading: const Icon(Symbols.update_rounded), title: Text(l.metaverse_autoUpdates),
+            subtitle: Text(metaverseUpdateFrequencyLabel(context, ref.watch(metaverseUpdatesProvider).value?.frequency ?? MetaverseUpdateFrequency.daily)),
+            trailing: const Icon(Symbols.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(InteractionPageRoute(builder: (_) => const MetaverseUpdatePage())),
+          )]),
+          const SizedBox(height: 24),
           Text(
             l.metaverse_marketSourceHint,
             style: Theme.of(context).textTheme.titleSmall,

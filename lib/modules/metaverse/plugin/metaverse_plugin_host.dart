@@ -187,6 +187,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   String get id => manifest.id;
 
+  /// 保留打开的页面、交互弹层和正在启动的实例，自动更新不能打断它们。
+  bool get hasUpdateBlocker => _uiBusy || _preparedNavigation != null ||
+      (_starting != null && _runtime == null) || (_runtime != null && !_runtime!.isIdle) ||
+      (_runtime?.surfaces.any((s) => s.kind != 'card' || s.foreground) ?? false);
+
   MetaversePluginRuntime? _runtime;
   Runtime? _widgets;
   final _surfaceContexts = <MetaversePluginSurface, BuildContext>{};

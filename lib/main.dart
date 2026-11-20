@@ -146,6 +146,7 @@ import 'navigation/nav_entry.dart';
 import 'navigation/nav_entry_registry.dart';
 import 'navigation/nav_entries_provider.dart';
 import 'modules/metaverse/plugin/providers/metaverse_plugin_providers.dart' show metaverseTaskDriverProvider;
+import 'modules/metaverse/market/metaverse_update_provider.dart';
 import 'navigation/navigation_activity_scope.dart';
 import 'providers/read_later_provider.dart';
 import 'providers/shortcut_provider.dart';
@@ -1705,6 +1706,7 @@ class _MainPageState extends ConsumerState<MainPage>
     final user = currentUserAsync.value;
 
     ref.watch(metaverseTaskDriverProvider);
+    ref.watch(metaverseUpdateDriverProvider);
 
     // 从偏好读取底栏布局，按注册表解析为 entry 列表（含所有 kind）
     final bottomNavIds = ref.watch(

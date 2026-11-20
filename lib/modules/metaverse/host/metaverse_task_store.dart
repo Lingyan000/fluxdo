@@ -208,6 +208,21 @@ class MetaverseTaskStore {
     readOnly: true,
   );
 
+  /// 安装索引提交期间阻止新任务领取，避免后台刚好读到旧版本继续运行。
+  int? holdForUpdate(String plugin) => transaction((s) {
+    if (map(s, 'jobs').values.any((v) => v['plugin'] == plugin && (v['leaseUntil'] as int? ?? 0) > now)) return null;
+    final holds = map(s, 'updates');
+    if ((holds[plugin] as int? ?? 0) > now) return null;
+    final until = now + const Duration(seconds: 30).inMilliseconds;
+    holds[plugin] = until;
+    return until;
+  });
+  bool updateHeld(String plugin, int token) => transaction((s) =>
+      map(s, 'updates')[plugin] == token && token > now, readOnly: true);
+  void releaseUpdate(String plugin, int token) => transaction((s) {
+    if (map(s, 'updates')[plugin] == token) map(s, 'updates').remove(plugin);
+  });
+
   /// 全局每次执行一项；持久化租约防止两个 Flutter engine 重复执行。
   Map<String, dynamic>? claim({required bool background}) => transaction((s) {
     final account = (s['account'] as Map?)?['id'];
@@ -221,6 +236,7 @@ class MetaverseTaskStore {
           final v = entry.value as Map;
           return v['account'] == account &&
               map(s, 'plugins').containsKey(v['plugin']) &&
+              (map(s, 'updates')[v['plugin']] as int? ?? 0) <= now &&
               (!background || v['background'] == true) &&
               dueAt(v, background: background) <= now;
         }).toList()..sort(
