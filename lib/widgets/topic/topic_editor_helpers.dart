@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pangutext/pangutext.dart';
@@ -15,6 +15,7 @@ import '../../utils/platform_utils.dart';
 import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
+import '../markdown_editor/composer_page_chrome.dart';
 import '../../../../../l10n/s.dart';
 import '../../utils/color_utils.dart';
 
@@ -626,6 +627,12 @@ class ComposerMetaBar extends StatelessWidget {
   final bool postVotingLocked;
   final ValueChanged<bool>? onPostVotingChanged;
 
+  /// 放在编辑页透明顶栏里（仅桌面端）：各选择器合成一块与顶栏一致的
+  /// 实色胶囊，内容滚到顶栏下面时随顶栏一起浮起
+  final bool floating;
+
+  static const double _floatingHeight = 36;
+
   const ComposerMetaBar({
     super.key,
     required this.category,
@@ -640,6 +647,7 @@ class ComposerMetaBar extends StatelessWidget {
     this.postVotingEnabled = false,
     this.postVotingLocked = false,
     this.onPostVotingChanged,
+    this.floating = false,
   });
 
   Future<void> _pickCategory(BuildContext context) async {
@@ -683,6 +691,24 @@ class ComposerMetaBar extends StatelessWidget {
     Key? key,
   }) {
     final desktop = PlatformUtils.isDesktop;
+    if (desktop && floating) {
+      // 顶栏里的分类 / 标签共用一块胶囊（见 build），这里只是其中一段；
+      // 状态（未选分类、标签不足）由文字与图标颜色表达，不再单独描边
+      final segment = InkWell(
+        key: key,
+        onTap: enabled ? onTap : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _floatingHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(mainAxisSize: MainAxisSize.min, children: children),
+          ),
+        ),
+      );
+      return tooltip == null
+          ? segment
+          : Tooltip(message: tooltip, child: segment);
+    }
     if (!desktop) {
       final pill = Material(
         key: key,
@@ -1056,6 +1082,40 @@ class ComposerMetaBar extends StatelessWidget {
               if (showPostVotingToggle) Flexible(child: _postVotingPill(theme)),
             ],
           );
+    if (desktop && floating) {
+      final divider = SizedBox(
+        height: 16,
+        child: VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: theme.colorScheme.outlineVariant,
+        ),
+      );
+      final segments = [
+        Flexible(child: _categoryPill(context, theme)),
+        if (showTags) Flexible(child: _tagsPill(context, theme)),
+        if (showPostVotingToggle) Flexible(child: _postVotingPill(theme)),
+      ];
+      final capsule = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: ComposerBarCapsule(
+          height: _floatingHeight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < segments.length; i++) ...[
+                if (i > 0) divider,
+                segments[i],
+              ],
+            ],
+          ),
+        ),
+      );
+      if (!enabled) {
+        return IgnorePointer(child: Opacity(opacity: 0.6, child: capsule));
+      }
+      return capsule;
+    }
     if (!enabled) {
       return IgnorePointer(child: Opacity(opacity: 0.6, child: bar));
     }

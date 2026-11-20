@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../plugins/plugins.dart';
 
@@ -23,11 +23,15 @@ class CharacterCountsOverlay extends StatelessWidget {
   /// 对齐主题组件的 `showWarning`：正文传 true，标题不传。
   final bool showWarning;
 
+  /// 放在工具栏等单行空间里时限制行数，超出部分省略
+  final int? maxLines;
+
   const CharacterCountsOverlay({
     super.key,
     required this.length,
     this.minimumLength,
     this.showWarning = true,
+    this.maxLines,
   });
 
   @override
@@ -46,6 +50,8 @@ class CharacterCountsOverlay extends StatelessWidget {
       child: Text(
         warning == null ? '$length / $min' : '$length / $min  $warning',
         textAlign: TextAlign.end,
+        maxLines: maxLines,
+        overflow: maxLines == null ? null : TextOverflow.ellipsis,
         style: theme.textTheme.labelSmall?.copyWith(
           color: theme.colorScheme.error,
           fontWeight: FontWeight.w600,

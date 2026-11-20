@@ -3,12 +3,12 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
-import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/relative_time_clock.dart';
 import '../../utils/svg_utils.dart';
 import '../common/animated_avatar_overlay.dart';
@@ -272,6 +272,29 @@ class _RenderTopicCard extends RenderBox
   @override
   bool get isRepaintBoundary => true;
 
+  /// 段落内嵌 emoji:占位矩形相对段落原点,[origin] 为段落绘制原点
+  void _paintEmojis(
+    Canvas canvas,
+    List<(Rect, String)> emojis,
+    Offset origin,
+  ) {
+    for (final (rect, url) in emojis) {
+      final img = TopicCardImages.lookup(
+        url,
+        this,
+        bucket: BlobImageCache.emojiBucket,
+      );
+      if (img != null) {
+        canvas.drawImageRect(
+          img,
+          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+          rect.shift(origin),
+          Paint()..filterQuality = FilterQuality.low,
+        );
+      }
+    }
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
@@ -294,24 +317,11 @@ class _RenderTopicCard extends RenderBox
     for (final (rect, icon) in l.titleIcons) {
       canvas.drawParagraph(icon, rect.topLeft + offset + l.titleOffset);
     }
-    for (final (rect, url) in l.titleEmojis) {
-      final img = TopicCardImages.lookup(
-        url,
-        this,
-        bucket: BlobImageCache.emojiBucket,
-      );
-      if (img != null) {
-        canvas.drawImageRect(
-          img,
-          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-          rect.shift(offset + l.titleOffset),
-          Paint()..filterQuality = FilterQuality.low,
-        );
-      }
-    }
+    _paintEmojis(canvas, l.titleEmojis, offset + l.titleOffset);
 
     if (l.excerpt != null) {
       canvas.drawParagraph(l.excerpt!, offset + l.excerptOffset);
+      _paintEmojis(canvas, l.excerptEmojis, offset + l.excerptOffset);
     }
 
     // 头像:动图 overlay 未就绪时画静态首帧(TopicCardImages 单帧,
@@ -549,9 +559,8 @@ class TopicCardImages {
   /// SVG 按 cover 裁切光栅化成 96px 方图(与位图路径同一解码上限),
   /// 裁切方式与 SmartAvatar 的 BoxFit.cover 一致
   static Future<ui.Image?> _rasterizeSvg(List<int> bytes) async {
-    final si = ScalableImage.fromSvgString(
+    final si = await SvgImageCache.load(
       SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes)),
-      warnF: (_) {},
     );
     await si.prepareImages();
     try {

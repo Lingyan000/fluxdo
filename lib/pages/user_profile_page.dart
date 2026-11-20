@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,7 +18,6 @@ import '../utils/time_utils.dart';
 import '../utils/number_utils.dart';
 import '../utils/load_more_coordinator.dart';
 import '../utils/pagination_helper.dart';
-import '../services/emoji_handler.dart';
 
 import 'package:dio/dio.dart';
 
@@ -44,6 +43,7 @@ import '../utils/fluxdo_render_callbacks.dart';
 import '../widgets/post/reply_sheet.dart';
 import '../widgets/user/user_profile_skeleton.dart';
 import '../widgets/user/user_profile_header.dart';
+import '../widgets/user/activity_card_layout.dart';
 import '../widgets/user/activity_post_card.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/user/ignore_duration_picker.dart';
@@ -57,6 +57,7 @@ import '../models/badge.dart' as badge_model;
 import 'topic_detail_page/topic_detail_page.dart';
 import 'search_page.dart';
 import 'follow_list_page.dart';
+import '../providers/following_feed_provider.dart';
 import 'image_viewer_page.dart';
 import 'badge_page.dart';
 import 'group_page.dart';
@@ -69,6 +70,7 @@ import '../l10n/s.dart';
 import '../widgets/common/hero_image.dart';
 import '../theme/app_colors.dart';
 import '../utils/color_utils.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 用户个人页
 /// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
@@ -340,7 +342,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   void _onTabChanged() {
-    if (_tabController.indexIsChanging) return;
+    // 点击切换时动画一开始 index 就已更新,此时立即发请求,不等动画结束。
     if (_user == null || _user!.profileHidden) return;
     final changed = _activeTabIndex != _tabController.index;
     _activeTabIndex = _tabController.index;
@@ -562,6 +564,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       } else {
         await service.followUser(_user!.username);
       }
+      ref.invalidate(followingFeedProvider);
 
       if (mounted) {
         setState(() {
@@ -837,7 +840,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   /// 用户动作分页助手
   static final _actionsPaginationHelper = PaginationHelpers.forList<UserAction>(
-    keyExtractor: (a) => '${a.topicId}_${a.postNumber}_${a.actionType}',
+    keyExtractor: (a) => a.dedupeKey,
     expectedPageSize: 30,
   );
 
@@ -2434,25 +2437,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   Widget _buildStatusEmoji(UserStatus status) {
     final emoji = status.emoji;
     if (emoji == null || emoji.isEmpty) return const SizedBox.shrink();
-
-    final isEmojiName =
-        emoji.contains(RegExp(r'[a-zA-Z0-9_]')) &&
-        !emoji.contains(RegExp(r'[^\x00-\x7F]'));
-
-    if (isEmojiName) {
-      final cleanName = emoji.replaceAll(':', '');
-      final emojiUrl = _getEmojiUrl(cleanName);
-
-      return Image(
-        image: emojiImageProvider(emojiUrl),
-        width: 18,
-        height: 18,
-        fit: BoxFit.contain,
-        errorBuilder: (_, _, _) => const SizedBox.shrink(),
-      );
-    }
-
-    return Text(emoji, style: const TextStyle(fontSize: 16));
+    return EmojiImage(emoji, size: 18);
   }
 
   Widget _buildActivityTab() {
@@ -2469,9 +2454,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   }
 
   Widget _buildBadgesTab() {
-    if (_badgesLoading && _badges == null) {
-      return const UserBadgeListSkeleton();
-    }
     if (_badgesError != null) {
       return ErrorView(
         error: _badgesError!,
@@ -2479,7 +2461,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         onRetry: _loadBadges,
       );
     }
-    final badges = _badges ?? const <badge_model.UserBadge>[];
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架
+    final badges = _badges;
+    if (badges == null) return const UserBadgeListSkeleton();
     final own = ref.watch(currentUserProvider).value?.id == _user?.id;
     final theme = Theme.of(context);
     return ListView(
@@ -2756,8 +2740,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       );
     }
 
-    // 优先检查 loading 状态
-    if (isLoading && actions == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (actions == null) {
       final actionType = int.tryParse(filter);
       final ownPost =
           filter == 'all' ||
@@ -2775,7 +2759,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
 
     // 空状态
-    if (actions == null || actions.isEmpty) {
+    if (actions.isEmpty) {
       return AppEmptyState(
         icon: const Icon(Symbols.inbox_rounded),
         title: context.l10n.userProfile_noContent,
@@ -2794,24 +2778,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        key: PageStorageKey('user_${_username}_$filter'),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: actions.length + 1,
-        itemBuilder: (context, index) {
-          if (index == actions.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
-              onRetry: () => _loadMoreActions(filter),
-            );
-          }
-          return _buildActionItem(actions[index], (
-            index: index,
-            count: actions.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          key: PageStorageKey('user_${_username}_$filter'),
+          padding: padding,
+          itemCount: actions.length + 1,
+          itemBuilder: (context, index) {
+            if (index == actions.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore: loadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _loadMoreFailedCache[filter] == true,
+                onRetry: () => _loadMoreActions(filter),
+              );
+            }
+            return _buildActionItem(actions[index], (
+              index: index,
+              count: actions.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3294,7 +3280,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           child: Row(
             children: [
               Expanded(
-                child: Text(
+                child: EmojiText(
                   topic.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -3345,7 +3331,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           child: Row(
             children: [
               Expanded(
-                child: Text(
+                child: EmojiText(
                   topic?.title ??
                       context.l10n.userProfile_topicHash(
                         targetTopicId.toString(),
@@ -3409,7 +3395,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    EmojiText(
                       link.title ?? link.url,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -3634,15 +3620,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _reactionsLoading;
     final hasMore = _reactionsHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && reactions == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (reactions == null) {
       return const UserActionListSkeleton(
         type: UserActivitySkeletonType.reaction,
       );
     }
 
     // 空状态
-    if (reactions == null || reactions.isEmpty) {
+    if (reactions.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3676,24 +3662,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: reactions.length + 1,
-        itemBuilder: (context, index) {
-          if (index == reactions.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore:
-                  _reactionsLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _reactionsLoadMoreFailed,
-              onRetry: _loadMoreReactions,
-            );
-          }
-          return _buildReactionItem(reactions[index], (
-            index: index,
-            count: reactions.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: reactions.length + 1,
+          itemBuilder: (context, index) {
+            if (index == reactions.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _reactionsLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _reactionsLoadMoreFailed,
+                onRetry: _loadMoreReactions,
+              );
+            }
+            return _buildReactionItem(reactions[index], (
+              index: index,
+              count: reactions.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3704,13 +3692,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _boostsLoading;
     final hasMore = _boostsHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && boosts == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (boosts == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.boost);
     }
 
     // 空状态
-    if (boosts == null || boosts.isEmpty) {
+    if (boosts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3742,23 +3730,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: boosts.length + 1,
-        itemBuilder: (context, index) {
-          if (index == boosts.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _boostsLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _boostsLoadMoreFailed,
-              onRetry: _loadMoreBoosts,
-            );
-          }
-          return _buildBoostItem(boosts[index], (
-            index: index,
-            count: boosts.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: boosts.length + 1,
+          itemBuilder: (context, index) {
+            if (index == boosts.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _boostsLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _boostsLoadMoreFailed,
+                onRetry: _loadMoreBoosts,
+              );
+            }
+            return _buildBoostItem(boosts[index], (
+              index: index,
+              count: boosts.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3768,15 +3759,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final topics = _votesCache;
     final isLoading = _votesLoading;
     final hasMore = _votesHasMore;
-    const padding = EdgeInsets.symmetric(vertical: 12);
 
-    // 优先检查 loading 状态
-    if (isLoading && topics == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (topics == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.topic);
     }
 
     // 空状态
-    if (topics == null || topics.isEmpty) {
+    if (topics.isEmpty) {
       return AppEmptyState(
         icon: const Icon(Symbols.how_to_vote_rounded),
         title: context.l10n.userProfile_noVotes,
@@ -3800,58 +3790,61 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: padding,
-        itemCount: topics.length + 1,
-        itemBuilder: (context, index) {
-          if (index == topics.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _votesLoadMoreFailed,
-              onRetry: _loadMoreVotes,
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: topics.length + 1,
+          itemBuilder: (context, index) {
+            if (index == topics.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _votesLoadMoreFailed,
+                onRetry: _loadMoreVotes,
+              );
+            }
+            final topic = topics[index];
+            void openTopic() => _openTopic(
+              topicId: topic.id,
+              initialTitle: topic.title,
+              scrollToPostNumber:
+                  ref.read(preferencesProvider).defaultNestedView
+                  ? null
+                  : topic.lastReadPostNumber,
             );
-          }
-          final topic = topics[index];
-          void openTopic() => _openTopic(
-            topicId: topic.id,
-            initialTitle: topic.title,
-            scrollToPostNumber: ref.read(preferencesProvider).defaultNestedView
-                ? null
-                : topic.lastReadPostNumber,
-          );
-          return MorphingDialogAnchor(
-            enabled: enableLongPress,
-            bottomGap: index == topics.length - 1
-                ? 0
-                : SegmentedCardItem.gapOf(context, 4),
-            builder: (cardContext) => ActivityTopicCard(
-              topic: topic,
-              position: (index: index, count: topics.length),
-              categories: categories,
-              onTap: openTopic,
-              onPreviewIntent: enableLongPress
-                  ? () => TopicPreviewPreloader.preload(
-                      ref.read(discourseServiceProvider),
-                      topic.id,
-                    )
-                  : null,
-              onLongPress: enableLongPress
-                  ? () => TopicPreviewDialog.show(
-                      context,
-                      topic: topic,
-                      onOpen: openTopic,
-                      sourceContext: cardContext,
-                      anchorColor: PageBackgroundScope.contentColor(
+            return MorphingDialogAnchor(
+              enabled: enableLongPress,
+              bottomGap: index == topics.length - 1
+                  ? 0
+                  : SegmentedCardItem.gapOf(context, 4),
+              builder: (cardContext) => ActivityTopicCard(
+                topic: topic,
+                position: (index: index, count: topics.length),
+                categories: categories,
+                onTap: openTopic,
+                onPreviewIntent: enableLongPress
+                    ? () => TopicPreviewPreloader.preload(
+                        ref.read(discourseServiceProvider),
+                        topic.id,
+                      )
+                    : null,
+                onLongPress: enableLongPress
+                    ? () => TopicPreviewDialog.show(
                         context,
-                        Theme.of(context).cardTheme.color ??
-                            Theme.of(context).colorScheme.surfaceContainerLow,
-                      ),
-                    )
-                  : null,
-            ),
-          );
-        },
+                        topic: topic,
+                        onOpen: openTopic,
+                        sourceContext: cardContext,
+                        anchorColor: PageBackgroundScope.contentColor(
+                          context,
+                          Theme.of(context).cardTheme.color ??
+                              Theme.of(context).colorScheme.surfaceContainerLow,
+                        ),
+                      )
+                    : null,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -3862,13 +3855,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     final isLoading = _solvedLoading;
     final hasMore = _solvedHasMore;
 
-    // 优先检查 loading 状态
-    if (isLoading && posts == null) {
+    // 首屏数据未到(含切 tab 时请求尚未发出)一律显示骨架,空状态只代表已加载且为空
+    if (posts == null) {
       return const UserActionListSkeleton(type: UserActivitySkeletonType.reply);
     }
 
     // 空状态
-    if (posts == null || posts.isEmpty) {
+    if (posts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -3900,23 +3893,26 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         }
         return false;
       },
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: posts.length + 1,
-        itemBuilder: (context, index) {
-          if (index == posts.length) {
-            return PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: _solvedLoadMoreCoordinator.isRunning && isLoading,
-              isLoadMoreFailed: _solvedLoadMoreFailed,
-              onRetry: _loadMoreSolved,
-            );
-          }
-          return _buildSolvedItem(posts[index], (
-            index: index,
-            count: posts.length,
-          ));
-        },
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: posts.length + 1,
+          itemBuilder: (context, index) {
+            if (index == posts.length) {
+              return PagedListFooter(
+                hasMore: hasMore,
+                isLoadingMore:
+                    _solvedLoadMoreCoordinator.isRunning && isLoading,
+                isLoadMoreFailed: _solvedLoadMoreFailed,
+                onRetry: _loadMoreSolved,
+              );
+            }
+            return _buildSolvedItem(posts[index], (
+              index: index,
+              count: posts.length,
+            ));
+          },
+        ),
       ),
     );
   }
@@ -3979,22 +3975,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         action.actionType == UserActionType.newTopic ||
         action.actionType == UserActionType.reply;
     final author = action.author ?? (ownPost ? _activityOwner : null);
-    final actor = TopicUser(
-      id: 0,
-      username: action.username ?? _user!.username,
-      avatarTemplate: action.avatarTemplate ?? _user!.avatarTemplate ?? '',
-    );
+    final wasLiked = action.actionType == UserActionType.wasLiked;
     return ActivityPostCard(
       position: position,
       author: author,
       title: action.title,
-      actionLabel: action.actionType == UserActionType.wasLiked
+      actionLabel: wasLiked
           ? action.postNumber == 1
                 ? context.l10n.userProfile_actionCreatedTopic
                 : context.l10n.common_reply
           : _getActionLabel(action.actionType),
       actionIcon: _getActionIcon(action.actionType),
-      actionActor: action.actionType == UserActionType.wasLiked ? actor : null,
+      // 获赞的帖子作者就是资料页主人，首行改为点赞人
+      actionActor: wasLiked ? action.actor : null,
+      actorVerb: wasLiked ? context.l10n.userProfile_likedThisPost : null,
       occurredAt: action.actingAt,
       postNumber: action.postNumber,
       excerpt: action.excerpt,
@@ -4044,9 +4038,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         return Symbols.history_rounded;
     }
   }
-
-  String _getEmojiUrl(String emojiName) =>
-      EmojiHandler().getEmojiUrl(emojiName);
 
   String _getActionLabel(int? type) {
     switch (type) {

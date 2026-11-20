@@ -66,12 +66,14 @@ mixin PagedAsyncNotifierMixin<T> on AsyncNotifier<List<T>> {
     PagedRefreshLoader<T> loadPage, {
     int pageNumber = 0,
   }) async {
+    final requestRef = ref;
     resetPagingState(page: pageNumber);
     state = AsyncLoading<List<T>>();
-    state = await AsyncValue.guard(() async {
-      final page = await loadPage();
-      return completePagedRefresh(page, pageNumber: pageNumber);
-    });
+    final result = await AsyncValue.guard(loadPage);
+    if (!requestRef.mounted) return;
+    state = result.whenData(
+      (page) => completePagedRefresh(page, pageNumber: pageNumber),
+    );
   }
 
   Future<void> runPagedLoadMore(PagedLoadMoreLoader<T> loadPage) async {
@@ -80,6 +82,7 @@ mixin PagedAsyncNotifierMixin<T> on AsyncNotifier<List<T>> {
     if (currentItems == null) return;
 
     _isLoadMoreFailed = false;
+    final requestRef = ref;
     final nextPage = _page + 1;
 
     // ignore: invalid_use_of_internal_member
@@ -87,12 +90,14 @@ mixin PagedAsyncNotifierMixin<T> on AsyncNotifier<List<T>> {
 
     try {
       final page = await loadPage(currentItems, nextPage);
+      if (!requestRef.mounted) return;
       _hasMore = page.hasMore;
       if (page.advancePage) {
         _page = nextPage;
       }
       state = AsyncValue.data(page.items);
     } catch (_) {
+      if (!requestRef.mounted) return;
       _isLoadMoreFailed = true;
       state = AsyncValue.data(currentItems);
     }

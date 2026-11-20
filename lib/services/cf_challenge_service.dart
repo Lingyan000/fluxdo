@@ -5,7 +5,7 @@ import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
+import 'network/cookie/cookie_logger.dart';
+import 'log/log_writer.dart';
 import 'local_notification_service.dart'; // 用于获取全局 navigatorKey
 import 'cf_challenge_logger.dart';
 import 'cf_clearance_refresh_service.dart';
@@ -1167,6 +1169,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
       controller: _controller,
       cookieNames: const {'cf_clearance'},
       trusted: true,
+      throwOnError: true,
       acceptValues: freshClearance != null && freshClearance.isNotEmpty
           ? {'cf_clearance': freshClearance}
           : null,
@@ -1860,6 +1863,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
         reason:
             'main frame verification navigation reached origin (${response?.statusCode})',
         headers: response?.headers,
+        statusCode: response?.statusCode,
       );
       return NavigationResponseAction.CANCEL;
     }
@@ -1870,6 +1874,7 @@ class _CfChallengePageState extends State<CfChallengePage> {
   void _finishFromOriginResponse({
     required String reason,
     Map<String, String>? headers,
+    int? statusCode,
   }) {
     if (_hasPopped || _finishingFromVerifyResponse) return;
     _finishingFromVerifyResponse = true;
@@ -1889,20 +1894,86 @@ class _CfChallengePageState extends State<CfChallengePage> {
 
     // 源站可直接放行而不签发 Cookie。只同步此刻已有的值，不轮询续期，
     // 不把 Cookie 的产生或落库作为页面结束条件。
-    final cookieSync = _syncCookiesAfterOriginResponse();
+    final cookieSync = _syncCookiesAfterOriginResponse(
+      reason: reason,
+      statusCode: statusCode,
+      cfRay: headers?.entries
+          .where((entry) => entry.key.toLowerCase() == 'cf-ray')
+          .firstOrNull
+          ?.value,
+    );
     CfChallengeService()._completionCookieSync = cookieSync;
     unawaited(cookieSync);
     if (mounted && !_hasPopped) _finish(true);
   }
 
-  Future<void> _syncCookiesAfterOriginResponse() async {
+  Future<void> _syncCookiesAfterOriginResponse({
+    required String reason,
+    int? statusCode,
+    String? cfRay,
+  }) async {
+    final timer = Stopwatch()..start();
+    final round = CfChallengeService()._verifyRound;
+    final networkContext = CfChallengeLogger.networkContext();
+    String? clearance;
+    String? jarClearance;
+    Object? failure;
+    var candidateCount = 0;
+    var freshCount = 0;
     try {
-      final clearance = await _readCookieValue('cf_clearance');
-      await _syncLiveCookiesToCookieJar(
-        freshClearance: _isFreshClearance(clearance) ? clearance : null,
-      );
+      final values = await BoundarySyncService.instance
+          .readCookieValuesFromWebView(
+            name: 'cf_clearance',
+            currentUrl: widget.verifyUrl,
+            controller: _controller,
+          );
+      candidateCount = values.length;
+      final freshValues = values.where(_isFreshClearance).toSet();
+      freshCount = freshValues.length;
+      // getCookie 可能只返回残留分区值。唯一新值直接选中；存在多个新值时
+      // 保留浏览器单值接口的选择，但必须确认它属于本轮，不能选回旧副本。
+      String? confirmed;
+      if (freshValues.length == 1) {
+        confirmed = freshValues.single;
+      } else if (freshValues.length > 1) {
+        final live = await _readCookieValue('cf_clearance');
+        final normalized = CookieValueCodec.decode(live ?? '');
+        if (!freshValues.contains(normalized)) {
+          throw StateError('本轮出现多个新的 cf_clearance，浏览器未返回其中的值');
+        }
+        confirmed = normalized;
+      }
+      clearance = confirmed ?? values.singleOrNull;
+      await _syncLiveCookiesToCookieJar(freshClearance: confirmed);
+      jarClearance = await CookieJarService().getCfClearance();
+      if (confirmed != null &&
+          CookieValueCodec.decode(jarClearance ?? '') != confirmed) {
+        throw StateError('本轮 cf_clearance 未同步到 CookieJar');
+      }
     } catch (e) {
+      failure = e;
       debugPrint('[CfChallenge] 源站已放行，Cookie 同步未完成: $e');
+    } finally {
+      // 复用本轮读取结果与 jar 内存快照，记录完成时序及两端摘要。
+      LogWriter.instance.write({
+        'timestamp': DateTime.now().toIso8601String(),
+        'level': failure == null ? 'info' : 'warning',
+        'type': 'cookie_trace',
+        'event': 'cf_completion_cookie_sync',
+        'message': 'CF 验证后的 Cookie 同步结果',
+        'verificationRound': round,
+        'verifyReason': reason,
+        'verifyStatusCode': statusCode,
+        'verifyCfRay': cfRay,
+        'cfNetworkContext': networkContext,
+        'cookieSyncDurationMs': timer.elapsedMilliseconds,
+        'cookieSyncCompleted': failure == null,
+        'clearanceCandidateCount': candidateCount,
+        'freshClearanceCount': freshCount,
+        'webViewCfClearanceHash': CookieLogger.valueHash(clearance),
+        'jarCfClearanceHash': CookieLogger.valueHash(jarClearance),
+        if (failure != null) 'errorType': failure.runtimeType.toString(),
+      });
     }
   }
 
@@ -2410,6 +2481,7 @@ document.readyState === 'complete' && document.body && document.body.innerHTML.t
                 reason:
                     'main frame verification request reached origin (${errorResponse.statusCode})',
                 headers: errorResponse.headers,
+                statusCode: errorResponse.statusCode,
               );
             }
           },

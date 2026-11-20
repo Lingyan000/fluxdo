@@ -134,7 +134,7 @@ extension LoadingMethods on TopicDetailNotifier {
           postNumber: lastPostNumber,
           asc: true,
           // 首屏未到末尾时服务端不下发推荐话题,由向下翻页补一次
-          includeSuggested: currentDetail.suggestedTopics.isEmpty,
+          includeSuggested: currentDetail.needsFooterTopics,
         );
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
@@ -166,6 +166,7 @@ extension LoadingMethods on TopicDetailNotifier {
           relatedTopics: newPostStream.relatedTopics.isNotEmpty
               ? newPostStream.relatedTopics
               : null,
+          relatedMessages: newPostStream.relatedMessages,
         ));
       });
       if (!ref.mounted) return;

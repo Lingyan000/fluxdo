@@ -247,13 +247,9 @@ fn json_error(message: &str) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_init_logging() {
     let _ = catch_unwind(|| {
-        use tracing_subscriber::{EnvFilter, Layer as _, filter::LevelFilter, prelude::*};
+        use tracing_subscriber::{Layer as _, filter::LevelFilter, prelude::*};
         // 全局放到 debug，各层再按自己的级别过滤：宿主开详细日志时不用重建订阅者
-        let filter = EnvFilter::builder()
-            .with_default_directive(LevelFilter::WARN.into())
-            .from_env_lossy()
-            .add_directive("fluxdo_net=debug".parse().unwrap())
-            .add_directive("rama=warn".parse().unwrap());
+        let filter = crate::log::logging_filter();
         #[cfg(target_os = "android")]
         let system = tracing_android::layer("FluxdoNet")
             .ok()
@@ -421,6 +417,18 @@ pub extern "C" fn fluxdo_net_status_json() -> *mut c_char {
         into_c_string(status)
     }))
     .unwrap_or_else(|_| json_error("status panicked"))
+}
+
+/// 只供调试宿主比对同一实例的 H3 模板；返回值用 fluxdo_net_free_string 释放。
+#[cfg(debug_assertions)]
+#[unsafe(no_mangle)]
+pub extern "C" fn fluxdo_net_diagnostic_h3_profile_json() -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let core = CORE.lock().clone();
+        let profile = core.map(|core| core.diagnostic_h3_profile()).unwrap_or_default();
+        into_c_string(profile.to_string())
+    }))
+    .unwrap_or_else(|_| json_error("diagnostic profile panicked"))
 }
 
 /// 丢弃所有池化连接。网络切换后调用：旧连接绑在旧网络的源地址上，

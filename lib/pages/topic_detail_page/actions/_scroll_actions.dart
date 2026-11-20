@@ -153,6 +153,7 @@ extension _ScrollActions on _TopicDetailPageState {
     final streamIndex = detail.postStream.stream.indexOf(targetPost.id);
     if (streamIndex != -1) {
       _controller.updateStreamIndex(streamIndex + 1);
+      _controller.readingPositionNotifier.value = streamIndex.toDouble();
     }
   }
 

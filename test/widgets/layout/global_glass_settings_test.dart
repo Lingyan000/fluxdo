@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
@@ -66,10 +65,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(GlassSurface), findsNWidgets(2));
     expect(
-      find.byType(BackdropFilter),
+      find.byType(GlassBackdrop),
       findsNWidgets(2),
       reason: '基础档两处各一层模糊，旧底栏关闭值不再生效',
     );
+    expect(_optical(), findsNothing);
     final before = tester
         .renderObjectList(find.byType(GlassSurface))
         .map((box) => (box as RenderBox).size)
@@ -77,7 +77,7 @@ void main() {
     final notifier = container.read(preferencesProvider.notifier);
     await notifier.setGlassEnabled(false);
     await tester.pumpAndSettle();
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     expect(
       tester
           .renderObjectList(find.byType(GlassSurface))
@@ -92,15 +92,15 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       });
       await tester.pump();
-      if (!ui.ImageFilter.isShaderFilterSupported ||
-          find.byType(BackdropFilter).evaluate().length == 4) {
+      if (_optical().evaluate().length == 2) {
         break;
       }
     }
     await tester.pumpAndSettle();
     expect(
-      find.byType(BackdropFilter),
-      findsNWidgets(ui.ImageFilter.isShaderFilterSupported ? 4 : 2),
+      _optical(),
+      findsNWidgets(2),
+      reason: '完整档两处都走光学材质，各平台一致',
     );
     expect(
       container.read(preferencesProvider).dialogBlur,
@@ -159,3 +159,8 @@ void main() {
     expect(optics(), isTrue);
   });
 }
+
+/// 走光学材质（带折射 shader）的玻璃背景
+Finder _optical() => find.byWidgetPredicate(
+  (widget) => widget is GlassBackdrop && widget.program != null,
+);

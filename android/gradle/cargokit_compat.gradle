@@ -1,0 +1,38 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+import org.gradle.util.GradleVersion
+
+abstract class FluxdoCargoKitExec {
+    @Inject
+    abstract ExecOperations getExecOperations()
+}
+
+// Cargokit 当前稳定版仍调用 Gradle 9 已移除的 Project.exec。
+// 仅为实际应用了 CargoKitPlugin 的子项目转接到官方 ExecOperations，
+// 保留原命令、环境变量和非零退出失败语义，不修改共享的 pub 缓存。
+if (GradleVersion.current() >= GradleVersion.version('9.0')) {
+    subprojects { child ->
+        child.plugins.all { plugin ->
+            if (plugin.class.name == 'CargoKitPlugin') {
+                // CargoKit 按旧格式从 android-37 提取整数，AGP 现在返回 android-37.0。
+                // 仅对无次版本的 SDK 提供等价旧格式，实际编译仍使用 AGP 的 SDK 配置。
+                def android = rootProject.project(':app').extensions.getByName('android')
+                def sdk = android.compileSdkVersion
+                if (sdk ==~ /android-\d+\.0/) {
+                    def originalMetaClass = android.getMetaClass()
+                    def legacySdk = sdk.substring(0, sdk.lastIndexOf('.'))
+                    android.metaClass.getCompileSdkVersion = { -> legacySdk }
+                    child.gradle.projectsEvaluated {
+                        android.setMetaClass(originalMetaClass)
+                    }
+                }
+                def executor = child.objects.newInstance(FluxdoCargoKitExec)
+                child.ext.exec = { Closure configure ->
+                    executor.execOperations.exec { spec ->
+                        child.configure(spec, configure)
+                    }
+                }
+            }
+        }
+    }
+}

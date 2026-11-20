@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 /// 手势只接管系统键盘的移动，不改变正文、选区或工具岛的展开状态。
@@ -38,6 +38,7 @@ class ComposerKeyboardDismissController extends ChangeNotifier
   final AnimationController _height;
   Future<bool>? _ready;
   int? _session;
+  int? _moveFrame;
   bool _disposed = false;
   bool _active = false;
   bool _interactive = false;
@@ -151,7 +152,24 @@ class ComposerKeyboardDismissController extends ChangeNotifier
     _distance = (_distance + delta).clamp(0.0, _initialHeight);
     // 等系统授予控制权后再一起移动，不能让浮岛先滑进尚未移动的键盘。
     if (_active && _interactive) _height.value = _initialHeight - _distance;
-    if (_interactive) unawaited(_moveNative(_session!));
+    if (_interactive && _moveFrame == null) {
+      final session = _session!;
+      // 同一帧只发送最新位置，保留 Dart 侧即时跟手的高度更新。
+      _moveFrame = WidgetsBinding.instance.scheduleFrameCallback((_) {
+        _moveFrame = null;
+        if (!_disposed && _session == session && !_ending) {
+          unawaited(_moveNative(session));
+        }
+      });
+    }
+  }
+
+  bool _cancelMoveFrame() {
+    final frame = _moveFrame;
+    if (frame == null) return false;
+    WidgetsBinding.instance.cancelFrameCallbackWithId(frame);
+    _moveFrame = null;
+    return true;
   }
 
   Future<void> _moveNative(int session) async {
@@ -168,9 +186,9 @@ class ComposerKeyboardDismissController extends ChangeNotifier
         });
       }
     } on PlatformException {
-      _systemCancelled();
+      if (_session == session) _systemCancelled();
     } on MissingPluginException {
-      _systemCancelled();
+      if (_session == session) _systemCancelled();
     }
   }
 
@@ -179,6 +197,7 @@ class ComposerKeyboardDismissController extends ChangeNotifier
     if (session == null || _ending) return;
     if (cancel && _finishPendingControl(dismiss: false)) return;
     _ending = true;
+    final pendingMove = _cancelMoveFrame();
     final dismiss =
         !cancel &&
         (velocity > 180 ||
@@ -193,6 +212,9 @@ class ComposerKeyboardDismissController extends ChangeNotifier
       return;
     }
     try {
+      // 松手发生在下一帧之前时，先交付末次位置再结束原生接管。
+      if (pendingMove) await _moveNative(session);
+      if (_disposed || _session != session) return;
       Future<void> native;
       if (_platform == TargetPlatform.iOS) {
         // 引擎以最后移动方向决定关闭/回位。末次微移用于传达松手意图，
@@ -231,14 +253,15 @@ class ComposerKeyboardDismissController extends ChangeNotifier
     } on TickerCanceled {
       // 生命周期/系统取消已经释放了本次接管。
     } on PlatformException {
-      _systemCancelled();
+      if (_session == session) _systemCancelled();
     } on MissingPluginException {
-      _systemCancelled();
+      if (_session == session) _systemCancelled();
     }
   }
 
   void _clear(int session) {
     if (_session != session) return;
+    _cancelMoveFrame();
     _sessions.remove(session);
     _session = null;
     _active = false;
@@ -261,6 +284,7 @@ class ComposerKeyboardDismissController extends ChangeNotifier
 
   @override
   void dispose() {
+    _cancelMoveFrame();
     WidgetsBinding.instance.removeObserver(this);
     final session = _session;
     if (session != null) {

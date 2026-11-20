@@ -1,6 +1,6 @@
 import 'package:fluxdo_render/semantic_editor.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/semantic_composer_codec.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';

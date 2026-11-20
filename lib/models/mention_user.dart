@@ -18,12 +18,14 @@ List<String> extractMentionNames(String text) {
 
 /// 用户提及搜索结果中的用户
 class MentionUser {
+  final int? id;
   final String username;
   final String? name;
   final String? avatarTemplate;
   final int? priorityGroup;
 
   const MentionUser({
+    this.id,
     required this.username,
     this.name,
     this.avatarTemplate,
@@ -32,6 +34,7 @@ class MentionUser {
 
   factory MentionUser.fromJson(Map<String, dynamic> json) {
     return MentionUser(
+      id: json['id'] as int?,
       username: json['username'] as String,
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String?,

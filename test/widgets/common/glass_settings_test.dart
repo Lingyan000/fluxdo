@@ -1,7 +1,6 @@
-import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -61,7 +60,7 @@ void main() {
         ),
       ),
     );
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     final box = tester.widget<DecoratedBox>(
       find
           .descendant(
@@ -102,10 +101,10 @@ void main() {
         });
         await tester.pump();
         final optics = settings.allowsOptics(
-          shaderSupported: ui.ImageFilter.isShaderFilterSupported,
+          shaderSupported: GlassSurface.opticalEdgeAvailable,
           highContrast: highContrast,
         );
-        if (!optics || find.byType(BackdropFilter).evaluate().length == 2) {
+        if (!optics || _optical().evaluate().length == 1) {
           break;
         }
       }
@@ -113,28 +112,19 @@ void main() {
     }
 
     await pump(const GlassSettings(level: GlassEffectLevel.basic));
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.byType(GlassBackdrop), findsOneWidget);
+    expect(_optical(), findsNothing);
     expect(mounts, 1);
     await pump(const GlassSettings(level: GlassEffectLevel.full));
-    expect(
-      find.byType(BackdropFilter),
-      ui.ImageFilter.isShaderFilterSupported
-          ? findsNWidgets(2)
-          : findsOneWidget,
-    );
+    expect(_optical(), findsOneWidget);
     await pump(
       const GlassSettings(enabled: false, level: GlassEffectLevel.full),
     );
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await pump(const GlassSettings(), highContrast: true);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await pump(const GlassSettings());
-    expect(
-      find.byType(BackdropFilter),
-      ui.ImageFilter.isShaderFilterSupported
-          ? findsNWidgets(2)
-          : findsOneWidget,
-    );
+    expect(_optical(), findsOneWidget);
     expect(mounts, 1);
     expect(tester.takeException(), isNull);
   });
@@ -157,3 +147,8 @@ class _ProbeState extends State<_Probe> {
   @override
   Widget build(BuildContext context) => const SizedBox(width: 240, height: 100);
 }
+
+/// 走光学材质（带折射 shader）的玻璃背景
+Finder _optical() => find.byWidgetPredicate(
+  (widget) => widget is GlassBackdrop && widget.program != null,
+);

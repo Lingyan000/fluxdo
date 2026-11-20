@@ -1,0 +1,19 @@
+{
+  "followingFeed_title": "动态",
+  "followingFeed_profileEntry": "关注动态",
+  "followingFeed_following": "我的关注",
+  "followingFeed_login": "登录后查看关注动态",
+  "followingFeed_empty": "暂无关注动态",
+  "followingFeed_emptyHint": "关注用户后，可以在这里查看他们发布的话题和回复。",
+  "followingFeed_posted": "发布了话题",
+  "followingFeed_replied": "回复了",
+  "followingFeed_loadMore": "加载更多",
+  "followingFeed_migrationTitle": "从追觅到关注动态",
+  "followingFeed_migrationSummary": "在这里查看你在网站上关注的人发布的话题和回复，支持下拉刷新和翻阅历史。",
+  "followingFeed_migrationChanges": "原追觅的点赞、回应、Boost 监控和后台提醒已停止。",
+  "followingFeed_migrationListHint": "旧名单已保存在「我的关注」中，可随时查看并前往用户主页选择关注。",
+  "followingFeed_migrationContinue": "开始浏览",
+  "followingFeed_viewLegacyUsers": "查看旧名单",
+  "followingFeed_legacyUsers": "旧追觅名单",
+  "followingFeed_legacyHint": "这是本机保存的旧名单，可能包含其他账号添加的用户。打开用户主页后，可逐个选择关注。"
+}

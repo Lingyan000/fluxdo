@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -219,7 +219,9 @@ class BrowserPageRoute<T> extends InteractionPageRoute<T> {
     Widget child,
   ) {
     final dock = _usesDockTransition;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final reduceMotion =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     // 始终保留主题转场和固定视口两层承载树，切换收起/关闭状态不重挂原生视图。
     // 普通导航完全交给应用主题；收起/恢复时仅将主题主动画固定在完成位置。
     return super.buildTransitions(
@@ -274,7 +276,8 @@ class _BrowserRouteSurface extends StatelessWidget {
           child: MediaQuery(data: media, child: child),
         ),
         builder: (context, content) {
-          final value = media.disableAnimations && !linear
+          final value =
+              (media.disableAnimations || media.reduceMotion) && !linear
               ? 1.0
               : animation.value;
           final t = dock

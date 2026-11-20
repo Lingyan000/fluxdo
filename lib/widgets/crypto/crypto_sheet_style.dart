@@ -4,7 +4,7 @@
 library;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 填充式输入框装饰（无边框 + 圆角 12 + surfaceContainerHighest 填充）。
 InputDecoration cryptoSheetInputDecoration(

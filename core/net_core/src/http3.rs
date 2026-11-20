@@ -32,6 +32,8 @@ pub(super) struct Http3Upgrade {
     alternatives: parking_lot::Mutex<HashMap<String, Alternative>>,
     endpoints: tokio::sync::Mutex<(Option<Endpoint>, Option<Endpoint>)>,
     probes: Arc<Semaphore>,
+    profile_endpoints: parking_lot::Mutex<Vec<std::sync::Weak<Endpoint>>>,
+    sessions: parking_lot::Mutex<Option<rama::extensions::Extensions>>,
     generation: AtomicU64,
     pub(super) established: AtomicU64,
     cancel: parking_lot::Mutex<tokio_util::sync::CancellationToken>,
@@ -46,6 +48,8 @@ impl Default for Http3Upgrade {
             alternatives: Default::default(),
             endpoints: Default::default(),
             probes: Arc::new(Semaphore::new(2)),
+            profile_endpoints: Default::default(),
+            sessions: parking_lot::Mutex::new(BoringTlsProvider.session_defaults()),
             generation: AtomicU64::new(0),
             established: AtomicU64::new(0),
             cancel: parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new()),
@@ -59,6 +63,14 @@ impl Default for Http3Upgrade {
 impl Drop for Http3Upgrade {
     fn drop(&mut self) {
         self.cancel.get_mut().cancel();
+        for endpoint in self
+            .profile_endpoints
+            .get_mut()
+            .drain(..)
+            .filter_map(|weak| weak.upgrade())
+        {
+            endpoint.close(0u32, b"client dropped");
+        }
         let endpoints = self.endpoints.get_mut();
         for endpoint in [endpoints.0.take(), endpoints.1.take()]
             .into_iter()
@@ -97,6 +109,15 @@ impl Http3Upgrade {
             self.generation.fetch_add(1, Ordering::Relaxed);
             token.cancel();
             *token = tokio_util::sync::CancellationToken::new();
+            *self.sessions.lock() = BoringTlsProvider.session_defaults();
+            for endpoint in self
+                .profile_endpoints
+                .lock()
+                .drain(..)
+                .filter_map(|weak| weak.upgrade())
+            {
+                endpoint.close(0u32, b"network reset");
+            }
             let now = Instant::now();
             self.alternatives.lock().retain(|_, alt| {
                 alt.probing = false;
@@ -254,7 +275,10 @@ impl Http3Upgrade {
     where
         F: Future<Output = Result<Sender, BoxError>>,
     {
-        if egress.has_fixed_proxy() {
+        if ((target.uses_browser_fingerprint || target.template.is_some())
+            && target.h3_template.is_none())
+            || egress.has_fixed_proxy()
+        {
             return tcp.await;
         }
         // 竞速的第二条连接也要占全局容量；已饱和时直接使用原 TCP 路径。
@@ -268,7 +292,7 @@ impl Http3Upgrade {
             let result = tokio::select! {
                 _ = probe.token.cancelled() => Err(NetError::Cancelled.into()),
                 value = tokio::time::timeout(PROBE_TIMEOUT,
-                    self.connect(egress, target.host, target.port, probe.alternative.port, exec)) =>
+                    self.connect_profile(egress, target.host, target.port, probe.alternative.port, exec, target.h3_template.as_deref())) =>
                     value.map_err(|_| BoxError::from("H3 connect timeout")).and_then(|r| r),
             };
             if result.is_ok() {
@@ -288,8 +312,14 @@ impl Http3Upgrade {
         exec: Executor,
         generation: u64,
     ) {
-        // 固定代理不支持直接 UDP；不占探针名额，不做 DNS 或重复写失败日志。
-        if egress.has_fixed_proxy() {
+        // TLS/TCP 与 H2 模板不包含 QUIC 传输参数、H3 SETTINGS 或 QPACK。
+        // 在实现相应采样前，浏览器模板请求不能升级为默认 QUIC 指纹。
+        // 首次采样/缓存缺失也属于浏览器客户端，不能趁模板为空升级。
+        // 固定代理同样不支持直接 UDP；两者都不启动后台探测。
+        if ((target.uses_browser_fingerprint || target.template.is_some())
+            && target.h3_template.is_none())
+            || egress.has_fixed_proxy()
+        {
             return;
         }
         if !self.observe_at(target.key, target.host, headers, generation) {
@@ -306,12 +336,13 @@ impl Http3Upgrade {
         let host = target.host.to_owned();
         let origin_port = target.port;
         let epoch = pool.epoch();
+        let h3_profile = target.h3_template.clone();
         // 后台升级和冷建连共用两个探测名额；超时、切网和 RAII 负责清理。
         tokio::spawn(async move {
             let started = Instant::now();
             let result = tokio::select! {
                 _ = probe.token.cancelled() => return,
-                result = tokio::time::timeout(PROBE_TIMEOUT, state.connect(&egress, &host, origin_port, probe.alternative.port, exec)) =>
+                result = tokio::time::timeout(PROBE_TIMEOUT, state.connect_profile(&egress, &host, origin_port, probe.alternative.port, exec, h3_profile.as_deref())) =>
                     result.map_err(|_| BoxError::from("H3 probe timeout")).and_then(|r| r),
             };
             let mut alternatives = state.alternatives.lock();
@@ -374,13 +405,14 @@ impl Http3Upgrade {
         *slot = Some(endpoint.clone());
         Ok(endpoint)
     }
-    async fn connect(
+    async fn connect_profile(
         &self,
         egress: &EgressConnector,
         host: &str,
         origin_port: u16,
         alt_port: u16,
         exec: Executor,
+        profile: Option<&crate::h3_template::Profile>,
     ) -> Result<Sender, BoxError> {
         // Resolve using origin policy first. A proxy route never becomes direct QUIC.
         let (targets, ech) = egress.resolve_egress(host, origin_port).await?;
@@ -404,7 +436,14 @@ impl Http3Upgrade {
             let ech = ech.clone();
             let exec = exec.clone();
             async move {
-                let mut tls = TlsClientConfig::default();
+                let mut tls = if let Some(profile) = profile {
+                    use rama::tls::boring::client::BoringClientConfigExt as _;
+                    let mut tls = TlsClientConfig::new_from_client_hello(&profile.sample.hello);
+                    tls.set_permute_extensions(profile.permute_tls);
+                    tls
+                } else {
+                    TlsClientConfig::default()
+                };
                 tls.set_platform_verifier();
                 #[cfg(test)]
                 if let Some(test_tls) = self.test_tls.lock().clone() {
@@ -415,12 +454,31 @@ impl Http3Upgrade {
                 if let Some(ech) = &ech {
                     tls.insert(BoringEchConfigList(ech.clone()));
                 }
-                self.connect_tls(host, origin_port, address, tls, ech.is_some(), exec)
-                    .await
+                // 同一 origin 的端口、模板和 ECH 政策分别隔离票据；网络重置另换缓存域。
+                let fingerprint = profile
+                    .map(|p| crate::mirror::profile_hash(&p.sample.hello))
+                    .unwrap_or_default();
+                let ech_digest = ech
+                    .as_ref()
+                    .map(|bytes| rama::tls::boring::core::sha::sha256(bytes));
+                tls.set_session_profile_scope(rama::tls::client::TlsSessionProfileScope(
+                    format!("{origin_port}:{alt_port}:{fingerprint}:{ech_digest:?}").into(),
+                ));
+                self.connect_tls_profile(
+                    host,
+                    origin_port,
+                    address,
+                    tls,
+                    ech.is_some(),
+                    exec,
+                    profile,
+                )
+                .await
             }
         })
         .await
     }
+    #[cfg(test)]
     async fn connect_tls(
         &self,
         host: &str,
@@ -429,6 +487,19 @@ impl Http3Upgrade {
         tls: TlsClientConfig,
         ech_applied: bool,
         exec: Executor,
+    ) -> Result<Sender, BoxError> {
+        self.connect_tls_profile(host, origin_port, address, tls, ech_applied, exec, None)
+            .await
+    }
+    async fn connect_tls_profile(
+        &self,
+        host: &str,
+        origin_port: u16,
+        address: std::net::SocketAddr,
+        tls: TlsClientConfig,
+        ech_applied: bool,
+        exec: Executor,
+        profile: Option<&crate::h3_template::Profile>,
     ) -> Result<Sender, BoxError> {
         let mut transport = TransportConfig::default();
         transport.set_max_concurrent_bidi_streams(64u32);
@@ -441,10 +512,43 @@ impl Http3Upgrade {
         // Fresh peer-bound config: generic Rama TLS cache does not include our ECH extension.
         let ech_observation = Arc::new(std::sync::atomic::AtomicU8::new(0));
         tls.insert(BoringEchObservation(ech_observation.clone()));
-        let config = BoringTlsProvider
-            .client_config(&tls, TlsOptions::default())?
+        if let Some(defaults) = self.sessions.lock().as_ref() {
+            tls.as_extensions().extend(defaults);
+        }
+        let mut config = BoringTlsProvider
+            .client_config(&tls, TlsOptions::default().with_early_data(false))?
             .with_transport_config(Arc::new(transport));
-        let endpoint = self.endpoint(address.is_ipv6(), exec.clone()).await?;
+        let endpoint = if let Some(profile) = profile {
+            let quic = profile.connection_quic()?;
+            config.apply_quic_profile(&quic)?;
+            config.set_transport_config(Arc::new(
+                TransportConfig::from_quic_profile(&quic)?.with_initial_packet_number_lengths(
+                    profile.sample.flight.packet_number_lengths.clone(),
+                )?.with_initial_cross_packet_chaos(profile.sample.cross_packet_initial())
+                    .with_initial_crypto_chunk_size(profile.sample.ordered_initial_chunk_size())?,
+            ));
+            let mut endpoint_config =
+                rama::quic::EndpointConfig::new(rama_crypto::hmac::HmacSha2::try_rand_256()?);
+            endpoint_config.apply_quic_profile(&quic)?;
+            let bind: std::net::SocketAddr = if address.is_ipv6() {
+                "[::]:0"
+            } else {
+                "0.0.0.0:0"
+            }
+            .parse()?;
+            rama::quic::EndpointBuilder::new(exec.clone())
+                .with_config(endpoint_config)
+                .bind_client_address(bind)
+                .await?
+        } else {
+            self.endpoint(address.is_ipv6(), exec.clone()).await?
+        };
+        let endpoint = Arc::new(endpoint);
+        if profile.is_some() {
+            let mut endpoints = self.profile_endpoints.lock();
+            endpoints.retain(|weak| weak.strong_count() > 0);
+            endpoints.push(Arc::downgrade(&endpoint));
+        }
         let connection = endpoint.connect_with(config, address, host)?.await?;
         let ech_status = ech_observation.load(Ordering::Acquire);
         if ech_status == 0 {
@@ -471,11 +575,15 @@ impl Http3Upgrade {
         let established = http_connect(
             Http3Transport {
                 connection: BoxedConnection::new(connection),
-                config: Arc::new(Config {
-                    max_requests: 64,
-                    max_pending_uni_streams: 8,
-                    datagrams: None,
-                    ..Config::default()
+                config: Arc::new(if let Some(profile) = profile {
+                    profile.connection_config()?
+                } else {
+                    Config {
+                        max_requests: 64,
+                        max_pending_uni_streams: 8,
+                        datagrams: None,
+                        ..Config::default()
+                    }
                 }),
             },
             input,
@@ -483,6 +591,8 @@ impl Http3Upgrade {
         )
         .await?;
         Ok(Arc::new(Conn {
+            _h3_endpoint: Some(endpoint),
+            tls_backend: "QUIC",
             id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
             service: established.conn,
             version: Version::HTTP_3,
@@ -937,6 +1047,8 @@ mod tests {
             host: "127.0.0.1",
             port: 443,
             template: None,
+            uses_browser_fingerprint: false,
+            h3_template: None,
             secure: true,
         };
         state.observe(target.key, target.host, &headers);
@@ -1018,6 +1130,8 @@ mod tests {
         let target = Target {
             key: "proxy",
             template: None,
+            uses_browser_fingerprint: false,
+            h3_template: None,
             host: "not-resolved.invalid",
             port: 443,
             secure: true,
@@ -1094,6 +1208,8 @@ mod tests {
         let target = Target {
             key: "key",
             template: None,
+            uses_browser_fingerprint: false,
+            h3_template: None,
             host: "127.0.0.1",
             port,
             secure: true,
@@ -1295,5 +1411,59 @@ mod tests {
         headers.insert("age", HeaderValue::from_static("2"));
         state.observe("key", "example.com", &headers);
         assert!(state.alternatives.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn browser_template_neither_starts_h3_probe_nor_uses_cached_alternative() {
+        let template = crate::presets::by_id("android-webview133").unwrap();
+        // 缓存缺失/清空后的采样窗口也必须保持相同限制。
+        for sample in [Some(&template), None] {
+            let state = Arc::new(Http3Upgrade::default());
+            let target = Target {
+                key: "https://localhost:443#1",
+                template: sample,
+                uses_browser_fingerprint: true,
+                h3_template: None,
+                host: "localhost",
+                port: 443,
+                secure: true,
+            };
+            let egress = Arc::new(EgressConnector::new(
+                None,
+                None,
+                None,
+                None,
+                Duration::from_secs(1),
+            ));
+            let pool = Arc::new(PoolState::default());
+            let mut headers = HeaderMap::new();
+            headers.insert("alt-svc", "h3=\":443\"; ma=600".parse().unwrap());
+            state.observe_and_upgrade(
+                &target,
+                &headers,
+                egress.clone(),
+                pool.clone(),
+                Executor::new(),
+                state.generation(),
+            );
+            assert!(state.alternatives.lock().is_empty());
+            // 模拟升级前已经保存的 Alt-Svc；不能绕过浏览器模板限制。
+            state.observe(target.key, target.host, &headers);
+            let result = state
+                .connect_or_tcp(&target, &egress, &pool, Executor::new(), async {
+                    Err::<Sender, BoxError>("tcp-only-marker".into())
+                })
+                .await;
+            assert_eq!(result.err().unwrap().to_string(), "tcp-only-marker");
+            assert_eq!(state.probes.available_permits(), 2);
+            assert!(
+                !state
+                    .alternatives
+                    .lock()
+                    .get(origin(target.key))
+                    .unwrap()
+                    .probing
+            );
+        }
     }
 }

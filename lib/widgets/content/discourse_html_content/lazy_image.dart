@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -10,6 +10,7 @@ import '../../../utils/frame_jank_monitor.dart';
 import '../../../utils/image_paint_gate.dart';
 import '../../common/first_paint_probe.dart';
 import '../../common/hero_image.dart';
+import '../../common/image_lift_menu.dart';
 import '../svg_view.dart';
 
 /// 帖子正文内容图组件:固定占位尺寸 + 解码分辨率约束 + 重绘隔离 + Hero。
@@ -45,11 +46,13 @@ class LazyImage extends StatefulWidget {
   final String heroTag;
   final VoidCallback? onTap;
 
-  /// 长按回调
-  final VoidCallback? onLongPress;
-
-  /// 右键回调（桌面端）
-  final GestureTapUpCallback? onSecondaryTapUp;
+  /// 打开菜单时传入屏幕上正在使用的解码规格，预览可直接接续同一条图片流。
+  final void Function(
+    BuildContext source,
+    ImageProvider image,
+    ImageMenuPress press,
+  )?
+  onShowMenu;
 
   /// 缓存 key（保留参数兼容旧调用方,当前未使用）
   final String? cacheKey;
@@ -81,8 +84,7 @@ class LazyImage extends StatefulWidget {
     this.fit = BoxFit.contain,
     required this.heroTag,
     this.onTap,
-    this.onLongPress,
-    this.onSecondaryTapUp,
+    this.onShowMenu,
     this.cacheKey,
     this.decodeWidth,
     this.placeholderColor,
@@ -245,22 +247,15 @@ class _LazyImageState extends State<LazyImage> {
       screenW,
     );
     final cacheWidth = (logicalWidth * dpr).round().clamp(1, 1 << 16);
-    // 登记解码参数:查看器缩略图占位按同参重建 provider → 同 key 命中
-    // ImageCache,Hero 转场帧零重解码。
-    final key = widget.cacheKey;
-    if (key != null && key.isNotEmpty) {
-      ImageDecodeSpecMemo.remember(
-        key,
-        cacheWidth,
-        LazyImage._kMaxDecodeHeight,
-      );
-    }
-    return ResizeImage(
+    final provider = ResizeImage(
       widget.imageProvider,
       width: cacheWidth,
       height: LazyImage._kMaxDecodeHeight,
       policy: ResizeImagePolicy.fit,
     );
+    final key = widget.cacheKey;
+    if (key != null) ImageDecodeSpecMemo.remember(key, provider);
+    return provider;
   }
 
   @override
@@ -312,10 +307,11 @@ class _LazyImageState extends State<LazyImage> {
       );
     }
 
+    final provider = _buildProvider(context);
     final imageChild = Image(
       // 解码目标宽 = 显示逻辑宽 × dpr(见 _buildProvider);与比例监听
       // 使用同一 provider 参数,共享 ImageStream 与缓存条目
-      image: _buildProvider(context),
+      image: provider,
       fit: widget.fit,
       width: width,
       height: height,
@@ -395,13 +391,19 @@ class _LazyImageState extends State<LazyImage> {
     Widget imageWidget = HeroImage(
       heroTag: widget.heroTag,
       onTap: widget.onTap,
-      onLongPress: widget.onLongPress,
-      onSecondaryTapUp: widget.onSecondaryTapUp,
       coverFlight: widget.coverFlight,
-      flightImage: widget.coverFlight ? _buildProvider(context) : null,
+      flightImage: widget.coverFlight ? provider : null,
       flightRadius: widget.flightRadius,
       child: imageChild,
     );
+
+    final showMenu = widget.onShowMenu;
+    if (showMenu != null) {
+      imageWidget = ImageLiftSource(
+        onShowMenu: (source, press) => showMenu(source, provider, press),
+        child: imageWidget,
+      );
+    }
 
     // 视野优先级:cacheExtent 预建区的 cell 会 build/layout 但不 paint,
     // 首帧 paint = 真进视口 —— 把还在下载等待队列的请求提到高优

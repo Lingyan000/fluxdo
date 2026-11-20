@@ -1,11 +1,12 @@
 import 'dart:convert' show utf8;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/svg_utils.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/url_helper.dart';
@@ -263,7 +264,7 @@ class _SvgFlairBadge extends StatefulWidget {
 }
 
 class _SvgFlairBadgeState extends State<_SvgFlairBadge> {
-  String? _svgContent;
+  ScalableImage? _si;
   bool _loading = true;
   bool _hasError = false;
 
@@ -295,10 +296,12 @@ class _SvgFlairBadgeState extends State<_SvgFlairBadge> {
       // 读取 SVG 内容并清理动画/不支持的元素
       String content = utf8.decode(bytes, allowMalformed: true);
       content = SvgUtils.sanitize(content);
-      
+      // 同一徽章在列表里反复出现，解析一次后各处共享，构建时不再解析。
+      final si = await SvgImageCache.load(content);
+
       if (mounted) {
         setState(() {
-          _svgContent = content;
+          _si = si;
           _loading = false;
         });
       }
@@ -318,18 +321,17 @@ class _SvgFlairBadgeState extends State<_SvgFlairBadge> {
 
     if (_loading) {
       content = SizedBox(width: widget.imageSize, height: widget.imageSize);
-    } else if (_hasError || _svgContent == null) {
+    } else if (_hasError || _si == null) {
       content = Icon(
         Symbols.broken_image_rounded,
         size: widget.imageSize * 0.8,
         color: Theme.of(context).colorScheme.outline,
       );
     } else {
-      final si = ScalableImage.fromSvgString(_svgContent!, warnF: (_) {});
       content = SizedBox(
         width: widget.imageSize,
         height: widget.imageSize,
-        child: ScalableImageWidget(si: si, fit: BoxFit.contain),
+        child: ScalableImageWidget(si: _si!, fit: BoxFit.contain),
       );
     }
 

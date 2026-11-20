@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -591,17 +591,17 @@ void main() {
     final rect = tester.getRect(dock);
     final glass = tester.widget<GlassSurface>(find.byType(GlassSurface));
     expect(glass.recipe, same(GlassRecipe.toolbar));
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.byType(GlassBackdrop), findsOneWidget);
     await tester.pumpWidget(
       _fixture(settings: const GlassSettings(enabled: false)),
     );
     await tester.pumpAndSettle();
     expect(tester.element(dock), same(element));
     expect(tester.getRect(dock), rect);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await tester.pumpWidget(_fixture(highContrast: true));
     await tester.pumpAndSettle();
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await tester.pumpWidget(_fixture(reduced: true));
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(100, 600));

@@ -92,6 +92,28 @@
     }
   },
   "notification_empty": "暂无通知",
+  "notification_emptyUnread": "没有未读通知",
+  "notification_filterAll": "全部通知",
+  "notification_filterRead": "已读",
+  "notification_filterUnread": "未读",
+  "notification_groupEarlier": "更早",
+  "notification_groupThisWeek": "本周",
+  "notification_tabBookmarks": "书签",
+  "notification_tabEdits": "编辑",
+  "notification_tabLikes": "获赞",
+  "notification_tabLinks": "链接",
+  "notification_tabMentions": "提及",
+  "notification_tabOther": "其他",
+  "notification_tabReactions": "回应",
+  "notification_tabReplies": "回复",
+  "notification_verbBoosted": "Boost 了你的帖子",
+  "notification_verbEdited": "编辑了你的帖子",
+  "notification_verbLiked": "赞了你的帖子",
+  "notification_verbLinked": "链接了你的帖子",
+  "notification_verbMentioned": "提及了你",
+  "notification_verbQuoted": "引用了你",
+  "notification_verbReacted": "回应了",
+  "notification_verbReplied": "回复了你",
   "notification_eventInvitation": "{username} 邀请你参加活动",
   "@notification_eventInvitation": {
     "placeholders": {
@@ -302,7 +324,7 @@
       }
     }
   },
-  "notification_reaction": "{username} 对你的帖子做出了反应",
+  "notification_reaction": "{username} 回应了你的帖子",
   "@notification_reaction": {
     "placeholders": {
       "username": {
@@ -375,6 +397,7 @@
   "notification_typeWatchingCategoryOrTag": "关注分类或标签",
   "notification_typeWatchingFirstPost": "关注首帖",
   "notification_votesReleased": "投票已发布",
+  "notification_viewAll": "查看全部通知",
   "notification_watchingCategoryNewPost": "{username} 发布了新帖子",
   "@notification_watchingCategoryNewPost": {
     "placeholders": {

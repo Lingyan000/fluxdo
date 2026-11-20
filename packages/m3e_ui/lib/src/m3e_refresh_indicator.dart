@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
@@ -39,7 +39,7 @@ abstract interface class RefreshRevealHandle {
   bool get canResumeDrag;
   double get resumeExtent;
   void beginResumedDrag(double visibleOffset);
-  void updateResumedDrag(double delta);
+  double updateResumedDrag(double delta);
   void endResumedDrag(double velocity);
   void cancelResumedDrag();
 }
@@ -142,12 +142,14 @@ class RefreshRevealScrollPhysics extends ScrollPhysics {
 /// 均翻车:SDK 的 onStatusChange 不通知 snap→refresh 与收尾→null
 /// 两个转移,外挂层必然漏状态(卡半截/闪现),该路线已废弃。
 ///
-/// 展示层:圆片内的 M3eCircularProgress 随下拉填充，到达阈值轻微放大。
-/// 圆片随下拉从顶缘裁剪滑出(与原生
-/// RefreshIndicator 同款揭示式入场,轻拉只露一条边,不会凭空出现
-/// 完整小圆片),刷新中切换 LoadingSpinner 形变动画,完成后缩放收没。
+/// 展示层对照 Compose PullToRefreshDefaults.LoadingIndicator:
+/// primaryContainer 圆形容器内的同一个形状贯穿全程 —— 下拉时确定态
+/// LoadingSpinner 由圆形 morph 到 SoftBurst,越过阈值继续拉则整体旋转;
+/// 松手后渐变为不定态循环 morph;结束或取消时容器滑回顶缘,形状随之
+/// 退回圆形。容器随下拉从顶缘裁剪滑出,轻拉只露一条边。
 ///
-/// M3E 开关关闭时回退原生 [RefreshIndicator]。
+/// M3E 开关关闭时回退原生 [RefreshIndicator];需要定制参数而走本组件时,
+/// 展示层回退经典圆片 + 进度环,完成后缩放收没。
 class M3eRefreshIndicator extends StatefulWidget {
   final Widget child;
   final RefreshCallback onRefresh;
@@ -268,8 +270,21 @@ const double _kDragSizeFactorLimit = 1.5;
 const Duration _kIndicatorSnapDuration = Duration(milliseconds: 150);
 const Duration _kIndicatorScaleDuration = Duration(milliseconds: 200);
 
-/// 指示器圆片直径。
+/// M3E 吸附与收起对照 Compose PullToRefreshState 的 animateTo:
+/// Animatable 默认弹簧(临界阻尼、StiffnessMedium 1500,阈值 0.01),
+/// 约 171ms 收敛,时长取收敛点,结束即触发刷新。
+const Duration _kM3ePositionDuration = Duration(milliseconds: 175);
+final Curve _kM3ePositionCurve = const M3eSpring(
+  dampingRatio: 1,
+  stiffness: 1500,
+).curveFor(_kM3ePositionDuration, visibilityThreshold: 0.01);
+
+/// 经典圆片直径。
 const double _kBadgeSize = 44;
+
+/// M3E 容器与形状尺寸,对照 LoadingIndicatorTokens:容器 48、形状 38。
+const double _kContainedSize = 48;
+const double _kContainedIndicatorSize = 38;
 
 /// 圆片四周的阴影留白。elevation 阴影画在布局边界之外,而入场用的
 /// SizeTransition 内部是 ClipRect,按布局尺寸硬裁——悬停态 sizeFactor
@@ -345,9 +360,9 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
   bool _resettingMode = false;
   bool get _ownsLeadingEdge =>
       widget.externalReveal &&
-      ((_dragOffset ?? 0) > 0 ||
-          _secondaryOpening ||
-          (widget.revealOffset?.call() ?? 0) > 0);
+      (widget.revealOffset != null
+          ? widget.revealOffset!() > 0
+          : (_dragOffset ?? 0) > 0 || _secondaryOpening);
   RefreshRevealGeometry? get _revealGeometry => widget.externalReveal
       ? RefreshRevealGeometry(
           viewportExtent: MediaQuery.sizeOf(context).height,
@@ -409,9 +424,11 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
   }
 
   @override
-  void updateResumedDrag(double delta) {
-    if (!canResumeDrag || !_resumedDrag) return;
-    _updateTwoStageOffset(((_dragOffset ?? 0) + delta).clamp(0.0, 1000.0));
+  double updateResumedDrag(double delta) {
+    if (!canResumeDrag || !_resumedDrag) return 0;
+    final next = (_dragOffset ?? 0) + delta;
+    _updateTwoStageOffset(next.clamp(0.0, 1000.0));
+    return math.min(0, next);
   }
 
   @override
@@ -826,10 +843,27 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     setState(() => _status = newMode);
     _notifyReveal();
     try {
+      final expressive = M3eFlags.of(context).enabled;
+      // M3E 完成与取消同样滑回顶缘,经典样式完成时缩放收没。
       final scaleOut =
-          newMode == RefreshIndicatorStatus.done && !widget.externalReveal;
-      await (scaleOut ? _scaleController : _positionController)
-          .animateTo(scaleOut ? 1 : 0, duration: _kIndicatorScaleDuration)
+          newMode == RefreshIndicatorStatus.done &&
+          !widget.externalReveal &&
+          !expressive;
+      await (scaleOut
+              ? _scaleController.animateTo(
+                  1,
+                  duration: _kIndicatorScaleDuration,
+                )
+              : expressive
+              ? _positionController.animateTo(
+                  0,
+                  duration: _kM3ePositionDuration,
+                  curve: _kM3ePositionCurve,
+                )
+              : _positionController.animateTo(
+                  0,
+                  duration: _kIndicatorScaleDuration,
+                ))
           .orCancel;
     } on TickerCanceled {
       return;
@@ -858,10 +892,14 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     _pendingRefreshFuture = completer.future;
     _status = RefreshIndicatorStatus.snap;
     _notifyReveal();
+    final expressive = M3eFlags.of(context).enabled;
     _positionController
         .animateTo(
           1.0 / _kDragSizeFactorLimit,
-          duration: _kIndicatorSnapDuration,
+          duration: expressive
+              ? _kM3ePositionDuration
+              : _kIndicatorSnapDuration,
+          curve: expressive ? _kM3ePositionCurve : Curves.linear,
         )
         .then<void>((void value) {
           if (mounted &&
@@ -1015,16 +1053,8 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
                 // 扣掉圆片自带的阴影留白,保持"圆片顶边距 edgeOffset 为
                 // displacement"的语义不变。
                 padding: _isIndicatorAtTop!
-                    ? EdgeInsets.only(
-                        top: (widget.displacement - _kBadgeShadowMargin).clamp(
-                          0.0,
-                          double.infinity,
-                        ),
-                      )
-                    : EdgeInsets.only(
-                        bottom: (widget.displacement - _kBadgeShadowMargin)
-                            .clamp(0.0, double.infinity),
-                      ),
+                    ? EdgeInsets.only(top: _indicatorInset)
+                    : EdgeInsets.only(bottom: _indicatorInset),
                 child: Align(
                   alignment: _isIndicatorAtTop!
                       ? Alignment.topCenter
@@ -1038,30 +1068,59 @@ class _M3eRefreshCoreState extends State<_M3eRefreshCore>
     );
   }
 
-  Widget _buildIndicator() => ScaleTransition(
-    scale: _scaleFactor,
-    child: FadeTransition(
-      opacity: _opacity,
-      child: AnimatedBuilder(
+  /// M3E 容器无阴影,不需要扣除阴影留白。
+  double get _indicatorInset =>
+      (widget.displacement -
+              (M3eFlags.of(context).enabled ? 0 : _kBadgeShadowMargin))
+          .clamp(0.0, double.infinity);
+
+  Widget _buildIndicator() {
+    if (M3eFlags.of(context).enabled) {
+      final Widget indicator = AnimatedBuilder(
         animation: _positionController,
-        builder: (context, _) {
-          final dragging =
-              _dragging || _status == RefreshIndicatorStatus.canceled;
-          return _SpinnerBadge(
-            size: _kBadgeSize,
-            child: M3eRefreshProgress(
-              progress: _positionFactor.value,
-              armed: _status == RefreshIndicatorStatus.armed,
-              refreshing: !dragging,
-            ),
-          );
-        },
+        builder: (context, _) => _ContainedRefreshIndicator(
+          progress: _positionFactor.value,
+          // 松手即进入加载形态,完成后在收起过程中退回确定态。
+          refreshing:
+              _status == RefreshIndicatorStatus.snap ||
+              _status == RefreshIndicatorStatus.refresh,
+        ),
+      );
+      // 默认位置靠顶缘裁剪揭示;自定义容器不保证裁剪方式,保留淡入,
+      // 避免浅拉时露出容器中段。
+      return widget.indicatorBuilder == null
+          ? indicator
+          : FadeTransition(opacity: _opacity, child: indicator);
+    }
+    return ScaleTransition(
+      scale: _scaleFactor,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: AnimatedBuilder(
+          animation: _positionController,
+          builder: (context, _) {
+            final dragging =
+                _dragging || _status == RefreshIndicatorStatus.canceled;
+            return _SpinnerBadge(
+              size: _kBadgeSize,
+              child: M3eRefreshProgress(
+                progress: _positionFactor.value,
+                armed: _status == RefreshIndicatorStatus.armed,
+                refreshing: !dragging,
+              ),
+            );
+          },
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// 刷新阶段的统一图案，供普通圆片和自定义下拉容器共同使用。
+///
+/// M3E 开启时全程是同一个形状:下拉为确定态 [LoadingSpinner]
+/// ([progress] 超过 1 的部分转换为整体旋转),刷新中渐变为不定态。
+/// 关闭时为经典进度环,到达阈值轻微放大。
 class M3eRefreshProgress extends StatelessWidget {
   const M3eRefreshProgress({
     super.key,
@@ -1069,6 +1128,7 @@ class M3eRefreshProgress extends StatelessWidget {
     required this.armed,
     required this.refreshing,
     this.size = 26,
+    this.color,
   });
 
   final double progress;
@@ -1076,11 +1136,59 @@ class M3eRefreshProgress extends StatelessWidget {
   final bool refreshing;
   final double size;
 
+  /// 形状颜色,默认 primary。
+  final Color? color;
+
+  /// 确定态与不定态之间的渐变,对照 Compose Crossfade 的
+  /// MotionSchemeKeyTokens.DefaultEffects(阈值 0.01,约 166ms 收敛)。
+  static const _crossfadeDuration = Duration(milliseconds: 170);
+  static final Curve _crossfadeCurve = M3eMotion.defaultEffects.curveFor(
+    _crossfadeDuration,
+    visibilityThreshold: 0.01,
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (!M3eFlags.of(context).enabled) return _buildClassic(context);
+    final Widget child;
+    if (refreshing) {
+      child =
+          UiDecor.maybeOf(context)?.loadingIndicator?.call(context, size) ??
+          LoadingSpinner(size: size, color: color);
+    } else {
+      // 拉过阈值后形状已完成 morph,继续下拉从 0 起逆时针整体旋转,
+      // 避免旋转在阈值处跳变。
+      final overPull = math.max(0.0, progress - 1);
+      child = Transform.rotate(
+        angle: -overPull * math.pi,
+        child: Semantics(
+          label: MaterialLocalizations.of(
+            context,
+          ).refreshIndicatorSemanticLabel,
+          child: LoadingSpinner(
+            key: const ValueKey('refresh-pull-progress'),
+            progress: progress.clamp(0.0, 1.0),
+            size: size,
+            color: color,
+          ),
+        ),
+      );
+    }
+    return SizedBox.square(
+      dimension: size,
+      child: AnimatedSwitcher(
+        duration: _crossfadeDuration,
+        switchInCurve: _crossfadeCurve,
+        switchOutCurve: _crossfadeCurve.flipped,
+        child: KeyedSubtree(key: ValueKey(refreshing), child: child),
+      ),
+    );
+  }
+
+  Widget _buildClassic(BuildContext context) {
     if (refreshing) {
       return UiDecor.maybeOf(context)?.loadingIndicator?.call(context, size) ??
-          LoadingSpinner(size: size);
+          LoadingSpinner(size: size, color: color);
     }
     const transition = Duration(milliseconds: 160);
     return AnimatedScale(
@@ -1094,6 +1202,42 @@ class M3eRefreshProgress extends StatelessWidget {
           value: progress.clamp(0.0, 1.0),
           size: size,
           strokeWidth: size * 2.5 / 26,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+/// M3E 刷新容器,对照 ContainedLoadingIndicator:primaryContainer 圆形、
+/// 无阴影,形状使用 onPrimaryContainer。
+class _ContainedRefreshIndicator extends StatelessWidget {
+  const _ContainedRefreshIndicator({
+    required this.progress,
+    required this.refreshing,
+  });
+
+  final double progress;
+  final bool refreshing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox.square(
+      dimension: _kContainedSize,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          shape: context.shapes.circle(),
+          color: scheme.primaryContainer,
+        ),
+        child: Center(
+          child: M3eRefreshProgress(
+            progress: progress,
+            armed: progress >= 1,
+            refreshing: refreshing,
+            size: _kContainedIndicatorSize,
+            color: scheme.onPrimaryContainer,
+          ),
         ),
       ),
     );

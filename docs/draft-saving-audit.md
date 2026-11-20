@@ -2,15 +2,15 @@
 
 参考 Discourse：`~/f/discourse`，commit `b3b561e5fad412c038e222499ebe22050b4a8de4`。
 
-UI 调整已独立提交为 `da4b0687`。本文记录随后保存机制的实现及与官方代码的对应关系。
+本文记录草稿保存机制与官方代码的对应关系。
 
-## 对之前结论的纠正
+## 官方草稿实现分布
 
 官方仓库中存在不同编辑器的草稿实现，不能用主编辑器的 `Draft.getLocal()` 占位方法概括整个项目。
 
 - **普通发帖、回复编辑器**：通过 `/drafts.json` 保存到服务端；保存失败显示“离线草稿”。这条路径的 `getLocal()` 尚未实现本地恢复。
 - **DockedComposer（嵌入式编辑器、AI 对话使用）**：`onReplyChange()` 调用 `persistDraft()`，通过 `keyValueStore` 把正文写入 `localStorage`；打开时恢复，清空或发送成功后移除。
-- **FluxDO**：用 Hive 代替浏览器存储，并保存正文、标题、分类、标签和收件人。现在结合上述本地保存行为与普通编辑器的在线保存规则。
+- **FluxDO**：用 Hive 代替浏览器存储，并保存正文、标题、分类、标签和收件人，结合上述本地保存行为与普通编辑器的在线保存规则。
 
 参考源码：
 
@@ -20,7 +20,7 @@ UI 调整已独立提交为 `da4b0687`。本文记录随后保存机制的实现
 - [普通编辑器保存调度](https://github.com/discourse/discourse/blob/b3b561e5fad412c038e222499ebe22050b4a8de4/frontend/discourse/app/services/composer.js#L1910)
 - [普通编辑器版本冲突处理](https://github.com/discourse/discourse/blob/b3b561e5fad412c038e222499ebe22050b4a8de4/frontend/discourse/app/models/composer.js#L1482)
 
-## 本轮实现
+## 行为对应
 
 | 官方行为 | Flutter 对应实现 |
 | --- | --- |
@@ -58,7 +58,7 @@ UI 调整已独立提交为 `da4b0687`。本文记录随后保存机制的实现
 
 FluxDO 在 `DraftData.fromJson()` 统一提取标签名称，禁止对整个对象调用 `toString()`，否则会显示并可能回写 `{name: 纯水}`。API 的 Map、JSON 字符串和本地缓存入口共用此解析；客户端继续保存兼容的名称数组，内容指纹也基于名称，避免对象/字符串表示差异引发误判。缺少有效字符串名称的条目忽略，不影响正文恢复。
 
-`/user-drafts/:user_id` 的 MessageBus 通知只更新草稿数量；本次标签问题发生在草稿内容解析，而非消息传输层。创建页回归测试使用网页端对象标签，覆盖首次恢复、回到前台更新及清空标签。
+`/user-drafts/:user_id` 的 MessageBus 通知只更新草稿数量；标签问题发生在草稿内容解析，而非消息传输层。创建页回归测试使用网页端对象标签，覆盖首次恢复、回到前台更新及清空标签。
 
 ## 验证
 

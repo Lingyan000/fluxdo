@@ -28,6 +28,46 @@ static void focus_flutter_view(GtkWindow* window, GtkWidget* view) {
   gtk_widget_grab_focus(view);
 }
 
+// 子引擎的窗口不能通过当前进程的活动窗口推断。
+static void on_child_window_call(FlMethodChannel*, FlMethodCall* call, gpointer data) {
+  auto weak_view = static_cast<GWeakRef*>(data);
+  g_autoptr(GObject) view = static_cast<GObject*>(g_weak_ref_get(weak_view));
+  GtkWidget* top = view ? gtk_widget_get_toplevel(GTK_WIDGET(view)) : nullptr;
+  if (!GTK_IS_WINDOW(top)) {
+    fl_method_call_respond_error(call, "WINDOW_CLOSED", nullptr, nullptr, nullptr);
+    return;
+  }
+  GtkWindow* window = GTK_WINDOW(top);
+  const gchar* method = fl_method_call_get_name(call);
+  FlValue* args = fl_method_call_get_args(call);
+  if (g_str_equal(method, "show")) {
+    gtk_widget_show(top);
+    gtk_window_present(window);
+  } else if (g_str_equal(method, "configure") && fl_value_get_type(args) == FL_VALUE_TYPE_STRING) {
+    gtk_window_set_title(window, fl_value_get_string(args));
+    gtk_widget_set_size_request(top, 420, 320);
+    gtk_window_resize(window, 1000, 760);
+    gtk_window_set_position(window, GTK_WIN_POS_CENTER);
+  } else if (g_str_equal(method, "close")) {
+    fl_method_call_respond_success(call, nullptr, nullptr);
+    gtk_window_close(window);
+    return;
+  } else if (g_str_equal(method, "isFullscreen")) {
+    auto native_window = gtk_widget_get_window(top);
+    g_autoptr(FlValue) value = fl_value_new_bool(native_window &&
+        (gdk_window_get_state(native_window) & GDK_WINDOW_STATE_FULLSCREEN));
+    fl_method_call_respond_success(call, value, nullptr);
+    return;
+  } else if (g_str_equal(method, "fullscreen") && fl_value_get_type(args) == FL_VALUE_TYPE_BOOL) {
+    if (fl_value_get_bool(args)) gtk_window_fullscreen(window);
+    else gtk_window_unfullscreen(window);
+  } else {
+    fl_method_call_respond_not_implemented(call, nullptr);
+    return;
+  }
+  fl_method_call_respond_success(call, nullptr, nullptr);
+}
+
 static void on_window_show(GtkWidget* widget, gpointer user_data) {
   focus_flutter_view(GTK_WINDOW(widget), GTK_WIDGET(user_data));
 }
@@ -126,6 +166,20 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   desktop_multi_window_plugin_set_window_created_callback([](FlPluginRegistry* registry) {
     fl_register_plugins(registry);
+    g_autoptr(FlPluginRegistrar) registrar = fl_plugin_registry_get_registrar_for_plugin(
+        registry, "FluxdoMiniAppWindowControls");
+    auto weak_view = new GWeakRef;
+    g_weak_ref_init(weak_view, fl_plugin_registrar_get_view(registrar));
+    g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+    g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
+        fl_plugin_registrar_get_messenger(registrar), "com.fluxdo/mini_app_window_controls",
+        FL_METHOD_CODEC(codec));
+    fl_method_channel_set_method_call_handler(channel, on_child_window_call, weak_view,
+        [](gpointer data) {
+          auto ref = static_cast<GWeakRef*>(data);
+          g_weak_ref_clear(ref);
+          delete ref;
+        });
   });
 
   focus_flutter_view(window, GTK_WIDGET(view));

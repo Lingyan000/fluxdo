@@ -10,9 +10,8 @@ import 'package:m3e_ui/m3e_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submit_button.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -256,11 +255,7 @@ Future<ScrollController> _pumpPage(
             child: child!,
           ),
           locale: const Locale('zh'),
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: ChatChannelPage(
             channelId: 1,
@@ -394,6 +389,27 @@ void main() {
     });
   }
 
+  testWidgets('输入框失焦与重新聚焦时输入条不上下跳', (tester) async {
+    await _pumpPage(tester, _Messages());
+    final surface = find.byKey(const ValueKey('chat-composer-surface'));
+    final field = find.byType(TextField);
+    final focusNode = tester.widget<TextField>(field).focusNode!;
+    // 进页 autofocus:聚焦但键盘未弹
+    expect(focusNode.hasFocus, isTrue);
+    final focusedBottom = tester.getRect(surface).bottom;
+
+    // 打开菜单/大图时焦点被新路由抢走
+    focusNode.unfocus();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(surface).bottom, focusedBottom);
+
+    // 菜单关闭后焦点回来
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(surface).bottom, focusedBottom);
+    await _disposePage(tester);
+  });
+
   testWidgets('聊天工具条玻璃与发送忙碌状态不重复提交', (tester) async {
     final messages = _Messages()..sendRequest = Completer<void>();
     await _pumpPage(tester, messages);
@@ -482,6 +498,22 @@ void main() {
         expect(
           tester.getCenter(send).dy,
           closeTo(tester.getCenter(field).dy, 0.5),
+        );
+        // 底色由装饰内部容器绘制，需与输入框外框一致，否则底色偏上
+        final fill = find.descendant(
+          of: field,
+          matching: find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_BorderContainer',
+          ),
+        );
+        expect(
+          tester.getRect(fill).top,
+          closeTo(tester.getRect(field).top, 0.5),
+        );
+        expect(
+          tester.getRect(fill).bottom,
+          closeTo(tester.getRect(field).bottom, 0.5),
+          reason: '单行时输入框底色撑满操作区高度，与按钮同一中线',
         );
         final distanceFromBottom =
             tester.getBottomLeft(field).dy - tester.getCenter(send).dy;

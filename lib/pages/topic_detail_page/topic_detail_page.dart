@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../services/app_error_handler.dart';
 import '../../services/notion/notion_bookmark_auto_sync.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../../utils/idle_task.dart';
@@ -28,6 +28,7 @@ import 'package:fluxdo_render/fluxdo_render.dart'
 import 'package:uuid/uuid.dart';
 
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 
 import '../../models/draft.dart';
@@ -38,6 +39,8 @@ import '../../models/topic.dart';
 import '../../models/pending_post.dart';
 import '../../utils/blocked_user_filter.dart';
 import '../../utils/responsive.dart';
+import '../../providers/app_state_refresher.dart';
+import '../login_page.dart';
 import '../../utils/share_utils.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -47,6 +50,11 @@ import '../../providers/discourse_providers.dart';
 import '../../providers/message_bus_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
 import '../../services/discourse/discourse_service.dart';
+import '../../services/drafts_signal.dart';
+import '../../providers/draft_store_provider.dart';
+import '../../widgets/post/inline_posts_scope.dart';
+import '../../widgets/post/reply_submission.dart';
+import '../../utils/markdown_block_format.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/screen_track.dart';
 import '../../services/toast_service.dart';
@@ -60,7 +68,6 @@ import '../../widgets/post/post_item/widgets/post_flag_sheet.dart';
 import '../../widgets/post/post_replies_sheet.dart';
 import '../../widgets/post/post_revision/revision_modal.dart';
 import '../../widgets/post/reply_sheet.dart';
-import '../../widgets/topic/topic_progress.dart';
 import '../../widgets/topic/topic_notification_button.dart';
 
 import 'package:common_ui/common_ui.dart';
@@ -71,9 +78,17 @@ import '../../widgets/common/error_view.dart';
 import '../../providers/nested_topic_provider.dart';
 import 'controllers/topic_detail_controller.dart';
 import 'controllers/topic_toc_controller.dart';
+import 'controllers/topic_position_info.dart';
+import 'controllers/topic_reply_session.dart';
 import 'widgets/nested_post_list.dart';
-import 'widgets/invite_private_message_dialog.dart';
+import 'widgets/private_message_participants.dart';
 import 'widgets/topic_detail_overlay.dart';
+import 'widgets/topic_bottom_bar.dart';
+import 'widgets/topic_filter_controls.dart';
+import 'widgets/topic_reading_rail.dart';
+import 'widgets/topic_quick_reply.dart';
+import 'widgets/topic_docked_composer.dart';
+import 'widgets/topic_timeline.dart';
 import 'widgets/topic_post_list.dart';
 import 'widgets/topic_toc_panel.dart';
 import 'widgets/topic_detail_header.dart';
@@ -196,6 +211,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 唯一实例 ID，确保每次打开页面都创建新的 provider 实例
   /// 支持外部传入以在布局切换时复用同一个 provider
   late final String _instanceId = widget.instanceId ?? const Uuid().v4();
+
+  /// 帖子内联展开(父帖/回复)的快照,按实例 id 登记:布局切换重建本页时
+  /// 续用,关掉页面后释放
+  late final InlinePostsStore _inlinePostsStore;
+
   late final int? _providerPostNumber;
 
   /// Provider 参数只携带首次构建所需的定位信息，运行时浏览位置由 controller 单独维护。
@@ -208,6 +228,56 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   // Controller
   late final TopicDetailController _controller;
   late final TopicTocController _tocController;
+
+  /// 任意楼层的日期与摘要(底栏拖动气泡、时间线共用)
+  late final TopicPositionInfoSource _positionInfo;
+
+  /// 话题页唯一的回复会话(底栏快捷回复);宽屏阅读栏形态仍走完整编辑器
+  late final TopicReplySession _replySession;
+
+  /// 最近一次构建时是否为宽屏阅读栏形态
+  bool _railMode = false;
+
+  /// 底栏回复入口胶囊:快捷回复面板与完整编辑器的变形起点
+  final GlobalKey _replyEntryKey = GlobalKey();
+
+  /// 宽屏停靠编辑器(阅读栏形态下的回复编辑器,非模态)
+  late final TopicDockedComposerController _dockedComposer =
+      TopicDockedComposerController(confirmSwitch: _confirmReplyTargetSwitch)
+        ..addListener(_syncDockedInset);
+
+  /// 停靠编辑器占用的高度:帖子列表末尾按它补留白,编辑器开着也能读到最后
+  final ValueNotifier<double> _dockedInset = ValueNotifier<double>(0);
+  double _pageHeight = 0;
+
+  void _syncDockedInset() {
+    final c = _dockedComposer;
+    _dockedInset.value = !c.isOpen
+        ? 0
+        : c.minimized
+        ? 48
+        : (c.height ??
+                  _pageHeight *
+                      TopicDockedComposerController.defaultHeightFactor)
+              .clamp(
+                TopicDockedComposerController.minHeight,
+                _pageHeight * TopicDockedComposerController.maxHeightFactor,
+              );
+  }
+
+  /// 宽屏阅读栏形态下回复走停靠编辑器
+  bool get _dockedComposerEnabled {
+    if (!_usesDockedComposer(_railMode)) return false;
+    if (ref.read(currentUserProvider).value == null) return false;
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    return detail != null && detail.canCreatePost;
+  }
+
+  /// 本话题未发出的回复草稿摘要(底栏回复入口展示),null = 无草稿
+  final ValueNotifier<String?> _replyDraftPreview = ValueNotifier<String?>(
+    null,
+  );
+  int _replyDraftReadSeq = 0;
   late final ScreenTrack _screenTrack;
 
   // UI State
@@ -215,8 +285,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   bool _hasFirstPost = false;
   bool _isCheckTitleVisibilityScheduled = false;
   bool _isRefreshing = false;
-  int? _removingPrivateMessageParticipantId;
-  String? _removingPrivateMessageGroupName;
+  ModalRoute<bool>? _membersRoute;
+  int? _removedPrivateMessageId;
   bool _isTogglingArchiveMessage = false;
 
   /// 本地屏蔽名单过滤缓存：provider 状态与名单实例都未变时复用同一份
@@ -322,6 +392,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   @override
   void initState() {
     super.initState();
+    _inlinePostsStore = InlinePostsStore.acquire(_instanceId);
     WidgetsBinding.instance.addObserver(this);
     _isParentActive = widget.parentActive;
     _providerPostNumber = widget.scrollToPostNumber;
@@ -427,8 +498,32 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       },
     );
 
+    _controller.autoHideBottomBar = ref
+        .read(preferencesProvider)
+        .topicBarAutoHide;
+
+    _positionInfo = TopicPositionInfoSource(
+      topicId: widget.topicId,
+      detailGetter: () {
+        final detail = ref.read(topicDetailProvider(_params)).value;
+        // 与列表渲染同口径(屏蔽用户过滤后),stream 索引才对得上
+        return detail == null ? null : _filteredDetail(detail);
+      },
+      fetchExcerpts: DiscourseService().getPostExcerpts,
+    );
+    _replySession = TopicReplySession(
+      topicId: widget.topicId,
+      localStore: ref.read(localDraftStoreProvider),
+      confirmSwitch: _confirmReplyTargetSwitch,
+    );
+    _replySession.activeNotifier.addListener(_onReplySessionActiveChanged);
+    DraftsSignal.localRevision.addListener(_refreshReplyDraftPreview);
+    _refreshReplyDraftPreview();
+
     // 话题目录(TOC):依赖 detailController 的段映射做标题级跳转
     _tocController = TopicTocController(detailController: _controller);
+    _tocController.addListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.addListener(_syncTocVisible);
 
     _controller.scrollController.addListener(_onScroll);
     // 滚动停止 → 回放滚动期间推迟的 msgbus 帖子更新
@@ -693,6 +788,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   void _handleCloseShortcut() {
     if (!mounted) return;
+    // 回复编辑器优先:Esc 先收起它(未发内容留作草稿),不能直接退出话题页
+    if (_replySession.active) {
+      _replySession.close();
+      return;
+    }
+    if (_dockedComposer.isOpen && !_dockedComposer.minimized) {
+      _dockedComposer.toggleMinimized();
+      return;
+    }
     if (ref.read(topicSearchProvider(widget.topicId)).isSearchMode) {
       _exitSearchMode();
       return;
@@ -734,6 +838,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _closeRemovedPrivateMessage() {
+    if (_removedPrivateMessageId == widget.topicId) return;
+    _removedPrivateMessageId = widget.topicId;
+    final members = _membersRoute;
+    if (members != null && members.isActive) {
+      final navigator = members.navigator!;
+      // 远端移除成员时，名单上面可能还开着行尾菜单或确认框。
+      navigator.popUntil((route) => route == members || route is! PopupRoute);
+      navigator.removeRoute(members);
+    }
     _invalidatePrivateMessageLists();
     _leaveTopicPage();
   }
@@ -848,8 +961,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     setState(() => _routeTransitionDone = true);
   }
 
+
   @override
   void dispose() {
+    InlinePostsStore.release(_instanceId);
     _idleFlushPosition?.isScrollingNotifier.removeListener(_onScrollIdle);
     _idleFlushPosition = null;
     // 按 identity 注销:叠栈的详情页可能已覆盖注册,只清自己那份
@@ -875,8 +990,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _controller.scrollController.removeListener(_onScroll);
     _screenTrack.stop();
     unawaited(_nestedReadingStore.flush());
+    _tocController.removeListener(_syncTocVisible);
+    _controller.viewportPostNumberNotifier.removeListener(_syncTocVisible);
     _controller.dispose();
     _tocController.dispose();
+    _tocVisible.dispose();
+    _positionInfo.dispose();
+    DraftsSignal.localRevision.removeListener(_refreshReplyDraftPreview);
+    _replySession.activeNotifier.removeListener(_onReplySessionActiveChanged);
+    _replySession.dispose();
+    _dockedComposer.dispose();
+    _dockedInset.dispose();
+    _replyDraftPreview.dispose();
     if (PlatformUtils.isDesktop) {
       toggleAiPanelNotifier.removeListener(_onToggleAiPanel);
       _shortcutScopeBinding.disposeDeferred();
@@ -1862,6 +1987,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           onExport: _showExportSheet,
           onOpenInBrowser: _openInBrowser,
           onFilter: _showFilterSheet,
+          onShowMembers: _showPrivateMessageMembers,
           onToggleArchiveMessage: () =>
               unawaited(_handleToggleArchiveMessage(notifier)),
           onReadingSettings: () {
@@ -1902,6 +2028,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
                 const SizedBox(width: 12),
                 Text(context.l10n.topicDetail_generateShareImage),
+              ],
+            ),
+          ),
+        if (PrivateMessageMemberSummary.isAvailable(detail))
+          PopupMenuItem(
+            value: 'members',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Symbols.group_rounded, size: 20),
+                const SizedBox(width: 12),
+                Text(context.l10n.pm_conversationMembers),
               ],
             ),
           ),
@@ -2023,9 +2161,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   void _showTimelineSheet(TopicDetail detail) {
     showTopicTimelineSheet(
       context: context,
+      infoSource: _positionInfo,
       currentIndex: _controller.currentVisibleStreamIndex,
-      stream: detail.postStream.stream,
-      onJumpToPostId: _jumpToPostByIdInTopic,
+      onJumpToIndex: _jumpToStreamIndex,
       title: detail.title,
     );
   }
@@ -2044,47 +2182,324 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _handleProgressGesture(action, detail, notifier);
   }
 
-  /// [TopicDetailOverlay] 的实例缓存(输入签名比对):见调用处注释。
-  ({Object signature, Widget widget})? _overlayCache;
+  /// 跳到 stream 索引(底栏拖动定位、时间线共用):索引 → 帖子 id 再跳。
+  /// 索引口径与列表一致(屏蔽用户过滤后)
+  void _jumpToStreamIndex(int streamIndex) {
+    final detail = _positionInfo.detail;
+    if (detail == null) return;
+    final stream = detail.postStream.stream;
+    if (streamIndex < 1 || streamIndex > stream.length) return;
+    unawaited(_jumpToPostByIdInTopic(stream[streamIndex - 1]));
+  }
 
-  Widget _buildOverlayCached(
+  /// 底栏书签按钮:与更多菜单同一条编辑书签链路
+  void _handleBottomBarBookmark() {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null) return;
+    final notifier = ref.read(topicDetailProvider(_params).notifier);
+    final traceId = createBookmarkEditTraceId();
+    writeBookmarkEditTrace(
+      phase: 'bottom_bar_tapped',
+      traceId: traceId,
+      source: 'topic_detail_bottom_bar',
+      message: '详情页底栏点击编辑书签',
+      topicId: widget.topicId,
+    );
+    unawaited(
+      _handleBookmark(
+        notifier,
+        traceId: traceId,
+        source: 'topic_detail_bottom_bar',
+      ),
+    );
+  }
+
+  static String _draftPreviewOf(String text) {
+    final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return collapsed.length > 80 ? collapsed.substring(0, 80) : collapsed;
+  }
+
+  /// 更新回复入口的草稿摘要。快捷回复收起后会话里的未发内容优先(即时、
+  /// 免读盘);否则读当前回复对象的本地草稿快照。本地写入 / 删除都会经
+  /// DraftsSignal.localRevision 触发
+  void _refreshReplyDraftPreview() {
+    final seq = ++_replyDraftReadSeq;
+    if (_replySession.hasContent) {
+      _replyDraftPreview.value = _draftPreviewOf(_replySession.text.text);
+      return;
+    }
+    final draftKey = _replySession.draftKey;
+    final store = ref.read(localDraftStoreProvider);
+    unawaited(() async {
+      String? preview;
+      try {
+        final account = await DiscourseService().getUsername();
+        if (account != null) {
+          final entry = await store.read(account, draftKey);
+          final text = entry?.data.reply;
+          if (entry != null && text != null && text.trim().isNotEmpty) {
+            if (entry.hasLocalChanges) {
+              // 本机未上传的修改:打开编辑器时草稿控制器同样保留它
+              preview = _draftPreviewOf(text);
+            } else {
+              // 已同步快照可能已在别处发出或删除:打开编辑器时控制器以
+              // 服务端为准,预览也先核对一次,避免「显示有草稿、点开为空」
+              final remote = await DiscourseService().getDraft(draftKey);
+              final remoteText = remote?.data.reply;
+              if (remoteText != null && remoteText.trim().isNotEmpty) {
+                preview = _draftPreviewOf(remoteText);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[TopicDetail] 读取回复草稿失败: $e');
+      }
+      // 只认最后一次读取,避免慢读覆盖新结果
+      if (!mounted || seq != _replyDraftReadSeq) return;
+      _replyDraftPreview.value = preview;
+    }());
+  }
+
+  void _onReplySessionActiveChanged() {
+    _controller.holdBottomBar = _replySession.active;
+    _refreshReplyDraftPreview();
+  }
+
+  /// 快捷回复可用:已登录、可回复,且不在宽屏阅读栏形态(那里用停靠编辑器)
+  bool get _quickReplyEnabled {
+    if (_railMode) return false;
+    if (ref.read(currentUserProvider).value == null) return false;
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    return detail != null && detail.canCreatePost;
+  }
+
+  /// 打开哪种编辑器(见设置「回复方式」)。自动模式下:开启了富文本编辑器,
+  /// 且内容需要格式——引用、或已有草稿含块级格式(快捷回复里会露出源码)
+  /// ——时直接打开完整编辑器,其余走快捷回复
+  Future<bool> _prefersFullEditor({Post? target, String? quote}) async {
+    final prefs = ref.read(preferencesProvider);
+    switch (prefs.replyComposerMode) {
+      case ReplyComposerMode.full:
+        return true;
+      case ReplyComposerMode.quick:
+        return false;
+      case ReplyComposerMode.auto:
+        if (!prefs.useRichComposer) return false;
+        if (quote != null) return true;
+        final draft = _replySession.hasContent
+            ? _replySession.text.text
+            : await _readLocalDraftText(
+                Draft.replyKey(
+                  widget.topicId,
+                  replyToPostNumber: target?.postNumber,
+                ),
+              );
+        return draft != null && markdownHasBlockFormatting(draft);
+    }
+  }
+
+  Future<String?> _readLocalDraftText(String draftKey) async {
+    try {
+      final account = await DiscourseService().getUsername();
+      if (account == null) return null;
+      final entry = await ref
+          .read(localDraftStoreProvider)
+          .read(account, draftKey);
+      return entry?.data.reply;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 底栏回复胶囊当前的外形:直接打开完整编辑器时从它长出;底栏收起或
+  /// 不在屏上时为 null(退回从屏幕底部滑入)
+  MorphSheetAnchor? _replyEntryMorphSource() {
+    if (!mounted || !_controller.showBottomBarNotifier.value) return null;
+    final box = _replyEntryKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    return (
+      rect: rect,
+      radius: rect.height / 2,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    );
+  }
+
+  /// 正在写的回复有内容时又要回复另一楼:保留内容改对象,或存草稿另写
+  Future<ReplyTargetSwitch?> _confirmReplyTargetSwitch(Post? from, Post? to) {
+    return showAppDialog<ReplyTargetSwitch>(
+      context: context,
+      builder: (dialogContext) {
+        final l10n = dialogContext.l10n;
+        return AlertDialog(
+          title: Text(l10n.topicDetail_quickReplySwitchTitle),
+          content: Text(l10n.topicDetail_quickReplySwitchBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.common_cancel),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext)
+                      .pop(ReplyTargetSwitch.saveAndStartNew),
+              child: Text(l10n.topicDetail_quickReplySaveAndNew),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext)
+                      .pop(ReplyTargetSwitch.keepContent),
+              child: Text(l10n.topicDetail_quickReplyKeepContent),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 快捷回复层(整页压暗 + 从底栏回复入口长出的面板);不可回复时不挂
+  Widget _buildQuickReplyLayer(TopicDetailParams params) {
+    return Consumer(
+      builder: (context, ref, _) {
+        final detail = ref.watch(topicDetailProvider(params)).value;
+        final isLoggedIn = ref.watch(currentUserProvider).value != null;
+        if (detail == null) return const SizedBox.shrink();
+        final state = _replyEntryState(detail, isLoggedIn);
+        if (state != TopicReplyEntryState.reply &&
+            state != TopicReplyEntryState.replyPrivateMessage) {
+          return const SizedBox.shrink();
+        }
+        return TopicQuickReplyLayer(
+          session: _replySession,
+          sourceKey: _replyEntryKey,
+          hint: state == TopicReplyEntryState.replyPrivateMessage
+              ? context.l10n.topicDetail_replyEntryPrivateHint
+              : context.l10n.topicDetail_replyEntryHint,
+          richEditorAvailable: ref.watch(
+            preferencesProvider.select((p) => p.useRichComposer),
+          ),
+          resolveMinLength: () => ReplySubmission.resolveMinLength(
+            ref,
+            categoryId: detail.categoryId,
+            isPrivateMessageContext: detail.isPrivateMessage,
+            isPmWithNonHumanUser: detail.pmWithNonHumanUser,
+          ),
+          onSend: _sendQuickReply,
+          onExpand: _expandQuickReply,
+        );
+      },
+    );
+  }
+
+  /// 快捷回复发送:与完整编辑器共用 ReplySubmission 的校验与发送
+  void _sendQuickReply() {
+    unawaited(
+      _replySession.submit((content, target, draft) async {
+        final params = _params;
+        final detail = ref.read(topicDetailProvider(params)).value;
+        final notifier = ref.read(topicDetailProvider(params).notifier);
+        final wasAtBottom = !notifier.hasMoreAfter;
+        if (!await ReplySubmission.preflight(
+          context: context,
+          ref: ref,
+          content: content,
+          topicId: widget.topicId,
+          categoryId: detail?.categoryId,
+          isPrivateMessageContext: detail?.isPrivateMessage ?? false,
+          isPmWithNonHumanUser: detail?.pmWithNonHumanUser ?? false,
+          draftController: draft,
+        )) {
+          return false;
+        }
+        final result = await ReplySubmission.createReply(
+          topicId: widget.topicId,
+          raw: content,
+          replyToPostNumber: target?.postNumber,
+          draftController: draft,
+          // 回复被送审:即时挂进帖子流底部的待审块(官方同款行为)
+          onEnqueued: (pending) => notifier.addPendingPost(pending),
+        );
+        if (!result.succeeded) return false;
+        final post = result.post;
+        if (post != null && mounted) _afterReplyPosted(post, wasAtBottom);
+        return true;
+      }),
+    );
+  }
+
+  /// 快捷回复展开成完整编辑器,一镜到底:编辑器从面板当前外形继续长大,
+  /// 面板截图钉在原位随之淡出,面板本体在编辑器首帧同一帧隐藏——看起来
+  /// 是面板自己长成了编辑器。交接期间快捷回复的输入框保持焦点,完整
+  /// 编辑器挂载后直接接过焦点,键盘不会先收起再弹出
+  Future<void> _expandQuickReply(QuickReplyExpansion from) async {
+    if (_replySession.handingOff) {
+      from.snapshot?.dispose();
+      return;
+    }
+    final handed = await _replySession.prepareHandOff();
+    if (!mounted) {
+      from.snapshot?.dispose();
+      return;
+    }
+    // 草稿在后台交接:不等保存往返,编辑器立即展开
+    final released = _replySession.releaseDraftInBackground();
+    await _handleReply(
+      handed.target,
+      initialContent: handed.content.trim().isEmpty ? null : handed.content,
+      forceFullEditor: true,
+      initialContentIsComplete: true,
+      morphFrom: from.rect,
+      morphFromRadius: from.radius,
+      morphFromColor: from.color,
+      morphFromSnapshot: from.snapshot,
+      onHandoffStart: from.onShown,
+      onHandoffComplete: () {
+        if (mounted) _replySession.finishHandOff();
+      },
+      draftReleased: released,
+    );
+  }
+
+  TopicReplyEntryState _replyEntryState(TopicDetail detail, bool isLoggedIn) {
+    if (!isLoggedIn) return TopicReplyEntryState.login;
+    if (!detail.canCreatePost) {
+      return detail.closed || detail.archived
+          ? TopicReplyEntryState.closed
+          : TopicReplyEntryState.noPermission;
+    }
+    return detail.isPrivateMessage
+        ? TopicReplyEntryState.replyPrivateMessage
+        : TopicReplyEntryState.reply;
+  }
+
+  void _handleReplyEntryTap() {
+    final isLoggedIn = ref.read(currentUserProvider).value != null;
+    if (isLoggedIn) {
+      unawaited(_handleReply(null));
+    } else {
+      unawaited(_goToLoginFromBottomBar());
+    }
+  }
+
+  Future<void> _goToLoginFromBottomBar() async {
+    // 提前捕获 container:登录路由弹出/平行视界重挂载可能让本元素短暂
+    // deactivate,此时任何祖先查找都会抛错(见 ProfilePage 同名流程)
+    final container = ProviderScope.containerOf(context, listen: false);
+    final result = await Navigator.of(context)
+        .push<bool>(InteractionPageRoute(builder: (_) => const LoginPage()));
+    if (result != true) return;
+    await WidgetsBinding.instance.endOfFrame;
+    AppStateRefresher.refreshAll(container);
+  }
+
+  TopicFilterControls _filterControls(
     TopicDetail detail,
     TopicDetailNotifier notifier,
-    bool isLoggedIn,
   ) {
-    // Overlay 及其子树实际消费的全部低频输入;detail 对象本身不入签名
-    // (它每次更新都是新实例),只取 Overlay 用到的字段。
-    final signature = (
-      isLoggedIn: isLoggedIn,
-      totalCount: detail.postStream.stream.length,
+    return TopicFilterControls(
       hasSummary: detail.hasSummary,
       isPostVoting: detail.isPostVoting,
-      isPrivateMessage: detail.isPrivateMessage,
-      isSummaryMode: notifier.isSummaryMode,
-      isActivityMode: notifier.isActivityMode,
-      isAuthorOnlyMode: notifier.isAuthorOnlyMode,
-      isTopLevelMode: notifier.isTopLevelMode,
-      isNestedMode: _isNestedView,
-      isLoading: _isSwitchingMode,
-    );
-    final cached = _overlayCache;
-    if (cached != null && cached.signature == signature) {
-      return cached.widget;
-    }
-    final overlay = TopicDetailOverlay(
-      showBottomBarListenable: _controller.showBottomBarNotifier,
-      isLoggedIn: isLoggedIn,
-      streamIndexListenable: _controller.streamIndexNotifier,
-      totalCount: detail.postStream.stream.length,
-      detail: detail,
-      onScrollToTop: _scrollToTop,
-      onShare: _shareTopic,
-      onShareAsImage: _shareAsImage,
-      onExport: _showExportSheet,
-      onOpenInBrowser: _openInBrowser,
-      onReply: () => _handleReply(null),
-      onProgressTap: _showTimelineSheetForCurrent,
-      onProgressGesture: _handleProgressGestureForCurrent,
       isSummaryMode: notifier.isSummaryMode,
       isActivityMode: notifier.isActivityMode,
       isAuthorOnlyMode: notifier.isAuthorOnlyMode,
@@ -2098,91 +2513,192 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       onCancelFilter: _handleCancelFilter,
       onShowNestedView: _toggleNestedView,
     );
+  }
+
+  /// [TopicDetailOverlay] 的实例缓存(输入签名比对):见调用处注释。
+  ({Object signature, Widget widget})? _overlayCache;
+
+  Widget _buildOverlayCached(
+    TopicDetail detail,
+    TopicDetailNotifier notifier,
+    bool isLoggedIn,
+  ) {
+    final replyEntryState = _replyEntryState(detail, isLoggedIn);
+    final bookmarked = _bookmarkEditTarget(detail) != null || detail.bookmarked;
+    // Overlay 及其子树实际消费的全部低频输入;detail 对象本身不入签名
+    // (它每次更新都是新实例),只取 Overlay 用到的字段。
+    final signature = (
+      replyEntryState: replyEntryState,
+      bookmarked: bookmarked,
+      totalCount: detail.postStream.stream.length,
+      hasMoreBefore: notifier.hasMoreBefore,
+      hasSummary: detail.hasSummary,
+      isPostVoting: detail.isPostVoting,
+      isSummaryMode: notifier.isSummaryMode,
+      isActivityMode: notifier.isActivityMode,
+      isAuthorOnlyMode: notifier.isAuthorOnlyMode,
+      isTopLevelMode: notifier.isTopLevelMode,
+      isNestedMode: _isNestedView,
+      isLoading: _isSwitchingMode,
+    );
+    final cached = _overlayCache;
+    if (cached != null && cached.signature == signature) {
+      return cached.widget;
+    }
+    final overlay = TopicDetailOverlay(
+      showBottomBarListenable: _controller.showBottomBarNotifier,
+      showBackToTopListenable: _controller.showBackToTopNotifier,
+      streamIndexListenable: _controller.streamIndexNotifier,
+      readingPositionListenable: _controller.readingPositionNotifier,
+      totalCount: detail.postStream.stream.length,
+      hasMoreBefore: notifier.hasMoreBefore,
+      replyEntryState: replyEntryState,
+      replyDraftListenable: _replyDraftPreview,
+      onReplyEntryTap: _handleReplyEntryTap,
+      onScrollToTop: _scrollToTop,
+      tocButton: _isNestedView ? null : _tocFab,
+      replySession:
+          replyEntryState == TopicReplyEntryState.reply ||
+              replyEntryState == TopicReplyEntryState.replyPrivateMessage
+          ? _replySession
+          : null,
+      replyEntryKey: _replyEntryKey,
+      tocVisibleListenable: _tocVisible,
+      onOpenTimeline: _showTimelineSheetForCurrent,
+      bookmarked: bookmarked,
+      onBookmark: _handleBottomBarBookmark,
+      onGestureAction: _handleProgressGestureForCurrent,
+      onScrubCommit: _jumpToStreamIndex,
+      infoSource: _positionInfo,
+      filter: _filterControls(detail, notifier),
+    );
     _overlayCache = (signature: signature, widget: overlay);
     return overlay;
   }
 
-  /// 话题目录(TOC)浮层:宽屏右侧常驻可折叠面板,窄屏右下浮动按钮
-  /// (叠在回复 FAB 上方,随底栏显隐联动)。平行视界右栏(embeddedMode)
-  /// 宽度有限,也走浮动按钮形态。
-  ///
-  /// 自动展开的最小页面宽度:正文列(maxContentWidth 800)居中后,单侧
-  /// 留白要装得下展开面板(240)+右偏移(12)+呼吸间距(16),展开才不
-  /// 遮挡正文 = 800 + 2×268 = 1336。
-  static const double _tocAutoExpandMinWidth =
-      Breakpoints.maxContentWidth +
-      2 * (TopicTocSidePanel.expandedWidth + 12 + 16);
+  /// 正文两侧目录和阅读栏的顶距。
+  static const double _sidePanelTop = 88;
 
-  Widget _buildTocLayer(BuildContext context, bool panelVisible) {
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
-    // 显隐门控(对齐 DiscoTOC:仅当前阅读位置是 1 楼时可见,
-    // 滚过 1 楼即隐、回到 1 楼复显;点击跳转途中 isJumping 冻结防闪隐)。
-    // hasToc 由 _tocController 通知,eyeline 位置走 viewportPostNumberNotifier。
-    Widget gateVisibility({required Widget child}) {
-      return ListenableBuilder(
-        listenable: _tocController,
+  bool _usesDockedComposer(bool railMode) => railMode;
+
+  Widget _buildDockedComposer(
+    TopicDetail detail,
+    TopicDetailNotifier notifier,
+    double pageWidth,
+  ) {
+    final columnWidth = math.min(pageWidth, Breakpoints.maxContentWidth);
+    return Positioned(
+      left: (pageWidth - columnWidth) / 2,
+      width: columnWidth,
+      top: 0,
+      bottom: MediaQuery.paddingOf(context).bottom,
+      child: ListenableBuilder(
+        listenable: _dockedComposer,
         builder: (context, _) {
-          if (!_tocController.hasToc) return const SizedBox.shrink();
-          return ValueListenableBuilder<int?>(
-            valueListenable: _controller.viewportPostNumberNotifier,
-            builder: (context, viewportPost, _) {
-              final visible = viewportPost == 1 || _tocController.isJumping;
-              return AnimatedOpacity(
-                opacity: visible ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 180),
-                child: IgnorePointer(ignoring: !visible, child: child),
-              );
-            },
-          );
-        },
-      );
-    }
-
-    if (Responsive.isMobile(context) || widget.embeddedMode) {
-      return ValueListenableBuilder<bool>(
-        valueListenable: _controller.showBottomBarNotifier,
-        builder: (context, showBottomBar, _) {
-          // 回复 FAB 的底部定位公式(见 TopicDetailOverlay),TOC 叠其上
-          final replyBottom = showBottomBar
-              ? bottomPadding + (80 - bottomPadding - 56) / 2
-              : 16 + bottomPadding;
-          return AnimatedPositioned(
-            key: const ValueKey('toc_fab'),
-            duration: const Duration(milliseconds: 200),
-            right: 16,
-            bottom: replyBottom + 56 + 12,
-            child: gateVisibility(
-              child: TopicTocFab(
-                controller: _tocController,
-                onEntryTap: _handleTocEntryTap,
-              ),
+          if (!_dockedComposer.isOpen) return const SizedBox.shrink();
+          return TopicDockedComposer(
+            controller: _dockedComposer,
+            topicId: widget.topicId,
+            categoryId: detail.categoryId,
+            topicTitle: detail.title,
+            isPrivateMessageTopic: detail.isPrivateMessage,
+            isPmWithNonHumanUser: detail.pmWithNonHumanUser,
+            onEnqueued: (pending) => ref
+                .read(topicDetailProvider(_params).notifier)
+                .addPendingPost(pending),
+            onPosted: (post) => _afterReplyPosted(
+              post,
+              !ref.read(topicDetailProvider(_params).notifier).hasMoreAfter,
             ),
           );
         },
-      );
-    }
-    return Positioned(
-      right: 12,
-      top: 88,
-      // 不定 bottom:高度随目录内容自适应,上限扣除顶距与底部操作栏区
-      child: gateVisibility(
-        child: TopicTocSidePanel(
-          controller: _tocController,
-          visible: panelVisible,
-          maxHeight:
-              MediaQuery.sizeOf(context).height -
-              kToolbarHeight -
-              MediaQuery.paddingOf(context).top -
-              88 -
-              120,
-          onToggleVisible: () => ref
-              .read(topicTocVisibilityProvider.notifier)
-              .toggle(panelVisible),
-          onEntryTap: _handleTocEntryTap,
-        ),
       ),
     );
   }
+
+  /// 宽屏阅读栏:放在帖子列右侧留白里
+  Widget _buildReadingRail(
+    TopicDetail detail,
+    TopicDetailNotifier notifier,
+    bool isLoggedIn,
+    double pageWidth,
+  ) {
+    final quickActions = ref.watch(
+      preferencesProvider.select((p) => p.progressGestureMenuActions),
+    );
+    final columnRight = (pageWidth + Breakpoints.maxContentWidth) / 2;
+    return Positioned(
+      left: columnRight + TopicReadingRail.gap,
+      top: _sidePanelTop,
+      bottom: MediaQuery.paddingOf(context).bottom + 24,
+      width: TopicReadingRail.width,
+      child: TopicReadingRail(
+        streamIndexListenable: _controller.streamIndexNotifier,
+        totalCount: detail.postStream.stream.length,
+        infoSource: _positionInfo,
+        lastReadIndex: _positionInfo.lastReadIndex,
+        onJumpToIndex: _jumpToStreamIndex,
+        replyEntryState: _replyEntryState(detail, isLoggedIn),
+        replyDraftListenable: _replyDraftPreview,
+        onReplyEntryTap: _handleReplyEntryTap,
+        filter: _filterControls(detail, notifier),
+        quickActions: quickActions,
+        onAction: _handleProgressGestureForCurrent,
+      ),
+    );
+  }
+
+  static const double _tocColumnGap = 16;
+  static const double _readingRailMinWidth =
+      Breakpoints.maxContentWidth +
+      2 * (TopicTocSidePanel.expandedWidth + _tocColumnGap + 12);
+
+  Widget _buildTocLayer(double pageWidth, double pageHeight) {
+    final expanded = ref.watch(topicTocVisibilityProvider) ?? true;
+    final columnLeft = (pageWidth - Breakpoints.maxContentWidth) / 2;
+    final availableHeight =
+        pageHeight - MediaQuery.paddingOf(context).bottom - 24;
+    final top = (availableHeight - kMinInteractiveDimension).clamp(
+      0.0,
+      _sidePanelTop,
+    );
+    final maxHeight = availableHeight - top;
+    return Positioned(
+      right: pageWidth - columnLeft + _tocColumnGap,
+      top: top,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _tocVisible,
+        builder: (context, visible, _) {
+          if (!visible) return const SizedBox.shrink();
+          // 极矮的窗格只够放一个入口，打开弹层仍能选到任意章节。
+          if (maxHeight < 2 * kMinInteractiveDimension) return _tocFab;
+          return TopicTocSidePanel(
+            controller: _tocController,
+            visible: expanded,
+            maxHeight: maxHeight,
+            onToggleVisible: () =>
+                ref.read(topicTocVisibilityProvider.notifier).toggle(expanded),
+            onEntryTap: _handleTocEntryTap,
+          );
+        },
+      ),
+    );
+  }
+
+  /// 目录只在阅读首帖或跳转章节途中显示，侧栏和浮动入口共用。
+  final ValueNotifier<bool> _tocVisible = ValueNotifier<bool>(false);
+
+  void _syncTocVisible() {
+    _tocVisible.value =
+        _tocController.hasToc &&
+        (_controller.viewportPostNumberNotifier.value == 1 ||
+            _tocController.isJumping);
+  }
+
+  late final Widget _tocFab = TopicTocFab(
+    controller: _tocController,
+    onEntryTap: _handleTocEntryTap,
+  );
 
   /// 目录项点击:跳转到标题(长帖先段级定位再精确化,见 controller)。
   void _handleTocEntryTap(TocEntry entry) {
@@ -2275,6 +2791,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     final theme = Theme.of(context);
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
     final canShowDetailPane = MasterDetailLayout.canShowBothPanesFor(context);
+
+    ref.listen(preferencesProvider.select((p) => p.topicBarAutoHide), (
+      _,
+      autoHide,
+    ) {
+      _controller.autoHideBottomBar = autoHide;
+    });
 
     ref.listen(nestedReadingStoreProvider, (previous, next) {
       _nestedReadingStore = next;
@@ -2629,15 +3152,35 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       body: Consumer(
         builder: (context, ref, _) {
           final detailAsync = ref.watch(topicDetailProvider(params));
-          return _buildBody(
-            context,
-            detailAsync,
-            detailAsync.value,
-            notifier,
-            isLoggedIn,
+          // 按页面自身宽度分档(平行视界右栏、窗口缩放都以实际宽度为准)
+          return LayoutBuilder(
+            builder: (context, constraints) => _buildBody(
+              context,
+              detailAsync,
+              detailAsync.value,
+              notifier,
+              isLoggedIn,
+              pageWidth: constraints.maxWidth,
+              pageHeight: constraints.maxHeight,
+            ),
           );
         },
       ),
+    );
+
+    // 快捷回复层挂在 Scaffold 之外：遮罩盖住整页（含顶栏），而不只是 body
+    final topicPage = Stack(
+      children: [
+        ValueListenableBuilder<bool>(
+          valueListenable: _replySession.presentedNotifier,
+          child: topicScaffold,
+          builder: (context, presented, child) => KeyboardInsetIsolation(
+            active: !presented,
+            child: child!,
+          ),
+        ),
+        Positioned.fill(child: _buildQuickReplyLayer(params)),
+      ],
     );
 
     // 无 AI 模型或非滑动入口模式：普通布局
@@ -2657,7 +3200,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 _exitSearchMode();
               }
             },
-            child: topicScaffold,
+            child: topicPage,
           ),
         ),
       );
@@ -2693,7 +3236,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 }
               },
               children: [
-                _KeepAlivePage(child: topicScaffold),
+                _KeepAlivePage(child: topicPage),
                 _KeepAlivePage(
                   child: Consumer(
                     builder: (context, ref, _) {
@@ -2751,6 +3294,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 分栏本身没问题，但链接点击时 stackProvider 始终为 null——根因就是
   /// 这个分支漏包）。
   Widget _wrapEmbeddedStack(Widget child) {
+    child = InlinePostsScope(store: _inlinePostsStore, child: child);
     if (widget.embeddedMode) {
       return EmbeddedStackScope(
         stackProvider: widget.stackProvider ?? selectedTopicProvider,
@@ -2808,18 +3352,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     AsyncValue<TopicDetail> detailAsync,
     TopicDetail? detail,
     TopicDetailNotifier notifier,
-    bool isLoggedIn,
-  ) {
+    bool isLoggedIn, {
+    required double pageWidth,
+    required double pageHeight,
+  }) {
     final params = _params;
     final searchState = ref.watch(topicSearchProvider(widget.topicId));
     final isSearchMode = searchState.isSearchMode;
-    // TOC 面板展开状态:null = 自动(宽度够才默认展开,否则收起成细条,
-    // 不遮挡正文);用户手动切换后为显式持久化选择。watch 在此层,
-    // 切换只走 _buildTocLayer 重建。
-    final tocPanelVisible =
-        ref.watch(topicTocVisibilityProvider) ??
-        MediaQuery.sizeOf(context).width >= _tocAutoExpandMinWidth;
-
+    // 宽屏阅读栏:帖子列两侧留白够放下目录(左)与阅读栏(右)时,阅读工具
+    // 移到右侧常驻,底部不再放任何东西
+    final railMode = pageWidth >= _readingRailMinWidth;
+    _railMode = railMode;
+    _pageHeight = pageHeight;
     // 初始加载或切换模式时显示骨架屏
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），
     // 也应该优先显示错误页面而不是骨架屏
@@ -2877,7 +3421,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       );
     } else if (detail != null) {
       // 正常内容构建 (保持原有逻辑，但简化提取)
-      content = _buildPostListContent(context, detail, notifier, isLoggedIn);
+      content = _buildPostListContent(
+        context,
+        detail,
+        notifier,
+        isLoggedIn,
+        railMode: railMode,
+      );
     }
 
     // Stack 组装
@@ -2906,13 +3456,26 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         // 缓存 —— 帖子信息更新(message bus / 分页)触发的整页 rebuild
         // 中,Overlay 消费的字段一般没变,直接复用实例整棵短路
         // (实测全量重建一次 4.5~8ms)。
-        if (detail != null && !isSearchMode)
-          _buildOverlayCached(detail, notifier, isLoggedIn),
+        if (detail != null && !isSearchMode && !railMode)
+          ListenableBuilder(
+            listenable: _dockedComposer,
+            child: _buildOverlayCached(detail, notifier, isLoggedIn),
+            // 停靠编辑器占据帖子列底部时底栏让开
+            builder: (context, child) =>
+                Offstage(offstage: _dockedComposer.isOpen, child: child),
+          ),
 
-        // 话题目录(TOC):宽屏右侧常驻面板,窄屏浮动按钮(叠回复 FAB 上方)。
-        // 嵌套视图自有滚动体系,不挂(对齐段映射只对平铺流有效)。
-        if (detail != null && !isSearchMode && !_isNestedView)
-          _buildTocLayer(context, tocPanelVisible),
+        // 宽屏阅读栏:帖子列右侧
+        if (detail != null && !isSearchMode && railMode)
+          _buildReadingRail(detail, notifier, isLoggedIn, pageWidth),
+
+        // 宽屏停靠编辑器:帖子列底部,后面的帖子照常可用
+        if (detail != null && _usesDockedComposer(railMode))
+          _buildDockedComposer(detail, notifier, pageWidth),
+
+        // 左侧有足够空间才显示常驻大纲，其余宽度只使用底栏浮动入口。
+        if (railMode && detail != null && !isSearchMode && !_isNestedView)
+          _buildTocLayer(pageWidth, pageHeight),
 
         // Expanded Header 相关组件（使用 ValueListenableBuilder 隔离状态变化）
         if (!isSearchMode)
@@ -2958,6 +3521,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                             child: SingleChildScrollView(
                               child: TopicDetailHeader(
                                 detail: detail,
+                                expanded: true,
+                                onShowMembers: _showPrivateMessageMembers,
                                 headerKey: null,
                                 onVoteChanged: _handleVoteChanged,
                                 onNotificationLevelChanged: (level) =>
@@ -3004,8 +3569,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     BuildContext context,
     TopicDetail detail,
     TopicDetailNotifier notifier,
-    bool isLoggedIn,
-  ) {
+    bool isLoggedIn, {
+    bool railMode = false,
+  }) {
     // 本地屏蔽过滤统一在此出口完成：页面内所有 postIndex（initialPostIndex/
     // dividerPostIndex/滚动映射）都基于同一份过滤后列表，语义天然一致。
     // watch 保证名单变化时整页重建。
@@ -3170,18 +3736,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           headerKey: _headerKey,
           hideHeaderTitle: widget.hideInlineHeaderTitle,
           isLoggedIn: isLoggedIn,
-          removingPrivateMessageParticipantId:
-              _removingPrivateMessageParticipantId,
-          removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-          onRemovePrivateMessageParticipant: isLoggedIn
-              ? _handleRemovePrivateMessageParticipant
-              : null,
-          onRemovePrivateMessageGroup: isLoggedIn
-              ? _handleRemovePrivateMessageGroup
-              : null,
-          onInvitePrivateMessageParticipants: isLoggedIn
-              ? _handleInvitePrivateMessageParticipants
-              : null,
+          onShowMembers: _showPrivateMessageMembers,
           onReply: _handleReply,
           onEdit: _handleEdit,
           onRefreshPost: _handleRefreshPost,
@@ -3215,6 +3770,16 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           valueListenable: _controller.highlightNotifier,
           builder: (context, highlightPostNumber, _) {
             return TopicPostList(
+              extraBottomInset: _usesDockedComposer(railMode)
+                  ? _dockedInset
+                  : null,
+              trailingReplyEntry: railMode
+                  ? TopicReplyEntry(
+                      state: _replyEntryState(detail, isLoggedIn),
+                      draftListenable: _replyDraftPreview,
+                      onTap: _handleReplyEntryTap,
+                    )
+                  : null,
               detail: detail,
               scrollController: _controller.scrollController,
               listController: _controller.postListController,
@@ -3232,18 +3797,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               onAnswerSortChanged: (byActivity) =>
                   byActivity ? _handleShowByActivity() : _handleCancelFilter(),
               headingAnchorRegistry: _tocController.registry,
-              removingPrivateMessageParticipantId:
-                  _removingPrivateMessageParticipantId,
-              removingPrivateMessageGroupName: _removingPrivateMessageGroupName,
-              onRemovePrivateMessageParticipant: isLoggedIn
-                  ? _handleRemovePrivateMessageParticipant
-                  : null,
-              onRemovePrivateMessageGroup: isLoggedIn
-                  ? _handleRemovePrivateMessageGroup
-                  : null,
-              onInvitePrivateMessageParticipants: isLoggedIn
-                  ? _handleInvitePrivateMessageParticipants
-                  : null,
+              onShowMembers: _showPrivateMessageMembers,
               hasMoreBefore: notifier.hasMoreBefore,
               hasMoreAfter: notifier.hasMoreAfter,
               loadingPreviousListenable: notifier.loadingPreviousListenable,
@@ -3256,6 +3810,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               initialPostIndex: initialPostIndex,
               dividerPostIndex: dividerPostIndex,
               onFirstVisiblePostChanged: _updateStreamIndexForPostNumber,
+              onReadingProgress: _controller.updateReadingPosition,
               onVisiblePostsChanged: _updateVisiblePosts,
               onScrollIndexMappingChanged: (mapping) =>
                   _controller.updateScrollIndexMapping(mapping, posts),

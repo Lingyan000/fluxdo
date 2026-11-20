@@ -247,6 +247,33 @@ mixin _TopicsMixin on _DiscourseServiceBase {
     return compute(_parsePostStreamJson, response.data!);
   }
 
+  /// 楼层摘要（时间线 / 拖动定位预览未加载楼层用）。服务端单次至多
+  /// 100 个 id；隐藏与已删除的帖子不返回
+  Future<List<TopicPostExcerpt>> getPostExcerpts(
+    int topicId,
+    List<int> postIds,
+  ) async {
+    if (postIds.isEmpty) return const [];
+    final response = await _dio.get<List<dynamic>>(
+      '/t/$topicId/excerpts.json',
+      queryParameters: {'post_ids[]': postIds.take(100).toList()},
+    );
+    return [
+      for (final item in response.data ?? const [])
+        if (item is Map<String, dynamic>) TopicPostExcerpt.fromJson(item),
+    ];
+  }
+
+  /// 话题近 30 天的每日浏览量，没有浏览的日子服务端不返回
+  Future<List<TopicViewStat>> getTopicViewStats(int topicId) async {
+    final response = await _dio.get('/t/$topicId/view-stats.json');
+    final stats = (response.data as Map<String, dynamic>)['stats'] as List?;
+    return [
+      for (final item in stats ?? const [])
+        ?TopicViewStat.fromJson(item as Map<String, dynamic>),
+    ];
+  }
+
   /// 按帖子编号获取帖子
   Future<PostStream> getPostsByNumber(int topicId, {required int postNumber, required bool asc, bool includeSuggested = false}) async {
     final response = await _dio.get<String>(
@@ -683,13 +710,15 @@ PostStream _parsePostStreamJson(String body) {
   // 的请求才有;没有就原样返回,不必重建对象。
   final suggested = parseSuggestedTopicList(data['suggested_topics']);
   final related = parseSuggestedTopicList(data['related_topics']);
-  if (suggested.isEmpty && related.isEmpty) return postStream;
+  final messages = parseRelatedMessages(data);
+  if (suggested.isEmpty && related.isEmpty && messages == null) return postStream;
   return PostStream(
     posts: postStream.posts,
     stream: postStream.stream,
     gaps: postStream.gaps,
     suggestedTopics: suggested,
     relatedTopics: related,
+    relatedMessages: messages,
   );
 }
 

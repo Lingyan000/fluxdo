@@ -1,0 +1,34 @@
+{
+  "dart_tests": [
+    "test/services/network/fingerprint_template_service_test.dart",
+    "test/services/network/h3_calibration_status_test.dart",
+    "test/services/network/apple_user_agent_test.dart",
+    "test/services/network/windows_h3_probe_environment_test.dart",
+    "test/services/network/core/net_core_config_test.dart",
+    "test/services/network/core/net_core_diagnostics_test.dart",
+    "test/services/network/per_device_cert_service_test.dart",
+    "test/services/network/proxy_certificate_test.dart",
+    "test/services/log/log_policy_test.dart",
+    "test/services/webview_session_diagnostics_test.dart",
+    "test/architecture"
+  ],
+  "dart_analyze": [
+    "lib/constants.dart",
+    "lib/services/network/apple_user_agent.dart",
+    "lib/services/network/core/net_core_service.dart",
+    "lib/services/network/core/net_core_diagnostics.dart",
+    "lib/services/network/doh_proxy/per_device_cert_service.dart",
+    "lib/services/network/doh_proxy/proxy_certificate.dart",
+    "lib/services/network/fingerprint",
+    "lib/services/network/doh/network_settings_service.dart",
+    "lib/services/log/logger_utils.dart",
+    "lib/services/log/log_policy.dart",
+    "lib/services/webview_session_cookie_refresh_service.dart"
+  ],
+  "python_suites": ["tool", "tool/apple_fingerprint", "tool/native_fingerprint", "tool/ci"],
+  "platforms": [
+    {"platform": "windows", "os": "windows-2022", "paths": ["windows/", "tool/native_fingerprint/windows/", "tool/native_fingerprint/windows_flutter/"]},
+    {"platform": "apple", "os": "macos-15", "paths": ["ios/", "macos/", "tool/apple_fingerprint/"]},
+    {"platform": "android", "os": "ubuntu-24.04", "paths": ["android/", "tool/native_fingerprint/android/"]}
+  ]
+}

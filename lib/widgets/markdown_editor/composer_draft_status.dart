@@ -1,6 +1,6 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../services/draft_controller.dart';
@@ -100,7 +100,8 @@ class _ComposerDraftMenuEntryState<T> extends State<ComposerDraftMenuEntry<T>> {
         child: Row(
           children: [
             if (status == DraftSaveStatus.saving &&
-                !MediaQuery.disableAnimationsOf(context))
+                !(MediaQuery.disableAnimationsOf(context) ||
+                    MediaQuery.reduceMotionOf(context)))
               SizedBox.square(
                 dimension: 20,
                 child: CircularProgressIndicator(

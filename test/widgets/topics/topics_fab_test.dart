@@ -1,12 +1,18 @@
-import 'package:flutter/material.dart';
+import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:m3e_ui/m3e_ui.dart' show M3eFlags;
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/shortcut_binding.dart';
 import 'package:fluxdo/providers/shortcut_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
+import 'package:fluxdo/theme/app_colors.dart';
+import 'package:fluxdo/theme/app_theme.dart';
+import 'package:fluxdo/theme/theme_style.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/keyboard_shortcut_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,6 +46,7 @@ void main() {
     bool isActive = true,
     double textScale = 1,
     bool disableAnimations = false,
+    ThemeData? theme,
     Size screen = const Size(390, 844),
     double? paneWidth,
     bool settle = true,
@@ -56,6 +63,7 @@ void main() {
           child: TranslationProvider(
             child: MaterialApp(
               navigatorKey: navigatorKey,
+              theme: theme,
               home: MediaQuery(
                 data: MediaQueryData(
                   size: screen,
@@ -145,6 +153,99 @@ void main() {
     expect(refreshCount, 0);
   });
 
+  testWidgets('切换明暗墨色主题后，主按钮和已展开的菜单使用同一对控件色', (tester) async {
+    Material surface(Finder widget) => tester.widget<Material>(
+      find.descendant(of: widget, matching: find.byType(Material)).first,
+    );
+    Color? iconColor(IconData icon) =>
+        IconTheme.of(tester.element(find.byIcon(icon))).color;
+
+    await pumpFab(tester);
+    final material = Theme.of(tester.element(trigger)).colorScheme;
+    expect(surface(trigger).color, material.primaryContainer);
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
+    expect(surface(trigger).color, material.primary);
+    expect(surface(items.last).color, material.primaryContainer);
+
+    const seed = Color(0xff3366cc);
+    for (final brightness in Brightness.values) {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: brightness,
+      );
+      final theme = buildAppTheme(
+        scheme,
+        AppColors.material(brightness),
+        const UiShapes(scale: 0.2, max: 3),
+        const ThemeState(mode: ThemeMode.system, seedColor: seed),
+        fullscreenSwipeBack: false,
+        pageBackground: false,
+        style: const ThemeStyle(controls: ControlStyle.ink, shadows: false),
+      );
+      await pumpFab(tester, theme: theme);
+      expect(surface(trigger).color, scheme.onSurface);
+      expect(surface(trigger).elevation, 0);
+      expect(iconColor(Symbols.close_rounded), scheme.surface);
+      for (final item in [items.first, items.last]) {
+        expect(surface(item).color, scheme.onSurface);
+        final text = find.descendant(of: item, matching: find.byType(Text));
+        expect(
+          DefaultTextStyle.of(tester.element(text)).style.color,
+          scheme.surface,
+        );
+      }
+      expect(iconColor(Symbols.edit_rounded), scheme.surface);
+      await tester.tap(trigger);
+      await tester.pumpAndSettle();
+      expect(surface(trigger).color, scheme.onSurface);
+      expect(iconColor(Symbols.add_rounded), scheme.surface);
+      expect(iconColor(Symbols.refresh_rounded), scheme.onSurfaceVariant);
+      await tester.tap(trigger);
+      await tester.pumpAndSettle();
+    }
+  });
+
+  testWidgets('菜单从右缘依次展开，文字保持原宽，收起时远端项先退', (tester) async {
+    await pumpFab(tester);
+    final anchor = tester.getRect(trigger);
+    await tester.tap(trigger);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 20));
+    final entering = tester.getRect(items.last);
+    final label = find.descendant(of: items.last, matching: find.byType(Text));
+    final labelWidth = tester.getSize(label).width;
+    expect(tester.getSize(items.first).width, 0);
+    expect(items.first.hitTestable(), findsNothing);
+    expect(entering.width, greaterThan(0));
+    expect(entering.right, anchor.right);
+    await tester.pumpAndSettle();
+    final near = tester.getRect(items.last);
+    final far = tester.getRect(items.first);
+    expect(near.width, greaterThan(entering.width));
+    expect(near.centerRight, entering.centerRight);
+    expect(tester.getSize(label).width, labelWidth);
+    expect(tester.getRect(trigger), anchor);
+    expect(tester.getSize(trigger), const Size.square(56));
+    expect(
+      IconTheme.of(tester.element(find.byIcon(Symbols.close_rounded))).size,
+      20,
+    );
+
+    await tester.tap(trigger);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(tester.getRect(items.last), near);
+    final leaving = tester.getRect(items.first);
+    expect(leaving.width, inExclusiveRange(0, far.width));
+    expect(leaving.centerRight, far.centerRight);
+    expect(items.hitTestable(), findsNothing);
+    await tester.pumpAndSettle();
+    expect(items, findsNothing);
+  });
+
   testWidgets('外部点击、ESC 和返回均收起菜单', (tester) async {
     await pumpFab(tester);
     await tester.tap(trigger);
@@ -200,6 +301,39 @@ void main() {
       expect(rect.top, greaterThan(0));
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('关闭表现动效仍可立即展开菜单并发帖', (tester) async {
+    await pumpFab(
+      tester,
+      theme: ThemeData(extensions: const [M3eFlags(enabled: false)]),
+    );
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+    await tester.tap(trigger);
+    await tester.pump();
+    expect(items.hitTestable(), findsNWidgets(2));
+    await tester.tap(items.last);
+    await tester.pump();
+    expect(createCount, 1);
+    expect(items, findsNothing);
+  });
+
+  testWidgets('收起途中失去发帖权限会释放遮住刷新的浮层', (tester) async {
+    await pumpFab(tester);
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
+    await tester.tap(trigger);
+    await tester.pump(const Duration(milliseconds: 16));
+    await pumpFab(tester, canCreate: false);
+    expect(items, findsNothing);
+    await tester.tap(refresh);
+    expect(refreshCount, 1);
+    await pumpFab(tester);
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
+    expect(items.hitTestable(), findsNWidgets(2));
+    await tester.tap(trigger);
+    await tester.pumpAndSettle();
   });
   testWidgets('访客直接卸载不在 dispose 创建 ticker', (tester) async {
     await pumpFab(tester, canCreate: false);
@@ -268,12 +402,15 @@ void main() {
   testWidgets('入场从中心缩放淡入，活跃切换反向退场且滚动不重播', (tester) async {
     await pumpFab(tester, settle: false);
     expect(opacity(tester), 0);
-    expect(scale(tester), 0);
+    expect(scale(tester), 0.2);
     final center = tester.getCenter(trigger);
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 50));
     expect(opacity(tester), inExclusiveRange(0, 1));
-    expect(scale(tester), inExclusiveRange(0, 1));
+    expect(scale(tester), inExclusiveRange(0.2, 1));
     expect(tester.getCenter(trigger), center);
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(scale(tester), greaterThan(1));
+    expect(opacity(tester), lessThanOrEqualTo(1));
     await tester.pumpAndSettle();
     expect(opacity(tester), 1);
     await pumpFab(tester, isActive: false, settle: false);
@@ -375,6 +512,12 @@ void main() {
     expect(scale(tester), 1);
     await pumpFab(tester, disableAnimations: true, settle: false);
     expect(opacity(tester), 1);
+    await tester.tap(trigger);
+    await tester.pump();
+    expect(items.hitTestable(), findsNWidgets(2));
+    await tester.tap(trigger);
+    await tester.pump();
+    expect(items, findsNothing);
   });
 
   testWidgets('push 覆盖时退场，pop 回列表时重新入场', (tester) async {

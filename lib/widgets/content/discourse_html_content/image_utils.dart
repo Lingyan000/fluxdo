@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../../pages/image_viewer_page.dart';
 import '../../../services/discourse/discourse_service.dart';
 import '../../../utils/url_helper.dart';

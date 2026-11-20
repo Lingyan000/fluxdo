@@ -3,7 +3,7 @@ use rama_core::{
     telemetry::tracing::{debug, trace, trace_span},
 };
 
-mod chaos;
+pub(super) mod chaos;
 
 use rand::RngExt;
 use std::net::SocketAddr;
@@ -144,8 +144,14 @@ impl PacketBuilder {
         let Some(number) = PacketNumber::new_at_least(
             exact_number,
             space.largest_acked_packet.unwrap_or(0),
-            recorded_width
-                .unwrap_or_else(|| conn.config.wire.packetization.min_packet_number_len()),
+            recorded_width.unwrap_or_else(|| {
+                let sampled=if space_id==SpaceId::Initial && conn.side.is_client() {
+                    let index=exact_number.saturating_sub(conn.config.wire.packetization.first_packet_number());
+                    usize::try_from(index).ok().and_then(|i|conn.config.initial_packet_number_lengths.get(i))
+                        .or_else(||conn.config.initial_packet_number_lengths.last()).copied()
+                } else {None};
+                sampled.unwrap_or_else(||conn.config.wire.packetization.min_packet_number_len())
+            }),
         ) else {
             // Even the margin above is used up: nothing more can be numbered on this connection.
             conn.kill(now, packet_numbers_outran_acknowledgements().into());
@@ -452,7 +458,8 @@ impl PacketBuilder {
         }
         // A client's Initial frames may be rearranged the way the profile asks, before they
         // are protected (the same bytes, differently laid out).
-        if self.space == SpaceId::Initial
+        if recorded.is_none()
+            && self.space == SpaceId::Initial
             && conn.side.is_client()
             && matches!(
                 conn.config.wire.packetization.layout(),
@@ -460,7 +467,7 @@ impl PacketBuilder {
             )
         {
             let payload_start = self.partial_encode.start + self.partial_encode.header_len;
-            chaos::scramble(&mut buffer[payload_start..], &mut conn.rng);
+            chaos::scramble(&mut buffer[payload_start..], &mut conn.rng, conn.config.initial_cross_packet_chaos);
         }
 
         let space = &conn.spaces[self.space];

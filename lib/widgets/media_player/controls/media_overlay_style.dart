@@ -2,7 +2,7 @@ import 'package:common_ui/common_ui.dart';
 
 import '../../../theme/color_contrast.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 媒体覆盖层的共享视觉令牌(黑底白字体系)。
 ///

@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +13,7 @@ import '../../providers/preferences_provider.dart';
 import '../../utils/color_utils.dart';
 import '../../utils/share_utils.dart';
 import '../../utils/number_utils.dart';
+import '../common/emoji_text.dart';
 import '../common/morphing_preview_route.dart';
 import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
@@ -177,7 +178,7 @@ class SearchPreviewDialog extends ConsumerWidget {
                 ),
               ),
             ),
-          TextSpan(text: topic.title),
+          ...EmojiText.buildEmojiSpans(context, topic.title, titleStyle),
         ],
       ),
       maxLines: 3,
@@ -347,8 +348,9 @@ class SearchPreviewDialog extends ConsumerWidget {
 
     final contentFontScale = ref.watch(preferencesProvider).contentFontScale;
     // 纯文本无色块:预览是轻量一瞥,摘要不需要卡片式衬底
-    return Text(
+    return EmojiText(
       cleanBlurb,
+      inline: true,
       style: theme.textTheme.bodyMedium?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
         height: 1.6,

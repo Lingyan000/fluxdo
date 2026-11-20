@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../l10n/s.dart';
@@ -13,10 +13,9 @@ import 'composer_page_chrome.dart';
 import 'composer_view_mode_switcher.dart';
 import 'composer_submit_button.dart';
 
-typedef ComposerReviewBuilder =
-    Widget Function(
-      Widget Function(bool reviewing, VoidCallback? trigger) builder,
-    );
+typedef ComposerReviewBuilder = Widget Function(
+  Widget Function(bool reviewing, VoidCallback? trigger) builder,
+);
 
 enum _HeaderAction { preview, review, discard, draft }
 
@@ -37,6 +36,8 @@ class ComposerHeaderActions extends StatelessWidget {
     this.draftStatus,
     this.onRetryDraft,
     this.minimumTitleWidth,
+    this.floating = false,
+    this.endInset = 16,
   });
 
   final double availableWidth;
@@ -53,6 +54,12 @@ class ComposerHeaderActions extends StatelessWidget {
   final VoidCallback? onDiscard;
   final ValueListenable<DraftSaveStatus>? draftStatus;
   final VoidCallback? onRetryDraft;
+
+  /// 顶栏没有实底（只有渐隐遮罩）时，操作与提交键收进同一块浮起胶囊
+  final bool floating;
+
+  /// 与屏幕右缘的距离（编辑页按 ComposerPageGrid）
+  final double endInset;
 
   /// 审核状态跨收纳保留，结果锚定当前外显按钮或菜单入口。
   final ComposerReviewBuilder? reviewBuilder;
@@ -211,41 +218,53 @@ class ComposerHeaderActions extends StatelessWidget {
       ),
     );
 
+    final buttons = [
+      for (final action in inline)
+        switch (action) {
+          _HeaderAction.preview => ComposerPreviewButton(
+            key: const ValueKey('composer-header-preview-inline'),
+            previewing: previewing,
+            onPressed: onTogglePreview,
+          ),
+          _HeaderAction.review => reviewHost(folded: false),
+          _HeaderAction.discard => ComposerActionButton(
+            key: const ValueKey('composer-header-discard-inline'),
+            icon: Symbols.delete_rounded,
+            label: S.current.common_discard,
+            onPressed: onDiscard,
+          ),
+          _HeaderAction.draft => const SizedBox.shrink(),
+        },
+      if (overflow.isNotEmpty)
+        overflow.contains(_HeaderAction.review)
+            ? reviewHost(folded: true)
+            : more(false, null),
+    ];
+    final submit = ComposerSubmitButton(
+      label: submitLabel,
+      icon: submitIcon,
+      busy: submitting,
+      onPressed: onSubmit,
+      compact: floating,
+    );
     return TextFieldTapRegion(
       child: Padding(
-        padding: const EdgeInsets.only(right: 16),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 8,
-          children: [
-            for (final action in inline)
-              switch (action) {
-                _HeaderAction.preview => ComposerPreviewButton(
-                  key: const ValueKey('composer-header-preview-inline'),
-                  previewing: previewing,
-                  onPressed: onTogglePreview,
+        padding: EdgeInsets.only(right: endInset),
+        child: floating
+            // 提交键的 48px 触控外框贴住胶囊右缘，36px 实心圆与胶囊上下右
+            // 三边等距
+            ? ComposerBarCapsule(
+                padding: const EdgeInsetsDirectional.only(start: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [...buttons, submit],
                 ),
-                _HeaderAction.review => reviewHost(folded: false),
-                _HeaderAction.discard => ComposerActionButton(
-                  key: const ValueKey('composer-header-discard-inline'),
-                  icon: Symbols.delete_rounded,
-                  label: S.current.common_discard,
-                  onPressed: onDiscard,
-                ),
-                _HeaderAction.draft => const SizedBox.shrink(),
-              },
-            if (overflow.isNotEmpty)
-              overflow.contains(_HeaderAction.review)
-                  ? reviewHost(folded: true)
-                  : more(false, null),
-            ComposerSubmitButton(
-              label: submitLabel,
-              icon: submitIcon,
-              busy: submitting,
-              onPressed: onSubmit,
-            ),
-          ],
-        ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 8,
+                children: [...buttons, submit],
+              ),
       ),
     );
   }

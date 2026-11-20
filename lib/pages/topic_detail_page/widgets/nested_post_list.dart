@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
@@ -24,7 +24,6 @@ import 'topic_detail_header.dart';
 import 'shared_issue_button.dart';
 import 'topic_more_topics.dart';
 import 'topic_status_notices.dart';
-import 'private_message_participants.dart';
 import 'pending_posts_section.dart';
 
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
@@ -39,11 +38,7 @@ class NestedPostList extends ConsumerStatefulWidget {
   final bool isLoggedIn;
   final void Function(PendingPost pending)? onWithdrawPendingPost;
   final void Function(PendingPost pending)? onWithdrawAndEditPendingPost;
-  final int? removingPrivateMessageParticipantId;
-  final String? removingPrivateMessageGroupName;
-  final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
-  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
-  final VoidCallback? onInvitePrivateMessageParticipants;
+  final VoidCallback? onShowMembers;
   final void Function(Post? replyToPost, {String? initialContent}) onReply;
   final void Function(Post post) onEdit;
   final void Function(int postId) onRefreshPost;
@@ -89,11 +84,7 @@ class NestedPostList extends ConsumerStatefulWidget {
     required this.isLoggedIn,
     this.onWithdrawPendingPost,
     this.onWithdrawAndEditPendingPost,
-    this.removingPrivateMessageParticipantId,
-    this.removingPrivateMessageGroupName,
-    this.onRemovePrivateMessageParticipant,
-    this.onRemovePrivateMessageGroup,
-    this.onInvitePrivateMessageParticipants,
+    this.onShowMembers,
     required this.onReply,
     required this.onEdit,
     required this.onRefreshPost,
@@ -497,20 +488,6 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     };
   }
 
-  PrivateMessageParticipants _buildPrivateMessageParticipants(
-    PrivateMessageParticipantsLocation location,
-  ) {
-    return PrivateMessageParticipants.fromDetail(
-      location: location,
-      detail: widget.detail,
-      removingParticipantId: widget.removingPrivateMessageParticipantId,
-      removingGroupName: widget.removingPrivateMessageGroupName,
-      onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
-      onRemoveGroup: widget.onRemovePrivateMessageGroup,
-      onInvite: widget.onInvitePrivateMessageParticipants,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final maxDepth = _getMaxDepth(context);
@@ -538,6 +515,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         key: 'header',
         builder: (context) => TopicDetailHeader(
           detail: widget.detail,
+          onShowMembers: widget.onShowMembers,
           headerKey: widget.headerKey,
           showTitle: !widget.hideHeaderTitle,
           onVoteChanged: widget.onVoteChanged,
@@ -607,15 +585,6 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
                     )
                   : null,
             ),
-          ),
-        ),
-
-      if (opPost != null &&
-          PrivateMessageParticipants.shouldShow(widget.detail))
-        (
-          key: 'pm-first',
-          builder: (context) => _buildPrivateMessageParticipants(
-            PrivateMessageParticipantsLocation.firstPost,
           ),
         ),
 
@@ -748,15 +717,9 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       if (!contextMode && !ns.hasMoreRoots)
         (
           key: 'suggested',
-          builder: (context) => MoreTopicsSection(detail: widget.detail),
-        ),
-
-      if (!ns.hasMoreRoots &&
-          PrivateMessageParticipants.shouldShowAtBottom(widget.detail))
-        (
-          key: 'pm-bottom',
-          builder: (context) => _buildPrivateMessageParticipants(
-            PrivateMessageParticipantsLocation.bottom,
+          builder: (context) => MoreTopicsSection(
+            detail: widget.detail,
+            relatedMessages: ns.relatedMessages,
           ),
         ),
 

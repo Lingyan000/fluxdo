@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 标签页选中标记：标签下方居中的一小段短横。
 class ShortBarTabIndicator extends Decoration {

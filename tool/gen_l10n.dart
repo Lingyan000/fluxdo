@@ -6,7 +6,7 @@ import 'package:slang/src/builder/builder/slang_file_collection_builder.dart';
 import 'package:slang/src/runner/generate.dart';
 
 // slang 暂无稳定的公开生成 API，这里直接调用其内部 runner。
-// 对应依赖已在 pubspec.yaml 中锁定为 4.14.0，升级时请一起验证这个脚本。
+// 对应依赖已在 pubspec.yaml 中锁定生成器版本，升级时请一起验证这个脚本。
 Future<void> main(List<String> args) async {
   enterWorkspaceRoot();
 

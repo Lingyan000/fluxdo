@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart' as selector;
+import 'package:mime/mime.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -246,13 +248,11 @@ class ShareUtils {
     // 兜底：file_picker 的移动端 saveFile 必须带 bytes（大文件有内存尖峰，
     // 所以只在原生腿走不通时用）
     try {
-      final ext = p.extension(fileName).replaceFirst('.', '');
-      final outputPath = await FilePicker.platform.saveFile(
+      final outputPath = await FilePicker.saveFile(
         dialogTitle: S.current.share_selectSaveLocation,
         fileName: fileName,
         bytes: await File(file.path).readAsBytes(),
-        type: ext.isNotEmpty ? FileType.custom : FileType.any,
-        allowedExtensions: ext.isNotEmpty ? [ext] : null,
+        mimeType: lookupMimeType(fileName) ?? 'application/octet-stream',
       );
       if (outputPath == null) return const ShareOutcome(shared: false);
       // iOS 侧落点在应用沙盒外，返回值长期不保证可读，只当提示用，
@@ -302,12 +302,13 @@ class ShareUtils {
 
     var stage = 'desktopPicker';
     try {
-      final outputPath = await FilePicker.platform.saveFile(
-        dialogTitle: S.current.share_selectSaveLocation,
-        fileName: fileName,
-        type: ext.isNotEmpty ? FileType.custom : FileType.any,
-        allowedExtensions: ext.isNotEmpty ? [ext] : null,
+      final location = await selector.getSaveLocation(
+        suggestedName: fileName,
+        acceptedTypeGroups: [
+          if (ext.isNotEmpty) selector.XTypeGroup(label: ext, extensions: [ext]),
+        ],
       );
+      final outputPath = location?.path;
 
       if (outputPath == null) {
         return const ShareOutcome(shared: false);

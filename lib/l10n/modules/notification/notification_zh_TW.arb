@@ -92,6 +92,28 @@
     }
   },
   "notification_empty": "暫無通知",
+  "notification_emptyUnread": "沒有未讀通知",
+  "notification_filterAll": "全部通知",
+  "notification_filterRead": "已讀",
+  "notification_filterUnread": "未讀",
+  "notification_groupEarlier": "更早",
+  "notification_groupThisWeek": "本週",
+  "notification_tabBookmarks": "書籤",
+  "notification_tabEdits": "編輯",
+  "notification_tabLikes": "獲讚",
+  "notification_tabLinks": "連結",
+  "notification_tabMentions": "提及",
+  "notification_tabOther": "其他",
+  "notification_tabReactions": "回應",
+  "notification_tabReplies": "回覆",
+  "notification_verbBoosted": "Boost 了你的貼文",
+  "notification_verbEdited": "編輯了你的貼文",
+  "notification_verbLiked": "按讚了你的貼文",
+  "notification_verbLinked": "連結了你的貼文",
+  "notification_verbMentioned": "提及了你",
+  "notification_verbQuoted": "引用了你",
+  "notification_verbReacted": "回應了",
+  "notification_verbReplied": "回覆了你",
   "notification_eventInvitation": "{username} 邀請你參加活動",
   "@notification_eventInvitation": {
     "placeholders": {
@@ -302,7 +324,7 @@
       }
     }
   },
-  "notification_reaction": "{username} 對你的帖子做出了反應",
+  "notification_reaction": "{username} 回應了你的貼文",
   "@notification_reaction": {
     "placeholders": {
       "username": {
@@ -375,6 +397,7 @@
   "notification_typeWatchingCategoryOrTag": "關注分類或標籤",
   "notification_typeWatchingFirstPost": "關注首帖",
   "notification_votesReleased": "投票已釋出",
+  "notification_viewAll": "查看全部通知",
   "notification_watchingCategoryNewPost": "{username} 釋出了新帖子",
   "@notification_watchingCategoryNewPost": {
     "placeholders": {

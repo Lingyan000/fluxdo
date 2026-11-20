@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:fluxdo/l10n/s.dart';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_tools_anchor.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_tools_panel.dart';
@@ -43,15 +43,9 @@ void main() {
     const guard =
         '#if defined(IMPELLER_TARGET_OPENGLES) && '
         '!defined(IMPELLER_OPENGLES_UNFLIPPED_DEPRECATED)';
-    for (final path in [
-      'shaders/progressive_top_blur.frag',
-      'packages/common_ui/shaders/glass_surface.frag',
-    ]) {
-      final shader = File(path).readAsStringSync();
-      expect(shader, contains(guard), reason: path);
-      expect(shader, isNot(contains('#ifdef IMPELLER_TARGET_OPENGLES')));
-    }
-    final blur = File('shaders/progressive_top_blur.frag').readAsStringSync();
-    expect(blur, isNot(contains('yTop = u_size.y - frag.y')));
+    const path = 'packages/common_ui/shaders/glass_surface.frag';
+    final shader = File(path).readAsStringSync();
+    expect(shader, contains(guard), reason: path);
+    expect(shader, isNot(contains('#ifdef IMPELLER_TARGET_OPENGLES')));
   });
 }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/selected_topic_provider.dart';
@@ -88,7 +88,7 @@ void main() {
   testWidgets('@提及在当前平行视界栈打开用户资料', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    container.read(selectedSeekingProvider.notifier).select(topicId: 1);
+    container.read(selectedFollowingFeedProvider.notifier).select(topicId: 1);
     final callbacks = FluxdoRenderCallbacks.generic(
       heroTagNamespace: 'parallel_mention_test',
     );
@@ -98,7 +98,7 @@ void main() {
         container: container,
         child: MaterialApp(
           home: EmbeddedStackScope(
-            stackProvider: selectedSeekingProvider,
+            stackProvider: selectedFollowingFeedProvider,
             child: Builder(
               builder: (context) => TextButton(
                 onPressed: () => callbacks.mentionTapHandler(
@@ -117,7 +117,7 @@ void main() {
     await tester.tap(find.text('打开提及用户'));
     await tester.pump();
 
-    final state = container.read(selectedSeekingProvider);
+    final state = container.read(selectedFollowingFeedProvider);
     expect(state.stack, hasLength(2));
     expect(state.kind, PaneKind.profile);
     expect(state.username, 'alice');

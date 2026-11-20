@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:jovial_svg/jovial_svg.dart';
 
 import '../../services/discourse_cache_manager.dart';
+import '../../services/image_decode_spec_memo.dart';
+import '../../services/svg_image_cache.dart';
 import '../../utils/svg_utils.dart';
 import 'first_paint_probe.dart';
 
@@ -147,7 +149,9 @@ class _SmartAvatarState extends State<SmartAvatar> {
       );
       if (bytes == null || bytes.isEmpty) return null;
       if (!SvgUtils.isSvgBytes(bytes)) return null;
-      return SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+      final content = SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+      await _preparse(content);
+      return content;
     } catch (_) {
       return null;
     }
@@ -167,14 +171,17 @@ class _SmartAvatarState extends State<SmartAvatar> {
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final decodeSide = (innerSize * dpr * 2).round().clamp(1, 512);
     return Image(
-      image: ResizeImage(
-        BlobImageProvider(
-          widget.imageUrl!,
-          bucket: BlobImageCache.avatarBucket,
+      image: ImageDecodeSpecMemo.remember(
+        widget.imageUrl!,
+        ResizeImage(
+          BlobImageProvider(
+            widget.imageUrl!,
+            bucket: BlobImageCache.avatarBucket,
+          ),
+          width: decodeSide,
+          height: decodeSide,
+          policy: ResizeImagePolicy.fit,
         ),
-        width: decodeSide,
-        height: decodeSide,
-        policy: ResizeImagePolicy.fit,
       ),
       width: innerSize,
       height: innerSize,
@@ -231,9 +238,12 @@ class _SmartAvatarState extends State<SmartAvatar> {
       // 避免列表中多个动图头像同时连累整个 list item 重绘。
       child = RepaintBoundary(
         child: Image(
-          image: discourseImageProvider(
+          image: ImageDecodeSpecMemo.remember(
             widget.imageUrl!,
-            bucket: BlobImageCache.avatarBucket,
+            discourseImageProvider(
+              widget.imageUrl!,
+              bucket: BlobImageCache.avatarBucket,
+            ),
           ),
           width: innerSize,
           height: innerSize,
@@ -324,7 +334,7 @@ class _SmartAvatarState extends State<SmartAvatar> {
 
   Widget? _buildSvg(String svgContent, double size) {
     try {
-      final si = ScalableImage.fromSvgString(svgContent, warnF: (_) {});
+      final si = SvgImageCache.sync(svgContent);
       return SizedBox(
         width: size,
         height: size,
@@ -402,6 +412,7 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
 
       if (SvgUtils.isSvgBytes(bytes)) {
         final svgString = SvgUtils.sanitize(SvgUtils.decodeSvgBytes(bytes));
+        await _preparse(svgString);
         if (mounted) {
           setState(() {
             _svgContent = svgString;
@@ -424,7 +435,7 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
   Widget build(BuildContext context) {
     if (_svgContent != null) {
       try {
-        final si = ScalableImage.fromSvgString(_svgContent!, warnF: (_) {});
+        final si = SvgImageCache.sync(_svgContent!);
         return SizedBox(
           width: widget.size,
           height: widget.size,
@@ -442,4 +453,11 @@ class _SvgFallbackBuilderState extends State<_SvgFallbackBuilder> {
 
     return widget.fallback;
   }
+}
+
+/// 在异步探测阶段预先解析，构建时只做缓存命中；解析失败留给构建期兜底处理。
+Future<void> _preparse(String content) async {
+  try {
+    await SvgImageCache.load(content);
+  } catch (_) {}
 }

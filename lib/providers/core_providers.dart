@@ -275,6 +275,13 @@ final systemUserAvatarTemplateProvider = FutureProvider<String?>((ref) async {
   return PreloadedDataService().getSystemUserAvatarTemplate();
 });
 
+/// 站点通知类型表（服务端类型名 → 类型 id）
+final siteNotificationTypesProvider = FutureProvider<Map<String, int>>((
+  ref,
+) async {
+  return PreloadedDataService().getNotificationTypes();
+});
+
 /// 用户统计数据 Provider
 class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
   static const String _cacheKey = 'user_summary_cache';

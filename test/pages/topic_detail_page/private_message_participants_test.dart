@@ -1,408 +1,433 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'dart:async';
+
+import 'package:common_ui/common_ui.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/models/mention_user.dart';
+import 'package:fluxdo/models/search_result.dart';
 import 'package:fluxdo/models/topic.dart';
+import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/invite_private_message_dialog.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/private_message_participants.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_more_topics.dart';
+import 'package:fluxdo/providers/discourse_providers.dart';
+import 'package:fluxdo/providers/selected_topic_provider.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/utils/dialog_utils.dart';
+import 'package:fluxdo/widgets/common/smart_avatar.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/services/preloaded_data_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-TopicUser _user(int id, String username, {String? name}) {
-  return TopicUser(id: id, username: username, name: name, avatarTemplate: '');
-}
+const _params = TopicDetailParams(42);
 
-Widget _wrap(Widget child) {
-  return TranslationProvider(
-    child: MaterialApp(
-      locale: const Locale('zh'),
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: AppLocaleUtils.supportedLocales,
-      home: Scaffold(body: SingleChildScrollView(child: child)),
-    ),
-  );
-}
-
-PrivateMessageParticipants _panel({
-  required bool canRemoveAllowedUsers,
-  int? removableSelfId = 1,
-  int? removingParticipantId,
-  String? removingGroupName,
-  List<TopicGroup> groups = const [],
-  bool canInvite = false,
-  ValueChanged<TopicUser>? onRemoveParticipant,
-  ValueChanged<TopicGroup>? onRemoveGroup,
-  VoidCallback? onInvite,
-}) {
-  return PrivateMessageParticipants(
-    location: PrivateMessageParticipantsLocation.firstPost,
-    participants: [
-      _user(1, 'me', name: '我'),
-      _user(2, 'alice', name: 'Alice'),
-      _user(3, 'bob'),
-    ],
-    groups: groups,
-    canRemoveAllowedUsers: canRemoveAllowedUsers,
-    removableSelfId: removableSelfId,
-    canInvite: canInvite,
-    removingParticipantId: removingParticipantId,
-    removingGroupName: removingGroupName,
-    onRemoveParticipant: onRemoveParticipant,
-    onRemoveGroup: onRemoveGroup,
-    onInvite: onInvite,
-  );
-}
-
-/// 生产装配路径(fromDetail)用的私信详情;权限位直接照 details 下发。
 TopicDetail _detail({
-  bool canRemoveAllowedUsers = false,
-  int? canRemoveSelfId = 1,
-  int postsCount = 1,
-  bool canInviteTo = false,
-  List<Map<String, dynamic>> allowedGroups = const [],
-  List<Map<String, dynamic>> allowedUsers = const [
-    {'id': 1, 'username': 'me', 'name': '我', 'avatar_template': ''},
-    {'id': 2, 'username': 'alice', 'name': 'Alice', 'avatar_template': ''},
-  ],
-}) {
-  return TopicDetail.fromJson({
-    'id': 42,
-    'title': 'Private message',
-    'slug': 'private-message',
-    'posts_count': postsCount,
-    'post_stream': {
-      'posts': const <Map<String, dynamic>>[],
-      'stream': const <int>[],
-    },
-    'category_id': 0,
-    'archetype': 'private_message',
-    'details': {
-      'allowed_users': allowedUsers,
-      'allowed_groups': allowedGroups,
-      'can_remove_allowed_users': canRemoveAllowedUsers,
-      'can_invite_to': canInviteTo,
-      'can_remove_self_id': ?canRemoveSelfId,
-    },
-  });
+  bool groups = false,
+  bool manage = false,
+  bool invite = false,
+  bool leave = false,
+}) => TopicDetail.fromJson({
+  'id': 42,
+  'title': '私信',
+  'slug': 'pm',
+  'archetype': 'private_message',
+  'posts_count': 4,
+  'category_id': 0,
+  'post_stream': {'posts': [], 'stream': []},
+  'details': {
+    'allowed_users': [
+      {'id': 1, 'username': 'me'},
+      {'id': 2, 'username': 'alice', 'name': 'Alice'},
+    ],
+    'allowed_groups': [
+      if (groups) {'name': 'staff', 'full_name': '管理组'},
+    ],
+    'can_remove_allowed_users': manage,
+    'can_invite_to': invite,
+    if (leave) 'can_remove_self_id': 1,
+  },
+});
+
+class _Detail extends TopicDetailNotifier {
+  _Detail(this.detail) : super(_params);
+  final TopicDetail detail;
+  @override
+  Future<TopicDetail> build() async => detail;
 }
+
+class _Service extends Fake implements DiscourseService {
+  final calls = <String>[];
+
+  @override
+  Future<SearchResult> search({
+    required String query,
+    int page = 1,
+    String? typeFilter,
+  }) async {
+    calls.add(query);
+    return SearchResult.fromJson({});
+  }
+
+  @override
+  Future<MentionSearchResult> searchUsers({
+    required String term,
+    int? topicId,
+    int? categoryId,
+    bool includeGroups = true,
+    bool includeMessageableGroups = false,
+    bool throwOnError = false,
+    int limit = 6,
+  }) async {
+    expect(includeGroups, isFalse);
+    expect(includeMessageableGroups, isTrue);
+    return const MentionSearchResult(
+      users: [MentionUser(id: 7, username: 'bob')],
+      groups: [MentionGroup(name: 'team', fullName: '团队')],
+    );
+  }
+
+  @override
+  Future<TopicUser?> invitePrivateMessageUser(
+    int topicId,
+    String username,
+  ) async {
+    calls.add('user/$topicId/$username');
+    return null;
+  }
+
+  @override
+  Future<void> invitePrivateMessageGroup(int topicId, String groupName) async {
+    calls.add('group/$topicId/$groupName');
+  }
+}
+
+class _CurrentUser extends CurrentUserNotifier {
+  @override
+  User build() => User(id: 1, username: 'me', trustLevel: 1);
+}
+
+Widget _app(Widget child) => TranslationProvider(
+  child: MaterialApp(
+    locale: const Locale('zh'),
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    supportedLocales: AppLocaleUtils.supportedLocales,
+    home: Scaffold(body: child),
+  ),
+);
+
+Widget _members(
+  TopicDetail detail, {
+  DiscourseService? service,
+  Widget child = const PrivateMessageMembersSheet(params: _params),
+}) =>
+    ProviderScope(
+      overrides: [
+        if (service != null)
+          discourseServiceProvider.overrideWithValue(service),
+        currentUserProvider.overrideWith(_CurrentUser.new),
+        topicDetailProvider(_params).overrideWith(() => _Detail(detail)),
+      ],
+      child: _app(child),
+    );
 
 void main() {
-  testWidgets('面板显示全部私信成员、用户名与人数', (tester) async {
-    await tester.pumpWidget(
-      _wrap(_panel(canRemoveAllowedUsers: false, onRemoveParticipant: (_) {})),
-    );
-    await tester.pump();
-
-    expect(find.text('参与者'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
-    // 胶囊统一单行只显昵称，@username 不上屏（进 tooltip）
-    expect(find.text('我'), findsOneWidget);
-    expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('bob'), findsOneWidget);
-    expect(find.text('@me'), findsNothing);
-    expect(find.text('@alice'), findsNothing);
-  });
-
-  testWidgets('@username 与群组全名放进 tooltip', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
-          onRemoveParticipant: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    String tooltipOf(Key key) => tester
-        .widget<Tooltip>(
-          find.ancestor(of: find.byKey(key), matching: find.byType(Tooltip)),
-        )
-        .message!;
-
-    // 有昵称：昵称 + @username 都在提示里
-    expect(
-      tooltipOf(const ValueKey('pm-participant-firstPost-2')),
-      'Alice · @alice',
-    );
-    // 昵称等于 username：不重复两遍
-    expect(tooltipOf(const ValueKey('pm-participant-firstPost-3')), '@bob');
-    // 群组：屏上是群组名，全名进提示
-    expect(find.text('staff'), findsOneWidget);
-    expect(find.text('管理组'), findsNothing);
-    expect(tooltipOf(const ValueKey('pm-group-firstPost-staff')), 'staff · 管理组');
-  });
-
-  testWidgets('用户胶囊可点(出卡片)，群组胶囊不可点', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          groups: const [TopicGroup(id: 9, name: 'staff')],
-          onRemoveParticipant: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    InkWell inkWellOf(Key key) => tester.widget<InkWell>(
-      find.descendant(of: find.byKey(key), matching: find.byType(InkWell)),
-    );
-
-    // 用户条目挂了 onTap(点开用户卡片)
-    expect(
-      inkWellOf(const ValueKey('pm-participant-firstPost-2')).onTap,
-      isNotNull,
-    );
-    // 群组没有可跳转的目标页，不给假入口
-    expect(inkWellOf(const ValueKey('pm-group-firstPost-staff')).onTap, isNull);
-  });
-
-  testWidgets('有无移除按钮、有无副名的胶囊一律等高', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          // 只有自己能退出 → 1 号有按钮，2/3 号没有
-          canRemoveAllowedUsers: false,
-          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
-          onRemoveParticipant: (_) {},
-          onRemoveGroup: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    final heights = [
-      const ValueKey('pm-participant-firstPost-1'), // 有按钮、无副名
-      const ValueKey('pm-participant-firstPost-2'), // 无按钮、有副名
-      const ValueKey('pm-participant-firstPost-3'), // 无按钮、无副名
-      const ValueKey('pm-group-firstPost-staff'), // 群组、有全名
-    ].map((key) => tester.getSize(find.byKey(key)).height).toSet();
-
-    expect(heights, hasLength(1), reason: '胶囊高度必须一致，实测 $heights');
-  });
-
-  testWidgets('普通成员只显示自己的退出按钮', (tester) async {
-    await tester.pumpWidget(
-      _wrap(_panel(canRemoveAllowedUsers: false, onRemoveParticipant: (_) {})),
-    );
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-1')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-2')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-3')),
-      findsNothing,
-    );
-  });
-
-  testWidgets('服务端授权移除成员时可退出自己并移除其他成员', (tester) async {
-    TopicUser? removed;
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: true,
-          onRemoveParticipant: (participant) => removed = participant,
-        ),
-      ),
-    );
-    await tester.pump();
-
-    for (final id in [1, 2, 3]) {
-      expect(
-        find.byKey(ValueKey('pm-participant-firstPost-remove-$id')),
-        findsOneWidget,
-      );
-    }
-
-    await tester.tap(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-2')),
-    );
-    expect(removed?.username, 'alice');
-  });
-
-  testWidgets('后端未授予退出权限时不显示自己的按钮', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          removableSelfId: null,
-          onRemoveParticipant: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-1')),
-      findsNothing,
-    );
-  });
-
-  // 回归防线:can_remove_allowed_users 已含「staff 或房主(TL2+)」判定,
-  // 装配层不得再叠加 admin 门槛,否则版主与非管理员房主看不到按钮。
-  testWidgets('fromDetail 只认服务端权限位，不叠加管理员门槛', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        PrivateMessageParticipants.fromDetail(
-          location: PrivateMessageParticipantsLocation.firstPost,
-          detail: _detail(canRemoveAllowedUsers: true),
-          removingParticipantId: null,
-          removingGroupName: null,
-          onRemoveParticipant: (_) {},
-          onRemoveGroup: (_) {},
-          onInvite: () {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-2')),
-      findsOneWidget,
-    );
-  });
-
-  test('底部面板对短私信不重复展示', () {
-    // 首楼已有一块,楼层数不过 Discourse MIN_POSTS_COUNT(=3) 时底部不再堆一块。
-    expect(PrivateMessageParticipants.shouldShow(_detail(postsCount: 1)), isTrue);
-    expect(
-      PrivateMessageParticipants.shouldShowAtBottom(_detail(postsCount: 1)),
-      isFalse,
-    );
-    expect(
-      PrivateMessageParticipants.shouldShowAtBottom(_detail(postsCount: 4)),
-      isTrue,
-    );
-  });
-
-  testWidgets('群组排在用户之前并计入人数，可移除', (tester) async {
-    TopicGroup? removed;
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: true,
-          groups: const [TopicGroup(id: 9, name: 'staff', fullName: '管理组')],
-          onRemoveParticipant: (_) {},
-          onRemoveGroup: (group) => removed = group,
-        ),
-      ),
-    );
-    await tester.pump();
-
-    // 3 个用户 + 1 个群组
-    expect(find.text('4'), findsOneWidget);
-    expect(find.text('staff'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('pm-group-firstPost-remove-staff')),
-    );
-    expect(removed?.name, 'staff');
-  });
-
-  testWidgets('无移除权限时群组不显示移除按钮', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          groups: const [TopicGroup(id: 9, name: 'staff')],
-          onRemoveParticipant: (_) {},
-          onRemoveGroup: (_) {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey('pm-group-firstPost-remove-staff')),
-      findsNothing,
-    );
-  });
-
-  testWidgets('邀请入口只在 can_invite_to 为真时出现', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          canInvite: false,
-          onRemoveParticipant: (_) {},
-          onInvite: () {},
-        ),
-      ),
-    );
-    await tester.pump();
-    expect(
-      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
-      findsNothing,
-    );
-
-    var invited = false;
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: false,
-          canInvite: true,
-          onRemoveParticipant: (_) {},
-          onInvite: () => invited = true,
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
-    );
-    expect(invited, isTrue);
-  });
-
-  testWidgets('移除进行中锁掉全部控件', (tester) async {
-    await tester.pumpWidget(
-      _wrap(
-        _panel(
-          canRemoveAllowedUsers: true,
-          canInvite: true,
-          removingGroupName: 'staff',
-          groups: const [TopicGroup(id: 9, name: 'staff')],
-          onRemoveParticipant: (_) {},
-          onRemoveGroup: (_) {},
-          onInvite: () {},
-        ),
-      ),
-    );
-    await tester.pump();
-
-    // 正在移除的群组换成进度指示，其余按钮全部禁用
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    final invite = tester.widget<IconButton>(
-      find.byKey(const ValueKey('pm-participants-firstPost-invite')),
-    );
-    expect(invite.onPressed, isNull);
-    final removeUser = tester.widget<IconButton>(
-      find.byKey(const ValueKey('pm-participant-firstPost-remove-2')),
-    );
-    expect(removeUser.onPressed, isNull);
-  });
-
-  test('只有群组、没有用户的私信也要显示面板', () {
-    final detail = _detail(
-      allowedUsers: const [],
-      allowedGroups: const [
-        {'id': 9, 'name': 'staff'},
+  testWidgets('相关私信可点开，双人会话满五条可查看对方的所有私信', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    PreloadedDataService().debugSeed(loaded: true);
+    addTearDown(PreloadedDataService().reset);
+    final service = _Service();
+    final container = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        currentUserProvider.overrideWith(_CurrentUser.new),
+        discourseServiceProvider.overrideWithValue(service),
       ],
     );
-    expect(PrivateMessageParticipants.shouldShow(detail), isTrue);
+    addTearDown(container.dispose);
+    Future<void> show(int count, {bool groups = false}) async {
+      final detail = _detail(groups: groups).copyWith(
+        relatedMessages: [
+          for (var id = 1; id <= count; id++)
+            Topic.fromJson({'id': id, 'title': '往来私信 $id'}),
+        ],
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _app(
+            EmbeddedStackScope(
+              stackProvider: selectedMessageProvider,
+              child: MoreTopicsSection(detail: detail),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    final all = find.text('查看来自 @alice 的所有私信');
+    await show(4);
+    expect(all, findsNothing);
+    await show(5, groups: true);
+    expect(all, findsNothing);
+    await show(5);
+    await tester.tap(find.text('往来私信 3'));
+    expect(container.read(selectedMessageProvider).topicId, 3);
+    await tester.tap(all);
+    await tester.pumpAndSettle();
+    expect(service.calls, ['@alice in:personal-direct']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
-  test('成员名单为空时两处都不展示', () {
-    final detail = _detail(postsCount: 10, allowedUsers: const []);
-    expect(PrivateMessageParticipants.shouldShow(detail), isFalse);
-    expect(PrivateMessageParticipants.shouldShowAtBottom(detail), isFalse);
+  testWidgets('私信页头显示成员名字和群组，点按打开名单', (tester) async {
+    var opened = false;
+    Future<void> show(TopicDetail detail) => tester.pumpWidget(
+      _app(
+        PrivateMessageMemberSummary(detail: detail, onTap: () => opened = true),
+      ),
+    );
+    await show(_detail());
+    final names = _detail().allowedUsers
+        .map((user) => user.displayName)
+        .join('、');
+    final avatars = find.byType(SmartAvatar);
+    final firstAvatar = tester.getRect(avatars.at(0));
+    final nextAvatar = tester.getRect(avatars.at(1));
+    expect(nextAvatar.left, greaterThan(firstAvatar.left));
+    expect(nextAvatar.left, lessThan(firstAvatar.right));
+    final namesRect = tester.getRect(find.text(names));
+    final arrow = tester.getRect(find.byIcon(Icons.chevron_right_rounded));
+    expect(namesRect.left, greaterThan(nextAvatar.right));
+    expect(arrow.left - namesRect.right, inInclusiveRange(0, 6));
+    final entry = tester.getRect(find.byTooltip('会话成员'));
+    expect(entry.height, greaterThanOrEqualTo(44));
+    expect(entry.right, greaterThan(arrow.right + 4));
+    await tester.tapAt(entry.centerRight - const Offset(4, 0));
+    expect(opened, isTrue);
+    await show(_detail(groups: true));
+    expect(find.text('$names、管理组'), findsOneWidget);
+    await show(
+      _detail(groups: true).copyWith(
+        allowedGroups: const [
+          TopicGroup(name: 'staff'),
+          TopicGroup(name: 'mods'),
+        ],
+      ),
+    );
+    expect(find.text('+1'), findsOneWidget);
+    await show(_detail(groups: true).copyWith(allowedUsers: []));
+    expect(find.text('管理组'), findsOneWidget);
+    await show(_detail(invite: true).copyWith(allowedUsers: []));
+    expect(find.text('会话成员'), findsOneWidget);
+    expect(find.byType(SmartAvatar), findsNothing);
+  });
+
+  testWidgets('窄栏双倍字号下私信成员名省略，额外成员数和箭头仍可见', (tester) async {
+    final detail = _detail().copyWith(
+      allowedUsers: [
+        for (var i = 0; i < 6; i++)
+          TopicUser(
+            id: i,
+            username: 'long_participant_name_$i',
+            avatarTemplate: '',
+          ),
+      ],
+    );
+    await tester.pumpWidget(
+      _app(
+        Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 240,
+            child: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: PrivateMessageMemberSummary(detail: detail, onTap: () {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    final names = find.textContaining('long_participant_name_');
+    expect(
+      tester.renderObject<RenderParagraph>(names).didExceedMaxLines,
+      isTrue,
+    );
+    final extra = tester.getRect(find.text('+3'));
+    final arrow = tester.getRect(find.byIcon(Icons.chevron_right_rounded));
+    final entry = tester.getRect(find.byTooltip('会话成员'));
+    expect(tester.getRect(names).right, lessThanOrEqualTo(extra.left));
+    expect(arrow.left - extra.right, inInclusiveRange(0, 6));
+    expect(arrow.right, lessThanOrEqualTo(entry.right));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('群组在前，普通成员只看到自己的退出操作', (tester) async {
+    await tester.pumpWidget(_members(_detail(groups: true, leave: true)));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('管理组')).dy,
+      lessThan(tester.getTopLeft(find.text('@me')).dy),
+    );
+    expect(find.text('@alice'), findsOneWidget);
+    expect(find.text('退出会话'), findsOneWidget);
+    expect(find.byTooltip('更多'), findsNothing);
+    expect(find.text('邀请成员'), findsNothing);
+  });
+
+  testWidgets('按服务端授权展示邀请和移除入口', (tester) async {
+    await tester.pumpWidget(
+      _members(_detail(groups: true, manage: true, invite: true)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('退出会话'), findsNothing);
+    expect(find.byTooltip('更多'), findsNWidgets(2));
+    await tester.tap(find.byTooltip('更多').last);
+    await tester.pumpAndSettle();
+    expect(find.text('移除'), findsOneWidget);
+  });
+
+  testWidgets('邀请排除自己，标记已加入，部分失败只重试失败项', (tester) async {
+    final sent = <String>[];
+    var returned = false;
+    await tester.pumpWidget(
+      _app(
+        PrivateMessageInviteSheet(
+          detail: _detail(),
+          currentUsername: 'me',
+          search: (_) async => const MentionSearchResult(
+            users: [
+              MentionUser(username: 'ME'),
+              MentionUser(username: 'ALICE'),
+              MentionUser(username: 'bob'),
+            ],
+            groups: [MentionGroup(name: 'staff')],
+          ),
+          onInvite: (item) async {
+            sent.add(item.mentionName);
+            if (item.isGroup && sent.length == 2) throw StateError('失败');
+          },
+          onBack: () => returned = true,
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'a');
+    await tester.pump(const Duration(milliseconds: 310));
+    await tester.pump();
+    expect(find.text('@ME'), findsNothing);
+    expect(
+      tester.widget<ListTile>(find.widgetWithText(ListTile, '@ALICE')).enabled,
+      isFalse,
+    );
+    expect(find.text('已加入'), findsOneWidget);
+    await tester.tap(find.text('@bob'));
+    await tester.pump();
+    await tester.tap(find.text('群组 · staff'));
+    await tester.pump();
+    await tester.tap(find.text('邀请 2 项'));
+    await tester.pumpAndSettle();
+    expect(sent, ['bob', 'staff']);
+    expect(returned, isFalse);
+    expect(find.widgetWithText(InputChip, 'staff'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'bob'), findsNothing);
+    await tester.tap(find.text('邀请 1 项'));
+    await tester.pump();
+    expect(sent, ['bob', 'staff', 'staff']);
+    expect(returned, isTrue);
+  });
+
+  testWidgets('从名单进入邀请，用户和群组分别提交并直接展示', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.viewPadding = const FakeViewPadding(top: 44);
+    tester.view.padding = const FakeViewPadding(top: 44);
+    addTearDown(tester.view.reset);
+
+    final service = _Service();
+    await tester.pumpWidget(
+      _members(
+        _detail(invite: true),
+        service: service,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    unawaited(
+      showAppBottomSheet<void>(
+        context: tester.element(find.byType(Scaffold)),
+        isScrollControlled: true,
+        useSafeArea: true,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        blur: false,
+        builder: (_) => const PrivateMessageMembersSheet(params: _params),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('邀请成员'));
+    await tester.pumpAndSettle();
+
+    final sheet = find.byType(AppSheetScaffold);
+    expect(tester.widget<AppSheetScaffold>(sheet).showDragHandle, isTrue);
+    final searchIcon = find.byIcon(Icons.search_rounded);
+    final iconCenter = tester.getCenter(searchIcon).dy;
+    final hint = find.text('搜索用户或群组');
+    expect(tester.getCenter(hint).dy, closeTo(iconCenter, 1));
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 340);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(sheet).dy, closeTo(44, 1));
+    expect(tester.getBottomLeft(find.byType(FilledButton)).dy, lessThan(460));
+
+    await tester.enterText(find.byType(TextField), 'b');
+    await tester.pump(const Duration(milliseconds: 310));
+    await tester.pump();
+    expect(
+      tester.getCenter(find.byType(EditableText)).dy,
+      closeTo(tester.getCenter(searchIcon).dy, 1),
+    );
+    await tester.tap(find.text('@bob'));
+    await tester.pump();
+    await tester.tap(find.text('群组 · team'));
+    await tester.pump();
+    await tester.tap(find.text('邀请 2 项'));
+    await tester.pumpAndSettle();
+    expect(service.calls, ['user/42/bob', 'group/42/team']);
+    expect(find.text('会话成员'), findsOneWidget);
+    expect(find.text('团队'), findsOneWidget);
+    expect(find.text('@bob'), findsOneWidget);
+  });
+
+  testWidgets('慢响应不会覆盖新查询或恢复清空的候选', (tester) async {
+    final requests = <String, Completer<MentionSearchResult>>{};
+    await tester.pumpWidget(
+      _app(
+        PrivateMessageInviteSheet(
+          detail: _detail(),
+          currentUsername: 'me',
+          search: (term) => (requests[term] = Completer()).future,
+          onInvite: (_) async {},
+          onBack: () {},
+        ),
+      ),
+    );
+    for (final term in ['a', 'ab', '']) {
+      await tester.enterText(find.byType(TextField), term);
+      await tester.pump(const Duration(milliseconds: 310));
+    }
+    for (final pending in requests.values.toList().reversed) {
+      pending.complete(
+        const MentionSearchResult(
+          users: [MentionUser(username: 'old')],
+          groups: [],
+        ),
+      );
+    }
+    await tester.pump();
+    expect(find.text('@old'), findsNothing);
+    expect(find.byType(ListTile), findsNothing);
   });
 }

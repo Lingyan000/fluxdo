@@ -69,7 +69,7 @@ abstract final class ImageSaveUtils {
   static Future<bool> _saveToGallery(Uint8List bytes, String fileName) async {
     Directory? stagingDir;
     try {
-      if (!await Gal.hasAccess() && !await Gal.requestAccess()) {
+      if (!await Gal.hasPermission() && !await Gal.requestPermission()) {
         ToastService.showInfo(S.current.imageViewer_grantPermission);
         return false;
       }

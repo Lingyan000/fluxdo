@@ -1,11 +1,11 @@
 name: fluxdo
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.2.30+2026111316
+version: 0.2.31-beta.10+2026111922
 
 environment:
-  sdk: ^3.13.0
-  flutter: ">=3.47.9"
+  sdk: ^3.14.0
+  flutter: ">=3.50.0"
 
 # sqlite3(经 sqflite_common_ffi 引入)的 build hook 默认在构建期从 GitHub
 # 下载预编译库,Flatpak 离线沙箱内必然失败;指向 vendored amalgamation
@@ -22,72 +22,77 @@ workspace:
   - packages/common_ui
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
+  - packages/fluxdo_js_runtime
   - packages/fluxdo_render
   - packages/m3e_ui
   - packages/pangutext
   - packages/paper_shaders
 
 dependencies:
+  cupertino_ui: ^1.1.7
+  material_ui: ^1.11.1
   desktop_multi_window: ^0.3.1
   flutter:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
   # tool/gen_l10n.dart 直接调用 slang 内部 runner，升级时需一起验证。
-  slang: 4.14.0
-  slang_flutter: 4.14.0
+  slang: 4.19.2
+  slang_flutter: 4.19.0
   collection: ^1.19.1
-  synchronized: ^3.4.0+1
-  dio: ^5.11.0
+  synchronized: ^3.6.1+1
+  dio: ^5.11.1
   http: ^1.6.0
-  dio_cookie_manager: ^3.1.1
-  cookie_jar: ^4.0.8
-  flutter_secure_storage: ^10.3.1
+  dio_cookie_manager: ^3.5.0
+  cookie_jar: ^4.0.9
+  # Android 旧版曾用 9.x 保存凭据；保留 10.x 的迁移能力，支持跨版本升级。
+  flutter_secure_storage: ^10.3.4
   flutter_inappwebview: ^6.2.0-beta.3
-  # 编辑器 1:1 预览:跑 Discourse 官方 markdown-it cook bundle
-  # (Android/Win/Linux=QuickJS,iOS/macOS=JavaScriptCore,均走 FFI)
-  flutter_js: ^0.8.7
+  fluxdo_js_runtime:
+    path: packages/fluxdo_js_runtime
   # 自研:native Rust 解码动图(GIF/APNG/动画 WebP),绕开 Flutter Skia
   # multi_frame_codec 在 disposal=2 等场景下的 #85831 bug。
   # 源码:https://github.com/Lingyan000/native_animated_image
   native_animated_image: ^0.3.4
-  flutter_riverpod: ^3.3.2
+  flutter_riverpod: ^3.5.0
   extended_image_lite:
     path: packages/extended_image_lite
   enhanced_cookie_jar:
     path: packages/enhanced_cookie_jar
   re_highlight: ^0.0.3
   lunar: ^1.7.9  # 农历与节气（节日主题判定）
-  share_plus: ^12.0.1
-  cross_file: ^0.3.4+2
-  open_filex: ^4.7.0
-  file_picker: ^10.3.10
-  record: ^7.1.1  # 语音消息录制(AAC-LC,五端)
-  intl: ^0.20.2
-  url_launcher: ^6.3.1
+  share_plus: ^13.3.1
+  cross_file: ^0.3.5+5
+  open_filex: ^5.0.0
+  file_picker: ^13.4.0
+  # 桌面另存为只选择目标路径，避免读取整个文件。
+  file_selector: ^1.1.0
+  record: ^7.2.0  # 语音消息录制(AAC-LC,五端)
+  intl: ^0.20.3
+  url_launcher: ^6.3.3
   font_awesome_flutter: ^11.0.0
   # 全局统一图标库。详见 packages/app_icons/README 与 lib/src/app_icons.dart。
   app_icons:
     path: packages/app_icons
   # NOTE: If updating font_awesome_flutter, run:
   #   dart run tool/gen_fa_name_mapping.dart
-  shared_preferences: ^2.5.4
+  shared_preferences: ^2.5.6
   flutter_displaymode: ^0.7.0  # Android 高刷新率支持
-  dynamic_color: ^1.8.1
+  dynamic_color: ^2.1.0
   scroll_to_index: ^3.0.1
   positioned_sliver_list: 0.2.5
   visibility_detector: ^0.4.0+2
   markdown: ^7.3.1
   emoji_extension: ^1.3.0
-  image_picker: ^1.2.1
+  image_picker: ^1.2.4
   # 扫码登录:已登录设备展示二维码(qr_flutter),待登录设备相机扫码
   # (mobile_scanner: Android/iOS/macOS) 或从相册解码(zxing2,全平台兜底)
   qr_flutter: ^4.1.0
-  mobile_scanner: ^7.4.0
+  mobile_scanner: ^7.5.0
   zxing2: ^0.2.4
   super_clipboard: ^0.9.1
   html2md: ^1.3.2  # 剪贴板 HTML → markdown(富粘贴清洗层)
-  gal: ^2.3.2
+  gal: ^3.0.1
   pangutext:
     path: packages/pangutext
   ai_model_manager:
@@ -100,43 +105,42 @@ dependencies:
     path: packages/paper_shaders
   fluxdo_render:
     path: packages/fluxdo_render
-  flutter_local_notifications: ^21.0.0
-  jovial_svg: ^1.1.29
+  flutter_local_notifications: ^23.0.2
+  jovial_svg: ^1.1.31
   # kroki.io mermaid 出图的 zlib+base64url 编码(纯 Dart,web 可用;
   # 本已是 image 等包的传递依赖,显式声明)
-  archive: ^4.0.9
-  html: ^0.15.5
+  archive: ^4.7.1
+  html: ^0.15.7
   extended_nested_scroll_view: ^6.2.1
-  popover: ^0.4.0
-  uuid: ^4.5.2
+  popover: ^0.5.1
+  uuid: ^4.6.0
   # User API Key 授权自愈:RSA 密钥对生成/PKCS1 解密(payload 与 OTP 均为
   # 服务端用客户端公钥加密回传,见 discourse user_api_keys_controller)
   pointycastle: ^4.0.0
   # Windows 深链前提:discourse://、fluxdo:// 协议需写入 HKCU 注册表
-  # (3.x 被 device_info_plus 12.3.0 的 ^2.1.0 约束挡住,升级时一并跟进)
-  win32_registry: ^2.1.0
-  path_provider: ^2.1.5
+  win32_registry: ^3.0.3
+  path_provider: ^2.1.6
   path: ^1.9.1
   # 「改名上传」媒体修复的魔数嗅探(MediaCompatService):.xz 等白名单
   # 扩展名内实为 mp4/mp3,靠 magic bytes 还原真实容器
-  mime: ^2.0.0
+  mime: ^2.1.0
   # MediaCompatService 本地副本文件名(sha1(url),确定性、重启可复用)
-  crypto: ^3.0.7
-  hive_ce: ^2.19.3
-  hive_ce_flutter: ^2.3.4
+  crypto: ^3.0.8
+  hive_ce: ^2.23.3
+  hive_ce_flutter: ^2.5.0
   dns_client: ^1.3.1
   # 安卓读取 Java 系统属性（系统代理），随配置下发给网络核心
-  jni: ^1.1.1
-  package_info_plus: ^8.1.2
-  pro_image_editor: ^11.18.4
-  flutter_image_compress: ^2.4.0
-  image: ^4.7.2
+  jni: ^1.1.2
+  package_info_plus: ^10.2.2
+  pro_image_editor: ^14.29.0
+  flutter_image_compress: ^2.5.1
+  image: ^4.13.1
   flutter_math_fork: ^0.7.4
-  device_info_plus: 12.3.0
-  connectivity_plus: 7.0.0
+  device_info_plus: 13.3.0
+  connectivity_plus: ^7.3.2
   ota_update: ^7.1.0
-  app_links: ^7.1.1
-  chat_bottom_container: ^0.4.0
+  app_links: ^7.2.2
+  chat_bottom_container: ^0.5.4
   # AVIF 解码器(libavif + dav1d)。之前在 v0.2.x 移除,但 native_animated_image
   # 内置的 zenavif (rav1d-safe) 在 ARM SIMD path 有 panic bug,会 crash app
   # (mc_arm.rs:5905 usize underflow)。flutter_avif 用 C 的 libavif/dav1d,
@@ -146,21 +150,21 @@ dependencies:
   # 直连它的 FFI 符号表(FlutterAvifImpl.flutterAvifFFI),绕开每帧 protobuf
   # 解析 + 双重拷贝的慢桥,见 lib/services/avif_fast_bridge.dart。
   flutter_avif_platform_interface: ^3.1.0
-  catcher_2: ^2.1.5
+  catcher_2: ^2.1.12
   logging: ^1.3.0
-  timezone: ^0.11.0
-  flutter_timezone: ^5.0.2
+  timezone: ^0.11.2
+  flutter_timezone: ^5.1.1
   # Flutter 3.41+ 严格按 wght 查找字体，系统字体缺少某些 weight 会 fallback 到宋体等。
   # 此包给 ThemeData 注入平台合适的中文字体到 fontFamilyFallback。
-  chinese_font_library: ^1.2.0
+  chinese_font_library: ^1.3.0
 
-  window_manager: ^0.5.1
-  screen_retriever: ^0.2.1
+  window_manager: ^0.7.0
+  screen_retriever: ^0.4.0
   flutter_acrylic: ^1.1.4
 
-  flutter_dynamic_icon_plus: ^1.4.0  # 动态应用图标切换
-  flutter_foreground_task: ^9.2.0  # Android 前台服务保活
-  workmanager: ^0.9.0+3            # iOS BGTaskScheduler
+  flutter_dynamic_icon_plus: ^1.6.0  # 动态应用图标切换
+  flutter_foreground_task: ^11.0.3  # Android 前台服务保活
+  workmanager: ^0.10.10            # iOS BGTaskScheduler
 
   video_player: any
   # video_player 官方无 Windows/Linux 后端,两平台经 video_player_media_kit
@@ -174,11 +178,8 @@ dependencies:
   # 其 CMake 会在 configure 期联网下载 mimalloc —— flatpak 禁网沙箱里由
   # scripts/ci/linux/patch_plugins.sh 指向 vendored 副本。
   media_kit_libs_linux: ^1.2.1
-  # 视频播放期间防熄屏(自绘播放器直接依赖)。1.4+ 依赖 package_info_plus ^9
-  # / win32 ^6,与项目锁定的 device_info_plus 12.3.0(win32 ^5)和
-  # package_info_plus ^8 冲突,停在 1.3.x。
-  wakelock_plus: ^1.3.3
-  volume_controller: ^3.6.0 # 播放器竖滑手势调系统音量(仅移动端调用)
+  wakelock_plus: ^1.8.2
+  volume_controller: ^3.7.1 # 播放器竖滑手势调系统音量(仅移动端调用)
   screen_brightness: ^2.1.11 # 播放器竖滑手势调 app 亮度(仅移动端调用)
   just_audio: ^0.10.6 # 原生上传音频播放(FluxdoRender audioBuilder)
   # just_audio 本身不包含 Windows/Linux 实现。
@@ -197,8 +198,8 @@ dependencies:
   ffi: any
   # 性能诊断:掉帧时 app 内连接自身 VM Service 抓取当帧 timeline,
   # 自动归并出耗时 widget(debug/profile 有效,release 无 VM Service)
-  vm_service: ^15.2.0
-  full_svg_flutter: ^1.3.0
+  vm_service: ^15.4.0
+  full_svg_flutter: ^1.5.4
 dependency_overrides:
   # Android 12+ 标准免确认自更新，保留系统确认回退。
   ota_update:
@@ -206,9 +207,8 @@ dependency_overrides:
   # 固定 Dio 5.11.1，仅修复响应流订阅、背压、取消和接收计时。
   dio:
     path: third_party/dio
-  # super_clipboard 0.9.1 要求 device_info_plus <12.0.0，
-  # 但实际 12.x 接口兼容，强制使用项目版本
-  device_info_plus: 12.3.0
+  # super_native_extensions 仅读取 Android SDK 版本，但约束仍停留在 <12。
+  device_info_plus: 13.3.0
   flutter_inappwebview_linux:
     path: packages/flutter_inappwebview_linux
   # Windows 插件析构存在悬垂 this 回调 UAF(CF 验证 WebView 销毁时闪退),
@@ -219,29 +219,37 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  melos: ^7.5.1
-  dart_console: ^4.1.4
+  jovial_svg_transformer: ^1.0.5
+  melos: ^8.6.0
+  dart_console: ^5.1.2
 
 melos:
   useRootAsPackage: true
 
 flutter:
-  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、flutter_js、
+  # 暂保留 CocoaPods：3.47.4 构建仍报告 flutter_avif、
   # super_native_extensions 等插件未支持 SwiftPM，不能只升级 SDK 就切换。
   # Apple 最低版本已同步 iOS 15 / macOS 12；待插件链路验证后独立迁移。
   config:
     enable-swift-package-manager: false
   uses-material-design: true
-  shaders:
-    - shaders/progressive_top_blur.frag
   assets:
-    - assets/logo.svg
-    - assets/logo_modern.svg
-    - assets/logo_modern_light.svg
+    - path: assets/icons/
+      transformers: &svgToSi
+        - package: jovial_svg_transformer
+    - path: assets/icons/thinking/
+      transformers: *svgToSi
+    - path: assets/ai_brands/
+      transformers: *svgToSi
+    - assets/ai_brands/licenses/
+    - path: assets/logo.svg
+      transformers: *svgToSi
+    - path: assets/logo_modern.svg
+      transformers: *svgToSi
+    - path: assets/logo_modern_light.svg
+      transformers: *svgToSi
     - assets/images/
     - assets/certs/
-    - assets/ai_brands/
-    - assets/icons/thinking/
     - assets/polyfill/
     - assets/cook/
     - assets/themes/

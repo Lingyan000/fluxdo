@@ -45,6 +45,30 @@ const EGRESS_BUDGET: Duration = Duration::from_secs(25);
 const ATTEMPT_STAGGER: Duration = Duration::from_millis(250);
 /// 客户端 TLS 握手卡住多久后起备用握手，见 [`EgressConnector::connect_client`]。
 const CLIENT_TLS_BACKUP_DELAY: Duration = Duration::from_millis(1500);
+/// 出站 TCP 保活间隔。移动端不开，避免周期性唤醒射频。
+pub(crate) const CLIENT_KEEPALIVE: Option<Duration> =
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        None
+    } else {
+        Some(Duration::from_secs(45))
+    };
+
+/// 出站 TCP 连接的通用选项，与 Chromium `SetDefaultOptionsForClient` 一致：
+/// 关闭 Nagle，HTTP/2 帧与 TLS 记录这类小写入不必等上一段的 ACK；
+/// 桌面端开 TCP 保活，防止中间设备静默丢弃空闲连接的映射后，复用时要等重传超时才发现。
+pub(crate) fn configure_client_socket(stream: &TcpStream) {
+    if let Err(error) = stream.set_nodelay(true) {
+        warn!("Set TCP_NODELAY failed: {error}");
+    }
+    if let Some(interval) = CLIENT_KEEPALIVE {
+        let keepalive = socket2::TcpKeepalive::new()
+            .with_time(interval)
+            .with_interval(interval);
+        if let Err(error) = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive) {
+            warn!("Set TCP keepalive failed: {error}");
+        }
+    }
+}
 /// 一个候选上游。代理项自带要用的配置：出口可能来自应用内代理，也可能来自
 /// 按目标求值的系统代理（含 PAC），两者在这里统一。
 #[derive(Debug, Clone)]
@@ -58,7 +82,7 @@ pub enum EgressTarget {
 impl fmt::Display for EgressTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Proxy(proxy) => write!(f, "proxy {}:{}", proxy.host, proxy.port),
+            Self::Proxy(_) => f.write_str("proxy [redacted]"),
             Self::Addr { addr, .. } => write!(f, "{addr}"),
         }
     }
@@ -366,7 +390,7 @@ impl EgressConnector {
     }
 
     /// 按候选地址依次握手，见 [`Self::connect_with_handshake`]。
-    async fn connect_targets<T, F, Fut>(
+    pub(crate) async fn connect_targets<T, F, Fut>(
         &self,
         host: &str,
         port: u16,
@@ -430,7 +454,27 @@ impl EgressConnector {
                                 self.record_success(host, target, attempt_started.elapsed());
                                 return Ok(value);
                             }
-                            Err(failure) if !failure.retryable => return Err(failure.error),
+                            Err(failure) if !failure.retryable => {
+                                if matches!(&failure.error, NetError::Certificate(_)) {
+                                    // 证书拒绝以前在记录目标地址之前直接返回，无法对比 Wi-Fi/蜂窝出口。
+                                    // 代理场景不输出代理主机或凭据，目标站点地址族也不能猜测。
+                                    let (route, peer, family, sticky) = match target {
+                                        EgressTarget::Addr { addr, sticky } => (
+                                            "direct", addr.to_string(),
+                                            if addr.is_ipv4() { "ipv4" } else { "ipv6" }, *sticky,
+                                        ),
+                                        EgressTarget::Proxy(_) => ("proxy", "unknown".into(), "unknown", false),
+                                    };
+                                    warn!(
+                                        event = "egress_tls_rejected", host, port,
+                                        route, peerAddr = peer.as_str(), addressFamily = family,
+                                        stickyCandidate = sticky, echRequested = used_ech,
+                                        error = %failure.error,
+                                        "Egress TLS handshake rejected; no retry"
+                                    );
+                                }
+                                return Err(failure.error);
+                            }
                             Err(failure) => {
                                 warn!(
                                     "Egress TLS to {host}:{port} via {target} failed (ECH requested: {used_ech}): {}",
@@ -594,6 +638,7 @@ async fn open_target(
                 .await
                 .map_err(|_| NetError::Timeout)?
                 .map_err(NetError::Io)?;
+            configure_client_socket(&stream);
             Ok(Box::new(stream))
         }
     }

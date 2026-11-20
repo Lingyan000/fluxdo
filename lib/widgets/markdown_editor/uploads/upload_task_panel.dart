@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 
 import '../../../l10n/s.dart';

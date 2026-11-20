@@ -3,7 +3,7 @@ import 'package:common_ui/common_ui.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../utils/idle_task.dart';
 
@@ -22,7 +22,7 @@ import '../../../utils/responsive.dart';
 import '../../../utils/scroll_busy_signal.dart';
 import '../../../utils/time_utils.dart';
 import '../controllers/topic_detail_controller.dart'
-    show topicPostListLeadingItemCount;
+    show PostSegmentRange, topicPostListLeadingItemCount;
 import '../../../widgets/common/positioned_stream_list.dart';
 import '../../../widgets/post/post_item/widgets/post_voting_answer_header.dart';
 
@@ -47,7 +47,7 @@ import 'topic_more_topics.dart';
 import 'topic_status_notices.dart';
 import 'typing_indicator.dart';
 import 'pending_posts_section.dart';
-import 'private_message_participants.dart';
+import 'topic_bottom_bar.dart';
 
 /// 话题帖子列表
 /// 负责构建 CustomScrollView 及其 Slivers
@@ -64,11 +64,7 @@ class TopicPostList extends StatefulWidget {
   final int? selectedPostNumber;
   final int? highlightPostNumber;
   final bool isLoggedIn;
-  final int? removingPrivateMessageParticipantId;
-  final String? removingPrivateMessageGroupName;
-  final ValueChanged<TopicUser>? onRemovePrivateMessageParticipant;
-  final ValueChanged<TopicGroup>? onRemovePrivateMessageGroup;
-  final VoidCallback? onInvitePrivateMessageParticipants;
+  final VoidCallback? onShowMembers;
   final bool hasMoreBefore;
   final bool hasMoreAfter;
 
@@ -83,6 +79,9 @@ class TopicPostList extends StatefulWidget {
   final int initialPostIndex;
   final int? dividerPostIndex;
   final void Function(int postNumber) onFirstVisiblePostChanged;
+
+  /// 以楼层为单位的连续阅读位置。楼层顶部为起点，楼内按视线的位置推进。
+  final ValueChanged<double>? onReadingProgress;
   final void Function(Set<int> visiblePostNumbers)? onVisiblePostsChanged;
   final void Function(Map<int, int>)? onScrollIndexMappingChanged;
   final void Function(Map<int, int>)? onScrollIndexToPostNumberChanged;
@@ -122,6 +121,13 @@ class TopicPostList extends StatefulWidget {
   final void Function(PendingPost pending)? onWithdrawPendingPost;
   final void Function(PendingPost pending)? onWithdrawAndEditPendingPost;
 
+  /// 帖子流读到底后的内联回复入口（宽屏阅读栏形态下提供）
+  final Widget? trailingReplyEntry;
+
+  /// 额外的末尾留白（宽屏停靠编辑器打开时的高度），编辑器开着也能把
+  /// 最后的帖子滚到它上方
+  final ValueListenable<double>? extraBottomInset;
+
   /// 高亮指定用户的 boost（从 boost 通知跳转时使用）
   final String? highlightBoostUsername;
   final bool hideHeaderTitle;
@@ -152,11 +158,7 @@ class TopicPostList extends StatefulWidget {
     this.hideHeaderTitle = false,
     this.canAssignPost = false,
     required this.isLoggedIn,
-    this.removingPrivateMessageParticipantId,
-    this.removingPrivateMessageGroupName,
-    this.onRemovePrivateMessageParticipant,
-    this.onRemovePrivateMessageGroup,
-    this.onInvitePrivateMessageParticipants,
+    this.onShowMembers,
     required this.hasMoreBefore,
     required this.hasMoreAfter,
     required this.loadingPreviousListenable,
@@ -168,6 +170,7 @@ class TopicPostList extends StatefulWidget {
     required this.initialPostIndex,
     required this.dividerPostIndex,
     required this.onFirstVisiblePostChanged,
+    this.onReadingProgress,
     this.onVisiblePostsChanged,
     this.onScrollIndexMappingChanged,
     this.onScrollIndexToPostNumberChanged,
@@ -193,6 +196,8 @@ class TopicPostList extends StatefulWidget {
     this.onShowPostDetail,
     this.onWithdrawPendingPost,
     this.onWithdrawAndEditPendingPost,
+    this.trailingReplyEntry,
+    this.extraBottomInset,
     this.isActivitySort = false,
     this.onAnswerSortChanged,
     this.headingAnchorRegistry,
@@ -212,6 +217,8 @@ class _TopicPostListState extends State<TopicPostList> {
   }
 
   int? _lastReportedPostNumber;
+  Map<int, PostSegmentRange> _segmentRanges = const {};
+  ({List<int> stream, int id, int? nextId, int start, int end})? _readingRange;
 
   /// TYPING 诊断日志去重:上次记录的 typing 人数(见 build 内 Consumer)
   int? _lastLoggedTypingCount;
@@ -241,20 +248,6 @@ class _TopicPostListState extends State<TopicPostList> {
   /// 长帖正文 chunk 的 widget 实例缓存(key: (post.id, chunkIndex)),
   /// 语义同上;data 实例由 [_longPostDataFor] 的内容签名保证稳定。
   final Map<(int, int), _ChunkWidgetCacheEntry> _chunkWidgetCache = {};
-
-  PrivateMessageParticipants _buildPrivateMessageParticipants(
-    PrivateMessageParticipantsLocation location,
-  ) {
-    return PrivateMessageParticipants.fromDetail(
-      location: location,
-      detail: detail,
-      removingParticipantId: widget.removingPrivateMessageParticipantId,
-      removingGroupName: widget.removingPrivateMessageGroupName,
-      onRemoveParticipant: widget.onRemovePrivateMessageParticipant,
-      onRemoveGroup: widget.onRemovePrivateMessageGroup,
-      onInvite: widget.onInvitePrivateMessageParticipants,
-    );
-  }
 
   @override
   void initState() {
@@ -428,9 +421,6 @@ class _TopicPostListState extends State<TopicPostList> {
     final posts = detail.postStream.posts;
     if (posts.isEmpty) return;
 
-    final tagMap = scrollController.tagMap;
-    if (tagMap.isEmpty) return;
-
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
     // 弹簧过冲(BouncingScrollPhysics 出界回弹)期间冻结上报:出界时
@@ -439,7 +429,7 @@ class _TopicPostListState extends State<TopicPostList> {
     // closest 兜底必命中它 —— 进度条瞬跳到 N/N(或视口顶帖),回弹才
     // 恢复;visiblePosts 误报更会经 screenTrack 把末帖标记已读,污染
     // 服务端 lastRead。回界后滚动通知会再次触发本方法,无需补偿。
-    if (position.outOfRange) return;
+    if (!position.hasContentDimensions || position.outOfRange) return;
     final viewportHeight = position.viewportDimension;
 
     // 视口可见区域的上下边界
@@ -465,12 +455,12 @@ class _TopicPostListState extends State<TopicPostList> {
     }
 
     // === 找到 eyeline 所在的帖子并收集可见帖子 ===
-    int? eyelinePostIndex;
+    int? readingSegment;
+    double withinSegment = 0;
     final visiblePostNumbers = <int>{};
     double closestDistance = double.infinity;
-    int? closestPostIndex;
 
-    for (final entry in tagMap.entries) {
+    for (final entry in scrollController.tagMap.entries) {
       final postNumber = _scrollIndexToPostNumber[entry.key];
       if (postNumber == null) continue;
 
@@ -500,38 +490,89 @@ class _TopicPostListState extends State<TopicPostList> {
         visiblePostNumbers.add(postNumber);
       }
 
-      // 帖子包含 eyeline → 即为当前帖子
-      if (topY <= eyeline && bottomY > eyeline) {
-        eyelinePostIndex = _postNumberToIndex[postNumber];
-      }
-
-      // 记录距 eyeline 最近的帖子（兜底用）
+      // 优先取包含视线的段，帖子间隙与底部留白取最近的一段。
       final distance = topY > eyeline
           ? topY - eyeline
           : (bottomY < eyeline ? eyeline - bottomY : 0.0);
-      if (distance < closestDistance) {
+      if (distance < closestDistance ||
+          (topY <= eyeline && eyeline < bottomY)) {
         closestDistance = distance;
-        closestPostIndex = _postNumberToIndex[postNumber];
+        readingSegment = entry.key;
+        final height = renderBox.size.height;
+        withinSegment = height > 0
+            ? ((eyeline - topY) / height).clamp(0.0, 1.0)
+            : 0;
       }
     }
-
-    // 没有帖子包含 eyeline 时（如处于帖子间隙或底部留白），取最近的帖子
-    eyelinePostIndex ??= closestPostIndex;
 
     // 通知可见帖子变化（用于 screenTrack）
     if (visiblePostNumbers.isNotEmpty) {
       onVisiblePostsChanged?.call(visiblePostNumbers);
     }
 
-    if (eyelinePostIndex != null) {
-      final reportPostNumber = posts[eyelinePostIndex].postNumber;
-
-      // 防止重复报告相同的帖子
-      if (reportPostNumber != _lastReportedPostNumber) {
-        _lastReportedPostNumber = reportPostNumber;
-        widget.onFirstVisiblePostChanged(reportPostNumber);
+    if (readingSegment != null) {
+      final number = _renderSegments[readingSegment].post.postNumber;
+      if (number != _lastReportedPostNumber) {
+        _lastReportedPostNumber = number;
+        widget.onFirstVisiblePostChanged(number);
       }
     }
+    _reportReadingProgress(position, readingSegment, withinSegment);
+  }
+
+  void _reportReadingProgress(
+    ScrollPosition position,
+    int? segmentIndex,
+    double withinSegment,
+  ) {
+    final report = widget.onReadingProgress;
+    final stream = detail.postStream.stream;
+    if (report == null || stream.isEmpty) return;
+    // 可见区域可能全是话题标题或帖后的推荐区，仍要能到达进度两端。
+    if (!hasMoreAfter && position.pixels >= position.maxScrollExtent) {
+      report(stream.length.toDouble());
+      return;
+    }
+    if (!hasMoreBefore && position.pixels <= position.minScrollExtent) {
+      report(0);
+      return;
+    }
+    if (segmentIndex == null) return;
+    final segment = _renderSegments[segmentIndex];
+    final post = segment.post;
+    final posts = detail.postStream.posts;
+    final nextIndex = segment.postIndex + 1;
+    final nextId = nextIndex < posts.length ? posts[nextIndex].id : null;
+    // 同一楼内逐帧复用索引。遇到屏蔽楼层时，连续衔接到下一篇可见帖子。
+    var range = _readingRange;
+    if (range == null ||
+        !identical(range.stream, stream) ||
+        range.id != post.id ||
+        range.nextId != nextId) {
+      final start = stream.indexOf(post.id);
+      if (start < 0) return;
+      var end = start + 1;
+      if (nextId != null && (end >= stream.length || stream[end] != nextId)) {
+        final next = stream.indexOf(nextId);
+        if (next >= 0) end = next;
+      }
+      range = _readingRange = (
+        stream: stream,
+        id: post.id,
+        nextId: nextId,
+        start: start,
+        end: end,
+      );
+    }
+
+    // 长帖的段可能已被回收，用稳定的段序号衔接各段的实测位置。
+    final segments = _segmentRanges[post.postNumber]!;
+    final count = segments.lastScrollIndex - segments.firstScrollIndex + 1;
+    final throughPost =
+        (segmentIndex - segments.firstScrollIndex + withinSegment) / count;
+    final start = segment.postIndex == 0 && !hasMoreBefore ? 0 : range.start;
+    final end = nextId == null && !hasMoreAfter ? stream.length : range.end;
+    report(start + (end - start) * throughPost);
   }
 
   /// 可见性由引擎布局后的 itemPositions 统一更新。
@@ -855,6 +896,7 @@ class _TopicPostListState extends State<TopicPostList> {
     _renderSegments = segments;
     _postIndexToScrollIndex = postIndexToScrollIndex;
     _scrollIndexToPostNumber = scrollIndexToPostNumber;
+    _segmentRanges = postSegmentRanges;
     _postNumberToIndex = postNumberToIndex;
     segmentsStopwatch.stop();
     if (segmentsStopwatch.elapsedMilliseconds >= 4) {
@@ -1002,7 +1044,6 @@ class _TopicPostListState extends State<TopicPostList> {
       'load-more',
       'topic-status-notices',
       'suggested-topics',
-      'pm-participants',
       'bottom-padding',
     ];
 
@@ -1047,6 +1088,7 @@ class _TopicPostListState extends State<TopicPostList> {
                         context,
                         TopicDetailHeader(
                           detail: detail,
+                          onShowMembers: widget.onShowMembers,
                           headerKey: headerKey,
                           showTitle: !widget.hideHeaderTitle,
                           onVoteChanged: onVoteChanged,
@@ -1098,8 +1140,16 @@ class _TopicPostListState extends State<TopicPostList> {
   }
 
   Widget _buildTrailingRow(BuildContext context, int index) {
-    if (index == 6) {
-      return SizedBox(height: 80 + MediaQuery.paddingOf(context).bottom);
+    if (index == 5) {
+      // 末尾留出底栏展开态的高度，读到底时最后的内容不被栏遮住
+      final base = TopicBottomBarMetrics.occupiedHeight(context);
+      final extra = widget.extraBottomInset;
+      if (extra == null) return SizedBox(height: base);
+      return ValueListenableBuilder<double>(
+        valueListenable: extra,
+        builder: (context, inset, _) =>
+            SizedBox(height: inset > base ? inset : base),
+      );
     }
     if (hasMoreAfter) {
       return index == 2
@@ -1143,18 +1193,24 @@ class _TopicPostListState extends State<TopicPostList> {
           ),
         );
       case 3:
-        return _wrapContent(context, TopicStatusNotices(detail: detail));
+        final replyEntry = widget.trailingReplyEntry;
+        return _wrapContent(
+          context,
+          replyEntry == null
+              ? TopicStatusNotices(detail: detail)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TopicStatusNotices(detail: detail),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: replyEntry,
+                    ),
+                  ],
+                ),
+        );
       case 4:
         return _wrapContent(context, MoreTopicsSection(detail: detail));
-      case 5:
-        return PrivateMessageParticipants.shouldShowAtBottom(detail)
-            ? _wrapContent(
-                context,
-                _buildPrivateMessageParticipants(
-                  PrivateMessageParticipantsLocation.bottom,
-                ),
-              )
-            : const SizedBox.shrink();
       default:
         return const SizedBox.shrink();
     }
@@ -1422,31 +1478,15 @@ class _TopicPostListState extends State<TopicPostList> {
         break;
     }
 
-    final childWithParticipants =
-        PrivateMessageParticipants.shouldShow(detail) &&
-            post.postNumber == 1 &&
-            (segment.type == _PostRenderSegmentType.shortPost ||
-                segment.type == _PostRenderSegmentType.longFooter)
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              child,
-              _buildPrivateMessageParticipants(
-                PrivateMessageParticipantsLocation.firstPost,
-              ),
-            ],
-          )
-        : child;
-
     // TOC 锚点作用域只挂 1 楼:节点 id 跨帖重复,其他楼的标题不能进
     // 注册表(见 HeadingAnchorRegistrar/headingAnchorKey)。
     final anchorRegistry = widget.headingAnchorRegistry;
     final scopedChild = anchorRegistry != null && post.postNumber == 1
         ? HeadingAnchorScope(
             registry: anchorRegistry,
-            child: childWithParticipants,
+            child: child,
           )
-        : childWithParticipants;
+        : child;
 
     final wrapped = _wrapContent(
       context,
@@ -1762,7 +1802,7 @@ class _LoadMoreIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(child: LoadingSpinner(size: 24)),
+      child: Center(child: LoadingSpinner.standard()),
     );
   }
 }

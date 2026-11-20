@@ -16,6 +16,8 @@
   },
   "post_acceptSolution": "採納為解決方案",
   "post_collapseReplies": "收起回覆",
+  "post_unfoldFullText": "展開全文",
+  "post_foldFullText": "收起全文",
   "post_contentRequired": "請輸入內容",
   "post_deleteReplyConfirm": "確定要刪除這條回覆嗎？此操作可以撤銷。",
   "post_deleteReplyTitle": "刪除回覆",
@@ -98,17 +100,8 @@
       }
     }
   },
-  "post_replyCount": "{count} 條回覆",
-  "@post_replyCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "post_replySent": "回覆已傳送",
   "post_replySentAction": "檢視",
-  "post_replyTo": "回覆給",
   "post_replyToTopic": "回覆話題",
   "post_replyToUser": "回覆 @{username}",
   "@post_replyToUser": {
@@ -132,6 +125,13 @@
   "pm_recipientHint": "搜尋使用者或群組",
   "pm_newTitle": "新增私訊",
   "pm_inviteParticipants": "邀請成員",
+  "pm_conversationMembers": "對話成員",
+  "pm_privateMessage": "私訊",
+  "pm_memberSeparator": "、",
+  "pm_alreadyJoined": "已加入",
+  "pm_leaveConversation": "退出對話",
+  "pm_inviteCount": "邀請 {count} 項",
+  "pm_inviteFailedRetry": "邀請未完成，可重試下列對象：{names}",
   "pm_inviteParticipantsHint": "搜尋使用者或可傳送私信的群組，加入本次私信。",
   "pm_inviteSucceeded": "已邀請",
   "pm_invitePartiallyFailed": "部分邀請失敗：{names}",

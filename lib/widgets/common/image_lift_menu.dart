@@ -1,23 +1,22 @@
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
+import 'dart:ui' show clampDouble, lerpDouble;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
-
-import 'package:flutter/material.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/physics.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../models/shortcut_binding.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../utils/blur_config.dart';
-import 'fading_edge_scroll_view.dart';
+import '../../utils/responsive.dart';
 import 'predictive_back_overlay_handler.dart';
 
-/// X(Twitter)风格「长按浮起」图片上下文菜单的动作项。
+/// 图片长按菜单的操作项。
 class ImageLiftAction {
   const ImageLiftAction({
     required this.icon,
@@ -32,33 +31,23 @@ class ImageLiftAction {
   final VoidCallback onTap;
 }
 
-/// X(Twitter)风格图片长按菜单:对齐 X 在 iOS 上的系统级
-/// `UIContextMenuInteraction` 动效(iOS 16 起 iPhone 上的呈现形态)。
-///
-/// 一次长按同时出现三样东西,共同构成一个整体动画:
-///
-/// 1. **图片浮起(lift)** —— 预览图从源矩形"脱离"(Apple HIG 原文
-///    "the system animates the preview image as it emerges from the
-///    content"),以单一弹簧同时做位移 + 缩放,飞到屏幕中上部预览位,
-///    圆角渐变为 12、阴影渐显;
-/// 2. **背景模糊 + 压暗** —— 整个屏幕(含源图原位)被高斯模糊并叠加
-///    dim 层("dimming the screen behind the preview and the menu"),
-///    预览与菜单在其上保持清晰;
-/// 3. **底部动作面板** —— 同一弹簧从屏幕底缘滑入,大图标按钮阵列
-///    (iOS 16 上下文菜单的底部面板形态,X 的图片菜单即此样式)。
-///
-/// 关闭方式(对齐 iOS 交互):
-/// - 点按遮罩空白处:弹簧回落,预览图回到源矩形;
-/// - 面板下拉:面板跟手位移,超过阈值/速度继续滑出并整体收回;
-/// - 点选动作:整体快速淡出(X/iOS 选动作不回弹,直接消散)后执行回调。
-///
-/// 弹簧参数按 iOS 上下文菜单实测口径(response≈0.35s,damping
-/// ratio≈0.78,整体 ≈0.4s,几乎无过冲),见 [_LiftSpringCurve]。
-/// 浮起菜单源信息包:调用方(ImageContextMenu)汇总传入,避免参数发散。
+/// 记录实际按下的位置，供折叠屏选区和鼠标菜单定位。无障碍长按没有坐标。
+class ImageMenuPress {
+  const ImageMenuPress.longPress([this.position]) : secondary = false;
+  const ImageMenuPress.secondaryTap(Offset point)
+    : position = point,
+      secondary = true;
+
+  final Offset? position;
+  final bool secondary;
+}
+
+/// 帖内图片移交给浮层的预览内容和来源。
 class ImageLiftSpec {
   const ImageLiftSpec({
     required this.sourceContext,
     required this.previewBuilder,
+    this.press = const ImageMenuPress.longPress(),
     this.sourceRadius = 0,
     this.onPreviewTap,
   });
@@ -69,63 +58,147 @@ class ImageLiftSpec {
   /// 预览内容 builder(填满预览框,复用源图缓存零闪烁)。
   final WidgetBuilder previewBuilder;
 
+  final ImageMenuPress press;
+
   /// 源图圆角(网格瓦片 4)。
   final double sourceRadius;
 
-  /// 点预览回调(iOS 语义:点预览打开内容);null 时点预览关闭菜单。
+  /// 点按预览时执行，未提供时关闭菜单。
   final VoidCallback? onPreviewTap;
+}
+
+/// 图片只在长按成立时浮起。点按交给图片本身，滑动交给所在列表。
+class ImageLiftSource extends StatelessWidget {
+  const ImageLiftSource({
+    super.key,
+    required this.onShowMenu,
+    required this.child,
+  });
+
+  final void Function(BuildContext source, ImageMenuPress press) onShowMenu;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      onLongPress: () => onShowMenu(context, const ImageMenuPress.longPress()),
+      child: RawGestureDetector(
+        excludeFromSemantics: true,
+        gestures: {
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+                () => LongPressGestureRecognizer(
+                  duration: const Duration(milliseconds: 350),
+                  debugOwner: this,
+                ),
+                (recognizer) => recognizer.onLongPressStart = (event) =>
+                    onShowMenu(
+                      context,
+                      ImageMenuPress.longPress(event.globalPosition),
+                    ),
+              ),
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                TapGestureRecognizer.new,
+                (recognizer) => recognizer.onSecondaryTapUp = (event) =>
+                    onShowMenu(
+                      context,
+                      ImageMenuPress.secondaryTap(event.globalPosition),
+                    ),
+              ),
+        },
+        child: ValueListenableBuilder<BuildContext?>(
+          valueListenable: ImageLiftMenu.activeSource,
+          builder: (_, source, child) => Opacity(
+            opacity: identical(context, source) ? 0 : 1,
+            child: child,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+typedef _LiftOrigin = ({Rect bounds, Rect visible});
+
+/// 源图和祖先裁切都换算到根浮层坐标，保留滚出视口前的完整图片尺寸。
+_LiftOrigin? _readOrigin(BuildContext source, RenderBox overlay) {
+  if (!source.mounted || !overlay.attached || !overlay.hasSize) return null;
+  RenderObject? box;
+  try {
+    box = source.findRenderObject();
+  } on FlutterError {
+    // 列表回收时，元素可能已停用但尚未卸载。
+    return null;
+  }
+  if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+  final bounds = MatrixUtils.transformRect(
+    box.getTransformTo(overlay),
+    Offset.zero & box.size,
+  );
+  if (!bounds.isFinite || bounds.isEmpty) return null;
+  var visible = bounds.intersect(Offset.zero & overlay.size);
+  RenderObject descendant = box;
+  while (descendant != overlay && descendant.parent != null) {
+    final parent = descendant.parent!;
+    final clip = parent.describeApproximatePaintClip(descendant);
+    if (clip != null) {
+      visible = visible.intersect(
+        MatrixUtils.transformRect(parent.getTransformTo(overlay), clip),
+      );
+    }
+    descendant = parent;
+  }
+  return visible.isEmpty ? null : (bounds: bounds, visible: visible);
 }
 
 class ImageLiftMenu {
   ImageLiftMenu._();
 
-  /// 当前浮起会话的源 element(非 null = 会话进行中)。
-  ///
-  /// 源图处以 [ValueListenableBuilder] 监听本 notifier:值与自身 context
-  /// 同一(identical)时以 `Opacity(0)` 隐藏 —— X/iOS lift 语义:源视图
-  /// 被「拿走」浮起,原位空缺,与查看大图的 Hero 飞行一致;落回/淡出
-  /// 时恢复。
+  /// 浮层接管绘制的图片，关闭后交还给原位的 [ImageLiftSource]。
   static final ValueNotifier<BuildContext?> _activeSource =
       ValueNotifier<BuildContext?>(null);
 
   static ValueListenable<BuildContext?> get activeSource => _activeSource;
 
-  /// 弹出浮起菜单。
-  ///
-  /// [context] 源图片的 BuildContext,用于取源矩形(全局坐标)与
-  /// Overlay;[previewBuilder] 返回填满预览框的内容(同一图片 provider
-  /// / SVG 会话缓存,零闪烁);[actions] 动作项;[sourceRadius] 源图
-  /// 圆角(网格瓦片传 4,动画中插值到预览圆角);[onPreviewTap] 点按
-  /// 预览图的回调(iOS 语义:点预览打开内容),null 时点预览关闭菜单。
-  ///
-  /// 返回是否成功弹出(取不到源矩形/动作为空/已有会话时返回 false,
-  /// 调用方可回退到其他菜单形态)。
+  /// 从源图位置打开操作菜单，无法取得可见来源或已有预览时返回 false。
   static bool show({
     required BuildContext context,
     required WidgetBuilder previewBuilder,
     required List<ImageLiftAction> actions,
     double sourceRadius = 0,
     VoidCallback? onPreviewTap,
+    ImageMenuPress press = const ImageMenuPress.longPress(),
   }) {
     if (actions.isEmpty) return false;
     // 同一时刻只允许一个浮起会话(遮罩本就独占输入)。
     if (_activeSource.value != null) return false;
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox ||
-        !renderObject.attached ||
-        !renderObject.hasSize) {
-      return false;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return false;
+    final overlayBox = overlay.context.findRenderObject();
+    if (overlayBox is! RenderBox) return false;
+    final origin = _readOrigin(context, overlayBox);
+    if (origin == null) return false;
+
+    // 右键优先让操作列表贴近指针，空间不足时交还普通指针菜单。
+    Alignment? pressAnchor;
+    if (press.position case final position?) {
+      final point = overlayBox.globalToLocal(position);
+      if (press.secondary &&
+          !_LiftViewport(
+            overlayBox.size,
+            MediaQuery.of(overlay.context),
+            point,
+          ).wide) {
+        return false;
+      }
+      final bounds = origin.bounds;
+      pressAnchor = Alignment(
+        2 * (point.dx - bounds.left) / bounds.width - 1,
+        2 * (point.dy - bounds.top) / bounds.height - 1,
+      );
     }
-    final rawRect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
-    if (rawRect.isEmpty || rawRect.hasNaN) return false;
-    // 源盒子可能比窗口还大/部分出屏(unbounded 容器:横滚内容、按原图
-    // 尺寸排的盒子等),此时从完整源矩形起飞会让飞行前段全部在屏幕外
-    // (预览「跑到外面」)。动画起点取与窗口的交集 —— 用户实际看到的
-    // 那一部分;图片完整宽高比另记(_contentAspect)供目标矩形计算。
-    final windowRect = Offset.zero & MediaQuery.sizeOf(context);
-    final sourceRect = rawRect.intersect(windowRect);
-    if (sourceRect.isEmpty) return false;
-    final contentAspect = rawRect.width / rawRect.height;
 
     // 模糊偏好与底部弹框同口径(dialog_utils._isBlurEnabled)。
     bool enableBlur = true;
@@ -154,15 +227,18 @@ class ImageLiftMenu {
       // 无 ProviderScope 环境(测试等)跳过快捷键注册。
     }
 
-    final overlay = Overlay.of(context, rootOverlay: true);
+    final route = ModalRoute.of(context);
     final viewKey = GlobalKey<_ImageLiftMenuViewState>();
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ImageLiftMenuView(
         key: viewKey,
         sourceContext: context,
-        sourceRect: sourceRect,
-        contentAspect: contentAspect,
+        route: route,
+        origin: origin,
+        pressAnchor: pressAnchor,
+        secondary: press.secondary,
+        overlayBox: overlayBox,
         sourceRadius: sourceRadius,
         previewBuilder: previewBuilder,
         actions: actions,
@@ -170,6 +246,7 @@ class ImageLiftMenu {
         enableBlur: enableBlur,
         onDismissed: () {
           entry.remove();
+          entry.dispose();
           if (shortcutOwner != null) {
             shortcutRegistry?.unregister(owner: shortcutOwner);
           }
@@ -184,7 +261,7 @@ class ImageLiftMenu {
         kind: ShortcutSurfaceKind.overlay,
         repeatBehavior: ShortcutSurfaceRepeatBehavior.dedupe,
         blocksShortcuts: true,
-        route: ModalRoute.of(context),
+        route: route,
         onClose: () => viewKey.currentState?._requestClose(),
       );
     }
@@ -192,58 +269,61 @@ class ImageLiftMenu {
     // 源「被拿走」无感切换。
     _activeSource.value = context;
     overlay.insert(entry);
-    HapticFeedback.mediumImpact();
+    if (!press.secondary) HapticFeedback.mediumImpact();
     return true;
   }
 }
 
-/// 生命周期:等测量 → 浮起 → 常驻 → 收回/淡出。
-enum _LiftPhase { waitingMeasure, opening, open, closing, fading }
+const _openDuration = Duration(milliseconds: 270);
+const _closeDuration = Duration(milliseconds: 230);
+const _fadeDuration = Duration(milliseconds: 150);
+const _panelStart = 0.22;
+const _sheetMaxWidth = 480.0;
+const _sideGap = 16.0;
 
-const Duration _kOpenDuration = Duration(milliseconds: 420);
-const Duration _kCloseDuration = Duration(milliseconds: 380);
-const Duration _kFadeDuration = Duration(milliseconds: 200);
-
-const double _kPreviewMarginH = 24;
-const double _kPreviewMaxWidth = 480; // 大屏(iPad/桌面)不铺满全宽
-const double _kPreviewMaxHeightFactor = 0.52;
-const double _kPreviewTargetRadius = 12;
-const double _kPanelCornerRadius = 20; // 对齐 AppSheetScaffold 外壳
-const double _kPanelMaxWidth = 480; // 大屏面板居中限宽,两侧可点遮罩关闭
-const double _kSpringSpanSec = 0.42;
-
-/// 度量变化后布局稳定所需的观察帧数上限(LayoutBuilder 链、sliver
-/// 惰性重排会跨多帧,单帧测量会拿到中间态)。
-const int _kSettleFrames = 8;
-
-/// iOS 上下文菜单浮起弹簧:response≈0.35s、damping ratio≈0.78
-/// (社区对 UIKit 的实测口径),对应 stiffness=(2π/0.35)²≈322.5、
-/// damping=2·0.78·√322.5≈28.0,微量过冲(≈2%)后快速稳态。
-class _LiftSpringCurve extends Curve {
-  const _LiftSpringCurve();
-
-  static final SpringSimulation _sim = SpringSimulation(
-    const SpringDescription(mass: 1, stiffness: 322.5, damping: 28.0),
-    0,
-    1,
-    0,
-  );
-
-  @override
-  double transformInternal(double t) {
-    final value = _sim.x(t * _kSpringSpanSec);
-    return value < 0 ? 0.0 : value;
+/// 根浮层中的可用区域。跨铰链的窗口选取触点所在的一侧。
+class _LiftViewport {
+  _LiftViewport(Size size, MediaQueryData media, Offset anchor) {
+    final window = Offset.zero & size;
+    var section = window;
+    if (media.displayFeatures.isNotEmpty) {
+      final screens = DisplayFeatureSubScreen.subScreensInBounds(
+        window,
+        DisplayFeatureSubScreen.avoidBounds(media),
+      );
+      double distance(Rect rect) =>
+          (anchor - _inside(rect, anchor)).distanceSquared;
+      section = screens.reduce((a, b) => distance(a) <= distance(b) ? a : b);
+    }
+    bounds = section;
+    safe = section.intersect(
+      (media.padding + media.viewInsets).deflateRect(window),
+    );
   }
+
+  late final Rect bounds;
+  late final Rect safe;
+  bool get wide => safe.width >= Breakpoints.mobile && safe.height > 0;
 }
 
-const Curve _spring = _LiftSpringCurve();
+Offset _inside(Rect rect, Offset point) => Offset(
+  clampDouble(point.dx, rect.left, rect.right),
+  clampDouble(point.dy, rect.top, rect.bottom),
+);
+
+/// 图片先离开原位，面板随后入场。两者都由当前可见进度驱动，收回时沿原路返回。
+double _panelProgress(double lift) =>
+    ((lift - _panelStart) / (1 - _panelStart)).clamp(0.0, 1.0);
 
 class _ImageLiftMenuView extends StatefulWidget {
   const _ImageLiftMenuView({
     super.key,
     required this.sourceContext,
-    required this.sourceRect,
-    required this.contentAspect,
+    required this.route,
+    required this.origin,
+    required this.pressAnchor,
+    required this.secondary,
+    required this.overlayBox,
     required this.sourceRadius,
     required this.previewBuilder,
     required this.actions,
@@ -252,16 +332,12 @@ class _ImageLiftMenuView extends StatefulWidget {
     required this.onDismissed,
   });
 
-  /// 源图 element:会话期间 `ImageLiftMenu.activeSource` 指向它,
-  /// 源图据此隐藏;结束时清除。
   final BuildContext sourceContext;
-
-  /// 动画起点的源矩形(已与窗口求交,恒在视口内)。
-  final Rect sourceRect;
-
-  /// 图片完整宽高比(未与窗口求交的原始盒子计算):目标矩形按它等比,
-  /// 源盒子超屏被裁时预览内容比例仍正确。
-  final double contentAspect;
+  final ModalRoute<dynamic>? route;
+  final _LiftOrigin origin;
+  final Alignment? pressAnchor;
+  final bool secondary;
+  final RenderBox overlayBox;
   final double sourceRadius;
   final WidgetBuilder previewBuilder;
   final List<ImageLiftAction> actions;
@@ -274,693 +350,610 @@ class _ImageLiftMenuView extends StatefulWidget {
 }
 
 class _ImageLiftMenuViewState extends State<_ImageLiftMenuView>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
-  late final AnimationController _master = AnimationController(vsync: this);
-  late final AnimationController _dragReset = AnimationController(vsync: this);
-
-  final GlobalKey _panelKey = GlobalKey();
-
-  _LiftPhase _phase = _LiftPhase.waitingMeasure;
+    with TickerProviderStateMixin {
+  late final _lift = AnimationController(vsync: this, duration: _openDuration);
+  late final _opacity = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: _fadeDuration,
+  );
   final _acceptsInput = ValueNotifier(true);
+  final _panelKey = GlobalKey();
+  late final _scroll = _PanelScrollController(this);
+  final _floatingScroll = ScrollController();
+  final _menuFocus = FocusScopeNode(debugLabel: 'Image actions');
+  FocusNode? _previousFocus;
+  (Size, Rect, Rect)? _lastViewport;
+  late _LiftOrigin _origin = widget.origin;
+  double? _backStart;
+  bool _draggingPanel = false;
+  bool _sourceRestored = false;
 
-  /// 源矩形(可变:窗口/旋转变化时重测并与窗口求交,见 [didChangeMetrics])。
-  late Rect _sourceRect = widget.sourceRect;
-
-  /// 图片完整宽高比(随重测更新)。
-  late double _contentAspect = widget.contentAspect;
-
-  /// 面板实测高度(首帧后测量面板再起动画)。
-  double _panelHeight = 0;
-
-  /// 预览目标矩形在 build 期从当前 MediaQuery 派生(见 [build]):窗口
-  /// 尺寸变化触发的重建同一帧即拿到新几何,不依赖 settle 回调链——
-  /// postFrame 回调不保证有后续帧,且源 element 被卸载后回调链可能
-  /// 中断,存量的目标矩形会永远停留在旧窗口尺寸(预览稳态越屏)。
-
-  /// 度量变化后的稳定观察剩余帧数与调度去重(见 [didChangeMetrics])。
-  int _settleFrames = 0;
-  bool _settleScheduled = false;
-
-  /// 源 element 已卸载(列表回收等):关闭时不再飞回原位,原地淡出。
-  bool _sourceDetached = false;
-
-  /// 重测发现源盒子整体移出视口(大改重排/横滚翻页):关闭原地淡出。
-  bool _sourceOffscreen = false;
-
-  /// 面板下拉跟手位移(常驻态)与收回时冻结的起始位移。
-  double _dragOffset = 0;
-  double _frozenDrag = 0;
-  Animation<double>? _dragResetAnim;
-
-  /// 淡出后待执行的动作回调。
-  VoidCallback? _pendingCallback;
-
-  /// 返回键消费项:挂源页面路由的 local history,系统返回(按钮/
-  /// 手势 commit/页面返回入口)优先关菜单而非 pop 页面。
-  LocalHistoryEntry? _historyEntry;
-  bool _removingHistory = false;
-
-  /// Android 预测返回手势:跟手进度(非 null 表示手势进行中/回弹中)。
+  LocalHistoryEntry? _history;
   PredictiveBackOverlayHandler? _backHandler;
-  double? _backProgress;
-  bool _backResetAnimating = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _master.addStatusListener(_onMasterStatus);
-    _attachBackHandling();
-    // 首帧:预览盖在源图上(像素级重合)、遮罩全透明、面板移出屏外,
-    // 测得面板高度与预览目标矩形后再开始浮起动画,延迟一帧不可感知。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureAndOpen());
-  }
-
-  /// 返回拦截:LocalHistoryEntry(所有 pop 路径先关菜单) + 预测返回
-  /// 手势(Android 13+ 跟手动画,commit 关菜单/cancel 回弹)。
-  void _attachBackHandling() {
-    final route = ModalRoute.of(widget.sourceContext);
+    _open();
+    final route = widget.route;
     if (route == null) return;
-    _historyEntry = LocalHistoryEntry(
+    _history = LocalHistoryEntry(
       onRemove: () {
-        _historyEntry = null;
-        if (!_removingHistory) _requestClose();
+        _history = null;
+        if (_acceptsInput.value) _requestClose();
       },
     );
-    route.addLocalHistoryEntry(_historyEntry!);
+    route.addLocalHistoryEntry(_history!);
     _backHandler = PredictiveBackOverlayHandler(
-      isEnabled: () =>
-          route.isCurrent &&
-          (_phase == _LiftPhase.open || _phase == _LiftPhase.opening),
-      onStart: _onBackStart,
-      onUpdate: _onBackUpdate,
-      onCancel: _onBackCancel,
-      onCommit: _onBackCommit,
+      isEnabled: () => route.isCurrent && _acceptsInput.value,
+      onStart: () {
+        _lift.stop();
+        _refreshOrigin();
+        _backStart = _lift.value;
+      },
+      onUpdate: (progress) {
+        if (_acceptsInput.value) _lift.value = _backStart! * (1 - progress);
+      },
+      onCancel: () {
+        _backStart = null;
+        if (_acceptsInput.value) _open();
+      },
+      onCommit: _requestClose,
     )..attach();
   }
 
-  void _detachHistory() {
-    final entry = _historyEntry;
-    if (entry == null) return;
-    _historyEntry = null;
-    _removingHistory = true;
-    entry.remove();
-    _removingHistory = false;
+  void _open() {
+    _lift.animateTo(
+      1,
+      duration: _openDuration * (1 - _lift.value),
+      curve: Curves.fastOutSlowIn,
+    );
   }
 
-  // ---- Android 预测返回手势:跟手进度叠加在现有动画输出之上 ----
-
-  void _onBackStart() {
-    // 手势接管:opening 动画若在进行先停住,进度由手势驱动。
-    _master.stop();
-    _dragReset.stop();
-    setState(() => _backProgress = 0);
+  bool _refreshOrigin() {
+    final origin = _readOrigin(widget.sourceContext, widget.overlayBox);
+    if (origin == null) return false;
+    if (origin != _origin) setState(() => _origin = origin);
+    return true;
   }
 
-  void _onBackUpdate(double progress) {
-    if (_backProgress == null) return;
-    setState(() => _backProgress = progress);
-  }
-
-  void _onBackCancel() {
-    final start = _backProgress ?? 0;
-    // 恢复 opening(手势开始于 opening 阶段时从断点继续)。
-    if (_phase == _LiftPhase.opening) _master.forward();
-    if (start <= 0) {
-      setState(() => _backProgress = null);
-      return;
+  void _restoreSource() {
+    if (_sourceRestored) return;
+    _sourceRestored = true;
+    if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
+      ImageLiftMenu._activeSource.value = null;
     }
-    // 跟手进度回弹到 0(复用 _dragReset 通道)。
-    _backResetAnimating = true;
-    _dragResetAnim = Tween<double>(
-      begin: start,
-      end: 0,
-    ).animate(CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic));
-    _dragReset
-      ..duration = const Duration(milliseconds: 220)
-      ..forward(from: 0).whenCompleteOrCancel(() {
-        if (mounted) {
-          setState(() {
-            _backProgress = null;
-            _backResetAnimating = false;
-          });
-        }
-      });
   }
 
-  void _onBackCommit() {
-    setState(() => _backProgress = null);
-    _close();
+  void _requestClose() => _dismiss();
+
+  void _dismiss({VoidCallback? action, double flingSpeed = 0}) {
+    if (!_acceptsInput.value) return;
+    _acceptsInput.value = false;
+    _lift.stop();
+    final returnToSource = action == null && _refreshOrigin();
+    if (action != null && !widget.secondary) {
+      HapticFeedback.selectionClick();
+    }
+    if (!returnToSource) _restoreSource();
+    final exit = returnToSource
+        ? _returnToSource(flingSpeed)
+        : _opacity.animateBack(0, curve: Curves.easeOut);
+    exit.then((_) {
+      if (!mounted) return;
+      _restoreSource();
+      _history?.remove();
+      if (_menuFocus.hasFocus &&
+          (_previousFocus?.canRequestFocus ?? false) &&
+          _previousFocus?.context?.mounted == true) {
+        _previousFocus!.requestFocus();
+      }
+      widget.onDismissed();
+      action?.call();
+    });
+  }
+
+  TickerFuture _returnToSource(double flingSpeed) {
+    final distance = _lift.value;
+    var duration = _closeDuration * distance;
+    Curve curve = Curves.fastOutSlowIn;
+    if (flingSpeed > 0) {
+      // 匀减速到零，平均速度为松手速度的一半。
+      final seconds = 2 * distance / flingSpeed;
+      final coast = Duration(
+        microseconds: (seconds * Duration.microsecondsPerSecond).round(),
+      );
+      if (coast < duration) duration = coast;
+      curve = Curves.decelerate;
+    }
+    return _lift.animateBack(0, duration: duration, curve: curve);
+  }
+
+  // 列表到顶后把余下的位移交给面板。手指反向时先把面板推回，再继续滚列表。
+  double _consumePanelDrag(double delta) {
+    if (!_acceptsInput.value || _backStart != null) return delta;
+    if (!_draggingPanel && (delta <= 0 || _lift.value <= _panelStart)) {
+      return delta;
+    }
+    final height = _panelHeight;
+    if (height <= 0) return delta;
+    final before = _panelProgress(_lift.value);
+    final after = (before - delta / height).clamp(0.0, 1.0);
+    if (before == after) return delta;
+    if (!_draggingPanel) _refreshOrigin();
+    _draggingPanel = true;
+    _lift.value = _panelStart + after * (1 - _panelStart);
+    return delta - (before - after) * height;
+  }
+
+  double get _panelHeight => _panelKey.currentContext?.size?.height ?? 0;
+
+  bool _releasePanel(double velocity) {
+    if (!_draggingPanel) return false;
+    _draggingPanel = false;
+    if (_acceptsInput.value && _backStart == null) {
+      final fling = velocity > 700 && _panelHeight > 0;
+      if (_panelProgress(_lift.value) < 0.68 || fling) {
+        // 把手指的像素速度换成浮起进度的速度，让快速甩出的面板继续减速滑走。
+        _dismiss(
+          flingSpeed: fling ? velocity * (1 - _panelStart) / _panelHeight : 0,
+        );
+      } else {
+        _open();
+      }
+    }
+    return _lift.value < 1;
   }
 
   @override
   void dispose() {
-    // 防御:overlay entry 被外部移除时也保证源图恢复可见。
-    if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
-      ImageLiftMenu._activeSource.value = null;
-    }
+    _acceptsInput.value = false;
     _backHandler?.dispose();
-    _detachHistory();
-    WidgetsBinding.instance.removeObserver(this);
-    _master.dispose();
-    _dragReset.dispose();
+    _history?.remove();
+    _restoreSource();
+    _menuFocus.dispose();
+    _floatingScroll.dispose();
+    _scroll.dispose();
+    _lift.dispose();
+    _opacity.dispose();
     _acceptsInput.dispose();
     super.dispose();
   }
 
-  /// 窗口/屏幕度量变化(桌面拖拽边缘、旋转、分屏):预览目标位、面板
-  /// 定位与源矩形都可能失效,重测后整体跳到新布局。连续拖拽时逐帧
-  /// 跟随,与原生浮层的重排行为一致。
-  ///
-  /// 大改动会引发**多帧级联重排**(LayoutBuilder 链、sliver 惰性重排、
-  /// 图片占位切换),单帧测量会拿到中间态;故在度量变化后的数帧内
-  /// 持续重测,直到矩形不再变化(见 [_kSettleFrames])。
-  @override
-  void didChangeMetrics() {
-    // 首测尚未进行:几何信息由 [_measureAndOpen] 统一建立。
-    if (_phase == _LiftPhase.waitingMeasure) return;
-    _settleFrames = _kSettleFrames;
-    _scheduleSettleMeasure();
-  }
-
-  void _scheduleSettleMeasure() {
-    if (_settleScheduled || _settleFrames <= 0 || !mounted) return;
-    _settleScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _settleScheduled = false;
-      if (!mounted ||
-          _settleFrames <= 0 ||
-          _phase == _LiftPhase.closing ||
-          _phase == _LiftPhase.fading) {
-        return;
-      }
-      _settleFrames--;
-      final changed = _remeasureGeometry();
-      // 还有剩余帧且期间仍有变化 → 继续观察;无变化时提前停止。
-      if (_settleFrames > 0 &&
-          (changed || _settleFrames == _kSettleFrames - 1)) {
-        _scheduleSettleMeasure();
-      }
-    });
-  }
-
-  /// 重测源矩形/面板高度/窗口尺寸,有实际变化时重算目标并重建。
-  bool _remeasureGeometry() {
-    var changed = false;
-
-    // 重测源矩形:窗口变化引起文档流重排,源图位置随实际布局走;与窗口
-    // 求交(unbounded 盒子可能超屏),并同步完整宽高比。源 element 已
-    // 卸载(sliver 回收、响应式布局切换重挂载等)保持旧矩形并标记
-    // detached,源整体移出视口标记 offscreen —— 两种情况关闭时都按
-    // 「无源」处理(原地淡出)。
-    //
-    // 防护:非 active 的 element 在 debug 下 findRenderObject 直接抛
-    // FlutterError(而非返回 null)——不挡的话异常会中断 settle 回调链,
-    // 后续窗口变化永远无法重测。
-    final sourceContext = widget.sourceContext;
-    RenderObject? renderObject;
-    if (sourceContext.mounted) {
-      try {
-        renderObject = sourceContext.findRenderObject();
-      } catch (_) {
-        renderObject = null;
-      }
-    }
-    final screen = MediaQuery.sizeOf(context);
-    if (renderObject is RenderBox &&
-        renderObject.attached &&
-        renderObject.hasSize) {
-      final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
-      if (!rect.hasNaN && !rect.isEmpty) {
-        final visible = rect.intersect(Offset.zero & screen);
-        if (visible.isEmpty) {
-          if (!_sourceOffscreen) {
-            _sourceOffscreen = true;
-            changed = true;
-          }
-        } else {
-          if (_sourceRect != visible) {
-            _sourceRect = visible;
-            changed = true;
-          }
-          final aspect = rect.width / rect.height;
-          if (_contentAspect != aspect) {
-            _contentAspect = aspect;
-            changed = true;
-          }
-          if (_sourceOffscreen) {
-            _sourceOffscreen = false;
-            changed = true;
-          }
-        }
-        if (_sourceDetached) {
-          _sourceDetached = false;
-          changed = true;
-        }
-      }
-    } else if (!_sourceDetached) {
-      _sourceDetached = true;
-    }
-
-    final panelRenderObject = _panelKey.currentContext?.findRenderObject();
-    if (panelRenderObject is RenderBox && panelRenderObject.hasSize) {
-      final height = panelRenderObject.size.height;
-      if (_panelHeight != height) {
-        _panelHeight = height;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      setState(() {});
-    }
-    return changed;
-  }
-
-  void _measureAndOpen() {
-    if (!mounted) return;
-    final renderObject = _panelKey.currentContext?.findRenderObject();
-    if (renderObject is RenderBox && renderObject.hasSize) {
-      _panelHeight = renderObject.size.height;
-    } else {
-      _panelHeight = 180; // 测不到时的保守估值,仅影响预览垂直定位。
-    }
-    setState(() => _phase = _LiftPhase.opening);
-    _master.duration = _kOpenDuration;
-    _master.forward(from: 0);
-  }
-
-  /// 预览目标矩形:按源图宽高比放大到多限约束内,水平居中,
-  /// 垂直居中于「顶部安全区 ~ 面板上缘」的可用区间
-  /// (iOS 上下文菜单:预览悬于中上部,菜单贴底)。
-  Rect _computeTargetRect(Size screen, EdgeInsets padding) {
-    final aspect = _contentAspect;
-    final maxW = math.min(
-      screen.width - 2 * _kPreviewMarginH,
-      _kPreviewMaxWidth,
-    );
-    final maxH = screen.height * _kPreviewMaxHeightFactor;
-    var w = maxW;
-    var h = w / aspect;
-    if (h > maxH) {
-      h = maxH;
-      w = h * aspect;
-    }
-    final availTop = padding.top + 12;
-    final availBottom = screen.height - _panelHeight - 16;
-    final center = (availTop + availBottom) / 2;
-    var top = center - h / 2;
-    // 上下边界钳制:极端比例(矮窗口 + 高面板)下也不越出屏幕。
-    if (top < availTop) top = availTop;
-    final maxTop = math.max(availTop, availBottom - h);
-    if (top > maxTop) top = maxTop;
-    return Rect.fromLTWH((screen.width - w) / 2, top, w, h);
-  }
-
-  void _onMasterStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    switch (_phase) {
-      case _LiftPhase.opening:
-        if (mounted) setState(() => _phase = _LiftPhase.open);
-      case _LiftPhase.closing:
-      case _LiftPhase.fading:
-        _finish();
-      case _LiftPhase.open:
-      case _LiftPhase.waitingMeasure:
-        break;
-    }
-  }
-
-  void _finish() {
-    // 先恢复源图再移除 overlay:回落动画末帧预览与源图像素级重合,
-    // 同帧切换无感。淡出路径源图已在 [_runAction] 里提前恢复。
-    if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
-      ImageLiftMenu._activeSource.value = null;
-    }
-    // 菜单已关:返回消费项同步摘除,避免占用页面的返回拦截。
-    _detachHistory();
-    widget.onDismissed();
-    _pendingCallback?.call();
-    _pendingCallback = null;
-  }
-
-  /// 快捷键 surface(ESC)的关闭入口。
-  void _requestClose() => _close();
-
-  /// 点遮罩 / 收回:预览弹簧回落到源矩形,面板继续滑出。
-  ///
-  /// 源图已不在视口内(窗口大改后文档流重排把源图推出屏、轮播翻页、
-  /// 列表回收)或已卸载时,飞回原位会把预览甩出屏幕 —— 改为原地淡出
-  /// (iOS 上下文菜单源视图不可用时的消散语义)。
-  void _close({double? fromDrag}) {
-    if (_phase != _LiftPhase.open && _phase != _LiftPhase.opening) return;
-    _acceptsInput.value = false;
-    _dragReset.stop();
-    if (_isSourceVisible()) {
-      _frozenDrag = fromDrag ?? _dragOffset;
-      _dragOffset = 0;
-      setState(() => _phase = _LiftPhase.closing);
-      _master.duration = _kCloseDuration;
-      _master.forward(from: 0);
-    } else {
-      _frozenDrag = 0;
-      _dragOffset = 0;
-      setState(() => _phase = _LiftPhase.fading);
-      _master.duration = _kFadeDuration;
-      _master.forward(from: 0);
-    }
-  }
-
-  /// 源图当前是否仍(至少部分)在视口内且未卸载。
-  bool _isSourceVisible() {
-    if (_sourceDetached || _sourceOffscreen) return false;
-    final screen = MediaQuery.sizeOf(context);
-    return _sourceRect.overlaps(Offset.zero & screen);
-  }
-
-  /// 选动作:整体淡出(X/iOS 语义:选动作不回弹,直接消散),
-  /// overlay 移除后执行回调。
-  void _runAction(VoidCallback onTap) {
-    if (_phase != _LiftPhase.open && _phase != _LiftPhase.opening) return;
-    _acceptsInput.value = false;
-    HapticFeedback.selectionClick();
-    // 选动作整体淡出:源图立即在底下恢复(iOS 交叉淡出语义,遮罩与
-    // 预览一起淡去时露出完整页面),动作在淡出完成后执行。
-    if (identical(ImageLiftMenu._activeSource.value, widget.sourceContext)) {
-      ImageLiftMenu._activeSource.value = null;
-    }
-    _pendingCallback = onTap;
-    _frozenDrag = 0;
-    _dragOffset = 0;
-    _dragReset.stop();
-    setState(() => _phase = _LiftPhase.fading);
-    _master.duration = _kFadeDuration;
-    _master.forward(from: 0);
-  }
-
-  void _handlePreviewTap() {
-    final onTap = widget.onPreviewTap;
-    if (onTap != null) {
-      _runAction(onTap);
-    } else {
-      _close();
-    }
-  }
-
-  void _onPanelDragUpdate(DragUpdateDetails details) {
-    final delta = details.primaryDelta ?? 0;
-    if (delta == 0) return;
-    setState(() {
-      _dragOffset = (_dragOffset + delta).clamp(0.0, _panelHeight);
-    });
-  }
-
-  void _onPanelDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldClose = _dragOffset > _panelHeight * 0.32 || velocity > 700;
-    if (shouldClose) {
-      _close(fromDrag: _dragOffset);
-      return;
-    }
-    if (_dragOffset > 0) {
-      _dragResetAnim = Tween<double>(begin: _dragOffset, end: 0).animate(
-        CurvedAnimation(parent: _dragReset, curve: Curves.easeOutCubic),
-      );
-      _dragReset.duration = const Duration(milliseconds: 260);
-      _dragReset.forward(from: 0).whenCompleteOrCancel(() {
-        if (mounted) setState(() => _dragOffset = 0);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([_master, _dragReset]),
-      builder: (context, _) {
-        final m = _master.value;
-        final drag = _dragReset.isAnimating && _dragResetAnim != null
-            ? _dragResetAnim!.value
-            : _dragOffset;
-
-        // 浮起进度(带微量过冲):opening 弹簧 0→1,closing 1→弹簧(0)。
-        double liftT;
-        // 遮罩/阴影/模糊进度:快速淡入,收回时快速淡出。
-        double scrimT;
-        // 面板位移(向下为正,px)。
-        double panelOffset;
-        switch (_phase) {
-          case _LiftPhase.waitingMeasure:
-            liftT = 0;
-            scrimT = 0;
-            panelOffset = 0;
-          case _LiftPhase.opening:
-            final s = _spring.transform(m);
-            liftT = s;
-            scrimT = Curves.easeOut.transform(m);
-            panelOffset = _panelHeight * (1 - s) + drag;
-          case _LiftPhase.open:
-            liftT = 1;
-            scrimT = 1;
-            panelOffset = drag;
-          case _LiftPhase.closing:
-            final s = _spring.transform(m);
-            liftT = 1 - s;
-            scrimT = 1 - Curves.easeOut.transform(m);
-            // 从冻结的拖拽位继续滑出:起始即当前面板位置,无跳变。
-            panelOffset = _frozenDrag + _panelHeight * s;
-          case _LiftPhase.fading:
-            liftT = 1;
-            scrimT = 1 - m;
-            panelOffset = drag;
-        }
-
-        // Android 预测返回手势的跟手进度:线性叠加在现有动画输出上 ——
-        // 预览缩回源位、面板下滑、遮罩淡出,commit 关菜单/cancel 回弹。
-        final backP = _backResetAnimating && _dragResetAnim != null
-            ? _dragResetAnim!.value
-            : (_backProgress ?? 0);
-        if (backP > 0) {
-          liftT *= (1 - backP);
-          scrimT *= (1 - backP);
-          panelOffset += _panelHeight * backP;
-        }
-
-        // 目标矩形从当前 MediaQuery 派生:窗口尺寸变化触发本视图重建,
-        // 同一帧即按新窗口算出落点;不经过任何回调链,无陈旧中间态。
-        final mediaQuery = MediaQuery.of(context);
-        final target = _phase == _LiftPhase.waitingMeasure
-            ? null
-            : _computeTargetRect(mediaQuery.size, mediaQuery.padding);
-        final previewRect = target == null
-            ? _sourceRect
-            : Rect.lerp(_sourceRect, target, liftT)!;
-        final radius =
-            lerpDouble(
-              context.shapes.resolve(widget.sourceRadius),
-              context.shapes.resolve(_kPreviewTargetRadius),
-              liftT,
-            ) ??
-            _kPreviewTargetRadius;
-
-        Widget stack = Stack(
-          children: [
-            Positioned.fill(child: _buildScrim(context, scrimT)),
-            Positioned.fromRect(
-              rect: previewRect,
-              child: _buildPreview(context, radius, scrimT, m),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              // 测量前面板先移出屏外(Transform 不参与测量定位,直接
-              // 用超大负 bottom 保证首帧不可见,布局尺寸不受影响)。
-              bottom: _phase == _LiftPhase.waitingMeasure
-                  ? -12000
-                  : -panelOffset,
-              child: _buildPanel(context),
-            ),
-          ],
-        );
-
-        if (_phase == _LiftPhase.fading) {
-          stack = Opacity(opacity: 1 - m, child: stack);
-        }
-
-        return InteractionGate(enabled: _acceptsInput, child: stack);
-      },
-    );
-  }
-
-  /// 背景模糊 + 压暗(对齐 blur_config 的 Telegram 式口径与用户偏好)。
-  Widget _buildScrim(BuildContext context, double scrimT) {
-    if (scrimT <= 0) return const SizedBox.expand();
-    final base = widget.enableBlur
-        ? blurBarrierColor(Theme.of(context).brightness)
-        : Colors.black54;
-    final dim = ColoredBox(color: base.withValues(alpha: base.a * scrimT));
-    final tapArea = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _close,
-      child: dim,
-    );
-    if (!widget.enableBlur) return tapArea;
-    final sigma = (blurSigma * scrimT).clamp(0.01, blurSigma);
+  Widget _buildScrim(BuildContext context) {
+    final color = Theme.of(context).colorScheme.scrim;
     return Semantics(
       label: S.current.common_close,
       button: true,
-      child: BackdropFilter(filter: createBlurFilter(sigma), child: tapArea),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _requestClose,
+        child: AnimatedBuilder(
+          animation: _lift,
+          builder: (_, _) {
+            final t = _lift.value;
+            final dim = ColoredBox(color: color.withValues(alpha: 0.50 * t));
+            if (!widget.enableBlur) return dim;
+            return BackdropFilter(
+              enabled: t > 0,
+              filter: createBlurFilter(4 * t),
+              child: dim,
+            );
+          },
+        ),
+      ),
     );
   }
 
-  /// 浮起的预览图:圆角 + 阴影随浮起渐显,内容零闪烁复用源图缓存。
-  Widget _buildPreview(
-    BuildContext context,
-    double radius,
-    double shadowT,
-    double fadeT,
-  ) {
-    Widget preview = ClipRSuperellipse(
-      borderRadius: BorderRadius.circular(radius),
-      child: SizedBox.expand(child: Builder(builder: widget.previewBuilder)),
-    );
-    if (shadowT > 0) {
-      preview = DecoratedBox(
-        decoration: ShapeDecoration(
-          shadows: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.32 * shadowT),
-              blurRadius: 44 * shadowT,
-              offset: Offset(0, 14 * shadowT),
-            ),
-          ],
-          shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.circular(radius),
-          ),
-        ),
-        child: preview,
-      );
-    }
-    if (_phase == _LiftPhase.fading) {
-      preview = Transform.scale(scale: 1 - 0.02 * fadeT, child: preview);
-    }
+  Widget _buildPreview(BuildContext context) {
+    final shadow = Theme.of(context).colorScheme.shadow;
+    final sourceRadius = context.shapes.resolve(widget.sourceRadius);
+    final previewRadius = context.shapes.resolve(12);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _handlePreviewTap,
-      child: preview,
+      onTap: () => _dismiss(action: widget.onPreviewTap),
+      child: AnimatedBuilder(
+        animation: _lift,
+        child: Builder(builder: widget.previewBuilder),
+        builder: (_, child) {
+          final t = _lift.value;
+          final radius = BorderRadius.circular(
+            lerpDouble(sourceRadius, previewRadius, t)!,
+          );
+          final (:bounds, :visible) = _origin;
+          return DecoratedBox(
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(borderRadius: radius),
+              shadows: [
+                BoxShadow(
+                  color: shadow.withValues(alpha: 0.18 * t),
+                  blurRadius: 16 * t,
+                  offset: Offset(0, 4 * t),
+                ),
+              ],
+            ),
+            child: ClipRSuperellipse(
+              borderRadius: radius,
+              // 展开裁切窗口，保留长图首帧露在视口里的那一段。
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: (bounds.left - visible.left) * (1 - t),
+                    top: (bounds.top - visible.top) * (1 - t),
+                    right: (visible.right - bounds.right) * (1 - t),
+                    bottom: (visible.bottom - bounds.bottom) * (1 - t),
+                    child: child!,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
-  /// 底部动作面板:单行大图标按钮(iOS 16 上下文菜单/X 图片菜单与
-  /// share sheet 同形态——动作多时横向滚动,绝不换行),外壳对齐
-  /// AppSheetScaffold(surface 底、顶部圆角 20)。
-  Widget _buildPanel(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    // 大屏限宽居中:面板两侧露出遮罩,点两侧同样可关闭(iOS 大屏形态)。
-    final panel = Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _kPanelMaxWidth),
-        child: Material(
-          key: _panelKey,
-          color: colorScheme.surface,
-          shape: RoundedSuperellipseBorder(
-            borderRadius: BorderRadius.vertical(
-              top: context.shapes.radius(_kPanelCornerRadius),
+  Widget _buildPanel(BuildContext context, bool wide) {
+    final list = SingleChildScrollView(
+      controller: wide ? _floatingScroll : _scroll,
+      physics: wide
+          ? null
+          : const ClampingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final action in widget.actions)
+            ListTile(
+              autofocus: wide && identical(action, widget.actions.first),
+              minTileHeight: wide ? kMinInteractiveDimension : null,
+              contentPadding: wide
+                  ? const EdgeInsets.symmetric(horizontal: 16)
+                  : null,
+              leading: Icon(action.icon, size: wide ? 20 : 22),
+              title: Text(action.label),
+              onTap: () => _dismiss(action: action.onTap),
+            ),
+        ],
+      ),
+    );
+    if (!wide) {
+      return RepaintBoundary(
+        key: _panelKey,
+        child: AppSheetScaffold(
+          showDragHandle: false,
+          contentPadding: EdgeInsets.zero,
+          child: list,
+        ),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final popup = PopupMenuTheme.of(context);
+    final menu = Material(
+      color: popup.color ?? theme.colorScheme.surfaceContainerLow,
+      elevation: popup.elevation ?? 6,
+      shadowColor: popup.shadowColor,
+      surfaceTintColor: popup.surfaceTintColor,
+      shape:
+          popup.shape ??
+          RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(16),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 14, 8, 12),
-              // 单行横滚:X/iOS 动作面板形态。Row 收缩到内容宽:
-              // 动作少时在面板内居中,多时横向滚动 + 渐隐边缘提示。
-              child: FadingEdgeScrollView(
-                fadeLeft: true,
-                fadeRight: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final action in widget.actions)
-                        _LiftActionButton(
-                          action: action,
-                          onTap: () => _runAction(action.onTap),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+      clipBehavior: Clip.antiAlias,
+      child: list,
+    );
+    return FocusScope(
+      node: _menuFocus,
+      autofocus: true,
+      child: Shortcuts(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
+        },
+        child: Actions(
+          actions: {
+            DismissIntent: CallbackAction<DismissIntent>(
+              onInvoke: (_) => _requestClose(),
             ),
+          },
+          child: AnimatedBuilder(
+            animation: _lift,
+            child: RepaintBoundary(child: menu),
+            builder: (_, child) {
+              final progress = _panelProgress(_lift.value);
+              return IgnorePointer(
+                ignoring: progress == 0,
+                child: Opacity(opacity: progress, child: child),
+              );
+            },
           ),
         ),
       ),
     );
-    final interactive = _phase == _LiftPhase.open;
-    return GestureDetector(
-      // 面板下拉跟手;常驻态以外的阶段不参与手势。
-      onVerticalDragUpdate: interactive ? _onPanelDragUpdate : null,
-      onVerticalDragEnd: interactive ? _onPanelDragEnd : null,
-      child: panel,
+  }
+
+  void _observeViewport(Size size, _LiftViewport viewport) {
+    final metrics = (size, viewport.bounds, viewport.safe);
+    final previous = _lastViewport;
+    if (previous == metrics) return;
+    _lastViewport = metrics;
+    if (previous == null) return;
+    // 横竖切换会卸载原来的底部列表，接回仍停在手指下的浮起进度。
+    final settleDrag = viewport.wide && _draggingPanel;
+    if (settleDrag) _draggingPanel = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_acceptsInput.value) return;
+      _refreshOrigin();
+      if (settleDrag && _backStart == null) _open();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return InteractionGate(
+      enabled: _acceptsInput,
+      child: BlockSemantics(
+        child: FadeTransition(
+          opacity: _opacity,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final size = constraints.biggest;
+              final press = widget.pressAnchor?.withinRect(_origin.bounds);
+              final anchor = press == null
+                  ? _origin.visible.center
+                  : _inside(_origin.visible, press);
+              final viewport = _LiftViewport(size, media, anchor);
+              _observeViewport(size, viewport);
+              if (viewport.wide && !_menuFocus.hasFocus) {
+                _previousFocus ??= FocusManager.instance.primaryFocus;
+              }
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildScrim(context),
+                  CustomMultiChildLayout(
+                    delegate: _LiftLayout(
+                      origin: _origin,
+                      lift: _lift,
+                      viewport: viewport,
+                      pointer: widget.secondary ? anchor : null,
+                    ),
+                    children: [
+                      LayoutId(
+                        id: _LiftPart.preview,
+                        child: _buildPreview(context),
+                      ),
+                      LayoutId(
+                        id: _LiftPart.panel,
+                        child: _buildPanel(context, viewport.wide),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// 大图标动作按钮:60×60 圆角容器 + 下方小标签,
-/// iOS 16 上下文菜单 / 分享建议行的按钮形态。
-class _LiftActionButton extends StatelessWidget {
-  const _LiftActionButton({required this.action, required this.onTap});
+enum _LiftPart { preview, panel }
 
-  final ImageLiftAction action;
-  final VoidCallback onTap;
+/// 同一轮布局先量操作列表，再给预览分配空间。
+class _LiftLayout extends MultiChildLayoutDelegate {
+  _LiftLayout({
+    required this.origin,
+    required this.lift,
+    required this.viewport,
+    required this.pointer,
+  }) : super(relayout: lift);
 
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 76,
-      child: InkWell(
-        customBorder: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(22),
-        ),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: ShapeDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(18),
-                  ),
-                ),
-                child: Icon(
-                  action.icon,
-                  size: 26,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                action.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
+  final _LiftOrigin origin;
+  final Animation<double> lift;
+  final _LiftViewport viewport;
+  final Offset? pointer;
+
+  Rect _layoutSheet() {
+    final screen = viewport.bounds;
+    final safe = viewport.safe;
+    final panelWidth = math.min(screen.width, _sheetMaxWidth);
+    final panel = layoutChild(
+      _LiftPart.panel,
+      BoxConstraints(
+        minWidth: panelWidth,
+        maxWidth: panelWidth,
+        maxHeight: math.max(
+          0,
+          safe.height * 0.55 + screen.bottom - safe.bottom,
         ),
       ),
     );
+    positionChild(
+      _LiftPart.panel,
+      Offset(
+        screen.center.dx - panel.width / 2,
+        screen.bottom - panel.height * _panelProgress(lift.value),
+      ),
+    );
+    final space = Rect.fromLTRB(
+      safe.left + 16,
+      safe.top + 12,
+      safe.right - 16,
+      screen.bottom - panel.height - 12,
+    );
+    final previewSize = applyBoxFit(
+      BoxFit.contain,
+      origin.bounds.size,
+      Size(
+        math.max(0, math.min(_sheetMaxWidth, space.width)),
+        math.max(0, math.min(screen.height * 0.52, space.height)),
+      ),
+    ).destination;
+    return Rect.fromCenter(
+      center: space.center,
+      width: previewSize.width,
+      height: previewSize.height,
+    );
+  }
+
+  Rect _layoutBesideSource() {
+    // 极矮的横窗也保留可滚动的列表空间。
+    final safe = viewport.safe;
+    final verticalMargin = math.min(24.0, math.max(0.0, safe.height / 8));
+    final area = EdgeInsets.symmetric(
+      horizontal: 24,
+      vertical: verticalMargin,
+    ).deflateRect(safe);
+    final panelWidth = clampDouble(area.width * 0.26, 200, 264);
+    final panel = layoutChild(
+      _LiftPart.panel,
+      BoxConstraints(
+        minWidth: panelWidth,
+        maxWidth: panelWidth,
+        maxHeight: math.max(0, area.height),
+      ),
+    );
+    final source = _inside(area, origin.visible.center);
+    final click = pointer;
+    // 触摸时优先让图片留在来源一侧；右键时优先让首项落在指针旁。
+    final menuOnRight = click == null
+        ? source.dx <= area.center.dx
+        : click.dx >= area.center.dx;
+    final contentWidth = area.width - panel.width - _sideGap;
+    final double panelX;
+    final double previewX;
+    final Size previewSize;
+    Size fit(double maxWidth) => applyBoxFit(
+      BoxFit.contain,
+      origin.bounds.size,
+      Size(
+        math.min(Breakpoints.maxContentWidth, math.max(0, maxWidth)),
+        math.max(0, area.height),
+      ),
+    ).destination;
+    if (click != null) {
+      panelX = clampDouble(
+        menuOnRight ? click.dx - 12 : click.dx - panel.width + 12,
+        area.left,
+        area.right - panel.width,
+      );
+      final freeWidth = menuOnRight
+          ? panelX - area.left
+          : area.right - panelX - panel.width;
+      previewSize = fit(freeWidth - _sideGap);
+      previewX = menuOnRight
+          ? panelX - _sideGap - previewSize.width
+          : panelX + panel.width + _sideGap;
+    } else {
+      previewSize = fit(contentWidth);
+      final minX = area.left + (menuOnRight ? 0 : panel.width + _sideGap);
+      previewX = clampDouble(
+        source.dx - previewSize.width / 2,
+        minX,
+        minX + math.max(0.0, contentWidth - previewSize.width),
+      );
+      panelX = menuOnRight
+          ? previewX + previewSize.width + _sideGap
+          : previewX - panel.width - _sideGap;
+    }
+    final previewY = clampDouble(
+      source.dy - previewSize.height / 2,
+      area.top,
+      area.top + math.max(0.0, area.height - previewSize.height),
+    );
+    final panelY = clampDouble(
+      click == null
+          ? source.dy - panel.height / 2
+          : click.dy - 8 - kMinInteractiveDimension / 2,
+      area.top,
+      area.top + math.max(0.0, area.height - panel.height),
+    );
+    final reveal = _panelProgress(lift.value);
+    positionChild(
+      _LiftPart.panel,
+      Offset(panelX + (menuOnRight ? -10 : 10) * (1 - reveal), panelY),
+    );
+    return Offset(previewX, previewY) & previewSize;
+  }
+
+  @override
+  void performLayout(Size size) {
+    final target = viewport.wide ? _layoutBesideSource() : _layoutSheet();
+    final t = lift.value;
+    final preview = Rect.lerp(origin.visible, target, t)!;
+    // 先向屏幕中央靠拢，再完成放大。侧边缩略图浮起时因此有一条浅弧线。
+    final centerX = lerpDouble(
+      origin.visible.center.dx,
+      target.center.dx,
+      Curves.easeOutCubic.transform(t),
+    )!;
+    final double left = clampDouble(
+      centerX - preview.width / 2,
+      0.0,
+      math.max(0.0, size.width - preview.width),
+    );
+    layoutChild(_LiftPart.preview, BoxConstraints.tight(preview.size));
+    positionChild(_LiftPart.preview, Offset(left, preview.top));
+  }
+
+  @override
+  bool shouldRelayout(_LiftLayout oldDelegate) =>
+      origin != oldDelegate.origin ||
+      viewport.bounds != oldDelegate.viewport.bounds ||
+      viewport.safe != oldDelegate.viewport.safe ||
+      pointer != oldDelegate.pointer ||
+      lift != oldDelegate.lift;
+}
+
+class _PanelScrollController extends ScrollController {
+  _PanelScrollController(this.menu);
+  final _ImageLiftMenuViewState menu;
+
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) => _PanelScrollPosition(
+    menu: menu,
+    physics: physics,
+    context: context,
+    oldPosition: oldPosition,
+  );
+}
+
+class _PanelScrollPosition extends ScrollPositionWithSingleContext {
+  _PanelScrollPosition({
+    required this.menu,
+    required super.physics,
+    required super.context,
+    super.oldPosition,
+  });
+
+  final _ImageLiftMenuViewState menu;
+
+  @override
+  void applyUserOffset(double delta) {
+    if (delta > 0 && pixels > minScrollExtent) {
+      final contentDelta = math.min(delta, pixels - minScrollExtent);
+      super.applyUserOffset(contentDelta);
+      delta -= contentDelta;
+    }
+    final remaining = menu._consumePanelDrag(delta);
+    if (remaining != 0) super.applyUserOffset(remaining);
+  }
+
+  @override
+  void goBallistic(double velocity) {
+    final handled = menu._releasePanel(-velocity);
+    super.goBallistic(handled ? 0 : velocity);
   }
 }

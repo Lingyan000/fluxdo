@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
@@ -21,6 +21,8 @@ void main() {
         final layer = GlobalKey<HomeMiniAppsLayerState>();
         final refresh = GlobalKey<M3eRefreshIndicatorState>();
         final home = GlobalKey();
+        final scroll = ScrollController();
+        addTearDown(scroll.dispose);
         final gallery = GlobalKey();
         final refreshed = Completer<void>();
         var refreshes = 0;
@@ -36,13 +38,15 @@ void main() {
                     key: refresh,
                     externalReveal: true,
                     revealOffset: () => layer.currentState!.offset,
-                    onSecondaryAction: () => layer.currentState!.open(),
+                    onSecondaryAction: () =>
+                        layer.currentState!.open(scrollController: scroll),
                     onRefresh: () async {
                       refreshes++;
                       await refreshed.future;
                     },
                     child: ListView(
                       key: home,
+                      controller: scroll,
                       physics: RefreshRevealScrollPhysics(
                         holdLeadingEdge: () =>
                             refresh.currentState?.isRevealing ?? false,
@@ -133,6 +137,33 @@ void main() {
         expect(refreshes, 1);
         expect(home.currentContext, same(originalHome));
         expect(gallery.currentContext, same(originalGallery));
+        final close = await tester.startGesture(const Offset(180, 800));
+        await close.moveBy(const Offset(0, -700));
+        await tester.pump();
+        expect(scroll.offset, 0);
+        final remaining = offset();
+        await close.moveBy(Offset(0, -remaining - 45));
+        await tester.pump();
+        expect(layer.currentState!.isOpen, isFalse);
+        expect(scroll.offset, closeTo(45, 1), reason: '触顶这一帧只把剩余位移交给列表');
+        await close.moveBy(const Offset(0, -50));
+        await tester.pump();
+        expect(scroll.offset, closeTo(95, 1), reason: '不松手也能继续滚动');
+        await close.cancel();
+        await tester.pump();
+        await tester.dragFrom(const Offset(180, 400), const Offset(0, -80));
+        expect(scroll.offset, greaterThan(95), reason: '交接取消后下一次滑动立即生效');
+        scroll.jumpTo(0);
+        await tester.pumpAndSettle();
+
+        await openByPull();
+        final reverse = await catchClosing();
+        await reverse.moveBy(Offset(0, -offset() / .9 - 60));
+        await tester.pump();
+        expect(scroll.offset, closeTo(60, 1), reason: '从刷新区反向上推也只交接剩余位移');
+        await reverse.up();
+        await tester.pumpAndSettle();
+        expect(refreshes, 1);
         expect(tester.takeException(), isNull);
       });
     }

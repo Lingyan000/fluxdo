@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../models/topic.dart';
@@ -12,6 +12,7 @@ import '../../../../services/app_error_handler.dart';
 import '../../../../services/discourse/discourse_service.dart';
 import '../../../../utils/frame_jank_monitor.dart';
 import '../../../common/relative_time_text.dart';
+import '../../inline_posts_scope.dart';
 import '../../post_revision/edits_indicator.dart';
 import '../../post_revision/revision_modal.dart';
 import '../../small_action_item.dart';
@@ -74,15 +75,54 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
   final ValueNotifier<bool> _showReplyHistoryNotifier = ValueNotifier<bool>(
     false,
   );
+  final ValueNotifier<Set<int>> _unfoldedParentIdsNotifier =
+      ValueNotifier<Set<int>>(const {});
   Widget? _cachedAvatarWidget;
   int? _cachedPostId;
   bool? _cachedHasMention;
   ThemeData? _cachedAvatarTheme;
 
+  /// 父帖快照存放处(页面级),State 随 sliver 回收后靠它恢复;
+  /// 不在话题页内为 null,不保留
+  InlinePostsStore? _inlineStore;
+
+  /// 快照键。异步加载完成时 State 可能已卸载,不再经 widget 取
+  late final int _postId = widget.post.id;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.disableReplyHistory) {
+      _inlineStore = InlinePostsScope.maybeOf(context);
+    }
+    final snapshot = _inlineStore?.read(InlinePostsKind.parents, _postId);
+    if (snapshot != null) {
+      _replyHistory = snapshot.posts;
+      _showReplyHistoryNotifier.value =
+          snapshot.expanded && snapshot.posts.isNotEmpty;
+      _unfoldedParentIdsNotifier.value = snapshot.unfoldedPostIds;
+    }
+    _showReplyHistoryNotifier.addListener(_saveReplyHistorySnapshot);
+    _unfoldedParentIdsNotifier.addListener(_saveReplyHistorySnapshot);
+  }
+
+  void _saveReplyHistorySnapshot({bool? expanded}) {
+    final history = _replyHistory;
+    if (history == null) return;
+    _inlineStore?.save(
+      InlinePostsKind.parents,
+      _postId,
+      posts: history,
+      expanded: expanded ?? _showReplyHistoryNotifier.value,
+      unfoldedPostIds: _unfoldedParentIdsNotifier.value,
+    );
+  }
+
   @override
   void dispose() {
     _isLoadingReplyHistoryNotifier.dispose();
     _showReplyHistoryNotifier.dispose();
+    _unfoldedParentIdsNotifier.dispose();
     super.dispose();
   }
 
@@ -138,8 +178,12 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
     _isLoadingReplyHistoryNotifier.value = true;
     try {
       final history = await _service.getPostReplyHistory(widget.post.id);
-      if (!mounted) return;
       _replyHistory = history;
+      if (!mounted) {
+        // 加载期间滑出屏幕:按用户意图记为已展开,回来时直接恢复
+        _saveReplyHistorySnapshot(expanded: history.isNotEmpty);
+        return;
+      }
       _isLoadingReplyHistoryNotifier.value = false;
       _showReplyHistoryNotifier.value = true;
     } on DioException catch (_) {
@@ -326,7 +370,7 @@ class _PostHeaderSectionState extends ConsumerState<PostHeaderSection> {
                   if (!showReplyHistory) return const SizedBox.shrink();
                   return PostReplyHistory(
                     replyHistory: _replyHistory,
-                    showReplyHistoryNotifier: _showReplyHistoryNotifier,
+                    unfoldedPostIdsNotifier: _unfoldedParentIdsNotifier,
                     onJumpToPost: widget.onJumpToPost,
                     contentFontScale: ref
                         .watch(preferencesProvider)

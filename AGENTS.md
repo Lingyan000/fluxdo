@@ -46,11 +46,13 @@ just run / build   # flutter run / build
 - **路由与弹窗**：使用 `InteractionPageRoute`、`showAppDialog`、`showAppBottomSheet` 等统一入口，不直接用 `MaterialPageRoute`、`showDialog`、`showModalBottomSheet`（[守卫](test/architecture/interaction_entry_points_test.dart)）。关闭根层弹框用 `Navigator.of(context, rootNavigator: true)` 或弹框自己的 context，裸 `pop` 会误关嵌套导航里的页面。
 - **主题 token**：颜色和圆角必须经过主题 token，同一块区域里的颜色、圆角保持一致。圆角用 `context.shapes`，图标强调色用 `context.emphasis`，分类色用 `ColorUtils.category`。细则与新增主题见 [fluxdo-theme](.agents/skills/fluxdo-theme/SKILL.md)，守卫见 `test/architecture/` 下的 ratchet 测试。
 - **国际化**：界面文案一律走 arb，以 `zh` 为基准语言；只用文本插入的方式改 arb。流程见 [fluxdo-l10n](.agents/skills/fluxdo-l10n/SKILL.md)。
+- 新增**内置静态 SVG** 时，将源文件直接放在 `assets/icons/`，AI 品牌和思考图标分别放在 `assets/ai_brands/`、`assets/icons/thinking/`。Flutter 构建时自动编译为 SI，界面用 `AppSvgAsset('assets/icons/my_icon.svg')` 按原路径加载。Flutter 只转换目录的直接子文件，新增子目录时在 `pubspec.yaml` 给该目录配置 `transformers: *svgToSi`。许可证等文本放在单独目录。
 - **视觉变化需确认**：颜色、字号、字重、间距、动效等用户能察觉的变化，要先经维护者确认；不要在性能优化或重构中顺带修改。
 - **不写硬编码白名单**：「需要处理哪些」从数据或类型推导，不靠手写常量列表。
 - **跨平台**：平台层改动要评估全部五个平台。
 - **依赖**：新增或升级依赖时，先查 pub.dev 使用最新稳定版；不得擅自修改 SDK 约束。
 - **注释与提交信息**：使用中文；描述功能本身，不写「仿 XX」「XX 式」等特指其他产品的说法。
+- **文档**：`docs/` 只放长期参考（入口文档、设计依据、长期契约）；会话过程、诊断输出、方案草稿不入库；内容从问题和约束出发分析，不以其他产品的做法为依据。见 [fluxdo-docs](.agents/skills/fluxdo-docs/SKILL.md)。
 
 ## 测试与验证
 
@@ -58,7 +60,7 @@ just run / build   # flutter run / build
 - 全量测试中存在与改动无关的存量失败。判断失败是否由自己引起，要在干净的 HEAD 上对比同一个用例。
 - 改动 `packages/fluxdo_render` 时，验证流程（全量 golden、fixture 索引）见 [fluxdo-render](.agents/skills/fluxdo-render/SKILL.md)。
 - 能机械检查的规则放进 `test/architecture/` 守卫测试。合理的存量用法通过基线计数豁免，只降不升。
-- TODO：CI 还没有运行守卫测试和 analyze，要先治理存量问题再接入。在此之前，提交前请自行运行 `flutter test test/architecture`。
+- 网络回归 CI 已运行全部架构守卫和网络相关定向 analyze；尚未接入整个应用的全量测试与全量 analyze。提交前仍请自行运行 `flutter test test/architecture`。
 
 ## 提交
 

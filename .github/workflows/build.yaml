@@ -7,7 +7,7 @@ on:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
-  FLUTTER_VERSION: '3.47.9'
+  FLUTTER_VERSION: '3.50.0'
   ANDROID_NDK_VERSION: '27.3.13750724'
 
 jobs:
@@ -78,7 +78,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -208,7 +208,8 @@ jobs:
 
       - name: Test macOS updater bridge
         if: matrix.platform == 'macos'
-        run: dart tool/flutterw.dart test test/services/macos_update_service_test.dart
+        # 更新器单测只验证接口调用，跳过测试资源包的 SVG 并发转换。
+        run: dart tool/flutterw.dart test test/services/macos_update_service_test.dart --no-test-assets
 
       - name: Build macOS
         if: matrix.platform == 'macos'
@@ -272,7 +273,8 @@ jobs:
 
       - name: Test Windows updater
         if: matrix.platform == 'windows'
-        run: dart tool/flutterw.dart test test/services/windows_update_service_test.dart
+        # 更新器单测只验证接口与下载校验，跳过测试资源包的 SVG 并发转换。
+        run: dart tool/flutterw.dart test test/services/windows_update_service_test.dart --no-test-assets
 
       - name: Build Windows
         if: matrix.platform == 'windows'

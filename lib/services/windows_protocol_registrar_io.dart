@@ -22,16 +22,14 @@ Future<void> ensureWindowsProtocolsRegistered() async {
 
 void _registerScheme(String scheme) {
   final appPath = Platform.resolvedExecutable;
-  final key = Registry.currentUser.createKey('Software\\Classes\\$scheme');
+  final key = CURRENT_USER.create('Software\\Classes\\$scheme');
   try {
     // 名字为空 = 键的 (Default) 值
-    key.createValue(
-      RegistryValue.string('', 'URL:$scheme Protocol'),
-    );
-    key.createValue(const RegistryValue.string('URL Protocol', ''));
-    final cmdKey = key.createKey('shell\\open\\command');
+    key.setValue('', RegistryValue.string('URL:$scheme Protocol'));
+    key.setValue('URL Protocol', const RegistryValue.string(''));
+    final cmdKey = key.create('shell\\open\\command');
     try {
-      cmdKey.createValue(RegistryValue.string('', '"$appPath" "%1"'));
+      cmdKey.setValue('', RegistryValue.string('"$appPath" "%1"'));
     } finally {
       cmdKey.close();
     }

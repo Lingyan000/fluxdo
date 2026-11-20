@@ -6,18 +6,27 @@ import 'package:flutter/widgets.dart';
 /// padding.bottom 含底栏槽高，viewPadding 只保留系统安全区。Scaffold
 /// 定位 FAB 只认 viewPadding，不补差值就会被底栏盖住。作为独立路由
 /// 打开时两者相等，差值为 0，不影响位置。
+///
+/// [mediaQuery] 必须从内层 Scaffold 外的页面 context 读取并传入。
+/// Scaffold 会清除 FAB 子树的 padding，在本组件 build 中读取时
+/// 已经丢失底栏槽高，无法计算避让距离。
 class BottomNavClearance extends StatelessWidget {
-  const BottomNavClearance({super.key, required this.child});
+  const BottomNavClearance({
+    super.key,
+    required this.mediaQuery,
+    required this.child,
+  });
 
+  final MediaQueryData mediaQuery;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final clearance = (media.padding.bottom - media.viewPadding.bottom).clamp(
-      0.0,
-      double.infinity,
-    );
+    final clearance =
+        (mediaQuery.padding.bottom - mediaQuery.viewPadding.bottom).clamp(
+          0.0,
+          double.infinity,
+        );
     if (clearance == 0) return child;
     return Padding(
       padding: EdgeInsets.only(bottom: clearance),

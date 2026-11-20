@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -48,7 +48,7 @@ class PagedListFooter extends StatelessWidget {
         ),
       );
     } else if (isLoadingMore) {
-      child = const LoadingSpinner(size: 24);
+      child = const LoadingSpinner.standard();
     } else if (!hasMore) {
       child = Text(
         context.l10n.common_noMore,

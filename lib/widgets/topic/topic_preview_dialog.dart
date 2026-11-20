@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +19,7 @@ import '../common/morphing_preview_route.dart';
 import '../common/skeleton.dart';
 import '../../utils/number_utils.dart';
 import '../common/emoji_text.dart';
+import '../../utils/emoji_shortcodes.dart';
 import '../common/smart_avatar.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../pages/category_topics_page.dart';
@@ -320,7 +321,7 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
   }
 
   Widget _buildExcerptFallback(ThemeData theme) {
-    final cleanExcerpt = topic.excerpt!
+    final cleanExcerpt = emojiImagesToShortcodes(topic.excerpt!)
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll('&hellip;', '...')
         .replaceAll('&amp;', '&')
@@ -334,8 +335,9 @@ class _TopicPreviewDialogState extends ConsumerState<TopicPreviewDialog> {
 
     final contentFontScale = ref.watch(preferencesProvider).contentFontScale;
     // 纯文本无色块:预览是轻量一瞥,excerpt 不需要卡片式衬底
-    return Text(
+    return EmojiText(
       cleanExcerpt,
+      inline: true,
       style: theme.textTheme.bodyMedium?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,
         height: 1.6,

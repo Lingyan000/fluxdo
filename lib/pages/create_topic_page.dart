@@ -10,17 +10,18 @@ import '../utils/platform_utils.dart';
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/draft_store_provider.dart';
 
 import 'package:fluxdo/widgets/common/error_view.dart';
-import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
+import 'package:fluxdo/widgets/common/top_fade_scrim.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_close_confirmation.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
@@ -82,15 +83,35 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   /// 富文本导入失败时本次会话降级纯文本
   bool _richFallback = false;
   bool _allowClose = false;
+  bool _closePending = false;
   bool _richModeEnabled = false;
 
-  void _closeWithCurrentContent(dynamic result) {
-    if (!_submitted && !_discarded && !_flushRichContent()) return;
-    setState(() => _allowClose = true);
-    // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop(result);
-    });
+  Future<void> _closeWithCurrentContent(dynamic result) async {
+    if (_closePending || _allowClose) return;
+    _closePending = true;
+    try {
+      if (!_submitted && !_discarded && !_isSubmitting) {
+        final ready = _richKey.currentState?.prepareToClose() ?? true;
+        if (!ready) {
+          final discard = await confirmComposerDiscard(
+            context,
+            synchronizationFailed: true,
+          );
+          if (!mounted || !discard) return;
+          _discarded = true;
+          _draftController.disable();
+          _richKey.currentState?.prepareForDocumentReplacement();
+        }
+      }
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      // 等待 PopScope 更新许可；dispose 随后保存刚刚同步的草稿。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop(result);
+      });
+    } finally {
+      _closePending = false;
+    }
   }
 
   /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
@@ -102,7 +123,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
               _richFallback ||
               !ref.read(preferencesProvider).useRichComposer);
     if (!ready) {
-      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+      ToastService.showError(S.current.composer_syncFailed);
     }
     return ready;
   }
@@ -112,8 +133,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   final _formKey = GlobalKey<FormState>();
   final _chrome = ComposerChromeController();
   double get _topChromeInset =>
-      ProgressiveTopBlur.heightFor(context) +
-      (PlatformUtils.isDesktop && MediaQuery.sizeOf(context).width < 900
+      TopFadeScrim.barHeightFor(context) +
+      (PlatformUtils.isDesktop &&
+              MediaQuery.sizeOf(context).width < ComposerPageGrid.expandedWidth
           ? 56
           : 0);
 
@@ -172,6 +194,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       localStore: ref.read(localDraftStoreProvider),
       onRemoteDraftChanged: (data) {
         if (mounted &&
+            !_allowClose &&
             !_submitted &&
             !_discarded &&
             (!_isLoadingDraft || _reloadingDraft)) {
@@ -244,7 +267,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     setState(() => _isLoadingDraft = true);
     try {
       final draft = await _draftController.loadDraft();
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
 
       if (draft != null && draft.hasContent) {
         // 弹出恢复草稿对话框
@@ -258,7 +281,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         }
       }
     } finally {
-      if (mounted) {
+      if (mounted && !_allowClose) {
         setState(() => _isLoadingDraft = false);
         _applyCurrentFilter();
       }
@@ -894,7 +917,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   bool _submissionPending = false;
 
   Future<void> _submit() async {
-    if (_submissionPending || _isSubmitting) return;
+    if (_submissionPending || _isSubmitting || _closePending || _allowClose) {
+      return;
+    }
     _submissionPending = true;
     try {
       await _submitChecked();
@@ -1002,7 +1027,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       if (confirm != true) return;
     }
 
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (_draftController.hasConflict &&
         !await confirmComposerDraftOverwrite(
           context,
@@ -1010,8 +1035,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         )) {
       return;
     }
-    if (!mounted) return;
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (!approved.verify(
       synchronize: _flushRichContent,
       read: _submissionValues,
@@ -1038,13 +1062,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       await _draftController.deleteDraft();
       _submitted = true;
 
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       Navigator.of(context).pop(topicId);
     } on PostEnqueuedException {
       // 审核场景：删除草稿，提示用户（带「查看」入口），关闭编辑器
       await _draftController.deleteDraft();
       _submitted = true;
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       ToastService.show(
         S.current.createTopic_pendingReview,
         type: ToastType.info,
@@ -1071,12 +1095,11 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   /// 分类/标签在顶栏或底部浮岛常驻；标题与正文同滚,
   /// 写正文时自然滚出屏,想改标题滚回顶部即可。
   Widget _buildComposerHeader(ThemeData theme, int minTitleLength) {
-    // extendBodyBehindAppBar 后滚动内容从屏顶开始,首屏让出渐变模糊层
-    // 全高(含消散尾巴 —— 初始态标题不被尾巴遮,滚动上移时才进入
-    // 消散区被渐次溶解)
+    // extendBodyBehindAppBar 后滚动内容从屏顶开始,首屏让出顶栏;渐隐
+    // 遮罩只在内容滚到栏下时出现,不用再让出尾巴
     final topInset = _topChromeInset;
     return ComposerReadingPadding(
-      vertical: EdgeInsets.only(top: topInset + 20),
+      vertical: EdgeInsets.only(top: topInset + ComposerChromeScope.contentGap),
       // 标题字数提示悬浮在输入框右下角(与正文同一套做法):
       // 不占布局空间，字数达标后自动隐藏
       child: Column(
@@ -1182,8 +1205,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   Widget _buildMetaBar(
     List<Category> categories,
     bool canTagTopics,
-    AsyncValue<List<String>> tagsAsync,
-  ) {
+    AsyncValue<List<String>> tagsAsync, {
+    bool floating = false,
+  }) {
     // 站点是否装 post-voting 插件:从分类 JSON 是否下发插件字段派生
     final locked = _selectedCategory?.onlyPostVotingInThisCategory ?? false;
     return ComposerMetaBar(
@@ -1198,10 +1222,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       postVotingEnabled: _createAsPostVoting || locked,
       postVotingLocked: locked,
       onPostVotingChanged: (v) => setState(() => _createAsPostVoting = v),
+      floating: floating,
     );
   }
 
-  Widget _buildPageTitle(bool supportsQuestions) {
+  Widget _buildPageTitle(bool supportsQuestions) =>
+      ComposerBarTitle(child: _buildPageTitleLabel(supportsQuestions));
+
+  Widget _buildPageTitleLabel(bool supportsQuestions) {
     if (!supportsQuestions) {
       return Text(
         context.l10n.createTopic_title,
@@ -1233,7 +1261,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
     final minTitleLength = ref.watch(minTopicTitleLengthProvider).value ?? 15;
 
     final desktop = PlatformUtils.isDesktop;
-    final inlineProperties = desktop && MediaQuery.sizeOf(context).width >= 900;
+    // 顶栏与正文的布局网格
+    final grid = ComposerPageGrid.of(context);
+    final inlineProperties = desktop && grid.expanded;
     final supportsQuestions =
         categoriesAsync.value?.any((c) => c.hasPostVotingFields) ?? false;
     Widget metadata() => TextFieldTapRegion(
@@ -1241,6 +1271,7 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
         categoriesAsync.value ?? const [],
         canTagTopics,
         tagsAsync,
+        floating: true,
       ),
     );
 
@@ -1257,13 +1288,18 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        // 顶栏渐变模糊:AppBar 纯透明只承载功能件,模糊/遮罩由 body
-        // Stack 顶部的 ProgressiveTopBlur 提供(从上到下消散到全透明,
-        // 无均匀毛玻璃的硬下边);分类/标签/字数在底部 ComposerMetaBar
+        // 顶栏渐隐:AppBar 纯透明只承载功能件,遮罩由 body Stack 顶部的
+        // TopFadeScrim 提供(从上到下渐隐到全透明,无硬下边);
+        // 分类/标签/字数在底部 ComposerMetaBar
         extendBodyBehindAppBar: true,
         appBar: ComposerAutoHideAppBar(
           child: AppBar(
             centerTitle: false,
+            // 返回键与标题按网格定位（ComposerPageGrid）
+            automaticallyImplyLeading: false,
+            leading: grid.leading,
+            leadingWidth: grid.leadingWidth,
+            titleSpacing: grid.titleSpacing,
             title: inlineProperties
                 ? Row(
                     children: [
@@ -1282,7 +1318,13 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 ? PreferredSize(
                     preferredSize: const Size.fromHeight(56),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      // 与标题、正文同一条左边
+                      padding: EdgeInsets.fromLTRB(
+                        grid.contentStart,
+                        0,
+                        grid.end,
+                        12,
+                      ),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: metadata(),
@@ -1304,6 +1346,8 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 availableWidth:
                     MediaQuery.sizeOf(context).width -
                     MediaQuery.paddingOf(context).horizontal,
+                floating: true,
+                endInset: grid.end,
                 submitLabel: context.l10n.common_publish,
                 onSubmit: _isSubmitting ? null : _submit,
                 submitting: _isSubmitting,
@@ -1475,7 +1519,9 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                             ),
                             preview: SingleChildScrollView(
                               padding: EdgeInsets.only(
-                                top: _topChromeInset + 20,
+                                top:
+                                    _topChromeInset +
+                                    ComposerChromeScope.contentGap,
                                 bottom:
                                     MediaQuery.paddingOf(context).bottom + 80,
                               ),
@@ -1567,14 +1613,14 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
                 onRetry: () => ref.invalidate(categoriesProvider),
               ),
             ),
-            // 顶栏渐变模糊:内容从透明 AppBar 下滚过,模糊+遮罩自上
-            // 而下消散到全透明(尾巴伸出 AppBar 下缘 36pt)
+            // 顶栏渐隐:内容从透明 AppBar 下滚过,遮罩自上而下渐隐到
+            // 全透明(尾巴伸出 AppBar 下缘)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: ComposerTopFade(
-                height: _topChromeInset,
+                height: _topChromeInset + TopFadeScrim.tail,
                 statusBarHeight: MediaQuery.viewPaddingOf(context).top,
               ),
             ),

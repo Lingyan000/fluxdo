@@ -1,0 +1,72 @@
+["package"]
+"name" = "rama-crypto"
+"description" = "All crypto logic used by rama"
+"version" = "0.5.0"
+"license" = "MIT OR Apache-2.0"
+"edition" = "2024"
+"repository" = "https://github.com/plabayo/rama"
+"keywords" = ["cyrpto", "security", "certificates", "network", "rama"]
+"categories" = ["asynchronous", "network-programming", "web-programming"]
+"authors" = ["Glen De Cauwsemaecker <glen@plabayo.tech>"]
+"rust-version" = "1.96.0"
+
+["package"."metadata"."cargo-public-api-crates"]
+"allowed" = []
+
+["package"."metadata"."docs"."rs"]
+"all-features" = true
+"rustdoc-args" = ["--cfg", "docsrs"]
+"targets" = ["x86_64-unknown-linux-gnu"]
+
+["features"]
+"default" = []
+"inspect" = ["dep:rama-inspect", "dep:tokio", "dep:parking_lot"]
+"aws-lc" = ["dep:aws-lc-rs", "rcgen/aws_lc_rs", "x509-parser/verify-aws"]
+"ring" = ["dep:ring", "rcgen/ring", "x509-parser/verify"]
+"boring" = ["dep:rama-boring"]
+"native-certs" = ["dep:webpki-root-certs", "dep:security-framework", "dep:core-foundation", "dep:schannel", "dep:windows-sys", "dep:openssl-probe", "dep:ahash", "dep:jni", "dep:ndk-context"]
+
+["target"."cfg(all(unix, not(target_os = \"macos\")))"."dependencies"]
+"openssl-probe" = { "version" = "0.2", "optional" = true }
+
+["target"."cfg(target_os = \"android\")"."dependencies"]
+"jni" = { "version" = "0.22", "optional" = true }
+"ndk-context" = { "version" = "0.1", "optional" = true }
+
+["target"."cfg(target_os = \"macos\")"."dependencies"]
+"ahash" = { "version" = "0.8", "optional" = true }
+
+["target"."cfg(target_vendor = \"apple\")"."dependencies"]
+"core-foundation" = { "version" = "0.10", "optional" = true }
+"security-framework" = { "version" = "3", "optional" = true }
+
+["target"."cfg(windows)"."dependencies"]
+"schannel" = { "version" = "0.1", "optional" = true }
+"windows-sys" = { "version" = "0.61", "optional" = true, "features" = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
+["dependencies"]
+"aws-lc-rs" = { "version" = "1.19", "features" = ["bindgen"], "optional" = true }
+"base64" = { "version" = "0.23", "default-features" = true }
+"hmac" = { "version" = "0.13" }
+"parking_lot" = { "version" = "0.13", "optional" = true }
+"rama-boring" = { "version" = "0.7.0", "default-features" = false, "optional" = true }
+"rama-core" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rama-inspect" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "optional" = true }
+"rama-net" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rama-utils" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["std"] }
+"rand" = { "version" = "0.10" }
+"rcgen" = { "version" = "0.14", "default-features" = false, "features" = ["pem", "x509-parser"], "optional" = true }
+"ring" = { "version" = "0.17", "optional" = true, "features" = ["std"] }
+"rustls-pki-types" = { "version" = "^1", "features" = ["std"] }
+"serde" = { "version" = "1.0", "default-features" = false, "features" = ["alloc"] }
+"serde_json" = { "version" = "1.0" }
+"sha2" = { "version" = "0.11" }
+"time" = { "version" = "0.3.55" }
+"tokio" = { "version" = "1.54.1", "optional" = true, "features" = ["io-util"] }
+"webpki-root-certs" = { "version" = "1.0", "optional" = true }
+"x509-parser" = { "version" = "0.18", "default-features" = false }
+"yasna" = { "version" = "0.6", "default-features" = false, "features" = ["std", "time"] }
+
+["dev-dependencies"]
+"rama-inspect" = { "version" = "0.5.0", "default-features" = false, "git" = "https://github.com/plabayo/rama", "rev" = "23d59722e125fb6f2de66df588f772205318e555", "features" = ["test-utils"] }
+"tokio-test" = { "version" = "0.4" }

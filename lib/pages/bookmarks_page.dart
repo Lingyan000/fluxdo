@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -34,6 +34,7 @@ import '../widgets/search/searchable_app_bar.dart';
 import '../widgets/search/user_content_search_view.dart';
 import 'topics_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+import '../widgets/common/emoji_text.dart';
 
 typedef BookmarksWorkspaceTopicPageBuilder =
     Widget Function(
@@ -555,7 +556,7 @@ class _BookmarksPageState extends ConsumerState<BookmarksPage> {
               icon: const Icon(Symbols.close_rounded),
             ),
             Expanded(
-              child: Text(
+              child: EmojiText(
                 activeTopic.title,
                 key: const ValueKey('bookmark-workspace-mobile-title-text'),
                 maxLines: 1,

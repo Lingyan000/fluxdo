@@ -85,7 +85,7 @@ internal object MiniAppWindows {
         activities.clear()
         val manager = activity.getSystemService(Activity.ACTIVITY_SERVICE) as ActivityManager
         manager.appTasks.filter {
-            it.taskInfo.baseIntent.component?.className == MiniAppWindowActivity::class.java.name
+            it.taskInfo?.baseIntent?.component?.className == MiniAppWindowActivity::class.java.name
         }.forEach { it.finishAndRemoveTask() }
     }
 
@@ -112,6 +112,7 @@ internal object MiniAppWindows {
 class MiniAppWindowActivity : FlutterActivity() {
     private val id: String? get() = intent.data?.lastPathSegment
     private var bridge: MethodChannel? = null
+    private var webViewSurfaceChannel: WebViewSurfaceChannel? = null
     private var controls: MethodChannel? = null
     private var taskColor = 0
     // FlutterEngineGroup 的默认启动路径仅取根库入口名，不能依赖 libraryUri。
@@ -122,6 +123,8 @@ class MiniAppWindowActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        webViewSurfaceChannel?.dispose()
+        webViewSurfaceChannel = WebViewSurfaceChannel(engine)
         bridge = MethodChannel(engine.dartExecutor.binaryMessenger, "com.fluxdo/mini_app_windows").also { child ->
             child.setMethodCallHandler { call, reply ->
                 val entry = MiniAppWindows.entries[id]
@@ -183,6 +186,8 @@ class MiniAppWindowActivity : FlutterActivity() {
     }
     override fun cleanUpFlutterEngine(engine: FlutterEngine) {
         bridge?.setMethodCallHandler(null)
+        webViewSurfaceChannel?.dispose()
+        webViewSurfaceChannel = null
         controls?.setMethodCallHandler(null)
         super.cleanUpFlutterEngine(engine)
     }

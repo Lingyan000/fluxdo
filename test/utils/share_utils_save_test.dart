@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -19,26 +19,40 @@ import 'package:path/path.dart' as p;
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
-class _Picker extends FilePicker {
+// ignore: depend_on_referenced_packages
+import 'package:file_selector_platform_interface/file_selector_platform_interface.dart' as selector;
+
+class _Selector extends selector.FileSelectorPlatform {
+  String? path;
+  @override
+  Future<selector.FileSaveLocation?> getSaveLocation({
+    List<selector.XTypeGroup>? acceptedTypeGroups,
+    selector.SaveDialogOptions options = const selector.SaveDialogOptions(),
+  }) async => path == null ? null : selector.FileSaveLocation(path!);
+}
+
+class _Picker extends FilePickerPlatform {
   int calls = 0;
   Uint8List? bytes;
   Object? error;
   String? result = '/export/app_log_share.jsonl';
 
   @override
-  Future<String?> saveFile({
+  Future<Uri?> saveFile({
+    required String fileName,
+    required Uint8List bytes,
+    required String mimeType,
     String? dialogTitle,
-    String? fileName,
     String? initialDirectory,
-    FileType type = FileType.any,
-    List<String>? allowedExtensions,
-    Uint8List? bytes,
-    bool lockParentWindow = false,
+    Function(FilePickerStatus)? onFileSaving,
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
   }) async {
     calls++;
     this.bytes = bytes;
     if (error != null) throw error!;
-    return result;
+    return result == null ? null : Uri.file(result!);
   }
 }
 
@@ -63,7 +77,9 @@ void main() {
   late _Picker picker;
   late _Paths paths;
   late PathProviderPlatform originalPaths;
-  FilePicker? originalPicker;
+  late FilePickerPlatform originalPicker;
+  late selector.FileSelectorPlatform originalSelector;
+  late _Selector dialog;
   Map<String, Object?>? nativeResult;
   Object? nativeError;
 
@@ -72,13 +88,12 @@ void main() {
     source = File(p.join(sandbox.path, 'app_log_share.jsonl'))
       ..writeAsStringSync('{"message":"测试日志"}\n');
     await LogWriter.initForTesting(Directory(p.join(sandbox.path, 'logs')));
-    try {
-      originalPicker = FilePicker.platform;
-    } catch (_) {
-      originalPicker = null;
-    }
+    originalPicker = FilePickerPlatform.instance;
+    originalSelector = selector.FileSelectorPlatform.instance;
+    dialog = _Selector();
+    selector.FileSelectorPlatform.instance = dialog;
     picker = _Picker();
-    FilePicker.platform = picker;
+    FilePickerPlatform.instance = picker;
     originalPaths = PathProviderPlatform.instance;
     paths = _Paths(p.join(sandbox.path, 'Downloads'));
     PathProviderPlatform.instance = paths;
@@ -100,7 +115,8 @@ void main() {
 
   tearDown(() async {
     binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
-    if (originalPicker != null) FilePicker.platform = originalPicker!;
+    FilePickerPlatform.instance = originalPicker;
+    selector.FileSelectorPlatform.instance = originalSelector;
     PathProviderPlatform.instance = originalPaths;
     PlatformUtils.debugDesktopOverride = null;
     PublicFileChannel.debugPlatformOverride = null;
@@ -260,12 +276,12 @@ void main() {
       ),
     );
     PlatformUtils.debugDesktopOverride = true;
-    picker.result = p.join(sandbox.path, 'selected.jsonl');
+    dialog.path = p.join(sandbox.path, 'selected.jsonl');
     final outcome = await tester.runAsync(
       () => ShareUtils.saveFile(XFile(source.path)),
     );
-    expect(outcome!.finalPath, picker.result);
-    expect(File(picker.result!).readAsStringSync(), source.readAsStringSync());
+    expect(outcome!.finalPath, dialog.path);
+    expect(File(dialog.path!).readAsStringSync(), source.readAsStringSync());
     expect(picker.bytes, isNull);
     expect(nativeCalls, isEmpty);
   });

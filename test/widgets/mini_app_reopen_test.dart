@@ -3,12 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1140,11 +1139,7 @@ void main() {
             navigatorKey: nav,
             builder: (_, child) => RepaintBoundary(key: preview, child: child!),
             navigatorObservers: [appRouteObserver],
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             supportedLocales: AppLocaleUtils.supportedLocales,
             home: const MiniAppRunnerPage(details: details),
           ),
@@ -1477,11 +1472,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             navigatorObservers: [appRouteObserver],
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             supportedLocales: AppLocaleUtils.supportedLocales,
             home: MiniAppRunnerPage(details: lightDetails),
           ),
@@ -1574,11 +1565,7 @@ void main() {
           child: MaterialApp(
             navigatorKey: nav,
             navigatorObservers: [appRouteObserver],
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             supportedLocales: AppLocaleUtils.supportedLocales,
             home: const Scaffold(),
           ),

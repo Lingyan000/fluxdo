@@ -1,3 +1,13 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+plugins {
+    id("org.jetbrains.kotlin.android") apply false
+}
+
+apply(from = "gradle/cargokit_compat.gradle")
+apply(from = "gradle/kotlin_compat.gradle")
+apply(from = "gradle/compile_sdk_compat.gradle")
+
 allprojects {
     repositories {
         google()
@@ -15,6 +25,16 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
+
+    // 跨盘插件源码无法相对 Android 工程写入 Kotlin 增量缓存。
+    // 等各插件注册完编译任务，再覆盖 KGP 给任务设置的默认值。
+    if (projectDir.toPath().root != rootDir.toPath().root) {
+        gradle.projectsEvaluated {
+            tasks.withType<KotlinCompile>().configureEach {
+                incremental = false
+            }
+        }
+    }
 
     // 统一所有插件子项目的 Java/Kotlin 编译目标为 17，匹配 Kotlin 2.2 默认 JVM target。
     // 解决部分插件（如 flutter_avif_android 声明 Java 11、audio_session 声明 Kotlin 11）导致的

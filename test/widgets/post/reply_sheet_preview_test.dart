@@ -2,11 +2,10 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -39,6 +38,7 @@ Future<void> _pumpReply(
   bool rich = false,
   bool review = false,
   ReplySheet? sheet,
+  bool openFromQuickReply = false,
   double? width,
   double scale = 1,
   bool dark = false,
@@ -126,11 +126,7 @@ Future<void> _pumpReply(
         child: MaterialApp(
           locale: const Locale('zh'),
           navigatorKey: navigatorKey,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           theme: ThemeData(
             brightness: dark ? Brightness.dark : Brightness.light,
@@ -141,11 +137,27 @@ Future<void> _pumpReply(
                 .copyWith(textScaler: TextScaler.linear(scale)),
             child: child!,
           ),
-          home: Scaffold(body: sheet ?? const ReplySheet()),
+          home: Scaffold(
+            body: openFromQuickReply
+                ? Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => showReplySheet(
+                        context: context,
+                        topicId: 1,
+                        initialContentIsComplete: true,
+                        morphFrom: const Rect.fromLTWH(12, 280, 360, 160),
+                        preloadedDraftFuture: Future.value(null),
+                      ),
+                      child: const Text('展开回复'),
+                    ),
+                  )
+                : sheet ?? const ReplySheet(),
+          ),
         ),
       ),
     ),
   );
+  if (openFromQuickReply) await tester.tap(find.text('展开回复'));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 600));
   // 草稿的本地存储读取需要让平台异步回调完成，再操作被遮罩覆盖的页头。
@@ -647,6 +659,37 @@ void main() {
       writes.map((write) => jsonDecode(write['data'] as String)['reply']),
       contains(contains('关闭前尚未 debounce 的最新正文')),
     );
+  });
+
+  testWidgets('从快捷回复展开后下拉手柄关闭，保存刚输入的正文', (tester) async {
+    final store = MemoryDraftStore();
+    await _pumpReply(
+      tester,
+      width: 390,
+      draftStore: store,
+      openFromQuickReply: true,
+    );
+    final field = find.descendant(
+      of: find.byType(MarkdownEditor),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(field, '下拉前的正文');
+    await tester.pumpAndSettle();
+    final header = tester.getRect(
+      find.byKey(const ValueKey('reply-composer-header')),
+    );
+    await tester.flingFrom(
+      Offset(header.center.dx, header.top - 10),
+      const Offset(0, 250),
+      1600,
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(ReplySheet), findsNothing);
+    expect(find.text('展开回复'), findsOneWidget);
+    expect(store.entry?.data.reply, '下拉前的正文');
+    // 弹层卸载后，草稿仍会异步确认服务端保存。
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('富文本实际回复：预览使用最新内容并保留内核历史', (tester) async {

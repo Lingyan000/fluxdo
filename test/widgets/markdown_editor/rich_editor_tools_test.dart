@@ -4,9 +4,10 @@
 /// 让它与源码模式机制对齐（外显 pin + 「更多」面板网格）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo_render/editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/ai_content_block.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_editor_tools.dart';
 
 EditorState _makeState() => EditorState.fromTexts(const ['第一段']);
@@ -69,6 +70,22 @@ void main() {
   test('resolveVisibleRichTools 忽略未知 id', () {
     final got = resolveVisibleRichTools(['bold', 'nope']);
     expect(got.map((t) => t.id).toList(), ['bold']);
+  });
+
+  test('旧 AI 类型固定记录合并到单个入口并保留顺序', () {
+    for (final block in AiContentBlock.values) {
+      expect(
+        normalizeRichToolbarTools([
+          'bold',
+          'insert:ai ${block.name}',
+          'italic',
+          for (final other in AiContentBlock.values) 'insert:ai ${other.name}',
+          kRichAiContentToolId,
+          'insert:table',
+        ]),
+        ['bold', kRichAiContentToolId, 'italic', 'insert:table'],
+      );
+    }
   });
 
   group('工具动作真的改文档', () {

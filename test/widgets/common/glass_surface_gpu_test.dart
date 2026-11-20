@@ -3,12 +3,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// 运行：flutter test --enable-impeller test/widgets/common/glass_surface_gpu_test.dart
-// 普通 Skia 测试跳过；必须确认启用 Impeller 后所有像素断言实际执行。
+// Skia 与 Impeller 都要跑：flutter test test/widgets/common/glass_surface_gpu_test.dart
+// 以及 flutter test --enable-impeller 同一文件；折射位移量的阈值只在 Impeller 上断言。
 void main() {
   const size = Size(200, 48);
   const surfaceKey = ValueKey('被测玻璃');
@@ -77,15 +77,19 @@ void main() {
       MaterialApp(
         home: RepaintBoundary(
           key: captureKey,
-          child: Stack(
-            children: [
-              const Positioned.fill(child: ColoredBox(color: Colors.white)),
-              Positioned(
-                left: nested ? 31 : 0,
-                top: nested ? 43 : 0,
-                child: scene,
-              ),
-            ],
+          // 玻璃的背景来自截取宿主，与应用根部一致
+          child: GlassCaptureHost(
+            enabled: true,
+            child: Stack(
+              children: [
+                const Positioned.fill(child: ColoredBox(color: Colors.white)),
+                Positioned(
+                  left: nested ? 31 : 0,
+                  top: nested ? 43 : 0,
+                  child: scene,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -96,15 +100,11 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       });
       await tester.pump();
-      if (!optical || find.byType(BackdropFilter).evaluate().length == 2) break;
+      if (!optical || _optical().evaluate().length == 1) break;
     }
     await tester.pumpAndSettle();
     if (optical) {
-      expect(
-        find.byType(BackdropFilter),
-        findsNWidgets(2),
-        reason: '必须实际执行局部背景层与折射层，不能降级冒充通过',
-      );
+      expect(_optical(), findsOneWidget, reason: '必须实际执行截取上的折射，不能降级冒充通过');
       expect(
         find.byWidgetPredicate(
           (w) => w is CustomPaint && w.painter is GlassEdgePainter,
@@ -186,17 +186,13 @@ void main() {
     }
 
     await pumpSurface(true);
-    for (
-      var i = 0;
-      i < 50 && find.byType(BackdropFilter).evaluate().length != 2;
-      i++
-    ) {
+    for (var i = 0; i < 50 && _optical().evaluate().isEmpty; i++) {
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       });
       await tester.pump();
     }
-    expect(find.byType(BackdropFilter), findsNWidgets(2));
+    expect(_optical(), findsOneWidget);
     expect(mounts, 1);
     expect(
       tester.getSize(find.byType(GlassSurface)).height,
@@ -204,11 +200,11 @@ void main() {
       reason: '松约束不能让玻璃高度膨胀到整页',
     );
     await pumpSurface(false);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     await pumpSurface(true);
-    expect(find.byType(BackdropFilter), findsNWidgets(2));
+    expect(_optical(), findsOneWidget);
     expect(mounts, 1);
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+  });
 
   testWidgets('折射开启时不同位置与 DPR 的像素结果一致，右半边不复制成条带', (tester) async {
     addTearDown(tester.view.reset);
@@ -223,9 +219,12 @@ void main() {
         position: const Offset(240, 300),
         dpr: dpr,
       );
+      // 背景截取按模糊程度缩小（DPR 1 时一个截取像素约 7dp），内容按截取
+      // 像素取整落位：平移量不是截取像素的整数倍时，条纹背景会有轻微的
+      // 量化差异，DPR 越低越明显
       expect(
         difference(original, moved),
-        lessThan(1.5),
+        lessThan(dpr == 1 ? 3 : 1.5),
         reason: '玻璃与背景一起平移不应改变材质',
       );
       final width = (size.width * dpr).round();
@@ -239,7 +238,7 @@ void main() {
       }
       expect(colors.length, greaterThan(10), reason: '右半边必须保留背景变化，不能反复读取同一列');
     }
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+  });
 
   GlassRecipe refractionOnly(double amount) {
     const base = GlassRecipe.navigation;
@@ -257,60 +256,65 @@ void main() {
       highlightAlpha: 0,
       darkHighlightMultiplier: base.darkHighlightMultiplier,
       noise: 0,
-      postBlurSigma: 0.5,
       fallbackEdgeWidth: base.fallbackEdgeWidth,
       fallbackLightAlpha: base.fallbackLightAlpha,
       fallbackDarkAlpha: base.fallbackDarkAlpha,
     );
   }
 
-  testWidgets('只改变折射量就产生边缘位移，中间区域保持不变', (tester) async {
-    addTearDown(tester.view.reset);
-    final optical = await capture(
-      tester,
-      position: const Offset(200, 300),
-      dpr: 2,
-      recipe: refractionOnly(18),
-    );
-    final identity = await capture(
-      tester,
-      position: const Offset(200, 300),
-      dpr: 2,
-      recipe: refractionOnly(0),
-    );
-    var edgeDifference = 0.0;
-    var centerDifference = 0.0;
-    var edgeCount = 0;
-    var centerCount = 0;
-    const width = 400;
-    for (var y = 0; y < 96; y++) {
-      for (var x = 0; x < width; x++) {
-        final i = (y * width + x) * 4;
-        final delta =
-            (optical[i] - identity[i]).abs() +
-            (optical[i + 1] - identity[i + 1]).abs() +
-            (optical[i + 2] - identity[i + 2]).abs();
-        if (x > 60 && x < 340 && y > 4 && y < 24) {
-          edgeDifference += delta;
-          edgeCount += 3;
-        }
-        if (x > 100 && x < 300 && y > 43 && y < 53) {
-          centerDifference += delta;
-          centerCount += 3;
+  testWidgets(
+    '只改变折射量就产生边缘位移，中间区域保持不变',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      final optical = await capture(
+        tester,
+        position: const Offset(200, 300),
+        dpr: 2,
+        recipe: refractionOnly(18),
+      );
+      final identity = await capture(
+        tester,
+        position: const Offset(200, 300),
+        dpr: 2,
+        recipe: refractionOnly(0),
+      );
+      var edgeDifference = 0.0;
+      var centerDifference = 0.0;
+      var edgeCount = 0;
+      var centerCount = 0;
+      const width = 400;
+      for (var y = 0; y < 96; y++) {
+        for (var x = 0; x < width; x++) {
+          final i = (y * width + x) * 4;
+          final delta =
+              (optical[i] - identity[i]).abs() +
+              (optical[i + 1] - identity[i + 1]).abs() +
+              (optical[i + 2] - identity[i + 2]).abs();
+          if (x > 60 && x < 340 && y > 4 && y < 24) {
+            edgeDifference += delta;
+            edgeCount += 3;
+          }
+          if (x > 100 && x < 300 && y > 43 && y < 53) {
+            centerDifference += delta;
+            centerCount += 3;
+          }
         }
       }
-    }
-    expect(
-      edgeDifference / edgeCount,
-      greaterThan(2),
-      reason: '关闭高光、噪点、色散和色罩后，仍必须有真实折射位移',
-    );
-    expect(
-      centerDifference / centerCount,
-      lessThan(1),
-      reason: '折射应局限在边缘带，不拉伸整个背景',
-    );
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+      expect(
+        edgeDifference / edgeCount,
+        greaterThan(2),
+        reason: '关闭高光、噪点、色散和色罩后，仍必须有真实折射位移',
+      );
+      expect(
+        centerDifference / centerCount,
+        lessThan(1),
+        reason: '折射应局限在边缘带，不拉伸整个背景',
+      );
+    },
+    // 折射位移的阈值按 Impeller 标定；Skia 上折射同样生效，但截取的
+    // 模糊更柔，边缘位移量偏小
+    skip: !ui.ImageFilter.isShaderFilterSupported,
+  );
 
   testWidgets('左上边缘被父裁切时仍与完整玻璃对应区域一致', (tester) async {
     addTearDown(tester.view.reset);
@@ -338,7 +342,7 @@ void main() {
       }
     }
     expect(delta / count, lessThan(2));
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+  });
 
   testWidgets('额外缩放后的折射几何与未缩放结果一致', (tester) async {
     addTearDown(tester.view.reset);
@@ -369,7 +373,7 @@ void main() {
     }
     debugPrint('缩放平均像素差: ${total / count}');
     expect(total / count, lessThan(8));
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+  });
 
   testWidgets('嵌套离屏层、分数位置与缩放仍保留折射', (tester) async {
     addTearDown(tester.view.reset);
@@ -390,7 +394,7 @@ void main() {
       );
       expect(difference(a, b), lessThan(2), reason: '父离屏层和位置不能改变玻璃的局部坐标');
     }
-  }, skip: !ui.ImageFilter.isShaderFilterSupported);
+  });
 }
 
 class _BackdropPattern extends CustomPainter {
@@ -442,3 +446,8 @@ class _StateProbeState extends State<_StateProbe> {
   @override
   Widget build(BuildContext context) => const SizedBox(height: 48);
 }
+
+/// 走光学材质（带折射 shader）的玻璃背景
+Finder _optical() => find.byWidgetPredicate(
+  (widget) => widget is GlassBackdrop && widget.program != null,
+);

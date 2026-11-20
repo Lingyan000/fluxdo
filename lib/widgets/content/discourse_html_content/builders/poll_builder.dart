@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../../../models/topic.dart';
@@ -1066,6 +1066,7 @@ class _PieChartInteractiveState extends State<_PieChartInteractive> {
     tipLeft = tipLeft.clamp(-20.0, _size - 60);
     tipTop = tipTop.clamp(-20.0, _size - 30);
     return MouseRegion(
+      cursor: _hovered == null ? MouseCursor.defer : SystemMouseCursors.click,
       onHover: (e) {
         final local = _toLocal(e.position);
         final hit = _hitTest(local);

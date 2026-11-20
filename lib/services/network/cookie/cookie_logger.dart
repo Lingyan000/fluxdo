@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../log/log_writer.dart';
@@ -8,6 +11,11 @@ import '../../log/log_writer.dart';
 /// 和 LogWriter（持久化 JSONL，用于线上排查）。
 class CookieLogger {
   CookieLogger._();
+
+  /// 同一 Cookie 在同步与请求日志中使用相同的短摘要，便于关联。
+  static String? valueHash(String? value) => value == null || value.isEmpty
+      ? null
+      : sha256.convert(utf8.encode(value)).toString().substring(0, 16);
 
   // ---------------------------------------------------------------------------
   // 保存

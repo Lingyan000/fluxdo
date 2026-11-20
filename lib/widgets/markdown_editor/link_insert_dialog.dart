@@ -1,13 +1,14 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../../../l10n/s.dart';
 import '../../models/search_result.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/url_helper.dart';
+import '../common/emoji_text.dart';
 
 /// 链接插入/编辑对话框(官方 upsert-hyperlink 对齐):
 /// - URL 框输入非 http 文字(≥4 字符)→ 站内话题搜索联想,选中回填
@@ -208,7 +209,7 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                                 const SizedBox(width: 4),
                               ],
                               Expanded(
-                                child: Text(
+                                child: EmojiText(
                                   t.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

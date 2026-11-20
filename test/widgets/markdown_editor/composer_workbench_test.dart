@@ -5,18 +5,19 @@ import 'dart:io';
 import 'package:app_icons/app_icons.dart';
 import 'package:chat_bottom_container/constants.dart';
 import 'package:chat_bottom_container/listener_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/widgets/common/tag_selection_sheet.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/emoji.dart';
+import 'package:fluxdo/models/user.dart';
+import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/emoji_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
@@ -32,8 +33,10 @@ import 'package:common_ui/common_ui.dart';
 import 'package:fluxdo/services/preloaded_data_service.dart';
 import 'package:fluxdo/services/discourse_cook_service.dart';
 import 'package:fluxdo/widgets/markdown_editor/markdown_editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/ai_content_block.dart';
 import 'package:fluxdo/widgets/markdown_editor/emoji_sticker_panel.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
+import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_editor_tools.dart';
 import 'package:fluxdo/widgets/markdown_editor/image_upload_dialog.dart';
 import 'package:fluxdo/widgets/markdown_editor/uploads/upload_task_panel.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
@@ -111,11 +114,7 @@ Future<void> _pump(
         child: MaterialApp(
           locale: const Locale('zh'),
           navigatorKey: navigatorKey,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           theme: ThemeData(
             platform: desktop ? TargetPlatform.macOS : TargetPlatform.android,
@@ -206,9 +205,43 @@ class _DelayedDraftCodec extends SemanticComposerCodec {
   }) => loaded.future;
 }
 
+class _NoCurrentUser extends CurrentUserNotifier {
+  @override
+  Future<User?> build() async => null;
+}
+
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  testWidgets('富文本导入中允许沿用原文关闭，提交仍等待导入完成', (tester) async {
+    final controller = TextEditingController(text: '尚在导入的原始正文');
+    final codec = _DelayedDraftCodec();
+    final key = GlobalKey<RichComposerEditorState>();
+    await _pump(
+      tester,
+      ProviderScope(
+        overrides: [currentUserProvider.overrideWith(_NoCurrentUser.new)],
+        child: RichComposerEditor(
+          key: key,
+          controller: controller,
+          semanticCodec: codec,
+        ),
+      ),
+    );
+    expect(key.currentState!.prepareToClose(), isTrue);
+    expect(key.currentState!.flushToController(), isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+    codec.loaded.complete(
+      ComposerImportResult.success(
+        SemanticNode('doc', content: [SemanticNode('paragraph')]),
+      ),
+    );
+    await tester.pump();
+    expect(controller.text, '尚在导入的原始正文');
+    expect(tester.takeException(), isNull);
+    controller.dispose();
+  });
 
   for (final missing in [false, true]) {
     for (final resolveFrame in [4, 16, 40]) {
@@ -234,7 +267,7 @@ void main() {
             .readAsStringSync()
             .replaceAll(
               'upload://',
-              'upload://case${resolveFrame}${missing ? 'missing' : 'loaded'}',
+              'upload://case$resolveFrame${missing ? 'missing' : 'loaded'}',
             );
         final controller = TextEditingController(text: raw);
         final codec = _DelayedDraftCodec();
@@ -2507,6 +2540,209 @@ void main() {
         focus.dispose();
       });
     }
+  }
+
+  for (final desktop in [false, true]) {
+    testWidgets('富文本 AI 内容分级选择保留原选区 desktop=$desktop', (tester) async {
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        ProviderScope(
+          overrides: [currentUserProvider.overrideWith(_NoCurrentUser.new)],
+          child: RichComposerEditor(controller: controller),
+        ),
+        desktop: desktop,
+        width: desktop ? 1000 : 390,
+      );
+      await tester.pumpAndSettle();
+      final settings = PreloadedDataService().siteSettingsSync!;
+      final previousDetails = settings['details_enabled'];
+      settings['details_enabled'] = desktop;
+      addTearDown(() => settings['details_enabled'] = previousDetails);
+      final editor = tester
+          .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+          .state;
+      editor.pastePlainText('before selected after');
+      final blockId = editor.blocks.first.id;
+      editor.updateSelection(
+        EditorSelection(
+          base: EditorPosition(blockId: blockId, offset: 7),
+          extent: EditorPosition(blockId: blockId, offset: 15),
+        ),
+      );
+      final before = docToMarkdown(editor.blocks);
+      await tester.pump();
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pumpAndSettle();
+      final ai = find.byKey(
+        const ValueKey('composer-tool-$kRichAiContentToolId'),
+      );
+      await tester.scrollUntilVisible(
+        ai,
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('composer-tools-panel')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(find.text(S.current.editor_aiCode), findsNothing);
+      expect(find.text(S.current.editor_aiQuote), findsNothing);
+      await tester.tap(ai);
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.editor_aiCode), findsOneWidget);
+      expect(find.text(S.current.editor_aiQuote), findsOneWidget);
+      expect(
+        find.text(S.current.editor_aiDetails),
+        desktop ? findsOneWidget : findsNothing,
+      );
+      expect(docToMarkdown(editor.blocks), before);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        ai,
+        180,
+        scrollable: find
+            .descendant(
+              of: find.byKey(const ValueKey('composer-tools-panel')),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      expect(ai, findsOneWidget);
+      expect(find.text(S.current.editor_aiQuote), findsNothing);
+      await tester.tap(ai);
+      await tester.pumpAndSettle();
+      editor.updateSelection(
+        EditorSelection.collapsed(EditorPosition(blockId: blockId, offset: 0)),
+      );
+      await tester.tap(find.text(S.current.editor_aiQuote));
+      await tester.pumpAndSettle();
+      for (
+        var i = 0;
+        i < 30 && !docToMarkdown(editor.blocks).contains('[!AI]');
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      expect(find.byKey(const ValueKey('composer-tools-panel')), findsNothing);
+      expect(docToMarkdown(editor.blocks), contains('> [!AI]\n> selected'));
+      expect(docToMarkdown(editor.blocks), contains('before'));
+      expect(docToMarkdown(editor.blocks), contains('after'));
+      editor.undo();
+      await tester.pump();
+      expect(docToMarkdown(editor.blocks), before);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
+
+    testWidgets('富文本 AI 内容兼容旧固定记录并支持菜单与搜索 desktop=$desktop', (tester) async {
+      final key = GlobalKey<RichComposerEditorState>();
+      final controller = TextEditingController();
+      await _pump(
+        tester,
+        ProviderScope(
+          overrides: [currentUserProvider.overrideWith(_NoCurrentUser.new)],
+          child: RichComposerEditor(key: key, controller: controller),
+        ),
+        desktop: desktop,
+        width: desktop ? 1000 : 390,
+      );
+      await tester.pumpAndSettle();
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(RichComposerEditor)),
+      );
+      await container.read(preferencesProvider.notifier).setRichToolbarTools([
+        'bold',
+        for (final block in AiContentBlock.values) 'insert:ai ${block.name}',
+      ]);
+      await tester.pumpAndSettle();
+      final ai = find.byTooltip(S.current.editor_aiContent);
+      expect(ai, findsOneWidget);
+      expect(find.byTooltip(S.current.editor_aiCode), findsNothing);
+      expect(find.byTooltip(S.current.editor_aiQuote), findsNothing);
+      final editor = tester
+          .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+          .state;
+      editor.pastePlainText('selected');
+      final blockId = editor.blocks.first.id;
+      editor.updateSelection(
+        EditorSelection(
+          base: EditorPosition(blockId: blockId, offset: 0),
+          extent: EditorPosition(blockId: blockId, offset: 8),
+        ),
+      );
+      final before = docToMarkdown(editor.blocks);
+      await tester.pump();
+      await tester.tap(ai);
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.editor_aiCode), findsOneWidget);
+      await tester.tap(find.text(S.current.editor_aiQuote));
+      await tester.pumpAndSettle();
+      for (
+        var i = 0;
+        i < 30 && !docToMarkdown(editor.blocks).contains('[!AI]');
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      expect(docToMarkdown(editor.blocks), contains('> [!AI]\n> selected'));
+      editor.undo();
+      await tester.pump();
+      expect(docToMarkdown(editor.blocks), before);
+
+      unawaited(key.currentState!.showQuickPanel());
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('composer-tools-search')),
+        'ai quote',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(S.current.editor_aiQuote), findsOneWidget);
+      expect(find.byType(ListTile), findsOneWidget);
+      await tester.tap(find.text(S.current.editor_aiQuote));
+      await tester.pumpAndSettle();
+      for (
+        var i = 0;
+        i < 30 && !docToMarkdown(editor.blocks).contains('[!AI]');
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      expect(docToMarkdown(editor.blocks), contains('> [!AI]\n> selected'));
+
+      await tester.tap(find.byTooltip(S.current.composer_expandToolbar));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.toolPanel_customize));
+      await tester.pump();
+      final aiCell = find.byKey(
+        const ValueKey('composer-tool-$kRichAiContentToolId'),
+      );
+      await tester.tap(aiCell);
+      await tester.pump();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('pref_rich_toolbar_tools'), ['bold']);
+      await tester.tap(aiCell);
+      await tester.pump();
+      expect(prefs.getStringList('pref_rich_toolbar_tools'), [
+        'bold',
+        kRichAiContentToolId,
+      ]);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    });
   }
 
   testWidgets('富文本扩展动作直接列出插入块，不再叠加菜单', (tester) async {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 
 /// 只把玻璃覆盖的小块原生画面送入 Flutter 合成树，不覆盖或暂停整个游戏。
@@ -156,7 +156,8 @@ class _MiniAppGlassBackdropState extends State<MiniAppGlassBackdrop>
       });
       // 只有首帧接入需要过渡；周期更新不能反复从透明开始，否则会脉冲闪烁。
       if (old == null) {
-        if (MediaQuery.disableAnimationsOf(context)) {
+        if ((MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))) {
           _frameFade.value = 1;
         } else {
           _frameFade.forward(from: 0);

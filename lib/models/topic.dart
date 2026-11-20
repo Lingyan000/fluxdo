@@ -7,6 +7,7 @@ import '../utils/url_helper.dart';
 import '../utils/bookmark_name_utils.dart';
 import 'pending_post.dart';
 import 'user.dart';
+import 'topic_timeline_lookup.dart';
 
 /// 标签模型
 class Tag {
@@ -538,11 +539,10 @@ class Topic {
   }
 }
 
-/// 解析话题详情响应里的推荐话题数组(suggested_topics / related_topics)
+/// 解析详情响应里的话题或私信推荐条目。
 ///
-/// 这两组走 SuggestedTopicSerializer,字段比列表接口稀疏且随站点设置浮动
-/// (excerpt/tags/posters 都可能缺席),用户对象内嵌在 poster 里而非顶层
-/// users 表。单条解析失败只跳过该条,不能让整个话题详情解析失败。
+/// Discourse 的 SuggestedTopicSerializer 把用户对象放在 poster 里。
+/// 摘要、标签和参与者都可能缺失，单条数据解析失败时继续处理其余条目。
 List<Topic> parseSuggestedTopicList(dynamic raw) {
   if (raw is! List || raw.isEmpty) return const [];
   final result = <Topic>[];
@@ -555,6 +555,12 @@ List<Topic> parseSuggestedTopicList(dynamic raw) {
     }
   }
   return result;
+}
+
+/// 未下发时保留已加载的相关私信，明确返回空数组时清空列表。
+List<Topic>? parseRelatedMessages(Map<String, dynamic> json) {
+  final messages = json['related_messages'];
+  return messages is List ? parseSuggestedTopicList(messages) : null;
 }
 
 /// 链接点击统计
@@ -1635,11 +1641,11 @@ class PostStream {
   final List<int> stream; // 所有 post_id 的列表
   final PostStreamGaps? gaps; // 服务端过滤后被跳过的楼层，见 PostStreamGaps
 
-  /// 翻页响应(`/t/{id}/posts.json?include_suggested=true`)顶层带回的推荐
-  /// 话题。大话题首屏 `/t/{id}.json` 不返回这两组(服务端见 next_page 有值
-  /// 就关掉 include_suggested),只能靠翻页请求补,这里是回填通道。
+  /// 长话题或私信的首屏可能省略推荐列表，翻页时服务端通过
+  /// `/t/{id}/posts.json?include_suggested=true` 在顶层返回这些列表。
   final List<Topic> suggestedTopics;
   final List<Topic> relatedTopics;
+  final List<Topic>? relatedMessages;
 
   PostStream({
     required this.posts,
@@ -1647,6 +1653,7 @@ class PostStream {
     this.gaps,
     this.suggestedTopics = const [],
     this.relatedTopics = const [],
+    this.relatedMessages,
   });
 
   factory PostStream.fromJson(Map<String, dynamic> json) {
@@ -1765,15 +1772,16 @@ class PostStream {
 /// 单个被采纳答案的展示数据(对齐 Discourse 的 accepted_answers 数组元素)
 ///
 /// 字段来源:
-/// - postNumber/username/name/avatarTemplate/excerpt/accepterUsername/accepterName:
-///   discourse-solved 的 `accepted_answers_post_info` 数组元素
-/// - createdAt: 通过 postNumber 反查 PostStream 后填充(后端 payload 不带)
+/// - 新版 `accepted_answers` 数组元素下发完整 `cooked` 与 `created_at`,
+///   由展示端按 `solved_quote_length` 截高
+/// - 旧版 `accepted_answer` 单对象只有截断后的 `excerpt`、不带时间,
+///   createdAt 通过 postNumber 反查 PostStream 补齐
 class AcceptedAnswer {
   final int postNumber;
   final String username;
   final String? name;
   final String? avatarTemplate;
-  final String? excerpt; // cooked HTML;solved_quote_length=0 时为 null
+  final String? cooked; // 答案 HTML;solved_quote_length=0 时为 null
   final DateTime? createdAt;
   final String? accepterUsername;
   final String? accepterName;
@@ -1783,7 +1791,7 @@ class AcceptedAnswer {
     required this.username,
     this.name,
     this.avatarTemplate,
-    this.excerpt,
+    this.cooked,
     this.createdAt,
     this.accepterUsername,
     this.accepterName,
@@ -1801,21 +1809,21 @@ class AcceptedAnswer {
       username: post.username,
       name: post.name,
       avatarTemplate: post.avatarTemplate,
-      excerpt: post.cooked,
+      cooked: post.cooked,
       createdAt: post.createdAt,
       accepterUsername: accepterUsername,
       accepterName: accepterName,
     );
   }
 
-  /// 从 json 解析,可选地用 postStream 反查 createdAt
+  /// 从 json 解析,缺 created_at 时可选地用 postStream 反查
   factory AcceptedAnswer.fromJson(
     Map<String, dynamic> json, {
     PostStream? postStream,
   }) {
     final pn = json['post_number'] as int;
-    DateTime? createdAt;
-    if (postStream != null) {
+    var createdAt = TimeUtils.parseUtcTime(json['created_at'] as String?);
+    if (createdAt == null && postStream != null) {
       final post = postStream.posts
           .where((p) => p.postNumber == pn)
           .firstOrNull;
@@ -1826,7 +1834,7 @@ class AcceptedAnswer {
       username: json['username'] as String? ?? '',
       name: json['name'] as String?,
       avatarTemplate: json['avatar_template'] as String?,
-      excerpt: json['excerpt'] as String?,
+      cooked: json['cooked'] as String? ?? json['excerpt'] as String?,
       createdAt: createdAt,
       accepterUsername: json['accepter_username'] as String?,
       accepterName: json['accepter_name'] as String?,
@@ -1865,13 +1873,53 @@ class TopicLink {
   final String title;
   final int clicks;
 
-  const TopicLink({required this.url, this.title = '', this.clicks = 0});
+  /// 站内链接（指向本站话题、帖子等）
+  final bool internal;
 
-  factory TopicLink.fromJson(Map<String, dynamic> json) => TopicLink(
-    url: json['url'] as String? ?? '',
-    title: json['title'] as String? ?? '',
-    clicks: json['clicks'] as int? ?? 0,
-  );
+  /// 指向本站上传的附件
+  final bool attachment;
+
+  /// 链接域名，服务端未下发时从 [url] 解析
+  final String domain;
+
+  const TopicLink({
+    required this.url,
+    this.title = '',
+    this.clicks = 0,
+    this.internal = false,
+    this.attachment = false,
+    this.domain = '',
+  });
+
+  factory TopicLink.fromJson(Map<String, dynamic> json) {
+    final url = json['url'] as String? ?? '';
+    return TopicLink(
+      url: url,
+      title: json['title'] as String? ?? '',
+      clicks: json['clicks'] as int? ?? 0,
+      internal: json['internal'] as bool? ?? false,
+      attachment: json['attachment'] as bool? ?? false,
+      domain: json['domain'] as String? ?? Uri.tryParse(url)?.host ?? '',
+    );
+  }
+}
+
+/// 话题某一天的浏览量（`/t/:id/view-stats.json`）
+class TopicViewStat {
+  /// 服务端按 UTC 日期汇总；这里只用年月日，不代表具体时刻
+  final DateTime day;
+  final int views;
+
+  const TopicViewStat({required this.day, required this.views});
+
+  static TopicViewStat? fromJson(Map<String, dynamic> json) {
+    final day = TimeUtils.parseUtcTime(json['viewed_at'] as String?);
+    if (day == null) return null;
+    return TopicViewStat(
+      day: DateTime(day.year, day.month, day.day),
+      views: (json['views'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// 话题详情模型
@@ -1890,6 +1938,12 @@ class TopicDetail {
   final DateTime? createdAt;
   final bool visible;
   final int? lastReadPostNumber; // 最后阅读的帖子编号（从 API 获取）
+
+  /// 最后阅读的帖子 id，用于在 stream 中定位上次阅读位置（未登录时为 null）
+  final int? lastReadPostId;
+
+  /// stream 位置 → 日期的稀疏查找表，进度与时间线据此显示任意位置的日期
+  final TopicTimelineLookup timelineLookup;
   final int highestPostNumber; // 最高帖子编号（含小动作楼层，标记未读回退用）
   final int slowModeSeconds;
   final TopicTimer? topicTimer;
@@ -1935,6 +1989,10 @@ class TopicDetail {
   // 话题权限（来自 details）
   final bool canEdit; // 是否可以编辑话题元数据（标题、分类、标签）
 
+  /// 当前用户能否在本话题发帖回复（details.can_create_post）。
+  /// 话题关闭、归档或权限不足时为 false；管理员在关闭话题里仍为 true。
+  final bool canCreatePost;
+
   /// 该私信是否已被当前用户归档（顶层 `message_archived`，非 details；
   /// 服务端只在私信下发，见 TopicViewSerializer#include_message_archived?）。
   final bool messageArchived;
@@ -1967,6 +2025,9 @@ class TopicDetail {
   /// 服务端不下发,由翻页请求补回,见 [PostStream.suggestedTopics]。
   final List<Topic> suggestedTopics;
   final List<Topic> relatedTopics;
+
+  /// 私信末尾的相关会话。null 表示当前响应未携带该字段。
+  final List<Topic>? relatedMessages;
 
   // 指定(discourse-assign 插件)相关字段。站点未装插件时恒为 null。
   final TopicUser? assignedToUser;
@@ -2002,6 +2063,10 @@ class TopicDetail {
   /// 是否为私信
   bool get isPrivateMessage => archetype == 'private_message';
 
+  /// 下一次分页是否需要服务端附带页尾列表。
+  bool get needsFooterTopics =>
+      isPrivateMessage ? relatedMessages == null : suggestedTopics.isEmpty;
+
   TopicDetail({
     required this.id,
     required this.title,
@@ -2017,6 +2082,8 @@ class TopicDetail {
     this.createdAt,
     this.visible = true,
     this.lastReadPostNumber,
+    this.lastReadPostId,
+    this.timelineLookup = TopicTimelineLookup.empty,
     this.highestPostNumber = 0,
     this.slowModeSeconds = 0,
     this.topicTimer,
@@ -2043,6 +2110,7 @@ class TopicDetail {
     this.pmWithNonHumanUser = false,
     this.isPostVoting = false,
     this.canEdit = false,
+    this.canCreatePost = true,
     this.messageArchived = false,
     this.allowedUsers = const [],
     this.allowedGroups = const [],
@@ -2057,6 +2125,7 @@ class TopicDetail {
     this.pendingPosts = const [],
     this.suggestedTopics = const [],
     this.relatedTopics = const [],
+    this.relatedMessages,
     this.assignedToUser,
     this.assignedToGroupName,
     this.assignmentNote,
@@ -2224,6 +2293,13 @@ class TopicDetail {
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       visible: json['visible'] as bool? ?? true,
       lastReadPostNumber: json['last_read_post_number'] as int?,
+      lastReadPostId: json['last_read_post_id'] as int?,
+      // 位于话题 JSON 顶层（PostStreamSerializerMixin 混入话题视图），
+      // 不在 post_stream 内
+      timelineLookup: TopicTimelineLookup.fromJson(
+        json['timeline_lookup'],
+        DateTime.now(),
+      ),
       highestPostNumber: json['highest_post_number'] as int? ?? 0,
       slowModeSeconds: json['slow_mode_seconds'] as int? ?? 0,
       visibilityReasonId: json['visibility_reason_id'] as int? ?? 99,
@@ -2266,6 +2342,12 @@ class TopicDetail {
         details['notification_level'] as int?,
       ),
       canEdit: details['can_edit'] as bool? ?? false,
+      // 服务端只在为 true 时下发该键（TopicViewDetailsSerializer 的
+      // include_can_create_post?），缺省即无权回复；整个 details 缺失时
+      // 无从判断，按可回复处理，由发帖接口兜底报错
+      canCreatePost: detailsJson is Map
+          ? details['can_create_post'] == true
+          : true,
       messageArchived: json['message_archived'] as bool? ?? false,
       allowedUsers: (details['allowed_users'] as List<dynamic>? ?? const [])
           .whereType<Map>()
@@ -2289,6 +2371,7 @@ class TopicDetail {
           .toList(),
       suggestedTopics: parseSuggestedTopicList(json['suggested_topics']),
       relatedTopics: parseSuggestedTopicList(json['related_topics']),
+      relatedMessages: parseRelatedMessages(json),
       assignedToUser: _tryParseAssignedToUser(json['assigned_to_user']),
       assignedToGroupName: _tryParseAssignedToGroupName(
         json['assigned_to_group'],
@@ -2376,6 +2459,8 @@ class TopicDetail {
     DateTime? createdAt,
     bool? visible,
     int? lastReadPostNumber,
+    int? lastReadPostId,
+    TopicTimelineLookup? timelineLookup,
     int? highestPostNumber,
     int? slowModeSeconds,
     TopicTimer? topicTimer,
@@ -2403,6 +2488,7 @@ class TopicDetail {
     bool? pmWithNonHumanUser,
     bool? isPostVoting,
     bool? canEdit,
+    bool? canCreatePost,
     bool? messageArchived,
     List<TopicUser>? allowedUsers,
     List<TopicGroup>? allowedGroups,
@@ -2421,6 +2507,7 @@ class TopicDetail {
     List<PendingPost>? pendingPosts,
     List<Topic>? suggestedTopics,
     List<Topic>? relatedTopics,
+    List<Topic>? relatedMessages,
   }) {
     return TopicDetail(
       id: id ?? this.id,
@@ -2437,6 +2524,8 @@ class TopicDetail {
       createdAt: createdAt ?? this.createdAt,
       visible: visible ?? this.visible,
       lastReadPostNumber: lastReadPostNumber ?? this.lastReadPostNumber,
+      lastReadPostId: lastReadPostId ?? this.lastReadPostId,
+      timelineLookup: timelineLookup ?? this.timelineLookup,
       highestPostNumber: highestPostNumber ?? this.highestPostNumber,
       slowModeSeconds: slowModeSeconds ?? this.slowModeSeconds,
       topicTimer: clearTopicTimer ? null : (topicTimer ?? this.topicTimer),
@@ -2464,6 +2553,7 @@ class TopicDetail {
       pmWithNonHumanUser: pmWithNonHumanUser ?? this.pmWithNonHumanUser,
       isPostVoting: isPostVoting ?? this.isPostVoting,
       canEdit: canEdit ?? this.canEdit,
+      canCreatePost: canCreatePost ?? this.canCreatePost,
       messageArchived: messageArchived ?? this.messageArchived,
       allowedUsers: allowedUsers ?? this.allowedUsers,
       allowedGroups: allowedGroups ?? this.allowedGroups,
@@ -2485,6 +2575,7 @@ class TopicDetail {
       pendingPosts: pendingPosts ?? this.pendingPosts,
       suggestedTopics: suggestedTopics ?? this.suggestedTopics,
       relatedTopics: relatedTopics ?? this.relatedTopics,
+      relatedMessages: relatedMessages ?? this.relatedMessages,
       // 指定字段不提供 copyWith 覆写(始终透传旧值):指定/取消指定后
       // 一律整页重拉(assign_sheet _refetch),本地不拼状态。
       assignedToUser: assignedToUser,

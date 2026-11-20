@@ -15,6 +15,26 @@
 - `melos` 只保留 workspace bootstrap，不再扩张为本地开发命令面
 - CI shell/python 脚本只保留工作流级环境胶水，不承载项目业务逻辑
 
+## Android 插件兼容验证
+
+`android/gradle/kotlin_compat.gradle` 在应用显式关闭 AGP 内置 Kotlin 时，
+为含 Kotlin 源码的 Android library 提前应用 KGP。某些插件只检查 AGP
+版本，Flutter 的静态检测又会把条件分支中的 `apply` 当成已应用，导致
+插件类未编译、最终在 `GeneratedPluginRegistrant` 中报找不到类。
+排查时除检查 Gradle 配置，还应执行对应插件的 `compileReleaseKotlin`
+并确认 class 产物，再验证应用的 Release APK 构建。
+
+`android/gradle/cargokit_compat.gradle` 为仍调用 `Project.exec` 的 Cargokit
+插件转接到 Gradle 9 的 `ExecOperations`，仅作用于 Android 的 Cargokit 子项目。
+安装 Flutter 依赖及 Gradle 9 后，可离线运行：
+
+```sh
+python3 scripts/ci/android/check_cargokit_compat.py --gradle "$PWD/android/gradlew"
+```
+
+检查直接加载当前依赖的真实 Cargokit 任务，覆盖原始错误、命令和环境变量、
+带空格路径、非零退出以及其他插件隔离。上游全部迁移后应一并移除兼容层和此检查。
+
 ## Windows 自更新发布约定
 
 - 发布资源保持 `fluxdo-windows-x86_64-setup.exe` 和同名 `.sha256`。现有 release job 已为所有产物生成校验文件；更新端优先校验 GitHub API 返回的 SHA-256 digest，没有 digest 时必须成功获取并校验 `.sha256`，不会在校验失败后执行安装包。

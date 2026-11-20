@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/scheduler.dart';
@@ -22,6 +22,27 @@ const String _recentEmojisKey = 'recent_emojis';
 
 /// 最多保存的常用表情数量
 const int _maxRecentEmojis = 30;
+
+/// 最近使用的表情名（新 → 旧）。表情面板与快捷回复的最近表情条共用
+Future<List<String>> loadRecentEmojiNames() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getStringList(_recentEmojisKey) ?? const [];
+}
+
+/// 记一次表情使用（挪到最前）
+Future<void> recordRecentEmoji(String name) async {
+  final prefs = await SharedPreferences.getInstance();
+  final names = [
+    name,
+    ...?prefs.getStringList(_recentEmojisKey)?.where((n) => n != name),
+  ];
+  await prefs.setStringList(
+    _recentEmojisKey,
+    names.length > _maxRecentEmojis
+        ? names.sublist(0, _maxRecentEmojis)
+        : names,
+  );
+}
 
 class EmojiPicker extends ConsumerStatefulWidget {
   final Function(Emoji) onEmojiSelected;

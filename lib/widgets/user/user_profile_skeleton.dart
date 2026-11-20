@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../utils/responsive.dart';
@@ -159,7 +159,12 @@ enum UserActivitySkeletonType {
   post,
   reply,
   quoted,
+
+  /// 动作者优先，引用自己的原文（获赞、收到的回应、被编辑）
   receivedLike,
+
+  /// 动作者优先，展示对方的正文（被回复、被提及）
+  actorPost,
   reaction,
   boost,
   topic,
@@ -193,45 +198,52 @@ class UserActionItemSkeleton extends StatelessWidget {
         ? theme.textTheme.bodyMedium!
         : theme.textTheme.bodyLarge!;
     final bodyHeight = scaler.scale(bodyStyle.fontSize!) * 1.5;
-    final bodyFirst = type == UserActivitySkeletonType.reply;
+    final actorFirst =
+        type == UserActivitySkeletonType.receivedLike ||
+        type == UserActivitySkeletonType.actorPost;
+    final bodyFirst = type == UserActivitySkeletonType.reply || actorFirst;
+    const avatar = SizedBox(
+      width: 44,
+      height: 44,
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: SkeletonCircle(size: 36),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (type == UserActivitySkeletonType.receivedLike) ...[
+        if (actorFirst)
           ActivityCardHeader(
-            metadata: Row(
-              children: [
-                Flexible(
-                  child: SkeletonBox(width: 180, height: metadataHeight),
-                ),
-              ],
+            avatar: avatar,
+            metadata: SkeletonBox(
+              key: const ValueKey('activity-skeleton-metadata'),
+              width: 120,
+              height: authorHeight,
+            ),
+            timestamp: SkeletonBox(width: 40, height: metadataHeight),
+          )
+        else
+          ActivityCardHeader(
+            avatar: avatar,
+            identity: SkeletonBox(width: 120, height: authorHeight),
+            metadata: SkeletonBox(
+              key: const ValueKey('activity-skeleton-metadata'),
+              width: 100,
+              height: metadataHeight,
             ),
             timestamp: SkeletonBox(width: 40, height: metadataHeight),
           ),
-          const SizedBox(height: 12),
-        ],
-        ActivityCardHeader(
-          avatar: const SizedBox(
-            width: 44,
-            height: 44,
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: SkeletonCircle(size: 36),
-            ),
-          ),
-          identity: SkeletonBox(width: 120, height: authorHeight),
-          metadata: SkeletonBox(
-            key: const ValueKey('activity-skeleton-metadata'),
-            width: 100,
-            height: metadataHeight,
-          ),
-          timestamp: type == UserActivitySkeletonType.receivedLike
-              ? null
-              : SkeletonBox(width: 40, height: metadataHeight),
-        ),
         if (bodyFirst) ...[
           const SizedBox(height: 12),
-          SkeletonBox(width: double.infinity, height: bodyHeight * 2),
+          if (quoted)
+            SkeletonBox(
+              width: double.infinity,
+              height: bodyHeight * 2 + 20,
+              borderRadius: 10,
+            )
+          else
+            SkeletonBox(width: double.infinity, height: bodyHeight * 2),
         ],
         const SizedBox(height: 12),
         Padding(
@@ -261,7 +273,7 @@ class UserActionItemSkeleton extends StatelessWidget {
         ],
         if (type == UserActivitySkeletonType.boost) ...[
           const SizedBox(height: 10),
-          const SkeletonBox(width: 200, height: 44, borderRadius: 22),
+          const SkeletonBox(width: 200, height: 26, borderRadius: 12),
         ],
         const SizedBox(height: 4),
         SizedBox(
@@ -302,12 +314,14 @@ class UserActionListSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Skeleton(
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        itemCount: itemCount,
-        itemBuilder: (context, index) => ActivityCardFrame(
-          position: (index: index, count: itemCount),
-          child: UserActionItemSkeleton(type: type),
+      child: ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          padding: padding,
+          itemCount: itemCount,
+          itemBuilder: (context, index) => ActivityCardFrame(
+            position: (index: index, count: itemCount),
+            child: UserActionItemSkeleton(type: type),
+          ),
         ),
       ),
     );

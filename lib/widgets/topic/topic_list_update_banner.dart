@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../providers/topic_list/filter_provider.dart';

@@ -1,6 +1,6 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -605,13 +605,13 @@ class DataBackupSection extends ConsumerWidget {
 
   Future<void> _importData(BuildContext context, WidgetRef ref) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
-      if (result == null || result.files.isEmpty) return;
+      if (result == null) return;
 
-      final filePath = result.files.single.path;
+      final filePath = result.path;
       if (filePath == null) return;
 
       final backup = await DataBackupService.parseBackupFile(filePath);

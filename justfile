@@ -1,5 +1,28 @@
 set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 
+# 切分支后 flutter_sdk 可能仍指向旧版本，按 .fvmrc 选择版本目录。
+fvm_dir := join(justfile_directory(), ".fvm")
+flutter_version := if path_exists(fvm_dir) == "false" {
+  ""
+} else if os_family() == "windows" {
+  shell("(Get-Content -Raw .fvmrc | ConvertFrom-Json).flutter")
+} else {
+  shell("""python3 -c 'import json; print(json.load(open(".fvmrc"))["flutter"])'""")
+}
+project_flutter_bin := join(fvm_dir, "versions", flutter_version, "bin")
+launcher_suffix := if os_family() == "windows" { ".bat" } else { "" }
+path_list_separator := if os_family() == "windows" { ";" } else { ":" }
+missing_sdk := "项目缺少 .fvmrc 指定的 Flutter " + flutter_version + "，请在仓库根目录执行 fvm use --skip-pub-get。"
+export PATH := if path_exists(fvm_dir) == "false" {
+  env("PATH")
+} else if path_exists(join(project_flutter_bin, "dart" + launcher_suffix)) == "false" {
+  error(missing_sdk)
+} else if path_exists(join(project_flutter_bin, "flutter" + launcher_suffix)) == "false" {
+  error(missing_sdk)
+} else {
+  project_flutter_bin + path_list_separator + env("PATH")
+}
+
 # 显示可用命令
 default:
   @just --list

@@ -1,0 +1,19 @@
+{
+  "followingFeed_title": "Activity",
+  "followingFeed_profileEntry": "Following activity",
+  "followingFeed_following": "Following",
+  "followingFeed_login": "Sign in to view following activity",
+  "followingFeed_empty": "No activity yet",
+  "followingFeed_emptyHint": "Follow people to see their new topics and replies here.",
+  "followingFeed_posted": "created a topic",
+  "followingFeed_replied": "replied",
+  "followingFeed_loadMore": "Load more",
+  "followingFeed_migrationTitle": "From Seeking to following activity",
+  "followingFeed_migrationSummary": "See topics and replies from people you follow on the website. Pull to refresh or scroll through earlier posts.",
+  "followingFeed_migrationChanges": "Seeking's monitoring of likes, reactions and boosts, and background alerts have ended.",
+  "followingFeed_migrationListHint": "Your previous watch list is saved under Following. Open it anytime to visit profiles and choose whom to follow.",
+  "followingFeed_migrationContinue": "Start browsing",
+  "followingFeed_viewLegacyUsers": "View previous watch list",
+  "followingFeed_legacyUsers": "Previous watch list",
+  "followingFeed_legacyHint": "This list was saved on this device and may include people added while using another account. Open each person's profile to choose whether to follow them."
+}

@@ -1,0 +1,190 @@
+name: Network regression
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: '追加 Android / Apple / Windows 编译检查（Linux 已由 Rust 回归覆盖）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: network-regression-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_BUILD_JOBS: '3'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      dart: ${{ steps.plan.outputs.dart }}
+      rust: ${{ steps.plan.outputs.rust }}
+      python: ${{ steps.plan.outputs.python }}
+      platforms: ${{ steps.plan.outputs.platforms }}
+      has_platforms: ${{ steps.plan.outputs.has_platforms }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from changed paths
+        id: plan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ALL_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          args=()
+          if [ -n "$BASE_SHA" ]; then args+=(--base "$BASE_SHA"); fi
+          if [ "$ALL_PLATFORMS" = true ]; then args+=(--all-platforms); fi
+          python3 tool/ci/network_checks.py plan --head "$HEAD_SHA" "${args[@]}"
+
+  dart:
+    needs: changes
+    if: needs.changes.outputs.dart == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+      - name: Install Linux native dependencies for Flutter tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libgtk-3-dev libx11-dev libxi-dev
+      - name: Prepare dependencies and localization
+        run: |
+          dart tool/project_prep.dart test
+          # 单测不创建生产 CA；仅补齐 pubspec 声明的空资源目录。
+          mkdir -p assets/certs
+      - name: Run targeted regressions, architecture guards and analysis
+        run: python3 tool/ci/network_checks.py dart
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: network-regression-linux
+      - name: Install native build and local TLS test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libclang-dev pkg-config libgnutls28-dev
+      - name: Run Core tests with local sockets and reject zero tests
+        run: python3 tool/ci/network_checks.py rust
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test evidence comparison, cancellation and budget guards offline
+        run: python3 tool/ci/network_checks.py python
+
+  native:
+    needs: changes
+    if: needs.changes.outputs.has_platforms == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.platforms) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: network-regression-${{ matrix.platform }}
+      - uses: ilammy/setup-nasm@v1
+        if: matrix.platform == 'windows'
+      - uses: android-actions/setup-android@v3
+        if: matrix.platform == 'android'
+        with:
+          packages: 'ndk;27.3.13750724'
+      - name: Check Android arm64 Core
+        if: matrix.platform == 'android'
+        shell: bash
+        working-directory: core/net_core
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libclang-dev
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.3.13750724"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          cargo ndk -t arm64-v8a check --locked --lib
+      - name: Check Windows Core
+        if: matrix.platform == 'windows'
+        working-directory: core/net_core
+        run: cargo check --locked --lib
+      - name: Check macOS Core and iOS device / simulator SDKs
+        if: matrix.platform == 'apple'
+        shell: bash
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          command -v cmake || brew install cmake
+          xcrun swiftc -typecheck -swift-version 5 macos/Runner/DohProxyCertHandler.swift
+          for sdk in iphoneos iphonesimulator; do
+            target=arm64-apple-ios15.0
+            if [ "$sdk" = iphonesimulator ]; then target=arm64-apple-ios15.0-simulator; fi
+            xcrun --sdk "$sdk" swiftc -typecheck -swift-version 5 -parse-as-library -D FLUXDO_CORE_DIAGNOSTIC \
+              -sdk "$(xcrun --sdk "$sdk" --show-sdk-path)" -target "$target" \
+              tool/apple_fingerprint/WKProbe.swift ios/Runner/BrowserIdentity.swift tool/apple_fingerprint/IOSCoreProbe.swift
+          done
+          cd core/net_core
+          cargo check --locked --lib
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cargo check --locked --lib --target aarch64-apple-ios
+          cargo check --locked --lib --target aarch64-apple-ios-sim
+
+  result:
+    name: Network regression result
+    needs: [changes, dart, rust, python, native]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require all selected checks to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert results['changes']['result'] == 'success', results
+          assert all(job['result'] in ('success', 'skipped') for job in results.values()), results
+          print('All selected network checks passed; unrelated paths may be skipped.')
+          PY

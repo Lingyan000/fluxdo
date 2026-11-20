@@ -1,0 +1,13 @@
+// 旧版 Flutter 插件可能固定了过低的 compileSdk，无法通过传递依赖的 AAR 检查。
+// 等插件自己的 DSL 配置完成后再提高下限，保留更高版本和预览版。
+subprojects { child ->
+    child.plugins.withId('com.android.library') {
+        child.androidComponents.finalizeDsl { android ->
+            def minimum = child.extensions.findByName('flutter')?.compileSdkVersion
+            if (minimum != null && android.compileSdkPreview == null &&
+                    android.compileSdk != null && android.compileSdk < minimum) {
+                android.compileSdk = minimum
+            }
+        }
+    }
+}

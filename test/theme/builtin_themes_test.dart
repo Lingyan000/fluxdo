@@ -7,7 +7,7 @@ import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/theme/theme_spec.dart';
 import 'package:fluxdo/theme/theme_style.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 直接读仓库里的主题资产，与 ThemeRegistry.loadBuiltins 的解析同源。

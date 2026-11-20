@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -30,6 +30,8 @@ import '../../providers/discourse_providers.dart';
 import '../../services/topic_preview_preloader.dart';
 import '../topic/topic_preview_dialog.dart';
 import '../../theme/app_colors.dart';
+import '../common/emoji_text.dart';
+import '../../utils/emoji_shortcodes.dart';
 
 class BookmarksListContent extends ConsumerWidget {
   const BookmarksListContent({
@@ -606,8 +608,9 @@ class BookmarksListContent extends ConsumerWidget {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
-    return Text(
+    return EmojiText(
       cleaned,
+      inline: true,
       style: TextStyle(
         fontSize: 12,
         color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -619,7 +622,7 @@ class BookmarksListContent extends ConsumerWidget {
   }
 
   String _cleanExcerpt(String html) {
-    return html
+    return emojiImagesToShortcodes(html)
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll('&hellip;', '...')
         .replaceAll('&amp;', '&')

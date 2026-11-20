@@ -1,8 +1,7 @@
 import 'dart:convert';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -73,11 +72,7 @@ Future<_Chat> _pump(WidgetTester tester, List<AiChatMessage> messages) async {
       child: TranslationProvider(
         child: MaterialApp(
           navigatorKey: navigatorKey,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: const AiChatPage(topicId: 1, embedded: true),
         ),

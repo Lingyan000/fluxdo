@@ -24,7 +24,7 @@ class LoggerUtils {
   static Future<File> getLogFile() => LogWriter.getLogFile();
 
   /// 生成带设备/APP 头信息的分享文件，返回临时文件路径
-  static Future<String> getShareFilePath({bool fullHistory = false}) async {
+  static Future<String> getShareFilePath({bool fullHistory = true}) async {
     var stage = 'flushLogs';
     String? sharePath;
     try {
@@ -41,11 +41,13 @@ class LoggerUtils {
       stage = 'resolveLogDirectory';
       final logFile = await getLogFile();
       final dir = logFile.parent;
-      final shareFile = File('${dir.path}/app_log_share.jsonl');
+      // 不同范围使用不同文件，避免后一次导出覆盖系统分享面板仍在读取的文件。
+      final scope = fullHistory ? 'all' : 'session';
+      final shareFile = File('${dir.path}/app_log_${scope}_share.jsonl');
       sharePath = shareFile.path;
       stage = 'writeExportFile';
       await shareFile.writeAsString(
-        '$header${LogPolicy.export(logContent, fullHistory: fullHistory)}',
+        LogPolicy.export(logContent, fullHistory: fullHistory, headers: header),
       );
       return shareFile.path;
     } catch (error, stackTrace) {
@@ -102,7 +104,6 @@ class LoggerUtils {
       } else if (Platform.isWindows) {
         final info = await deviceInfo.windowsInfo;
         buf.writeln('平台: Windows (${info.buildNumber})');
-        buf.writeln('设备: ${info.computerName}');
       }
     } catch (_) {}
 
@@ -122,20 +123,18 @@ class LoggerUtils {
   }
 
   /// 构建分享文件头部的设备和应用信息（JSONL 格式）
-  static Future<String> _buildShareHeader() async {
-    final buf = StringBuffer();
+  static Future<List<Map<String, dynamic>>> _buildShareHeader() async {
+    final headers = <Map<String, dynamic>>[];
 
     try {
       final pkg = await PackageInfo.fromPlatform();
-      buf.writeln(
-        jsonEncode({
-          '_header': 'app_info',
-          'appName': pkg.appName,
-          'version': pkg.version,
-          'buildNumber': pkg.buildNumber,
-          'packageName': pkg.packageName,
-        }),
-      );
+      headers.add({
+        '_header': 'app_info',
+        'appName': pkg.appName,
+        'version': pkg.version,
+        'buildNumber': pkg.buildNumber,
+        'packageName': pkg.packageName,
+      });
     } catch (_) {}
 
     try {
@@ -181,7 +180,6 @@ class LoggerUtils {
         device = {
           '_header': 'device_info',
           'platform': 'Windows',
-          'computerName': info.computerName,
           'buildNumber': info.buildNumber,
         };
       } else {
@@ -193,6 +191,9 @@ class LoggerUtils {
 
       // User-Agent
       device['userAgent'] = AppConstants.userAgent;
+      if (Platform.isIOS || Platform.isMacOS) {
+        device['browserIdentity'] = AppConstants.browserIdentityDiagnostics;
+      }
 
       // WebView 版本
       final webViewVersion = _parseWebViewVersion();
@@ -203,21 +204,23 @@ class LoggerUtils {
       // 网络配置信息
       device.addAll(_getNetworkConfigMap());
 
-      buf.writeln(jsonEncode(device));
+      headers.add(device);
     } catch (_) {}
 
-    return buf.toString();
+    return headers;
   }
 
   /// 从缓存的 User-Agent 中解析 WebView/浏览器引擎版本
   static String? _parseWebViewVersion() {
+    // Apple UA 的 Version 可能来自兼容回退，不能记录为已确认的内核版本。
+    if (Platform.isIOS || Platform.isMacOS) {
+      final version = AppConstants.verifiedSafariProductVersion;
+      return version == null ? null : 'Safari/$version';
+    }
     final ua = AppConstants.userAgent;
     // Chrome/xxx.x.x.x（Android WebView 和桌面端）
     final chromeMatch = RegExp(r'Chrome/([\d.]+)').firstMatch(ua);
     if (chromeMatch != null) return 'Chrome/${chromeMatch.group(1)}';
-    // Safari/xxx（iOS WKWebView）
-    final safariMatch = RegExp(r'Version/([\d.]+).*Safari').firstMatch(ua);
-    if (safariMatch != null) return 'Safari/${safariMatch.group(1)}';
     return null;
   }
 
@@ -231,8 +234,7 @@ class LoggerUtils {
     // DOH 配置
     final doh = NetworkSettingsService.instance.current;
     if (doh.dohEnabled) {
-      final serverName = _findDohServerName(doh.selectedServerUrl);
-      final parts = <String>[serverName];
+      final parts = <String>[S.current.common_enable];
       if (doh.preferIPv6) parts.add('IPv6');
       lines.add('DOH: ${parts.join(', ')}');
     } else {
@@ -242,7 +244,7 @@ class LoggerUtils {
     // HTTP 代理
     final proxy = ProxySettingsService.instance.current;
     if (proxy.isValid) {
-      lines.add('代理: ${proxy.host}:${proxy.port}');
+      lines.add('代理: ${proxy.protocol.storageValue}');
     } else {
       lines.add(S.current.deviceInfo_proxyOff);
     }
@@ -259,37 +261,18 @@ class LoggerUtils {
     final doh = NetworkSettingsService.instance.current;
     map['dohEnabled'] = doh.dohEnabled;
     if (doh.dohEnabled) {
-      map['dohServer'] = doh.selectedServerUrl;
       map['preferIPv6'] = doh.preferIPv6;
     }
 
     final proxy = ProxySettingsService.instance.current;
-    final core = NetCoreService.instance.status;
-    // 保留旧字段含义，新增实际出口，避免把系统代理误读为直连。
-    map['proxyEnabled'] = proxy.isValid;
-    map['systemProxyEnabled'] = core.systemProxy;
-    map['effectiveProxyEnabled'] = proxy.isValid || core.systemProxy;
-    map['proxySource'] = proxy.isValid
-        ? 'app'
-        : (core.systemProxy ? 'system' : 'direct');
+    map.addAll(
+      NetCoreService.instance.readDiagnostics().toLogFields(
+        appProxyEnabled: proxy.isValid,
+      ),
+    );
     map['fingerprintSelection'] = doh.fingerprintPreset;
-    map['templateMode'] = core.templateMode;
-    map['templateSource'] = core.templateSource;
-    map['templatePreset'] = core.templatePreset;
-    if (proxy.isValid) {
-      map['proxyHost'] = '${proxy.host}:${proxy.port}';
-    }
 
     return map;
-  }
-
-  /// 根据 DOH 服务器 URL 查找名称
-  static String _findDohServerName(String url) {
-    final servers = NetworkSettingsService.instance.servers;
-    for (final server in servers) {
-      if (server.url == url) return server.name;
-    }
-    return url;
   }
 
   /// 读取并解析 JSONL，逆序返回（最新在前）。

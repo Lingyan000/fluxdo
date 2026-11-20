@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:jovial_svg/jovial_svg.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1552,12 +1551,7 @@ class _IdeaIcon extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: ColorFiltered(
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        child: ScalableImageWidget.fromSISource(
-          si: ScalableImageSource.fromSvg(rootBundle, asset, warnF: (_) {}),
-        ),
-      ),
+      child: AppSvgAsset(asset, tint: color),
     );
   }
 }

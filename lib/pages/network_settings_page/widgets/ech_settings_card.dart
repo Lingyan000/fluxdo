@@ -1,6 +1,6 @@
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
@@ -120,7 +120,9 @@ class _EchDomainsEditorState extends State<EchDomainsEditor> {
         if (controller == null || !controller.hasClients) return;
         controller.animateTo(
           controller.position.maxScrollExtent,
-          duration: MediaQuery.disableAnimationsOf(context)
+          duration:
+              (MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.reduceMotionOf(context))
               ? Duration.zero
               : const Duration(milliseconds: 200),
           curve: Curves.easeOut,
@@ -159,10 +161,7 @@ class _EchDomainsEditorState extends State<EchDomainsEditor> {
                     ListTile(
                       title: Text(domain),
                       subtitle: Text(l10n.dohDetail_includesSubdomains),
-                      trailing: const Icon(
-                        AppIcons.lock,
-                        size: 20,
-                      ),
+                      trailing: const Icon(AppIcons.lock, size: 20),
                     ),
                 ],
               ),

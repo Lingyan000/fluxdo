@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/mini_apps/home_mini_apps_layer.dart';
@@ -155,23 +155,6 @@ void main() {
       expect(layer.currentState!.isOpen, isFalse);
       expect(find.byKey(gallery), findsOneWidget);
       final originalGallery = gallery.currentContext;
-      final opacity = tester
-          .widget<Opacity>(
-            find
-                .ancestor(
-                  of: find.byKey(const ValueKey('mini-app-gallery-surface')),
-                  matching: find.byType(Opacity),
-                )
-                .first,
-          )
-          .opacity;
-      expect(opacity, inExclusiveRange(0, 1), reason: '深拉时真实广场渐入，不突然全亮');
-      double galleryScale() => tester
-          .widget<Transform>(
-            find.byKey(const ValueKey('mini-app-gallery-scale')),
-          )
-          .transform
-          .storage[0];
       double galleryTint() =>
           (tester
                       .widget<DecoratedBox>(
@@ -181,13 +164,26 @@ void main() {
                   as BoxDecoration)
               .color!
               .a;
+      // 渐入由同色蒙版完成：蒙版未满即已透出，未清零即尚未全亮。
+      expect(
+        galleryTint(),
+        inExclusiveRange(0, 1),
+        reason: '深拉时真实广场渐入，不突然全亮',
+      );
+      double galleryScale() => tester
+          .widget<Transform>(
+            find.byKey(const ValueKey('mini-app-gallery-scale')),
+          )
+          .transform
+          .storage[0];
       expect(galleryScale(), inExclusiveRange(.94, 1));
-      expect(galleryTint(), greaterThan(0));
       expect(
         find.byKey(const ValueKey('mini-app-refresh-feedback')),
         findsOneWidget,
         reason: '后页显露时，刷新提示仍叠在前景上方',
       );
+      expect(find.byType(MiniAppRefreshLogo), findsOneWidget);
+      expect(find.byType(M3eRefreshProgress), findsNothing);
       final firstLabelY = tester
           .getTopLeft(find.byKey(const ValueKey('mini-app-pull-label')))
           .dy;
@@ -535,8 +531,13 @@ void main() {
         final gesture = await tester.startGesture(const Offset(200, 100));
         await gesture.moveBy(const Offset(0, 25));
         await tester.pump();
+        final dedicatedLogo = find.byType(MiniAppRefreshLogo);
+        expect(dedicatedLogo, findsOneWidget);
+        expect(find.byType(M3eRefreshProgress), findsNothing);
+        final logoState = tester.state(dedicatedLogo);
         await gesture.moveBy(Offset(0, (52 + 80 + 36 * textScale) / .9 - 20));
         await tester.pump();
+        expect(tester.state(dedicatedLogo), same(logoState));
         final label = find.byKey(const ValueKey('mini-app-pull-label'));
         expect(
           find.text('app preview'),
@@ -557,10 +558,16 @@ void main() {
         await gesture.up();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
-        expect(tester.widget<M3eRefreshProgress>(find.byType(M3eRefreshProgress)).refreshing, isTrue);
+        expect(tester.state(dedicatedLogo), same(logoState));
+        expect(tester.widget<MiniAppRefreshLogo>(dedicatedLogo).refreshing, isTrue);
         expect(find.text('app preview'), findsNothing);
-        expect(find.descendant(of: logo, matching: find.byType(LoadingSpinner)), findsOneWidget);
+        final painting = find.byKey(const ValueKey('mini-app-refresh-logo-paint'));
+        final first = tester.widget<CustomPaint>(painting).painter!;
         await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          tester.widget<CustomPaint>(painting).painter!.shouldRepaint(first),
+          isTrue,
+        );
         refreshed.complete();
         await tester.pumpAndSettle();
         expect(refreshes, 1);

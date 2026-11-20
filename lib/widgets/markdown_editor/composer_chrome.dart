@@ -1,12 +1,21 @@
 import 'dart:math' as math;
+
 import 'package:chat_bottom_container/listener_manager.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import '../common/progressive_top_blur.dart';
+
+import '../../utils/platform_utils.dart';
+import '../common/top_fade_scrim.dart';
+import 'composer_block_hover.dart';
 
 /// 顶栏与底栏共享阅读态显隐；输入或面板交互期间保持可见。
 class ComposerChromeController extends ChangeNotifier {
+  /// 内容是否已滚到顶栏下面：顶栏胶囊的阴影与渐隐遮罩只在此时出现。
+  /// 独立通知，不随显隐重建整个作用域
+  final ValueNotifier<bool> scrolledUnder = ValueNotifier(false);
+
   bool _hidden = false;
   int _locks = 0;
   bool _inputActive = false;
@@ -40,6 +49,12 @@ class ComposerChromeController extends ChangeNotifier {
       }
     };
   }
+
+  @override
+  void dispose() {
+    scrolledUnder.dispose();
+    super.dispose();
+  }
 }
 
 class ComposerChromeScope extends StatefulWidget {
@@ -54,6 +69,20 @@ class ComposerChromeScope extends StatefulWidget {
   final double topInset;
   static ComposerChromeController? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_ChromeScope>()?.notifier;
+
+  /// 首屏内容与顶栏下缘的间距（页面顶部避让 = 顶栏高 + 本值）
+  static const double contentGap = 16;
+
+  /// 内容碰到顶栏下缘时的滚动距离，即 [contentGap]。比自动隐藏的 36px
+  /// 早，但两者只差一小段：往下拖时胶囊先浮起，紧接着整条栏收起
+  static const double scrolledUnderExtent = contentGap;
+
+  /// 不建立依赖：控制器在页面生命周期内不变，订阅方自己监听
+  /// [ComposerChromeController.scrolledUnder]
+  static ValueListenable<bool>? scrolledUnderOf(BuildContext context) => context
+      .getInheritedWidgetOfExactType<_ChromeScope>()
+      ?.notifier
+      ?.scrolledUnder;
   static double topInsetOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_ChromeScope>()?.topInset ?? 0;
   @override
@@ -122,6 +151,8 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
 
   bool _onScroll(ScrollNotification event) {
     if (event.depth != 0 || event.metrics.axis != Axis.vertical) return false;
+    widget.controller.scrolledUnder.value =
+        event.metrics.extentBefore > ComposerChromeScope.scrolledUnderExtent;
     if (_keyboardVisible) {
       widget.controller.reveal();
       return false;
@@ -175,50 +206,53 @@ class _ComposerChromeScopeState extends State<ComposerChromeScope> {
     notifier: widget.controller,
     topInset: widget.topInset,
     child: LayoutBuilder(
-      builder: (context, bounds) => Listener(
-        onPointerDown: (event) {
-          _down = event.localPosition;
-          _moved = false;
-        },
-        onPointerMove: (event) {
-          if (_down != null && (event.localPosition - _down!).distance > 8) {
-            _moved = true;
-          }
-        },
-        onPointerUp: (_) {
-          if (!_moved) widget.controller.reveal();
-          _down = null;
-        },
-        onPointerCancel: (_) => _down = null,
-        onPointerHover: (event) {
-          if (event.localPosition.dy <
-                  kToolbarHeight + MediaQuery.paddingOf(context).top ||
-              event.localPosition.dy > bounds.maxHeight - 72) {
-            widget.controller.reveal();
-          }
-        },
-        child: Focus(
-          canRequestFocus: false,
-          skipTraversal: true,
-          onFocusChange: (focused) {
-            if (!focused) widget.controller.endInput();
+      builder: (context, bounds) => ComposerReadingGutter.page(
+        width: bounds.maxWidth,
+        child: Listener(
+          onPointerDown: (event) {
+            _down = event.localPosition;
+            _moved = false;
           },
-          onKeyEvent: (_, event) {
-            if (event is KeyDownEvent &&
-                event.logicalKey != LogicalKeyboardKey.pageDown &&
-                event.logicalKey != LogicalKeyboardKey.pageUp) {
-              widget.controller.reveal();
-              if (event.character?.isNotEmpty == true ||
-                  event.logicalKey == LogicalKeyboardKey.backspace ||
-                  event.logicalKey == LogicalKeyboardKey.enter) {
-                widget.controller.beginInput();
-              }
+          onPointerMove: (event) {
+            if (_down != null && (event.localPosition - _down!).distance > 8) {
+              _moved = true;
             }
-            return KeyEventResult.ignored;
           },
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _onScroll,
-            child: widget.child,
+          onPointerUp: (_) {
+            if (!_moved) widget.controller.reveal();
+            _down = null;
+          },
+          onPointerCancel: (_) => _down = null,
+          onPointerHover: (event) {
+            if (event.localPosition.dy <
+                    kToolbarHeight + MediaQuery.paddingOf(context).top ||
+                event.localPosition.dy > bounds.maxHeight - 72) {
+              widget.controller.reveal();
+            }
+          },
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onFocusChange: (focused) {
+              if (!focused) widget.controller.endInput();
+            },
+            onKeyEvent: (_, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey != LogicalKeyboardKey.pageDown &&
+                  event.logicalKey != LogicalKeyboardKey.pageUp) {
+                widget.controller.reveal();
+                if (event.character?.isNotEmpty == true ||
+                    event.logicalKey == LogicalKeyboardKey.backspace ||
+                    event.logicalKey == LogicalKeyboardKey.enter) {
+                  widget.controller.beginInput();
+                }
+              }
+              return KeyEventResult.ignored;
+            },
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: widget.child,
+            ),
           ),
         ),
       ),
@@ -294,7 +328,9 @@ class ComposerChromeVisibility extends StatelessWidget {
     final controller = ComposerChromeScope.maybeOf(context);
     if (controller == null) return child;
     final hidden = controller.hidden;
-    final duration = MediaQuery.disableAnimationsOf(context)
+    final duration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
         ? Duration.zero
         : const Duration(milliseconds: 180);
     return IgnorePointer(
@@ -327,7 +363,8 @@ class ComposerAutoHideAppBar extends StatelessWidget
       ComposerChromeVisibility(top: true, child: child);
 }
 
-/// 顶栏收起后保留窄幅渐变，让滚出画面的文字自然消失。
+/// 顶栏收起后保留窄幅渐变，让滚出画面的文字自然消失；内容没滚到顶栏下面时
+/// 遮罩淡出，静止的页面顶部保持干净。
 class ComposerTopFade extends StatelessWidget {
   const ComposerTopFade({
     super.key,
@@ -340,13 +377,28 @@ class ComposerTopFade extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hidden = ComposerChromeScope.maybeOf(context)?.hidden ?? false;
-    return TweenAnimationBuilder<double>(
+    final duration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
+        ? Duration.zero
+        : const Duration(milliseconds: 180);
+    final scrim = TweenAnimationBuilder<double>(
       tween: Tween(begin: height, end: hidden ? statusBarHeight + 24 : height),
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 180),
+      duration: duration,
       curve: Curves.easeOutCubic,
-      builder: (context, value, _) => ProgressiveTopBlur(height: value),
+      builder: (context, value, _) =>
+          TopFadeScrim(height: value, solidHeight: statusBarHeight),
+    );
+    final scrolledUnder = ComposerChromeScope.scrolledUnderOf(context);
+    if (scrolledUnder == null) return scrim;
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      builder: (context, under, child) => AnimatedOpacity(
+        opacity: under ? 1 : 0,
+        duration: duration,
+        child: child,
+      ),
+      child: scrim,
     );
   }
 }
@@ -359,6 +411,19 @@ class ComposerReadingGutter extends InheritedWidget {
     this.trailing = 20,
     required super.child,
   });
+
+  /// 编辑页整页的正文边距（富文本与源码模式共用，切换模式文字不跳）：
+  /// 手机为标准页边距 16；桌面端左侧是把手栏，块把手和顶栏返回键都在里面
+  ComposerReadingGutter.page({
+    super.key,
+    required double width,
+    required super.child,
+  }) : leading = pageGutter(width),
+       trailing = pageGutter(width);
+
+  static double pageGutter(double width) => PlatformUtils.isDesktop
+      ? ComposerBlockHover.gutterFor(width, desktop: true)
+      : 16;
   final double leading;
   final double trailing;
   static double of(BuildContext context) =>
@@ -386,6 +451,7 @@ class ComposerReadingPadding extends StatelessWidget {
   final Widget child;
   final EdgeInsets vertical;
   final double? minLeading;
+
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.fromLTRB(

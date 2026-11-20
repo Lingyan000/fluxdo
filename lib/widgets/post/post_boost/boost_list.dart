@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:popover/popover.dart';
 
@@ -226,18 +226,21 @@ class _BoostListState extends State<BoostList>
           );
         },
         direction: PopoverDirection.bottom,
-        arrowHeight: 8,
-        arrowWidth: 12,
-        backgroundColor: theme.colorScheme.surface,
-        barrierColor: Colors.transparent,
-        radius: 8,
-        shadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        style: PopoverStyle(
+          arrowStyle: PopoverArrowStyle.triangle,
+          arrowHeight: 8,
+          arrowWidth: 12,
+          backgroundColor: theme.colorScheme.surface,
+          barrierColor: Colors.transparent,
+          radius: 8,
+          shadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
       );
     } finally {
       if (mounted) {

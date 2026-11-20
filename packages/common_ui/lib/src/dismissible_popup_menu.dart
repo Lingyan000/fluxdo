@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
@@ -358,7 +358,10 @@ class _MenuPopTransitionState extends State<_MenuPopTransition> {
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+    if (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context)) {
+      return widget.child;
+    }
     return FadeTransition(
       opacity: _fade,
       child: ScaleTransition(
@@ -921,7 +924,8 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
   void _updateDepth() {
     if (widget.route.animation!.status == AnimationStatus.reverse) return;
     final target = _expansion.isAnyActive ? 1.0 : 0.0;
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if ((MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context))) {
       _depth.value = target;
     } else {
       _depth.animateTo(target, curve: Curves.easeOutCubic);
@@ -1130,7 +1134,8 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>>
     final anchor = widget.route.animationAnchorRect;
     if (anchor != null &&
         overlay is RenderBox &&
-        !MediaQuery.disableAnimationsOf(context)) {
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))) {
       return _MenuDragRegion(
         route: widget.route,
         child: withDepth(
@@ -1562,7 +1567,8 @@ Future<T?> _showSwipeDismissibleMenu<T>({
   VoidCallback? onCompleted,
 }) {
   assert(items.isNotEmpty);
-  if (MediaQuery.disableAnimationsOf(context)) {
+  if ((MediaQuery.disableAnimationsOf(context) ||
+      MediaQuery.reduceMotionOf(context))) {
     popUpAnimationStyle = AnimationStyle.noAnimation;
   }
 
@@ -1665,6 +1671,7 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
     this.requestFocus,
     this.headerActions,
     this.menuNavigatorKey,
+    this.openOnPress = true,
   }) : assert(
          !(child != null && icon != null),
          'You can only pass [child] or [icon], not both.',
@@ -1710,6 +1717,9 @@ class SwipeDismissiblePopupMenuButton<T> extends StatefulWidget {
   /// 用于按钮位于手动 OverlayEntry 内的场景：菜单仍复用同一套路由与样式，
   /// 但可以由后插入/更高层的 Navigator 承载，避免被外层 OverlayEntry 盖住。
   final GlobalKey<NavigatorState>? menuNavigatorKey;
+
+  /// 按下后可继续拖动选项。位于可拖动的控件内时可改为确认点按后打开。
+  final bool openOnPress;
 
   @override
   State<SwipeDismissiblePopupMenuButton<T>> createState() =>
@@ -1867,19 +1877,20 @@ class _SwipeDismissiblePopupMenuButtonState<T>
   Widget build(BuildContext context) => RawGestureDetector(
     excludeFromSemantics: true,
     gestures: {
-      _MenuAnchorRecognizer:
-          GestureRecognizerFactoryWithHandlers<_MenuAnchorRecognizer>(
-            () => _MenuAnchorRecognizer(debugOwner: this),
-            (recognizer) => recognizer
-              ..canOpen = (() => mounted && widget.enabled && !_active)
-              ..delay = Scrollable.maybeOf(context) == null
-                  ? Duration.zero
-                  : kPressTimeout
-              ..onOpen = _openFromPress
-              ..onMove = _movePress
-              ..onUp = _endPress
-              ..onCancel = _cancelPress,
-          ),
+      if (widget.openOnPress)
+        _MenuAnchorRecognizer:
+            GestureRecognizerFactoryWithHandlers<_MenuAnchorRecognizer>(
+              () => _MenuAnchorRecognizer(debugOwner: this),
+              (recognizer) => recognizer
+                ..canOpen = (() => mounted && widget.enabled && !_active)
+                ..delay = Scrollable.maybeOf(context) == null
+                    ? Duration.zero
+                    : kPressTimeout
+                ..onOpen = _openFromPress
+                ..onMove = _movePress
+                ..onUp = _endPress
+                ..onCancel = _cancelPress,
+            ),
     },
     child: RepaintBoundary(key: _anchorKey, child: _buildButton(context)),
   );
@@ -2014,7 +2025,9 @@ Future<void> _showAnchoredSubmenu({
         ],
         anchor: anchor,
         fromMenuRow: fromMenuRow,
-        reducedMotion: MediaQuery.disableAnimationsOf(context),
+        reducedMotion:
+            (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)),
         capturedThemes: InheritedTheme.capture(
           from: context,
           to: navigator.context,

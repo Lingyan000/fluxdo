@@ -354,6 +354,8 @@ pub(crate) struct Connection {
     stats: ConnectionStats,
     /// Whether a recorded Initial layout is used; cleared when it does not fit.
     recorded_initial: bool,
+    /// 当前连接生成的布局，只保存偏移与长度，不保存历史握手字节。
+    generated_initial: Option<rama_quic_proto::profile::initial::RecordedInitialFlight>,
     /// QUIC version the connection's packets currently carry.
     wire_version: WireVersion,
     /// QUIC version of the client's first flight, before any compatible negotiation
@@ -531,6 +533,7 @@ impl Connection {
             qlog_closed: false,
             stats: ConnectionStats::default(),
             recorded_initial: true,
+            generated_initial: None,
             wire_version: version,
             original_wire_version: original_version,
             original_initial_crypto,

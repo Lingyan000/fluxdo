@@ -19,12 +19,28 @@ TopicUser? _readPostAuthor(Map<String, dynamic>? post) {
   );
 }
 
+TopicUser? _readUser(Map<String, dynamic>? user) {
+  final username = user?['username'] as String?;
+  if (username == null || username.isEmpty) return null;
+  return TopicUser(
+    id: user!['id'] as int? ?? 0,
+    username: username,
+    name: user['name'] as String?,
+    avatarTemplate: user['avatar_template'] as String? ?? '',
+  );
+}
+
 /// 用户操作类型
 class UserActionType {
   static const int like = 1; // 点赞
   static const int wasLiked = 2; // 被点赞
   static const int newTopic = 4; // 创建话题
   static const int reply = 5; // 回复
+  static const int response = 6; // 被回复
+  static const int mention = 7; // 被提及
+  static const int quote = 9; // 被引用
+  static const int edit = 11; // 帖子被编辑
+  static const int linked = 17; // 帖子被链接
 }
 
 class UserAction {
@@ -34,6 +50,7 @@ class UserAction {
   final String? slug;
   final int? postNumber;
   final String? username;
+  final String? actingName;
   final String? avatarTemplate;
   final DateTime? actingAt;
   final int? categoryId;
@@ -47,6 +64,7 @@ class UserAction {
     this.slug,
     this.postNumber,
     this.username,
+    this.actingName,
     this.avatarTemplate,
     this.actingAt,
     this.categoryId,
@@ -63,6 +81,7 @@ class UserAction {
       postNumber: json['post_number'] as int?,
       username:
           json['acting_username'] as String? ?? json['username'] as String?,
+      actingName: json['acting_name'] as String? ?? json['name'] as String?,
       avatarTemplate:
           json['acting_avatar_template'] as String? ??
           json['avatar_template'] as String?,
@@ -72,6 +91,21 @@ class UserAction {
       categoryId: json['category_id'] as int?,
       excerpt: json['excerpt'] as String?,
       author: _readPostAuthor(json),
+    );
+  }
+
+  /// 列表去重键。同一帖子可能有多人动作（如多人点赞），需带上动作者。
+  String get dedupeKey => '${topicId}_${postNumber}_${actionType}_$username';
+
+  /// 发起这条动作的用户（点赞人、回复人等），缺字段时为 null。
+  TopicUser? get actor {
+    final name = username;
+    if (name == null || name.isEmpty) return null;
+    return TopicUser(
+      id: 0,
+      username: name,
+      name: actingName,
+      avatarTemplate: avatarTemplate ?? '',
     );
   }
 
@@ -107,6 +141,9 @@ class UserReaction {
   final String? reactionValue;
   final DateTime? createdAt;
   final TopicUser? author;
+
+  /// 做出回应的用户；收到的回应里是对方，发出的回应里是本人。
+  final TopicUser? actor;
   final int? categoryId;
 
   const UserReaction({
@@ -119,6 +156,7 @@ class UserReaction {
     this.reactionValue,
     this.createdAt,
     this.author,
+    this.actor,
     this.categoryId,
   });
 
@@ -136,6 +174,7 @@ class UserReaction {
       reactionValue: reaction?['reaction_value'] as String?,
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       author: _readPostAuthor(post),
+      actor: _readUser(json['user'] as Map<String, dynamic>?),
       categoryId: post?['category_id'] as int?,
     );
   }
@@ -182,6 +221,9 @@ class UserBoost {
   final String cooked;
   final DateTime? createdAt;
   final TopicUser? author;
+
+  /// Boost 的人；收到的 Boost 里是对方，发出的 Boost 里是本人。
+  final TopicUser? booster;
   final int? categoryId;
 
   const UserBoost({
@@ -194,6 +236,7 @@ class UserBoost {
     required this.cooked,
     this.createdAt,
     this.author,
+    this.booster,
     this.categoryId,
   });
 
@@ -222,6 +265,7 @@ class UserBoost {
       cooked: json['cooked'] as String? ?? '',
       createdAt: TimeUtils.parseUtcTime(json['created_at'] as String?),
       author: _readPostAuthor(post),
+      booster: _readUser(json['user'] as Map<String, dynamic>?),
       categoryId: post?['category_id'] as int?,
     );
   }

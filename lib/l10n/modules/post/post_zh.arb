@@ -73,6 +73,8 @@
   },
   "post_acceptSolution": "采纳为解决方案",
   "post_collapseReplies": "收起回复",
+  "post_unfoldFullText": "展开全文",
+  "post_foldFullText": "收起全文",
   "post_contentRequired": "请输入内容",
   "post_deleteReplyConfirm": "确定要删除这条回复吗？此操作可以撤销。",
   "post_deleteReplyTitle": "删除回复",
@@ -151,17 +153,8 @@
       }
     }
   },
-  "post_replyCount": "{count} 条回复",
-  "@post_replyCount": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "post_replySent": "回复已发送",
   "post_replySentAction": "查看",
-  "post_replyTo": "回复给",
   "post_replyToTopic": "回复话题",
   "post_replyToUser": "回复 @{username}",
   "@post_replyToUser": {
@@ -185,6 +178,15 @@
   "pm_recipientHint": "搜索用户或群组",
   "pm_newTitle": "新建私信",
   "pm_inviteParticipants": "邀请成员",
+  "pm_conversationMembers": "会话成员",
+  "pm_privateMessage": "私信",
+  "pm_memberSeparator": "、",
+  "pm_alreadyJoined": "已加入",
+  "pm_leaveConversation": "退出会话",
+  "pm_inviteCount": "邀请 {count} 项",
+  "@pm_inviteCount": {"placeholders": {"count": {"type": "int"}}},
+  "pm_inviteFailedRetry": "邀请未完成，可重试下列对象：{names}",
+  "@pm_inviteFailedRetry": {"placeholders": {"names": {"type": "String"}}},
   "pm_inviteParticipantsHint": "搜索用户或可发私信的群组，加入本次私信。",
   "pm_inviteSucceeded": "已邀请",
   "pm_invitePartiallyFailed": "部分邀请失败：{names}",

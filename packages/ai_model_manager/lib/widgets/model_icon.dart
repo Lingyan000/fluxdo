@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:jovial_svg/jovial_svg.dart';
+import 'package:common_ui/common_ui.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 模型/Provider 头像图标
 ///
@@ -37,7 +36,7 @@ class ModelIcon extends StatelessWidget {
 
     // 三种渲染策略
     Color bgColor;
-    ColorFilter? tint;
+    Color? tint;
     Color letterColor = brand;
     if (assetPath == null) {
       // (1) Fallback：首字母 + brand 半透明背景
@@ -62,25 +61,16 @@ class ModelIcon extends StatelessWidget {
         bgColor = withBackground
             ? brand.withValues(alpha: isDark ? 0.3 : 0.2)
             : Colors.transparent;
-        tint = ColorFilter.mode(brand, BlendMode.srcIn);
+        tint = brand;
       } else {
         bgColor = withBackground ? brand : Colors.transparent;
-        tint = const ColorFilter.mode(Colors.white, BlendMode.srcIn);
+        tint = Colors.white;
       }
     }
 
     Widget inner;
     if (assetPath != null) {
-      final svgWidget = ScalableImageWidget.fromSISource(
-        si: ScalableImageSource.fromSvg(
-          rootBundle,
-          assetPath,
-          warnF: _silent,
-        ),
-      );
-      inner = tint == null
-          ? svgWidget
-          : ColorFiltered(colorFilter: tint, child: svgWidget);
+      inner = AppSvgAsset(assetPath, tint: tint);
     } else {
       inner = Text(
         _firstLetter(colorSeed),
@@ -112,8 +102,6 @@ class ModelIcon extends StatelessWidget {
   }
 
   static double _luminance(Color c) => c.computeLuminance();
-
-  static void _silent(String _) {}
 
   static String _firstLetter(String s) {
     final trimmed = s.trim();

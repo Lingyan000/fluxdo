@@ -1,5 +1,5 @@
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_submit_button.dart';
 

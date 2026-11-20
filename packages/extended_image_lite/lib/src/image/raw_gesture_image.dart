@@ -1,6 +1,6 @@
 import 'dart:ui' as ui show Image;
 
-import 'package:flutter/material.dart' hide Image;
+import 'package:material_ui/material_ui.dart' hide Image;
 import 'package:flutter/rendering.dart';
 
 import '../gesture/gesture_controller.dart';

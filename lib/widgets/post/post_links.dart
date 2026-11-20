@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
 import '../../l10n/s.dart';
@@ -7,6 +7,7 @@ import '../../models/topic.dart';
 import '../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../providers/selected_topic_provider.dart';
 import '../../utils/discourse_url_parser.dart';
+import '../common/emoji_text.dart';
 
 /// 帖子相关链接组件
 ///
@@ -257,7 +258,7 @@ class _PostLinksState extends State<PostLinks>
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
+              child: EmojiText(
                 link.title ?? link.url,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.primary,

@@ -6,14 +6,16 @@ import '../widgets/markdown_editor/composer_header_actions.dart';
 import '../utils/platform_utils.dart';
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
-import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
+import 'package:fluxdo/widgets/common/top_fade_scrim.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_shortcuts.dart';
+import 'package:fluxdo/widgets/markdown_editor/composer_close_confirmation.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_switch_fade.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
@@ -73,9 +75,10 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   final _formKey = GlobalKey<FormState>();
   final _chrome = ComposerChromeController();
   double get _topChromeInset =>
-      ProgressiveTopBlur.heightFor(context) +
+      TopFadeScrim.barHeightFor(context) +
       (PlatformUtils.isDesktop &&
-              MediaQuery.sizeOf(context).width < 900 &&
+              MediaQuery.sizeOf(context).width <
+                  ComposerPageGrid.expandedWidth &&
               !_isPrivateMessage
           ? 56
           : 0);
@@ -96,15 +99,41 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   /// 富文本降级态(导入门禁不过/用户主动切源码;可经工具栏切回)。
   bool _richFallback = false;
   bool _allowClose = false;
+  bool _closePending = false;
 
-  void _closeWithCurrentContent(dynamic result) {
-    if (!_flushRichContent()) return;
-    setState(() => _allowClose = true);
-    // 等待 PopScope 更新许可后再关闭，失败时保持当前编辑文档。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop(result);
-    });
+  Future<void> _closeWithCurrentContent(dynamic result) async {
+    if (_closePending || _allowClose) return;
+    _closePending = true;
+    try {
+      if (!_isSubmitting) {
+        final ready = _richKey.currentState?.prepareToClose() ?? true;
+        if (!ready || _hasUnsavedChanges) {
+          final discard = await confirmComposerDiscard(
+            context,
+            synchronizationFailed: !ready,
+          );
+          if (!mounted || !discard) return;
+          _richKey.currentState?.prepareForDocumentReplacement();
+        }
+      }
+      if (!mounted) return;
+      setState(() => _allowClose = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop(result);
+      });
+    } finally {
+      _closePending = false;
+    }
   }
+
+  bool get _hasUnsavedChanges =>
+      (_canEditMetadata &&
+          (_titleController.text.trim() != _originalTitle ||
+              (!_isPrivateMessage &&
+                  ((_selectedCategory != null &&
+                          _selectedCategory!.id != _originalCategoryId) ||
+                      !_listEquals(_selectedTags, _originalTags ?? []))))) ||
+      (_canEditContent && _contentController.text != (_originalContent ?? ''));
 
   /// 富文本未就绪或导出失败时，绝不能消费 controller 中的旧镜像。
   bool _flushRichContent() {
@@ -115,7 +144,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
               _richFallback ||
               !ref.read(preferencesProvider).useRichComposer);
     if (!ready) {
-      ToastService.showError('正文尚未同步，已停止操作；请稍后重试，勿关闭编辑器');
+      ToastService.showError(S.current.composer_syncFailed);
     }
     return ready;
   }
@@ -345,7 +374,9 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
   bool _submissionPending = false;
 
   Future<void> _submit() async {
-    if (_submissionPending || _isSubmitting) return;
+    if (_submissionPending || _isSubmitting || _closePending || _allowClose) {
+      return;
+    }
     _submissionPending = true;
     try {
       await _submitChecked();
@@ -424,7 +455,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       return;
     }
 
-    if (!mounted) return;
+    if (!mounted || _closePending || _allowClose) return;
     if (!approved.verify(
       synchronize: _flushRichContent,
       read: _submissionValues,
@@ -464,7 +495,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       }
 
       // 元数据请求也可能等待网络；正文写入前不能发送等待期间的旧快照。
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
       if (!approved.verify(
         synchronize: _flushRichContent,
         read: _submissionValues,
@@ -481,7 +512,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         );
       }
 
-      if (!mounted) return;
+      if (!mounted || _allowClose) return;
 
       // 返回编辑结果
       Navigator.of(context).pop(
@@ -526,6 +557,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       allTags: tagsAsync.value ?? const [],
       onTagsChanged: (tags) => setState(() => _selectedTags = tags),
       enabled: _canEditMetadata && !_isSubmitting,
+      floating: true,
     );
   }
 
@@ -542,7 +574,9 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         : (ref.watch(minTopicTitleLengthProvider).value ?? 15);
 
     final desktop = PlatformUtils.isDesktop;
-    final inlineProperties = desktop && MediaQuery.sizeOf(context).width >= 900;
+    // 顶栏与正文的布局网格
+    final grid = ComposerPageGrid.of(context);
+    final inlineProperties = desktop && grid.expanded;
     final metadata = _buildPageMetadata(
       categoriesAsync.value ?? const [],
       canTagTopics,
@@ -561,20 +595,27 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        // 顶栏渐变模糊(创建页同款):AppBar 纯透明只承载功能件,
-        // 模糊/遮罩由 body Stack 顶部的 ProgressiveTopBlur 提供
+        // 顶栏渐隐(创建页同款):AppBar 纯透明只承载功能件,
+        // 遮罩由 body Stack 顶部的 TopFadeScrim 提供
         extendBodyBehindAppBar: true,
         appBar: ComposerAutoHideAppBar(
           child: AppBar(
             centerTitle: false, // 同 create_topic_page：窄屏标题让位给右侧功能件
+            // 返回键与标题按网格定位（ComposerPageGrid）
+            automaticallyImplyLeading: false,
+            leading: grid.leading,
+            leadingWidth: grid.leadingWidth,
+            titleSpacing: grid.titleSpacing,
             title: Row(
               children: [
                 Flexible(
-                  child: Text(
-                    _isPrivateMessage
-                        ? context.l10n.editTopic_editPm
-                        : context.l10n.editTopic_editTopic,
-                    overflow: TextOverflow.ellipsis,
+                  child: ComposerBarTitle(
+                    child: Text(
+                      _isPrivateMessage
+                          ? context.l10n.editTopic_editPm
+                          : context.l10n.editTopic_editTopic,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 if (inlineProperties && metadata != null) ...[
@@ -592,7 +633,13 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 ? PreferredSize(
                     preferredSize: const Size.fromHeight(56),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      // 与标题、正文同一条左边
+                      padding: EdgeInsets.fromLTRB(
+                        grid.contentStart,
+                        0,
+                        grid.end,
+                        12,
+                      ),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: TextFieldTapRegion(child: metadata),
@@ -614,6 +661,8 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 availableWidth:
                     MediaQuery.sizeOf(context).width -
                     MediaQuery.paddingOf(context).horizontal,
+                floating: true,
+                endInset: grid.end,
                 submitLabel: context.l10n.common_save,
                 submitIcon: Symbols.check_rounded,
                 onSubmit: (_isSubmitting || _isLoadingContent) ? null : _submit,
@@ -646,14 +695,14 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                       onRetry: () => ref.invalidate(categoriesProvider),
                     ),
                   ),
-            // 顶栏渐变模糊:内容从透明 AppBar 下滚过,模糊+遮罩自上
-            // 而下消散到全透明(尾巴伸出 AppBar 下缘 36pt)
+            // 顶栏渐隐:内容从透明 AppBar 下滚过,遮罩自上而下渐隐到
+            // 全透明(尾巴伸出 AppBar 下缘)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: ComposerTopFade(
-                height: _topChromeInset,
+                height: _topChromeInset + TopFadeScrim.tail,
                 statusBarHeight: MediaQuery.viewPaddingOf(context).top,
               ),
             ),
@@ -816,10 +865,13 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
     // 滚动头部(编辑分支):透明 AppBar 避让 + 标题。写作流只留
     // 标题+正文,分类/标签/字数在底部 ComposerMetaBar 常驻
     Widget buildComposerHeader() {
-      // 含消散尾巴:初始态标题不被渐变层遮,滚动时才进消散区
+      // 首屏让出顶栏;渐隐遮罩只在内容滚到栏下时出现
       final topInset = _topChromeInset;
       return ComposerReadingPadding(
-        vertical: EdgeInsets.only(top: topInset + 20, bottom: 16),
+        vertical: EdgeInsets.only(
+          top: topInset + ComposerChromeScope.contentGap,
+          bottom: 16,
+        ),
         child: buildTitleField(),
       );
     }
@@ -846,8 +898,8 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(
             20,
-            // 透明 AppBar+消散尾巴避让
-            _topChromeInset + 20,
+            // 透明 AppBar 避让
+            _topChromeInset + ComposerChromeScope.contentGap,
             20,
             16,
           ),
@@ -953,7 +1005,7 @@ class _EditTopicPageState extends ConsumerState<EditTopicPage> {
                 ),
                 preview: SingleChildScrollView(
                   padding: EdgeInsets.only(
-                    top: _topChromeInset + 20,
+                    top: _topChromeInset + ComposerChromeScope.contentGap,
                     bottom: MediaQuery.paddingOf(context).bottom + 80,
                   ),
                   child: ComposerReadingPadding(

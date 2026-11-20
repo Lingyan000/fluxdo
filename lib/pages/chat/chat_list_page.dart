@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
@@ -274,6 +274,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
       ),
       // 新建会话只对私信有意义;频道 tab 隐藏 FAB
       floatingActionButton: BottomNavClearance(
+        mediaQuery: MediaQuery.of(context),
         child: AnimatedBuilder(
           animation: _tabController,
           builder: (context, _) => _tabController.index == 1
@@ -443,7 +444,7 @@ class _ChatChannelTile extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Flexible(
-                                child: Text(
+                                child: EmojiText(
                                   title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

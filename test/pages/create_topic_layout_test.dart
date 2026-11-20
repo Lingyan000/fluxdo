@@ -1,13 +1,15 @@
 import 'package:fluxdo/providers/draft_store_provider.dart';
+
 import '../helpers/memory_draft_store.dart';
+
 import 'dart:convert';
+
 import 'package:chat_bottom_container/listener_manager.dart';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -24,7 +26,7 @@ import 'package:fluxdo/widgets/markdown_editor/composer_page_chrome.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_header_actions.dart';
 import 'package:fluxdo/services/draft_controller.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_chrome.dart';
-import 'package:fluxdo/widgets/common/progressive_top_blur.dart';
+import 'package:fluxdo/widgets/common/top_fade_scrim.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_view_mode_switcher.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
 import 'package:fluxdo/widgets/markdown_editor/rich_composer/rich_composer_editor.dart';
@@ -121,11 +123,7 @@ void main() {
                   child: child!,
                 ),
                 locale: const Locale('zh'),
-                localizationsDelegates: const [
-                  GlobalMaterialLocalizations.delegate,
-                  GlobalWidgetsLocalizations.delegate,
-                  GlobalCupertinoLocalizations.delegate,
-                ],
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
                 supportedLocales: AppLocaleUtils.supportedLocales,
                 theme: ThemeData(
                   inputDecorationTheme: const InputDecorationTheme(
@@ -147,9 +145,7 @@ void main() {
                       initialCategoryId: 1,
                       initialTags: ['flutter', '体验'],
                       initialTitle: empty ? '123123' : '分享最近的开发体验',
-                      initialContent: empty
-                          ? ''
-                          : '最近重新整理了写作环境。\n\n常用工具应该留在手边，需要的时候能直接找到。\n\n大家平时更习惯怎样的编辑器？',
+                      initialContent: empty ? '' : '最近重新整理了写作环境。\n\n常用工具应该留在手边，需要的时候能直接找到。\n\n大家平时更习惯怎样的编辑器？',
                     ),
                   ),
                 },
@@ -232,7 +228,19 @@ void main() {
         }
         final appbar = find.byType(AppBar);
         final publish = find.byKey(const ValueKey('composer-header-submit'));
-        expect(width - tester.getRect(publish).right, 16);
+        // 顶栏按布局网格定位：右边距、返回键与标题胶囊的左缘
+        final grid = ComposerPageGrid.of(tester.element(appbar));
+        expect(width - tester.getRect(publish).right, grid.end);
+        expect(
+          tester.getRect(find.byType(ComposerBarTitle)).left,
+          moreOrLessEquals(grid.titleStart),
+        );
+        if (grid.hasBack) {
+          expect(
+            tester.getRect(find.byType(ComposerBarBack)).left,
+            moreOrLessEquals(grid.backStart),
+          );
+        }
         expect(tester.getSize(publish), const Size(48, 48));
         expect(find.byTooltip(S.current.common_publish), findsOneWidget);
         final chrome = ComposerChromeScope.maybeOf(tester.element(appbar))!;
@@ -240,9 +248,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 200));
         expect(
-          tester
-              .widget<ProgressiveTopBlur>(find.byType(ProgressiveTopBlur))
-              .height,
+          tester.widget<TopFadeScrim>(find.byType(TopFadeScrim)).height,
           statusBarHeight + 24,
           reason: '收起后的渐变仍应覆盖完整状态栏和消散尾巴',
         );
@@ -252,7 +258,7 @@ void main() {
         final toolbar = tester.widget<NavigationToolbar>(
           find.descendant(of: appbar, matching: find.byType(NavigationToolbar)),
         );
-        expect(toolbar.middleSpacing, NavigationToolbar.kMiddleSpacing);
+        expect(toolbar.middleSpacing, grid.titleSpacing);
         expect(
           find.descendant(of: appbar, matching: find.byType(BackButton)),
           findsOneWidget,
@@ -576,9 +582,7 @@ void main() {
           );
           expect(
             island.top,
-            greaterThanOrEqualTo(
-              statusBarHeight + kToolbarHeight + ProgressiveTopBlur.tail,
-            ),
+            greaterThanOrEqualTo(statusBarHeight + kToolbarHeight),
           );
           expect(island.bottom, lessThanOrEqualTo(460));
           final toolsScroll = tester

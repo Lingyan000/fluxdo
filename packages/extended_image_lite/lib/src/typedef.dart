@@ -1,5 +1,5 @@
 import 'dart:ui' as ui show Image;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'gesture/utils.dart';
 import 'gesture/slide_page.dart';

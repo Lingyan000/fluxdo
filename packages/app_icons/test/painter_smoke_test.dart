@@ -1,7 +1,7 @@
 // SmileyPainter / StickerPainter 的 golden 测试 —— 同时打印各 fill 状态的视觉，
 // 校验没有崩溃 + 描边/填充语义正确（线框态外圆有 stroke，实心态有 fill）。
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

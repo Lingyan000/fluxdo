@@ -1,5 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/slang/strings.g.dart';
@@ -116,11 +115,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             locale: const Locale('zh'),
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             navigatorKey: navigatorKey,
             supportedLocales: AppLocaleUtils.supportedLocales,
             home: Scaffold(
@@ -215,6 +210,7 @@ Future<void> _pumpSourcePreview(
       width: 400,
       theme: ThemeData(),
       category: null,
+      emojiUrlOf: topicCardEmojiUrlResolver,
     );
   });
   await tester.pumpWidget(
@@ -230,11 +226,7 @@ Future<void> _pumpSourcePreview(
           navigatorKey: navigatorKey,
           locale: const Locale('zh'),
           supportedLocales: AppLocaleUtils.supportedLocales,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           home: Scaffold(
             body: Builder(
               builder: (context) {

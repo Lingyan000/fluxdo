@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/widgets/markdown_editor/composer_workbench.dart';
@@ -10,6 +10,79 @@ import 'composer_interaction_test.dart' show pumpApp;
 
 void main() {
   for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets('键盘位移每帧合并，松手刷新末次位置，销毁取消待发更新 $platform', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 760);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.reset);
+      final calls = <MethodCall>[];
+      const channel = MethodChannel('com.fluxdo/interactive_keyboard');
+      Future<Object?> handle(MethodCall call) async {
+        calls.add(call);
+        return call.method == 'begin' ? {'supported': true} : null;
+      }
+
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, handle);
+      messenger.setMockMethodCallHandler(SystemChannels.textInput, handle);
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(channel, null);
+        messenger.setMockMethodCallHandler(SystemChannels.textInput, null);
+      });
+      final move = platform == TargetPlatform.android
+          ? 'update'
+          : 'TextInput.onPointerMoveForInteractiveKeyboard';
+      double position(MethodCall call) =>
+          ((call.arguments as Map)[platform == TargetPlatform.android
+                      ? 'distance'
+                      : 'pointerY']
+                  as num)
+              .toDouble();
+      final controller = ComposerKeyboardDismissController(
+        vsync: tester,
+        platform: platform,
+      );
+      expect(controller.begin(tester.view), isTrue);
+      await tester.pump();
+      calls.clear();
+      for (var i = 0; i < 10; i++) {
+        controller.update(3);
+      }
+      expect(controller.visibleHeight, 270);
+      expect(calls.where((call) => call.method == move), isEmpty);
+      await tester.pump();
+      final moves = calls.where((call) => call.method == move).toList();
+      expect(moves, hasLength(1));
+      expect(
+        position(moves.single),
+        platform == TargetPlatform.android ? 30 : 490,
+      );
+      calls.clear();
+      controller.update(12);
+      final ended = controller.end(0);
+      await tester.pump();
+      final flush = calls.first;
+      expect(flush.method, move);
+      expect(position(flush), platform == TargetPlatform.android ? 42 : 502);
+      await tester.pump(const Duration(milliseconds: 500));
+      await ended;
+      calls.clear();
+      expect(controller.begin(tester.view), isTrue);
+      await tester.pump();
+      calls.clear();
+      controller.update(9);
+      controller.dispose();
+      await tester.pump();
+      // iOS 的销毁 move 用来结束快照，不能再夹入旧拖拽的待发位置。
+      final afterDispose = calls.where((call) => call.method == move).toList();
+      if (platform == TargetPlatform.android) {
+        expect(afterDispose, isEmpty);
+      } else {
+        expect(afterDispose, hasLength(1));
+        expect(position(afterDispose.single), greaterThan(760));
+      }
+    });
+
     testWidgets('离开编辑页结束原生键盘接管 platform=$platform', (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(390, 760);

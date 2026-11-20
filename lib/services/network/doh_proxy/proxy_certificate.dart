@@ -8,8 +8,7 @@ import 'per_device_cert_service.dart';
 
 /// Proxy CA certificate management
 ///
-/// Configures the app to trust the MITM proxy's CA certificate
-/// on all platforms.
+/// 配置 WebView 所需的代理 CA，不扩展 Dart 网络请求的全局信任。
 class ProxyCertificate {
   ProxyCertificate._();
 
@@ -18,7 +17,7 @@ class ProxyCertificate {
   /// macOS: CA 是否已在钥匙串中被信任
   static bool _macOsKeychainTrusted = false;
 
-  /// Initialize the security context to trust the proxy CA
+  /// 初始化设备证书和平台 WebView 信任入口
   ///
   /// Call this early in app startup (e.g., in main.dart)
   static Future<void> initialize() async {
@@ -29,10 +28,6 @@ class ProxyCertificate {
     if (usePerDevice) {
       // per-device CA 证书（iOS/macOS 强制，其他平台可选）
       await _initializePerDevice();
-    } else if (!Platform.isAndroid) {
-      // Android: CA 通过 network_security_config.xml 信任
-      // 其他平台: 从 assets 加载编译时 CA
-      await _configureSecurityContext();
     }
 
     _initialized = true;
@@ -78,15 +73,6 @@ class ProxyCertificate {
     final certService = PerDeviceCertService.instance;
     final ok = await certService.ensureCaCert();
     if (ok && certService.certPem != null) {
-      try {
-        final certBytes = Uint8List.fromList(certService.certPem!.codeUnits);
-        final context = SecurityContext.defaultContext;
-        context.setTrustedCertificatesBytes(certBytes);
-        debugPrint('ProxyCertificate: per-device CA loaded');
-      } catch (e) {
-        debugPrint('ProxyCertificate: Could not load per-device CA: $e');
-      }
-
       // iOS: 将 CA 发送到原生层（swizzle 需要在 WebView 创建前设置）
       if (Platform.isIOS) {
         await _sendCaCertToNative(certService.certPem!);
@@ -94,19 +80,6 @@ class ProxyCertificate {
       // macOS: 不在启动时添加钥匙串，等 DOH 开启时由 ensureKeychainTrust() 处理
     } else {
       debugPrint('ProxyCertificate: per-device CA not ready');
-    }
-  }
-
-  /// Configure the global security context to trust the proxy CA
-  static Future<void> _configureSecurityContext() async {
-    try {
-      final certData = await rootBundle.load('assets/certs/proxy_ca.pem');
-      final certBytes = certData.buffer.asUint8List();
-      final context = SecurityContext.defaultContext;
-      context.setTrustedCertificatesBytes(certBytes);
-      debugPrint('ProxyCertificate: CA certificate loaded successfully');
-    } catch (e) {
-      debugPrint('ProxyCertificate: Could not load CA certificate: $e');
     }
   }
 

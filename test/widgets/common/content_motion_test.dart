@@ -1,12 +1,17 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  Widget host(Widget child, {bool reduced = false}) => MaterialApp(
+  Widget host(
+    Widget child, {
+    bool reduced = false,
+    bool reduceMotion = false,
+  }) => MaterialApp(
     builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(disableAnimations: reduced),
+      data: MediaQuery.of(context)
+          .copyWith(disableAnimations: reduced, reduceMotion: reduceMotion),
       child: child!,
     ),
     home: Scaffold(body: child),
@@ -54,6 +59,15 @@ void main() {
       host(const PageMotionScope(moving: true, child: empty)),
     );
     expect(opacity(tester, 'empty'), 1);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('iOS reduceMotion 独立启用时空态直接呈现，运行时切换也生效', (tester) async {
+    await tester.pumpWidget(host(empty));
+    expect(opacity(tester, 'empty'), 0);
+    await tester.pumpWidget(host(empty, reduceMotion: true));
+    expect(opacity(tester, 'empty'), 1);
+    expect(opacity(tester, 'message'), 1);
     await tester.pumpAndSettle();
   });
 

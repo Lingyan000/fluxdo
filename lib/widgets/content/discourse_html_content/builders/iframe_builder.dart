@@ -1,9 +1,10 @@
 import 'dart:io';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -502,7 +503,7 @@ class _IframeWidgetState extends State<IframeWidget> with RouteAware {
           // 桌面平台：交互遮罩
           if (_needsInteractionMask && !_interacting && _isLoaded && !_hasError)
             Positioned.fill(
-              child: GestureDetector(
+              child: ContentTapTarget(
                 onTap: _enterInteractMode,
                 child: Container(
                   color: Colors.black38,

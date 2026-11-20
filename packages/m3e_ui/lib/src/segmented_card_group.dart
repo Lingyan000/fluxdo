@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
 
 import 'm3e_flags.dart';
@@ -81,7 +81,8 @@ class _SegmentedCardGroupState extends State<SegmentedCardGroup> {
     super.didChangeDependencies();
     _motionEnabled =
         M3eFlags.of(context).enabled &&
-        !MediaQuery.disableAnimationsOf(context);
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context));
     if (!_animate) _replace();
   }
 
@@ -202,9 +203,7 @@ extension on _SegmentedCardGroupState {
       clipBehavior: Clip.antiAlias,
       shape: RoundedSuperellipseBorder(
         borderRadius: context.shapes.borderRadius(widget.outerRadius),
-        side: BorderSide(
-          color: style.borderColor ?? scheme.outlineVariant,
-        ),
+        side: BorderSide(color: style.borderColor ?? scheme.outlineVariant),
       ),
       child: column,
     );
@@ -370,7 +369,10 @@ class SegmentedCardItem extends StatelessWidget {
         child: child,
       );
       return index < count - 1 && gap > 0
-          ? Padding(padding: EdgeInsets.only(bottom: gap), child: item)
+          ? Padding(
+              padding: EdgeInsets.only(bottom: gap),
+              child: item,
+            )
           : item;
     }
 

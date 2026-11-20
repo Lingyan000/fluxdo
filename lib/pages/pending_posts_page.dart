@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,6 +21,7 @@ import '../widgets/layout/master_detail_pane_host.dart';
 import 'topic_detail_page/topic_detail_page.dart';
 import 'create_topic_page.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 待审核内容列表 Provider
 final pendingPostsProvider = FutureProvider.autoDispose<List<PendingPost>>((
@@ -367,7 +368,7 @@ class _PendingPostCard extends StatelessWidget {
 
               // 标题(新主题 = 待审标题,回复 = 所在主题标题)
               if (pending.title != null && pending.title!.isNotEmpty)
-                Text(
+                EmojiText(
                   pending.title!,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w500,

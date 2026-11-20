@@ -1,6 +1,15 @@
 part of '../post_footer_section.dart';
 
 extension _PostFooterReplyActions on _PostFooterSectionState {
+  void _saveRepliesSnapshot({bool? expanded}) {
+    _inlineStore?.save(
+      InlinePostsKind.replies,
+      _postId,
+      posts: _replies,
+      expanded: expanded ?? _showRepliesNotifier.value,
+    );
+  }
+
   Future<void> _loadReplies() async {
     if (_isLoadingRepliesNotifier.value) return;
 
@@ -11,8 +20,10 @@ extension _PostFooterReplyActions on _PostFooterSectionState {
         widget.post.id,
         after: after,
       );
+      // 加载期间滑出屏幕也落快照,回来时直接是完整列表
+      _replies.addAll(replies);
+      _saveRepliesSnapshot(expanded: true);
       if (mounted) {
-        _replies.addAll(replies);
         _isLoadingRepliesNotifier.value = false;
       }
     } on DioException catch (_) {
@@ -63,6 +74,10 @@ extension _PostFooterReplyActions on _PostFooterSectionState {
         _replies.addAll(replies);
         _isLoadingRepliesNotifier.value = false;
         _showRepliesNotifier.value = true;
+      } else {
+        // 加载期间滑出屏幕:按用户意图记为已展开,回来时直接恢复
+        _replies.addAll(replies);
+        _saveRepliesSnapshot(expanded: replies.isNotEmpty);
       }
     } on DioException catch (_) {
       // 网络错误已由 ErrorInterceptor 处理

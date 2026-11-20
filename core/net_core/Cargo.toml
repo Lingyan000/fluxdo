@@ -26,6 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
+# 出站 TCP 保活（tokio 未暴露该选项）
+socket2 = "0.6"
 
 # DNS 报文编解码；DoH 查询经本库的出口发出
 hickory-proto = { version = "0.24", default-features = false }
@@ -39,15 +41,26 @@ rama-http-backend = { git = "https://github.com/plabayo/rama", rev = "23d59722e1
 rama-http-core = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["quic"] }
 rama-crypto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false, features = ["boring"] }
 
+# 生产 H3 模板读取 QUIC Initial；复用网络核心已经锁定的协议实现。
+rama-quic-proto = { git = "https://github.com/plabayo/rama", rev = "23d59722e125fb6f2de66df588f772205318e555", default-features = false }
+
 # 苹果端系统代理与 PAC（与 URLSession / WKWebView 读取同一份设置）
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 core-foundation = "0.10"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# 按运行时探测系统 GnuTLS；不把新的系统链接要求带到其他平台或无 GnuTLS 的发行版。
+libloading = "0.9"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-android = "0.2"
 # 平台证书校验器经它拿 JavaVM 与 Context，调用 Java 侧的 TrustManager
 ndk-context = "0.1"
 jni-sys = "0.4"
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# 在本地 JVM 执行生产 JNI 能力探测，覆盖 Android 提供者不实现可选 API 的路径。
+jni = { version = "0.22", features = ["invocation"] }
 
 [profile.release]
 lto = true
@@ -63,4 +76,7 @@ panic = "unwind"
 strip = false
 
 [patch."https://github.com/plabayo/rama"]
+rama-crypto = { path = "vendor/rama-crypto" }
 rama-quic = { path = "vendor/rama-quic" }
+rama-http-types = { path = "vendor/rama-http-types" }
+rama-http-core = { path = "vendor/rama-http-core" }

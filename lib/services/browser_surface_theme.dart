@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 小程序与内置浏览器共用的边缘取色调度。仅记录颜色，不保留网页或截图。
 class BrowserSurfaceTheme extends ChangeNotifier with WidgetsBindingObserver {

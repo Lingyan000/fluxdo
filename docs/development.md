@@ -49,6 +49,21 @@ dart run tool/project_prep.dart app
 dart run tool/flutterw.dart run -d windows
 ```
 
+## Flutter SDK 与 UI 包
+
+项目通过 `.fvmrc` 固定 Flutter 3.50.0（Dart 3.14）。使用 FVM 时，在仓库根目录执行
+`fvm use --skip-pub-get`，再运行 `just sync` 或 `just run`。`just` 按 `.fvmrc` 选择
+`.fvm/versions/<版本>/bin` 下的 Dart 和 Flutter。切换分支后若提示缺少对应版本，再执行一次
+`fvm use --skip-pub-get` 即可。没有本地 `.fvm` 目录时，`just` 使用 `PATH` 中的 SDK，其版本需与项目匹配。
+
+应用、公共 UI 包与 `fluxdo_render` 使用独立的 `material_ui` / `cupertino_ui`。
+主窗口和小程序启动窗口通过官方兼容桥为尚未迁移的第三方组件提供旧主题和本地化。
+独立的 `devtools_extension` 仍跟随 `devtools_extensions` 宿主使用旧 Material，
+待宿主支持独立 UI 包后一起迁移，避免新旧主题上下文不匹配。
+
+Apple 工程继续使用现有 CocoaPods 配置，Android 继续使用现有 AGP 配置；
+SDK 升级不同时启用 HCPP 或改动平台构建方式。
+
 ## 常用命令
 
 - `just sync`：显式同步依赖、l10n 生成物和代理证书资源；适合首次拉代码、切分支、修改 ARB 后或 IDE 调试前预热
@@ -117,7 +132,7 @@ just release -- patch --dry-run
 
 ```bash
 sudo pacman -S --needed base-devel clang cmake ninja pkgconf python git curl xz \
-  gtk3 libepoxy libsecret wayland wpewebkit alsa-lib mpv \
+  gtk3 libx11 libxi libepoxy libsecret wayland wpewebkit alsa-lib mpv \
   gst-plugins-base gst-plugins-good gst-libav just
 flutter doctor -v
 just run -- -d linux
@@ -193,3 +208,31 @@ security find-identity -v -p codesigning   # 应列出 "FluxDO Code Signing"
 然后在 `apple/Local.xcconfig` 中启用（见 example 文件的「用法 1」）。切换后首次启动钥匙串还会弹最后一次（旧 ACL 只认 adhoc 旧构建），点「始终允许」后 rebuild 不再弹。
 
 CI 发版使用同一张证书：把 p12 的 base64 与密码配置为仓库 secrets `MACOS_CODESIGN_P12_BASE64` / `MACOS_CODESIGN_P12_PASSWORD`（见 `.github/workflows/build.yaml` 的 "Setup macOS code signing" 步骤）。secrets 缺失时（如 fork）自动回退 adhoc 签名，构建不会失败。自签证书不等于公证，用户下载 DMG 后仍需右键打开或 `xattr -cr` 解除隔离，与 adhoc 时代一致。
+
+
+## 网络回归 CI
+
+`network-regression.yaml` 在 PR、dev/main 推送时按改动路径选择检查；文档改动只经过选择和结果汇总。
+同一 PR 的旧任务会被新提交取消，不启动 BrowserStack、不连接私有 Tailnet、不探测公网指纹服务。
+
+本地复用同一入口（先完成 `just sync` 或 `dart tool/project_prep.dart test`）：
+
+```sh
+python3 tool/ci/network_checks.py dart
+python3 tool/ci/network_checks.py rust
+python3 tool/ci/network_checks.py python
+```
+
+- Dart：网络专项测试、全部架构守卫、定向 analyze。范围在 `tool/ci/network_checks.json`，没有接入应用的存量全量失败。
+- Rust：Linux 上运行全部 Core 库测试，使用本地套接字；0 项测试不能算成功。
+- Python：严格证据比对、负对照、采样驱动清理和设备预算测试，不创建真实设备会话。
+- 原生代码变化：追加对应 Core 编译检查；共享 Core 变化检查 Android arm64、Windows、macOS 和 iOS device/simulator。
+  Apple Swift 身份代码以 iOS 15 部署目标检查。这些是 Core/SDK 编译检查，不是五平台完整应用构建或真机运行证据。
+- 缓存依赖和 Rust 编译结果；冷缓存可能明显慢于本地或后续运行。`Network regression result` 是统一汇总状态，仓库规则可将其设为必需检查。
+
+`network-diagnostics.yaml` 是唯一手动诊断入口，每次选择一个平台；默认 TCP，H3 必须显式选择。
+Windows Flutter 选项固定运行生产 H3 探针及错误 SPKI 负对照。H3 未校准时严格诊断会失败，不表示 TLS/H2 不可用。
+诊断使用一次性 GitHub runner/模拟器，不访问付费真机平台；产物保留 7 天。
+完整应用仍沿用现有 `build.yaml` 发布构建，不在每次提交重复打包。
+
+早期的临时诊断分支与工作流已归档在 `archive/fingerprint-diagnostics-20261116` 标签。

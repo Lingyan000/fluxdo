@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart'
+    show RenderAbstractViewport, ScrollCacheExtent;
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 // 0.2.5 的 ListController.jumpToIndex 会停止当前滚动活动。结构更新只需
 // 请求引擎的同帧布局修正，使用这个固定版本的布局接口保留拖动和惯性。
@@ -44,6 +45,20 @@ class PositionedStreamList extends StatefulWidget {
 
   /// 结构更新时从内容行保位，跳过加载提示等临时前缀。
   final int firstAnchorIndex;
+
+  /// 子项内即将收起一段内容时调用（在改状态之前）。
+  ///
+  /// 引擎按视口上沿所在项的项内偏移保位：顶边已滚出视口的长项收起后，
+  /// 项内偏移超出新高度，视口会直接越过其后若干项。这里改为下一趟布局
+  /// 把该项底边留在当前屏幕位置，其后内容不动。顶边仍在视口内时不处理，
+  /// 收起后其后内容自然上移。不在列表内（弹层等）时无操作。
+  static void keepTrailingEdgeOnShrink(BuildContext context) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<_PositionedStreamItem>();
+    final item = element?.widget as _PositionedStreamItem?;
+    if (element == null || item == null) return;
+    item.list._keepTrailingEdge(item.itemKey, element.findRenderObject());
+  }
 
   @override
   State<PositionedStreamList> createState() => _PositionedStreamListState();
@@ -114,6 +129,30 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
     }
   }
 
+  void _keepTrailingEdge(String itemKey, RenderObject? box) {
+    final index = _indices[itemKey];
+    final controller = widget.listController;
+    if (widget.reverse ||
+        index == null ||
+        box is! RenderBox ||
+        !box.hasSize ||
+        !controller.isAttached) {
+      return;
+    }
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return;
+    final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+    if (top >= 0) return;
+    unawaited(
+      controller.jumpToIndex(
+        index,
+        offset: top + box.size.height,
+        targetRectResolver: (_, child) =>
+            Rect.fromLTWH(0, child.size.height, child.size.width, 0),
+      ),
+    );
+  }
+
   void _restoreDuringLayout(int index, double offsetInItem) {
     final sliver = _sliverKey.currentContext?.findRenderObject();
     if (sliver is! RenderSuperSliverList ||
@@ -146,10 +185,29 @@ class _PositionedStreamListState extends State<PositionedStreamList> {
               _indices[(key as ValueKey<String>).value],
           itemBuilder: (context, index) => KeyedSubtree(
             key: ValueKey(widget.itemKeys[index]),
-            child: widget.itemBuilder(context, index),
+            child: _PositionedStreamItem(
+              list: this,
+              itemKey: widget.itemKeys[index],
+              child: widget.itemBuilder(context, index),
+            ),
           ),
         ),
       ],
     );
   }
+}
+
+/// 子项所在列表与稳定标识；索引在调用时按标识现查，结构更新后不会过期。
+class _PositionedStreamItem extends InheritedWidget {
+  const _PositionedStreamItem({
+    required this.list,
+    required this.itemKey,
+    required super.child,
+  });
+
+  final _PositionedStreamListState list;
+  final String itemKey;
+
+  @override
+  bool updateShouldNotify(_PositionedStreamItem oldWidget) => false;
 }

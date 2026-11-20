@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../models/category.dart';
 import '../../models/topic.dart';
@@ -118,7 +118,10 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
         if (avatarUrl != null) {
           TopicCardImages.prewarm(avatarUrl);
         }
-        for (final (_, url) in layout.titleEmojis) {
+        for (final (_, url) in [
+          ...layout.titleEmojis,
+          ...layout.excerptEmojis,
+        ]) {
           TopicCardImages.prewarm(url, bucket: BlobImageCache.emojiBucket);
         }
       }

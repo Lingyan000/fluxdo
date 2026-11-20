@@ -13,6 +13,8 @@ import 'package:fluxdo/theme/app_theme.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/user/user_profile_header.dart';
+import 'package:fluxdo/utils/responsive.dart';
+import 'package:fluxdo/widgets/user/activity_card_layout.dart';
 import 'package:fluxdo/widgets/user/activity_post_card.dart';
 import 'package:fluxdo/widgets/user/user_profile_skeleton.dart';
 import 'package:fluxdo/widgets/post/post_item/widgets/reaction_emoji.dart';
@@ -24,8 +26,7 @@ import '../helpers/preview_fonts.dart';
 
 import 'package:visibility_detector/visibility_detector.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/message_bus/session_channel_providers.dart';
@@ -469,11 +470,7 @@ void main() {
               theme: theme,
               locale: const Locale('zh'),
               supportedLocales: AppLocaleUtils.supportedLocales,
-              localizationsDelegates: const [
-                GlobalMaterialLocalizations.delegate,
-                GlobalWidgetsLocalizations.delegate,
-                GlobalCupertinoLocalizations.delegate,
-              ],
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(context)
                     .copyWith(textScaler: TextScaler.linear(textScale)),
@@ -1179,8 +1176,12 @@ void main() {
             matching: find.byType(ActivityPostCard),
           ),
         );
-        expect(cardRect.left, listRect.left);
-        expect(cardRect.right, listRect.right);
+        // 卡片形态带底色，两侧与栏边留出间距；平铺形态贴边铺满。
+        final inset = listRect.width < Breakpoints.mobile
+            ? 0.0
+            : ActivityCardList.gutter;
+        expect(cardRect.left, listRect.left + inset);
+        expect(cardRect.right, listRect.right - inset);
         expect(cardRect.left, skeletonRect.left);
         expect(cardRect.right, skeletonRect.right);
         final voteSegment = tester.widget<SegmentedCardItem>(

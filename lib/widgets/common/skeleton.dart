@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 骨架屏容器
 ///

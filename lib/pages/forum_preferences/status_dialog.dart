@@ -1,5 +1,5 @@
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
@@ -12,10 +12,9 @@ import '../../widgets/common/smart_avatar.dart';
 import '../../utils/dialog_utils.dart';
 import '../../utils/error_utils.dart';
 import '../../utils/time_utils.dart';
-import '../../services/discourse_cache_manager.dart';
-import '../../services/emoji_handler.dart';
 import '../../widgets/markdown_editor/emoji_picker.dart';
 import 'preference_controls.dart';
+import '../../widgets/common/emoji_text.dart';
 
 Future<bool?> editUserStatus(BuildContext context, WidgetRef ref, User user) {
   final current = ref.read(currentUserProvider).value;
@@ -53,14 +52,10 @@ class PreferenceStatusEmoji extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Image(
-    image: emojiImageProvider(EmojiHandler().getEmojiUrl(name)),
-    width: size,
-    height: size,
-    frameBuilder: (_, child, frame, synchronous) => synchronous || frame != null
-        ? child
-        : Icon(Symbols.mood_rounded, size: size),
-    errorBuilder: (_, _, _) => Icon(Symbols.mood_rounded, size: size),
+  Widget build(BuildContext context) => EmojiImage(
+    name,
+    size: size,
+    placeholder: Icon(Symbols.mood_rounded, size: size),
   );
 }
 

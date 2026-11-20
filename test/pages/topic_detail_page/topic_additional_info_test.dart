@@ -1,11 +1,16 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_state_summary.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_statistics.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_statistics_sheets.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// 弹层读取背景模糊等偏好，需要可用的 SharedPreferences
+late SharedPreferences _prefs;
 
 TopicDetail _detail(Map<String, dynamic> fields) => TopicDetail.fromJson({
   'id': 1,
@@ -18,6 +23,7 @@ Widget _app(
   Brightness brightness = Brightness.light,
   double textScale = 1,
 }) => ProviderScope(
+  overrides: [sharedPreferencesProvider.overrideWithValue(_prefs)],
   child: TranslationProvider(
     child: MaterialApp(
       locale: const Locale('zh'),
@@ -35,6 +41,10 @@ Widget _app(
 );
 
 void main() {
+  setUpAll(() async {
+    SharedPreferences.setMockInitialValues({});
+    _prefs = await SharedPreferences.getInstance();
+  });
   setUp(() => LocaleSettings.setLocaleSync(AppLocale.zh));
 
   test('新增字段解析、复制和清除覆盖旧数据', () {
@@ -100,8 +110,8 @@ void main() {
   });
 
   testWidgets('无附加数据时隐藏，阅读时长使用站点速度且短话题不显示', (tester) async {
+    final semantics = tester.ensureSemantics();
     await tester.pumpWidget(_app(TopicStatistics(detail: _detail({}))));
-    expect(find.byType(ExpansionTile), findsNothing);
     expect(tester.getSize(find.byType(TopicStatistics)).height, 0);
     await tester.pumpWidget(
       _app(
@@ -111,7 +121,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('阅读约 10 分钟'), findsOneWidget);
+    expect(find.bySemanticsLabel('阅读约 10 分钟'), findsOneWidget);
     await tester.pumpWidget(
       _app(
         TopicStatistics(
@@ -120,10 +130,12 @@ void main() {
         ),
       ),
     );
-    expect(find.textContaining('阅读约'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('阅读约')), findsNothing);
+    semantics.dispose();
   });
 
-  testWidgets('展开参与者和链接，查看更多保留全部链接', (tester) async {
+  testWidgets('参与者和链接在弹层中查看，链接全部列出', (tester) async {
+    final semantics = tester.ensureSemantics();
     final detail = _detail({
       'participant_count': 2,
       'like_count': 7,
@@ -138,19 +150,34 @@ void main() {
       },
     });
     await tester.pumpWidget(_app(TopicStatistics(detail: detail)));
-    expect(find.text('2 位参与者'), findsOneWidget);
-    expect(find.text('7 个赞'), findsOneWidget);
-    expect(find.text('链接 1'), findsNothing);
-    await tester.tap(find.byType(ExpansionTile));
+    expect(find.bySemanticsLabel('2 位参与者'), findsOneWidget);
+    expect(find.bySemanticsLabel('7 个赞'), findsOneWidget);
+    expect(find.text('测试用户'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('2 位参与者'));
     await tester.pumpAndSettle();
-    expect(find.text('测试用户 · 8 帖'), findsOneWidget);
-    expect(find.text('链接 1'), findsOneWidget);
-    expect(find.text('链接 6'), findsNothing);
-    await tester.ensureVisible(find.text('查看全部 6 个链接'));
-    await tester.tap(find.text('查看全部 6 个链接'));
+    expect(find.text('测试用户'), findsOneWidget);
+    expect(find.text('@alice'), findsOneWidget);
+    expect(find.textContaining('8'), findsWidgets);
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
-    expect(find.text('链接 6'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('6 个链接'));
+    await tester.pumpAndSettle();
+    final linkList = find.descendant(
+      of: find.byType(TopicLinkList),
+      matching: find.byType(Scrollable),
+    );
+    for (var i = 1; i <= 6; i++) {
+      await tester.scrollUntilVisible(
+        find.text('链接 $i'),
+        50,
+        scrollable: linkList,
+      );
+      expect(find.text('链接 $i'), findsOneWidget);
+    }
     expect(tester.takeException(), isNull);
+    semantics.dispose();
   });
 
   for (final brightness in Brightness.values) {
@@ -192,10 +219,13 @@ void main() {
           textScale: 2,
         ),
       );
-      await tester.ensureVisible(find.byType(ExpansionTile));
-      await tester.tap(find.byType(ExpansionTile));
+      final semantics = tester.ensureSemantics();
+      await tester.ensureVisible(find.bySemanticsLabel('12345 位参与者'));
+      await tester.tap(find.bySemanticsLabel('12345 位参与者'));
       await tester.pumpAndSettle();
+      expect(find.text('a_very_long_participant_username'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      semantics.dispose();
     });
   }
 }

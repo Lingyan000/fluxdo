@@ -15,7 +15,7 @@ import 'es-module-shims';
 // 因为它是 Discourse boot 流程的"门"，过不去后面的 polyfill 都白搭。
 import './discourse-compat.js';
 
-// 入口：'core-js/actual' 这一行会被 @babel/preset-env (useBuiltIns: 'entry')
+// 入口：'core-js/actual' 这一行会被 Babel 的 core-js 入口插件
 // 按 package.json 里的 browserslist (iOS >= 15.0) 展开成精确的
 // `import 'core-js/modules/<feature>'` 列表，只引入老 WKWebView 缺失的 API。
 //

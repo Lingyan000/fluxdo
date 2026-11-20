@@ -1,9 +1,9 @@
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-import '../../widgets/content/discourse_image.dart';
 import 'mini_app.dart';
 import 'mini_app_artwork_palette.dart';
+import 'mini_app_artwork_watermark.dart';
 
 /// 在公共 SegmentedCardItem 的 Material 上绘制底色，保留水波纹和超椭圆裁切。
 class MiniAppCardSurface extends StatefulWidget {
@@ -71,7 +71,9 @@ class _MiniAppCardSurfaceState extends State<MiniAppCardSurface> {
             Positioned.fill(
               child: TweenAnimationBuilder<Color?>(
                 tween: ColorTween(end: accent),
-                duration: MediaQuery.disableAnimationsOf(context)
+                duration:
+                    (MediaQuery.disableAnimationsOf(context) ||
+                        MediaQuery.reduceMotionOf(context))
                     ? Duration.zero
                     : const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
@@ -107,27 +109,9 @@ class _MiniAppCardSurfaceState extends State<MiniAppCardSurface> {
                 height: 144,
                 child: IgnorePointer(
                   child: ExcludeSemantics(
-                    child: RepaintBoundary(
-                      child: ShaderMask(
-                        blendMode: BlendMode.dstIn,
-                        shaderCallback: (rect) => LinearGradient(
-                          begin: Alignment.topRight,
-                          end: Alignment.bottomLeft,
-                          colors: [
-                            Colors.white.withValues(alpha: dark ? .16 : .10),
-                            Colors.transparent,
-                          ],
-                          stops: const [.05, .85],
-                        ).createShader(rect),
-                        child: DiscourseImage(
-                          url: widget.app.iconUrl,
-                          width: 144,
-                          height: 144,
-                          fit: BoxFit.cover,
-                          placeholderBuilder: (_) => const SizedBox.shrink(),
-                          errorBuilder: (_) => const SizedBox.shrink(),
-                        ),
-                      ),
+                    child: MiniAppArtworkWatermark(
+                      url: widget.app.iconUrl,
+                      size: 144,
                     ),
                   ),
                 ),

@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -267,6 +267,7 @@ void main() {
                                   title: title,
                                   author: author,
                                   actionActor: index == 1 ? liker : null,
+                                  actorVerb: index == 1 ? '赞了这条内容' : null,
                                   actionLabel: label,
                                   actionIcon: icon,
                                   postNumber: index + 12,
@@ -444,44 +445,40 @@ void main() {
         greaterThanOrEqualTo(tester.getRect(boostExcerpt).bottom + 10),
       );
 
-      // 获赞事件独立呈现，点赞人、描述和发生时间对齐。
+      // 获赞以点赞人开头，帖子作者（资料页主人）不再重复出现。
       final likeCard = cards.at(1);
-      final likeAuthor = find
-          .ancestor(
-            of: find.descendant(of: likeCard, matching: find.text('林间')),
-            matching: find.byType(InkWell),
-          )
-          .first;
-      final likeLabel = find.descendant(
-        of: likeCard,
-        matching: find.text('回复'),
-      );
-      expect(tester.getRect(likeLabel).left, tester.getRect(likeAuthor).left);
-      final likerLink = find
-          .ancestor(of: find.text('@neo'), matching: find.byType(InkWell))
-          .first;
       expect(
-        tester.getRect(likerLink).top,
-        lessThan(tester.getRect(likeAuthor).top),
+        find.descendant(of: likeCard, matching: find.text('林间')),
+        findsNothing,
       );
-      final likeIcon = find.descendant(
+      final likerName = find.descendant(
         of: likeCard,
-        matching: find.byIcon(Symbols.favorite_rounded),
+        matching: find.text('neo'),
       );
+      final likeVerb = find.descendant(
+        of: likeCard,
+        matching: find.text('赞了这条内容'),
+      );
+      final likeFloor = find.descendant(
+        of: likeCard,
+        matching: find.text('#13'),
+      );
+      final likerAvatar = find
+          .descendant(of: likeCard, matching: find.byType(SmartAvatar))
+          .first;
       final contentLeft = firstRect.left + 16;
-      expect(tester.getRect(likeIcon).left, closeTo(contentLeft, 1));
-      final receivedLabel = find.text('赞了这条内容');
+      expect(tester.getRect(likerAvatar).left, contentLeft);
       if (scale == 1) {
         expect(
-          tester.getRect(likerLink).top,
-          closeTo(tester.getRect(receivedLabel).top, 0.1),
+          tester.getRect(likeVerb).left,
+          greaterThan(tester.getRect(likerName).right),
         );
-        expect(
-          tester.getCenter(likeIcon).dy,
-          closeTo(tester.getCenter(receivedLabel).dy, 0.5),
-        );
-      }
-      if (scale == 1) {
+        for (final label in [likeVerb, likeFloor]) {
+          expect(
+            tester.getCenter(label).dy,
+            closeTo(tester.getCenter(likerName).dy, 2),
+          );
+        }
         final likeTime = find.descendant(
           of: find.descendant(
             of: likeCard,
@@ -489,29 +486,30 @@ void main() {
           ),
           matching: find.byType(Text),
         );
-        final likeFloor = find.descendant(
-          of: likeCard,
-          matching: find.text('#13'),
+        expect(
+          tester.getRect(likeTime).top,
+          closeTo(tester.getRect(likerName).top, 3),
         );
-        final labelParagraph = tester.renderObject<RenderParagraph>(likeLabel);
-        final labelBaseline =
-            tester.getTopLeft(likeLabel).dy +
-            labelParagraph.getDryBaseline(
-              labelParagraph.constraints,
-              TextBaseline.alphabetic,
-            )!;
-        for (final label in [likeFloor]) {
-          final paragraph = tester.renderObject<RenderParagraph>(label);
-          final baseline =
-              tester.getTopLeft(label).dy +
-              paragraph.getDryBaseline(
-                paragraph.constraints,
-                TextBaseline.alphabetic,
-              )!;
-          expect(baseline, closeTo(labelBaseline, 0.1));
-        }
-        expect(tester.getRect(likeTime).top, tester.getRect(likerLink).top);
       }
+      // 自己的原文作引用排在标题之前，只保留两行唤起记忆
+      final likeExcerpt = find.descendant(
+        of: likeCard,
+        matching: find.byType(CollapsedHtmlContent),
+      );
+      expect(tester.widget<CollapsedHtmlContent>(likeExcerpt).maxLines, 2);
+      expect(
+        tester.getRect(likeExcerpt).bottom,
+        lessThan(
+          tester
+              .getRect(
+                find.descendant(
+                  of: likeCard,
+                  matching: find.text('从可用到好用，记录这次客户端更新'),
+                ),
+              )
+              .top,
+        ),
+      );
       final authorLink = find
           .ancestor(of: find.text('林间').first, matching: find.byType(InkWell))
           .first;
@@ -605,8 +603,8 @@ void main() {
       final container = ProviderScope.containerOf(context);
       expect(container.read(selectedTopicProvider).topEntry?.username, 'alice');
       expect(taps, [0]);
-      await tester.ensureVisible(find.text('@neo'));
-      await tester.tap(find.text('@neo'));
+      await tester.ensureVisible(find.text('neo'));
+      await tester.tap(find.text('neo'));
       await tester.pumpAndSettle();
       expect(container.read(selectedTopicProvider).topEntry?.username, 'neo');
       expect(taps, [0]);

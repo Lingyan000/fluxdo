@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/legacy.dart';
 
 enum MiniAppOrientation { system, portrait, landscape }
 
 /// 串行管理系统栏和屏幕方向；关闭页面后，迟到的操作不能重新锁屏或全屏。
 class MiniAppFullscreen {
-  // 独立 Windows 窗口必须操作所属 HWND，不能使用旧插件的主窗口查找。
+  // 独立桌面窗口通过当前引擎的原生通道操作自己的窗口。
   static Future<bool> Function()? windowIsFullscreen;
   static Future<void> Function(bool)? windowSetFullscreen;
   MiniAppFullscreen({this.restoreOrientations});

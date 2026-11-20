@@ -1,7 +1,7 @@
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, PointerHoverEvent;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/editor.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 
@@ -24,8 +24,11 @@ class ComposerBlockHover extends StatefulWidget {
     required this.child,
   });
   static const expandedControlWidth = 840.0;
+
+  /// 桌面端正文左侧的把手栏。编辑页顶栏的返回键也放在这一栏里（见
+  /// ComposerPageGrid），所以最窄也要放得下 48 的返回键胶囊加两侧留白
   static double gutterFor(double width, {required bool desktop}) => desktop
-      ? 48 + 36 * ((width - 640) / (expandedControlWidth - 640)).clamp(0.0, 1.0)
+      ? 64 + 20 * ((width - 640) / (expandedControlWidth - 640)).clamp(0.0, 1.0)
       : 64;
 
   final EditorState editor;

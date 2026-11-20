@@ -1,11 +1,12 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/shortcut_binding.dart';
 import '../../l10n/s.dart';
 import '../../providers/discourse_providers.dart';
+import '../../providers/message_bus_providers.dart';
 import '../../providers/shortcut_provider.dart';
 import '../../providers/preferences_provider.dart';
 import '../../pages/notifications_page.dart';
@@ -15,12 +16,12 @@ import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 import '../../utils/notification_navigation.dart';
 import '../../utils/blocked_user_filter.dart';
+import '../common/error_view.dart';
 import '../common/predictive_back_overlay_handler.dart';
 import '../layout/master_detail_layout.dart';
 import '../topic/category_drawer.dart' show CategoryDrawerHost;
 import 'notification_item.dart';
 import 'notification_list_skeleton.dart';
-import '../../theme/app_colors.dart';
 
 /// 通知快捷面板控制器
 /// 侧栏模式：在 widget 树中渲染（低于路由层，新页面自然覆盖）
@@ -55,7 +56,6 @@ class NotificationQuickPanel {
         context: context,
         useRootNavigator: true,
         isScrollControlled: true,
-        showDragHandle: true,
         shape: RoundedSuperellipseBorder(
           borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
         ),
@@ -124,7 +124,6 @@ class _SidebarNotificationPanelState
   late Animation<double> _animation;
   late final ShortcutSurfaceBinding _shortcutSurfaceBinding;
   late final PredictiveBackOverlayHandler _predictiveBackHandler;
-  final ScrollController _scrollController = ScrollController();
   bool _wasVisible = false;
   DynamicContentSuspensionLease? _dynamicContentLease;
 
@@ -179,7 +178,6 @@ class _SidebarNotificationPanelState
     _shortcutSurfaceBinding.disposeDeferred();
     _releaseDynamicContentSuspension();
     _animController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -276,10 +274,15 @@ class _SidebarNotificationPanelState
       child: Column(
         children: [
           _NotificationHeader(
-            padding: EdgeInsets.fromLTRB(20, showRail ? 16 : 12, 12, 8),
-            onClose: NotificationQuickPanel.dismiss,
+            padding: EdgeInsets.fromLTRB(16, showRail ? 12 : 0, 8, 4),
+            onViewAll: () {
+              NotificationQuickPanel.dismiss();
+              Navigator.of(context, rootNavigator: true).push(
+                InteractionPageRoute(builder: (_) => const NotificationsPage()),
+              );
+            },
           ),
-          _NotificationBody(scrollController: _scrollController),
+          const _NotificationBody(),
         ],
       ),
     );
@@ -320,7 +323,6 @@ class _SidebarNotificationPanelState
                   ),
                   child: const SizedBox(
                     width: double.infinity,
-                    height: 28,
                     child: _DragHandle(),
                   ),
                 ),
@@ -489,22 +491,24 @@ class _ExcludeRRectClipper extends CustomClipper<Path> {
 }
 
 /// 手机模式 BottomSheet 面板
-/// 拖拽手柄
+/// 拖拽手柄（与 AppSheetScaffold 保持同一尺度）
 class _DragHandle extends StatelessWidget {
   const _DragHandle();
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.only(top: 12),
-        width: 32,
-        height: 4,
-        decoration: ShapeDecoration(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          shape: RoundedSuperellipseBorder(
-            borderRadius: context.shapes.borderRadius(2),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Container(
+          width: 32,
+          height: 4,
+          decoration: ShapeDecoration(
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(2),
+            ),
           ),
         ),
       ),
@@ -523,7 +527,6 @@ class _MobileNotificationPanel extends StatefulWidget {
 }
 
 class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
-  final ScrollController _scrollController = ScrollController();
 
   @override
   void didChangeDependencies() {
@@ -543,7 +546,6 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -564,12 +566,12 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
         height: height,
         child: Column(
           children: [
+            const _DragHandle(),
             _NotificationHeader(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-              onClose: NotificationQuickPanel.dismiss,
+              padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
               onViewAll: _openAllNotifications,
             ),
-            _NotificationBody(scrollController: _scrollController),
+            const _NotificationBody(),
           ],
         ),
       ),
@@ -581,18 +583,34 @@ class _MobileNotificationPanelState extends State<_MobileNotificationPanel> {
 class _NotificationHeader extends ConsumerWidget {
   const _NotificationHeader({
     required this.padding,
-    required this.onClose,
-    this.onViewAll,
+    required this.onViewAll,
   });
 
   final EdgeInsets padding;
-  final VoidCallback onClose;
-  final VoidCallback? onViewAll;
+
+  /// 打开完整通知页
+  final VoidCallback onViewAll;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final tab = ref.watch(notificationPanelTabProvider);
+    final countState = ref.watch(notificationCountStateProvider);
+    final siteTypes =
+        ref.watch(siteNotificationTypesProvider).value ?? const {};
+    final listAsync = ref.watch(
+      tab == NotificationPanelTab.all
+          ? recentNotificationsProvider
+          : categorizedNotificationsProvider(tab),
+    );
+    final listUnread = listAsync.value?.where((n) => !n.read).length ?? 0;
+    final badgeUnread = tab == NotificationPanelTab.all
+        ? countState.totalUnread
+        : (tab.unreadCount(siteTypes, countState.grouped) ?? 0);
+    final unreadCount = badgeUnread > 0 ? badgeUnread : listUnread;
+    final canMarkRead = unreadCount > 0;
+    final selectedColor = context.emphasis.selected;
 
     return Padding(
       padding: padding,
@@ -600,46 +618,157 @@ class _NotificationHeader extends ConsumerWidget {
         children: [
           Text(
             context.l10n.common_notification,
-            style: theme.textTheme.titleLarge,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+          if (unreadCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: ShapeDecoration(
+                color: selectedColor.withValues(alpha: 0.12),
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(9999),
+                ),
+              ),
+              child: Text(
+                unreadCount > 99 ? '99+' : '$unreadCount',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: selectedColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const Spacer(),
           IconButton(
-            onPressed: () async {
-              await ref
-                  .read(recentNotificationsProvider.notifier)
-                  .markAllAsRead();
-            },
+            onPressed: canMarkRead
+                ? () async {
+                    // 分类下只标记本分类，与网页通知面板一致
+                    final currentTab = ref.read(notificationPanelTabProvider);
+                    if (currentTab == NotificationPanelTab.all) {
+                      await ref
+                          .read(notificationCountStateProvider.notifier)
+                          .markAllNotificationsRead();
+                    } else {
+                      await ref
+                          .read(
+                            categorizedNotificationsProvider(
+                              currentTab,
+                            ).notifier,
+                          )
+                          .markAllAsRead();
+                    }
+                  }
+                : null,
             icon: const Icon(Symbols.done_all_rounded, size: 20),
             tooltip: context.l10n.notification_markAllRead,
             style: IconButton.styleFrom(
               foregroundColor: colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(width: 4),
-          TextButton(
-            onPressed:
-                onViewAll ??
-                () {
-                  onClose();
-                  Navigator.of(context, rootNavigator: true).push(
-                    InteractionPageRoute(
-                      builder: (_) => const NotificationsPage(),
-                    ),
-                  );
-                },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+          IconButton(
+            onPressed: onViewAll,
+            icon: const Icon(Symbols.open_in_full_rounded, size: 20),
+            tooltip: context.l10n.notification_viewAll,
+            style: IconButton.styleFrom(
+              foregroundColor: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 共用通知列表：顶部文字分类带未读数，左右滑动或点按切换
+class _NotificationBody extends ConsumerStatefulWidget {
+  const _NotificationBody();
+
+  @override
+  ConsumerState<_NotificationBody> createState() => _NotificationBodyState();
+}
+
+class _NotificationBodyState extends ConsumerState<_NotificationBody>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: NotificationPanelTab.values.length,
+    vsync: this,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController.addListener(() {
+      ref
+          .read(notificationPanelTabProvider.notifier)
+          .select(NotificationPanelTab.values[_tabController.index]);
+    });
+    Future.microtask(() {
+      ref
+          .read(notificationPanelTabProvider.notifier)
+          .select(NotificationPanelTab.all);
+      ref.invalidate(recentNotificationsProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  String _label(NotificationPanelTab tab) => switch (tab) {
+    NotificationPanelTab.all => context.l10n.common_all,
+    NotificationPanelTab.replies => context.l10n.notification_tabReplies,
+    NotificationPanelTab.likes => context.l10n.notification_tabLikes,
+    NotificationPanelTab.messages =>
+      context.l10n.notification_typePrivateMessage,
+    NotificationPanelTab.bookmarks => context.l10n.notification_tabBookmarks,
+    NotificationPanelTab.other => context.l10n.notification_tabOther,
+  };
+
+  static IconData _icon(NotificationPanelTab tab) => switch (tab) {
+    NotificationPanelTab.all => Symbols.notifications_rounded,
+    NotificationPanelTab.replies => Symbols.reply_rounded,
+    NotificationPanelTab.likes => Symbols.favorite_rounded,
+    NotificationPanelTab.messages => Symbols.mail_rounded,
+    NotificationPanelTab.bookmarks => Symbols.bookmark_rounded,
+    NotificationPanelTab.other => Symbols.more_horiz_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final siteTypes =
+        ref.watch(siteNotificationTypesProvider).value ?? const {};
+    final grouped = ref.watch(
+      notificationCountStateProvider.select((state) => state.grouped),
+    );
+
+    return Expanded(
+      child: Column(
+        children: [
+          // 常驻文字、选中显现图标，与资料页共用同一套栏目组件与动画
+          MenuTabBar<Never>(
+            controller: _tabController,
+            mode: MenuTabMode.label,
+            items: [
+              for (final tab in NotificationPanelTab.values)
+                MenuTabItem(
+                  label: _label(tab),
+                  icon: _icon(tab),
+                  badgeCount: tab.unreadCount(siteTypes, grouped),
+                ),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
               children: [
-                Text(
-                  context.l10n.common_viewAll,
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(width: 2),
-                Icon(
-                  Symbols.chevron_right_rounded,
-                  size: 18,
-                  color: colorScheme.onSurfaceVariant,
-                ),
+                for (final tab in NotificationPanelTab.values)
+                  _PanelNotificationList(tab: tab),
               ],
             ),
           ),
@@ -649,121 +778,88 @@ class _NotificationHeader extends ConsumerWidget {
   }
 }
 
-/// 共用通知列表
-class _NotificationBody extends ConsumerStatefulWidget {
-  const _NotificationBody({this.scrollController});
+/// 单个分类的通知列表，滑走后保留滚动位置
+class _PanelNotificationList extends ConsumerStatefulWidget {
+  const _PanelNotificationList({required this.tab});
 
-  final ScrollController? scrollController;
+  final NotificationPanelTab tab;
 
   @override
-  ConsumerState<_NotificationBody> createState() => _NotificationBodyState();
+  ConsumerState<_PanelNotificationList> createState() =>
+      _PanelNotificationListState();
 }
 
-class _NotificationBodyState extends ConsumerState<_NotificationBody> {
+class _PanelNotificationListState extends ConsumerState<_PanelNotificationList>
+    with AutomaticKeepAliveClientMixin {
   @override
-  void initState() {
-    super.initState();
-    Future.microtask(() {
-      ref.invalidate(recentNotificationsProvider);
-    });
-  }
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final notificationsAsync = ref.watch(recentNotificationsProvider);
+    super.build(context);
+    final provider = widget.tab == NotificationPanelTab.all
+        ? recentNotificationsProvider
+        : categorizedNotificationsProvider(widget.tab);
     final systemAvatarTemplate = ref
         .watch(systemUserAvatarTemplateProvider)
         .value;
-
-    return Expanded(
-      child: notificationsAsync.when(
-        data: (notifications) {
-          final blockedUsernames = ref.watch(
-            preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    return ref.watch(provider).when(
+      data: (notifications) {
+        final blockedUsernames = ref.watch(
+          preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+        );
+        final visibleNotifications = notifications
+            .where(
+              (notification) => !BlockedUserFilter.isBlockedNotification(
+                notification,
+                blockedUsernames,
+              ),
+            )
+            .toList(growable: false);
+        if (visibleNotifications.isEmpty) {
+          return AppEmptyState(
+            icon: const Icon(Symbols.notifications_rounded),
+            title: context.l10n.notification_empty,
           );
-          final visibleNotifications = notifications
-              .where(
-                (notification) => !BlockedUserFilter.isBlockedNotification(
-                  notification,
-                  blockedUsernames,
-                ),
-              )
-              .toList(growable: false);
-          if (visibleNotifications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Symbols.notifications_rounded,
-                    size: 48,
-                    color: context.appColors.grey,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    context.l10n.notification_empty,
-                    style: TextStyle(color: context.appColors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView.builder(
-            controller: widget.scrollController,
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom,
-            ),
-            itemCount: visibleNotifications.length,
-            itemBuilder: (context, index) {
-              final notification = visibleNotifications[index];
-              return NotificationItem(
-                notification: notification,
-                systemAvatarTemplate: systemAvatarTemplate,
-                onTap: () {
-                  // 先派发跳转再处理面板:跳转在本帧同步读取
-                  // context/provider。siblings = 当前可见列表,大屏弹窗
-                  // 内可上一条/下一条快速切换。
-                  handleNotificationTap(
-                    context,
-                    ref,
-                    notification,
-                    siblings: visibleNotifications,
-                  );
-                  // 大屏(弹窗落点,自带通知列表侧栏)关面板;窄屏推的
-                  // 是全屏详情路由,sheet 留在栈里垫底——返回即回到
-                  // 面板继续看下一条,不用重新拉开。
-                  if (MasterDetailLayout.canShowBothPanesFor(context)) {
-                    NotificationQuickPanel.dismiss();
-                  }
-                },
-              );
-            },
-          );
-        },
-        loading: () => const NotificationListSkeleton(),
-        error: (error, _) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Symbols.error_rounded,
-                size: 48,
-                color: context.appColors.grey,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                context.l10n.common_loadFailed,
-                style: TextStyle(color: colorScheme.error),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => ref.invalidate(recentNotificationsProvider),
-                child: Text(context.l10n.common_retry),
-              ),
-            ],
+        }
+        return ListView.builder(
+          padding: EdgeInsets.only(
+            top: 4,
+            bottom: MediaQuery.viewPaddingOf(context).bottom + 8,
           ),
-        ),
+          itemCount: visibleNotifications.length,
+          itemBuilder: (context, index) {
+            final notification = visibleNotifications[index];
+            return NotificationItem(
+              notification: notification,
+              systemAvatarTemplate: systemAvatarTemplate,
+              showTopDivider: index > 0,
+              onTap: () {
+                // 先派发跳转再处理面板:跳转在本帧同步读取
+                // context/provider。siblings = 当前可见列表,大屏弹窗
+                // 内可上一条/下一条快速切换。
+                handleNotificationTap(
+                  context,
+                  ref,
+                  notification,
+                  siblings: visibleNotifications,
+                );
+                // 大屏(弹窗落点,自带通知列表侧栏)关面板;窄屏推的
+                // 是全屏详情路由,sheet 留在栈里垫底——返回即回到
+                // 面板继续看下一条,不用重新拉开。
+                if (MasterDetailLayout.canShowBothPanesFor(context)) {
+                  NotificationQuickPanel.dismiss();
+                }
+              },
+            );
+          },
+        );
+      },
+      loading: () => const NotificationListSkeleton(),
+      error: (error, stack) => ErrorView(
+        error: error,
+        stackTrace: stack,
+        onRetry: () => ref.invalidate(provider),
       ),
     );
   }

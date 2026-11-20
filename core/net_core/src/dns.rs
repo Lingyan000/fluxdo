@@ -184,6 +184,21 @@ impl CachedDohMessage {
 #[cfg(test)]
 mod ech_query_tests {
     use super::*;
+    #[test]
+    fn invalid_doh_configuration_does_not_echo_private_paths() {
+        for input in [
+            "http://resolver.example/private-key",
+            "resolver.example/private-key",
+            "https://[resolver.example]/private-key",
+        ] {
+            let error = DnsResolver::parse_doh_url(input).unwrap_err().to_string();
+            assert!(!error.contains("private-key"), "{error}");
+            assert!(!error.contains("resolver.example"), "{error}");
+        }
+        let valid = "https://resolver.example/private-key?token=secret";
+        assert_eq!(DnsResolver::parse_doh_url(valid).unwrap().to_string(), valid);
+    }
+
     use crate::ech_dns_policy::CLOUDFLARE_ECH_QUERY_NAME;
     use hickory_proto::{
         op::{Message, MessageType},
@@ -1131,21 +1146,15 @@ impl DnsResolver {
 
         let uri: Uri = doh_url
             .parse()
-            .map_err(|e| NetError::InvalidUrl(format!("Invalid DOH URL '{}': {}", doh_url, e)))?;
+            .map_err(|e| NetError::InvalidUrl(format!("Invalid DOH URL: {e}")))?;
         let scheme = uri
             .scheme_str()
-            .ok_or_else(|| NetError::InvalidUrl(format!("Missing URL scheme: {}", doh_url)))?;
+            .ok_or_else(|| NetError::InvalidUrl("Missing DOH URL scheme".into()))?;
         if scheme != "https" {
-            return Err(NetError::InvalidUrl(format!(
-                "Unsupported DOH URL scheme '{}': {}",
-                scheme, doh_url
-            )));
+            return Err(NetError::InvalidUrl("DOH URL requires HTTPS".into()));
         }
         if uri.host().is_none() {
-            return Err(NetError::InvalidUrl(format!(
-                "Missing host in DOH URL: {}",
-                doh_url
-            )));
+            return Err(NetError::InvalidUrl("Missing host in DOH URL".into()));
         }
         Ok(uri)
     }

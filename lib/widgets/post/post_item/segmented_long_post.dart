@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 import 'package:html/dom.dart' as dom;
@@ -57,12 +57,16 @@ class NewEngineLongPostData {
       // 先按顶层切,再把「大 blockquote」装饰下放拆成多片(让容器内部也跟随
       // sliver 虚拟化,见子包 BlockquoteChunkPos)。拆分后再判 chunk 数 → 单个
       // 超大引用块的帖子也能拆开,不会退回整段渲染。
-      final chunks = _splitLargeBlockquotes(HtmlChunker.chunk(preprocessed));
+      // 分块与脚注提取复用同一份 DOM，避免为长帖重复解析全文。
+      final document = html_parser.parseFragment(preprocessed);
+      final chunks = _splitLargeBlockquotes(
+        HtmlChunker.chunkDocument(html: preprocessed, document: document),
+      );
       if (chunks.length <= 1) return null;
       return LongPostParseData(
         preprocessed: preprocessed,
         chunks: chunks,
-        footnotesHtml: _extractFootnotesSection(preprocessed),
+        footnotesHtml: _extractFootnotesSection(document),
       );
     });
     if (parseData == null) return null;
@@ -182,13 +186,24 @@ class NewEngineLongPostData {
     return buf.toString();
   }
 
-  /// 抽出整帖脚注区 `<section class="footnotes">…</section>`(无则 null)。
-  static String? _extractFootnotesSection(String html) {
-    final m = RegExp(
-      r'<section[^>]*class="[^"]*footnotes[^"]*"[^>]*>[\s\S]*?</section>',
-      caseSensitive: false,
-    ).firstMatch(html);
-    return m?.group(0);
+  /// 收集整帖脚注区，兼容 section 包裹和裸 ol，供前面的正文分段取内容。
+  static String? _extractFootnotesSection(dom.DocumentFragment document) {
+    final sections = document.querySelectorAll(
+      'section.footnotes, ol.footnotes-list',
+    );
+    if (sections.isEmpty) return null;
+    final roots = sections.toSet();
+    return sections
+        .where((section) {
+          for (var parent = section.parent;
+              parent != null;
+              parent = parent.parent) {
+            if (roots.contains(parent)) return false;
+          }
+          return true;
+        })
+        .map((section) => section.outerHtml)
+        .join();
   }
 }
 

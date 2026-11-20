@@ -4,6 +4,7 @@ import 'package:hive_ce/hive.dart';
 
 import '../models/draft.dart';
 import '../storage/app_database.dart';
+import 'drafts_signal.dart';
 
 typedef LocalDraftBoxFactory = Future<Box<Map>> Function();
 
@@ -86,6 +87,7 @@ class LocalDraftStore {
       'synced': synced,
       'base_fingerprint': ?baseFingerprint,
     });
+    DraftsSignal.notifyLocalChanged();
   }
 
   /// 保存回执只能确认同一份内容；拉取云端时可替换指定的旧缓存。
@@ -185,12 +187,14 @@ class LocalDraftStore {
     final raw = box.get(key);
     if (raw?[_dataKey] != data.toJsonString()) return false;
     await box.delete(key);
+    DraftsSignal.notifyLocalChanged();
     return true;
   }
 
   Future<void> delete(String accountId, String draftKey) async {
     final box = await _boxFactory();
     await box.delete(_entryKey(accountId, draftKey));
+    DraftsSignal.notifyLocalChanged();
   }
 
   Future<void> _pruneExpired(Box<Map> box) async {

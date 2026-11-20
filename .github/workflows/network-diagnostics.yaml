@@ -1,0 +1,212 @@
+name: Network diagnostics (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '一次仅运行一个平台；windows-flutter 使用生产探针的 SPKI 对照'
+        type: choice
+        options: [android, windows, apple, windows-flutter]
+        default: android
+      protocol:
+        description: 'H3 是严格诊断：本地未校准会失败，不代表 TLS/H2 不可用；windows-flutter 固定 H3'
+        type: choice
+        options: [tcp, h3]
+        default: tcp
+permissions:
+  contents: read
+concurrency:
+  group: network-diagnostics-${{ github.ref }}-${{ inputs.platform }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      FLUXDO_NATIVE_PROBE_NETLOG: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+      - name: Verify dual loopback UDP relay
+        run: |
+          mkdir -p "${{ runner.temp }}/udp-test"
+          javac -d "${{ runner.temp }}/udp-test" tool/native_fingerprint/android/app/src/main/java/com/fluxdo/fingerprintprobe/UdpBridge.java tool/native_fingerprint/android/UdpBridgeSmoke.java
+          java -cp "${{ runner.temp }}/udp-test" com.fluxdo.fingerprintprobe.UdpBridgeSmoke | tee "${{ runner.temp }}/udp-test/result.json"
+      - name: Build native WebView host
+        run: gradle -p tool/native_fingerprint/android :app:assembleDebug
+      - name: Build Core diagnostic collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install tool/native_fingerprint/android/app/build/outputs/apk/debug/app-debug.apk
+            chmod +x tool/native_fingerprint/android_driver.py
+            python tool/native_fingerprint/run.py --platform android ${{ inputs.protocol == 'h3' && '--production-h3 --qpack-scenarios' || '' }} --output "${{ runner.temp }}/native-fingerprint"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-production-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/udp-test/result.json
+            ${{ runner.temp }}/native-fingerprint/**/*.json
+            ${{ runner.temp }}/native-fingerprint/**/*.log
+            ${{ runner.temp }}/native-fingerprint/**/*.stdout
+            ${{ runner.temp }}/native-fingerprint/**/*.stderr
+          retention-days: 7
+    if: inputs.platform == 'android'
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: ilammy/setup-nasm@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build native WebView2 host
+        run: dotnet build tool/native_fingerprint/windows/Probe.csproj -c Release
+      - name: Build Core diagnostic collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Compare native WebView2 and Windows Core
+        run: |
+          $arguments = @('--platform', 'windows', '--output', "$env:RUNNER_TEMP/native-fingerprint")
+          if ('${{ inputs.protocol }}' -eq 'h3') { $arguments += @('--production-h3', '--qpack-scenarios') }
+          python tool/native_fingerprint/run.py @arguments
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-production-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/**/*.json
+            ${{ runner.temp }}/native-fingerprint/**/*.log
+            ${{ runner.temp }}/native-fingerprint/**/*.stdout
+            ${{ runner.temp }}/native-fingerprint/**/*.stderr
+          retention-days: 7
+    if: inputs.platform == 'windows'
+  apple:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode matching the iOS 26 simulator
+        run: |
+          # runner 镜像预装 26.3，但默认仍为 16.4；显式固定已核对的稳定版。
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          key: apple-fingerprint-macos-15
+          cache-on-failure: true
+      - name: Prepare diagnostic build tools
+        run: |
+          command -v cmake || brew install cmake
+          echo "LIBCLANG_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+          chmod +x tool/apple_fingerprint/ios_driver.py
+          chmod +x tool/apple_fingerprint/mac_driver.py
+      - name: Build production core diagnostic
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Run macOS and iOS native WKWebView scenarios
+        run: python3 tool/apple_fingerprint/run.py --output "$RUNNER_TEMP/apple-fingerprint" --ios-version 26.2 ${{ inputs.protocol == 'h3' && '--production-h3 --qpack-scenarios' || '' }}
+      - name: Upload raw diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-production-h3-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/apple-fingerprint/**/*.json
+            ${{ runner.temp }}/apple-fingerprint/**/*.log
+            ${{ runner.temp }}/apple-fingerprint/**/*.stdout
+            ${{ runner.temp }}/apple-fingerprint/**/*.stderr
+            ${{ runner.temp }}/apple-fingerprint/*.png
+          if-no-files-found: warn
+          retention-days: 7
+    if: inputs.platform == 'apple'
+  windows-flutter:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core/net_core
+          cache-on-failure: true
+      - uses: ilammy/setup-nasm@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          channel: stable
+          cache: true
+      - name: Build production collector
+        run: cargo build --locked --manifest-path core/net_core/Cargo.toml --example fingerprint_probe --example h3_fingerprint_probe --example h3_production_client
+      - name: Build minimal Flutter host using production environment
+        run: |
+          python tool/native_fingerprint/windows_flutter/prepare.py "$env:RUNNER_TEMP/h3-flutter"
+          Push-Location "$env:RUNNER_TEMP/h3-flutter"
+          flutter pub get
+          flutter build windows --release
+          Pop-Location
+      - name: Compare live Flutter probe and production Core
+        run: |
+          python tool/native_fingerprint/run.py --platform windows --production-h3 --qpack-scenarios --force-quic-control --driver "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" --output "$env:RUNNER_TEMP/native-fingerprint"
+      - name: Reject a different certificate key
+        run: python tool/native_fingerprint/windows_flutter/negative.py "$env:RUNNER_TEMP/h3-flutter/build/windows/x64/runner/Release/h3_probe_host.exe" "$env:RUNNER_TEMP/native-fingerprint/wrong-pin"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-flutter-h3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-fingerprint/**/*.json
+            ${{ runner.temp }}/native-fingerprint/**/*.log
+            ${{ runner.temp }}/native-fingerprint/**/*.stdout
+            ${{ runner.temp }}/native-fingerprint/**/*.stderr
+            ${{ runner.temp }}/h3-flutter/production-source.json
+          retention-days: 7
+    if: inputs.platform == 'windows-flutter'

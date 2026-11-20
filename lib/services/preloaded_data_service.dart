@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show compute, visibleForTesting;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../constants.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
@@ -199,6 +199,17 @@ class PreloadedDataService {
           .toList();
     }
     return null;
+  }
+
+  /// 获取站点通知类型表（服务端类型名 → 类型 id，含已安装插件的类型）
+  Future<Map<String, int>> getNotificationTypes() async {
+    await _ensureLoaded();
+    final raw = _site?['notification_types'];
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        if (entry.value is int) '${entry.key}': entry.value as int,
+    };
   }
 
   /// 获取帖子操作类型（举报类型等）

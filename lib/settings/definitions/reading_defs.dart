@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -155,6 +155,26 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
             );
           },
         ),
+        CustomModel(
+          id: 'replyComposerMode',
+          title: l10n.reading_replyComposerMode,
+          builder: (context, ref) {
+            final current = ref.watch(
+              preferencesProvider.select((p) => p.replyComposerMode),
+            );
+            final l = context.l10n;
+            return ListTile(
+              leading: Icon(
+                Symbols.edit_note_rounded,
+                color: context.emphasis.accent,
+              ),
+              title: Text(l.reading_replyComposerMode),
+              subtitle: Text(_replyComposerModeLabel(l, current)),
+              trailing: const Icon(Symbols.chevron_right_rounded),
+              onTap: () => _showReplyComposerModePicker(context, ref, current),
+            );
+          },
+        ),
         PlatformConditionalModel(
           inner: SwitchModel(
             id: 'aiSwipeEntry',
@@ -174,6 +194,15 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
       icon: Symbols.gesture_rounded,
       items: [
         SwitchModel(
+          id: 'topicBarAutoHide',
+          title: l10n.reading_topicBarAutoHide,
+          subtitle: l10n.reading_topicBarAutoHideDesc,
+          icon: Symbols.unfold_less_rounded,
+          getValue: (ref) => ref.watch(preferencesProvider).topicBarAutoHide,
+          onChanged: (ref, v) =>
+              ref.read(preferencesProvider.notifier).setTopicBarAutoHide(v),
+        ),
+        SwitchModel(
           id: 'progressGesturesEnabled',
           title: l10n.progressGesture_enable,
           subtitle: l10n.progressGesture_enableDesc,
@@ -185,72 +214,23 @@ List<SettingsGroup> buildReadingGroups(BuildContext context) {
               .setProgressGesturesEnabled(v),
         ),
         CustomModel(
-          id: 'progressGestureSwipeLeft',
-          title: l10n.progressGesture_swipeLeft,
+          id: 'progressGestureDragToLocate',
+          title: l10n.progressGesture_dragToLocate,
+          subtitle: l10n.progressGesture_dragToLocateDesc,
           builder: (context, ref) {
             final enabled = ref.watch(
               preferencesProvider.select((p) => p.progressGesturesEnabled),
             );
-            final current = ref.watch(
-              preferencesProvider.select((p) => p.progressGestureSwipeLeft),
-            );
-            final meta = progressGestureActionMeta(context, current);
             return ListTile(
               enabled: enabled,
               leading: Icon(
-                Symbols.swipe_left_rounded,
+                Symbols.swap_horiz_rounded,
                 color: enabled
                     ? Theme.of(context).colorScheme.primary
                     : Theme.of(context).disabledColor,
               ),
-              title: Text(context.l10n.progressGesture_swipeLeft),
-              subtitle: Text(meta.label),
-              trailing: const Icon(Symbols.chevron_right_rounded),
-              onTap: enabled
-                  ? () => _showGestureActionPicker(
-                      context,
-                      ref,
-                      current,
-                      (a) => ref
-                          .read(preferencesProvider.notifier)
-                          .setProgressGestureSwipeLeft(a),
-                    )
-                  : null,
-            );
-          },
-        ),
-        CustomModel(
-          id: 'progressGestureSwipeRight',
-          title: l10n.progressGesture_swipeRight,
-          builder: (context, ref) {
-            final enabled = ref.watch(
-              preferencesProvider.select((p) => p.progressGesturesEnabled),
-            );
-            final current = ref.watch(
-              preferencesProvider.select((p) => p.progressGestureSwipeRight),
-            );
-            final meta = progressGestureActionMeta(context, current);
-            return ListTile(
-              enabled: enabled,
-              leading: Icon(
-                Symbols.swipe_right_rounded,
-                color: enabled
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).disabledColor,
-              ),
-              title: Text(context.l10n.progressGesture_swipeRight),
-              subtitle: Text(meta.label),
-              trailing: const Icon(Symbols.chevron_right_rounded),
-              onTap: enabled
-                  ? () => _showGestureActionPicker(
-                      context,
-                      ref,
-                      current,
-                      (a) => ref
-                          .read(preferencesProvider.notifier)
-                          .setProgressGestureSwipeRight(a),
-                    )
-                  : null,
+              title: Text(context.l10n.progressGesture_dragToLocate),
+              subtitle: Text(context.l10n.progressGesture_dragToLocateDesc),
             );
           },
         ),
@@ -456,6 +436,53 @@ void _showBookmarksOpenModePicker(
   ).then((selected) {
     if (selected != null) {
       ref.read(preferencesProvider.notifier).setBookmarksOpenMode(selected);
+    }
+  });
+}
+
+String _replyComposerModeLabel(AppLocalizations l, ReplyComposerMode mode) {
+  return switch (mode) {
+    ReplyComposerMode.auto => l.reading_replyComposerModeAuto,
+    ReplyComposerMode.quick => l.reading_replyComposerModeQuick,
+    ReplyComposerMode.full => l.reading_replyComposerModeFull,
+  };
+}
+
+void _showReplyComposerModePicker(
+  BuildContext context,
+  WidgetRef ref,
+  ReplyComposerMode current,
+) {
+  final l10n = context.l10n;
+  showInteractionDialog<ReplyComposerMode>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: Text(l10n.reading_replyComposerMode),
+      children: [
+        for (final mode in ReplyComposerMode.values)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, mode),
+            child: Row(
+              children: [
+                Icon(
+                  mode == current
+                      ? Symbols.radio_button_checked_rounded
+                      : Symbols.radio_button_unchecked_rounded,
+                  color: mode == current
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(_replyComposerModeLabel(l10n, mode))),
+              ],
+            ),
+          ),
+      ],
+    ),
+  ).then((selected) {
+    if (selected != null) {
+      ref.read(preferencesProvider.notifier).setReplyComposerMode(selected);
     }
   });
 }

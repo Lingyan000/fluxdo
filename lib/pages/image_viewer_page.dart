@@ -1,7 +1,7 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
@@ -11,6 +11,8 @@ import 'package:super_clipboard/super_clipboard.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/dynamic_content_suspension_service.dart';
 import '../services/image_decode_spec_memo.dart';
+import '../services/image_predecode_controller.dart';
+import '../services/svg_image_cache.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/image_save_utils.dart';
@@ -293,11 +295,18 @@ class _RouteFadeState extends State<_RouteFade> {
 }
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
-    with TickerProviderStateMixin, DoubleTapZoomMixin {
+    with TickerProviderStateMixin, DoubleTapZoomMixin, WidgetsBindingObserver {
   late int currentIndex;
-  bool _isSaving = false;
-  bool _isSharing = false;
-  bool _showUI = true;
+  final _predecoder = ImagePredecodeController();
+  final _dismissOffset = ValueNotifier(Offset.zero);
+  // 工具栏在页面与飞行层间交接时延续点按显隐动画和按钮焦点。
+  final _controlsKey = GlobalKey();
+  Timer? _predecodeDelay;
+  int _pageDirection = 1;
+  bool _predecodePaused = false;
+  final _isSaving = ValueNotifier(false);
+  final _isSharing = ValueNotifier(false);
+  final _showUI = ValueNotifier(true);
 
   /// 系统栏是否被本页隐藏(沉浸模式)。退场起点据此提前恢复
   bool _systemUiHidden = false;
@@ -352,6 +361,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           initialScale: 1.0,
           inPageView: inPageView,
           initialAlignment: InitialAlignment.center,
+          hitTestBehavior: HitTestBehavior.opaque,
         ),
       ),
     );
@@ -398,56 +408,66 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       // 预测返回是 user gesture 转场,不开这个标记 Hero 不飞
       // (与所有源端 Hero 配对开启,见 hero_image/discourse_image 等)
       transitionOnUserGestures: true,
-      flightShuttleBuilder: !useFlightImage
-          ? (_, _, _, _, _) => child
-          : (flightContext, animation, direction, fromContext, toContext) {
-              // animation 为路由原始动画,值语义恒为「0=贴源,1=在查看器」。
-              //
-              // 何时需要 src 窗口随飞行插值:
-              // - cover 源(网格瓦片/圆形头像):源端是裁切展示,窗口要从
-              //   cover 张到 contain;
-              // - **放大态**(任何源):取景框要从「此刻看得见的那块」张回
-              //   完整图。这里若钉在 1,窗口永不张开 ⇒ 飞行全程都是放大态的
-              //   局部视图、落地才忽然完整(用户报的症状,contain 源尤其明显
-              //   因为它一直走的就是钉住分支)。
-              //
-              // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
-              // 比例在变,插值反而引入不必要的窗口动画。
-              final zoomed =
-                  HeroVisibilityController.instance.exitVisibleFraction != null;
-              // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
-              // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
-              final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
-                coverSource: coverSource,
-                zoomed: zoomed,
-              );
-              // 源端缩略图盒子的固定宽高比:push 时源在 from,pop(divert)时
-              // 沿用 push 建的 shuttle 仍是 from。cover 裁窗须按它算,不按飞行
-              // 途中变化的画布比例(否则两端完整、中间帧被裁,见
-              // CoverContainFlightImage.sourceAspect)。
-              final BuildContext srcContext =
-                  direction == HeroFlightDirection.pop
-                  ? toContext
-                  : fromContext;
-              double? sourceAspect;
-              final ro = srcContext.findRenderObject();
-              if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
-                sourceAspect = ro.size.width / ro.size.height;
-              }
-              return CoverContainFlightImage(
-                image: _thumbnailProvider(thumbUrl),
-                animation: needsProgress ? animation : kAlwaysCompleteAnimation,
-                radius: widget.heroSourceRadius,
-                circular: widget.heroSourceCircular,
-                // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
-                // Image(fit:cover) 的可见区域对齐,否则落地瞬间「裁切一条」
-                // 突变成完整图(聊天气泡因 clamp 夹高最明显)
-                coverSource: coverSource,
-                sourceAspect: sourceAspect,
-                fallback: child,
-              );
-            },
-      child: child,
+      // 飞行层接管工具栏，页面端只占位，避免两层半透明渐变叠加。
+      placeholderBuilder: (_, size, _) => SizedBox.fromSize(size: size),
+      flightShuttleBuilder: ViewerHeroForeground.wrapFlight(
+        !useFlightImage
+            ? (_, _, _, _, _) => child
+            : (flightContext, animation, direction, fromContext, toContext) {
+                // animation 为路由原始动画,值语义恒为「0=贴源,1=在查看器」。
+                //
+                // 何时需要 src 窗口随飞行插值:
+                // - cover 源(网格瓦片/圆形头像):源端是裁切展示,窗口要从
+                //   cover 张到 contain;
+                // - **放大态**(任何源):取景框要从「此刻看得见的那块」张回
+                //   完整图。这里若钉在 1,窗口永不张开 ⇒ 飞行全程都是放大态的
+                //   局部视图、落地才忽然完整(用户报的症状,contain 源尤其明显
+                //   因为它一直走的就是钉住分支)。
+                //
+                // 其余(contain 源且未放大)钉在 1:两端都是完整图,只有盒子
+                // 比例在变,插值反而引入不必要的窗口动画。
+                final zoomed =
+                    HeroVisibilityController.instance.exitVisibleFraction !=
+                    null;
+                // 判据抽成 ImageViewerPage.debugFlightNeedsProgress —— 产品
+                // 代码与测试读**同一个**实现,避免测试复刻逻辑变成自洽装置。
+                final needsProgress = ImageViewerPage.debugFlightNeedsProgress(
+                  coverSource: coverSource,
+                  zoomed: zoomed,
+                );
+                // 源端缩略图盒子的固定宽高比:push 时源在 from,pop(divert)时
+                // 沿用 push 建的 shuttle 仍是 from。cover 裁窗须按它算,不按飞行
+                // 途中变化的画布比例(否则两端完整、中间帧被裁,见
+                // CoverContainFlightImage.sourceAspect)。
+                final BuildContext srcContext =
+                    direction == HeroFlightDirection.pop
+                    ? toContext
+                    : fromContext;
+                double? sourceAspect;
+                final ro = srcContext.findRenderObject();
+                if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
+                  sourceAspect = ro.size.width / ro.size.height;
+                }
+                return CoverContainFlightImage(
+                  image: _thumbnailProvider(thumbUrl),
+                  animation: needsProgress
+                      ? animation
+                      : kAlwaysCompleteAnimation,
+                  radius: widget.heroSourceRadius,
+                  circular: widget.heroSourceCircular,
+                  // 贴源端窗口按源端展示方式算:cover 裁切展示时要与源端
+                  // Image(fit:cover) 的可见区域对齐,否则落地瞬间「裁切一条」
+                  // 突变成完整图(聊天气泡因 clamp 夹高最明显)
+                  coverSource: coverSource,
+                  sourceAspect: sourceAspect,
+                  fallback: child,
+                );
+              },
+      ),
+      child: ViewerHeroForeground(
+        foregroundBuilder: _buildHeroControls,
+        child: child,
+      ),
     );
   }
 
@@ -456,7 +476,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 解码这类图会产生 100ms+ 的同步纹理上传,独占 raster 线程期间全 app
   /// 掉帧(诊断实测单帧 raster 148ms、后续帧排队 300ms)。maxScale 4.0
   /// 的放大浏览下该上限内清晰度无感知差异。
-  ImageProvider _clampedViewerProvider(String url) {
+  ResizeImage _clampedViewerProvider(
+    String url, {
+    DownloadPriority priority = DownloadPriority.high,
+  }) {
     final view = View.of(context);
     final longestPx = (view.physicalSize.longestSide * 3)
         .clamp(2048.0, 8192.0)
@@ -466,7 +489,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         url,
         bucket: BlobImageCache.originalBucket,
         // 用户主动点开的大图,插到所有预建/预取前面
-        priority: DownloadPriority.high,
+        priority: priority,
       ),
       width: longestPx,
       height: longestPx,
@@ -474,26 +497,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 缩略图占位 provider:按帖内登记的解码参数原样重建 —— ImageCache 的
-  /// key 是 ResizeImageKey(内层 key + 宽高 + 策略),参数一致才能同步命中
-  /// 帖内那份还在屏的解码位图;裸 provider 是不同 key,Hero 转场帧会白付
-  /// 一次全量解码(原图 jpg/png 尤其疼)。未登记(非帖内入口)退回裸
-  /// provider,行为同旧。
+  /// 复用源图的实际 provider，包含头像 bucket、解码尺寸和自定义解码器。
   ImageProvider _thumbnailProvider(String url) {
-    // 头像 URL 走 avatarBucket:与页面头像(SmartAvatar)同 bucket 同
-    // key,占位/飞行纹理直接命中已解码缓存(否则 content bucket 视为
-    // 全新资源,首次飞行拿不到纹理退化为无插值)
+    final source = ImageDecodeSpecMemo.peek(url);
+    if (source != null) return source;
     if (url.contains('/user_avatar/')) {
       return discourseImageProvider(url, bucket: BlobImageCache.avatarBucket);
     }
-    final spec = ImageDecodeSpecMemo.peek(url);
-    if (spec == null) return discourseImageProvider(url);
-    return ResizeImage(
-      discourseImageProvider(url),
-      width: spec.$1,
-      height: spec.$2,
-      policy: ResizeImagePolicy.fit,
-    );
+    return discourseImageProvider(url);
   }
 
   /// 下滑关闭判定:惯性投影终点法。
@@ -520,9 +531,26 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         Offset(pageSize.width, pageSize.height).distance / 6;
   }
 
+  void _onSlidingPage(ExtendedImageSlidePageState slide) {
+    _dismissOffset.value = slide.offset;
+  }
+
+  double _dismissOpacity(Offset offset, Size pageSize) {
+    if (pageSize.height <= 0) return 1;
+    // 网络图只响应纵向关闭，内存图允许向任意方向拖出。
+    final distance = widget.imageBytes == null
+        ? offset.dy.abs() * 2
+        : offset.distance;
+    return (1 - distance / pageSize.height).clamp(0.0, 1.0);
+  }
+
+  Color _slideBackground(Offset offset, Size pageSize) =>
+      Colors.black.withValues(alpha: _dismissOpacity(offset, pageSize));
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // 图片查看器使用透明路由，底层页面仍会保持可见和Ticker活跃。
     // 查看大图期间暂停帖子动态内容，避免SVG动画与大图解码/缩放争抢
     // UI、raster和GPU；关闭查看器后由租约自动恢复。
@@ -556,6 +584,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       _navUserGesture = userGesture;
       _navUserGesture?.addListener(_onNavUserGestureChanged);
     }
+    _scheduleAdjacentPredecode();
   }
 
   /// 退场起点(按钮/程序化 pop):路由动画转 reverse 的第一帧,早于
@@ -567,7 +596,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 缩略图 Opacity 锁死在 0 ⇒ 飞行体撤走瞬间是空洞(黑闪)。详见
   /// [HeroVisibilityController.startPopping]。
   void _onRouteAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _scheduleAdjacentPredecode();
     if (status != AnimationStatus.reverse) return;
+    _cancelPredecode();
     _restoreSystemUIForExit();
     _publishExitFlightRect();
     HeroVisibilityController.instance.startPopping();
@@ -579,10 +610,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   void _onNavUserGestureChanged() {
     if (!(_route?.isCurrent ?? false)) return;
     if (_navUserGesture?.value == true) {
+      _cancelPredecode();
       _restoreSystemUIForExit();
       _publishExitFlightRect();
       HeroVisibilityController.instance.startPopping();
-    } else if (!_showUI && !_systemUiHidden) {
+    } else if (!_showUI.value && !_systemUiHidden) {
       // 手势取消、仍停留在查看器:回到沉浸
       _updateSystemUI();
     }
@@ -672,6 +704,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dismissOffset.dispose();
+    _showUI.dispose();
+    _isSaving.dispose();
+    _isSharing.dispose();
+    _predecodeDelay?.cancel();
+    _predecoder.dispose();
     HeroVisibilityController.instance.setExitFlightRect(null);
     _route?.animation?.removeStatusListener(_onRouteAnimationStatus);
     _navUserGesture?.removeListener(_onNavUserGestureChanged);
@@ -688,9 +727,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   void _toggleUI() {
-    setState(() {
-      _showUI = !_showUI;
-    });
+    _showUI.value = !_showUI.value;
     _updateSystemUI();
   }
 
@@ -707,15 +744,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   void _hideUI() {
-    if (!_showUI) return;
-    setState(() {
-      _showUI = false;
-    });
+    if (!_showUI.value) return;
+    _showUI.value = false;
     _updateSystemUI();
   }
 
   void _updateSystemUI() {
-    if (_showUI) {
+    if (_showUI.value) {
       _restoreSystemUI();
     } else {
       // 用 immersiveSticky 而非 manual+overlays:[]。
@@ -729,6 +764,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   Future<void> _restoreSystemUI() async {
+    // 未进入沉浸模式，或已在退场起点恢复时，不再切换系统栏模式。
+    // 多余的 manual → edgeToEdge 切换也会触发安全区变化；普通查看时
+    // 没有启用安全区冻结，会让底下的聊天输入栏在 dispose 后上下跳动。
+    if (!_systemUiHidden) return;
     _systemUiHidden = false;
     ImmersiveInsetsHold.release();
     // Flutter 3.41+ 引擎在 setSystemChromeEnabledSystemUIMode 的 EDGE_TO_EDGE
@@ -747,6 +786,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 预加载相邻图片
   void _preloadAdjacentImages() {
+    _scheduleAdjacentPredecode();
     final images = widget.galleryImages;
     if (images == null || images.length <= 1) return;
 
@@ -761,6 +801,55 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     for (final url in preloadUrls) {
       unawaited(BlobImageCache.precache(BlobImageCache.originalBucket, url));
     }
+  }
+
+  void _cancelPredecode() {
+    _predecodeDelay?.cancel();
+    _predecoder.cancel();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    _predecodePaused = true;
+    _cancelPredecode();
+  }
+
+  void _scheduleAdjacentPredecode() {
+    _cancelPredecode();
+    final images = widget.galleryImages;
+    if (_predecodePaused ||
+        images == null ||
+        _route?.isCurrent != true ||
+        _route?.animation?.status != AnimationStatus.completed) {
+      return;
+    }
+    final next = currentIndex + _pageDirection;
+    if (next < 0 || next >= images.length) return;
+    // 转场结束、翻页停稳后再解码，快速连续翻页只保留最终方向的一张。
+    _predecodeDelay = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted || _route?.isCurrent != true) return;
+      final controller = _galleryPageController;
+      if (controller != null &&
+          controller.hasClients &&
+          controller.position.isScrollingNotifier.value) {
+        _scheduleAdjacentPredecode();
+        return;
+      }
+      final provider = _clampedViewerProvider(
+        images[next],
+        priority: DownloadPriority.normal,
+      );
+      // 自定义动图/AVIF 解码器不参加静态图预解码。
+      final source = provider.imageProvider;
+      if (source is! BlobImageProvider) return;
+      unawaited(
+        _predecoder.prefetch(
+          provider: provider,
+          loadBytes: () => BlobImageCache.fetch(source.bucket, source.url),
+          configuration: createLocalImageConfiguration(context),
+        ),
+      );
+    });
   }
 
   /// 获取当前显示的图片 URL
@@ -779,9 +868,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 保存当前图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveCurrentImage() async {
-    if (_isSaving) return;
+    if (_isSaving.value) return;
 
-    setState(() => _isSaving = true);
+    _isSaving.value = true;
 
     try {
       // 使用缓存管理器获取图片字节（优先从缓存读取）
@@ -809,22 +898,22 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       }
     } finally {
       if (mounted) {
-        setState(() => _isSaving = false);
+        _isSaving.value = false;
       }
     }
   }
 
   /// 保存内存图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveMemoryImage() async {
-    if (_isSaving || widget.imageBytes == null) return;
-    setState(() => _isSaving = true);
+    if (_isSaving.value || widget.imageBytes == null) return;
+    _isSaving.value = true;
     try {
       await ImageSaveUtils.saveBytes(
         widget.imageBytes!,
         fileName: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
       );
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) _isSaving.value = false;
     }
   }
 
@@ -954,8 +1043,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 分享当前图片
   Future<void> _shareImage() async {
-    if (_isSharing) return;
-    setState(() => _isSharing = true);
+    if (_isSharing.value) return;
+    _isSharing.value = true;
 
     try {
       final imageUrl = _currentImageUrl;
@@ -980,7 +1069,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       }
     } finally {
       if (mounted) {
-        setState(() => _isSharing = false);
+        _isSharing.value = false;
       }
     }
   }
@@ -1026,14 +1115,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   state.pageSize,
                   SlideAxis.both,
                 ),
-            slidePageBackgroundHandler: (Offset offset, Size pageSize) {
-              double progress = offset.distance / (pageSize.height);
-              return Colors.black.withValues(
-                alpha: (1.0 - progress).clamp(0.0, 1.0),
-              );
-            },
-            child: Scaffold(
-              backgroundColor: Colors.transparent,
+            slidePageBackgroundHandler: _slideBackground,
+            onSlidingPage: _onSlidingPage,
+            child: _viewerScaffold(
               body: Stack(
                 children: [
                   GestureDetector(
@@ -1059,77 +1143,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       },
                     ),
                   ),
-                  IgnorePointer(
-                    ignoring: !_showUI,
-                    child: AnimatedOpacity(
-                      opacity: _showUI ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: Stack(
-                        children: [
-                          // Top Gradient for status bar visibility
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            height: 100,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.6),
-                                    Colors.transparent,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          Positioned(
-                            top: MediaQuery.of(context).padding.top + 10,
-                            right: 20,
-                            child: CircleAvatar(
-                              backgroundColor: Colors.black.withValues(
-                                alpha: 0.5,
-                              ),
-                              child: IconButton(
-                                icon: const Icon(
-                                  Symbols.close_rounded,
-                                  color: Colors.white,
-                                ),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: MediaQuery.of(context).padding.top + 10,
-                            left: 20,
-                            child: CircleAvatar(
-                              backgroundColor: Colors.black.withValues(
-                                alpha: 0.5,
-                              ),
-                              child: _isSaving
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: LoadingSpinner(
-                                        size: 20,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : IconButton(
-                                      icon: const Icon(
-                                        Symbols.save_alt_rounded,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed: _saveMemoryImage,
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  _buildControls(),
                 ],
               ),
             ),
@@ -1140,7 +1154,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
     final images = widget.galleryImages ?? [widget.imageUrl!];
     final bool isGallery = images.length > 1;
+    final heroTag = isGallery
+        ? _getHeroTagForIndex(currentIndex)
+        : widget.heroTag;
 
+    // 混合画廊翻到无 Hero 的页时也保留同一个 Overlay 和翻页控制器。
+    final hasHero =
+        widget.heroTag != null ||
+        (isGallery && (widget.heroTags?.isNotEmpty ?? false));
     return _wrapDesktopShortcuts(
       context,
       AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1159,16 +1180,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 state.pageSize,
                 SlideAxis.vertical,
               ),
-          // 只处理背景透明度，不干预关闭逻辑，让库自己处理 pop
-          slidePageBackgroundHandler: (Offset offset, Size pageSize) {
-            // 使用垂直偏移量计算背景透明度（与 slideAxis: vertical 匹配）
-            double progress = offset.dy.abs() / (pageSize.height / 2);
-            return Colors.black.withValues(
-              alpha: (1.0 - progress).clamp(0.0, 1.0),
-            );
-          },
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
+          slidePageBackgroundHandler: _slideBackground,
+          onSlidingPage: _onSlidingPage,
+          child: _viewerScaffold(
+            hasHero: hasHero,
             body: Stack(
               children: [
                 if (!isGallery)
@@ -1238,6 +1253,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         // 离场页重置缩放(与旧行为一致:PageView 不缓存
                         // 离屏页,离页即回初始状态)
                         _gestureControllers[currentIndex]?.reset();
+                        _pageDirection = index >= currentIndex ? 1 : -1;
                         setState(() {
                           currentIndex = index;
                         });
@@ -1266,16 +1282,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         return ValueListenableBuilder<int>(
                           valueListenable: _activeHeroPage,
                           builder: (context, activePage, _) {
-                            String? heroTag;
-                            if (index == activePage) {
-                              if (widget.heroTags != null &&
-                                  index < widget.heroTags!.length) {
-                                heroTag = widget.heroTags![index];
-                              } else if (index == widget.initialIndex &&
-                                  widget.heroTag != null) {
-                                heroTag = widget.heroTag;
-                              }
-                            }
+                            final heroTag = index == activePage
+                                ? _getHeroTagForIndex(index)
+                                : null;
 
                             return GestureImageView(
                               image: _clampedViewerProvider(url),
@@ -1291,7 +1300,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                               inPageView: true,
                               heroBuilder: heroTag != null
                                   ? (child) => _buildViewerHero(
-                                      tag: heroTag!,
+                                      tag: heroTag,
                                       thumbUrl: thumbUrl,
                                       child: child,
                                     )
@@ -1320,178 +1329,222 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     ),
                   ),
 
-                IgnorePointer(
-                  ignoring: !_showUI,
-                  child: AnimatedOpacity(
-                    opacity: _showUI ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Stack(
-                      children: [
-                        // Top Gradient for status bar visibility
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 100,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.6),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // 顶部指示器 (仅画廊模式)
-                        if (isGallery)
-                          Positioned(
-                            top: MediaQuery.of(context).padding.top + 15,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: ShapeDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  shape: RoundedSuperellipseBorder(
-                                    borderRadius: context.shapes.borderRadius(20),
-                                  ),
-                                ),
-                                child: Text(
-                                  "${currentIndex + 1} / ${images.length}",
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        // Close button
-                        Positioned(
-                          top: MediaQuery.of(context).padding.top + 10,
-                          right: 20,
-                          child: CircleAvatar(
-                            backgroundColor: Colors.black.withValues(
-                              alpha: 0.5,
-                            ),
-                            child: IconButton(
-                              icon: const Icon(
-                                Symbols.close_rounded,
-                                color: Colors.white,
-                              ),
-                              onPressed: () => Navigator.of(context).pop(),
-                            ),
-                          ),
-                        ),
-
-                        // Save button
-                        Positioned(
-                          top: MediaQuery.of(context).padding.top + 10,
-                          left: 20,
-                          child: CircleAvatar(
-                            backgroundColor: Colors.black.withValues(
-                              alpha: 0.5,
-                            ),
-                            child: _isSaving
-                                ? const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: LoadingSpinner(
-                                      size: 20,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : IconButton(
-                                    icon: const Icon(
-                                      Symbols.save_alt_rounded,
-                                      color: Colors.white,
-                                    ),
-                                    onPressed: _saveCurrentImage,
-                                  ),
-                          ),
-                        ),
-
-                        // Share button（Linux 上 share_plus 不支持分享文件）
-                        if (widget.enableShare && ShareUtils.canShareFiles)
-                          Positioned(
-                            top: MediaQuery.of(context).padding.top + 10,
-                            left: 70, // 保存按钮右侧 (20 + 40 + 10)
-                            child: CircleAvatar(
-                              backgroundColor: Colors.black.withValues(
-                                alpha: 0.5,
-                              ),
-                              child: _isSharing
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: LoadingSpinner(
-                                        size: 20,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : IconButton(
-                                      icon: const Icon(
-                                        Symbols.share_rounded,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed: _shareImage,
-                                    ),
-                            ),
-                          ),
-
-                        // 底部文件名栏
-                        if (_currentFilename != null &&
-                            _currentFilename!.isNotEmpty)
-                          Positioned(
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            child: Container(
-                              padding: EdgeInsets.only(
-                                left: 16,
-                                right: 16,
-                                top: 12,
-                                bottom:
-                                    MediaQuery.of(context).padding.bottom + 12,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.bottomCenter,
-                                  end: Alignment.topCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.6),
-                                    Colors.transparent,
-                                  ],
-                                ),
-                              ),
-                              child: Text(
-                                _currentFilename!,
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+                if (heroTag == null) _buildControls(),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _viewerScaffold({required Widget body, bool hasHero = false}) =>
+      Scaffold(
+        backgroundColor: Colors.transparent,
+        body: hasHero ? Overlay.wrap(child: body) : body,
+      );
+
+  Widget _buildHeroControls(bool inFlight) {
+    // 页面内的 Overlay 已经随路由淡入淡出。飞行时前景挂到 Navigator 的
+    // Overlay，同一帧复用路由正在使用的透明度，保持按钮与上下渐变连续。
+    final controls = Material(
+      type: MaterialType.transparency,
+      child: _buildControls(),
+    );
+    final route = _route;
+    if (!inFlight || route == null) return controls;
+    final fade = context.findAncestorStateOfType<_RouteFadeState>();
+    return RouteInputGate(
+      route: route,
+      child: FadeTransition(
+        opacity: fade?._opacity ?? kAlwaysCompleteAnimation,
+        child: controls,
+      ),
+    );
+  }
+
+  late final _controlChanges = Listenable.merge([
+    _showUI,
+    _isSaving,
+    _isSharing,
+    _activeHeroPage,
+  ]);
+
+  Widget _buildControls() => ListenableBuilder(
+    key: _controlsKey,
+    listenable: _controlChanges,
+    builder: (context, _) {
+      if (widget.imageBytes != null) {
+        return _buildControlBar(onSave: _saveMemoryImage);
+      }
+      return _buildControlBar(
+        onSave: _saveCurrentImage,
+        onShare: widget.enableShare && ShareUtils.canShareFiles
+            ? _shareImage
+            : null,
+        pageCount: widget.galleryImages?.length ?? 1,
+        filename: _currentFilename,
+      );
+    },
+  );
+
+  Widget _buildControlBar({
+    required VoidCallback onSave,
+    VoidCallback? onShare,
+    int pageCount = 1,
+    String? filename,
+  }) {
+    final padding = MediaQuery.paddingOf(context);
+    final pageSize = MediaQuery.sizeOf(context);
+    final shade = Colors.black.withValues(alpha: 0.6);
+    return ValueListenableBuilder<Offset>(
+      valueListenable: _dismissOffset,
+      builder: (context, offset, child) {
+        final opacity = _dismissOpacity(offset, pageSize);
+        return IgnorePointer(
+          ignoring: !_showUI.value || opacity == 0,
+          child: Opacity(opacity: opacity, child: child),
+        );
+      },
+      // 点按显隐有自己的淡入淡出；拖动和回弹直接跟随图片的当前帧。
+      child: AnimatedOpacity(
+        opacity: _showUI.value ? 1 : 0,
+        duration: const Duration(milliseconds: 200),
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 100,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [shade, Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: padding.top + 6,
+              left: padding.left + 16,
+              right: padding.right + 16,
+              height: kMinInteractiveDimension,
+              child: NavigationToolbar(
+                middleSpacing: 4,
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _controlButton(
+                      Symbols.save_alt_rounded,
+                      onSave,
+                      busy: _isSaving.value,
+                    ),
+                    if (onShare != null) ...[
+                      const SizedBox(width: 2),
+                      _controlButton(
+                        Symbols.share_rounded,
+                        onShare,
+                        busy: _isSharing.value,
+                      ),
+                    ],
+                  ],
+                ),
+                middle: pageCount > 1
+                    ? IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: ShapeDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: context.shapes.borderRadius(20),
+                            ),
+                          ),
+                          child: Text(
+                            '${currentIndex + 1} / $pageCount',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
+                trailing: _controlButton(
+                  Symbols.close_rounded,
+                  () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+            if (filename != null && filename.isNotEmpty)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: EdgeInsets.fromLTRB(
+                      padding.left + 16,
+                      12,
+                      padding.right + 16,
+                      padding.bottom + 12,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [shade, Colors.transparent],
+                      ),
+                    ),
+                    child: Text(
+                      filename,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 圆形底色保持 40，按钮本身留足 48 的点击范围。
+  Widget _controlButton(
+    IconData icon,
+    VoidCallback action, {
+    bool busy = false,
+  }) {
+    return SizedBox.square(
+      dimension: kMinInteractiveDimension,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.black.withValues(alpha: 0.5),
+          ),
+          Positioned.fill(
+            child: IconButton(
+              onPressed: busy ? null : action,
+              icon: busy
+                  ? const LoadingSpinner(size: 16, color: Colors.white)
+                  : Icon(icon, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1597,7 +1650,7 @@ class _ImageDecodeFallbackState extends State<_ImageDecodeFallback> {
           return;
         }
         final svgString = SvgUtils.sanitize(raw);
-        final si = ScalableImage.fromSvgString(svgString, warnF: (_) {});
+        final si = await SvgImageCache.load(svgString);
         if (mounted) {
           setState(() {
             _svgSi = si;

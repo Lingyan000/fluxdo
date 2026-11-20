@@ -5,8 +5,8 @@
 //!   WebView，请求头按 WebView fetch 请求的顺序重排；
 //! - DoH 查询（[`crate::dns`]）：不带模板，用标准 BoringSSL 配置即可。
 //!
-//! 连接按「站点 + 模板版本」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
-//! 与浏览器的连接行为一致；模板换代（WebView 升级）后旧指纹的连接不再复用。
+//! 连接按「站点 + 模板的建连特征」复用：HTTP/2 多路复用一条连接，HTTP/1.1 走 keep-alive，
+//! 与浏览器的连接行为一致；WebView 升级使握手或 HTTP/2 设置变化后，旧指纹的连接不再复用。
 
 use std::{
     collections::{HashMap, HashSet},
@@ -80,6 +80,7 @@ const MAX_CONNECTIONS: usize = 64;
 static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 struct Conn {
+    _h3_endpoint: Option<Arc<rama::quic::Endpoint>>,
     id: u64,
     service: HttpClientService<Body>,
     version: Version,
@@ -87,6 +88,7 @@ struct Conn {
     resumed: bool,
     ech_applied: bool,
     ech_accepted: bool,
+    tls_backend: &'static str,
     _capacity: Option<OwnedSemaphorePermit>,
 }
 
@@ -250,12 +252,12 @@ impl PoolState {
         None
     }
 
-    /// 收下新建的连接。`generation` 为当前模板版本，旧版本的站点整体淘汰。
-    fn admit(&self, key: &str, conn: &Sender, generation: Option<u64>) {
+    /// 收下新建的连接。`identity` 为当前模板的连接身份，其他身份的站点整体淘汰。
+    fn admit(&self, key: &str, conn: &Sender, identity: Option<u64>) {
         let mut hosts = self.hosts.lock();
-        if let Some(generation) = generation {
-            // 模板换代后旧指纹的连接不再复用
-            let suffix = format!("#{generation}");
+        if let Some(identity) = identity {
+            // 模板的建连特征变了，旧指纹的连接不再复用
+            let suffix = format!("#{identity}");
             hosts.retain(|existing, _| existing.ends_with(&suffix));
         }
         let new = !hosts.contains_key(key);
@@ -471,10 +473,16 @@ impl HttpEgressClient {
         let secure = scheme == "https";
         let (host, port) = authority_of(&request)?;
         let template = self.templates.as_ref().and_then(|t| t.snapshot());
-        let key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
+        let h3_profile = template.as_ref().filter(|t| t.is_calibrated()).and_then(|_| {
+            self.templates.as_ref()?.h3.snapshot(request.headers().get("user-agent").and_then(|v|v.to_str().ok()))
+        });
+        let mut key = format!("{scheme}://{}", pool_key(template.as_ref(), &host, port));
+        if let Some((revision,_)) = &h3_profile { if let Some(at)=key.rfind('#') {key.insert_str(at,&format!("#h3:{revision}"));} }
         let target = Target {
             key: &key,
             template: template.as_ref(),
+            uses_browser_fingerprint: self.templates.is_some(),
+            h3_template: h3_profile.map(|(_,p)|p),
             host: &host,
             port,
             secure,
@@ -539,7 +547,7 @@ impl HttpEgressClient {
             ech_accepted: checkout.conn.ech_accepted,
             connect: started.elapsed(),
         };
-        let request = build_request(
+        let mut request = build_request(
             target.template,
             request,
             target.host,
@@ -547,6 +555,9 @@ impl HttpEgressClient {
             checkout.conn.version,
         )
         .map_err(Failure::Fatal)?;
+        if checkout.conn.version == Version::HTTP_3 && let Some(profile)=&target.h3_template {
+            profile.apply_request(&mut request);
+        }
         // 建连与连接池排队不消耗上传时限；完整上传阶段只启动一次，不按块续期。
         if let Some(started) = request
             .extensions()
@@ -743,18 +754,16 @@ impl HttpEgressClient {
         self.established.fetch_add(1, Ordering::Relaxed);
 
         // 切网清池之前开始的连接仍可完成原请求，但不能污染新连接池；
-        // 模板在建连期间换代时同理
-        let current_generation = self
+        // 模板的建连特征在建连期间变化时同理
+        let current_identity = self
             .templates
             .as_ref()
             .and_then(|t| t.snapshot())
-            .map(|current| current.generation);
-        let stale_generation = target
-            .template
-            .is_some_and(|template| current_generation != Some(template.generation));
-        if self.pool.epoch() == epoch && !stale_generation {
-            self.pool
-                .admit(target.key, &conn, target.template.map(|t| t.generation));
+            .map(|current| current.connection_identity());
+        let identity = target.template.map(FingerprintTemplate::connection_identity);
+        let stale_identity = identity.is_some() && current_identity != identity;
+        if self.pool.epoch() == epoch && !stale_identity {
+            self.pool.admit(target.key, &conn, identity);
         }
         if matches!(conn.version, Version::HTTP_2 | Version::HTTP_3) {
             return Ok(Checkout {
@@ -790,12 +799,14 @@ impl HttpEgressClient {
             started.elapsed().as_millis()
         );
         Ok(Arc::new(Conn {
+            _h3_endpoint: None,
             id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
             service: established.conn,
             version: Version::HTTP_11,
             resumed: false,
             ech_applied: false,
             ech_accepted: false,
+            tls_backend: "plaintext",
             _capacity: None,
         }))
     }
@@ -809,6 +820,7 @@ impl HttpEgressClient {
         let started = Instant::now();
         let server_host: Host = host.parse()?;
         let hello = template.map(|template| template.hello.clone());
+        let permute_extensions = template.is_some_and(|t| t.tls_permute_extensions == Some(true));
         let h2_params = template.map(|template| H2ClientContextParams {
             early_frames: Some(template.early_frames.clone()),
             headers_pseudo_order: Some(template.pseudo_order.clone()),
@@ -816,8 +828,13 @@ impl HttpEgressClient {
         });
         let exec = self.exec.clone();
         let sessions = self.sessions.clone();
+        #[cfg(target_os = "linux")]
+        let use_native = template.is_some_and(|template| template.is_calibrated())
+            && hello.as_ref().is_some_and(|hello| crate::linux_tls::matches(hello, permute_extensions));
         #[cfg(test)]
         let test_tls = self.test_tls.lock().clone();
+        #[cfg(all(test, target_os = "linux"))]
+        let use_native = use_native && test_tls.is_none();
 
         let attempt = move |stream: BoxStream, ech: Option<Vec<u8>>| {
             let server_host = server_host.clone();
@@ -830,6 +847,40 @@ impl HttpEgressClient {
             // 装箱成 `dyn Future + Send`：rama 的握手 future 内部跨 await 持有借用，
             // 留给自动推断时编译器无法证明它对所有生命周期 Send
             Box::pin(async move {
+                #[cfg(target_os = "linux")]
+                if use_native && ech.is_none() {
+                    let tls = tokio::time::timeout(EGRESS_TLS_TIMEOUT,
+                        crate::linux_tls::NativeTlsStream::connect(stream, &server_host.to_string(),
+                            port, hello.as_ref().expect("native profile checked"), sessions.native.clone()))
+                        .await.map_err(|_| HandshakeFailure::retry(NetError::Timeout))?
+                        .map_err(|e| match e {
+                            NetError::Certificate(_) => HandshakeFailure::abort(e),
+                            _ => HandshakeFailure::retry(e),
+                        })?;
+                    let resumed = tls.resumed();
+                    let version = match tls.alpn().as_deref() {
+                        Some(b"h2") => Version::HTTP_2,
+                        Some(b"http/1.0") => Version::HTTP_10,
+                        Some(b"http/1.1") | None => Version::HTTP_11,
+                        _ => return Err(HandshakeFailure::abort(NetError::Proxy("unsupported negotiated ALPN".into()))),
+                    };
+                    let stream = PlainHttpStream(Box::new(tls), Extensions::new());
+                    stream.extensions().insert(TargetHttpVersion(version));
+                    let input = ConnectRequest::new(HostWithPort::new(server_host, port));
+                    if version == Version::HTTP_2 && let Some(params) = h2_params {
+                        input.extensions().insert(params);
+                    }
+                    let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+                        http_connect(stream, input, exec)))
+                        .await.map_err(|e| HandshakeFailure::abort(NetError::Proxy(format!("Handshake task: {e}"))))?
+                        .map_err(|e| HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}"))))?;
+                    return Ok((Arc::new(Conn {
+                        _h3_endpoint: None,
+                        id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
+                        service: established.conn, version, resumed, ech_applied: false,
+                        ech_accepted: false, tls_backend: "GnuTLS", _capacity: None,
+                    }), version, false, resumed));
+                }
                 let sessions = sessions.for_peer(
                     &server_host.to_string(),
                     port,
@@ -841,6 +892,7 @@ impl HttpEgressClient {
                     server_host.clone(),
                     ech.as_deref(),
                     &sessions,
+                    permute_extensions,
                 )
                 .map_err(|e| {
                     HandshakeFailure::abort(NetError::Proxy(format!("Build egress: {e}")))
@@ -881,6 +933,11 @@ impl HttpEgressClient {
                 // 握手放进独立任务：rama 的 h2 握手 future 跨 await 持有借用，
                 // 直接留在这里会让编译器无法证明本 future 对所有生命周期 Send
                 let input = ConnectRequest::new(HostWithPort::new(server_host, port));
+                // 当前 rama 的普通 HTTP 握手从 ConnectRequest 读取 H2 参数，
+                // 只写到 TLS stream 会静默使用默认 SETTINGS / 窗口 / 伪头顺序。
+                if let Some(params) = tls.extensions().get_ref::<H2ClientContextParams>() {
+                    input.extensions().insert(params.clone());
+                }
                 // 普通 JoinHandle 在丢弃时会脱离外层继续运行；取消请求或
                 // 备用路径胜出时必须终止这个握手，避免遗留 socket/任务。
                 let established = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
@@ -894,12 +951,14 @@ impl HttpEgressClient {
                     HandshakeFailure::retry(NetError::Proxy(format!("HTTP handshake: {e}")))
                 })?;
                 let conn = Conn {
+                    _h3_endpoint: None,
                     id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
                     service: established.conn,
                     version,
                     resumed,
                     ech_applied,
                     ech_accepted,
+                    tls_backend: "BoringSSL",
                     _capacity: None,
                 };
                 Ok((Arc::new(conn), version, ech_applied, resumed))
@@ -918,12 +977,15 @@ impl HttpEgressClient {
                 e.with_context(&format!("Connect {host}:{port}"))
             })?;
         info!(
-            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}) in {}ms",
+            "Connection established for {host}:{port} ({version:?}, ECH: {ech_applied}, ECH accepted: {}, resumed: {resumed}, fingerprint: {}, h2_template: {}, tls_permute_extensions: {:?}, tls_backend: {}) in {}ms",
             sender.ech_accepted,
             template.map_or("standard", |template| template
                 .source
                 .id()
                 .unwrap_or(template.source.name())),
+            template.is_some(),
+            template.and_then(|t| t.tls_permute_extensions),
+            sender.tls_backend,
             started.elapsed().as_millis()
         );
         Ok(sender)
@@ -934,6 +996,9 @@ impl HttpEgressClient {
 struct Target<'a> {
     key: &'a str,
     template: Option<&'a FingerprintTemplate>,
+    /// 区分尚无样本的浏览器客户端与不使用指纹的普通/DoH 客户端。
+    uses_browser_fingerprint: bool,
+    h3_template: Option<Arc<crate::h3_template::Profile>>,
     host: &'a str,
     port: u16,
     secure: bool,
@@ -1035,10 +1100,17 @@ fn tls_config(
     server_host: Host,
     ech: Option<&[u8]>,
     sessions: &ClientSessions,
+    permute_extensions: bool,
 ) -> Result<(TlsConnectorData, bool), BoxError> {
     match hello {
         Some(hello) => {
-            let built = browser_tls::build(hello, server_host, ech, Some(sessions))?;
+            let built = browser_tls::build_with_permutation(
+                hello,
+                server_host,
+                ech,
+                Some(sessions),
+                permute_extensions,
+            )?;
             Ok((built.connector_data, built.ech_applied))
         }
         None => {
@@ -1077,11 +1149,11 @@ fn authority_of<B>(request: &Request<B>) -> Result<(String, u16), BoxError> {
 }
 
 fn pool_key(template: Option<&FingerprintTemplate>, host: &str, port: u16) -> String {
-    let generation = template.map_or(0, |template| template.generation);
+    let identity = template.map_or(0, FingerprintTemplate::connection_identity);
     if host.contains(':') && !host.starts_with('[') {
-        format!("[{host}]:{port}#{generation}")
+        format!("[{host}]:{port}#{identity}")
     } else {
-        format!("{host}:{port}#{generation}")
+        format!("{host}:{port}#{identity}")
     }
 }
 
@@ -1120,6 +1192,22 @@ fn build_request(
     port: u16,
     version: Version,
 ) -> Result<Request<Body>, BoxError> {
+    // 仅默认 fetch 用途复用采样权重；显式优先级优先。采样依赖属于旧连接，
+    // 不能复制旧流号：这里先挂根并保留权重与排他标记，由 HTTP/2 层在分配流号时
+    // 按 Chromium 规则改挂到同档在途的上一个流，形成先来先服务的链。
+    if version == Version::HTTP_2
+        && let Some(template) = template.filter(|t| t.is_calibrated())
+        && request.uri().scheme_str() == Some("https")
+        && template.user_agent.as_deref() == request.headers().get("user-agent").and_then(|v| v.to_str().ok())
+        && request.headers().get("sec-fetch-mode").is_some_and(|v| v == "cors")
+        && !request.headers().contains_key("priority")
+        && !request.extensions().contains::<rama::http::proto::h2::frame::StreamDependency>()
+        && !request.extensions().contains::<rama::http::proto::h2::frame::ReceivedStreamDependency>()
+        && let Some(priority) = template.fetch_h2_priority.as_ref().and_then(|p| p.dependency.as_ref())
+    {
+        request.extensions().insert(rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), priority.weight, priority.is_exclusive));
+    }
     let uri = request.uri();
     // 保留 wire 原样拼写转发，不做重新编码
     let path = uri
@@ -1161,7 +1249,69 @@ fn build_request(
         headers.remove(name);
     }
     if let Some(template) = template {
-        if let Some(value) = template
+        // UA 推导无法覆盖旧版 GREASE 品牌、Chromium/Chrome 品牌差异，
+        // 也无法判断自定义 WebView UA 是否抑制了 Client Hints。
+        // 只为同 UA 的 HTTPS 请求复用实际低熵采样；不伪造高熵提示。
+        if scheme == "https"
+            && template.user_agent.as_deref().is_some_and(|ua| {
+                headers.get("user-agent").and_then(|v| v.to_str().ok()) == Some(ua)
+            })
+            && let Some(hints) = &template.low_entropy_client_hints
+        {
+            if version == Version::HTTP_2 && template.is_calibrated()
+                && let Some(policy) = &template.hpack_indexing
+            {
+                for (name, value) in headers.iter_mut() {
+                    if crate::mirror::hpack_probe_candidate(name) && !value.is_sensitive()
+                        && let Some(index) = policy.get(name.as_str())
+                    {
+                        value.set_hpack_indexing(Some(*index));
+                    }
+                }
+            }
+            // 旧 WebKit 的真实 fetch 不发送 Fetch Metadata。仅对同 UA 的 HTTPS
+            // cors 请求移除调用方额外添加的这一组头；不从回环探针复制站点关系，
+            // 不改 Origin、Referer、Cookie 或 CSRF，也不改导航请求和未校准模板。
+            if template.is_calibrated()
+                && headers.get("sec-fetch-mode").is_some_and(|v| v == "cors")
+                && !template
+                    .fetch_header_order
+                    .iter()
+                    .any(|name| name.eq_ignore_ascii_case("sec-fetch-mode"))
+            {
+                let unsupported: Vec<_> = headers
+                    .keys()
+                    .filter(|name| name.as_str().starts_with("sec-fetch-"))
+                    .cloned()
+                    .collect();
+                for name in unsupported {
+                    headers.remove(name);
+                }
+            }
+            let supplied: Vec<_> = headers
+                .keys()
+                .filter(|name| crate::mirror::is_low_entropy_client_hint(name.as_str()))
+                .cloned()
+                .collect();
+            for name in supplied {
+                headers.remove(name);
+            }
+            for (name, value) in hints {
+                if crate::mirror::is_low_entropy_client_hint(name)
+                    && let (Ok(name), Ok(value)) = (
+                        HeaderName::from_bytes(name.as_bytes()),
+                        HeaderValue::from_str(value),
+                    )
+                {
+                    headers.insert(name, value);
+                }
+            }
+        }
+        if headers.contains_key("range") {
+            // 区间请求不能套用普通 fetch 的压缩列表；保留调用方的显式编码协商。
+            // 未指定时请求未压缩表示，避免解压后字节偏移与 Range 的表示不一致。
+            headers.entry("accept-encoding").or_insert(HeaderValue::from_static("identity"));
+        } else if let Some(value) = template
             .accept_encoding
             .as_deref()
             .and_then(|value| HeaderValue::from_str(value).ok())
@@ -1171,7 +1321,8 @@ fn build_request(
         let reordered = reorder_headers(headers, &template.fetch_header_order);
         *request.headers_mut() = reordered;
     }
-    debug!("Request {} {}", request.method(), request.uri());
+    // DoH 等服务可能把账号密钥放在路径内，诊断只记录方法和连接目标。
+    debug!(method = %request.method(), authority, "HTTP request prepared");
     Ok(request)
 }
 
@@ -1351,6 +1502,7 @@ mod tests {
                 Host::from_static("linux.do"),
                 ech,
                 &ClientSessions::default(),
+                false,
             )
             .unwrap();
             assert_eq!(applied, ech.is_some());
@@ -1376,7 +1528,7 @@ mod tests {
             .header("x-end-to-end", "preserved")
             .body(Body::empty())
             .unwrap();
-        let request = build_request(None, request, "localhost", 80, Version::HTTP_11).unwrap();
+        let mut request = build_request(None, request, "localhost", 80, Version::HTTP_11).unwrap();
         assert!(!request.headers().contains_key("x-local"));
         assert!(!request.headers().contains_key("x-another"));
         assert!(!request.headers().contains_key("connection"));
@@ -1432,6 +1584,60 @@ mod tests {
         server.abort();
         assert!(response.is_err(), "响应丢失不能把已执行的POST重放成成功");
         assert_eq!(seen.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn range_encoding_is_not_replaced_by_normal_fetch_template() {
+        let mut template = crate::presets::by_id("ios-safari18").unwrap();
+        template.accept_encoding=Some("gzip, deflate, br".into());
+        for version in [Version::HTTP_11,Version::HTTP_2,Version::HTTP_3] {
+            for encoding in [None,Some("identity"),Some("gzip")] {
+                let mut request=Request::builder().uri("https://example.test/file")
+                    .header("range","bytes=0-15").header("if-none-match","\"unchanged\"");
+                if let Some(value)=encoding {request=request.header("accept-encoding",value);}
+                let built=build_request(Some(&template),request.body(Body::empty()).unwrap(),"example.test",443,version).unwrap();
+                assert_eq!(built.headers()["accept-encoding"],encoding.unwrap_or("identity"));
+                assert_eq!(built.headers()["range"],"bytes=0-15");
+                assert_eq!(built.headers()["if-none-match"],"\"unchanged\"");
+            }
+        }
+    }
+
+    #[test]
+    fn sampled_hpack_policy_changes_only_conditional_header_encoding() {
+        use rama::http::proto::h2::hpack::{Encoder, Header};
+        for index in [false, true] {
+            let mut template = crate::presets::by_id("ios-safari18").unwrap();
+            template.user_agent = Some("Probe-UA".into());
+            template.tls_permute_extensions = Some(false);
+            template.low_entropy_client_hints = Some(Vec::new());
+            template.hpack_indexing = Some(std::collections::BTreeMap::from([
+                ("if-none-match".into(), index), ("x-csrf-token".into(), true),
+            ]));
+            let make = |scheme: &str, ua: &str, sensitive: bool| {
+                let mut request = Request::builder().uri(format!("{scheme}://example.test/topic"))
+                    .header("user-agent", ua).header("if-none-match", "\"etag\"")
+                    .header("x-csrf-token", "unchanged").body(Body::empty()).unwrap();
+                request.headers_mut().get_mut("if-none-match").unwrap().set_sensitive(sensitive);
+                build_request(Some(&template), request, "example.test", 443, Version::HTTP_2).unwrap()
+            };
+            let request = make("https", "Probe-UA", false);
+            assert_eq!(request.headers()["if-none-match"], "\"etag\"");
+            assert_eq!(request.headers()["if-none-match"].hpack_indexing(), Some(index));
+            assert_eq!(request.headers()["x-csrf-token"], "unchanged");
+            assert_eq!(request.headers()["x-csrf-token"].hpack_indexing(), None);
+            let mut encoder = Encoder::default();
+            for repeated in [false, true] {
+                let mut bytes = rama::bytes::BytesMut::new();
+                encoder.encode([Header::Field { name: Some(HeaderName::from_static("if-none-match")),
+                    value: request.headers()["if-none-match"].clone() }], &mut bytes);
+                if index { assert_eq!(bytes[0] & 128 != 0, repeated); }
+                else { assert_eq!(bytes[0] & 240, 0); }
+            }
+            for request in [make("http", "Probe-UA", false), make("https", "Other-UA", false), make("https", "Probe-UA", true)] {
+                assert_eq!(request.headers()["if-none-match"].hpack_indexing(), None);
+            }
+        }
     }
 
     #[test]
@@ -1512,7 +1718,7 @@ mod tests {
             let request = Request::builder().uri(url).body(Body::empty()).unwrap();
             let (host, port) = authority_of(&request).unwrap();
             assert_eq!(port, expected_port);
-            let request = build_request(None, request, &host, port, Version::HTTP_11).unwrap();
+            let mut request = build_request(None, request, &host, port, Version::HTTP_11).unwrap();
             assert_eq!(request.uri().to_string(), url);
         }
     }
@@ -1749,5 +1955,356 @@ mod tests {
             pool_key(None, "linux.do", 443),
             pool_key(None, "linux.do", 8443)
         );
+    }
+
+    #[test]
+    fn sampled_client_hints_override_guesses_only_for_matching_ua() {
+        let mut template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        template.user_agent = Some("Chrome/99.0".into());
+        for hints in [
+            vec![],
+            vec![("sec-ch-ua".into(), "\"Chromium\";v=\"99\"".into())],
+        ] {
+            template.low_entropy_client_hints = Some(hints.clone());
+            for ua in ["Chrome/99.0", "different"] {
+                let request = Request::builder()
+                    .uri("https://localhost/test")
+                    .header("user-agent", ua)
+                    .header("sec-ch-ua", "guessed")
+                    .header("sec-ch-ua-mobile", "?1")
+                    .header("sec-ch-ua-full-version", "requested-by-origin")
+                    .body(Body::empty())
+                    .unwrap();
+                let built =
+                    build_request(Some(&template), request, "localhost", 443, Version::HTTP_2)
+                        .unwrap();
+                assert_eq!(
+                    built.headers()["sec-ch-ua-full-version"],
+                    "requested-by-origin"
+                );
+                if ua == "different" {
+                    assert_eq!(built.headers()["sec-ch-ua"], "guessed");
+                } else {
+                    assert!(!built.headers().contains_key("sec-ch-ua-mobile"));
+                    assert_eq!(
+                        built
+                            .headers()
+                            .get("sec-ch-ua")
+                            .map(|v| v.to_str().unwrap()),
+                        hints.first().map(|(_, v)| v.as_str())
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_webkit_fetch_metadata_matches_sample_without_changing_security_headers() {
+        // 原生 iOS 15.5 云端采样：不发送 Fetch Metadata；不使用 UA 版本阈值。
+        let reference: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/ios15_5_wkwebview_probe.json"
+        ))
+        .unwrap();
+        for (same_ua, calibrated, supports_metadata, scheme, mode, should_remove) in [
+            (true, true, false, "https", "cors", true),
+            (false, true, false, "https", "cors", false),
+            (true, false, false, "https", "cors", false),
+            (true, true, true, "https", "cors", false),
+            (true, true, false, "http", "cors", false),
+            (true, true, false, "https", "navigate", false),
+        ] {
+            let mut template = reference.clone();
+            if !calibrated {
+                template.tls_permute_extensions = None;
+            }
+            if supports_metadata {
+                template.fetch_header_order.push("sec-fetch-mode".into());
+            }
+            let request = Request::builder()
+                .uri(format!("{scheme}://localhost/test"))
+                .header(
+                    "user-agent",
+                    if same_ua {
+                        reference.user_agent.as_deref().unwrap()
+                    } else {
+                        "another-client"
+                    },
+                )
+                .header("sec-fetch-mode", mode)
+                .header("sec-fetch-site", "same-origin")
+                .header("sec-fetch-dest", "empty")
+                .header("origin", "https://localhost")
+                .header("referer", "https://localhost/topics/1")
+                .header("x-csrf-token", "unchanged-token")
+                .header("cookie", "session=unchanged")
+                .body(Body::empty())
+                .unwrap();
+            let built =
+                build_request(Some(&template), request, "localhost", 443, Version::HTTP_2).unwrap();
+            for name in ["sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest"] {
+                assert_eq!(
+                    built.headers().contains_key(name),
+                    !should_remove,
+                    "{same_ua}/{calibrated}/{supports_metadata}/{scheme}/{mode}: {name}"
+                );
+            }
+            assert_eq!(built.headers()["origin"], "https://localhost");
+            assert_eq!(built.headers()["referer"], "https://localhost/topics/1");
+            assert_eq!(built.headers()["x-csrf-token"], "unchanged-token");
+            assert_eq!(built.headers()["cookie"], "session=unchanged");
+        }
+    }
+
+    #[tokio::test]
+    async fn sampled_h2_settings_and_pseudo_order_reach_the_wire() {
+        use rama::{
+            http::proto::h2::{PseudoHeaderOrder, frame::EarlyFrameCapture},
+            http::server::HttpServer,
+            service::service_fn,
+            tls::{
+                boring::server::TlsAcceptorLayer,
+                server::{ServerAuthData, TlsServerConfig},
+            },
+        };
+        use std::convert::Infallible;
+        let template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        // 原生 Android 样本会依赖旧连接中仍存在的流 5；生产回放保留属性并重挂根。
+        let priority = rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::from(5), 219, true);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(priority.clone()));
+        templates.observe_probe_fetch(&sample);
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("localhost"),
+            ),
+        )
+        .unwrap();
+        let mut trust = TlsClientConfig::new()
+            .with_server_name(Host::from_static("localhost"))
+            .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+            .unwrap();
+        trust.set_alpn([ApplicationProtocol::HTTP_2].into_iter().collect());
+        let tls = TlsServerConfig::new()
+            .with_server_auth(ServerAuthData::new(chain, key))
+            .with_alpn_http_auto();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let captured = Arc::new(parking_lot::Mutex::new(None));
+        let sink = captured.clone();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut http = HttpServer::auto(Executor::new());
+            http.h2_mut().set_observe_early_frames(true);
+            let http = http.service(service_fn(move |request: Request| {
+                *sink.lock() = Some((
+                    request
+                        .extensions()
+                        .get_ref::<EarlyFrameCapture>()
+                        .unwrap()
+                        .clone(),
+                    request
+                        .extensions()
+                        .get_ref::<PseudoHeaderOrder>()
+                        .unwrap()
+                        .clone(),
+                    request.extensions().get_ref::<rama::http::proto::h2::frame::ReceivedStreamDependency>().map(|p| p.0.clone()),
+                ));
+                async { Ok::<_, Infallible>(Response::new(Body::from("ok"))) }
+            }));
+            let _ = TlsAcceptorLayer::new(tls)
+                .into_layer(http)
+                .serve(ServiceInput::new(socket))
+                .await;
+        });
+        let client = HttpEgressClient::new(
+            Arc::new(EgressConnector::new(
+                None,
+                None,
+                None,
+                None,
+                Duration::from_secs(3),
+            )),
+            Some(templates),
+        );
+        *client.test_tls.lock() = Some(trust);
+        let response = client
+            .send(
+                Request::builder()
+                    .uri(format!("https://localhost:{port}/"))
+                    .header("user-agent", "priority-lab")
+                    .header("sec-fetch-mode", "cors")
+                    .body(Body::empty())
+                    .unwrap(),
+                Some(Duration::from_secs(5)),
+                Some(Duration::from_secs(5)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.version(), Version::HTTP_2);
+        let (frames, order, actual_priority) = captured.lock().clone().unwrap();
+        assert_eq!(actual_priority, Some(rama::http::proto::h2::frame::StreamDependency::new(
+            rama::http::proto::h2::frame::StreamId::zero(), priority.weight, priority.is_exclusive)));
+        let initial = |frames: &EarlyFrameCapture| {
+            serde_json::to_value(frames)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|f| f.get("Settings").is_none_or(|s| s["flags"] != 1))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(initial(&frames), initial(&template.early_frames));
+        assert_eq!(
+            serde_json::to_value(order).unwrap(),
+            serde_json::to_value(template.pseudo_order).unwrap()
+        );
+        // 镜像只能跨连接保留根依赖，不能把入站流 3 复制成当前流 3 的自依赖。
+        for (dependency_id, expected) in [(0u32, Some(31u8)), (3, None)] {
+            let request = Request::builder().uri(format!("https://localhost:{port}/"))
+                .header("user-agent", "priority-lab").header("sec-fetch-mode", "cors")
+                .body(Body::empty()).unwrap();
+            request.extensions().insert(rama::http::proto::h2::frame::ReceivedStreamDependency(
+                rama::http::proto::h2::frame::StreamDependency::new(
+                    rama::http::proto::h2::frame::StreamId::from(dependency_id), 31, false)));
+            let response = client.send(request, Some(Duration::from_secs(5)), Some(Duration::from_secs(5))).await.unwrap();
+            assert_eq!(response.status().as_u16(), 200);
+            assert_eq!(captured.lock().as_ref().unwrap().2.as_ref().map(|p| p.weight), expected);
+        }
+        client.reset_connections().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn concurrent_fetches_chain_priority_in_creation_order() {
+        use rama::{
+            http::proto::h2::frame::{ReceivedStreamDependency, StreamDependency, StreamId},
+            http::server::HttpServer,
+            service::service_fn,
+            tls::{
+                boring::server::TlsAcceptorLayer,
+                server::{ServerAuthData, TlsServerConfig},
+            },
+        };
+        use std::convert::Infallible;
+        let template: FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap();
+        let templates = Arc::new(FingerprintTemplates::new(None));
+        templates.record_hello(&template.hello);
+        templates.record_hello(&template.hello);
+        let sample = Request::builder().version(Version::HTTP_2)
+            .header("user-agent", "priority-lab").body(()).unwrap();
+        sample.extensions().insert(template.early_frames.clone());
+        sample.extensions().insert(template.pseudo_order.clone());
+        sample.extensions().insert(ReceivedStreamDependency(
+            StreamDependency::new(StreamId::from(5), 219, true)));
+        templates.observe_probe_fetch(&sample);
+        let (chain, key) = rama_crypto::cert::generate_server_auth(
+            rama_crypto::cert::GeneratedServerAuthConfig::generated_ca_for(
+                rama::net::address::Domain::from_static("localhost"),
+            ),
+        )
+        .unwrap();
+        let mut trust = TlsClientConfig::new()
+            .with_server_name(Host::from_static("localhost"))
+            .try_with_server_trust_anchors([chain.last().unwrap().clone()])
+            .unwrap();
+        trust.set_alpn([ApplicationProtocol::HTTP_2].into_iter().collect());
+        let tls = TlsServerConfig::new()
+            .with_server_auth(ServerAuthData::new(chain, key))
+            .with_alpn_http_auto();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (sink, gate) = (seen.clone(), release.clone());
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let http = HttpServer::auto(Executor::new()).service(service_fn(move |request: Request| {
+                let path = request
+                    .uri()
+                    .path()
+                    .map(|path| path.as_encoded_str().into_owned())
+                    .unwrap_or_default();
+                let slow = path == "/slow";
+                sink.lock().push((
+                    path,
+                    request.extensions().get_ref::<ReceivedStreamDependency>().map(|p| p.0.clone()),
+                ));
+                let gate = gate.clone();
+                async move {
+                    if slow {
+                        gate.notified().await;
+                    }
+                    Ok::<_, Infallible>(Response::new(Body::from("ok")))
+                }
+            }));
+            let _ = TlsAcceptorLayer::new(tls)
+                .into_layer(http)
+                .serve(ServiceInput::new(socket))
+                .await;
+        });
+        let client = Arc::new(HttpEgressClient::new(
+            Arc::new(EgressConnector::new(None, None, None, None, Duration::from_secs(3))),
+            Some(templates),
+        ));
+        *client.test_tls.lock() = Some(trust);
+        let get = |path: &'static str| {
+            let client = client.clone();
+            async move {
+                let response = client
+                    .send(
+                        Request::builder()
+                            .uri(format!("https://localhost:{port}{path}"))
+                            .header("user-agent", "priority-lab")
+                            .header("sec-fetch-mode", "cors")
+                            .body(Body::empty())
+                            .unwrap(),
+                        Some(Duration::from_secs(5)),
+                        Some(Duration::from_secs(5)),
+                    )
+                    .await
+                    .unwrap();
+                rama::http::body::util::BodyExt::collect(response.into_body()).await.unwrap();
+            }
+        };
+        let slow = tokio::spawn(get("/slow"));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while seen.lock().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        get("/fast").await;
+        release.notify_one();
+        slow.await.unwrap();
+        get("/after").await;
+        let seen = seen.lock().clone();
+        let dependency = |path: &str| {
+            seen.iter().find(|(p, _)| p == path).and_then(|(_, d)| d.clone()).unwrap()
+        };
+        // 在途的 /slow 是流 1：后发的 /fast 排他挂在它身下，而不是把它压到自己身下
+        assert_eq!(dependency("/slow"), StreamDependency::new(StreamId::zero(), 219, true));
+        assert_eq!(dependency("/fast"), StreamDependency::new(StreamId::from(1), 219, true));
+        // 前面的流都已结束，链从根重新开始
+        assert_eq!(dependency("/after"), StreamDependency::new(StreamId::zero(), 219, true));
+        client.reset_connections().await;
+        server.abort();
     }
 }

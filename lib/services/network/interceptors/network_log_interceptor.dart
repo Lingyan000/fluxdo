@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 
-import '../../log/log_writer.dart';
+import '../../cf_clearance_authority.dart';
+import '../../cf_challenge_logger.dart';
 import '../../log/log_policy.dart';
+import '../../log/log_writer.dart';
+import '../cookie/cookie_logger.dart';
 import '../adapters/adapter_log_metadata.dart';
 import '../core/net_core_http_adapter.dart';
 import '../flux_request_spec.dart';
@@ -13,6 +16,7 @@ import '../cookie/csrf_session_trace.dart';
 /// 网络请求日志拦截器，记录每个请求的 method/url/statusCode/duration
 class NetworkLogInterceptor extends Interceptor {
   static const String _startTimeKey = '_networkLog_startTime';
+  static const String _cfChallengeKey = '_networkLog_cfChallenge';
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
@@ -31,10 +35,13 @@ class NetworkLogInterceptor extends Interceptor {
       // isSilent（MessageBus 长轮询等后台请求）成功属于常态，
       // 记为 debug 避免高频条目淹没日志
       final isSilent = response.requestOptions.spec.isSilent;
+      // 过盾后的重试结果需与首次挑战关联，后台请求也保留这一条。
+      final recoveredCf =
+          response.requestOptions.extra[_cfChallengeKey] == true;
       _logRequest(
         options: response.requestOptions,
         statusCode: response.statusCode,
-        level: isSilent ? 'debug' : 'info',
+        level: isSilent && !recoveredCf ? 'debug' : 'info',
         responseExtra: response.extra,
         responseHeaders: response.headers,
       );
@@ -79,26 +86,49 @@ class NetworkLogInterceptor extends Interceptor {
     handler.next(err);
   }
 
-  void _logRequest({
+  /// 在恢复修改请求头和 attemptId 之前保存首次挑战的完整关联信息。
+  static void logCfChallenge(DioException error) {
+    final options = error.requestOptions;
+    options.extra[_cfChallengeKey] = true;
+    options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
+    options.extra.putIfAbsent('attemptId', LogPolicy.newTraceId);
+    _logRequest(
+      options: options,
+      statusCode: error.response?.statusCode,
+      level: 'warning',
+      event: 'cf_challenge_detected',
+      responseExtra: error.response?.extra,
+      responseHeaders: error.response?.headers,
+      error: error,
+    );
+  }
+
+  static void _logRequest({
     required RequestOptions options,
     required int? statusCode,
     required String level,
+    String event = 'request_complete',
     Map<String, dynamic>? responseExtra,
     Headers? responseHeaders,
     DioException? error,
   }) {
+    if (level == 'debug' && !LogWriter.verboseEnabled) return;
     final timer = options.extra[_startTimeKey] as Stopwatch?;
     final duration = timer?.elapsedMilliseconds;
 
     // URL 脱敏：不记录查询参数
     final uri = options.uri;
     final sanitizedUrl = '${uri.scheme}://${uri.host}${uri.path}';
+    final clearance = CfClearanceAuthority.extractFromCookieHeader(
+      options.headers[HttpHeaders.cookieHeader]?.toString() ??
+          options.headers['Cookie']?.toString(),
+    );
 
     final entry = <String, dynamic>{
       'timestamp': DateTime.now().toIso8601String(),
       'level': level,
       'type': 'request',
-      'event': 'request_complete',
+      'event': event,
       'traceId': options.extra['traceId'],
       'attemptId': options.extra['attemptId'],
       'coreRequestId': options.extra['coreRequestId'],
@@ -107,6 +137,11 @@ class NetworkLogInterceptor extends Interceptor {
       'url': sanitizedUrl,
       'statusCode': statusCode,
       'duration': duration,
+      'isSilent': options.spec.isSilent,
+      // 适配器输入头的摘要。WebView 的实际 Cookie 由浏览器存储决定。
+      'inputCfClearanceHash': CookieLogger.valueHash(clearance),
+      if (event == 'cf_challenge_detected')
+        'cfNetworkContext': CfChallengeLogger.networkContext(),
       if (DeadlineDio.elapsedMilliseconds(options) case final int total)
         'totalDurationMs': total,
       if (options.extra['_networkLog_preRequestMs'] case final int before)
@@ -117,10 +152,9 @@ class NetworkLogInterceptor extends Interceptor {
     if (uri.path == '/topics/timings') {
       entry.addAll(_timingsDiagnostics(options));
     }
-    // 写请求被拒（403）：记下发出的 cookie 名与响应侧的会话变化，
-    // 区分 CSRF/会话失配、运行时 cookie（_rt）被拒与 CF 拦截
-    if (statusCode == 403 && options.method.toUpperCase() != 'GET') {
-      entry.addAll(_rejectedWriteDiagnostics(options, responseHeaders));
+    // GET 和写请求的挑战都保留响应 Ray ID 与 Cookie 名称、长度。
+    if (statusCode == 403 || statusCode == 429) {
+      entry.addAll(_rejectedRequestDiagnostics(options, responseHeaders));
     }
     // 调用方标注的链路标签(csrf-refresh / otp-redeem / preload-home 等),
     // 让日志里能按链路而非仅按 URL 归因。
@@ -133,7 +167,7 @@ class NetworkLogInterceptor extends Interceptor {
       entry.addAll(extraFields.cast<String, dynamic>());
     }
     final csrfTrace = options.extra[CsrfSessionTrace.extraKey];
-    if (csrfTrace is Map) entry.addAll(csrfTrace.cast<String, dynamic>());
+    if (csrfTrace is Map) entry.addAll(CsrfSessionTrace.forLog(csrfTrace));
     final adapterName = getRequestAdapterLogName(options);
     if (adapterName != null) {
       entry['networkAdapter'] = adapterName;
@@ -168,7 +202,7 @@ class NetworkLogInterceptor extends Interceptor {
     LogWriter.instance.write(entry);
   }
 
-  Map<String, dynamic> _rejectedWriteDiagnostics(
+  static Map<String, dynamic> _rejectedRequestDiagnostics(
     RequestOptions options,
     Headers? responseHeaders,
   ) {
@@ -195,7 +229,7 @@ class NetworkLogInterceptor extends Interceptor {
     };
   }
 
-  Map<String, dynamic> _timingsDiagnostics(RequestOptions options) {
+  static Map<String, dynamic> _timingsDiagnostics(RequestOptions options) {
     final csrfHeader = options.headers['X-CSRF-Token']?.toString();
     final cookieHeader =
         options.headers[HttpHeaders.cookieHeader]?.toString() ??

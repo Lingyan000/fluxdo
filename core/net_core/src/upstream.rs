@@ -1,3 +1,4 @@
+use crate::egress::{CLIENT_KEEPALIVE, configure_client_socket};
 use crate::error::{NetError, Result};
 use crate::{BoxStream, UpstreamProxyConfig};
 use base64::Engine;
@@ -7,6 +8,7 @@ use shadowsocks::{
     config::{ServerAddr, ServerConfig, ServerType},
     context::Context,
     crypto::CipherKind,
+    net::{ConnectOpts, TcpSocketOpts},
     relay::socks5::Address,
 };
 use std::net::{IpAddr, SocketAddr};
@@ -97,12 +99,12 @@ pub async fn connect_http_tunnel(
 
     let authority = format!("{}:{}", target_host, target_port);
     info!(
-        "Connecting to upstream HTTP proxy {} for {}",
-        proxy.proxy_url(),
+        "Connecting to upstream HTTP proxy [redacted] for {}",
         authority
     );
 
     let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
+    configure_client_socket(&stream);
     let mut request = format!(
         "CONNECT {} HTTP/1.1\r\nHost: {}\r\nProxy-Connection: Keep-Alive\r\n",
         authority, authority
@@ -193,13 +195,13 @@ pub async fn connect_socks5_tunnel(
     }
 
     info!(
-        "Connecting to upstream SOCKS5 proxy {} for {}:{}",
-        proxy.proxy_url(),
+        "Connecting to upstream SOCKS5 proxy [redacted] for {}:{}",
         target_host,
         target_port
     );
 
     let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
+    configure_client_socket(&stream);
     let has_auth = proxy.auth_pair().is_some();
     let methods = if has_auth {
         vec![0x00, 0x02]
@@ -359,14 +361,21 @@ pub async fn connect_shadowsocks_tunnel(
     let target = Address::from((target_host.to_string(), target_port));
 
     info!(
-        "Connecting to upstream Shadowsocks proxy {} for {}:{} with cipher {}",
-        proxy.proxy_url(),
+        "Connecting to upstream Shadowsocks proxy [redacted] for {}:{} with cipher {}",
         target_host,
         target_port,
         cipher_name
     );
 
-    let stream = ProxyClientStream::connect(context, &server_config, target)
+    let opts = ConnectOpts {
+        tcp: TcpSocketOpts {
+            nodelay: true,
+            keepalive: CLIENT_KEEPALIVE,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let stream = ProxyClientStream::connect_with_opts(context, &server_config, target, &opts)
         .await
         .map_err(|error| {
             NetError::Proxy(format!("Upstream Shadowsocks CONNECT failed: {}", error))

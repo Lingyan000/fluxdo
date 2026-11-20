@@ -4,8 +4,7 @@
 /// 故这里断言的是「按钮存在 + 可用性随历史栈变化 + 点击真的改文本」。
 library;
 
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -31,11 +30,7 @@ Future<void> _pumpEditor(
         child: MaterialApp(
           locale: const Locale('zh'),
           navigatorKey: navigatorKey,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: Scaffold(
             body: MarkdownEditor(

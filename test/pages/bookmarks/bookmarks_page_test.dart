@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/slang/strings.g.dart';
@@ -21,6 +20,7 @@ import 'package:fluxdo/storage/bookmark_cache_dao.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_list_content.dart';
 import 'package:fluxdo/widgets/bookmark/bookmarks_workspace_tab_bar.dart';
+import 'package:fluxdo/widgets/common/emoji_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../storage/bookmark_hive_test_support.dart';
@@ -337,11 +337,7 @@ void main() {
           child: MaterialApp(
             locale: const Locale('zh'),
             navigatorKey: navigatorKey,
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-            ],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
             supportedLocales: AppLocaleUtils.supportedLocales,
             home: Scaffold(
               body: BookmarksPage(
@@ -404,10 +400,10 @@ void main() {
     expect(find.text('已打开 1 个'), findsNothing);
     expect(find.text('1'), findsOneWidget);
 
-    final titleText = tester.widget<Text>(
+    final titleText = tester.widget<EmojiText>(
       find.byKey(const ValueKey('bookmark-workspace-mobile-title-text')),
     );
-    expect(titleText.data, 'Alpha');
+    expect(titleText.text, 'Alpha');
     expect(titleText.maxLines, 1);
     expect(titleText.overflow, TextOverflow.ellipsis);
 
@@ -568,11 +564,7 @@ class _BookmarksPageTestApp extends StatelessWidget {
       child: MaterialApp(
         locale: const Locale('zh'),
         navigatorKey: navigatorKey,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: AppLocaleUtils.supportedLocales,
         home: Scaffold(
           body: BookmarksPage(
@@ -619,11 +611,7 @@ class _BookmarksPageLifecycleHostState
       child: MaterialApp(
         locale: const Locale('zh'),
         navigatorKey: navigatorKey,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: AppLocaleUtils.supportedLocales,
         home: Scaffold(
           body: _isVisible

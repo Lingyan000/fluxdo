@@ -1,8 +1,8 @@
-import 'package:common_ui/common_ui.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart' show RenderStack;
+import 'package:flutter/rendering.dart' show MatrixUtils, RenderStack;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
@@ -36,13 +36,12 @@ class TopicsFab extends ConsumerStatefulWidget {
 class _TopicsFabState extends ConsumerState<TopicsFab>
     with TickerProviderStateMixin {
   final _portal = OverlayPortalController();
-  final _link = LayerLink();
-  final _anchorKey = GlobalKey();
   final _tapGroup = Object();
   final _triggerFocus = FocusNode();
   final _menuFocus = FocusNode();
-  late final AnimationController _animation;
-  late final AnimationController _appearance;
+  late final AnimationController _appearanceScale;
+  late final AnimationController _appearanceAlpha;
+  late final Listenable _appearance;
   bool _present = false;
   bool _reduceMotion = false;
   bool _closeQueued = false;
@@ -54,16 +53,9 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
   void initState() {
     super.initState();
     // 访客没有主 FAB，也要在挂载阶段初始化，不能在 dispose 首次创建 ticker。
-    _animation = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-      reverseDuration: const Duration(milliseconds: 180),
-    )..addStatusListener(_onAnimationStatus);
-    _appearance = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-      reverseDuration: const Duration(milliseconds: 180),
-    );
+    _appearanceScale = AnimationController.unbounded(vsync: this);
+    _appearanceAlpha = AnimationController.unbounded(vsync: this);
+    _appearance = Listenable.merge([_appearanceScale, _appearanceAlpha]);
     _shortcutSurface = ShortcutSurfaceBinding(
       ref: ref,
       id: 'home.fabMenu',
@@ -91,7 +83,10 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     // isCurrentOf 会在 push/pop 时通知，普通重建和滚动不会重播入场。
     final routeVisible = ModalRoute.isCurrentOf(context) ?? true;
     final present = widget.isActive && routeVisible;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final reduceMotion =
+        !M3eFlags.of(context).enabled ||
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context);
     // IndexedStack 非活跃 tab 会禁用 ticker，反向动画无法推进。
     // 回来时从零入场，不能沿用冻结在 1 的旧进度而跳过 Appearing。
     if (!present && !TickerMode.valuesOf(context).enabled) {
@@ -99,20 +94,24 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     }
     if (present && _hiddenWhileTickerMuted) {
       _hiddenWhileTickerMuted = false;
-      _appearance.value = 0;
+      _appearanceScale.value = 0;
+      _appearanceAlpha.value = 0;
     }
     if (present != _present || reduceMotion != _reduceMotion) {
       _present = present;
       _reduceMotion = reduceMotion;
+      final target = present ? 1.0 : 0.0;
       if (reduceMotion) {
-        _appearance.value = present ? 1 : 0;
-      } else if (present) {
-        _appearance.forward();
+        _appearanceScale.value = target;
+        _appearanceAlpha.value = target;
       } else {
-        _appearance.reverse();
+        M3eMotion.fastSpatial.animateTo(_appearanceScale, target);
+        M3eMotion.fastEffects.animateTo(_appearanceAlpha, target);
       }
     }
-    if ((!present || !widget.canCreate) && _expanded) _queueHiddenMenuClose();
+    if ((!present || !widget.canCreate) && _portal.isShowing) {
+      _queueHiddenMenuClose();
+    }
   }
 
   void _queueHiddenMenuClose() {
@@ -121,8 +120,11 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     // OverlayPortal 不允许在 build/didUpdateWidget 中直接隐藏。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _closeQueued = false;
-      if (mounted && _expanded) {
+      if (!mounted) return;
+      if (_expanded) {
         _close(immediately: true, restoreFocus: false);
+      } else {
+        _onMenuDismissed();
       }
     });
   }
@@ -133,18 +135,15 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     _history = null;
     history?.remove();
     _shortcutSurface.disposeDeferred();
-    _animation.dispose();
-    _appearance.dispose();
+    _appearanceScale.dispose();
+    _appearanceAlpha.dispose();
     _triggerFocus.dispose();
     _menuFocus.dispose();
     super.dispose();
   }
 
-  void _onAnimationStatus(AnimationStatus status) {
-    // 仅在真正退场完成时移除；快速重新展开不会被旧的反向动画移除。
-    if (status == AnimationStatus.dismissed && !_expanded) {
-      _portal.hide();
-    }
+  void _onMenuDismissed() {
+    if (mounted && !_expanded && _portal.isShowing) setState(_portal.hide);
   }
 
   void _toggle() {
@@ -169,11 +168,6 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     }
     _shortcutSurface.register(context, onClose: _scheduleClose);
     _portal.show();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _animation.value = 1;
-    } else {
-      _animation.forward();
-    }
     _menuFocus.requestFocus();
     HapticFeedback.lightImpact();
   }
@@ -195,12 +189,7 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     setState(() => _expanded = false);
     _shortcutSurface.clearDeferred();
     if (restoreFocus) _triggerFocus.requestFocus();
-    if (immediately || MediaQuery.disableAnimationsOf(context)) {
-      _animation.value = 0;
-      _portal.hide();
-    } else {
-      _animation.reverse();
-    }
+    if (immediately || _reduceMotion) _portal.hide();
   }
 
   void _select(VoidCallback action) {
@@ -225,54 +214,53 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
         ? barVisibility
         : 1.0;
     _scrollVisibility = visibility;
-    if (_expanded && visibility < 1) _queueHiddenMenuClose();
+    if (_portal.isShowing && visibility < 1) _queueHiddenMenuClose();
     final media = MediaQuery.of(context);
     final barHeight = (media.padding.bottom - media.viewPadding.bottom).clamp(
       0.0,
       double.infinity,
     );
-    final scheme = Theme.of(context).colorScheme;
+    final refreshCovered = widget.canCreate && _portal.isShowing;
+    final refreshStyle = IconButton.styleFrom(
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+      minimumSize: const Size.square(48),
+    );
 
-    final controls = OverlayPortal(
-      controller: _portal,
-      overlayChildBuilder: _buildMenu,
-      child: TapRegion(
-        groupId: _tapGroup,
-        onTapOutside: (_) {
-          if (_expanded) _close(restoreFocus: false);
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // 展开时由菜单占据辅助按钮区域，保留槽位避免主按钮跳动。
-            if (showRefresh)
-              ExcludeFocus(
-                excluding: _expanded,
-                child: ExcludeSemantics(
-                  excluding: _expanded,
-                  child: IgnorePointer(
-                    ignoring: _expanded,
-                    child: Opacity(
-                      opacity: _expanded ? 0 : 1,
-                      child: SizedBox(
-                        width: 56,
-                        height: 48,
-                        child: Center(
-                          child: _appear(
-                            id: 'refresh',
-                            visibility: visibility,
-                            child: IconButton.filledTonal(
-                              key: const ValueKey('topics-refresh'),
-                              tooltip: context.l10n.common_refresh,
-                              style: IconButton.styleFrom(
-                                backgroundColor: scheme.surfaceContainerHigh,
-                                foregroundColor: scheme.onSurfaceVariant,
-                                minimumSize: const Size(48, 48),
-                              ),
-                              onPressed: widget.onRefresh,
-                              icon: const Icon(Symbols.refresh_rounded),
-                            ),
+    final controls = TapRegion(
+      groupId: _tapGroup,
+      onTapOutside: (_) {
+        if (_expanded) _close(restoreFocus: false);
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // 展开时由菜单占据辅助按钮区域，保留槽位避免主按钮跳动。
+          if (showRefresh)
+            ExcludeFocus(
+              excluding: refreshCovered,
+              child: ExcludeSemantics(
+                excluding: refreshCovered,
+                child: IgnorePointer(
+                  ignoring: refreshCovered,
+                  child: Opacity(
+                    opacity: refreshCovered ? 0 : 1,
+                    child: SizedBox(
+                      width: 56,
+                      height: 48,
+                      child: Center(
+                        child: _appear(
+                          id: 'refresh',
+                          visibility: visibility,
+                          child: IconButton.filledTonal(
+                            key: const ValueKey('topics-refresh'),
+                            tooltip: context.l10n.common_refresh,
+                            style:
+                                IconButtonTheme.of(context).style
+                                    ?.merge(refreshStyle) ??
+                                refreshStyle,
+                            onPressed: widget.onRefresh,
+                            icon: const Icon(Symbols.refresh_rounded),
                           ),
                         ),
                       ),
@@ -280,65 +268,36 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
                   ),
                 ),
               ),
-            if (widget.canCreate) ...[
-              if (showRefresh) const SizedBox(height: 12),
-              CompositedTransformTarget(
-                key: _anchorKey,
-                link: _link,
-                child: SizedBox(
-                  width: 56,
-                  height: 56,
-                  child: Center(
-                    child: _appear(
-                      id: 'create',
-                      visibility: visibility,
-                      child: AnimatedBuilder(
-                        animation: _animation,
-                        builder: (context, _) {
-                          final t = Curves.easeInOut.transform(
-                            _animation.value,
-                          );
-                          return SizedBox.square(
-                            dimension: 56 - 8 * t,
-                            child: FloatingActionButton(
-                              key: const ValueKey('topics-create-menu'),
-                              heroTag: null,
-                              focusNode: _triggerFocus,
-                              tooltip: _expanded
-                                  ? context.l10n.common_close
-                                  : context.l10n.topicsScreen_createTopic,
-                              elevation: _expanded ? 0 : 3,
-                              shape: RoundedSuperellipseBorder(
-                                borderRadius: context.shapes.borderRadius(
-                                  16 + 8 * t,
-                                ),
-                              ),
-                              backgroundColor: Color.lerp(
-                                scheme.primaryContainer,
-                                scheme.primary,
-                                t,
-                              ),
-                              foregroundColor: Color.lerp(
-                                scheme.onPrimaryContainer,
-                                scheme.onPrimary,
-                                t,
-                              ),
-                              onPressed: _toggle,
-                              child: Transform.rotate(
-                                angle: t * 0.7853981633974483,
-                                child: const Icon(Symbols.add_rounded),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+            ),
+          if (widget.canCreate) ...[
+            if (showRefresh) const SizedBox(height: 12),
+            OverlayPortal.overlayChildLayoutBuilder(
+              controller: _portal,
+              overlayChildBuilder: _buildMenu,
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: Center(
+                  child: _appear(
+                    id: 'create',
+                    visibility: visibility,
+                    child: M3eFabMenuButton(
+                      key: const ValueKey('topics-create-menu'),
+                      expanded: _expanded,
+                      focusNode: _triggerFocus,
+                      tooltip: _expanded
+                          ? context.l10n.common_close
+                          : context.l10n.topicsScreen_createTopic,
+                      icon: const Icon(Symbols.add_rounded),
+                      closeIcon: const Icon(Symbols.close_rounded),
+                      onPressed: _toggle,
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
     // 隐藏/退场开始就停用点击、键盘和无障碍，避免透明按钮抢焦点。
@@ -365,11 +324,11 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
       animation: _appearance,
       child: child,
       builder: (context, child) {
-        final progress = _appearance.value;
-        final scale = Curves.easeOutCubic.transform(progress) * visibility;
+        final opacity = _appearanceAlpha.value.clamp(0.0, 1.0) * visibility;
+        final scale = (0.2 + 0.8 * _appearanceScale.value) * visibility;
         return Opacity(
           key: ValueKey('topics-$id-appearance-opacity'),
-          opacity: progress * visibility,
+          opacity: opacity,
           child: Transform.scale(
             key: ValueKey('topics-$id-appearance-scale'),
             scale: _reduceMotion ? 1 : scale,
@@ -381,28 +340,29 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
     );
   }
 
-  Widget _buildMenu(BuildContext context) {
-    final anchor = _anchorKey.currentContext?.findRenderObject() as RenderBox?;
+  Widget _buildMenu(BuildContext context, OverlayChildLayoutInfo layout) {
     final media = MediaQuery.of(context);
-    final origin = anchor?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final anchor = MatrixUtils.transformPoint(
+      layout.childPaintTransform,
+      layout.childSize.topRight(Offset.zero),
+    );
     // 最近的 Stack 就是 master 格，不能用整窗宽度让菜单侵入导航栏。
     final pane = this.context.findAncestorRenderObjectOfType<RenderStack>();
-    final paneLeft = pane?.localToGlobal(Offset.zero).dx ?? 0;
-    final availableWidth = origin.dx + 56 - paneLeft - 16;
-    final availableHeight = origin.dy - media.viewPadding.top - 16;
+    final overlay = Overlay.of(this.context).context.findRenderObject();
+    final paneLeft =
+        pane?.localToGlobal(Offset.zero, ancestor: overlay).dx ?? 0;
+    final availableWidth = anchor.dx - paneLeft - 16;
+    final menuBottom = anchor.dy - 8;
+    final availableHeight = menuBottom - media.viewPadding.top - 16;
     final menuVisible = _present && _scrollVisibility == 1;
-    return Positioned.fill(
-      child: Visibility(
-        visible: menuVisible,
-        maintainState: true,
-        child: CompositedTransformFollower(
-          link: _link,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.topRight,
-          followerAnchor: Alignment.bottomRight,
-          offset: const Offset(0, -8),
-          child: Align(
-            alignment: Alignment.bottomRight,
+    return Stack(
+      children: [
+        Positioned(
+          right: layout.overlaySize.width - anchor.dx,
+          bottom: layout.overlaySize.height - menuBottom,
+          child: Visibility(
+            visible: menuVisible,
+            maintainState: true,
             child: TapRegion(
               groupId: _tapGroup,
               child: FocusScope(
@@ -416,47 +376,29 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
                     }
                     return KeyEventResult.ignored;
                   },
-                  child: AnimatedBuilder(
-                    animation: _animation,
-                    builder: (context, _) => IgnorePointer(
-                      ignoring: !_expanded,
-                      child: ExcludeFocus(
-                        excluding: !_expanded,
-                        child: ExcludeSemantics(
-                          excluding: !_expanded,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: availableWidth.clamp(0.0, 320.0),
-                              maxHeight: availableHeight.clamp(
-                                0.0,
-                                media.size.height,
-                              ),
-                            ),
-                            child: SingleChildScrollView(
-                              reverse: true,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  _buildItem(
-                                    index: 1,
-                                    label: context.l10n.topicsScreen_myDrafts,
-                                    icon: Symbols.drafts_rounded,
-                                    onPressed: widget.onOpenDrafts,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildItem(
-                                    index: 0,
-                                    label:
-                                        context.l10n.topicsScreen_createTopic,
-                                    icon: Symbols.edit_rounded,
-                                    onPressed: widget.onCreateTopic,
-                                  ),
-                                ],
-                              ),
-                            ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: availableWidth.clamp(0.0, 320.0),
+                      maxHeight: availableHeight.clamp(0.0, media.size.height),
+                    ),
+                    child: SingleChildScrollView(
+                      reverse: true,
+                      child: M3eFabMenuItems(
+                        expanded: _expanded,
+                        onDismissed: _onMenuDismissed,
+                        iconAlignment: IconAlignment.end,
+                        items: [
+                          M3eFabMenuItem(
+                            label: Text(context.l10n.topicsScreen_myDrafts),
+                            icon: const Icon(Symbols.drafts_rounded, size: 24),
+                            onPressed: () => _select(widget.onOpenDrafts),
                           ),
-                        ),
+                          M3eFabMenuItem(
+                            label: Text(context.l10n.topicsScreen_createTopic),
+                            icon: const Icon(Symbols.edit_rounded, size: 24),
+                            onPressed: () => _select(widget.onCreateTopic),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -465,53 +407,7 @@ class _TopicsFabState extends ConsumerState<TopicsFab>
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildItem({
-    required int index,
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    final t = Interval(
-      index * 0.2,
-      1,
-      curve: Curves.easeOutCubic,
-    ).transform(_animation.value);
-    final theme = Theme.of(context);
-    return Opacity(
-      opacity: t,
-      child: Transform.translate(
-        offset: Offset(0, (1 - t) * 16),
-        child: Transform.scale(
-          scaleX: 0.85 + 0.15 * t,
-          alignment: Alignment.centerRight,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.primaryContainer,
-              foregroundColor: theme.colorScheme.onPrimaryContainer,
-              minimumSize: const Size(0, 56),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.all(context.shapes.radius(9999)),
-              ),
-              textStyle: theme.textTheme.labelLarge,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            onPressed: () => _select(onPressed),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(child: Text(label)),
-                const SizedBox(width: 12),
-                Icon(icon, size: 24),
-              ],
-            ),
-          ),
-        ),
-      ),
+      ],
     );
   }
 }

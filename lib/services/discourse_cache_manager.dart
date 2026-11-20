@@ -46,7 +46,8 @@ bool _isAvifUrl(String url) {
 ///   绕 Skia multi_frame_codec 的 #85831 bug)
 /// - 其他静态格式 → BlobImageProvider(content bucket,零 sqlite 寻址)
 ///
-/// 需要限制解码尺寸时在外层包 decode-time 的 `ResizeImage(policy: fit)`。
+/// Flutter 静态解码路径可在外层包 `ResizeImage(policy: fit)` 限制尺寸。
+/// 原生动图不消费 Flutter 的 decode 回调；AVIF 使用自身的尺寸上限。
 ImageProvider discourseImageProvider(
   String url, {
   double scale = 1.0,

@@ -1,7 +1,7 @@
 import 'package:common_ui/common_ui.dart';
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,6 +39,7 @@ import 'package:ai_model_manager/ai_model_manager.dart';
 
 import 'topic_detail_page/topic_detail_page.dart';
 import 'drafts_page.dart';
+import 'following_feed_page.dart';
 import 'pending_posts_page.dart';
 import 'private_messages_page.dart';
 import 'chat/chat_list_page.dart';
@@ -61,6 +62,7 @@ import '../services/log/log_writer.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../theme/app_colors.dart';
+import '../widgets/common/emoji_text.dart';
 
 /// 个人页面
 class ProfilePage extends ConsumerStatefulWidget {
@@ -869,6 +871,14 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ),
         ),
         _buildOptionTile(
+          icon: Symbols.rss_feed_rounded,
+          title: context.l10n.followingFeed_profileEntry,
+          onTap: () => Navigator.push(
+            context,
+            InteractionPageRoute(builder: (_) => const FollowingFeedPage()),
+          ),
+        ),
+        _buildOptionTile(
           icon: Symbols.groups_rounded,
           title: context.l10n.userProfile_groups,
           onTap: () => Navigator.push(
@@ -994,6 +1004,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     required IconData icon,
     Color? iconColor,
     required String title,
+    String? subtitle,
     required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
@@ -1018,12 +1029,24 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
             ),
             Icon(
@@ -1437,15 +1460,16 @@ class _ProfileStatusContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (emoji?.isNotEmpty ?? false) ...[
-          if (RegExp(r'[^\x00-\x7F]').hasMatch(emoji!))
-            Text(emoji!, style: const TextStyle(fontSize: 18, height: 1))
-          else
-            PreferenceStatusEmoji(emoji!, size: 18),
+          PreferenceStatusEmoji(emoji!, size: 18),
           if (text.isNotEmpty) const SizedBox(width: 6),
         ],
         if (text.isNotEmpty)
           Flexible(
-            child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: EmojiText(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
       ],
     ),

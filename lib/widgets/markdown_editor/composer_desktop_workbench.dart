@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:app_icons/app_icons.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -71,7 +71,8 @@ class _ComposerDesktopWorkbenchState extends State<ComposerDesktopWorkbench>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduced =
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !M3eFlags.of(context).enabled;
     if (_presenting && !TickerMode.valuesOf(context).enabled) {
       // 切换预览时编辑器会 Offstage。结束被暂停的退场，不能留下

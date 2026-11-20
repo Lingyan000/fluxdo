@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
@@ -19,7 +19,7 @@ void main() {
   late List<MethodCall> calls;
   String? savedPath;
   Uint8List? savedBytes;
-  var hasAccess = true;
+  var hasPermission = true;
   var saveFails = false;
 
   setUp(() {
@@ -27,7 +27,7 @@ void main() {
     calls = [];
     savedPath = null;
     savedBytes = null;
-    hasAccess = true;
+    hasPermission = true;
     saveFails = false;
     PlatformUtils.debugDesktopOverride = false;
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -39,9 +39,9 @@ void main() {
     ) async {
       calls.add(call);
       switch (call.method) {
-        case 'hasAccess':
-        case 'requestAccess':
-          return hasAccess;
+        case 'hasPermission':
+        case 'requestPermission':
+          return hasPermission;
         case 'putImage':
           savedPath = (call.arguments as Map)['path'] as String;
           savedBytes = File(savedPath!).readAsBytesSync();
@@ -158,10 +158,10 @@ void main() {
   });
 
   testWidgets('Android 拒绝权限时不写临时文件或调用相册写入', (tester) async {
-    hasAccess = false;
+    hasPermission = false;
     final bytes = img.encodePng(img.Image(width: 1, height: 1));
     expect(await save(tester, bytes, 'photo.png'), isFalse);
-    expect(calls.map((call) => call.method), ['hasAccess', 'requestAccess']);
+    expect(calls.map((call) => call.method), ['hasPermission', 'requestPermission']);
     expect(tempDir.listSync(), isEmpty);
   });
 }

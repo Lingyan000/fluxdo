@@ -279,6 +279,7 @@ class WebViewSessionCookieRefreshService {
             level: result.ok ? 'info' : 'warning',
             extra: {
               'ok': result.ok,
+              if (result.phase != null) 'phase': result.phase,
               if (result.cfBlocked) 'cfBlocked': true,
               if (result.status != null) 'status': result.status,
               if (!result.ok) 'failureStreak': _failureStreak,
@@ -468,6 +469,7 @@ class WebViewSessionCookieRefreshService {
     bool Function()? isCancelled,
     Future<void>? cancellationSignal,
   }) async {
+    final stopwatch = Stopwatch()..start();
     if (isCancelled?.call() == true) {
       return const SessionBootstrapResult.failure(phase: 'cancelled');
     }
@@ -577,9 +579,17 @@ class WebViewSessionCookieRefreshService {
             );
     } on TimeoutException {
       debugPrint('[WebViewSessionSync] bootstrap 超时: reason=$reason');
+      _logBootstrapFailure(
+        reason, 'timeout', stopwatch.elapsedMilliseconds,
+        timeoutMs: timeout.inMilliseconds,
+      );
       return const SessionBootstrapResult.failure(phase: 'timeout');
     } catch (e) {
       debugPrint('[WebViewSessionSync] bootstrap 执行失败: reason=$reason $e');
+      _logBootstrapFailure(
+        reason, 'controller_error', stopwatch.elapsedMilliseconds,
+        errorType: e.runtimeType.toString(),
+      );
       return const SessionBootstrapResult.failure(phase: 'controller_error');
     } finally {
       try {
@@ -588,6 +598,27 @@ class WebViewSessionCookieRefreshService {
         // 旧平台实现可能没有 remove 能力；handler 名唯一，残留也不会串线。
       }
     }
+  }
+
+  // release 导出也必须能区分超时和控制器失败；不记录可能包含站点数据的异常正文。
+  void _logBootstrapFailure(
+    String reason, String phase, int elapsedMs, {
+    int? timeoutMs,
+    String? errorType,
+  }) {
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'warning',
+      'type': 'cookie_trace',
+      'event': 'webview_session_bootstrap_result',
+      'message': 'WebView session bootstrap 执行失败',
+      'reason': reason,
+      'ok': false,
+      'phase': phase,
+      'elapsedMs': elapsedMs,
+      'timeoutMs': ?timeoutMs,
+      'errorType': ?errorType,
+    });
   }
 
   /// 把 caller 提供的 plugin url 列表注入到 WebView 全局，bootstrap 脚本会

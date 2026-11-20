@@ -1,5 +1,6 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
 import 'package:app_icons/app_icons.dart';
 
 import '../../../../services/discourse_cache_manager.dart';
@@ -162,7 +163,7 @@ class _LazyVideoWidgetState extends State<_LazyVideoWidget> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // 缩略图 + 播放按钮
-              GestureDetector(
+              ContentTapTarget(
                 onTap: _loadEmbed,
                 child: Stack(
                   alignment: Alignment.center,
@@ -214,7 +215,7 @@ class _LazyVideoWidgetState extends State<_LazyVideoWidget> {
               ),
               // 标题栏（点击打开视频链接）
               if (attrs.title.isNotEmpty)
-                GestureDetector(
+                ContentTapTarget(
                   onTap: attrs.url.isNotEmpty
                       ? () => launchContentLink(context, attrs.url)
                       : null,

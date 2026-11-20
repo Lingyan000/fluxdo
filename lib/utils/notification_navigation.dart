@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_icons/app_icons.dart';
 import '../l10n/s.dart';
@@ -120,6 +120,20 @@ void _markNotificationRead(
   container
       .read(recentNotificationsProvider.notifier)
       .markAsRead(notification.id);
+  // 历史通知页按已读筛选分别缓存，只同步当前存活的那几份
+  for (final filter in NotificationReadFilter.values) {
+    final provider = notificationListProvider(filter);
+    if (container.exists(provider)) {
+      container.read(provider.notifier).markAsRead(notification.id);
+    }
+  }
+  for (final tab in NotificationPanelTab.values) {
+    if (tab == NotificationPanelTab.all) continue;
+    final provider = categorizedNotificationsProvider(tab);
+    if (container.exists(provider)) {
+      container.read(provider.notifier).markAsRead(notification.id);
+    }
+  }
   container
       .read(discourseServiceProvider)
       .markNotificationRead(notification.id)
@@ -393,7 +407,6 @@ class _NotificationPagerListState extends State<_NotificationPagerList> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final systemAvatarTemplate = widget.container
         .read(systemUserAvatarTemplateProvider)
         .value;
@@ -408,18 +421,12 @@ class _NotificationPagerListState extends State<_NotificationPagerList> {
             widget.locallyRead.contains(notification.id)) {
           notification = notification.copyWith(read: true);
         }
-        final selected = index == widget.currentIndex;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: selected
-                ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.45)
-                : Colors.transparent,
-          ),
-          child: NotificationItem(
-            notification: notification,
-            systemAvatarTemplate: systemAvatarTemplate,
-            onTap: () => widget.onSelect(index),
-          ),
+        return NotificationItem(
+          notification: notification,
+          systemAvatarTemplate: systemAvatarTemplate,
+          showTopDivider: index > 0,
+          selected: index == widget.currentIndex,
+          onTap: () => widget.onSelect(index),
         );
       },
     );

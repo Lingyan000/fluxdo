@@ -2,7 +2,7 @@ import 'package:common_ui/common_ui.dart';
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -191,10 +191,13 @@ class AdaptiveScaffold extends ConsumerWidget {
                       padding: EdgeInsets.only(bottom: dockInset),
                       child: Builder(
                         builder: (bodyContext) => MediaQuery(
-                          // 在 Scaffold 的 body 内读取，保留 extendBody 注入的底栏高度。
-                          // 系统安全区来自外层，避免 body 的 removePadding 将其清零。
                           data: browserDockContentMedia(
                             MediaQuery.of(bodyContext).copyWith(
+                              // 投影详情时导航已移出屏幕，只需避让系统安全区。
+                              // 列表仍使用 extendBody 注入的导航栏高度。
+                              padding: hideBottomNavigation
+                                  ? MediaQuery.paddingOf(context)
+                                  : null,
                               viewPadding: MediaQuery.viewPaddingOf(context),
                             ),
                             dockInset,
@@ -394,14 +397,19 @@ class _AnimatedBottomNav extends StatelessWidget {
 }
 
 /// 底栏的底与分界：有页面背景时垫背景副本；色块风格靠底栏底色区分，
-/// 描边 / 平铺风格底栏与页面同色，在顶边补一道细线。
-class _StyledBarEdge extends StatelessWidget {
+/// 描边 / 平铺风格底栏与页面同色，在顶边补一道细线。悬浮胶囊浮在内容
+/// 之上，自带玻璃材质与轮廓，整条槽位既不垫底也不画线。
+class _StyledBarEdge extends ConsumerWidget {
   const _StyledBarEdge({required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final floating = ref.watch(
+      preferencesProvider.select((p) => p.bottomNavFloating),
+    );
+    if (floating) return child;
     // 有页面背景时底栏透明（见主题），垫一层对齐的背景副本挡住下方内容
     final bar = PageBackgroundScope.isActive(context)
         ? PageBackdrop(child: child)

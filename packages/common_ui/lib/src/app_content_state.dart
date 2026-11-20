@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'route_motion_hold.dart';
 import 'ui_decor.dart';
@@ -116,7 +116,8 @@ class _AppEmptyStateState extends State<AppEmptyState>
     final route = ModalRoute.of(context);
     final skip =
         !widget.animate ||
-        MediaQuery.disableAnimationsOf(context) ||
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) ||
         !TickerMode.valuesOf(context).enabled ||
         PageMotionScope.of(context) ||
         (route?.animation?.isAnimating ?? false) ||

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 保留端点间距，把静止圆弧收窄到更靠近边缘的一侧。
 Path insetMiniAppArc(Path path, Size size, double progress, bool right) {

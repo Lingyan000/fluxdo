@@ -3,12 +3,14 @@ import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show ContentTapTarget;
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../../services/discourse_cache_manager.dart';
 import '../../../../services/image_decode_spec_memo.dart';
+import '../../../../utils/image_zoom_cursor.dart';
 import '../../../common/hero_image.dart';
 import '../image_utils.dart';
 import 'image_grid_builder.dart';
@@ -358,8 +360,7 @@ class _CarouselSlideState extends State<_CarouselSlide>
         ? heroTags[globalIndex]
         : 'carousel_${widget.imageData.src.hashCode}';
 
-    // 解码尺寸双向 cap(decode-time ResizeImage,engine 下采样,全格式
-    // 生效)。不要走 CachedNetworkImageProvider 的 maxWidth/maxHeight ——
+    // 解码尺寸双向 cap(decode-time ResizeImage,engine 下采样，支持 Flutter 解码的静态格式)。不要走 CachedNetworkImageProvider 的 maxWidth/maxHeight ——
     // 那是 flutter_cache_manager 的 resize 路径:webp 不在
     // supportedFileNames 里直接原图返回(等于没约束);jpg/png 则解码后
     // PNG 重编码再写第二份磁盘缓存,首次加载反而多付几百 ms。
@@ -367,7 +368,15 @@ class _CarouselSlideState extends State<_CarouselSlide>
     final cacheWidth = (MediaQuery.sizeOf(context).width * dpr).round();
     final cacheHeight = (widget.carouselHeight * dpr).round();
     // 登记解码参数:查看器缩略图占位同参重建 → 同 key 命中缓存
-    ImageDecodeSpecMemo.remember(url, cacheWidth, cacheHeight);
+    final provider = ImageDecodeSpecMemo.remember(
+      url,
+      ResizeImage(
+        discourseImageProvider(url),
+        width: cacheWidth,
+        height: cacheHeight,
+        policy: ResizeImagePolicy.fit,
+      ),
+    );
 
     final aspect = _imageAspect;
 
@@ -382,13 +391,11 @@ class _CarouselSlideState extends State<_CarouselSlide>
       heroTag: heroTag,
       style: _slideStyle,
       aspectRatio: aspect,
-      flightImage: discourseImageProvider(url),
+      flightImage: provider,
       onTap: () => widget.onTap(context, widget.index, url),
-      child: _buildImage(
-        url,
-        cacheWidth,
-        cacheHeight,
-        fillSlot: aspect == null,
+      child: MouseRegion(
+        cursor: imageZoomCursor,
+        child: _buildImage(provider, fillSlot: aspect == null),
       ),
     );
   }
@@ -401,19 +408,9 @@ class _CarouselSlideState extends State<_CarouselSlide>
     return w / h;
   }
 
-  Widget _buildImage(
-    String url,
-    int cacheWidth,
-    int cacheHeight, {
-    required bool fillSlot,
-  }) {
+  Widget _buildImage(ImageProvider provider, {required bool fillSlot}) {
     return Image(
-      image: ResizeImage(
-        discourseImageProvider(url),
-        width: cacheWidth,
-        height: cacheHeight,
-        policy: ResizeImagePolicy.fit,
-      ),
+      image: provider,
       // 盒子已由 AspectRatio 收成图片比例,此时 contain 与 fill 等效。
       // 但**必须用 contain**:AspectRatio 用的是 <img> 声明的宽高,而
       // Discourse 那个值偶尔与实际文件不符 —— 用 fill 会拉伸变形,
@@ -457,7 +454,7 @@ class _NavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
+    return ContentTapTarget(
       onTap: onTap,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
@@ -502,7 +499,7 @@ class _DotsIndicator extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(count, (index) {
         final isActive = index == currentIndex;
-        return GestureDetector(
+        return ContentTapTarget(
           onTap: () => onTap(index),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),

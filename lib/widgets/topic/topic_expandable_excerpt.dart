@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,9 +10,11 @@ import '../../pages/image_viewer_page.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/topic_excerpt_provider.dart';
+import '../../services/emoji_handler.dart';
 import '../../services/topic_excerpt_service.dart';
 import '../../services/toast_service.dart';
 import '../common/cached_image.dart';
+import '../common/emoji_text.dart';
 
 /// 列表内容预览：文字和图片分别控制，首楼补充请求单独授权。
 class TopicExpandableExcerpt extends ConsumerStatefulWidget {
@@ -97,6 +99,21 @@ class _TopicExpandableExcerptState
     ToastService.showSuccess(context.l10n.topicCardStyle_excerptCopied);
   }
 
+  /// 测量用文本:短代码按一个字宽占位(渲染时是行内 emoji 图)。
+  static String _measurementText(String text) {
+    final buffer = StringBuffer();
+    var last = 0;
+    for (final match in EmojiHandler.shortcodeMatches(text, inline: true)) {
+      buffer
+        ..write(text.substring(last, match.start))
+        ..write('◯');
+      last = match.end;
+    }
+    if (last == 0) return text;
+    buffer.write(text.substring(last));
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = widget.showText ? _excerptData?.text ?? '' : '';
@@ -128,7 +145,10 @@ class _TopicExpandableExcerptState
           measuredStyle = measuredStyle.copyWith(fontWeight: FontWeight.bold);
         }
         final painter = TextPainter(
-          text: TextSpan(text: compactText, style: measuredStyle),
+          text: TextSpan(
+            text: _measurementText(compactText),
+            style: measuredStyle,
+          ),
           textDirection: Directionality.of(context),
           maxLines: widget.maxCollapsedLines,
           textScaler: MediaQuery.textScalerOf(context),
@@ -147,8 +167,10 @@ class _TopicExpandableExcerptState
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onLongPress: () => _copyContent(text),
-                  child: Text(
+                  child: EmojiText(
                     _isExpanded ? text : compactText,
+                    // 摘要由 cooked 还原,短代码是 cooked 已判定的表情
+                    inline: true,
                     style: textStyle,
                     maxLines: _isExpanded ? null : widget.maxCollapsedLines,
                     overflow: _isExpanded
@@ -193,7 +215,10 @@ class _TopicExpandableExcerptState
               ),
           ],
         );
-        if (MediaQuery.disableAnimationsOf(context)) return content;
+        if (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context)) {
+          return content;
+        }
         return AnimatedSize(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeInOut,

@@ -1,7 +1,6 @@
-import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -79,11 +78,8 @@ void main() {
     return decoration.decoration as ShapeDecoration;
   }
 
-  test('支持 Impeller 时保留光学材质能力', () {
-    expect(
-      GlassSurface.opticalEdgeAvailable,
-      ui.ImageFilter.isShaderFilterSupported,
-    );
+  test('光学材质改用画笔 shader，各平台都支持', () {
+    expect(GlassSurface.opticalEdgeAvailable, isTrue);
   });
 
   testWidgets('不同位置与 DPR 均使用当前视图的稳定背景模糊', (tester) async {
@@ -98,21 +94,17 @@ void main() {
         const Offset(500, 700),
       ]) {
         await pumpGlass(tester, dpr: dpr, position: position);
-        expect(find.byType(BackdropFilter), findsOneWidget);
-        final backdrop = tester.widget<BackdropFilter>(
-          find.byType(BackdropFilter),
+        expect(find.byType(GlassBackdrop), findsOneWidget);
+        final backdrop = tester.widget<GlassBackdrop>(
+          find.byType(GlassBackdrop),
         );
         expect(
-          backdrop.filter,
-          ui.ImageFilter.blur(
-            sigmaX: GlassRecipe.navigation.blurSigmaPx / dpr,
-            sigmaY: GlassRecipe.navigation.blurSigmaPx / dpr,
-            tileMode: ui.TileMode.clamp,
-          ),
+          backdrop.blurSigma,
+          GlassRecipe.navigation.blurSigmaPx / dpr,
         );
-        // 确认滤镜仍被胶囊的局部裁切包住，而不是作用于整页。
+        // 确认背景仍被胶囊的局部裁切包住，而不是作用于整页。
         final clip = find.ancestor(
-          of: find.byType(BackdropFilter),
+          of: find.byType(GlassBackdrop),
           matching: find.byType(ClipRSuperellipse),
         );
         expect(clip, findsOneWidget);
@@ -122,9 +114,13 @@ void main() {
     }
   });
 
-  testWidgets('共用外壳只画一层方向性边缘光，色罩取主题的浮层中性色', (tester) async {
+  testWidgets('基础档共用外壳只画一层方向性边缘光，色罩取主题的浮层中性色', (tester) async {
     for (final brightness in Brightness.values) {
-      await pumpGlass(tester, brightness: brightness);
+      await pumpGlass(
+        tester,
+        brightness: brightness,
+        settings: const GlassSettings(level: GlassEffectLevel.basic),
+      );
       final surface = tester.widget<GlassSurface>(find.byType(GlassSurface));
       expect(surface.drawFallbackBorder, isFalse);
       final decoration = surfaceDecoration(tester);
@@ -167,8 +163,12 @@ void main() {
     expect(frame().shadows, isNull);
   });
 
-  testWidgets('独立玻璃保留默认细描边', (tester) async {
-    await pumpGlass(tester, framed: false);
+  testWidgets('基础档独立玻璃保留默认细描边', (tester) async {
+    await pumpGlass(
+      tester,
+      framed: false,
+      settings: const GlassSettings(level: GlassEffectLevel.basic),
+    );
     expect(
       (surfaceDecoration(tester).shape as OutlinedBorder).side.width,
       GlassRecipe.navigation.fallbackEdgeWidth,
@@ -177,14 +177,14 @@ void main() {
 
   testWidgets('关闭再开启模糊时仍走稳定路径', (tester) async {
     await pumpGlass(tester);
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.byType(GlassBackdrop), findsOneWidget);
 
     await pumpGlass(tester, enabled: false);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBackdrop), findsNothing);
     expect(surfaceDecoration(tester).color!.a, 1);
 
     await pumpGlass(tester);
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    expect(find.byType(GlassBackdrop), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

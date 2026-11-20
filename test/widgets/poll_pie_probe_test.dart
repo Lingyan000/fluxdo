@@ -1,8 +1,7 @@
 // 临时验证:饼图渲染链路(buildPoll → _PollWidget → _PiePainter)。
 // 验证点:1) 服务端形态 cooked(camelCase 属性)能读出 chartType;
 // 2) 已投票 + voters>0 + pie → CustomPaint 出现;3) voters=0 回落条形。
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -66,11 +65,7 @@ void main() {
       child: MaterialApp(
         locale: const Locale('zh'),
         navigatorKey: navigatorKey,
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [Locale('zh'), Locale('en')],
         home: Scaffold(
           body: Builder(

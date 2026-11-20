@@ -6,8 +6,7 @@
             <certificates src="system"/>
             <!-- Trust user-installed CAs (for MITM proxy) -->
             <certificates src="user"/>
-            <!-- Trust our embedded proxy CA -->
-            <certificates src="@raw/proxy_ca"/>
+            <!-- 本地代理证书仅由 WebView 的当前 Core CA 回调验证，不能成为上游信任锚点。 -->
         </trust-anchors>
     </base-config>
 </network-security-config>

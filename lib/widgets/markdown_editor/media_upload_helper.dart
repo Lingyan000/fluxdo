@@ -15,7 +15,7 @@ import 'package:dio/dio.dart';
 import '../../services/uploads/upload_progress.dart';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:mime/mime.dart' show lookupMimeType;
 import 'package:path_provider/path_provider.dart';
@@ -214,10 +214,9 @@ Future<String?> pickAndUploadMediaTag(
   BuildContext context, {
   required bool isAudio,
 }) async {
-  final picked = await FilePicker.platform.pickFiles(
+  final file = await FilePicker.pickFile(
     type: isAudio ? FileType.audio : FileType.video,
   );
-  final file = picked?.files.single;
   final path = file?.path;
   if (file == null || path == null || !context.mounted) return null;
   return uploadMediaFileAsTag(

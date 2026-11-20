@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +10,7 @@ import '../../utils/number_utils.dart';
 import '../../utils/platform_utils.dart';
 import '../../utils/responsive.dart';
 import '../common/category_tags_line.dart';
+import '../common/emoji_text.dart';
 import '../common/relative_time_text.dart';
 import '../common/smart_avatar.dart';
 import '../topic/painted_topic_card.dart';
@@ -45,6 +46,7 @@ TopicCardLayout obtainSearchPostLayout(
     width: cardWidth,
     theme: Theme.of(context),
     category: categoryId == null ? null : categoryMap?[categoryId],
+    emojiUrlOf: topicCardEmojiUrlResolver,
     statsAvailableWidth: cardWidth - 64,
   );
 }
@@ -185,7 +187,7 @@ class _SearchPostCardContent extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: _buildTopicTitle(post, topic, theme, titleStyle),
+                    child: _buildTopicTitle(context, post, topic, theme, titleStyle),
                   ),
                   if (post.isAiGenerated || post.postNumber > 1)
                     const SizedBox(width: 6),
@@ -226,7 +228,7 @@ class _SearchPostCardContent extends ConsumerWidget {
               // 摘要(支持搜索高亮,最多2行):Gmail snippet 位
               if (post.blurb.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                _buildBlurb(post.blurb, theme),
+                _buildBlurb(context, post.blurb, theme),
               ],
               const SizedBox(height: 8),
 
@@ -332,6 +334,7 @@ class _SearchPostCardContent extends ConsumerWidget {
   }
 
   Widget _buildTopicTitle(
+    BuildContext context,
     SearchPost post,
     SearchTopic? topic,
     ThemeData theme,
@@ -343,6 +346,7 @@ class _SearchPostCardContent extends ConsumerWidget {
     if (post.topicTitleHeadline != null &&
         post.topicTitleHeadline!.isNotEmpty) {
       return _buildHighlightedTitle(
+        context,
         post.topicTitleHeadline!,
         topic,
         theme,
@@ -351,7 +355,7 @@ class _SearchPostCardContent extends ConsumerWidget {
     }
 
     if (!topic.closed && !topic.archived) {
-      return Text(
+      return EmojiText(
         topic.title,
         style: titleStyle,
         maxLines: 2,
@@ -364,7 +368,7 @@ class _SearchPostCardContent extends ConsumerWidget {
         style: titleStyle,
         children: [
           ..._buildTitleStateIcons(topic, theme),
-          TextSpan(text: topic.title),
+          ...EmojiText.buildEmojiSpans(context, topic.title, titleStyle),
         ],
       ),
       maxLines: 2,
@@ -404,6 +408,7 @@ class _SearchPostCardContent extends ConsumerWidget {
 
   /// 带状态图标的高亮标题
   Widget _buildHighlightedTitle(
+    BuildContext context,
     String headline,
     SearchTopic topic,
     ThemeData theme,
@@ -415,20 +420,21 @@ class _SearchPostCardContent extends ConsumerWidget {
     final regex = RegExp(r'<span class="search-highlight">(.*?)</span>');
     final matches = regex.allMatches(headline);
 
+    void addPlain(String html) => spans.addAll(
+      EmojiText.buildEmojiSpans(
+        context,
+        html.replaceAll(RegExp(r'<[^>]*>'), ''),
+        style,
+      ),
+    );
+
     if (matches.isEmpty) {
-      final cleanText = headline.replaceAll(RegExp(r'<[^>]*>'), '');
-      spans.add(TextSpan(text: cleanText));
+      addPlain(headline);
     } else {
       int lastEnd = 0;
       for (final match in matches) {
         if (match.start > lastEnd) {
-          spans.add(
-            TextSpan(
-              text: headline
-                  .substring(lastEnd, match.start)
-                  .replaceAll(RegExp(r'<[^>]*>'), ''),
-            ),
-          );
+          addPlain(headline.substring(lastEnd, match.start));
         }
         spans.add(
           TextSpan(
@@ -443,13 +449,7 @@ class _SearchPostCardContent extends ConsumerWidget {
         lastEnd = match.end;
       }
       if (lastEnd < headline.length) {
-        spans.add(
-          TextSpan(
-            text: headline
-                .substring(lastEnd)
-                .replaceAll(RegExp(r'<[^>]*>'), ''),
-          ),
-        );
+        addPlain(headline.substring(lastEnd));
       }
     }
 
@@ -460,7 +460,7 @@ class _SearchPostCardContent extends ConsumerWidget {
     );
   }
 
-  Widget _buildBlurb(String blurb, ThemeData theme) {
+  Widget _buildBlurb(BuildContext context, String blurb, ThemeData theme) {
     final style = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
       height: 1.4,
@@ -471,7 +471,7 @@ class _SearchPostCardContent extends ConsumerWidget {
 
     if (matches.isEmpty) {
       final cleanText = blurb.replaceAll(RegExp(r'<[^>]*>'), '');
-      return Text(
+      return EmojiText(
         cleanText,
         style: style,
         maxLines: 2,
@@ -479,15 +479,19 @@ class _SearchPostCardContent extends ConsumerWidget {
       );
     }
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     int lastEnd = 0;
+    void addPlain(String html) => spans.addAll(
+      EmojiText.buildEmojiSpans(
+        context,
+        html.replaceAll(RegExp(r'<[^>]*>'), ''),
+        style,
+      ),
+    );
 
     for (final match in matches) {
       if (match.start > lastEnd) {
-        final beforeText = blurb
-            .substring(lastEnd, match.start)
-            .replaceAll(RegExp(r'<[^>]*>'), '');
-        spans.add(TextSpan(text: beforeText));
+        addPlain(blurb.substring(lastEnd, match.start));
       }
       spans.add(
         TextSpan(
@@ -503,10 +507,7 @@ class _SearchPostCardContent extends ConsumerWidget {
     }
 
     if (lastEnd < blurb.length) {
-      final afterText = blurb
-          .substring(lastEnd)
-          .replaceAll(RegExp(r'<[^>]*>'), '');
-      spans.add(TextSpan(text: afterText));
+      addPlain(blurb.substring(lastEnd));
     }
 
     return RichText(

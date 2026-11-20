@@ -36,13 +36,14 @@ impl Core {
         }
         let ca = match (&self.config.ca_cert_pem, &self.config.ca_key_pem) {
             (Some(cert), Some(_)) => cert.as_str(),
-            _ => crate::cert::embedded_ca_pem(),
+            (None, None) => crate::cert::embedded_ca_pem(),
+            _ => return false,
         };
         crate::cert::verify_webview_leaf(ca, der, host)
     }
 
     pub async fn start(config: NetConfig) -> Result<Arc<Self>> {
-        let templates = Arc::new(FingerprintTemplates::with_selection(
+        let templates = Arc::new(FingerprintTemplates::with_runtime_selection(
             config
                 .fingerprint_cache_path
                 .as_ref()
@@ -53,6 +54,7 @@ impl Core {
                 .unwrap_or(std::env::consts::OS),
             config.fingerprint_user_agent.as_deref(),
             config.fingerprint_preset.as_deref(),
+            config.fingerprint_runtime_identity.as_deref(),
         )?);
 
         // DoH 开启时才建解析器；关闭时出站走系统 DNS
@@ -86,6 +88,8 @@ impl Core {
             &config.server_ip,
             config.upstream_proxy.as_ref().map(|p| p.cache_key()),
             config.system_proxy.as_ref().map(|p| p.cache_key()),
+            &config.fingerprint_runtime_identity,
+            crate::mirror::cache_revision(),
         ))
         .unwrap_or_default();
         let mut sessions = crate::browser_tls::ClientSessions::default();
@@ -111,7 +115,10 @@ impl Core {
         let mirror = if config.webview_mitm {
             let (cert_pem, key_pem) = match (&config.ca_cert_pem, &config.ca_key_pem) {
                 (Some(cert), Some(key)) => (cert.as_str(), key.as_str()),
-                _ => (cert::embedded_ca_pem(), cert::embedded_ca_key_pem()),
+                (None, None) => (cert::embedded_ca_pem(), cert::embedded_ca_key_pem()),
+                _ => return Err(crate::error::NetError::Certificate(
+                    "Custom CA certificate and key must be provided together".into(),
+                )),
             };
             info!("WebView MITM uses browser fingerprint mirror egress");
             Some(Arc::new(MirrorRelay::new(
@@ -163,6 +170,25 @@ impl Core {
         system_proxy::clear_pac_cache();
     }
 
+    /// 诊断宿主读取当前实例的校准结果；正式构建不暴露原始采样。
+    #[cfg(debug_assertions)]
+    pub fn diagnostic_h3_profile(&self) -> serde_json::Value {
+        let Some(reference) = self.templates.captured_snapshot() else {
+            return serde_json::Value::Null;
+        };
+        let Some((_, profile)) = self.templates.h3.snapshot(reference.user_agent.as_deref()) else {
+            return serde_json::Value::Null;
+        };
+        serde_json::json!({
+            "hello": profile.sample.hello, "flight": profile.sample.flight,
+            "parameters": profile.sample.parameters, "boundary": profile.sample.boundary,
+            "warm_boundary": profile.sample.warm_boundary, "wire_fields": profile.sample.wire_fields,
+            "insert_on_reuse": profile.sample.insert_on_reuse, "quic": profile.quic,
+            "permute_tls": profile.permute_tls, "header_order": profile.sample.header_order,
+            "pseudo_order": profile.sample.pseudo_order,
+        })
+    }
+
     /// 宿主用于判断「dio 现在能不能按浏览器指纹出站」以及是否需要重新采样。
     pub fn status_json(&self) -> String {
         let template = self.templates.snapshot();
@@ -175,7 +201,8 @@ impl Core {
                 "http1_idle": self.client.pooled_connections().1,
             },
             "port": self.port(),
-            "template_ready": template.as_ref().is_some_and(|template| template.source.id().is_none()),
+            "template_ready": template.as_ref().is_some_and(|template| template.source.id().is_none() && template.is_calibrated()),
+            "template_diagnostics": serde_json::from_str::<serde_json::Value>(&self.templates.status_json()).unwrap_or_default(),
             "template_source": template.as_ref().map(|template| template.source.name()),
             "template_mode": if self.config.fingerprint_preset.is_some() { "preset" } else { "auto" },
             "template_preset": template.as_ref().and_then(|template| template.source.id()),

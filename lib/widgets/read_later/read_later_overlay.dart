@@ -3,7 +3,7 @@ import 'package:common_ui/common_ui.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -16,6 +16,7 @@ import '../../services/local_notification_service.dart'; // navigatorKey
 import '../../utils/dialog_utils.dart';
 import '../../utils/responsive.dart';
 import '../../utils/time_utils.dart';
+import '../common/emoji_text.dart';
 
 /// 稍后阅读整屏浮层
 ///
@@ -303,7 +304,7 @@ class _ReadLaterCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  EmojiText(
                     item.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

@@ -1,7 +1,6 @@
 import Cocoa
 import FlutterMacOS
 import WebKit
-import window_manager
 import desktop_multi_window
 
 /// Flutter 会同步等待此钩子结束，再销毁旧 isolate。
@@ -36,17 +35,6 @@ class MainFlutterWindow: NSWindow {
   /// 详见 SyntheticPasteFix.swift 的文件头注释与上游 issue 184571。
   private let syntheticPasteFix = SyntheticPasteFix()
 
-  // 隐藏启动:XIB 窗口默认 visibleAtLaunch,直接显示会先落在 XIB 默认
-  // 位置(800×600),等 Dart 端读完 window_state.json 才跳到恢复位置,
-  // 产生肉眼可见的闪跳。这里在首次 order 时立刻隐藏窗口(与 Windows/
-  // Linux runner 的隐藏启动对齐),由 Dart 端 main() 冷启动分支在首帧
-  // 光栅化后恢复位置再显示。hiddenWindowAtLaunch 内部带 configured
-  // 标记,只在首次生效,不影响后续 show/hide/Dock 唤起。
-  override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
-    super.order(place, relativeTo: otherWin)
-    hiddenWindowAtLaunch()
-  }
-
   override func awakeFromNib() {
     // 必须先加载为全局符号，再创建会启动 Dart 的 FlutterViewController。
     _ = NetCoreLibraryHost.shared
@@ -56,9 +44,40 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    ImageZoomCursor.register(with: flutterViewController.engine)
     MacOSUpdateHandler.shared.register(messenger: flutterViewController.engine.binaryMessenger)
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       RegisterGeneratedPlugins(registry: controller)
+      ImageZoomCursor.register(with: controller.engine)
+      let channel = FlutterMethodChannel(name: "com.fluxdo/mini_app_window_controls",
+                                         binaryMessenger: controller.engine.binaryMessenger)
+      channel.setMethodCallHandler { [weak controller] call, result in
+        guard let window = controller?.view.window else {
+          result(FlutterError(code: "WINDOW_CLOSED", message: nil, details: nil)); return
+        }
+        switch call.method {
+        case "show":
+          window.makeKeyAndOrderFront(nil)
+          NSApp.activate(ignoringOtherApps: true)
+        case "configure":
+          guard let title = call.arguments as? String else {
+            result(FlutterError(code: "INVALID_TITLE", message: nil, details: nil)); return
+          }
+          window.title = title
+          window.setContentSize(NSSize(width: 1000, height: 760))
+          window.contentMinSize = NSSize(width: 420, height: 320)
+          window.center()
+        case "close":
+          result(nil); window.close(); return
+        case "isFullscreen": result(window.styleMask.contains(.fullScreen)); return
+        case "fullscreen":
+          if let enabled = call.arguments as? Bool, enabled != window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+          }
+        default: result(FlutterMethodNotImplemented); return
+        }
+        result(nil)
+      }
       if let window = controller.view.window {
         // 观察器持有生命周期对象至关闭，异步任务持有 controller 至销毁结束。
         _ = MiniAppWindowLifetime(window: window) {

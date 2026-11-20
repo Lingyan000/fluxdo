@@ -14,7 +14,7 @@
 //   6. 例外：社区数据驱动的 badge/tag/category 图标继续走 font_awesome。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'icon_painters.dart';

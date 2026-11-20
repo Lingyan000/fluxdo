@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +8,9 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 void main() {
   for (final decorated in [false, true]) {
-    testWidgets('普通刷新默认使用 M3E 进度并衔接加载图案 decorated=$decorated', (tester) async {
+    testWidgets('M3E 刷新全程使用同一形状并在收起时退回确定态 decorated=$decorated', (
+      tester,
+    ) async {
       final completion = Completer<void>();
       var refreshes = 0;
       await tester.pumpWidget(
@@ -39,35 +41,52 @@ void main() {
       await drag.moveBy(const Offset(0, 50));
       await tester.pump();
       expect(_pullProgress(tester), inExclusiveRange(0, 1));
-      expect(find.byType(LoadingSpinner), findsNothing);
+      expect(_indeterminate, findsNothing);
       expect(
         find.byKey(const ValueKey('test-loading-decoration')),
         findsNothing,
       );
-      final progress = tester.widget<M3eCircularProgress>(
-        find.byType(M3eCircularProgress),
+      expect(find.byType(M3eCircularProgress), findsNothing);
+      final pull = tester.widget<LoadingSpinner>(_determinate);
+      expect(pull.size, 38);
+      final scheme = Theme.of(tester.element(_determinate)).colorScheme;
+      expect(pull.color, scheme.onPrimaryContainer);
+      final container = tester.widget<DecoratedBox>(
+        find
+            .ancestor(of: _determinate, matching: find.byType(DecoratedBox))
+            .first,
       );
-      expect(progress.size, 26);
+      expect(
+        (container.decoration as ShapeDecoration).color,
+        scheme.primaryContainer,
+      );
+      expect(_overPullRotation(tester).isIdentity(), isTrue);
       await drag.moveBy(const Offset(0, 60));
       await tester.pump();
       expect(_pullProgress(tester), 1);
-      expect(
-        tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale,
-        1.12,
-      );
+      // 越过阈值后形状整体旋转。
+      expect(_overPullRotation(tester).isIdentity(), isFalse);
       await drag.up();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
       expect(refreshes, 1);
-      expect(find.byType(M3eCircularProgress), findsNothing);
+      expect(_determinate, findsNothing);
       expect(
         decorated
             ? find.byKey(const ValueKey('test-loading-decoration'))
-            : find.byType(LoadingSpinner),
+            : _indeterminate,
         findsOneWidget,
       );
       completion.complete();
+      // 首帧完成状态转移，第二帧起收起动画计时。
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      // 收起时渐变回确定态，形状随位移退回圆形。
+      expect(_determinate, findsOneWidget);
+      expect(_pullProgress(tester), lessThan(1));
       await tester.pumpAndSettle();
+      expect(_determinate, findsNothing);
       expect(tester.takeException(), isNull);
     });
   }
@@ -172,7 +191,7 @@ void main() {
       completion.complete();
       await tester.pump();
       await tester.pump();
-      expect(find.byType(LoadingSpinner), findsOneWidget);
+      expect(find.byType(LoadingSpinner), findsWidgets);
       await tester.pumpAndSettle();
       expect(find.byType(LoadingSpinner), findsNothing);
       expect(tester.takeException(), isNull);
@@ -354,11 +373,24 @@ void main() {
   });
 }
 
-double _pullProgress(WidgetTester tester) => tester
-    .widget<M3eCircularProgress>(
-      find.byKey(const ValueKey('refresh-pull-progress')),
+final _determinate = find.byKey(const ValueKey('refresh-pull-progress'));
+
+final _indeterminate = find.byWidgetPredicate(
+  (widget) => widget is LoadingSpinner && widget.progress == null,
+);
+
+double _pullProgress(WidgetTester tester) =>
+    switch (tester.widget(_determinate)) {
+      LoadingSpinner(:final progress) => progress!,
+      M3eCircularProgress(:final value) => value!,
+      final widget => throw StateError('未知进度组件 $widget'),
+    };
+
+Matrix4 _overPullRotation(WidgetTester tester) => tester
+    .widget<Transform>(
+      find.ancestor(of: _determinate, matching: find.byType(Transform)).first,
     )
-    .value!;
+    .transform;
 
 Widget _testLoadingDecoration(BuildContext context, double size) =>
     SizedBox.square(

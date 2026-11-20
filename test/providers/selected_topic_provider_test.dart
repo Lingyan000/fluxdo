@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/providers/selected_topic_provider.dart';
@@ -75,13 +75,13 @@ void main() {
     expect(notifier.state.isStacked, isFalse);
   });
 
-  test('追觅平行视界与首页、搜索栈相互隔离', () {
+  test('动态平行视界与首页、搜索栈相互隔离', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    container.read(selectedSeekingProvider.notifier).select(topicId: 99);
+    container.read(selectedFollowingFeedProvider.notifier).select(topicId: 99);
 
-    expect(container.read(selectedSeekingProvider).topicId, 99);
+    expect(container.read(selectedFollowingFeedProvider).topicId, 99);
     expect(container.read(selectedTopicProvider).hasSelection, isFalse);
     expect(container.read(selectedSearchProvider).hasSelection, isFalse);
   });

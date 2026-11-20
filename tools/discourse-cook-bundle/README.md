@@ -2,8 +2,8 @@
 
 把 Discourse 官方 markdown→cooked HTML 管线（`frontend/discourse-markdown-it` +
 `frontend/pretty-text` + 官方插件的 markdown features）用 esbuild 打成无
-DOM 依赖的 IIFE bundle，供 app 内 flutter_js（Android/Win/Linux=QuickJS，
-iOS/macOS=JavaScriptCore）执行，实现与服务端 1:1 的编辑器预览 cook。
+DOM 依赖的 IIFE bundle，由 `fluxdo_js_runtime` 在独立的后台 QuickJS 实例中执行，
+五个原生平台共用这条编辑器预览管线。
 
 Discourse 服务端本身就是用 MiniRacer（裸 V8）跑这同一份 JS 完成 cook 的，
 所以整条管线天然 DOM-free，这里只做打包和数据注入，不改写任何管线逻辑。

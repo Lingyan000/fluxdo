@@ -55,7 +55,7 @@ println(
 
 android {
     namespace = "com.github.lingyan000.fluxdo"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -107,6 +107,14 @@ android {
         }
     }
 
+    // 原生库压缩进 APK，安装时解压：下载包约小 40MB（libapp/libflutter/libfluxdo_net
+    // 不压缩时占 APK 七成），代价是安装后多占一份解压副本。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // 显式根据构建目标过滤 ABI，防止 Cronet 等原生库引入不需要的架构
     val targetPlatform = project.findProperty("target-platform") as? String
     println("Target Platform: $targetPlatform")
@@ -139,6 +147,27 @@ android {
     }
 }
 
+// 依赖包里只供 Web 端加载的资源（wasm 解码器、web worker、hls.js 等）也会被
+// 打进原生包。剔除 flutter_assets/packages/<包>/ 下名为 web 的目录；
+// iOS/macOS 见 scripts/strip_web_assets.sh，Windows/Linux 见各自 CMakeLists.txt。
+tasks.matching { it.name.startsWith("copyFlutterAssets") }.configureEach {
+    doLast {
+        outputs.files.forEach { output ->
+            File(output, "flutter_assets/packages").listFiles()?.forEach { pkg ->
+                pkg.walkTopDown()
+                    .filter { it.isDirectory && it.name == "web" }
+                    .toList()
+                    .forEach { dir ->
+                        if (dir.exists()) {
+                            logger.lifecycle("剔除 Web 专用资源: ${dir.relativeTo(output)}")
+                            dir.deleteRecursively()
+                        }
+                    }
+            }
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
@@ -150,6 +179,8 @@ flutter {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.18")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation(platform("com.google.firebase:firebase-bom:33.14.0"))
     implementation("com.google.firebase:firebase-crashlytics-ndk")

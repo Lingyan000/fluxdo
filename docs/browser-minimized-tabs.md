@@ -16,14 +16,9 @@
 
 关闭最后一个页面或全部关闭时，会话资源立即释放，底栏静态图标和标题保留到占位动画结束，随占位下移、淡出后再移除。退场区域持续绘制主题背景，覆盖内容区与底栏之间的亚像素接缝，避免出现透明黑块。
 
-## 参考实现
+## 实现要点
 
-- Telegram Android 的 `TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java`：约 60dp 的占用区、紧凑叠卡与单页恢复/多页概览。
-- Telegram iOS 的 `submodules/TelegramUI/Components/MinimizedContainer/Sources/MinimizedContainer.swift`：56pt 标题栏、底部安全区、缩减导航容器高度、横向滑动关闭。
-- Telegram Android 的 `ui/web/WebActionBar.java` 和 iOS 的 `BrowserUI/Sources/BrowserScreen.swift`：左侧关闭、地址栏就地展开并选中文字、独立浏览操作及页内查找。
-- Flutter InAppWebView 的 [Keep Alive 文档](https://inappwebview.dev/docs/webview/keep-alive/)：同一 token 保留同一个原生 WebView，不能同时挂载两个宿主。
-
-本实现采用项目的 Material 主题和动效参数。概览使用统一高度的截图卡片，无截图时保留相同预览占位；面板外侧和网格内侧各留 16dp，卡片间距 12dp，根据可用宽度和字号使用 1/2/3 列。底栏卡片左右留 12dp，最大宽度 736dp。未复制 Telegram 的平台绘制代码和透视旋转效果。
+概览使用统一高度的截图卡片，无截图时保留相同预览占位；面板外侧和网格内侧各留 16dp，卡片间距 12dp，根据可用宽度和字号使用 1/2/3 列。底栏卡片左右留 12dp，最大宽度 736dp。
 
 浏览器通过 `BrowserPageRoute` 接入：普通进入、关闭沿用应用 `PageTransitionsTheme` 的导航动画与时长，包括 Android 的横向导航和预测返回。收起时向底栏缩拢，恢复时展开并用截图衔接；这两个阶段通过 `canTransitionFrom` 禁止下层路由横向退场，避免暴露未绘制的背景。恢复完成后的导航和取消返回手势恢复为普通转场。
 
@@ -33,8 +28,6 @@
 
 收起和展开使用方向独立的临界阻尼响应，较快启动并逐渐减速，展开 460ms、收起 420ms，端点归一化以免末帧跳动。靠近底栏时，网页与复用实际底栏布局的卡片交叉淡化，卡片在根导航器外继续运动到最终位置，避免末段被导航器的占位裁掉。静态底栏与转场卡片统一为 52dp 高、16dp 圆角；收拢时逐渐移出状态栏留白，标题区域与底栏衔接。运动期间静态卡片隐藏，避免两张卡片重复显示。
 
-此段参考 [Telegram Android BottomSheetTabsOverlay](https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java) 的弹簧收拢与卡片交接方式，使用本项目 Flutter 布局与临界阻尼响应实现，并非复刻原生渲染管线。
-
 ## 生命周期
 
 `BrowserTabSession` 持有 keep-alive token。收起后只卸载 Flutter 路由，保留原生网页、历史、表单和滚动位置；恢复时不再调用 `loadUrl`。旧路由卸载后的帧末才解除挂载锁，快速恢复和重复点击不会同时挂载同一个原生实例。显式关闭通过 `disposeKeepAlive` 释放资源，未创建 WebView 的页面无需平台调用。
@@ -42,19 +35,6 @@
 预览在加载完成或滚动停止 500ms 后准备并解码，宽度限制为约 640 物理像素的 JPEG。导航、正文触摸、滚动和视口尺寸变化使旧预览失效；截图或解码期间发生变化的迟到结果丢弃。点击/拖动入口只使用已准备的预览，不等待截图、解码或额外一帧；无预览时保持原生网页全尺寸上下移动。截图 API 在 Android 主线程执行，空闲调度与降低编码量不能等同于消除所有平台耗时。
 
 恢复时原生网页从首帧就在不透明截图下布局；控制器状态并行查询接回、路由动画完成后，再等待两个 Flutter 帧，以 120ms 淡出截图。下拉取消也先接回原生画面再撤截图。网页只保存在当前进程内，不写入收藏、稍后阅读或磁盘；应用退出后不恢复这些实例。
-
-## 验证
-
-`test/services/browser_tabs_test.dart` 覆盖实例互斥、卸载等待和释放。
-`test/widgets/browser_dock_test.dart` 覆盖布局、安全区、返回键、Esc、横滑关闭、键盘和全屏避让，以及概览卡片尺寸、间距和自定义图标/标题/恢复回调。关闭最后一页时逐帧检查内容保留与占位收缩，并采样底部像素确认主题背景持续不透明。
-`test/widgets/browser_page_route_test.dart` 使用应用实际 Android 导航主题，比较浏览器与普通页面进入、关闭时的位置和时长，并验证从底栏恢复后的预测返回取消。
-`test/widgets/browser_page_lifecycle_test.dart` 使用假的 WebView 平台驱动真实页面路由，验证 token 复用、恢复不重载、标题/历史更新、关闭释放和迟到回调。
-`test/services/browser_navigation_test.dart` 验证地址解析、关键词编码、协议限制和引擎偏好。
-`test/widgets/browser_experience_test.dart` 验证地址编辑去重、搜索失败/超时提示、本次搜索与默认引擎的区别、HTTP 错误保留网页、收藏历史、页内查找及窄屏/大字号/键盘/减少动画/桌面对齐；逐帧断言网页尺寸和挂载稳定、收起向下和恢复向上且水平居中、背景页覆盖完整宽度，原生控制器提前或延迟接回时截图都不会提前消失。添加 `--dart-define=BROWSER_PREVIEW=true` 可输出实际组件预览到 `.artifacts/browser-motion/previews`（网页内容为测试占位文章）。
-
-Android 录屏已用于定位普通进入动画偏差和恢复时背景页横移造成的黑色空隙。修复通过组件回归；最终真机视觉效果由用户继续确认，不能将 Flutter 帧等待等同于原生绘制完成。原生 WebView 的实际滚动、表单、音视频与其他平台画面仍需对应环境验证。
-
-交互回归另覆盖慢截图不阻塞首帧、迟到截图丢弃、上下拖动逐段位移和停手稳定、反拖/取消、会话重复恢复、下层布局次数稳定、圆角/托柄显隐，以及多页概览跟手展开/收回。`BROWSER_MOTION` 日志记录空闲截图耗时及输入到首个 Flutter 帧的等待，不代表 Android 实际呈现时间。
 
 小程序由 `MiniAppTabSession` 复用会话挂载互斥和释放规则，并保存启动参数与引擎身份；恢复交回 `MiniAppRunnerPage`，不会误入通用网页浏览器。普通网页不绑定论坛登录，小程序会在账号代变化后关闭。
 

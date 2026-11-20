@@ -3,11 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../main.dart' show MainApp;
 import '../../l10n/s.dart';
@@ -33,11 +32,7 @@ const _controls = MethodChannel('com.fluxdo/mini_app_window_controls');
 const _startupTimeout = Duration(seconds: 15);
 
 Future<void> _closeWindow() async {
-  if (Platform.isWindows || !MiniAppWindowBridge.desktop) {
-    await _controls.invokeMethod<void>('close');
-  } else {
-    await windowManager.close();
-  }
+  await _controls.invokeMethod<void>('close');
 }
 
 /// 移动端自建引擎使用此入口，桌面子窗口由 main 分流至同一启动链。
@@ -91,19 +86,11 @@ Future<bool> startMiniAppWindow() async {
       initialize: () async {
         if (desktop != null) {
           // 桌面同样先展示加载首帧，初始化失败的错误页不能藏在隐藏窗口中。
-          if (!Platform.isWindows) {
-            await windowManager.ensureInitialized().timeout(_startupTimeout);
-          }
           await WidgetsBinding.instance.waitUntilFirstFrameRasterized.timeout(
             const Duration(seconds: 2),
             onTimeout: () {},
           );
-          if (Platform.isWindows) {
-            await _controls.invokeMethod<void>('show').timeout(_startupTimeout);
-          } else {
-            await windowManager.show().timeout(_startupTimeout);
-            await windowManager.focus().timeout(_startupTimeout);
-          }
+          await _controls.invokeMethod<void>('show').timeout(_startupTimeout);
         }
         return _initializeWindow(key!, desktop);
       },
@@ -136,13 +123,11 @@ Future<Widget> _initializeWindow(
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge)
       .timeout(_startupTimeout);
 
-  if (Platform.isWindows) {
+  if (MiniAppWindowBridge.desktop) {
     MiniAppFullscreen.windowIsFullscreen = () async =>
         await _controls.invokeMethod<bool>('isFullscreen') ?? false;
     MiniAppFullscreen.windowSetFullscreen = (value) =>
         _controls.invokeMethod<void>('fullscreen', value);
-  } else if (MiniAppWindowBridge.desktop) {
-    await windowManager.ensureInitialized().timeout(_startupTimeout);
   }
 
   final entry = ValueNotifier<Uri?>(null);
@@ -166,11 +151,8 @@ Future<Widget> _initializeWindow(
         return null;
       }
       entry.value = value;
-      if (Platform.isWindows) {
+      if (MiniAppWindowBridge.desktop) {
         await _controls.invokeMethod<void>('show');
-      } else if (MiniAppWindowBridge.desktop) {
-        await windowManager.show();
-        await windowManager.focus();
       }
     }
     return null;
@@ -193,16 +175,11 @@ Future<Widget> _initializeWindow(
     await WindowsWebViewEnvironmentService.instance
         .setProxy(data['proxy'] as String?)
         .timeout(_startupTimeout);
+  }
+  if (MiniAppWindowBridge.desktop) {
     await _controls
         .invokeMethod<void>('configure', details.app.name)
         .timeout(_startupTimeout);
-  } else if (MiniAppWindowBridge.desktop) {
-    await windowManager.setTitle(details.app.name).timeout(_startupTimeout);
-    await windowManager.setSize(const Size(1000, 760)).timeout(_startupTimeout);
-    await windowManager
-        .setMinimumSize(const Size(420, 320))
-        .timeout(_startupTimeout);
-    await windowManager.center().timeout(_startupTimeout);
   }
   if (revoked) throw PlatformException(code: 'SESSION_REVOKED');
   final application = ProviderScope(

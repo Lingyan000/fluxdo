@@ -1,8 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/webview_surface_capture.dart';
@@ -139,6 +139,74 @@ void main() {
         );
       }
       expect(calls, 2);
+    });
+  });
+
+  testWidgets('Android 保活实例走原生缩小绘制，不调用插件截图；拿不到时退回插件', (tester) async {
+    const channel = MethodChannel('com.fluxdo/webview_surface');
+    final requests = <Map<Object?, Object?>>[];
+    var available = true;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      final args = call.arguments as Map<Object?, Object?>;
+      requests.add(args);
+      if (!available) return null;
+      // 原生按请求宽度绘制完整视口：上半红、下半蓝
+      final width = args['width']! as int;
+      final height = width * 2;
+      final pixels = Uint8List(width * height * 4);
+      for (var y = 0; y < height; y++) {
+        for (var x = 0; x < width; x++) {
+          final p = (y * width + x) * 4;
+          final top = y < height / 2;
+          pixels
+            ..[p] = top ? 255 : 0
+            ..[p + 2] = top ? 0 : 255
+            ..[p + 3] = 255;
+        }
+      }
+      return {'width': width, 'height': height, 'pixels': pixels};
+    });
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
+    await tester.runAsync(() async {
+      var pluginCalls = 0;
+      Future<SurfaceFrame?> sample() => WebViewSurfaceCapture.capture(
+        takeScreenshot: (configuration) async {
+          pluginCalls++;
+          final width = (configuration.snapshotWidth! * 3).round();
+          return image(width, width * 2);
+        },
+        platform: TargetPlatform.android,
+        viewport: const Rect.fromLTWH(0, 56, 400, 800),
+        region: const Rect.fromLTWH(0, 832, 400, 24),
+        devicePixelRatio: 3,
+        maxWidth: 48,
+        viewId: 'keep-alive',
+      );
+
+      final fast = (await sample())!;
+      try {
+        expect(pluginCalls, 0);
+        expect(requests.single['keepAliveId'], 'keep-alive');
+        // 完整视口按取样比例缩小：400 宽、48/400 的比例下约 48 像素宽
+        expect(requests.single['width'], 48);
+        final data = (await fast.image.toByteData())!;
+        expect(data.getUint8(2), greaterThan(200), reason: '底边应取到蓝色');
+        expect(data.getUint8(0), lessThan(60));
+      } finally {
+        fast.image.dispose();
+      }
+
+      available = false;
+      final fallback = (await sample())!;
+      fallback.image.dispose();
+      expect(pluginCalls, 1);
     });
   });
 }

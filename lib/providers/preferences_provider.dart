@@ -16,6 +16,7 @@ import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/uploads/upload_settings.dart';
 import '../services/cf_challenge_service.dart';
+import '../services/log/log_writer.dart';
 import '../services/crash_context_reporter.dart';
 import '../services/emoji_handler.dart';
 import '../services/render_backend_service.dart';
@@ -45,6 +46,26 @@ enum BookmarksOpenMode {
     return BookmarksOpenMode.values.firstWhere(
       (mode) => mode.name == value,
       orElse: () => BookmarksOpenMode.defaultRoute,
+    );
+  }
+}
+
+/// 话题页回复入口打开哪种编辑器
+enum ReplyComposerMode {
+  /// 默认快捷回复；开启富文本编辑器且内容需要格式（引用、已有带格式的
+  /// 草稿）时直接打开完整编辑器
+  auto,
+
+  /// 总是快捷回复（需要时手动展开）
+  quick,
+
+  /// 总是完整编辑器
+  full;
+
+  static ReplyComposerMode fromString(String? value) {
+    return ReplyComposerMode.values.firstWhere(
+      (mode) => mode.name == value,
+      orElse: () => ReplyComposerMode.auto,
     );
   }
 }
@@ -186,6 +207,9 @@ class AppPreferences {
   /// AI 助手左滑入口（PageView 模式）
   final bool aiSwipeEntry;
 
+  /// 话题底栏随滚动自动隐藏（下滑收起、上滑出现）；关闭则常驻
+  final bool topicBarAutoHide;
+
   /// 富文本编辑器(实验性,自研 WYSIWYG composer)
   final bool useRichComposer;
 
@@ -252,6 +276,9 @@ class AppPreferences {
   /// 书签页默认打开方式（桌面端与手机端均生效）
   final BookmarksOpenMode bookmarksOpenMode;
 
+  /// 话题页回复入口打开哪种编辑器
+  final ReplyComposerMode replyComposerMode;
+
   /// 最大并发请求数
   final bool forceDisableMultipartUpload;
   final int maxConcurrent;
@@ -286,14 +313,8 @@ class AppPreferences {
   /// Android 屏幕刷新率偏好（0 = auto/跟随系统，其它为目标刷新率，如 60 / 90 / 120）
   final int displayModeRefreshRate;
 
-  /// 进度悬浮条手势总开关
+  /// 话题底栏手势总开关（拖动定位、上滑、长按菜单）
   final bool progressGesturesEnabled;
-
-  /// 左滑动作
-  final ProgressGestureAction progressGestureSwipeLeft;
-
-  /// 右滑动作
-  final ProgressGestureAction progressGestureSwipeRight;
 
   /// 上滑动作
   final ProgressGestureAction progressGestureSwipeUp;
@@ -346,6 +367,7 @@ class AppPreferences {
     required this.autoCfChallenge,
     required this.expandRelatedLinks,
     required this.aiSwipeEntry,
+    this.topicBarAutoHide = true,
     this.useRichComposer = false,
     this.composerEnterSoftBreak = true,
     this.composerLiveRender = false,
@@ -365,6 +387,7 @@ class AppPreferences {
     this.defaultNestedView = false,
     this.nestedLineStyle = NestedLineStyle.auto,
     this.bookmarksOpenMode = BookmarksOpenMode.defaultRoute,
+    this.replyComposerMode = ReplyComposerMode.auto,
     this.forceDisableMultipartUpload = false,
     required this.maxConcurrent,
     required this.maxPerWindow,
@@ -378,8 +401,6 @@ class AppPreferences {
     this.glassEffectLevel = GlassEffectLevel.auto,
     this.displayModeRefreshRate = 0,
     this.progressGesturesEnabled = true,
-    this.progressGestureSwipeLeft = ProgressGestureAction.nextPost,
-    this.progressGestureSwipeRight = ProgressGestureAction.previousPost,
     this.progressGestureSwipeUp = ProgressGestureAction.jumpToUnread,
     this.progressGestureLongPressEnabled = true,
     this.progressGestureMenuActions = _defaultProgressGestureMenu,
@@ -416,6 +437,7 @@ class AppPreferences {
     bool? autoCfChallenge,
     bool? expandRelatedLinks,
     bool? aiSwipeEntry,
+    bool? topicBarAutoHide,
     bool? useRichComposer,
     bool? composerEnterSoftBreak,
     bool? composerLiveRender,
@@ -435,6 +457,7 @@ class AppPreferences {
     bool? defaultNestedView,
     NestedLineStyle? nestedLineStyle,
     BookmarksOpenMode? bookmarksOpenMode,
+    ReplyComposerMode? replyComposerMode,
     bool? forceDisableMultipartUpload,
     int? maxConcurrent,
     int? maxPerWindow,
@@ -448,8 +471,6 @@ class AppPreferences {
     GlassEffectLevel? glassEffectLevel,
     int? displayModeRefreshRate,
     bool? progressGesturesEnabled,
-    ProgressGestureAction? progressGestureSwipeLeft,
-    ProgressGestureAction? progressGestureSwipeRight,
     ProgressGestureAction? progressGestureSwipeUp,
     bool? progressGestureLongPressEnabled,
     List<ProgressGestureAction>? progressGestureMenuActions,
@@ -487,6 +508,7 @@ class AppPreferences {
       autoCfChallenge: autoCfChallenge ?? this.autoCfChallenge,
       expandRelatedLinks: expandRelatedLinks ?? this.expandRelatedLinks,
       aiSwipeEntry: aiSwipeEntry ?? this.aiSwipeEntry,
+      topicBarAutoHide: topicBarAutoHide ?? this.topicBarAutoHide,
       useRichComposer: useRichComposer ?? this.useRichComposer,
       composerEnterSoftBreak:
           composerEnterSoftBreak ?? this.composerEnterSoftBreak,
@@ -519,6 +541,7 @@ class AppPreferences {
       defaultNestedView: defaultNestedView ?? this.defaultNestedView,
       nestedLineStyle: nestedLineStyle ?? this.nestedLineStyle,
       bookmarksOpenMode: bookmarksOpenMode ?? this.bookmarksOpenMode,
+      replyComposerMode: replyComposerMode ?? this.replyComposerMode,
       forceDisableMultipartUpload:
           forceDisableMultipartUpload ?? this.forceDisableMultipartUpload,
       maxConcurrent: maxConcurrent ?? this.maxConcurrent,
@@ -537,10 +560,6 @@ class AppPreferences {
           displayModeRefreshRate ?? this.displayModeRefreshRate,
       progressGesturesEnabled:
           progressGesturesEnabled ?? this.progressGesturesEnabled,
-      progressGestureSwipeLeft:
-          progressGestureSwipeLeft ?? this.progressGestureSwipeLeft,
-      progressGestureSwipeRight:
-          progressGestureSwipeRight ?? this.progressGestureSwipeRight,
       progressGestureSwipeUp:
           progressGestureSwipeUp ?? this.progressGestureSwipeUp,
       progressGestureLongPressEnabled:
@@ -590,6 +609,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _autoCfChallengeKey = 'pref_auto_cf_challenge';
   static const String _expandRelatedLinksKey = 'pref_expand_related_links';
   static const String _aiSwipeEntryKey = 'pref_ai_swipe_entry';
+  static const String _topicBarAutoHideKey = 'pref_topic_bar_auto_hide';
   static const String _useRichComposerKey = 'pref_use_rich_composer';
   static const String _composerEnterSoftBreakKey =
       'pref_composer_enter_soft_break';
@@ -615,6 +635,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _defaultNestedViewKey = 'pref_default_nested_view';
   static const String _nestedLineStyleKey = 'pref_nested_line_style';
   static const String _bookmarksOpenModeKey = 'pref_bookmarks_open_mode';
+  static const String _replyComposerModeKey = 'pref_reply_composer_mode';
   static const String _maxConcurrentKey = 'pref_max_concurrent';
   static const String _maxPerWindowKey = 'pref_max_per_window';
   static const String _windowSecondsKey = 'pref_window_seconds';
@@ -631,10 +652,6 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
       'pref_display_mode_refresh_rate';
   static const String _progressGesturesEnabledKey =
       'pref_progress_gestures_enabled';
-  static const String _progressGestureSwipeLeftKey =
-      'pref_progress_gesture_swipe_left';
-  static const String _progressGestureSwipeRightKey =
-      'pref_progress_gesture_swipe_right';
   static const String _progressGestureSwipeUpKey =
       'pref_progress_gesture_swipe_up';
   static const String _progressGestureLongPressEnabledKey =
@@ -686,6 +703,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           autoCfChallenge: _prefs.getBool(_autoCfChallengeKey) ?? true,
           expandRelatedLinks: _prefs.getBool(_expandRelatedLinksKey) ?? false,
           aiSwipeEntry: _prefs.getBool(_aiSwipeEntryKey) ?? false,
+          topicBarAutoHide: _prefs.getBool(_topicBarAutoHideKey) ?? true,
           useRichComposer: _prefs.getBool(_useRichComposerKey) ?? false,
           composerEnterSoftBreak:
               _prefs.getBool(_composerEnterSoftBreakKey) ?? true,
@@ -716,6 +734,9 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           bookmarksOpenMode: BookmarksOpenMode.fromString(
             _prefs.getString(_bookmarksOpenModeKey),
           ),
+          replyComposerMode: ReplyComposerMode.fromString(
+            _prefs.getString(_replyComposerModeKey),
+          ),
           forceDisableMultipartUpload: UploadSettings.forceDisabled(_prefs),
           maxConcurrent: _prefs.getInt(_maxConcurrentKey) ?? 3,
           maxPerWindow: _prefs.getInt(_maxPerWindowKey) ?? 6,
@@ -728,9 +749,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
             _prefs.getString(_bottomDoubleTapActionKey),
             fallback: NavTapAction.refresh,
           ),
-          bottomNavIds:
-              _prefs.getStringList(_bottomNavIdsKey) ??
-              const [NavEntryIds.home, NavEntryIds.profile],
+          bottomNavIds: NavEntryIds.migrateLegacyIds(
+            _prefs.getStringList(_bottomNavIdsKey) ??
+                const [NavEntryIds.home, NavEntryIds.profile],
+          ),
           bottomNavLabelless: _prefs.getBool(_bottomNavLabellessKey) ?? false,
           bottomNavFloating: _prefs.getBool(_bottomNavFloatingKey) ?? false,
           // 新全局策略默认自动开启；不继承废弃的底栏局部开关。
@@ -742,14 +764,6 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               _prefs.getInt(_displayModeRefreshRateKey) ?? 0,
           progressGesturesEnabled:
               _prefs.getBool(_progressGesturesEnabledKey) ?? true,
-          progressGestureSwipeLeft: _readGestureAction(
-            _prefs.getString(_progressGestureSwipeLeftKey),
-            ProgressGestureAction.nextPost,
-          ),
-          progressGestureSwipeRight: _readGestureAction(
-            _prefs.getString(_progressGestureSwipeRightKey),
-            ProgressGestureAction.previousPost,
-          ),
           progressGestureSwipeUp: _readGestureAction(
             _prefs.getString(_progressGestureSwipeUpKey),
             ProgressGestureAction.jumpToUnread,
@@ -946,9 +960,21 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   }
 
   Future<void> setAutoCfChallenge(bool enabled) async {
+    if (state.autoCfChallenge == enabled) return;
+    if (!await _prefs.setBool(_autoCfChallengeKey, enabled)) {
+      throw StateError('保存自动过盾设置失败');
+    }
+    final previous = state.autoCfChallenge;
     state = state.copyWith(autoCfChallenge: enabled);
-    await _prefs.setBool(_autoCfChallengeKey, enabled);
     CfChallengeService().autoVerifyEnabled = enabled;
+    LogWriter.instance.write({
+      'type': 'settings',
+      'event': 'network_setting_changed',
+      'setting': _autoCfChallengeKey,
+      'previousValue': previous,
+      'value': enabled,
+      'persistent': true,
+    });
   }
 
   Future<void> setExpandRelatedLinks(bool enabled) async {
@@ -959,6 +985,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   Future<void> setAiSwipeEntry(bool enabled) async {
     state = state.copyWith(aiSwipeEntry: enabled);
     await _prefs.setBool(_aiSwipeEntryKey, enabled);
+  }
+
+  Future<void> setTopicBarAutoHide(bool enabled) async {
+    if (state.topicBarAutoHide == enabled) return;
+    state = state.copyWith(topicBarAutoHide: enabled);
+    await _prefs.setBool(_topicBarAutoHideKey, enabled);
   }
 
   Future<void> setUseRichComposer(bool enabled) async {
@@ -1096,6 +1128,12 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     await _prefs.setString(_bookmarksOpenModeKey, mode.name);
   }
 
+  Future<void> setReplyComposerMode(ReplyComposerMode mode) async {
+    if (state.replyComposerMode == mode) return;
+    state = state.copyWith(replyComposerMode: mode);
+    await _prefs.setString(_replyComposerModeKey, mode.name);
+  }
+
   Future<void> setForceDisableMultipartUpload(bool value) async {
     await _prefs.setBool(UploadSettings.forceDisableMultipartKey, value);
     state = state.copyWith(forceDisableMultipartUpload: value);
@@ -1173,20 +1211,6 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.progressGesturesEnabled == enabled) return;
     state = state.copyWith(progressGesturesEnabled: enabled);
     await _prefs.setBool(_progressGesturesEnabledKey, enabled);
-  }
-
-  Future<void> setProgressGestureSwipeLeft(ProgressGestureAction action) async {
-    if (state.progressGestureSwipeLeft == action) return;
-    state = state.copyWith(progressGestureSwipeLeft: action);
-    await _prefs.setString(_progressGestureSwipeLeftKey, action.name);
-  }
-
-  Future<void> setProgressGestureSwipeRight(
-    ProgressGestureAction action,
-  ) async {
-    if (state.progressGestureSwipeRight == action) return;
-    state = state.copyWith(progressGestureSwipeRight: action);
-    await _prefs.setString(_progressGestureSwipeRightKey, action.name);
   }
 
   Future<void> setProgressGestureSwipeUp(ProgressGestureAction action) async {

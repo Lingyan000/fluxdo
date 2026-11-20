@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 全息渐变动画文字（模拟 CSS holographic 效果）
 class HolographicText extends StatefulWidget {

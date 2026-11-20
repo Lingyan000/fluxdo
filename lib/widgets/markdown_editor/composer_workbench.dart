@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../utils/platform_utils.dart';
 import 'composer_island.dart';
@@ -231,7 +231,8 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
       if (!open) _status(AnimationStatus.dismissed);
       return;
     }
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if ((MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context))) {
       _animation.value = target;
       return;
     }
@@ -509,9 +510,12 @@ class _ComposerWorkbenchState extends State<ComposerWorkbench>
                                           child: Transform.translate(
                                             offset: Offset(
                                               0,
-                                              MediaQuery.disableAnimationsOf(
-                                                    context,
-                                                  )
+                                              (MediaQuery.disableAnimationsOf(
+                                                        context,
+                                                      ) ||
+                                                      MediaQuery.reduceMotionOf(
+                                                        context,
+                                                      ))
                                                   ? 0
                                                   : 6 * (1 - progress),
                                             ),
@@ -678,7 +682,9 @@ class _ComposerEditorLayoutState extends State<ComposerEditorLayout>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _disableAnimations =
+        (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context));
     _keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     _safeBottom = MediaQuery.viewPaddingOf(context).bottom;
     _toolsInput.updateMetrics(

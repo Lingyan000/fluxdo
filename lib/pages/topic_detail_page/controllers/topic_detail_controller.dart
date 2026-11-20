@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
@@ -22,7 +22,8 @@ class TopicScrollState {
 
   const TopicScrollState({
     this.showBackToTop = false,
-    this.showBottomBar = false,
+    // 底栏承载回复入口，进入话题即显示，下滑阅读时再收起
+    this.showBottomBar = true,
     this.hasInitialScrolled = false,
     this.isPositioned = false,
     this.jumpTargetPostNumber,
@@ -95,7 +96,11 @@ class TopicDetailController extends ChangeNotifier {
   double _accumulatedScrollDelta = 0;
 
   /// 底部栏显示状态
-  final ValueNotifier<bool> showBottomBarNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> showBottomBarNotifier = ValueNotifier<bool>(true);
+
+  /// 已加载内容离顶超过阈值（回顶按钮显隐用）；与底栏显隐同理走独立
+  /// ValueNotifier，翻转时只重建按钮定位包装
+  final ValueNotifier<bool> showBackToTopNotifier = ValueNotifier<bool>(false);
 
   /// 定位完成状态
   final ValueNotifier<bool> isPositionedNotifier = ValueNotifier<bool>(false);
@@ -132,6 +137,10 @@ class TopicDetailController extends ChangeNotifier {
 
   /// stream 索引
   final ValueNotifier<int> streamIndexNotifier = ValueNotifier<int>(1);
+
+  /// 底栏专用，从 0 到总楼数，包含当前楼层内已经滚过的部分。
+  final ValueNotifier<double> readingPositionNotifier = ValueNotifier(0.0);
+  double? _pendingReadingPosition;
 
   /// 视口当前帖号(eyeline 上报)的细粒度通知 —— TOC 显隐门控等用;
   /// 独立 ValueNotifier 是因为滚动期它高频变化,不能走 ChangeNotifier
@@ -216,6 +225,9 @@ class TopicDetailController extends ChangeNotifier {
       if (_scrollState.showBottomBar != newState.showBottomBar) {
         showBottomBarNotifier.value = newState.showBottomBar;
       }
+      if (_scrollState.showBackToTop != newState.showBackToTop) {
+        showBackToTopNotifier.value = newState.showBackToTop;
+      }
       if (_scrollState.isPositioned != newState.isPositioned) {
         isPositionedNotifier.value = newState.isPositioned;
       }
@@ -267,8 +279,32 @@ class TopicDetailController extends ChangeNotifier {
     _handleBottomBarScrollDelta(delta);
   }
 
+  /// 底栏是否随滚动自动隐藏（偏好开关）；关闭时立即恢复显示并常驻
+  bool _autoHideBottomBar = true;
+  set autoHideBottomBar(bool value) {
+    if (_autoHideBottomBar == value) return;
+    _autoHideBottomBar = value;
+    _accumulatedScrollDelta = 0;
+    if (!value && !_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
+  }
+
+  /// 快捷回复展开期间底栏必须常驻：滚动帖子不能把输入框收走
+  bool _holdBottomBar = false;
+  set holdBottomBar(bool value) {
+    if (_holdBottomBar == value) return;
+    _holdBottomBar = value;
+    _accumulatedScrollDelta = 0;
+    if (value && !_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
+  }
+
   void _handleBottomBarScrollDelta(double delta) {
-    if (delta == 0) return;
+    if (delta == 0 || !_autoHideBottomBar || _holdBottomBar) return;
 
     if ((_accumulatedScrollDelta > 0 && delta < 0) ||
         (_accumulatedScrollDelta < 0 && delta > 0)) {
@@ -418,6 +454,7 @@ class TopicDetailController extends ChangeNotifier {
   /// 准备跳转到帖子（重新加载数据）
   void prepareJumpToPost(int postNumber) {
     _cancelPostScroll();
+    _pendingReadingPosition = null;
     positionRevision++;
     _updateScrollState(
       TopicScrollState(
@@ -472,6 +509,9 @@ class TopicDetailController extends ChangeNotifier {
   void markPositioned() {
     if (!_scrollState.isPositioned) {
       _scrollState = _scrollState.copyWith(isPositioned: true);
+      final pending = _pendingReadingPosition;
+      if (pending != null) readingPositionNotifier.value = pending;
+      _pendingReadingPosition = null;
       isPositionedNotifier.value = true;
     }
   }
@@ -507,6 +547,7 @@ class TopicDetailController extends ChangeNotifier {
   /// 当前列表尚未应用目标帖子时，发起一次新的首帧定位。
   void jumpToPostLocally(int postNumber) {
     _cancelPostScroll();
+    _pendingReadingPosition = null;
     positionRevision++;
     // 重置可见性数据
     resetVisibility();
@@ -621,6 +662,15 @@ class TopicDetailController extends ChangeNotifier {
     }
   }
 
+  void updateReadingPosition(double floorsRead) {
+    if (isPositioned) {
+      readingPositionNotifier.value = floorsRead;
+    } else {
+      // 首次定位期间保留目标楼层，完成后再接上最后一次实际布局的位置。
+      _pendingReadingPosition = floorsRead;
+    }
+  }
+
   /// 更新滚动索引到帖子号的映射（长帖子分段导航使用）
   void updateScrollIndexToPostNumber(Map<int, int> mapping) {
     _scrollIndexToPostNumber = mapping;
@@ -650,6 +700,7 @@ class TopicDetailController extends ChangeNotifier {
     _cancelPostScroll();
     // 滚动相关
     showBottomBarNotifier.dispose();
+    showBackToTopNotifier.dispose();
     isPositionedNotifier.dispose();
     postListController.dispose();
     scrollController.dispose();
@@ -662,6 +713,7 @@ class TopicDetailController extends ChangeNotifier {
     // 可见性相关
     _screenTrackThrottleTimer?.cancel();
     streamIndexNotifier.dispose();
+    readingPositionNotifier.dispose();
     viewportPostNumberNotifier.dispose();
 
     super.dispose();

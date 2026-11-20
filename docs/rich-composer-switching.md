@@ -20,8 +20,7 @@
 `raw → parseForEditor → DTO v1 → SemanticComposerCodec → SemanticEditorSession → 绑定的 EditorState 投影`。
 
 整篇导出来自 `session.exportTree()`，不是从裸 EditorBlock 重建树。
-旧 `composer_doc_codec.dart` 和整篇 `importEditorTokens` 路径已删除，历史回归已迁正式链路。最新验收及剩余门禁见
-[Semantic 生产迁移独立验收](semantic-production-acceptance.md)。
+旧 `composer_doc_codec.dart` 和整篇 `importEditorTokens` 路径已删除，历史回归已迁正式链路。
 
 独立编辑引擎排除 onebox/watched-words/censored；普通 cook 仅用于预览与
 导入前后辅助门禁。旧 cookForEditor 已删除，阅读解析器也不再接受编辑专用源码占位。
@@ -35,7 +34,7 @@ meta.fluxdoSource，只有 root=true、范围合法、tokenCount匹配才允许�
 分开，导出均保持源码，不加代码围栏。此兼容策略不等于全部插件都有结构化
 编辑能力。严格 cooked 门禁仍保留，不以迁移 token 为由删除。
 
-## 本轮安全边界
+## 安全边界
 
 实现与回归应覆盖：
 
@@ -74,27 +73,17 @@ meta.fluxdoSource，只有 root=true、范围合法、tokenCount匹配才允许�
 - 宿主生命周期：无编辑切换、立即提交、IR 光标停留、卸载回写、草稿替换。
 - 三页面上传与中文输入法切换需交互/真机验证；不能由纯模型测试替代。
 
-## 历史验证记录
+## 当前兼容边界
 
-以下为 token 迁移阶段记录，不是当前 semantic 测试总数；当前组合结果以 [生产验收](semantic-production-acceptance.md) 为准。
-
-子包非 golden 全量测试通过。全量出现的33项golden失败，已在同环境使用
-子包 git archive HEAD 的隔离副本（不含本轮修改）复跑对应三个测试文件，
-得到完全相同失败列表；未更新golden。该基线问题独立跟进，不能宣称全量绿灯。
-
-移动端 QuickJS/JSC、中文输入法与三页面端到端切换仍需真机验证。
-
-### 当前兼容边界
-
-本轮媒体、投票、表格对齐、日期范围/周期、BBCode来源、附件原链、嵌套松散列表及
-基础脚注已恢复结构化能力，详见 `editor-token-migration-audit.md` 的修复与验收节。
+媒体、投票、表格对齐、日期范围/周期、BBCode来源、附件原链、嵌套松散列表及
+基础脚注已恢复结构化能力。
 不是所有 HTML 都应变为源码：完整 video/audio 优先真实媒体节点，复杂混合 HTML
 才保源。模型无法表达的重复/空HTML行内结构以及非TeX数学暂保完整源码。
 
 复杂多段脚注安全拒绝（宿主保留原文），未注册第三方color/size样式仍待独立扩展。
 这些边界不以通过若干样例冒充全部兼容。
 
-### 空引用边界
+## 空引用边界
 
 末尾独立 `>` 是合法空引用，不是可删除的空白。官方token包含空的
 blockquote_open/close；doc_converter必须补带QuoteFrame的空TextBlock，

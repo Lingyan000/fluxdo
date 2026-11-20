@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../typedef.dart';
 import 'gesture_controller.dart';
@@ -61,27 +61,19 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
   ///whether is sliding page
   bool get isSliding => _isSliding;
 
-  /// 滑动会话 ID，每次新滑动开始时递增。
-  /// 用于防止回弹动画完成时误将新会话的 _isSliding 重置。
-  int _slideSessionId = 0;
-
   Size? _pageSize;
   Size get pageSize => _pageSize ?? context.size!;
 
-  late AnimationController _backAnimationController;
+  late final AnimationController _backAnimationController;
   AnimationController get backAnimationController => _backAnimationController;
   Animation<Offset>? _backOffsetAnimation;
   Animation<Offset>? get backOffsetAnimation => _backOffsetAnimation;
   Animation<double>? _backScaleAnimation;
   Animation<double>? get backScaleAnimation => _backScaleAnimation;
   Offset _offset = Offset.zero;
-  Offset get offset =>
-      _backAnimationController.isAnimating
-          ? _backOffsetAnimation!.value
-          : _offset;
+  Offset get offset => _offset;
   double _scale = 1.0;
-  double get scale =>
-      _backAnimationController.isAnimating ? backScaleAnimation!.value : _scale;
+  double get scale => _scale;
 
   @override
   void initState() {
@@ -95,37 +87,22 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
 
   @override
   void didUpdateWidget(ExtendedImageSlidePage oldWidget) {
-    if (oldWidget.resetPageDuration != widget.resetPageDuration) {
-      _backAnimationController.stop();
-      _backAnimationController.removeListener(_backAnimation);
-      _backAnimationController.dispose();
-      _backAnimationController = AnimationController(
-        vsync: this,
-        duration: widget.resetPageDuration,
-      );
-      _backAnimationController.addListener(_backAnimation);
-    }
     super.didUpdateWidget(oldWidget);
+    _backAnimationController.duration = widget.resetPageDuration;
   }
 
   /// 滑动驱动目标:每 tick 写入 controller,绘制层监听 controller
   /// 重绘 —— 手势状态在 Widget 树之外,树切换不再中断滑动。
   ImageGestureController? _gestureController;
 
-  /// 回弹动画启动时记录的会话 ID
-  int _backAnimationSessionId = -1;
-
   void _backAnimation() {
-    if (mounted) {
-      setState(() {
-        // 仅当回弹动画的会话 ID 与当前一致时才重置 _isSliding，
-        // 避免新滑动会话被旧动画误重置。
-        if (_backAnimationController.isCompleted &&
-            _backAnimationSessionId == _slideSessionId) {
-          _isSliding = false;
-        }
-      });
-    }
+    // 启动时 forward(from: 0) 也会同步通知。每次都写入这一帧的
+    // 插值，图片、背景和接手的新拖动便始终读到相同的位置。
+    setState(() {
+      _offset = _backOffsetAnimation?.value ?? _offset;
+      _scale = _backScaleAnimation?.value ?? _scale;
+      if (_backAnimationController.isCompleted) _isSliding = false;
+    });
     if (widget.slideType == SlideType.onlyImage) {
       _gestureController?.updateSlide(offset, scale);
     }
@@ -140,10 +117,8 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
   }
 
   void slide(Offset value, {ImageGestureController? controller}) {
-    // 如果回弹动画正在播放，打断它并从当前动画位置开始新滑动
+    // 上一帧的位移和缩放已写入，新的拖动直接接手。
     if (_backAnimationController.isAnimating) {
-      _offset = _backOffsetAnimation?.value ?? _offset;
-      _scale = _backScaleAnimation?.value ?? _scale;
       _backAnimationController.stop();
     }
     if (controller != null) {
@@ -167,9 +142,6 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
           pageGestureAxis: widget.slideAxis,
         );
 
-    if (!_isSliding) {
-      _slideSessionId++;
-    }
     _isSliding = true;
     if (widget.slideType == SlideType.onlyImage) {
       _gestureController?.updateSlide(_offset, _scale);
@@ -210,11 +182,7 @@ class ExtendedImageSlidePageState extends State<ExtendedImageSlidePage>
           _backScaleAnimation = _backAnimationController.drive(
             Tween<double>(begin: _scale, end: 1.0),
           );
-          _offset = Offset.zero;
-          _scale = 1.0;
-          _backAnimationSessionId = _slideSessionId;
-          _backAnimationController.reset();
-          _backAnimationController.forward();
+          _backAnimationController.forward(from: 0);
         } else {
           setState(() {
             _isSliding = false;

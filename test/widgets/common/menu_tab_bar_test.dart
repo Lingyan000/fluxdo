@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -129,6 +129,58 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('常驻文字：未选中只显示文字与未读数，横滑时图标原位显现、文字让位', (
+    tester,
+  ) async {
+    final controller = TabController(length: 3, vsync: tester);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(_labelHost(controller));
+    await tester.pumpAndSettle();
+    // 未选中栏目常驻文字，未读数跟在文字后，图标不显示
+    expect(find.text('回复'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+    expect(find.byIcon(Icons.reply), findsNothing);
+    expect(find.byIcon(Icons.notifications), findsOneWidget);
+    final width = tester.getSize(find.byTooltip('回复')).width;
+    final otherTab = tester.getCenter(find.byTooltip('私信'));
+    var labelX = tester.getTopLeft(find.text('回复')).dx;
+    Offset? iconPosition;
+
+    for (final progress in [0.25, 0.5, 0.75]) {
+      controller.offset = progress;
+      await tester.pump();
+      final icon = find.byIcon(Icons.reply);
+      expect(icon, findsOneWidget);
+      final opacity = tester.widget<Opacity>(
+        find.ancestor(of: icon, matching: find.byType(Opacity)).first,
+      );
+      expect(opacity.opacity, progress);
+      // 图标停在最终位置，由遮罩逐渐露出；文字向末端让位
+      iconPosition ??= tester.getTopLeft(icon);
+      expect(tester.getTopLeft(icon), iconPosition);
+      final currentLabelX = tester.getTopLeft(find.text('回复')).dx;
+      expect(currentLabelX, greaterThan(labelX));
+      labelX = currentLabelX;
+      expect(tester.getSize(find.byTooltip('回复')).width, width);
+      expect(tester.getCenter(find.byTooltip('私信')), otherTab);
+      expect(tester.takeException(), isNull);
+    }
+
+    // 选中后保持原有线框图标并在文字前，间隔固定，激活前景跟随主题选中强调色
+    controller.index = 1;
+    await tester.pumpAndSettle();
+    final replyIcon = tester.widget<Icon>(find.byIcon(Icons.reply));
+    expect(replyIcon.fill, isNull);
+    final tabBar = tester.widget<TabBar>(find.byType(TabBar));
+    final hostContext = tester.element(find.byType(TabBar));
+    expect(tabBar.labelColor, hostContext.emphasis.selected);
+    expect(
+      tester.getRect(find.text('回复')).left -
+          tester.getRect(find.byIcon(Icons.reply)).right,
+      closeTo(6, 0.01),
+    );
+  });
 }
 
 Widget _host(
@@ -158,6 +210,23 @@ Widget _host(
           ),
           const MenuTabItem(label: '概览', icon: Icons.bar_chart),
           const MenuTabItem(label: '关于', icon: Icons.person_outline),
+        ],
+      ),
+    ),
+  ),
+);
+
+Widget _labelHost(TabController controller) => MaterialApp(
+  home: Scaffold(
+    body: Align(
+      alignment: Alignment.topCenter,
+      child: MenuTabBar<Never>(
+        controller: controller,
+        mode: MenuTabMode.label,
+        items: const [
+          MenuTabItem(label: '全部', icon: Icons.notifications),
+          MenuTabItem(label: '回复', icon: Icons.reply, badgeCount: 3),
+          MenuTabItem(label: '私信', icon: Icons.mail),
         ],
       ),
     ),

@@ -193,7 +193,7 @@ extension FilterMethods on TopicDetailNotifier {
           arg.topicId,
           nextIds,
           // 过滤模式下服务端同样不下发推荐话题,靠这一次翻页补
-          includeSuggested: currentDetail.suggestedTopics.isEmpty,
+          includeSuggested: currentDetail.needsFooterTopics,
         );
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
@@ -222,6 +222,7 @@ extension FilterMethods on TopicDetailNotifier {
           relatedTopics: newPostStream.relatedTopics.isNotEmpty
               ? newPostStream.relatedTopics
               : null,
+          relatedMessages: newPostStream.relatedMessages,
         ));
       });
       if (!ref.mounted) return;

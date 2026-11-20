@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub mod browser_tls;
+pub mod h3_template;
+mod h3_probe;
+#[cfg(target_os = "linux")]
+pub mod linux_tls;
 pub mod cert;
 pub mod client;
 pub mod core;
@@ -32,6 +36,10 @@ mod request_trace;
 mod session_cache;
 pub mod system_proxy;
 mod upload_timeout;
+#[cfg(all(test, target_os = "linux"))]
+mod android_revocation_tests;
+#[cfg(all(test, target_os = "linux"))]
+mod ocsp_tests;
 pub mod upstream;
 
 #[cfg(test)]
@@ -183,6 +191,9 @@ pub struct NetConfig {
     /// 宿主当前 WebView UA，用于缓存失效与就近预置选择。
     #[serde(default)]
     pub fingerprint_user_agent: Option<String>,
+    /// 宿主实际系统版本身份；独立于可能冻结的 WebView UA，用于缓存失效。
+    #[serde(default)]
+    pub fingerprint_runtime_identity: Option<String>,
     #[serde(default)]
     pub fingerprint_platform: Option<String>,
     /// 指定预置 ID；缺省为实时采样/缓存优先的自动模式。
@@ -218,6 +229,7 @@ impl Default for NetConfig {
             fingerprint_cache_path: None,
             http3_cache_path: None,
             fingerprint_user_agent: None,
+            fingerprint_runtime_identity: None,
             fingerprint_platform: None,
             fingerprint_preset: None,
             tls_session_cache_path: None,

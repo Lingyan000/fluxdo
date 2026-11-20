@@ -5,7 +5,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -71,11 +71,11 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
   /// 每次加载的代次：跳过/重试后，过期的加载结果不再推进页面
   int _attempt = 0;
 
-  bool get _reduceMotion => WidgetsBinding
-      .instance
-      .platformDispatcher
-      .accessibilityFeatures
-      .disableAnimations;
+  bool get _reduceMotion {
+    final features =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
+    return features.disableAnimations || features.reduceMotion;
+  }
 
   @override
   void initState() {
@@ -591,7 +591,9 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
     final background = brightness == Brightness.dark
         ? logoMotionBackgroundDark
         : logoMotionBackgroundLight;
-    final badgeFadeDuration = MediaQuery.disableAnimationsOf(context)
+    final badgeFadeDuration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
         ? Duration.zero
         : _badgeFadeDuration;
     // 固定在圆体右下角，只做短暂淡入淡出。
@@ -862,9 +864,8 @@ class _PreheatFailed extends StatelessWidget {
   const _PreheatFailed({super.key, required this.onRetry, this.error});
 
   void _openAbout(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(InteractionPageRoute(builder: (_) => const AboutPage()));
+    Navigator.of(context)
+        .push(InteractionPageRoute(builder: (_) => const AboutPage()));
   }
 
   void _openNetworkSettings(BuildContext context) {

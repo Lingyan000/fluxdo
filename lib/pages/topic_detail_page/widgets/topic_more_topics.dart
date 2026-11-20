@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,15 +7,18 @@ import '../../../l10n/s.dart';
 import '../../../models/category.dart';
 import '../../../models/topic.dart';
 import '../../../providers/category_provider.dart';
+import '../../../providers/core_providers.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../providers/selected_topic_provider.dart';
 import '../../../utils/number_utils.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/category_tags_line.dart';
-import '../../../widgets/common/icon_glyph_span.dart';
+import '../../../widgets/common/inline_icon_span.dart';
 import '../../../widgets/common/smart_avatar.dart';
 import '../../category_topics_page.dart';
+import '../../search_page.dart';
 import '../topic_detail_page.dart';
+import '../../../widgets/common/emoji_text.dart';
 
 /// 帖子流末尾的推荐区(对齐网页版 more-topics)
 ///
@@ -25,11 +28,18 @@ import '../topic_detail_page.dart';
 ///
 /// 顶部不画分隔线:上方最后一个帖子自带底部分隔线,再画一条就是双线。
 ///
-/// 私信不接:官方私信下走的是 related_messages 字段(文案也不同),本次未实现。
+/// 私信只展示服务端返回的相关消息。
 class MoreTopicsSection extends ConsumerStatefulWidget {
-  const MoreTopicsSection({super.key, required this.detail});
+  const MoreTopicsSection({
+    super.key,
+    required this.detail,
+    this.relatedMessages,
+  });
 
   final TopicDetail detail;
+
+  /// 树形末页可单独返回相关消息。字段缺失时沿用详情响应。
+  final List<Topic>? relatedMessages;
 
   @override
   ConsumerState<MoreTopicsSection> createState() => _MoreTopicsSectionState();
@@ -47,18 +57,28 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
     if (!enabled) return const SizedBox.shrink();
 
     final detail = widget.detail;
-    if (detail.isPrivateMessage) return const SizedBox.shrink();
-
-    final related = detail.relatedTopics;
-    final suggested = detail.suggestedTopics;
+    final isPrivateMessage = detail.isPrivateMessage;
+    final related = isPrivateMessage
+        ? widget.relatedMessages ?? detail.relatedMessages ?? const <Topic>[]
+        : detail.relatedTopics;
+    final suggested = isPrivateMessage
+        ? const <Topic>[]
+        : detail.suggestedTopics;
     if (related.isEmpty && suggested.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final l10n = context.l10n;
     final hasTabs = related.isNotEmpty && suggested.isNotEmpty;
-    final showRelated = related.isNotEmpty && (_preferRelated ?? true);
+    final showRelated =
+        related.isNotEmpty && (!hasTabs || (_preferRelated ?? true));
     final topics = showRelated ? related : suggested;
-    final categoryMap = ref.watch(categoryMapProvider).value;
+    final relatedLabel = isPrivateMessage
+        ? l10n.topicDetail_relatedMessages
+        : l10n.topicDetail_relatedTopics;
+    final categoryMap = isPrivateMessage
+        ? null
+        : ref.watch(categoryMapProvider).value;
+    final category = categoryMap?[detail.categoryId];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -84,7 +104,7 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                 )
               : Row(
                   children: [
-                    if (showRelated) ...[
+                    if (showRelated && !isPrivateMessage) ...[
                       Icon(
                         Symbols.auto_awesome_rounded,
                         size: 16,
@@ -92,12 +112,17 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
                       ),
                       const SizedBox(width: 6),
                     ],
-                    Text(
-                      showRelated
-                          ? l10n.topicDetail_relatedTopics
-                          : l10n.topicDetail_suggestedTopics,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          showRelated
+                              ? relatedLabel
+                              : l10n.topicDetail_suggestedTopics,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -107,6 +132,9 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
           _MoreTopicTile(
             topic: topic,
             category: categoryMap?[int.tryParse(topic.categoryId)],
+            totalReplies: isPrivateMessage && topic.postsCount > 0
+                ? topic.postsCount - 1
+                : null,
             // 平行视界面板内=压当前栈(与正文内链同语义);
             // 全屏话题页=照旧全屏 push。
             onTap: () {
@@ -127,7 +155,20 @@ class _MoreTopicsSectionState extends ConsumerState<MoreTopicsSection> {
               );
             },
           ),
-        _BrowseMoreLine(category: categoryMap?[detail.categoryId]),
+        if (isPrivateMessage &&
+            related.length >= 5 &&
+            detail.allowedGroups.isEmpty &&
+            detail.allowedUsers.length == 2)
+          _AllDirectMessagesLink(users: detail.allowedUsers),
+        if (category != null)
+          _BrowseMoreLine(
+            label: l10n.topicDetail_browseMoreInCategory(category.name),
+            onTap: () => Navigator.of(context).push(
+              InteractionPageRoute(
+                builder: (_) => CategoryTopicsPage(category: category),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -206,16 +247,17 @@ class MoreTopicTileDensity {
   final bool showExcerpt;
   final bool showCategoryLine;
 
-  /// 展示用回复数(reply_count 缺席时回落 posts_count - 1),0 = 不画
-  final int replyCount;
+  /// 已知的私信回复数包含零。精简话题条目可以省略此项。
+  final int? replyCount;
   final bool showTime;
 
-  bool get hasMetaLine => showCategoryLine || replyCount > 0 || showTime;
+  bool get hasMetaLine => showCategoryLine || replyCount != null || showTime;
 }
 
 MoreTopicTileDensity resolveMoreTopicTileDensity(
   Topic topic, {
   Category? category,
+  int? totalReplies,
 }) {
   TopicUser? creator;
   for (final poster in topic.posters) {
@@ -232,7 +274,7 @@ MoreTopicTileDensity resolveMoreTopicTileDensity(
     creator: creator,
     showExcerpt: (topic.excerpt?.trim().isNotEmpty ?? false),
     showCategoryLine: category != null || topic.tags.isNotEmpty,
-    replyCount: replies,
+    replyCount: totalReplies ?? (replies > 0 ? replies : null),
     showTime: (topic.lastPostedAt ?? topic.createdAt) != null,
   );
 }
@@ -247,23 +289,29 @@ class _MoreTopicTile extends StatelessWidget {
   const _MoreTopicTile({
     required this.topic,
     required this.category,
+    this.totalReplies,
     required this.onTap,
   });
 
   final Topic topic;
   final Category? category;
+  final int? totalReplies;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final density = resolveMoreTopicTileDensity(topic, category: category);
+    final density = resolveMoreTopicTileDensity(
+      topic,
+      category: category,
+      totalReplies: totalReplies,
+    );
     final metaColor = theme.colorScheme.onSurfaceVariant;
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        EmojiText(
           topic.title,
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w500,
@@ -319,100 +367,106 @@ class _MoreTopicTile extends StatelessWidget {
     );
   }
 
-  /// meta 行:分类 + 标签靠左(超宽省略),回复数 + 时间固定靠右,
-  /// 左右锚定避免逐项挤在一起的粘连感
+  /// 有分类或标签时分列展示，否则把统计直接排在标题下方。
   Widget _buildMetaLine(
     BuildContext context,
     MoreTopicTileDensity density,
     Color metaColor,
   ) {
-    final theme = Theme.of(context);
-    final rightStyle = theme.textTheme.labelSmall?.copyWith(color: metaColor);
-
-    final rightSpans = <InlineSpan>[];
-    if (density.replyCount > 0) {
-      rightSpans.add(
-        iconGlyphSpan(
-          context,
-          Symbols.chat_bubble_rounded,
-          size: 12,
-          color: metaColor,
-          gap: 3,
-          textStyle: rightStyle,
-        ),
-      );
-      rightSpans.add(
-        TextSpan(
-          text: NumberUtils.formatCount(density.replyCount),
-          style: rightStyle,
-        ),
-      );
-    }
-    if (density.showTime) {
-      if (rightSpans.isNotEmpty) {
-        rightSpans.add(TextSpan(text: ' · ', style: rightStyle));
-      }
-      rightSpans.add(
-        TextSpan(
-          text: TimeUtils.formatRelativeTime(
-            topic.lastPostedAt ?? topic.createdAt,
-          ),
-          style: rightStyle,
-        ),
-      );
-    }
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: metaColor,
+    );
+    final stats = Text.rich(
+      TextSpan(
+        children: [
+          if (density.replyCount case final count?) ...[
+            inlineIconSpan(
+              Symbols.chat_bubble_rounded,
+              size: 12,
+              color: metaColor,
+              textStyle: style ?? const TextStyle(),
+            ),
+            const WidgetSpan(child: SizedBox(width: 3)),
+            TextSpan(text: NumberUtils.formatCount(count)),
+            if (density.showTime) const TextSpan(text: ' · '),
+          ],
+          if (density.showTime)
+            TextSpan(
+              text: TimeUtils.formatRelativeTime(
+                topic.lastPostedAt ?? topic.createdAt,
+              ),
+            ),
+        ],
+      ),
+      style: style,
+    );
+    if (!density.showCategoryLine) return stats;
 
     return Row(
       children: [
         Expanded(
-          child: density.showCategoryLine
-              ? CategoryTagsLine(
-                  category: category,
-                  tags: topic.tags,
-                  metaColor: metaColor,
-                )
-              : const SizedBox.shrink(),
+          child: CategoryTagsLine(
+            category: category,
+            tags: topic.tags,
+            metaColor: metaColor,
+          ),
         ),
-        if (rightSpans.isNotEmpty) ...[
+        if (density.replyCount != null || density.showTime) ...[
           const SizedBox(width: 12),
-          Text.rich(TextSpan(children: rightSpans)),
+          stats,
         ],
       ],
     );
   }
 }
 
-/// 「浏览更多」一行(对齐官方 browse-more)
-///
-/// 官方那行还含「最新话题」链接,App 里「最新」是首页 tab,从详情再 push
-/// 一个列表页不自然,故只保留分类入口;话题没有分类时整行不画。
-class _BrowseMoreLine extends StatelessWidget {
-  const _BrowseMoreLine({required this.category});
+/// 只有当前用户参与的双人私信才能跳到与对方的直接消息搜索。
+class _AllDirectMessagesLink extends ConsumerWidget {
+  const _AllDirectMessagesLink({required this.users});
 
-  final Category? category;
+  final List<TopicUser> users;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final myId = ref.watch(currentUserProvider.select((user) => user.value?.id));
+    if (!users.any((user) => user.id == myId)) return const SizedBox.shrink();
+    final other = users.where((user) => user.id != myId).firstOrNull;
+    if (other == null || other.username.isEmpty) return const SizedBox.shrink();
+    return _BrowseMoreLine(
+      label: context.l10n.topicDetail_allMessagesFrom(other.username),
+      onTap: () => Navigator.of(context).push(
+        InteractionPageRoute(
+          builder: (_) => SearchPage(
+            initialQuery: '@${other.username} in:personal-direct',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowseMoreLine extends StatelessWidget {
+  const _BrowseMoreLine({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final category = this.category;
-    if (category == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: InkWell(
-          onTap: () => Navigator.of(context).push(
-            InteractionPageRoute(
-              builder: (_) => CategoryTopicsPage(category: category),
-            ),
-          ),
+          onTap: onTap,
           customBorder: RoundedSuperellipseBorder(
             borderRadius: context.shapes.borderRadius(6),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             child: Text(
-              context.l10n.topicDetail_browseMoreInCategory(category.name),
+              label,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.colorScheme.primary,
               ),

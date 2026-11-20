@@ -10,7 +10,7 @@
 //!   Chromium 本身就是 BoringSSL，结果与参考握手逐字相同；Safari 等非 Chromium 客户端
 //!   外层会少掉 BoringSSL 不支持的老套件（如 3DES 的 ECDHE 变体），以换取正确的内层。
 //! - 所有客户端都注入 ECH（可用性优先）；Chromium 系额外请求 server padding，与 Chrome 一致。
-//! - Chromium 系每条连接重新打乱扩展顺序、重新生成 GREASE，与浏览器行为一致。
+//! - 镜像保留当次扩展顺序；缓存回放只在实际采样观察到乱序后才重新排列。
 
 use std::io::{self, Read, Write};
 use std::num::NonZeroUsize;
@@ -61,6 +61,8 @@ pub struct BrowserEgress {
 #[derive(Clone)]
 pub struct ClientSessions {
     domain: TlsClientSessionDomain,
+    #[cfg(target_os = "linux")]
+    pub(crate) native: Arc<crate::linux_tls::Sessions>,
     store: Arc<dyn TlsClientSessionStore>,
     persistent: Option<Arc<crate::session_cache::TicketStore>>,
     namespace: Arc<str>,
@@ -71,6 +73,8 @@ impl Default for ClientSessions {
     fn default() -> Self {
         Self {
             domain: TlsClientSessionDomain::new(),
+            #[cfg(target_os = "linux")]
+            native: Arc::new(crate::linux_tls::Sessions::default()),
             persistent: None,
             namespace: "".into(),
             scope: None,
@@ -89,6 +93,8 @@ impl ClientSessions {
         store: Arc<crate::session_cache::TicketStore>,
         namespace: String,
     ) -> Self {
+        #[cfg(target_os = "linux")]
+        { self.native = Arc::new(crate::linux_tls::Sessions::persistent(store.clone(), namespace.clone())); }
         self.persistent = Some(store);
         self.namespace = namespace.into();
         self
@@ -147,6 +153,18 @@ pub fn build(
     ech_config_list: Option<&[u8]>,
     sessions: Option<&ClientSessions>,
 ) -> Result<BrowserEgress, BoxError> {
+    build_with_permutation(hello, server_name, ech_config_list, sessions, false)
+}
+
+/// 乱序是运行时行为，不能仅凭 Chromium 身份或 UA 主版本推断。
+/// 未完成多次采样时保留参考顺序；GREASE 和密钥仍由 TLS 库重新生成。
+pub fn build_with_permutation(
+    hello: &ClientHello,
+    server_name: Host,
+    ech_config_list: Option<&[u8]>,
+    sessions: Option<&ClientSessions>,
+    permute_extensions: bool,
+) -> Result<BrowserEgress, BoxError> {
     let chromium = is_chromium(hello);
     let mut config =
         TlsClientConfig::new_from_client_hello(hello).with_unknown_values(UnknownValues::Drop);
@@ -154,9 +172,7 @@ pub fn build(
     // 交给平台校验器：企业与用户自装的 CA、系统的吊销策略都算数，与系统网络栈同待遇
     // （安卓还会遵循 network_security_config）。没有平台校验器的 Linux 由 rama 退回系统信任库。
     config.set_platform_verifier();
-    if chromium {
-        config.set_permute_extensions(true);
-    }
+    config.set_permute_extensions(permute_extensions);
 
     // 标准套件串为空（参考握手没有 BoringSSL 认识的 TLS 1.2 套件）时无法安全注入 ECH
     let ech = ech_config_list.and_then(|list| {
@@ -236,6 +252,66 @@ fn is_grease(value: u16) -> bool {
     value & 0x0f0f == 0x0a0a && value >> 8 == value & 0xff
 }
 
+/// 本机后端能力审计，只比较公开的算法编号与扩展编号，不输出票据、密钥或请求头。
+/// 作用域是未注入 ECH 的完整 TCP 握手；不代表目标站点或 QUIC 已验证。
+pub fn capability_audit(reference: &ClientHello) -> serde_json::Value {
+    fn fields(hello: &ClientHello) -> std::collections::BTreeMap<&'static str, Vec<u16>> {
+        let clean = |items: Vec<u16>| items.into_iter().filter(|id| !is_grease(*id)).collect::<Vec<_>>();
+        let mut extensions = clean(hello.extensions().iter().map(|e| u16::from(e.id()))
+            .filter(|id| !matches!(*id, 21 | 41 | 44)).collect());
+        extensions.sort_unstable();
+        std::collections::BTreeMap::from([
+            ("cipher_suites", clean(hello.cipher_suites().iter().map(|v| u16::from(*v)).collect())),
+            ("supported_groups", clean(hello.ext_supported_groups().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("signature_algorithms", clean(hello.ext_signature_algorithms().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("supported_versions", clean(hello.supported_versions().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("key_share_groups", clean(hello.ext_key_share_groups().unwrap_or_default().iter().map(|v| u16::from(*v)).collect())),
+            ("extension_ids", extensions),
+        ])
+    }
+    // 这份配置只交给 HelloSink（无网络、无服务端响应），不初始化或污染进程全局
+    // 信任库。生产 build() 仍始终启用平台证书校验，此配置不会返回给连接调用方。
+    let mut config = TlsClientConfig::new_from_client_hello(reference)
+        .with_unknown_values(UnknownValues::Drop)
+        .with_server_verify(rama::tls::client::ServerVerifyMode::Disable);
+    config.set_server_name(Host::from_static("localhost"));
+    config.set_permute_extensions(false);
+    let result = TlsConnectorData::try_from(&config).and_then(emit_client_hello);
+    match result {
+        Ok(actual) => {
+            let expected = fields(reference);
+            let actual = fields(&actual);
+            let differences: std::collections::BTreeMap<_, _> = expected.iter()
+                .filter(|(name, values)| actual.get(**name) != Some(*values))
+                .map(|(name, values)| (*name, serde_json::json!({"sampled": values, "emitted": actual.get(name)})))
+                .collect();
+            serde_json::json!({"scope": "tcp_full_handshake_without_ech", "status": if differences.is_empty() { "checked_fields_match" } else { "backend_mismatch" }, "checked_fields": expected.keys().collect::<Vec<_>>(), "differences": differences})
+        }
+        Err(_) => serde_json::json!({"scope": "tcp_full_handshake_without_ech", "status": "backend_build_failed"}),
+    }
+}
+
+/// 报告直连完整握手实际可选的后端；ECH 分支仍保留单独的能力差异。
+pub fn selected_capability_audit(reference: &ClientHello, permutes: bool) -> serde_json::Value {
+    let mut audit = capability_audit(reference);
+    audit["backend"] = serde_json::json!("BoringSSL");
+    #[cfg(target_os = "linux")]
+    if crate::linux_tls::matches(reference, permutes) {
+        return serde_json::json!({
+            "scope": "tcp_full_handshake_without_ech",
+            "status": "checked_fields_match",
+            "backend": "GnuTLS",
+            "checked_fields": audit["checked_fields"],
+            "differences": {},
+            "ech_fallback": audit,
+            "mirror_backend": "native_tunnel_without_ech",
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = permutes;
+    audit
+}
+
 /// 不联网取出连接配置将要发出的 ClientHello：对着只收不发的对端开始握手。
 pub fn emit_client_hello(data: TlsConnectorData) -> Result<ClientHello, BoxError> {
     let ssl = data.into_ssl()?;
@@ -272,6 +348,22 @@ mod tests {
     use super::*;
 
     use crate::ech_test_keys::{ECH_CONFIG, ECH_KEY};
+
+    #[test]
+    fn linux_wpe_capability_loss_is_reported_without_exporting_handshake_secrets() {
+        let template: crate::mirror::FingerprintTemplate = serde_json::from_str(include_str!(
+            "../tests/fixtures/linux_wpe_webkit_probe.json"
+        )).unwrap();
+        let audit = capability_audit(&template.hello);
+        assert_eq!(audit["status"], "backend_mismatch");
+        let groups = audit["differences"]["supported_groups"]["sampled"].as_array().unwrap();
+        assert!(groups.iter().any(|id| id == 30));
+        assert!(!audit["differences"]["supported_groups"]["emitted"].as_array().unwrap().iter().any(|id| id == 30));
+        let serialized = audit.to_string();
+        for secret_field in ["ServerName", "user_agent", "Opaque", "session_ticket", "key_share_data"] {
+            assert!(!serialized.contains(secret_field));
+        }
+    }
 
     fn chrome156() -> ClientHello {
         serde_json::from_str(include_str!(
@@ -660,5 +752,102 @@ mod tests {
     fn standard_cipher_list_keeps_reference_order() {
         let list = standard_cipher_list(&chrome156()).unwrap();
         assert!(list.starts_with("ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"));
+    }
+
+    fn chrome99() -> ClientHello {
+        serde_json::from_str::<crate::mirror::FingerprintTemplate>(include_str!(
+            "../tests/fixtures/chromium99_linux_probe.json"
+        ))
+        .unwrap()
+        .hello
+    }
+
+    fn ordered_ids(hello: &ClientHello) -> Vec<u16> {
+        hello
+            .extensions()
+            .iter()
+            .map(|e| u16::from(e.id()))
+            .filter(|id| !is_grease(*id))
+            .collect()
+    }
+
+    #[test]
+    fn mirror_and_uncalibrated_replay_preserve_reference_extension_order() {
+        for reference in [chrome99(), chrome156(), safari27()] {
+            for _ in 0..8 {
+                let output =
+                    emitted(build(&reference, Host::from_static("localhost"), None, None).unwrap());
+                assert_eq!(ordered_ids(&output), ordered_ids(&reference));
+                assert_eq!(
+                    without_grease(output.cipher_suites()),
+                    without_grease(reference.cipher_suites())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn calibrated_permutation_changes_order_without_changing_capabilities() {
+        let reference = chrome156();
+        let mut orders = std::collections::HashSet::new();
+        for _ in 0..8 {
+            let output = emitted(
+                build_with_permutation(
+                    &reference,
+                    Host::from_static("localhost"),
+                    None,
+                    None,
+                    true,
+                )
+                .unwrap(),
+            );
+            orders.insert(ordered_ids(&output));
+            assert_eq!(extension_ids(&output), extension_ids(&reference));
+            assert_eq!(
+                without_grease(output.cipher_suites()),
+                without_grease(reference.cipher_suites())
+            );
+        }
+        assert!(orders.len() > 1);
+    }
+
+    #[test]
+    fn replay_keeps_sampled_alpn_versions_groups_signatures_and_alps_codepoint() {
+        fn stable(hello: &ClientHello) -> serde_json::Value {
+            let mut value = serde_json::to_value(hello).unwrap();
+            let extensions = value["extensions"].as_array_mut().unwrap();
+            extensions.retain(|entry| {
+                [
+                    "SupportedGroups",
+                    "SupportedVersions",
+                    "SignatureAlgorithms",
+                    "ApplicationLayerProtocolNegotiation",
+                    "ApplicationSettings",
+                    "CertificateCompression",
+                    "ECPointFormats",
+                ]
+                .iter()
+                .any(|name| entry.get(*name).is_some())
+            });
+            for entry in extensions.iter_mut() {
+                for name in [
+                    "SupportedGroups",
+                    "SupportedVersions",
+                    "SignatureAlgorithms",
+                ] {
+                    if let Some(values) = entry.get_mut(name).and_then(|v| v.as_array_mut()) {
+                        values.retain(|v| !is_grease(v.as_u64().unwrap() as u16));
+                    }
+                }
+            }
+            extensions
+                .sort_by_key(|entry| entry.as_object().unwrap().keys().next().unwrap().clone());
+            serde_json::json!(extensions)
+        }
+        for hello in [chrome99(), chrome156(), safari27()] {
+            let output =
+                emitted(build(&hello, Host::from_static("localhost"), None, None).unwrap());
+            assert_eq!(stable(&hello), stable(&output));
+        }
     }
 }

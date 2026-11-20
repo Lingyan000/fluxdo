@@ -12,11 +12,15 @@ void handleTopicDetailMoreMenuSelection(
   required void Function() onOpenInBrowser,
   required void Function() onFilter,
   required void Function() onReadingSettings,
+  void Function()? onShowMembers,
   void Function()? onToggleArchiveMessage,
 }) {
   switch (value) {
     case 'edit_topic':
       onEditTopic();
+      return;
+    case 'members':
+      onShowMembers?.call();
       return;
     case 'archive_message':
       onToggleArchiveMessage?.call();

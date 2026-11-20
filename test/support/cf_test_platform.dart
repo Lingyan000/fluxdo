@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +32,8 @@ class CfTestPlatform extends InAppWebViewPlatform {
     controller.partitionKey = null;
     controller.documentHtml = '';
     controller.documentComplete = true;
+    controller.documentUrl = 'https://linux.do/challenge';
+    controller.documentRead = null;
     webView = null;
     CfClearanceAuthority.instance
       ..debugCookieReader = null
@@ -124,6 +128,8 @@ class CfTestController extends PlatformInAppWebViewController {
   String? partitionKey;
   String documentHtml = '';
   bool documentComplete = true;
+  String documentUrl = 'https://linux.do/challenge';
+  Future<String>? documentRead;
 
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
@@ -141,6 +147,13 @@ class CfTestController extends PlatformInAppWebViewController {
     required String source,
     ContentWorld? contentWorld,
   }) async {
+    if (source.contains('JSON.stringify({url: location.href')) {
+      return documentRead ??
+          jsonEncode({
+            'url': documentUrl,
+            'html': documentComplete ? documentHtml : '',
+          });
+    }
     if (source.contains('document.readyState')) {
       return documentComplete ? documentHtml : '';
     }

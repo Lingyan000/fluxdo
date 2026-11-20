@@ -11,7 +11,7 @@ library;
 
 import 'package:common_ui/common_ui.dart' show UiShapesContext;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart' show LocalDateRun;
 
 import '../../../utils/dialog_utils.dart';

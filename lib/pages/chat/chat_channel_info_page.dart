@@ -1,5 +1,5 @@
 import 'package:common_ui/common_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -19,6 +19,7 @@ import 'chat_list_page.dart' show ChatChannelAvatar;
 import 'channel/chat_channel_page.dart';
 import 'chat_channel_members_page.dart';
 import 'new_chat_sheet.dart' show showUserPickerSheet;
+import '../../widgets/common/emoji_text.dart';
 
 /// 会话详情页:群聊=成员管理;1:1=对端资料入口。
 /// 点聊天窗 AppBar 标题进入。
@@ -340,7 +341,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Flexible(
-                      child: Text(
+                      child: EmojiText(
                         title,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleLarge?.copyWith(
@@ -375,7 +376,7 @@ class _ChatChannelInfoPageState extends ConsumerState<ChatChannelInfoPage> {
                     channel.description?.isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-                    child: Text(
+                    child: EmojiText(
                       channel.description!,
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodySmall?.copyWith(

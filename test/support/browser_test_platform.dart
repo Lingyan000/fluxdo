@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'cf_test_platform.dart' show CfTestCookieManager;
@@ -77,6 +77,8 @@ class BrowserTestController extends PlatformInAppWebViewController {
   Object? Function(String source)? evaluate;
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
+  @override
+  dynamic getViewId() => 'browser-test';
   @override
   void addJavaScriptHandler({
     required String handlerName,
