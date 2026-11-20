@@ -20,6 +20,95 @@
   "sticker_addFromMarket": "从市场添加",
   "sticker_addTooltip": "添加表情包",
   "sticker_added": "已添加",
+  "sticker_addGroupCount": "添加 {count} 个表情",
+  "@sticker_addGroupCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_removeGroup": "移除表情包",
+  "sticker_viewGroup": "查看所属表情包",
+  "sticker_removeFromRecent": "从最近使用中删除",
+  "sticker_manageTitle": "我的表情包",
+  "sticker_manageTooltip": "管理表情包",
+  "sticker_manageReorderHint": "拖动调整顺序，表情面板按此顺序显示",
+  "sticker_favorites": "收藏",
+  "sticker_favoriteAction": "收藏",
+  "sticker_favoriteMove": "移到其他分类",
+  "sticker_unfavorite": "移出收藏",
+  "sticker_favoriteTo": "收藏到…",
+  "sticker_favoritedTo": "已收藏到「{name}」",
+  "@sticker_favoritedTo": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "sticker_saveImageAsSticker": "收藏为表情",
+  "sticker_favoriteFailed": "收藏失败",
+  "sticker_favoriteCategories": "收藏分类",
+  "sticker_subscribedGroups": "已添加的表情包",
+  "sticker_newCategory": "新建分类",
+  "sticker_categoryName": "分类名称",
+  "sticker_renameCategory": "重命名分类",
+  "sticker_deleteCategory": "删除分类",
+  "sticker_deleteCategoryConfirm": "删除「{name}」及其中的 {count} 个表情？",
+  "@sticker_deleteCategoryConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_favoriteEmpty": "这里还没有表情",
+  "sticker_addImages": "添加图片",
+  "sticker_uploading": "上传中 {done}/{total}",
+  "@sticker_uploading": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_uploadFailed": "{count} 张图片上传失败",
+  "@sticker_uploadFailed": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_moveTo": "移动到…",
+  "sticker_selectedCount": "已选 {count} 个",
+  "@sticker_selectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_deleteSelectedConfirm": "删除选中的 {count} 个表情？",
+  "sticker_transferring": "正在转存表情…",
+  "sticker_transferFailed": "转存失败，已插入原链接",
+  "sticker_searchHint": "搜索表情或表情包",
+  "sticker_searchEmpty": "没有匹配的表情",
+  "sticker_searchTooltip": "搜索表情",
+  "@sticker_deleteSelectedConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "sticker_emojiCount": "{count} 个表情",
   "@sticker_emojiCount": {
     "placeholders": {

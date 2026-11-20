@@ -276,6 +276,45 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
               ref.watch(stickerMarketServiceProvider).baseUrl,
           onTap: (context, ref) => _showStickerBaseUrlDialog(context, ref),
         ),
+        SwitchModel(
+          id: 'stickerThumbnailProxy',
+          title: l10n.preferences_stickerThumbnailProxy,
+          subtitle: l10n.preferences_stickerThumbnailProxyDesc,
+          icon: Symbols.bolt_rounded,
+          getValue: (ref) => ref.watch(stickerThumbnailProxyProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerThumbnailProxyProvider.notifier).set(v),
+        ),
+        SwitchModel(
+          id: 'stickerDynamicOrder',
+          title: l10n.preferences_stickerDynamicOrder,
+          subtitle: l10n.preferences_stickerDynamicOrderDesc,
+          icon: Symbols.swap_vert_rounded,
+          getValue: (ref) => ref.watch(stickerDynamicOrderProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerDynamicOrderProvider.notifier).set(v),
+        ),
+        IntSliderModel(
+          id: 'stickerInsertScale',
+          title: l10n.preferences_stickerInsertScale,
+          subtitle: l10n.preferences_stickerInsertScaleDesc,
+          icon: Symbols.photo_size_select_large_rounded,
+          min: 10,
+          max: 100,
+          valueSuffix: '%',
+          getValue: (ref) => ref.watch(stickerInsertScaleProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerInsertScaleProvider.notifier).set(v),
+        ),
+        SwitchModel(
+          id: 'stickerTransferExternal',
+          title: l10n.preferences_stickerTransferExternal,
+          subtitle: l10n.preferences_stickerTransferExternalDesc,
+          icon: Symbols.cloud_upload_rounded,
+          getValue: (ref) => ref.watch(stickerTransferExternalProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerTransferExternalProvider.notifier).set(v),
+        ),
       ],
     ),
     SettingsGroup(

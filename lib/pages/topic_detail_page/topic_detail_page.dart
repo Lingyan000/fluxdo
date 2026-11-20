@@ -2107,14 +2107,19 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                   Icons.assignment_ind_outlined,
                   size: 20,
                   color: detail.isAssigned
-                      ? Theme.of(context).colorScheme.primary
+                      ? context.emphasis.selected
                       : Theme.of(context).colorScheme.onSurface,
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  detail.isAssigned
-                      ? '已指定 · ${detail.assignedToUser?.displayName ?? detail.assignedToGroupName ?? ''}'
-                      : '指定',
+                Flexible(
+                  child: Text(
+                    detail.isAssigned
+                        ? context.l10n.topicAssign_assignedTo(
+                            detail.assignedToUser?.displayName ??
+                                detail.assignedToGroupName ?? '',
+                          )
+                        : context.l10n.topicAssign_title,
+                  ),
                 ),
               ],
             ),

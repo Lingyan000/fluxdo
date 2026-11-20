@@ -12,7 +12,7 @@ import '../../services/sticker_thumbnail_provider.dart';
 /// 自动按 URL 后缀 + 是否有 target size 选 backend:
 ///
 /// **有 [memCacheWidth] / [memCacheHeight] 的 sticker 场景**(grid thumbnail):
-/// - `.avif` / `.gif` / `.webp` / `.apng` → [StickerThumbnailProvider]
+/// - `.avif` / `.gif` / `.webp` / `.apng`(贴纸 bucket 为任意格式)→ [StickerThumbnailProvider]
 ///   首次解码 → 缩放 → PNG cache → 后续直接 Flutter 内置 PNG codec
 ///   (毫秒级,完全跳过 AV1 / GIF disposal 等慢路径)
 ///
@@ -56,6 +56,10 @@ class CachedImage extends StatelessWidget {
   /// 否则 GIF / 动画 WebP 只显示第一帧,动画丢失。
   final bool thumbnailMode;
 
+  /// 缩略图优先使用的展示地址(表情市场条目的 `displayUrl`),仅
+  /// [thumbnailMode] 下生效;缓存仍以 [url] 为键。
+  final String? thumbnailDisplayUrl;
+
   /// 图片加载中显示的占位组件
   final WidgetBuilder? placeholder;
 
@@ -79,6 +83,7 @@ class CachedImage extends StatelessWidget {
     this.memCacheWidth,
     this.memCacheHeight,
     this.thumbnailMode = false,
+    this.thumbnailDisplayUrl,
     this.placeholder,
     this.errorBuilder,
     this.fadeInDuration = const Duration(milliseconds: 300),
@@ -119,13 +124,15 @@ class CachedImage extends StatelessWidget {
   }
 
   ImageProvider _resolveProvider(bool hasTargetSize, int? targetSize) {
-    // sticker thumbnail 场景:任意动态格式都走统一的 thumbnail PNG cache
+    // sticker thumbnail 场景:动态格式(以及贴纸 bucket 的任何格式)都走
+    // 统一的 thumbnail PNG cache
     if (thumbnailMode &&
         hasTargetSize &&
-        StickerThumbnailProvider.supports(url)) {
+        StickerThumbnailProvider.handles(url, bucket)) {
       return StickerThumbnailProvider(
         url,
         targetSize: targetSize!,
+        displayUrl: thumbnailDisplayUrl,
         bucket: bucket,
         priority: priority,
       );

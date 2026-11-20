@@ -12,32 +12,35 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(() => messenger.setMockMethodCallHandler(channel, null));
 
-  test('passes configured GitHub proxy to Sparkle', () async {
+  test('passes the selected version and proxy to Sparkle', () async {
     SharedPreferences.setMockInitialValues({
       'github_proxy_url': 'https://proxy.example/',
     });
     messenger.setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'checkForUpdates');
-      expect(call.arguments, {'githubProxy': 'https://proxy.example/'});
+      expect(call.arguments, {
+        'githubProxy': 'https://proxy.example/',
+        'version': '2.0.0-beta.10',
+      });
       return true;
     });
-    expect(await MacOSUpdateService.checkForUpdates(), isTrue);
+    expect(await MacOSUpdateService.checkForUpdates('2.0.0-beta.10'), isTrue);
   });
 
   test('missing native bridge allows browser fallback', () async {
-    expect(await MacOSUpdateService.checkForUpdates(), isFalse);
+    expect(await MacOSUpdateService.checkForUpdates('2.0.0'), isFalse);
   });
 
   test('native startup failure allows browser fallback', () async {
     messenger.setMockMethodCallHandler(channel, (_) async {
       throw PlatformException(code: 'updater_unavailable');
     });
-    expect(await MacOSUpdateService.checkForUpdates(), isFalse);
+    expect(await MacOSUpdateService.checkForUpdates('2.0.0'), isFalse);
   });
 
   test('debug builds can decline an in-place update', () async {
     messenger.setMockMethodCallHandler(channel, (_) async => false);
-    expect(await MacOSUpdateService.checkForUpdates(), isFalse);
+    expect(await MacOSUpdateService.checkForUpdates('2.0.0'), isFalse);
   });
 
   test('startup reminders respect the version skipped in Sparkle', () async {

@@ -95,6 +95,7 @@ class _EmojiStickerPanelState extends State<EmojiStickerPanel> {
           onStickerSelected: widget.onStickerSelected,
           bottomPadding: bottomPadding,
           compact: widget.compact,
+          inlineSearch: widget.inlineSearch,
           onDismissRequested: widget.onDismissRequested,
         ),
       ];

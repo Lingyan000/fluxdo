@@ -6,6 +6,8 @@ on:
     branches: [dev, main]
     paths:
       - scripts/ci/*distribution_manifests.py
+      - scripts/ci/publish_release.py
+      - scripts/ci/test_publish_release.py
       - .github/workflows/distribution-checks.yaml
       - .github/workflows/build.yaml
       - scripts/ci/macos/setup_signing.sh
@@ -16,6 +18,8 @@ on:
   pull_request:
     paths:
       - scripts/ci/*distribution_manifests.py
+      - scripts/ci/publish_release.py
+      - scripts/ci/test_publish_release.py
       - .github/workflows/distribution-checks.yaml
       - .github/workflows/build.yaml
       - scripts/ci/macos/setup_signing.sh
@@ -28,6 +32,13 @@ permissions:
   contents: read
 
 jobs:
+  release-publication:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release publication
+        run: python3 -m unittest discover -s scripts/ci -p test_publish_release.py
+
   macos-packages:
     runs-on: macos-latest
     timeout-minutes: 20

@@ -77,6 +77,45 @@ void main() {
     expect(systemUiCalls, isEmpty);
   }
 
+  Future<void> cacheGallery(
+    WidgetTester tester,
+    BuildContext context,
+    List<String> urls,
+  ) async {
+    // 原图与相邻预取只读本地测试缓存。
+    final root = (await tester.runAsync(() async {
+      final dir = await Directory.systemTemp.createTemp('fluxdo-viewer-');
+      await BlobImageCache.configureForTesting(root: dir);
+      for (final url in urls) {
+        await BlobImageCache.write(
+          BlobImageCache.originalBucket,
+          url,
+          imageBytes,
+        );
+        // 先解码测试视口（长边 800）的查看器原图，帧推进只受测试时钟控制。
+        if (context.mounted) {
+          await precacheImage(
+            ResizeImage(
+              discourseImageProvider(
+                url,
+                bucket: BlobImageCache.originalBucket,
+              ),
+              width: 2400,
+              height: 2400,
+              policy: ResizeImagePolicy.fit,
+            ),
+            context,
+          );
+        }
+      }
+      return dir;
+    }))!;
+    addTearDown(() async {
+      await BlobImageCache.configureForTesting();
+      await root.delete(recursive: true);
+    });
+  }
+
   double controlsOpacity(WidgetTester tester, Finder control) {
     var opacity = 1.0;
     tester.element(control).visitAncestorElements((element) {
@@ -195,38 +234,7 @@ void main() {
         ),
       ),
       open: (context) async {
-        // 两张图走真实查看器和画廊翻页路径，原图与相邻预取只读本地测试缓存。
-        final root = (await tester.runAsync(() async {
-          final dir = await Directory.systemTemp.createTemp('fluxdo-viewer-');
-          await BlobImageCache.configureForTesting(root: dir);
-          for (final url in urls) {
-            await BlobImageCache.write(
-              BlobImageCache.originalBucket,
-              url,
-              imageBytes,
-            );
-            // 先解码测试视口（长边 800）的查看器原图，帧推进只受测试时钟控制。
-            if (context.mounted) {
-              await precacheImage(
-                ResizeImage(
-                  discourseImageProvider(
-                    url,
-                    bucket: BlobImageCache.originalBucket,
-                  ),
-                  width: 2400,
-                  height: 2400,
-                  policy: ResizeImagePolicy.fit,
-                ),
-                context,
-              );
-            }
-          }
-          return dir;
-        }))!;
-        addTearDown(() async {
-          await BlobImageCache.configureForTesting();
-          await root.delete(recursive: true);
-        });
+        await cacheGallery(tester, context, urls);
         if (!context.mounted) return;
         ImageViewerPage.open(
           context,
@@ -280,6 +288,94 @@ void main() {
     await tester.tap(close);
     await tester.pumpAndSettle();
     expect(find.byType(ImageViewerPage), findsNothing);
+  });
+
+  testWidgets('直接打开第二张或滑到末张，显隐工具栏的每一帧都保持图片水平位置', (tester) async {
+    const urls = [
+      'https://example.test/gallery-a.png',
+      'https://example.test/gallery-b.png',
+      'https://example.test/gallery-c.png',
+    ];
+    const tags = ['a', 'b', 'c'];
+    await openViewer(
+      tester,
+      homeBody: const Center(
+        child: HeroImage(heroTag: 'b', child: SizedBox.square(dimension: 64)),
+      ),
+      open: (context) async {
+        await cacheGallery(tester, context, urls);
+        if (context.mounted) {
+          ImageViewerPage.open(
+            context,
+            urls[1],
+            initialIndex: 1,
+            galleryImages: urls,
+            heroTag: tags[1],
+            heroTags: tags,
+          );
+        }
+      },
+    );
+    final pager = tester
+        .widget<ExtendedImageGesturePageView>(
+          find.byType(ExtendedImageGesturePageView),
+        )
+        .controller;
+    final close = find.byIcon(Symbols.close_rounded);
+    for (final index in [1, 2]) {
+      if (index == 2) {
+        await tester.flingFrom(
+          const Offset(320, 400),
+          const Offset(-280, 0),
+          1000,
+        );
+        await tester.pumpAndSettle();
+      }
+      final image = find.descendant(
+        of: find.byType(ImageViewerPage),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Hero && widget.tag == tags[index],
+        ),
+      );
+      expect(find.text('${index + 1} / 3'), findsOneWidget);
+      final pixels = pager.position.pixels;
+      void expectAligned() {
+        expect(
+          tester.getTopLeft(image).dx,
+          closeTo(0, 0.01),
+          reason: '第 ${index + 1} 张，滚动偏移 ${pager.position.pixels}（原为 $pixels）',
+        );
+        expect(pager.position.pixels, closeTo(pixels, 0.01));
+        expect(pager.page, closeTo(index, 0.0001));
+      }
+
+      expectAligned();
+
+      for (final hidden in [true, false]) {
+        await tester.tapAt(const Offset(200, 400));
+        await tester.pump(const Duration(milliseconds: 310));
+        expectAligned();
+        expect(
+          systemUiCalls.last.arguments,
+          hidden ? 'SystemUiMode.immersiveSticky' : 'SystemUiMode.edgeToEdge',
+        );
+        // 原生系统栏异步改变安全区，覆盖通知到达时的第一帧与随后的动画帧。
+        final padding = hidden
+            ? FakeViewPadding.zero
+            : const FakeViewPadding(top: 24, bottom: 34);
+        tester.view.padding = padding;
+        tester.view.viewPadding = padding;
+        await tester.pump();
+        expectAligned();
+        for (var frame = 0; frame < 20; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expectAligned();
+        }
+        expect(controlsOpacity(tester, close), hidden ? 0 : 1);
+      }
+    }
+    await tester.tap(close);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('横屏工具栏避开两侧安全区，关闭按钮边缘可以点按', (tester) async {

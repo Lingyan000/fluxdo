@@ -2,6 +2,7 @@
   "@@locale": "en",
   "about_appLogs": "App logs",
   "about_checkUpdate": "Check for updates",
+  "about_checkBetaUpdates": "Check for beta updates",
   "about_checkUpdateError": "Cannot check for updates.\nError: {error}",
   "about_checkUpdateFailed": "Update check failed",
   "about_develop": "Development",

@@ -18,6 +18,7 @@ Future<void> main(List<String> args) async {
 
   final command = _firstFlutterCommand(args);
   if (command != null && _commandsRequiringAppPrep.contains(command)) {
+    _addReleaseVersion(args);
     // rfw 的核心组件注册会保留动态图标解码，AOT 图标裁剪无法分析该入口。
     // 在统一构建入口关闭裁剪，命令行显式指定的选项仍由调用方决定。
     if (_detectBuildMode(command, args) != '--debug' &&
@@ -43,6 +44,23 @@ Future<void> main(List<String> args) async {
     title: '执行 flutter ${args.join(' ')}',
     arguments: args,
   );
+}
+
+void _addReleaseVersion(List<String> args) {
+  const key = 'FLUXDO_RELEASE_VERSION';
+  if (args.any(
+    (arg) => arg.startsWith('--dart-define=$key=') || arg.startsWith('$key='),
+  )) {
+    return;
+  }
+  final version =
+      _extractOptionValue(args, '--build-name', '--build-name') ??
+      RegExp(r'^version:[ \t]*(\S+)', multiLine: true)
+          .firstMatch(File('pubspec.yaml').readAsStringSync())
+          ?.group(1)
+          ?.split('+')
+          .first;
+  if (version != null) args.add('--dart-define=$key=$version');
 }
 
 Future<void> _runNativePrepIfNeeded(String command, List<String> args) async {

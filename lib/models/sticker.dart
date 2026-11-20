@@ -85,7 +85,12 @@ class StickerGroup {
 class StickerItem {
   final String id;
   final String name;
+
+  /// 原图地址:发送与长按预览用它。
   final String url;
+
+  /// 展示地址(市场字段,多数与 [url] 相同,少数是压缩版):缩略图优先用它。
+  final String? displayUrl;
   final int width;
   final int height;
   final String groupId;
@@ -94,6 +99,7 @@ class StickerItem {
     required this.id,
     required this.name,
     required this.url,
+    this.displayUrl,
     required this.width,
     required this.height,
     required this.groupId,
@@ -104,6 +110,7 @@ class StickerItem {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       url: json['url'] as String? ?? '',
+      displayUrl: json['displayUrl'] as String?,
       width: json['width'] as int? ?? 0,
       height: json['height'] as int? ?? 0,
       groupId: json['groupId'] as String? ?? '',
@@ -114,13 +121,28 @@ class StickerItem {
     'id': id,
     'name': name,
     'url': url,
+    if (displayUrl != null) 'displayUrl': displayUrl,
     'width': width,
     'height': height,
     'groupId': groupId,
   };
 
+  /// 发送时的默认显示比例(百分比),可在设置里调整。
+  static const int defaultScale = 30;
+
   /// 转换为 Markdown 图片格式
-  String toMarkdown() => '![$name|${width}x$height,30%]($url)';
+  String toMarkdown({int scale = defaultScale}) =>
+      '![$name|${width}x$height,$scale%]($url)';
+
+  StickerItem copyWith({String? url, int? width, int? height}) => StickerItem(
+    id: id,
+    name: name,
+    url: url ?? this.url,
+    displayUrl: displayUrl,
+    width: width ?? this.width,
+    height: height ?? this.height,
+    groupId: groupId,
+  );
 }
 
 /// 表情包分组详情（包含所有表情）

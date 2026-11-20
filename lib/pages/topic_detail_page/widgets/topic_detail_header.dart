@@ -244,14 +244,20 @@ class TopicDetailHeader extends ConsumerWidget {
                       color: context.emphasis.accent,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      '已指定给 '
-                      '${detail.assignedToUser?.displayName ?? detail.assignedToGroupName ?? ''}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: context.emphasis.accent,
-                        fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Text(
+                        context.l10n.topicAssign_assignedTo(
+                          detail.assignedToUser?.displayName ??
+                              detail.assignedToGroupName ?? '',
+                        ),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: context.emphasis.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded, size: 16),
                   ],
                 ),
               ),

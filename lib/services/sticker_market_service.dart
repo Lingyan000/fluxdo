@@ -1,21 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/sticker.dart';
 import 'app_logger.dart';
+import 'sticker_thumbnail_source.dart';
 
-/// 顶层函数，供 compute() 在后台 Isolate 中解析分组详情
-StickerGroupDetail _parseGroupDetail(Map<String, dynamic> data) {
-  return StickerGroupDetail.fromJson(data);
+/// 顶层函数,供 compute() 在后台 Isolate 中解析分组详情。
+///
+/// 直接传原始 JSON 文本:文本跨 isolate 只是一次拷贝,而先在主线程 decode
+/// 成 Map 再传过去,既占主线程又要深拷贝整棵 Map(详情最大约 230KB)。
+StickerGroupDetail _parseGroupDetailJson(String body) {
+  return StickerGroupDetail.fromJson(json.decode(body) as Map<String, dynamic>);
 }
 
 /// 表情包市场 API 服务
 ///
 /// 使用独立的 Dio 实例（非 DiscourseDio），因为这是外部 API，
-/// 不需要 Discourse 认证。支持 SharedPreferences 缓存（24 小时过期）。
+/// 不需要 Discourse 认证。缓存 24 小时过期：分类与分页这类小文件存
+/// SharedPreferences；分组详情（单个 20～230KB，市场卡片的预览条会按需
+/// 拉取）存文件，避免 prefs 随浏览膨胀、启动时整份读进内存。
 class StickerMarketService {
   static const String defaultBaseUrl = 'https://s.pwsh.us.kg';
   static const String _baseUrlKey = 'sticker_market_base_url';
@@ -28,13 +38,38 @@ class StickerMarketService {
   /// 是用户数据、要能被旧版本读懂（降级不丢订阅），元信息只是可重建的缓存。
   static const String _subscribedMetaKey = 'sticker_subscribed_group_meta';
   static const String _recentStickersKey = 'sticker_recent_items';
+
+  /// 缩略图走缩放代理的开关(用户设置,不能用 [_cachePrefix] 前缀:
+  /// 那是可清的缓存,备份也会排除)。
+  static const String _thumbnailProxyKey = 'sticker_thumbnail_proxy';
+
+  /// 发送表情后把所在分组移到最前(用户设置,默认关闭)。
+  static const String _dynamicOrderKey = 'sticker_dynamic_order';
+
+  /// 发送时的显示比例(百分比,用户设置)。
+  static const String _insertScaleKey = 'sticker_insert_scale';
+
+  /// 外站托管的表情先转存到论坛再插入(用户设置,默认开启)。
+  static const String _transferExternalKey = 'sticker_transfer_external';
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
 
+  /// 未订阅分组的详情文件超过这个时长未访问就清理（订阅的长期保留）。
+  static const Duration _groupFileRetention = Duration(days: 14);
+
   final SharedPreferences _prefs;
   late final Dio _dio;
+  final Future<Directory> Function() _cacheRoot;
+  bool _swept = false;
 
-  StickerMarketService(this._prefs, {Dio? dio}) {
+  StickerMarketService(
+    this._prefs, {
+    Dio? dio,
+    Future<Directory> Function()? cacheDirectory,
+  }) : _cacheRoot = cacheDirectory ?? _defaultCacheRoot {
+    // 缩略图取源在 ImageProvider 里静态读开关;服务是表情面板与市场的
+    // 共同依赖,构造时同步一次即可覆盖所有取图路径。
+    StickerThumbnailSource.proxyEnabled = thumbnailProxyEnabled;
     _dio =
         dio ??
         Dio(
@@ -44,6 +79,38 @@ class StickerMarketService {
           ),
         );
   }
+
+  static Future<Directory> _defaultCacheRoot() async => Directory(
+    '${(await getApplicationSupportDirectory()).path}/sticker_market',
+  );
+
+  /// 表情缩略图是否走缩放代理(默认开启)
+  bool get thumbnailProxyEnabled => _prefs.getBool(_thumbnailProxyKey) ?? true;
+
+  Future<void> setThumbnailProxyEnabled(bool enabled) async {
+    StickerThumbnailSource.proxyEnabled = enabled;
+    await _prefs.setBool(_thumbnailProxyKey, enabled);
+  }
+
+  bool get dynamicOrderEnabled => _prefs.getBool(_dynamicOrderKey) ?? false;
+
+  int get insertScale =>
+      (_prefs.getInt(_insertScaleKey) ?? StickerItem.defaultScale).clamp(
+        10,
+        100,
+      );
+
+  Future<void> setInsertScale(int scale) =>
+      _prefs.setInt(_insertScaleKey, scale.clamp(10, 100));
+
+  bool get transferExternalEnabled =>
+      _prefs.getBool(_transferExternalKey) ?? true;
+
+  Future<void> setTransferExternalEnabled(bool enabled) =>
+      _prefs.setBool(_transferExternalKey, enabled);
+
+  Future<void> setDynamicOrderEnabled(bool enabled) =>
+      _prefs.setBool(_dynamicOrderKey, enabled);
 
   /// 当前 baseUrl
   String get baseUrl => _prefs.getString(_baseUrlKey) ?? defaultBaseUrl;
@@ -109,6 +176,22 @@ class StickerMarketService {
     return (groups, data['totalPages'] as int? ?? 1);
   }
 
+  /// 全市场分组概要(单文件 metadata.json,约 90KB)。
+  ///
+  /// 与各页文件同源导出、内容一致;分类成员即按 [StickerGroup.topic] 过滤。
+  /// 搜索要在全量上过滤,一次取全比逐页补齐少六七次请求。
+  Future<List<StickerGroup>> getAllGroups() async {
+    final data = await _fetchWithCache(
+      'metadata',
+      '$baseUrl/assets/market/metadata.json',
+    );
+    final list = data['groups'] as List<dynamic>? ?? [];
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(StickerGroup.fromJson)
+        .toList();
+  }
+
   /// 获取分组详情
   Future<StickerGroupDetail> getGroupDetail(String groupId) async {
     // 市场分组 id 通常已经包含 `group-` 前缀，不能再次拼接成
@@ -116,11 +199,46 @@ class StickerMarketService {
     final groupFileName = groupId.startsWith('group-')
         ? '$groupId.json'
         : 'group-$groupId.json';
-    final data = await _fetchWithCache(
-      'group_$groupId',
-      '$baseUrl/assets/market/$groupFileName',
-    );
-    return compute(_parseGroupDetail, data);
+    if (!_swept) {
+      _swept = true;
+      unawaited(_sweepGroupFiles());
+    }
+    final cacheKey = 'group_$groupId';
+    final url = '$baseUrl/assets/market/$groupFileName';
+    final cached = await _readFileCache(cacheKey);
+    if (cached != null &&
+        DateTime.now().difference(cached.time) < _cacheDuration) {
+      return compute(_parseGroupDetailJson, cached.body);
+    }
+    try {
+      final response = await _dio.get<String>(
+        url,
+        options: Options(responseType: ResponseType.plain),
+      );
+      final body = response.data!;
+      // 先解析再落盘:资产站对不存在的路径返回 200 + HTML,解析失败的
+      // 内容不能写进缓存
+      final detail = await compute(_parseGroupDetailJson, body);
+      await _writeFileCache(cacheKey, body);
+      return detail;
+    } catch (e, st) {
+      if (cached != null) {
+        AppLogger.warning(
+          '表情包市场请求失败，已回退过期缓存',
+          tag: 'StickerMarket',
+          fields: {'url': url, 'cacheKey': cacheKey, 'error': e.toString()},
+        );
+        return compute(_parseGroupDetailJson, cached.body);
+      }
+      AppLogger.error(
+        '表情包市场请求失败且无缓存可用',
+        tag: 'StickerMarket',
+        error: e,
+        stackTrace: st,
+        fields: {'url': url, 'cacheKey': cacheKey},
+      );
+      rethrow;
+    }
   }
 
   // ==================== 订阅管理 ====================
@@ -172,6 +290,23 @@ class StickerMarketService {
     if (metaById.remove(groupId) != null) {
       await _writeSubscribedMeta(metaById);
     }
+  }
+
+  /// 按给定顺序重排已订阅分组。只调整顺序:不在 [orderedIds] 里的已订阅
+  /// 分组按原顺序接在后面,[orderedIds] 里未订阅的 id 忽略。
+  Future<void> reorderSubscribed(List<String> orderedIds) async {
+    final current = getSubscribedGroupIds();
+    final known = current.toSet();
+    final head = [
+      for (final id in orderedIds)
+        if (known.contains(id)) id,
+    ];
+    final headSet = head.toSet();
+    await _prefs.setStringList(_subscribedKey, [
+      ...head,
+      for (final id in current)
+        if (!headSet.contains(id)) id,
+    ]);
   }
 
   /// 是否已订阅
@@ -259,33 +394,40 @@ class StickerMarketService {
     await _prefs.setStringList(_recentStickersKey, trimmed);
   }
 
-  /// 带缓存的网络请求
+  /// 从最近使用中删除一个表情
+  Future<void> removeRecentSticker(String stickerId) async {
+    final list = _prefs.getStringList(_recentStickersKey) ?? [];
+    list.removeWhere((s) {
+      try {
+        return (json.decode(s) as Map<String, dynamic>)['id'] == stickerId;
+      } catch (_) {
+        return false;
+      }
+    });
+    await _prefs.setStringList(_recentStickersKey, list);
+  }
+
+  /// 带缓存的网络请求(分类、分页、概要这类小文件,缓存存 prefs)。
+  /// 分组详情走文件缓存,见 [getGroupDetail]。
   Future<Map<String, dynamic>> _fetchWithCache(
     String cacheKey,
     String url,
   ) async {
-    final fullKey = '$_cachePrefix$cacheKey';
-    final timestampKey = '${fullKey}_ts';
-
-    // 检查缓存
-    final cached = _prefs.getString(fullKey);
-    final timestamp = _prefs.getInt(timestampKey);
-    if (cached != null && timestamp != null) {
-      final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
-      if (DateTime.now().difference(cacheTime) < _cacheDuration) {
-        return json.decode(cached) as Map<String, dynamic>;
-      }
+    final cached = _readPrefsCache(cacheKey);
+    if (cached != null &&
+        DateTime.now().difference(cached.time) < _cacheDuration) {
+      return json.decode(cached.body) as Map<String, dynamic>;
     }
 
     // 请求网络
     try {
       final response = await _dio.get<Map<String, dynamic>>(url);
       final data = response.data!;
-
-      // 保存缓存
-      await _prefs.setString(fullKey, json.encode(data));
-      await _prefs.setInt(timestampKey, DateTime.now().millisecondsSinceEpoch);
-
+      await _prefs.setString('$_cachePrefix$cacheKey', json.encode(data));
+      await _prefs.setInt(
+        '$_cachePrefix${cacheKey}_ts',
+        DateTime.now().millisecondsSinceEpoch,
+      );
       return data;
     } catch (e, st) {
       // 网络失败时尝试使用过期缓存
@@ -295,7 +437,7 @@ class StickerMarketService {
           tag: 'StickerMarket',
           fields: {'url': url, 'cacheKey': cacheKey, 'error': e.toString()},
         );
-        return json.decode(cached) as Map<String, dynamic>;
+        return json.decode(cached.body) as Map<String, dynamic>;
       }
       AppLogger.error(
         '表情包市场请求失败且无缓存可用',
@@ -308,11 +450,98 @@ class StickerMarketService {
     }
   }
 
+  ({String body, DateTime time})? _readPrefsCache(String cacheKey) {
+    final body = _prefs.getString('$_cachePrefix$cacheKey');
+    final timestamp = _prefs.getInt('$_cachePrefix${cacheKey}_ts');
+    if (body == null || timestamp == null) return null;
+    return (body: body, time: DateTime.fromMillisecondsSinceEpoch(timestamp));
+  }
+
+  Future<File> _cacheFile(String cacheKey) async {
+    final root = await _cacheRoot();
+    return File('${root.path}/${md5.convert(utf8.encode(cacheKey))}.json');
+  }
+
+  /// 读文件缓存；文件不存在时把旧版本存在 prefs 里的同 key 缓存迁过来。
+  Future<({String body, DateTime time})?> _readFileCache(
+    String cacheKey,
+  ) async {
+    try {
+      final file = await _cacheFile(cacheKey);
+      if (await file.exists()) {
+        return (
+          body: await file.readAsString(),
+          time: await file.lastModified(),
+        );
+      }
+      final legacy = _readPrefsCache(cacheKey);
+      if (legacy == null) return null;
+      await _writeFileCache(cacheKey, legacy.body, time: legacy.time);
+      await _prefs.remove('$_cachePrefix$cacheKey');
+      await _prefs.remove('$_cachePrefix${cacheKey}_ts');
+      return legacy;
+    } catch (e) {
+      debugPrint('[StickerMarket] 读取文件缓存失败 $cacheKey: $e');
+      return null;
+    }
+  }
+
+  Future<void> _writeFileCache(
+    String cacheKey,
+    String body, {
+    DateTime? time,
+  }) async {
+    try {
+      final file = await _cacheFile(cacheKey);
+      await file.parent.create(recursive: true);
+      // 先写临时文件再改名，读到的不会是写了一半的 JSON
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(body, flush: true);
+      await tmp.rename(file.path);
+      if (time != null) await file.setLastModified(time);
+    } catch (e) {
+      debugPrint('[StickerMarket] 写入文件缓存失败 $cacheKey: $e');
+    }
+  }
+
+  /// 清理长时间没刷新过的未订阅分组详情（每个服务实例只扫一次）。
+  /// 详情每 24 小时随访问刷新一次，修改时间即最近一次使用。
+  Future<void> _sweepGroupFiles() async {
+    try {
+      final root = await _cacheRoot();
+      if (!await root.exists()) return;
+      final keep = {
+        for (final id in getSubscribedGroupIds())
+          '${md5.convert(utf8.encode('group_$id'))}.json',
+      };
+      final deadline = DateTime.now().subtract(_groupFileRetention);
+      await for (final entity in root.list()) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        if (keep.contains(name)) continue;
+        if ((await entity.lastModified()).isBefore(deadline)) {
+          await entity.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('[StickerMarket] 清理分组详情缓存失败: $e');
+    }
+  }
+
   /// 清除全部缓存
   Future<void> _clearAllCache() async {
-    final keys = _prefs.getKeys().where((k) => k.startsWith(_cachePrefix));
+    // 地址键与缓存同前缀，必须跳过，否则刚设置的地址会被一并删掉
+    final keys = _prefs.getKeys().where(
+      (k) => k.startsWith(_cachePrefix) && k != _baseUrlKey,
+    );
     for (final key in keys.toList()) {
       await _prefs.remove(key);
+    }
+    try {
+      final root = await _cacheRoot();
+      if (await root.exists()) await root.delete(recursive: true);
+    } catch (e) {
+      debugPrint('[StickerMarket] 清除文件缓存失败: $e');
     }
   }
 }

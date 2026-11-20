@@ -82,7 +82,7 @@ class DioHttpClient extends http.BaseClient {
   /// 头像与 emoji 共享 12 槽小图池；静态头像最多 6 个、可能的动图
   /// 头像最多 2 个，组间公平轮转，避免大动图阻塞静态头像。
   /// 没有头像时 emoji 仍可使用原有 12 槽，不因固定分配而降低吞吐。
-  /// 正文/原图等 6 槽、贴纸原文件 3 槽各自独立，总上限仍为 21。
+  /// 正文/原图等 6 槽、贴纸原文件 3 槽、贴纸缩略图 12 槽各自独立，总上限 33。
   /// 槽位覆盖响应体消费及写盘背压，不随域名数量扩容；任务数约束
   /// 不等同于字节预算或进程总内存上限，动图头像也受头像组上限约束。
   static final DownloadRequestQueue _smallSemaphore = DownloadRequestQueue(
@@ -98,6 +98,12 @@ class DioHttpClient extends http.BaseClient {
     reservedHighSlots: 1,
   );
 
+  /// 贴纸缩略图源（缩放代理 / Range 首帧）：响应只有几 KB，耗时主要在
+  /// 服务端处理（冷请求约 0.9s/张），吞吐受并发数限制。实测 60 张冷请求
+  /// 6 槽 13.6s、12 槽约 6s；预留 2 槽给前台(预览页、面板可见格子)。
+  static final DownloadRequestQueue _stickerThumbSemaphore =
+      DownloadRequestQueue(12, reservedHighSlots: 2);
+
   /// [send](http.BaseClient 接口,现无常驻调用方)沿用内容通道。
   static DownloadRequestQueue get _downloadSemaphore => _contentSemaphore;
 
@@ -108,6 +114,7 @@ class DioHttpClient extends http.BaseClient {
         DownloadChannel.avatarAnimation => _smallSemaphore,
         DownloadChannel.content => _contentSemaphore,
         DownloadChannel.sticker => _stickerSemaphore,
+        DownloadChannel.stickerThumb => _stickerThumbSemaphore,
       };
 
   /// 把仍在 [channel] 等待队列中的 [url] 提到高优先级(滚入视野)。
@@ -234,6 +241,9 @@ class DioHttpClient extends http.BaseClient {
   ///
   /// 非 200 抛 [http.ClientException];[onProgress] 的 total 在响应无
   /// content-length(或 gzip)时为 null。
+  ///
+  /// [headers] 带 `Range` 时 206 也算成功;[onHead] 在读 body 前拿到状态码
+  /// 与响应头(Range 调用方据此读 `content-range`,判断服务端是否忽略了 Range)。
   Future<Uint8List> fetchBytes(
     Uri url, {
     DownloadChannel channel = DownloadChannel.content,
@@ -242,6 +252,8 @@ class DioHttpClient extends http.BaseClient {
     Future<void> Function(Uint8List bytes)? onBytesReady,
     dio.CancelToken? cancellation,
     Duration callTimeout = const Duration(minutes: 2),
+    Map<String, String>? headers,
+    void Function(int statusCode, dio.Headers headers)? onHead,
   }) async {
     try {
       return await DeadlineDio.withDeadline(
@@ -255,6 +267,8 @@ class DioHttpClient extends http.BaseClient {
           onBytesReady: onBytesReady,
           cancellation: request.cancelToken,
           requestExtra: request.extra,
+          headers: headers,
+          onHead: onHead,
         ),
       );
     } on dio.DioException catch (error) {
@@ -270,7 +284,11 @@ class DioHttpClient extends http.BaseClient {
     required Future<void> Function(Uint8List bytes)? onBytesReady,
     required dio.CancelToken? cancellation,
     required Map<String, dynamic> requestExtra,
+    Map<String, String>? headers,
+    void Function(int statusCode, dio.Headers headers)? onHead,
   }) async {
+    final isRange =
+        headers?.keys.any((key) => key.toLowerCase() == 'range') ?? false;
     final elapsed = Stopwatch()..start();
     final semaphore = _semaphoreOf(channel);
     final group = switch (channel) {
@@ -318,6 +336,7 @@ class DioHttpClient extends http.BaseClient {
         options: dio.Options(
           responseType: dio.ResponseType.stream,
           extra: extra,
+          headers: headers,
           validateStatus: (status) => true,
         ),
       );
@@ -341,9 +360,11 @@ class DioHttpClient extends http.BaseClient {
             if (coreConnection.containsKey(key)) key: coreConnection[key],
         };
       }
-      if (response.statusCode != 200) {
+      if (response.statusCode != 200 &&
+          !(isRange && response.statusCode == 206)) {
         throw HttpStatusException(response.statusCode, url);
       }
+      onHead?.call(response.statusCode!, response.headers);
       final contentLength = int.tryParse(
         response.headers.value('content-length') ?? '',
       );
@@ -428,4 +449,7 @@ enum DownloadChannel {
 
   /// 贴纸原文件 —— 面板预取型、单文件大,独立通道防挤占内容。
   sticker,
+
+  /// 贴纸缩略图源 —— 缩放代理与 Range 首帧,响应小、服务端耗时长。
+  stickerThumb,
 }

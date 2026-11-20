@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -9,11 +10,104 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<StickerMarketService> newService(_RecordingAdapter adapter) async {
-    SharedPreferences.setMockInitialValues({});
+  late Directory cacheDir;
+
+  setUp(() async {
+    cacheDir = await Directory.systemTemp.createTemp('sticker-market-');
+  });
+
+  tearDown(() async {
+    if (await cacheDir.exists()) await cacheDir.delete(recursive: true);
+  });
+
+  Future<StickerMarketService> newService(
+    _RecordingAdapter adapter, {
+    Map<String, Object> prefsValues = const {},
+  }) async {
+    SharedPreferences.setMockInitialValues(prefsValues);
     final prefs = await SharedPreferences.getInstance();
-    return StickerMarketService(prefs, dio: Dio()..httpClientAdapter = adapter);
+    return StickerMarketService(
+      prefs,
+      dio: Dio()..httpClientAdapter = adapter,
+      cacheDirectory: () async => cacheDir,
+    );
   }
+
+  group('市场地址', () {
+    test('设置后能读回(清缓存不能连地址一起删)', () async {
+      final service = await newService(_RecordingAdapter());
+
+      await service.setBaseUrl('https://example.com/');
+
+      expect(service.baseUrl, 'https://example.com');
+    });
+  });
+
+  group('分组详情缓存', () {
+    test('存文件不存 prefs,再次读取命中文件', () async {
+      final adapter = _RecordingAdapter();
+      final service = await newService(adapter);
+      final prefs = await SharedPreferences.getInstance();
+
+      await service.getGroupDetail('group-123');
+      await service.getGroupDetail('group-123');
+
+      expect(adapter.paths, ['/assets/market/group-123.json']);
+      expect(prefs.getKeys().where((k) => k.contains('group_')), isEmpty);
+      expect(cacheDir.listSync().whereType<File>(), hasLength(1));
+    });
+
+    test('旧版本存在 prefs 里的详情迁到文件', () async {
+      final adapter = _RecordingAdapter();
+      final service = await newService(
+        adapter,
+        prefsValues: {
+          'sticker_market_group_group-9': jsonEncode({
+            'id': 'group-9',
+            'name': 'legacy',
+            'icon': '',
+            'emojis': <dynamic>[],
+          }),
+          'sticker_market_group_group-9_ts':
+              DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+      final prefs = await SharedPreferences.getInstance();
+
+      final detail = await service.getGroupDetail('group-9');
+
+      expect(detail.name, 'legacy');
+      expect(adapter.paths, isEmpty, reason: '迁移过来的缓存仍在有效期内');
+      expect(prefs.getString('sticker_market_group_group-9'), isNull);
+      expect(cacheDir.listSync().whereType<File>(), hasLength(1));
+    });
+
+    test('资产站返回 HTML 回退页时报错且不落盘', () async {
+      SharedPreferences.setMockInitialValues({});
+      final service = StickerMarketService(
+        await SharedPreferences.getInstance(),
+        dio: Dio()..httpClientAdapter = _HtmlAdapter(),
+        cacheDirectory: () async => cacheDir,
+      );
+
+      await expectLater(service.getGroupDetail('group-404'), throwsA(anything));
+      expect(
+        cacheDir.existsSync()
+            ? cacheDir.listSync().whereType<File>().toList()
+            : const <File>[],
+        isEmpty,
+      );
+    });
+
+    test('切换市场地址时清掉文件缓存', () async {
+      final service = await newService(_RecordingAdapter());
+      await service.getGroupDetail('group-123');
+
+      await service.setBaseUrl('https://example.com');
+
+      expect(await cacheDir.exists(), isFalse);
+    });
+  });
 
   group('分组详情文件名', () {
     test('id 已带 group- 前缀时不再重复拼接', () async {
@@ -129,6 +223,27 @@ class _RecordingAdapter implements HttpClientAdapter {
       200,
       headers: {
         Headers.contentTypeHeader: ['application/json'],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// 模拟资产站对不存在路径的 200 + SPA 首页 HTML。
+class _HtmlAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    return ResponseBody.fromString(
+      '<!doctype html><html><title>视频转 GIF</title></html>',
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/html; charset=UTF-8'],
       },
     );
   }

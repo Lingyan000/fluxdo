@@ -131,4 +131,38 @@ void main() {
     expect(notifier.state, isEmpty);
     expect(notifier.isSubscribed('group-1'), isFalse);
   });
+
+  List<String> idsOf(SubscribedStickerGroupsNotifier n) =>
+      [for (final g in n.state) g.id];
+
+  test('拖拽排序:newIndex 是移除后的最终位置', () async {
+    final notifier = await newNotifier({
+      'sticker_subscribed_groups': ['a', 'b', 'c', 'd'],
+    });
+
+    await notifier.reorder(0, 2);
+    expect(idsOf(notifier), ['b', 'c', 'a', 'd']);
+
+    await notifier.reorder(3, 0);
+    expect(idsOf(notifier), ['d', 'b', 'c', 'a']);
+
+    await notifier.reorder(9, 0);
+    expect(idsOf(notifier), ['d', 'b', 'c', 'a'], reason: '越界下标不动');
+  });
+
+  test('动态排序:按给定顺序移到最前,未订阅的忽略,订阅关系不变', () async {
+    final notifier = await newNotifier({
+      'sticker_subscribed_groups': ['a', 'b', 'c', 'd'],
+    });
+
+    await notifier.moveToFrontAll(['c', 'x', 'a']);
+
+    expect(idsOf(notifier), ['c', 'a', 'b', 'd']);
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('sticker_subscribed_groups'),
+      ['c', 'a', 'b', 'd'],
+      reason: '顺序随订阅列表落盘,旧版本也能读到',
+    );
+  });
 }

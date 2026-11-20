@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
 
+import '../utils/image_format.dart';
+
 /// 查看器只预解码一张静态邻图；不持有解码帧，不驱逐其他页面的缓存。
 class ImagePredecodeController {
   int _generation = 0;
@@ -43,16 +45,27 @@ class ImagePredecodeController {
       if (stale() || status?.tracked == true) return;
       final bytes = await loadBytes();
       if (stale() || bytes.length > budget) return;
-      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      if (stale()) return;
-      descriptor = await ui.ImageDescriptor.encoded(buffer);
-      // 原图也计入预算，保守跳过高像素图片；不会改变用户点开后的清晰度。
-      if (stale() || descriptor.width * descriptor.height * 4 > budget) return;
-      probe = await descriptor.instantiateCodec(
-        targetWidth: 1,
-        targetHeight: 1,
-      );
-      if (stale() || probe.frameCount != 1) return;
+      if (bytesLookLikeAvif(bytes)) {
+        // AVIF 不交给引擎探测:Android 系统解码器探测文件头会让 UI 线程
+        // 等 IO 线程。尺寸直接读文件头,动画不预解码(与引擎探测的
+        // frameCount != 1 同口径)。
+        final size = avifIntrinsicSize(bytes);
+        if (size == null || avifLooksAnimated(bytes)) return;
+        if (size.$1 * size.$2 * 4 > budget) return;
+      } else {
+        buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+        if (stale()) return;
+        descriptor = await ui.ImageDescriptor.encoded(buffer);
+        // 原图也计入预算，保守跳过高像素图片；不会改变用户点开后的清晰度。
+        if (stale() || descriptor.width * descriptor.height * 4 > budget) {
+          return;
+        }
+        probe = await descriptor.instantiateCodec(
+          targetWidth: 1,
+          targetHeight: 1,
+        );
+        if (stale() || probe.frameCount != 1) return;
+      }
       _stream = provider.resolve(configuration);
       _listener = ImageStreamListener(
         (info, synchronousCall) {
