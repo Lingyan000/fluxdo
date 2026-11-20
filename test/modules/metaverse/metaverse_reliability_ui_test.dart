@@ -168,6 +168,16 @@ void main() {
         await settle();
       }
 
+      void expectNoSaveError() {
+        expect(
+          find.byWidgetPredicate(
+            (widget) => widget is Semantics && widget.properties.liveRegion == true,
+          ),
+          findsNothing,
+          reason: '成功保存设置不应出现错误提示',
+        );
+      }
+
       Future<void> capture(String name) async {
         expect(tester.takeException(), isNull);
         if (!snapshots) return;
@@ -202,11 +212,21 @@ void main() {
         ))!['compact'],
         true,
       );
+      expectNoSaveError();
       await tester.tap(find.text('排序方式'));
       await tester.pumpAndSettle();
       await capture('preference');
       await tester.tap(find.text('最早优先'));
       await settle();
+      expect(
+        (await tester.runAsync(
+          () => container
+              .read(metaversePluginStoreProvider)
+              .preferences(package.manifest),
+        ))!['sort'],
+        'oldest',
+      );
+      expectNoSaveError();
       await capture('settings');
       await show(
         Scaffold(

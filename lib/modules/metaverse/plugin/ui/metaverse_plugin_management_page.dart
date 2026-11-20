@@ -124,11 +124,11 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
     try {
       await action();
       if (mounted) {
-        setState(
-          () => _size = ref
+        setState(() {
+          _size = ref
               .read(metaversePluginStoreProvider)
-              .localBytes(widget.pluginId),
-        );
+              .localBytes(widget.pluginId);
+        });
       }
     } catch (error) {
       if (mounted) ToastService.showError('$error');
