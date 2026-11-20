@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'preloaded_data_service.dart';
 import '../utils/url_helper.dart';
+import '../utils/emoji_names.g.dart';
 import '../utils/emoji_shortcodes.dart';
 
 /// Emoji URL 解析器
@@ -111,12 +112,27 @@ class EmojiHandler {
           .siteSettingsSync?['enable_inline_emoji_translation'] ==
       true;
 
-  /// 展示文本里应转成表情的短代码(规则见 [displayEmojiShortcodeMatches])。
+  /// 展示文本里应转成表情的短代码(规则见 [displayEmojiShortcodeMatches]),
+  /// 只保留真实存在的表情([exists])。
   ///
   /// [inline] 为 null 时跟随站点设置;摘要等由 cooked 还原出的文本里,
   /// 短代码是 cooked 已判定过的表情,传 true 全量转换。
   static Iterable<RegExpMatch> shortcodeMatches(String text, {bool? inline}) =>
-      displayEmojiShortcodeMatches(text, inline: inline ?? inlineTranslation);
+      displayEmojiShortcodeMatches(
+        text,
+        inline: inline ?? inlineTranslation,
+      ).where((match) => EmojiHandler().exists(match.group(1)!));
+
+  /// 表情名是否存在:站点自定义表情,或标准表情(含别名,肤色后缀不计)。
+  ///
+  /// 同官方 emojiExists —— `qwen3:14b和qwen3:30b` 里的 `:14b和qwen3:`
+  /// 格式像短代码,但不是表情,保持原文。
+  bool exists(String name) {
+    final normalized = normalizeEmojiShortcodeName(name).toLowerCase();
+    if (_customEmojiMap?.containsKey(normalized) ?? false) return true;
+    final toneMatch = _toneRegex.firstMatch(normalized);
+    return standardEmojiNames.contains(toneMatch?.group(1) ?? normalized);
+  }
 
   /// 将文本中的 :emoji: 替换为 HTML img 标签
   String replaceEmojis(String text) {

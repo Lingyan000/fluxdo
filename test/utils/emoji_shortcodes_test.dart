@@ -32,6 +32,24 @@ void main() {
       expect(names('谢谢:smile:', inline: true), ['smile']);
     });
 
+    test('只转换存在的表情', () {
+      List<String> names(String text) => [
+        for (final m in EmojiHandler.shortcodeMatches(text, inline: true))
+          m.group(1)!,
+      ];
+
+      // 别名、肤色变体、大小写同官方
+      expect(names(':smile::thumbsup::+1:t3::Heart:'), [
+        'smile',
+        'thumbsup',
+        '+1:t3',
+        'Heart',
+      ]);
+      // 格式像短代码但不是表情,保持原文
+      expect(names('qwen3:14b和qwen3:30b-a3b'), isEmpty);
+      expect(names(':not_an_emoji: :smile:'), ['smile']);
+    });
+
     test('HTML 里的 emoji 图片还原成短代码', () {
       expect(
         emojiImagesToShortcodes(
