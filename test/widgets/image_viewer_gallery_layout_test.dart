@@ -3,6 +3,45 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  testWidgets('翻页途中更换滚动物理效果，保留已拖过的距离', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
+    final controller = ExtendedPageController(initialPage: 1, pageSpacing: 50);
+    addTearDown(controller.dispose);
+    Future<void> pumpGallery(ScrollPhysics physics) => tester.pumpWidget(
+      MaterialApp(
+        home: ExtendedImageGesturePageView(
+          controller: controller,
+          physics: physics,
+          children: List.generate(3, (i) => SizedBox.expand(key: ValueKey(i))),
+        ),
+      ),
+    );
+    await pumpGallery(const BouncingScrollPhysics());
+    final drag = await tester.startGesture(const Offset(300, 400));
+    await drag.moveBy(const Offset(-30, 0));
+    await tester.pump();
+    await drag.moveBy(const Offset(-110, 0));
+    await tester.pump();
+    final pixels = controller.offset;
+    final page = controller.page!;
+    final left = tester.getTopLeft(find.byKey(const ValueKey(1))).dx;
+    expect(page, inExclusiveRange(1, 2));
+    expect(left, lessThan(0));
+    final previous = controller.position;
+    await pumpGallery(const ClampingScrollPhysics());
+    expect(controller.position, isNot(same(previous)));
+    expect(controller.offset, closeTo(pixels, 0.01));
+    expect(controller.page, closeTo(page, 0.0001));
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey(1))).dx,
+      closeTo(left, 0.01),
+    );
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('翻页间距只出现在两张图之间，旋转后当前图仍居中', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(400, 800);
