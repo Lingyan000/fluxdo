@@ -6,3 +6,4 @@ export 'src/metaverse_plugin_prelude.dart';
 export 'src/metaverse_script_engine.dart';
 
 export 'src/plugin_features.dart';
+export 'src/plugin_event_stream.dart';

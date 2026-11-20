@@ -79,6 +79,7 @@
   "metaverse_apiCredentialRequest": "Ask for a service credential and return completion status",
   "metaverse_apiConnect": "Authorize through Connect and receive the service callback",
   "metaverse_apiPayment": "Open the native checkout with its password keypad and payment result",
+  "metaverse_apiStreams": "Subscribe to live events with lifecycle pause and reconnect. The demo shows connection changes and messages.",
   "metaverse_apiFetch": "Send a request to a domain allowed by the manifest",
   "metaverse_apiUser": "Read the public identity the user has agreed to share",
   "metaverse_apiNavigate": "Open a declared native plugin page with parameters",

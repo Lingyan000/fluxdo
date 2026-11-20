@@ -97,6 +97,8 @@ class _Api implements HttpClientAdapter {
 
 /// 从发布目录读取插件文件。商品接口返回固定数据，不创建订单。
 class _ShopApi extends _Api {
+  // 业务请求计数继续检查原流程，实时连接使用独立记录并显式返回停止状态。
+  final notificationRequests = <RequestOptions>[];
   bool connectTimeout = false;
   bool expired = false;
   String orderStatus = 'completed';
@@ -116,8 +118,14 @@ class _ShopApi extends _Api {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
-    requests.add(options);
     final uri = options.uri;
+    if (uri.path == '/api/shop/notifications/stream') {
+      notificationRequests.add(options);
+      expect(options.headers['Authorization'], 'Bearer fixture-session');
+      expect(options.headers['Accept'], 'text/event-stream');
+      return ResponseBody.fromString('', 204);
+    }
+    requests.add(options);
     if (uri.path == '/api/auth/init') {
       return ResponseBody.fromString(
         jsonEncode({
@@ -760,6 +768,7 @@ Future<void> main() async {
                 null,
       );
       expect(service.requests, hasLength(9));
+      expect(service.notificationRequests, isNotEmpty);
     });
 
     pluginTest('未登录入口调用宿主原生授权，取消后保留页面并可重新授权', (tester) async {

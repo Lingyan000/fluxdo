@@ -369,3 +369,33 @@ fluxdo.on('task.run', async (ctx, {id}) => {
 ```
 
 打包安装后可测试完整的系统授权、冷启动和撤销。临时开发会话不注册正式任务或通知。
+
+## SSE 实时事件
+
+声明 `requiredFeatures: ["eventStreams"]`。复用 `permissions.network` 与凭证的请求范围；带凭证时需要用户允许「服务账号」。不新增单独的消息连接开关。连接不会赋予系统通知权限，发通知仍需用户授权。
+
+```js
+fluxdo.on('page.open', async ctx => {
+  await ctx.api.streams.open({
+    id: 'updates', url: 'https://api.example.org/events', credential: 'account'
+  });
+});
+fluxdo.on('stream.event', (ctx, frame) => {
+  // event、data、lastEventId 都来自服务端，不把它们当作用户点击。
+  if (frame.event === 'count.changed') ctx.setData('unread', JSON.parse(frame.data).unread);
+});
+fluxdo.on('stream.state', (ctx, state) => {
+  if (state.state === 'open') { /* 按服务协议补查断线期间可能遗漏的状态。 */ }
+});
+// 在拥有订阅的同一 ctx 中关闭：await ctx.api.streams.close('updates');
+```
+
+- `streams.open({id,url,credential?,headers?,lastEventId?})` 返回订阅 ID；实际连接结果通过 `stream.state` 返回。只允许可见页面或卡片、HTTPS 标准端口、清单允许的域名；不自动跟随重定向。相同界面的同 ID 不能重复打开。
+- `streams.close(id)` 立即取消该界面的连接与重试，无需等网络返回。重复关闭无副作用。
+- `stream.event` 参数为 `{id,event,data,lastEventId}`，data 是原始文本，JSON 解析由插件负责。处理器 Promise 完成后再交付下一帧；10 秒仍未结束则停止订阅。
+- `stream.state` 的 `state` 为 `connecting/open/retrying/closed`，可附 `reason/status/retryInMs`。401/403、重定向、非 SSE 响应、非法帧和速率超限停止；网络中断、429、5xx 退避重连，遵守服务端 `retry` 与 `Retry-After` 秒数。204 表示停止。
+- 隐藏或应用切后台立即断开，恢复时重连；关闭页面、撤销授权、注销服务账号、换账号或插件停用后取消。系统任务不能建立长连接。页面隐藏时不向脚本追加状态事件，使用已有 `page.hide/card.hide` 生命周期。
+- 每实例最多 8 个订阅、2 条同时连接，全局最多 12 条连接；每实例每分钟最多发起 30 次连接。帧最多 64 Ki 个 UTF-16 单元，每 10 秒最多 1 MiB 或 300 条数据事件；75 秒无字节活动即重连。心跳注释不交给业务处理器。
+- 重连携带最后成功交付的 `Last-Event-ID`；服务端是否重放取决于自身协议，插件仍应补查快照及去重。未以空行结束的残缺帧丢弃。凭证不交给脚本，日志只记插件、界面、目标域名、连接状态和错误码，不记录 URL 参数或事件正文。
+
+应用内开发中心提供动态 `streams.open` 演示，用模拟消息展示连接、消息到达与重连，无真实账号请求。Android、iOS 和三种桌面平台共用此实现；后台长连接与远程推送不在此 API 的保证范围。

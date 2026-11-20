@@ -112,6 +112,10 @@ const metaversePluginPrelude = r'''
       });
     },
 
+    streams: Object.freeze({
+      open: function (options) { return call('streams.open', options); },
+      close: function (id) { return call('streams.close', {id: String(id)}); }
+    }),
     storage: Object.freeze({
       get: function (key) { return call('storage.get', { key: String(key) }); },
       set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },
@@ -215,17 +219,19 @@ const metaversePluginPrelude = r'''
         var value = JSON.parse(json);
         if (ok) entry.resolve(value); else entry.reject(new Error(String(value)));
       },
-      dispatch: function (name, infoJson, argsJson) {
+      dispatch: function (name, infoJson, argsJson, delivery) {
         var handler = handlers[name];
         var task = JSON.parse(infoJson).kind === 'task';
         var taskSurface = JSON.parse(infoJson).surface;
         if (typeof handler !== 'function') {
+          if (delivery) post({t: 'delivery.done', d: delivery});
           if (task) post({t: 'task.done', s: taskSurface, ok: false, error: 'task_handler_missing'});
           return false;
         }
         var eventId = ++seq;
         post({t: 'event', phase: 'start', id: eventId});
         function done(error) {
+          if (delivery) post({t: 'delivery.done', d: delivery});
           post({t: 'event', phase: 'end', id: eventId});
           if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : ''});
         }

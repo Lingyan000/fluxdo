@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams';
   type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
   type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
@@ -48,9 +48,16 @@ declare namespace FluxDO {
     R extends 'actions' ? {items: ForumActivity[]; nextOffset: number | null} :
     {items: ForumActivity[]; nextBefore: number | null};
   type ForumDestination = {type: 'topic'; topicId: number; postNumber?: number} | {type: 'user'; username: string};
+  interface StreamEvent {id: string; event: string; data: string; lastEventId: string}
+  interface StreamState {id: string; state: 'connecting' | 'open' | 'retrying' | 'closed'; reason?: string; status?: number; retryInMs?: number}
   interface Api {
-    on(name: string, handler: (ctx: Context, args: Record) => void | Promise<void>): () => void;
+    on<E extends string>(name: E, handler: (ctx: Context, args: E extends 'stream.event' ? StreamEvent : E extends 'stream.state' ? StreamState : Record) => void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
+    streams: {
+      /** 连接结果和数据经 stream.state / stream.event 交付；隐藏暂停。 */
+      open(options: {id: string; url: string; credential?: string; headers?: {[key: string]: string}; lastEventId?: string}): Promise<string>;
+      close(id: string): Promise<null>;
+    };
     host: { features(): Promise<string[]> };
     permissions: { status(): Promise<PermissionState>; request(names: ManagedPermission[]): Promise<boolean> };
     forum: {

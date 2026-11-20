@@ -1,3 +1,4 @@
+import 'metaverse_event_stream.dart';
 import 'metaverse_task.dart';
 import 'metaverse_ui_validator.dart';
 import 'metaverse_component_contract.dart';
@@ -214,6 +215,19 @@ class MetaversePluginHost implements MetaversePluginBridge {
   int? _accountAtStart;
   bool Function()? _taskActive;
   final _forumAvatars = <Uri>{};
+  final _streamBudget = MetaverseStreamBudget();
+  final _streams = <String, ({MetaversePluginSurface surface, MetaverseEventStream connection})>{};
+
+  void _closeStreams([bool Function(MetaverseEventStream)? where]) {
+    for (final key in _streams.keys.toList()) {
+      final entry = _streams[key]!;
+      if (where == null || where(entry.connection)) {
+        _streams.remove(key);
+        entry.connection.close();
+      }
+    }
+  }
+
   bool _uiBusy = false;
   DateTime? _activatedAt;
   MetaversePluginSurface? _activatedSurface;
@@ -287,6 +301,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
     if (identical(surface, _preparedNavigation?.surface)) {
       _preparedNavigation = null;
     }
+    for (final key in _streams.keys.where((key) => _streams[key]!.surface == surface).toList()) {
+      _streams.remove(key)!.connection.close();
+    }
     runtime.closeSurface(surface);
     _surfaceContexts.remove(surface);
     _surfaceData.remove(surface);
@@ -309,6 +326,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
       _clearActivation();
     }
     _runtime?.setForeground(surface, foreground, appForeground: appForeground);
+    for (final entry in _streams.values.where((entry) => entry.surface == surface)) {
+      entry.connection.setActive(foreground && appForeground);
+    }
   }
 
   void _clearActivation() {
@@ -353,6 +373,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
+    _closeStreams();
     _forumAvatars.clear();
     _delegate.onShutdown();
     _dohHost = null;
@@ -507,6 +528,87 @@ class MetaversePluginHost implements MetaversePluginBridge {
     return '@forum-account:$_accountAtStart:$key';
   }
 
+  Future<Object?> _streamCall(String method, Map<String, Object?> params) async {
+    final runtime = _runtime;
+    final surfaceId = PluginExecutionContext.current?.surfaceId;
+    final source = runtime?.surfaces.where((s) => s.id == surfaceId).firstOrNull;
+    final streamId = params['id'];
+    if (source == null || source.kind == 'task' || runtime == null) {
+      throw const MetaversePluginCallException('stream_requires_surface');
+    }
+    if (streamId is! String || !RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(streamId)) {
+      throw const MetaversePluginCallException('stream_invalid_id');
+    }
+    final key = '${source.id}:$streamId';
+    if (method == 'streams.close') {
+      _streams.remove(key)?.connection.close();
+      return null;
+    }
+    if (!manifest.requiredFeatures.contains('eventStreams')) {
+      throw const MetaversePluginCallException('stream_feature_not_declared');
+    }
+    if (!source.foreground || !source.appForeground) throw const MetaversePluginCallException('stream_not_visible');
+    if (_streams.containsKey(key)) throw const MetaversePluginCallException('stream_already_open');
+    if (_streams.length >= 8) throw const MetaversePluginCallException('stream_limit');
+    final url = params['url'];
+    final uri = url is String && url.length <= 8192 ? Uri.tryParse(url) : null;
+    final lastId = params['lastEventId'] ?? '';
+    if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty ||
+        lastId is! String || lastId.length > 4096 || lastId.contains(RegExp(r'[\x00-\x1f\x7f]')) ||
+        (params['headers'] != null && params['headers'] is! Map) ||
+        params.keys.any((key) => !{'id', 'url', 'headers', 'credential', 'lastEventId'}.contains(key))) {
+      throw const MetaversePluginCallException('stream_invalid_request');
+    }
+    final credentialName = params['credential'];
+    if (credentialName != null) {
+      _requirePermission(MetaversePluginPermission.serviceAccount);
+      _credentials.spec(credentialName);
+    }
+    final generation = _generation, account = _delegate.currentAccountId();
+    final revision = credentialName is String ? _store.credentialRevision(id, credentialName) : null;
+    late final MetaverseEventStream connection;
+    void checkActive() {
+      if (generation != _generation || _retired || account != _delegate.currentAccountId() ||
+          _streams[key]?.connection != connection || !runtime.owns(source) || !source.foreground ||
+          !source.appForeground || (credentialName is String && revision != _store.credentialRevision(id, credentialName))) {
+        throw const PluginOperationCancelled();
+      }
+      if (credentialName != null) _requirePermission(MetaversePluginPermission.serviceAccount);
+    }
+    connection = MetaverseEventStream(id: streamId, credential: credentialName as String?, budget: _streamBudget,
+      lastEventId: lastId,
+      connect: (cancel, lastEventId, onOpen, onEvent, onRetry) => PluginExecutionContext(
+        pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId,
+        surfaceId: source.id, emitter: 'framework', traceId: LogPolicy.newTraceId(),
+      ).run(() async {
+        checkActive();
+        final credential = credentialName == null ? null : await _credentials.read(credentialName, account);
+        checkActive();
+        if (credentialName != null && credential == null) throw const MetaverseStreamException('stream_credential_required');
+        void checkCredential() {
+          checkActive();
+          if (credential != null && !credential.validFor(account)) throw const MetaverseStreamException('stream_credential_expired');
+        }
+        await _network.consumeEvents(manifest, request: params, authToken: credential?.secret,
+          cancel: cancel, checkActive: checkCredential, onOpen: onOpen, onEvent: onEvent,
+          onRetry: onRetry, lastEventId: lastEventId);
+      }),
+      emit: (name, args) async {
+        checkActive();
+        if (name == 'stream.state') {
+          LogWriter.instance.write({'type': 'plugin', 'level': 'info', 'event': 'plugin_stream_state',
+            'pluginId': id, 'pluginVersion': manifest.version, 'runtimeId': _runtimeId, 'surfaceId': source.id,
+            'emitter': 'framework', 'streamId': streamId, 'host': uri.host,
+            'state': args['state'], 'reason': args['reason'], 'status': args['status'],
+            'message': '插件实时连接状态变更'});
+        }
+        await runtime.dispatchAndWait(source, name, args);
+      });
+    _streams[key] = (surface: source, connection: connection);
+    connection.setActive(true);
+    return streamId;
+  }
+
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     if (_retired) throw const PluginOperationCancelled();
     if (manifest.accountScoped && _accountAtStart != _delegate.currentAccountId()) {
@@ -529,6 +631,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
       }
     }
     switch (method) {
+      case 'streams.open':
+      case 'streams.close':
+        return _streamCall(method, params);
       case 'navigation.dismiss':
         final id = PluginExecutionContext.current?.surfaceId;
         final source = _runtime?.surfaces.where((surface) => surface.id == id).firstOrNull;
@@ -728,6 +833,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
         return status;
       case 'credentials.capture':
         _requirePermission(MetaversePluginPermission.serviceAccount);
+        _credentials.spec(params['name']);
+        _closeStreams((stream) => stream.credential == params['name']);
         if (_taskActive != null) throw const MetaversePluginCallException('task_read_only');
         final generation = _generation;
         final accountId = _delegate.currentAccountId();
@@ -739,6 +846,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         );
       case 'credentials.remove':
         final name = _credentials.spec(params['name']).name;
+        _closeStreams((stream) => stream.credential == name);
         await _store.removeCredential(id, name);
         return null;
       case 'credentials.request':

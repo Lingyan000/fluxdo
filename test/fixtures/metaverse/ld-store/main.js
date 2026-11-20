@@ -338,6 +338,112 @@ const ldStore = (() => {
   };
 })();
 const views = new Map();
+// 一个脚本实例只持有一条消息流，页面切换时交给仍可见的界面。
+let notificationOwner=null, notificationSync=null, notificationAgain=false, notificationBlocked=false;
+let notificationRetryAt=0, notificationRetryTimer=null;
+let notificationSummary=null, notificationRevision=0, notificationFallback=null;
+function visibleNotificationView() {
+  return [...views.values()].find(s=>s.ctx && !s.hidden) || null;
+}
+function stopNotificationFallback() {
+  if(notificationFallback)clearTimeout(notificationFallback);
+  notificationFallback=null;
+}
+function scheduleNotificationFallback() {
+  stopNotificationFallback();
+  if(!notificationOwner || notificationBlocked || typeof setTimeout!=='function')return;
+  notificationFallback=setTimeout(async()=>{
+    notificationFallback=null;
+    const owner=notificationOwner;
+    try {await refreshNotificationSnapshot(owner);await updateMessageViews();} catch(_) {}
+    if(owner===notificationOwner)scheduleNotificationFallback();
+  },60000);
+}
+function setNotificationSummary(value) {
+  if(!value || typeof value!=='object')return;
+  notificationSummary=value;notificationRevision++;
+  for(const s of views.values()) {
+    if(!s.ctx)continue;
+    if(s.overviewStats) {
+      s.overviewStats=s.overviewStats.map(stat=>stat.label==='未读消息' ? {...stat,value:display(Math.max(0,Number(value.totalUnread)||0))} : stat);
+      s.ctx.setData('stats',s.overviewStats);
+    }
+    if(s.ctx.page==='messages')s.ctx.setData('unread',(Number(value.systemUnread)||0)>0);
+  }
+}
+async function refreshNotificationSnapshot(owner) {
+  if(!owner || owner!==notificationOwner || market(owner.ctx)!==owner || owner.hidden)return;
+  const revision=notificationRevision;
+  const value=await read('/messages/unread-summary',true);
+  if(owner===notificationOwner && !owner.hidden && revision===notificationRevision)setNotificationSummary(value);
+}
+async function updateMessageViews() {
+  await Promise.all([...views.values()].filter(s=>s.ctx?.page==='messages').map(async s=>{
+    s.messagesChanged=true;s.messagesRevision=(s.messagesRevision || 0)+1;
+    s.ctx.setData('messagesChanged',true);
+    if(!s.hidden && !s.loading && !s.buyerBusy && (s.page || 1)===1)await loadMessages(s.ctx,false,true);
+  }));
+}
+function waitNotificationRetry(delay) {
+  if(notificationRetryTimer)clearTimeout(notificationRetryTimer);
+  notificationRetryTimer=setTimeout(()=>{
+    notificationRetryTimer=null;notificationRetryAt=0;syncNotifications();
+  },delay);
+}
+async function syncNotifications() {
+  notificationAgain=true;
+  if(notificationSync)return notificationSync;
+  notificationSync=(async()=>{
+    while(notificationAgain) {
+      notificationAgain=false;
+      const next=visibleNotificationView();
+      if(next===notificationOwner)continue;
+      const previous=notificationOwner;notificationOwner=null;stopNotificationFallback();
+      if(previous) {try {await previous.ctx.api.streams.close('notifications');} catch(_) {}}
+      if(!next || notificationBlocked || !next.ctx.api.streams)continue;
+      if(Date.now()<notificationRetryAt) {
+        if(!notificationRetryTimer)waitNotificationRetry(notificationRetryAt-Date.now());
+        continue;
+      }
+      const status=await next.ctx.api.credentials.status('account');
+      if(!status.authorized || market(next.ctx)!==next || next.hidden)continue;
+      notificationOwner=next;
+      try {
+        await next.ctx.api.streams.open({id:'notifications',url:api+'/notifications/stream',credential:'account',headers:{Origin:'https://ldcstore.com'}});
+      } catch(_) {if(notificationOwner===next)scheduleNotificationFallback();}
+    }
+  })().catch(()=>{}).finally(()=>{notificationSync=null;});
+  return notificationSync;
+}
+fluxdo.on('stream.event',(ctx,args)=>{
+  if(args.id!=='notifications' || notificationOwner?.ctx.surface!==ctx.surface || notificationOwner.hidden)return;
+  let value;try {value=JSON.parse(args.data);} catch(_) {return;}
+  if(args.event==='stream.closed' && typeof setTimeout==='function') {
+    const delay=Math.max(value.reason==='connection_limit' ? 60000 : 1000,Math.min(3600000,Number(value.retryAfterMs)||0));
+    notificationRetryAt=Date.now()+delay;
+    const owner=notificationOwner;notificationOwner=null;stopNotificationFallback();
+    owner.ctx.api.streams.close('notifications').catch(()=>{});
+    waitNotificationRetry(delay);return;
+  }
+  if(args.event==='summary.updated')setNotificationSummary(value);
+  if(args.event==='system-message.changed')updateMessageViews().catch(()=>{});
+});
+fluxdo.on('stream.state',(ctx,args)=>{
+  const owner=notificationOwner;
+  if(args.id!=='notifications' || owner?.ctx.surface!==ctx.surface || owner.hidden)return;
+  if(args.state==='open') {
+    stopNotificationFallback();
+    // 补查摘要和已打开的消息页，恢复断线期间的遗漏；不刷新商品或重置订单。
+    Promise.all([refreshNotificationSnapshot(owner),updateMessageViews()]).catch(()=>{});
+  } else if(args.state==='retrying')scheduleNotificationFallback();
+  else if(args.state==='closed') {
+    if(args.status===401 || args.status===403 || /credential/.test(args.reason || '')) {
+      notificationBlocked=true;stopNotificationFallback();
+      for(const s of views.values())if(s.ctx?.page==='messages')write(s.ctx,{needsSession:true,authorized:false,error:'士多会话已失效，请重新登录。'});
+    } else scheduleNotificationFallback();
+  }
+});
+
 const money = n => Number.isFinite(Number(n)) ? Number(n).toFixed(2) + ' LDC' : '—';
 const display = v => v == null ? '' : String(v);
 const flag = v => v === true || v === 1 || v === '1' || v === 'true';
@@ -747,8 +853,9 @@ async function loadOverview(ctx) {
       const [raw,unread]=await Promise.all([read('/user/attention',true),read('/messages/unread-summary',true)]);
       const data=normalizeOrderData(raw);
       if(!current())return;
-      ctx.setData('stats',[{label:'待付款',value:display(data.pendingPaymentCount ?? 0)},{label:'待发货',value:display(data.awaitingDeliveryCount ?? 0)},
-        {label:'优惠券',value:display(data.unusedCouponCount ?? 0)},{label:'未读消息',value:display(unread.totalUnread ?? 0)}]);
+      s.overviewStats=[{label:'待付款',value:display(data.pendingPaymentCount ?? 0)},{label:'待发货',value:display(data.awaitingDeliveryCount ?? 0)},
+        {label:'优惠券',value:display(data.unusedCouponCount ?? 0)},{label:'未读消息',value:display(notificationSummary?.totalUnread ?? unread.totalUnread ?? 0)}];
+      ctx.setData('stats',s.overviewStats);
       write(ctx,{refundHint:Number(data.refundAttentionCount)>0 ? display(data.refundAttentionCount)+' 笔售后待处理' : '',couponHint:Number(data.expiringCouponCount)>0 ? display(data.expiringCouponCount)+' 张即将到期' : ''});
     } else {
       const data=await read('/stats');
@@ -758,11 +865,14 @@ async function loadOverview(ctx) {
     ctx.setData('overviewError','');
   } catch (_) {if(current())write(ctx,{stats:[],overviewError:'暂时无法更新统计，仍可进入浏览'});}
 }
-fluxdo.on('card.load',ctx=>{views.set(ctx.surface,{seq:0,visibility:0});return loadOverview(ctx);});
+fluxdo.on('card.load',ctx=>{views.set(ctx.surface,{ctx,seq:0,visibility:0});syncNotifications();return loadOverview(ctx);});
+fluxdo.on('card.hide',ctx=>{const s=market(ctx);if(s)s.hidden=true;return syncNotifications();});
+fluxdo.on('card.resume',ctx=>{const s=market(ctx);if(s)s.hidden=false;return syncNotifications();});
 fluxdo.on('card.refresh',loadOverview);
 fluxdo.on('page.open',ctx => {
-  const s = {seq:0,visibility:0,rows:[],cat:'',search:'',sort:'updated_at',direction:'DESC',stock:false,min:'',max:''};
+  const s = {ctx,seq:0,visibility:0,rows:[],cat:'',search:'',sort:'updated_at',direction:'DESC',stock:false,min:'',max:''};
   views.set(ctx.surface,s);
+  syncNotifications();
   write(ctx,{externalBusy:false,externalError:''});
   if(ctx.page==='filters') {
     const source=views.get(ctx.params.source); if(!source)return;
@@ -783,12 +893,13 @@ fluxdo.on('page.open',ctx => {
     filterLabel:'筛选与排序'});
   return Promise.all([categories(ctx),load(ctx,false)]);
 });
-fluxdo.on('surface.close',ctx => {const s=market(ctx);if(s?.poll)clearTimeout(s.poll);if(s?.searchTimer)clearTimeout(s.searchTimer);views.delete(ctx.surface);});
+fluxdo.on('surface.close',ctx => {const s=market(ctx);if(s?.poll)clearTimeout(s.poll);if(s?.searchTimer)clearTimeout(s.searchTimer);views.delete(ctx.surface);return syncNotifications();});
 // 页面暂时被遮住时保留内容、筛选和分页，只收起已展开的交付内容。
 fluxdo.on('page.hide',ctx => {
   const s = market(ctx);
   if (!s) return;
   s.hidden = true;
+  syncNotifications();
   s.visibility++;
   if(s.poll) {clearTimeout(s.poll);s.poll=null;}
   if(s.searchTimer) {clearTimeout(s.searchTimer);s.searchTimer=null;s.dirty=true;}
@@ -801,6 +912,8 @@ fluxdo.on('page.resume',(ctx,args) => {
   const s = market(ctx);
   if (!s) return;
   s.hidden = false;
+  syncNotifications();
+  if(s.messagesChanged && ctx.page==='messages')updateMessageViews();
   if (s.createdNavigation) return openCreatedOrder(ctx,s);
   if (s.dirty) {showFilters(ctx,s);return refreshView(ctx);}
   if(ctx.page==='order')scheduleOrderPoll(ctx,s);
@@ -812,6 +925,10 @@ fluxdo.on('login',async ctx => {
   write(ctx,{loggingIn:true,loginError:''});
   try {
     if (!await ldStore.login(ctx.api)) return;
+    notificationBlocked=false;notificationSummary=null;notificationRetryAt=0;
+    if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
+    if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
+    notificationOwner=null;syncNotifications();
     invalidateViews(s);
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
@@ -1297,6 +1414,10 @@ fluxdo.on('messages',()=>fluxdo.navigate('messages'));
 fluxdo.on('overviewRefresh',loadOverview);
 fluxdo.on('signOut',async ctx=>{
   if(!await ctx.api.dialogs.confirm({title:'退出士多登录',message:'退出后仍可浏览商品。再次兑换时需要重新授权。',confirmLabel:'退出登录'}))return;
+  notificationBlocked=true;notificationSummary=null;notificationRetryAt=0;stopNotificationFallback();
+  if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
+  if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
+  notificationOwner=null;
   await ctx.api.credentials.remove('account');invalidateViews();await loadOverview(ctx);
 });
 fluxdo.on('seller',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername)return fluxdo.navigate('merchant',{username:p.sellerUsername,userId:display(p.sellerUserId),site:p.sellerSite || 'linux.do'});});
@@ -1313,13 +1434,14 @@ fluxdo.on('checkPayment',async ctx=>{
 fluxdo.on('sellerProfile',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername && (!p.sellerSite || p.sellerSite==='linux.do'))return ctx.api.forum.open({type:'user',username:p.sellerUsername});});
 
 const messageTabs=[{value:'',label:'全部'},{value:'unread',label:'未读'},{value:'read',label:'已读'}];
-async function loadMessages(ctx,more) {
+async function loadMessages(ctx,more,silent=false) {
   const s=market(ctx);if(!s || s.buyerBusy || (more && (s.loading || !s.more)))return;
   const revision=++s.seq,current=()=>market(ctx)===s && revision===s.seq;
   const page=more ? (s.page || 1)+1 : 1;
-  if(!more)s.rows=[];
+  const messagesRevision=s.messagesRevision || 0;
+  if(!more && !silent)s.rows=[];
   s.loading=true;
-  write(ctx,{rows:s.rows,loading:!more,loadingMore:more,error:'',buyerError:'',needsSession:false,
+  write(ctx,{rows:s.rows,loading:!more && !silent,loadingMore:more,error:'',buyerError:'',needsSession:false,
     tabs:messageTabs.map(t=>({...t,selected:t.value===(s.readStatus || '')}))});
   try {
     const auth=await ldStore.status();if(!current())return;
@@ -1327,11 +1449,13 @@ async function loadMessages(ctx,more) {
     if(!auth.authorized){write(ctx,{needsSession:true,error:'登录士多后查看消息',rows:[],more:false});return;}
     const data=await buyerRequest(ctx,'/messages/system?'+params({page,pageSize:20,readStatus:s.readStatus || '',search:s.search || ''}));
     if(!current())return;
+    if(silent && s.hidden)return;
     if(!Array.isArray(data.messages))throw Error('消息数据格式有误');
-    const ids=new Set(s.rows.map(r=>r.id));
+    const ids=new Set(more ? s.rows.map(r=>r.id) : []);
+    s.messagesChanged=messagesRevision!==(s.messagesRevision || 0);ctx.setData('messagesChanged',s.messagesChanged);
     const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),
       time:display(m.createdAt),read:flag(m.isRead),link:display(m.link)})).filter(r=>!ids.has(r.id));
-    s.rows=s.rows.concat(rows);s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
+    s.rows=more ? s.rows.concat(rows) : rows;s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
     write(ctx,{rows:s.rows,more:s.more,unread:Number(data.summary?.totalUnread || 0)>0});
   } catch(e) {if(current())write(ctx,{error:e.message,more:!!s.more,...(e.status===401 ? {rows:[],authorized:false,needsSession:true} : {})});}
   finally {if(current()){s.loading=false;write(ctx,{loading:false,loadingMore:false});}}

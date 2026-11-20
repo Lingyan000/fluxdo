@@ -58,6 +58,7 @@ class MetaverseApiExample {
     'auth.status' || 'auth.request' || 'auth.signOut' => l.metaverse_apiLegacyAuth,
     'payments.request' => l.metaverse_apiPayment,
     'fetch' => l.metaverse_apiFetch,
+    'streams.open' || 'streams.close' => l.metaverse_apiStreams,
     'user.get' => l.metaverse_apiUser,
     'navigate' => l.metaverse_apiNavigate,
     'prepareNavigation' => l.metaverse_apiPrepareNavigation,
@@ -72,6 +73,9 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('streams.open', "{id: 'updates', url: 'https://api.example.org/events'}", 'updates',
+    permission: 'network', apiVersion: 2, afterCall: "console.log(result); fluxdo.on('stream.state', (_, state) => console.log(state)); fluxdo.on('stream.event', (_, frame) => console.log(JSON.parse(frame.data)));"),
+  MetaverseApiExample('streams.close', "'updates'", null, permission: 'network', apiVersion: 2),
   MetaverseApiExample('permissions.status', '', {'forumActivity': false}, apiVersion: 2),
   MetaverseApiExample('permissions.request', "['forumActivity']", true, userAction: true, apiVersion: 2),
   MetaverseApiExample('tasks.schedule', "{id: 'refresh', intervalSeconds: 30, background: false}", true, permission: 'tasks', apiVersion: 2, userAction: true),

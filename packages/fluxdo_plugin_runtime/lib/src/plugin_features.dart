@@ -17,6 +17,7 @@ enum PluginFeature {
   modalDismiss,
   cardNavigation,
   contentPresentation,
+  eventStreams,
 }
 
 class PluginFeatures {

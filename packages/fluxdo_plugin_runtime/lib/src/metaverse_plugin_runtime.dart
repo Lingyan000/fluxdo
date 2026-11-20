@@ -115,6 +115,8 @@ class MetaversePluginRuntime {
   final _tasks = <String, Completer<void>>{};
   final _timers = <int, _PluginTimer>{};
   int _surfaceSeq = 0;
+  int _deliverySeq = 0;
+  final _deliveries = <int, ({String surface, Completer<void> done})>{};
   int _pendingCalls = 0;
   bool _disposed = false;
 
@@ -184,6 +186,9 @@ class MetaversePluginRuntime {
     if (!identical(_surfaces[surface.id], surface)) return;
     if (_surfaces.remove(surface.id) == null) return;
     surface.onData = null;
+    for (final delivery in _deliveries.values.where((v) => v.surface == surface.id)) {
+      if (!delivery.done.isCompleted) delivery.done.completeError(const MetaversePluginCallException('stream_cancelled'));
+    }
     _syncTimers();
     _dispatchRaw(surface, 'surface.close', const {});
   }
@@ -196,6 +201,18 @@ class MetaversePluginRuntime {
   ) {
     if (!owns(surface)) return;
     _dispatchRaw(surface, name, args);
+  }
+
+  /// 流式事件逐条等待处理完成，避免慢消费者积压原生和 JS 消息队列。
+  Future<void> dispatchAndWait(MetaversePluginSurface surface, String name, Map<String, Object?> args) async {
+    if (_disposed || !owns(surface)) throw const MetaversePluginCallException('stream_cancelled');
+    final id = ++_deliverySeq;
+    final done = Completer<void>();
+    _deliveries[id] = (surface: surface.id, done: done);
+    _run('__fluxdoMetaverse.dispatch(${jsonEncode(name)}, ${_literal(surface._info)}, ${_literal(args)}, $id)');
+    try { await done.future.timeout(const Duration(seconds: 10)); }
+    on TimeoutException { throw const MetaversePluginCallException('stream_consumer_timeout'); }
+    finally { _deliveries.remove(id); }
   }
 
   void _dispatchRaw(
@@ -224,6 +241,10 @@ class MetaversePluginRuntime {
       if (!pending.isCompleted) pending.completeError(const MetaversePluginCallException('task_cancelled'));
     }
     _tasks.clear();
+    for (final entry in _deliveries.values) {
+      if (!entry.done.isCompleted) entry.done.completeError(const MetaversePluginCallException('stream_cancelled'));
+    }
+    _deliveries.clear();
     _engine.dispose();
   }
 
@@ -270,6 +291,9 @@ class MetaversePluginRuntime {
 
   void _processMessage(Map message) {
     switch (message['t']) {
+      case 'delivery.done':
+        final delivery = _deliveries[message['d']];
+        if (delivery != null && !delivery.done.isCompleted) delivery.done.complete();
       case 'event':
         final id = message['id'];
         if (id is! int) return;

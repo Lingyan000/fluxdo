@@ -1597,6 +1597,7 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
                     if (name == 'CommentForm') 'fields':[{'name':'content','label':'评论内容','hint':'分享使用体验或提出问题（5–500 字）','type':'multiline','maxLength':500}],
                     'canClaim':true,'claimed':false,'claimLabel':'领取优惠券',
                     'coupon':{'title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','starts':'2026-11-17 00:00（北京时间）','state':''},
+                    if(name=='Messages') 'messagesChanged':true,
                     if(name=='Messages') 'rows':[{'id':'m1','title':'订单已交付','content':'您兑换的开发工具包已交付，可前往订单查看。','time':'2026-11-18T12:00:00Z','read':false,'link':'/order/LD1'}],
                     if(name=='Coupons') 'rows':[
                       {'id':'c1','title':'开发者专享券','rule':'减 2.00 LDC','seller':'卖家：tester','scope':'开发者工具包','minimum':'满 5.00 LDC','expires':'2026-12-31 23:59（北京时间）','state':'待支付订单占用','action':'查看订单'},

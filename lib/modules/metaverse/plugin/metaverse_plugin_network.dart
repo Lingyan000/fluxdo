@@ -144,6 +144,35 @@ class MetaversePluginNetwork {
     final target = await _checkTarget(uri, manifest.networkHosts);
 
     final method = '${request['method'] ?? 'GET'}'.toUpperCase();
+    final headers = _requestHeaders(manifest, uri, method, request, authToken);
+
+    final body = request['body'];
+    if (body != null && body is! String) {
+      throw const MetaversePluginCallException('请求体须为字符串');
+    }
+    if (body is String && utf8.encode(body).length > maxRequestBody) {
+      throw const MetaversePluginCallException('请求体过大');
+    }
+
+    checkActive?.call();
+    final response = await _send(
+      uri,
+      target: target,
+      method: method,
+      headers: headers,
+      body: body as String?,
+      maxBytes: maxResponseBody,
+    );
+    checkActive?.call();
+    return {
+      'status': response.status,
+      'headers': response.headers,
+      'body': utf8.decode(response.bytes, allowMalformed: true),
+    };
+  }
+
+  Map<String, String> _requestHeaders(MetaversePluginManifest manifest, Uri uri,
+      String method, Map<String, Object?> request, String? authToken) {
     final credentialName = request['credential'];
     final credential = manifest.capabilities.credentials[credentialName];
     if (credentialName != null && credential == null) {
@@ -204,29 +233,70 @@ class MetaversePluginNetwork {
           : '${auth.scheme} $authToken';
     }
 
-    final body = request['body'];
-    if (body != null && body is! String) {
-      throw const MetaversePluginCallException('请求体须为字符串');
-    }
-    if (body is String && utf8.encode(body).length > maxRequestBody) {
-      throw const MetaversePluginCallException('请求体过大');
-    }
+    return headers;
+  }
 
-    checkActive?.call();
-    final response = await _send(
-      uri,
-      target: target,
-      method: method,
-      headers: headers,
-      body: body as String?,
-      maxBytes: maxResponseBody,
-    );
-    checkActive?.call();
-    return {
-      'status': response.status,
-      'headers': response.headers,
-      'body': utf8.decode(response.bytes, allowMalformed: true),
-    };
+  /// 长连接复用普通请求的出口、TLS 与凭证范围，内容只按事件逐帧交付。
+  Future<void> consumeEvents(MetaversePluginManifest manifest, {
+    required Map<String, Object?> request,
+    required String? authToken,
+    required CancelToken cancel,
+    required void Function() checkActive,
+    required Future<void> Function() onOpen,
+    required Future<void> Function(PluginServerEvent) onEvent,
+    required void Function(int) onRetry,
+    String lastEventId = '',
+  }) async {
+    final uri = Uri.parse(request['url'] as String);
+    final target = await _checkTarget(uri, manifest.networkHosts).timeout(const Duration(seconds: 15));
+    final headers = _requestHeaders(manifest, uri, 'GET', request, authToken);
+    headers.removeWhere((key, _) => {'accept', 'cache-control', 'last-event-id'}.contains(key.toLowerCase()));
+    headers['Accept'] = 'text/event-stream';
+    headers['Cache-Control'] = 'no-cache';
+    if (lastEventId.isNotEmpty && !lastEventId.contains(RegExp(r'[\x00-\x1f\x7f]'))) headers['Last-Event-ID'] = lastEventId;
+    checkActive();
+    if (cancel.isCancelled) return;
+    await _send(uri, target: target, method: 'GET', headers: headers, body: null,
+      maxBytes: 0, cancelToken: cancel,
+      consume: (response) async {
+        checkActive();
+        final status = response.statusCode ?? 0;
+        if (status != 200) {
+          final seconds = int.tryParse(response.headers.value('retry-after') ?? '');
+          throw MetaverseStreamException('stream_http_$status', status: status,
+            retryAfter: seconds == null ? null : Duration(seconds: seconds.clamp(1, 3600)),
+            retryable: status == 429 || status >= 500);
+        }
+        if (response.headers.value('content-type')?.split(';').first.trim().toLowerCase() != 'text/event-stream') {
+          throw const MetaverseStreamException('stream_invalid_content_type');
+        }
+        await onOpen();
+        var bytes = 0, events = 0;
+        final window = Stopwatch()..start();
+        void budget({int size = 0, bool event = false}) {
+          checkActive();
+          if (window.elapsed >= const Duration(seconds: 10)) {
+            bytes = 0; events = 0; window.reset();
+          }
+          bytes += size;
+          if (event) events++;
+          if (bytes > 1024 * 1024 || events > 300) {
+            throw const MetaverseStreamException('stream_rate_limited');
+          }
+        }
+        try {
+          final chunks = response.data!.stream.timeout(const Duration(seconds: 75)).map((chunk) {
+            budget(size: chunk.length);
+            return chunk;
+          });
+          await for (final event in decodePluginEventStream(chunks, onRetry: onRetry, lastEventId: lastEventId)) {
+            budget(event: true);
+            await onEvent(event);
+          }
+        } on FormatException {
+          throw const MetaverseStreamException('stream_invalid_frame');
+        }
+      });
   }
 
   /// 下载插件包里的一个文件（清单、界面描述、脚本）。
@@ -433,6 +503,8 @@ class MetaversePluginNetwork {
     required Map<String, String> headers,
     required String? body,
     required int maxBytes,
+    CancelToken? cancelToken,
+    Future<void> Function(Response<ResponseBody>)? consume,
   }) async {
     final pins = target.pins;
     final core = useNetworkCore?.call() == true;
@@ -443,7 +515,7 @@ class MetaversePluginNetwork {
     final ownsClient = !core && _dio == null;
     if (ownsClient) _directClients.add(client);
     try {
-      final cancel = CancelToken();
+      final cancel = cancelToken ?? CancelToken();
       final Response<ResponseBody> response;
       final route = diagnosticNetwork?.call();
       try {
@@ -462,6 +534,7 @@ class MetaversePluginNetwork {
               ...headers,
             },
             responseType: ResponseType.stream,
+            receiveTimeout: consume == null ? null : const Duration(seconds: 75),
           ),
         );
       } on DioException catch (error) {
@@ -494,6 +567,11 @@ class MetaversePluginNetwork {
         throw MetaversePluginCallException('网络请求失败: ${error.type.name}');
       }
 
+      if (consume != null) {
+        try { await consume(response); }
+        finally { cancel.cancel(); }
+        return (status: response.statusCode ?? 0, headers: <String, String>{}, bytes: Uint8List(0));
+      }
       final builder = BytesBuilder(copy: false);
       try {
         await for (final chunk in response.data!.stream) {
@@ -525,4 +603,12 @@ class MetaversePluginNetwork {
       }
     }
   }
+}
+
+/// 状态与错误码可以进入插件日志；响应正文和凭证不能进入诊断。
+class MetaverseStreamException extends MetaversePluginCallException {
+  const MetaverseStreamException(super.message, {this.status, this.retryAfter, this.retryable = false});
+  final int? status;
+  final Duration? retryAfter;
+  final bool retryable;
 }

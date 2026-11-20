@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=readFileSync(new URL('../../fixtures/metaverse/ld-store/main.js',import.meta.url),'utf8');
 const campaign={id:'c1',name:'测试券',discountType:'fixed_amount',fixedAmount:2,minSpend:5,scopeType:'product',productId:'p1',sellerUsername:'seller',claimable:true};
-function setup({authorized=true,consent=true,respond=()=>({}),timers=false}={}) {
+function setup({authorized=true,consent=true,respond=()=>({}),timers=false,streams=false}={}) {
   const handlers=new Map(),calls=[],nav=[],confirmations=[];
-  const pendingTimers=new Map();let timerId=0;
+  const pendingTimers=new Map(),streamCalls=[];let timerId=0;
   const api={
     on:(name,handler)=>handlers.set(name,handler),
     user:{get:async()=>({id:42,username:'tester'})},
@@ -26,6 +26,7 @@ function setup({authorized=true,consent=true,respond=()=>({}),timers=false}={}) 
       return {ok:!(result?.failure),status:result?.failure||200,json:()=>result?.failure ? {success:false,error:result.message} : {success:true,data:result}};
     },
   };
+  if(streams)api.streams={open:async options=>{streamCalls.push({open:options});return options.id;},close:async id=>streamCalls.push({close:id})};
   vm.runInNewContext(script,{fluxdo:api,console:{warn:()=>{},log:()=>{}},...(timers ? {
     setTimeout:(fn,delay)=>{const id=++timerId;pendingTimers.set(id,{fn,delay});return id;},
     clearTimeout:id=>pendingTimers.delete(id),
@@ -36,7 +37,7 @@ function setup({authorized=true,consent=true,respond=()=>({}),timers=false}={}) 
     await handlers.get('page.open')(ctx);return {ctx,data};
   }
   const fire=(p,name,args={})=>handlers.get(name)(p.ctx,args);
-  return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
+  return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,streamCalls,async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
 }
 test('不同意士多协议时不初始化授权也不调用 Connect',async()=>{
   const t=setup({consent:false});const ctx={api:t.api,setData:()=>{}};
@@ -216,4 +217,61 @@ test('系统消息支持分页筛选，只在点击后标记已读，并跳转�
 });
 test('全部消息已读需确认，取消不会写入',async()=>{
  const t=setup({consent:false,respond:()=>({messages:[],pagination:{},summary:{}})});const p=await t.page('messages');await t.fire(p,'messagesReadAll');assert.equal(t.calls.length,1);
+});
+
+const messageResult={messages:[{id:'m1',title:'订单已发货',content:'请查看订单',isRead:false}],pagination:{totalPages:2},summary:{totalUnread:1}};
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+test('消息页共用一条订阅，隐藏交接，关闭取消，不写已读',async()=>{
+  const t=setup({streams:true,respond:()=>messageResult});
+  const a=await t.page('messages');await flush();
+  const b=await t.page('messages');await flush();
+  assert.equal(t.streamCalls.filter(c=>c.open).length,1);
+  await t.fire(a,'page.hide');await flush();
+  assert.equal(t.streamCalls.filter(c=>c.open).length,2);
+  await t.fire(b,'surface.close');await flush();
+  assert.equal(t.streamCalls.filter(c=>c.close).length,2);
+  assert.equal(t.calls.filter(c=>c.method!=='GET').length,0);
+});
+test('未登录不订阅；401 停止兜底，恢复页面不重试失效会话',async()=>{
+  const guest=setup({streams:true,authorized:false});await guest.page('messages');await flush();assert.equal(guest.streamCalls.length,0);
+  const t=setup({streams:true,timers:true,respond:()=>messageResult}),p=await t.page('messages');await flush();
+  await t.fire(p,'stream.state',{id:'notifications',state:'closed',status:401});
+  assert.equal(p.data.needsSession,true);assert.equal(t.pendingTimers.size,0);
+  await t.fire(p,'page.hide');await t.fire(p,'page.resume');await flush();
+  assert.equal(t.streamCalls.filter(c=>c.open).length,1);
+});
+test('SSE 首页面静默同步保留内容，翻页后只提示更新',async()=>{
+  let release,hold=false;const waiting=new Promise(r=>release=r);
+  const t=setup({streams:true,respond:r=>hold?waiting:{...messageResult,messages:[{...messageResult.messages[0],id:r.url.searchParams.get('page')==='2'?'m2':'m1'}]}});
+  const p=await t.page('messages');await flush();
+  hold=true;
+  const updating=t.fire(p,'stream.event',{id:'notifications',event:'system-message.changed',data:'{}'});
+  await flush();assert.equal(p.data.rows.length,1);assert.equal(p.data.loading,false);
+  release(messageResult);await updating;await flush();hold=false;
+  await t.fire(p,'messagesMore');const count=t.calls.length;
+  await t.fire(p,'stream.event',{id:'notifications',event:'system-message.changed',data:'{}'});
+  assert.equal(t.calls.length,count);assert.equal(p.data.rows.length,2);assert.equal(p.data.messagesChanged,true);
+});
+test('连接恢复补查摘要，失效连接和未知事件不能覆盖消息',async()=>{
+  const t=setup({streams:true,timers:true,respond:r=>r.url.pathname.endsWith('unread-summary')?{totalUnread:3,systemUnread:2}:messageResult});
+  const p=await t.page('messages');await flush();
+  await t.fire(p,'stream.state',{id:'notifications',state:'retrying'});assert.equal(t.pendingTimers.size,1);
+  await t.fire(p,'stream.state',{id:'notifications',state:'open'});assert.equal(t.pendingTimers.size,0);
+  assert.ok(t.calls.some(c=>c.url.pathname.endsWith('unread-summary')));
+  const before=t.calls.length;
+  await t.fire(p,'stream.event',{id:'notifications',event:'payment.success',data:'{}'});
+  assert.equal(t.calls.length,before);
+  await t.fire(p,'page.hide');
+  await t.fire(p,'stream.event',{id:'notifications',event:'summary.updated',data:'{"systemUnread":99}'});
+  assert.equal(t.calls.length,before);
+});
+
+test('服务端连接数限制按业务提示冷却，页面切换不会提前重连',async()=>{
+ const t=setup({streams:true,timers:true,respond:()=>messageResult}),p=await t.page('messages');await flush();
+ await t.fire(p,'stream.event',{id:'notifications',event:'stream.closed',data:'{"reason":"connection_limit","retryAfterMs":90000}'});
+ assert.equal(t.streamCalls.filter(c=>c.close).length,1);
+ assert.equal([...t.pendingTimers.values()][0].delay,90000);
+ await t.fire(p,'page.hide');await t.fire(p,'page.resume');await flush();
+ assert.equal(t.streamCalls.filter(c=>c.open).length,1);
+ await t.tick();await flush();assert.equal(t.streamCalls.filter(c=>c.open).length,2);
 });

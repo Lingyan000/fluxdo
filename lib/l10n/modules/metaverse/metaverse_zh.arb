@@ -81,6 +81,7 @@
   "metaverse_apiCredentialRequest": "请求用户填写服务凭证，返回是否完成",
   "metaverse_apiConnect": "通过公共 Connect 授权并取得服务回调",
   "metaverse_apiPayment": "打开原生收银台，体验密码键盘与支付结果",
+  "metaverse_apiStreams": "订阅实时事件流；随界面暂停与重连，示例动态展示连接和消息。",
   "metaverse_apiFetch": "向清单授权的域名发送网络请求",
   "metaverse_apiUser": "读取用户授权分享的公开身份",
   "metaverse_apiNavigate": "打开插件声明的原生页面并传入参数",

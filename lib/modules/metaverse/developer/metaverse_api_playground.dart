@@ -112,6 +112,11 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   };
   final _events = <String>[];
   MetaversePluginRuntime? _runtime;
+  final _streamTimers = <String, List<Timer>>{};
+  void _clearStreamPreviews() {
+    for (final timers in _streamTimers.values) { for (final timer in timers) { timer.cancel(); } }
+    _streamTimers.clear();
+  }
   ToastType _toastType = ToastType.info;
   bool _failure = false, _running = false;
   int _generation = 0;
@@ -128,6 +133,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   void dispose() {
     _generation++;
     _runtime?.dispose();
+    _clearStreamPreviews();
     _arguments.dispose();
     _message.dispose();
     _url.dispose();
@@ -139,6 +145,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
     FocusScope.of(context).unfocus();
     final generation = ++_generation;
     _runtime?.dispose();
+    _clearStreamPreviews();
     setState(() {
       _events.clear();
       _result = null;
@@ -198,6 +205,27 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     switch (method) {
+      case 'streams.close':
+        for (final timer in _streamTimers.remove(params['id']) ?? <Timer>[]) { timer.cancel(); }
+        return null;
+      case 'streams.open':
+        final id = '${params['id']}';
+        final generation = _generation;
+        for (final timer in _streamTimers.remove(id) ?? <Timer>[]) { timer.cancel(); }
+        _streamTimers[id] = [
+          for (final (delay, name, event) in [
+            (250, 'stream.state', {'id': id, 'state': 'open'}),
+            (600, 'stream.event', {'id': id, 'event': 'count.changed', 'data': '{"unread":1}', 'lastEventId': '1'}),
+            (1100, 'stream.state', {'id': id, 'state': 'retrying', 'retryInMs': 1000}),
+            (2100, 'stream.state', {'id': id, 'state': 'open'}),
+            (2400, 'stream.event', {'id': id, 'event': 'count.changed', 'data': '{"unread":2}', 'lastEventId': '2'}),
+          ]) Timer(Duration(milliseconds: delay), () {
+            if (!mounted || generation != _generation) return;
+            final runtime = _runtime, surface = _runtime?.surfaces.firstOrNull;
+            if (runtime != null && surface != null) runtime.dispatch(surface, name, event);
+          }),
+        ];
+        return id;
       case 'host.features':
         return PluginFeatures.supported.toList();
       case 'permissions.status':

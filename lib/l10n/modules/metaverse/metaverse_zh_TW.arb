@@ -79,6 +79,7 @@
   "metaverse_apiCredentialRequest": "要求使用者填寫服務憑證，回傳是否完成",
   "metaverse_apiConnect": "透過公共 Connect 授權並取得服務回呼",
   "metaverse_apiPayment": "開啟原生收銀台，體驗密碼鍵盤與付款結果",
+  "metaverse_apiStreams": "訂閱即時事件串流；隨介面暫停與重新連線，範例動態展示連線和訊息。",
   "metaverse_apiFetch": "向清單授權的網域傳送網絡請求",
   "metaverse_apiUser": "讀取使用者授權分享的公開身分",
   "metaverse_apiNavigate": "開啟插件宣告的原生頁面並傳入參數",
