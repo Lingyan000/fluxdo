@@ -174,6 +174,10 @@ FluxDO 集成了基于 Rust 的 DOH (DNS over HTTPS) 代理，提供：
 
 ## 致谢
 
+This project is tested with BrowserStack.
+
+[BrowserStack](https://www.browserstack.com/) 用于真机测试；已完成一次 Android 安装与启动验证（[运行记录](https://github.com/Lingyan000/fluxdo/actions/runs/43710553020)）。
+
 感谢 [Linux.do](https://linux.do/) 社区的所有成员，是你们的真诚、友善、团结、专业让这个社区充满活力。
 
 ## 相关文档
