@@ -4,26 +4,7 @@ part of '../topic_detail_page.dart';
 
 /// 过滤模式相关方法
 extension _FilterActions on _TopicDetailPageState {
-  bool _detailHasTargetPost(
-    TopicDetail detail, {
-    int? postNumber,
-    int? postId,
-  }) {
-    if (postId != null) {
-      if (detail.postStream.stream.contains(postId)) return true;
-      if (detail.postStream.posts.any((p) => p.id == postId)) return true;
-    }
-    if (postNumber != null) {
-      if (detail.postStream.posts.any((p) => p.postNumber == postNumber))
-        return true;
-    }
-    return false;
-  }
-
-  Future<void> _reloadWithFilterFallback({
-    required int postNumber,
-    int? postId,
-  }) async {
+  Future<void> _reloadWithFilterFallback({required int postNumber}) async {
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
     final wasSummaryMode = notifier.isSummaryMode;
@@ -40,7 +21,7 @@ extension _FilterActions on _TopicDetailPageState {
       final detail = ref.read(topicDetailProvider(params)).value;
       final hasTarget =
           detail != null &&
-          _detailHasTargetPost(detail, postNumber: postNumber, postId: postId);
+          detail.postStream.posts.any((post) => post.postNumber == postNumber);
       final shouldFallback =
           detail != null &&
           _shouldFallbackFilter(
