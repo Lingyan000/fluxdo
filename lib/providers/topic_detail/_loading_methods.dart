@@ -4,6 +4,38 @@ part of '../topic_detail_provider.dart';
 
 /// 加载相关方法
 extension LoadingMethods on TopicDetailNotifier {
+  /// 安装跳楼取回的一页。完整帖子流和话题元数据仍以当前详情为准。
+  void replacePostWindow(List<int> postIds, PostStream window) {
+    final current = state.requireValue;
+    final stream = current.postStream;
+    final requested = postIds.toSet();
+    final byId = {
+      for (final post in window.posts)
+        if (requested.contains(post.id)) post.id: post,
+      for (final post in stream.posts)
+        if (requested.contains(post.id)) post.id: post,
+    };
+    final posts = [for (final id in stream.stream) ?byId[id]];
+    _postWindowRevision++;
+    _isLoadingPrevious = false;
+    _isLoadingMore = false;
+    _isLoadPreviousFailed = false;
+    _isLoadMoreFailed = false;
+    _updateBoundaryState(posts, stream.stream);
+    final detail = current.copyWith(
+      postStream: PostStream(
+        posts: posts,
+        stream: stream.stream,
+        gaps: stream.gaps,
+      ),
+      suggestedTopics:
+          window.suggestedTopics.isEmpty ? null : window.suggestedTopics,
+      relatedTopics: window.relatedTopics.isEmpty ? null : window.relatedTopics,
+      relatedMessages: window.relatedMessages,
+    );
+    state = AsyncData(_withSuggestedCache(detail));
+  }
+
   /// 加载更早的帖子（向上滚动）
   Future<void> loadPrevious() async {
     if (_isLoadPreviousFailed) return; // 失败后需手动重试
@@ -13,6 +45,7 @@ extension LoadingMethods on TopicDetailNotifier {
       return;
     }
     if (!_hasMoreBefore || state.isLoading || _isLoadingPrevious) return;
+    final revision = _postWindowRevision;
     _isLoadingPrevious = true;
 
     try {
@@ -42,6 +75,7 @@ extension LoadingMethods on TopicDetailNotifier {
           postNumber: firstPostNumber,
           asc: false,
         );
+        if (!_isCurrentWindow(revision)) return currentDetail;
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
         final newPosts = newPostStream.posts
@@ -72,7 +106,7 @@ extension LoadingMethods on TopicDetailNotifier {
           ),
         );
       });
-      if (!ref.mounted) return;
+      if (!_isCurrentWindow(revision)) return;
       if (result.hasError) {
         // 未发射过 AsyncLoading,state 仍是原 AsyncData,无需恢复;
         // 失败重试按钮由 loadPreviousFailedListenable 驱动
@@ -81,7 +115,7 @@ extension LoadingMethods on TopicDetailNotifier {
         state = result;
       }
     } finally {
-      _isLoadingPrevious = false;
+      if (_isCurrentWindow(revision)) _isLoadingPrevious = false;
     }
   }
 
@@ -105,6 +139,7 @@ extension LoadingMethods on TopicDetailNotifier {
       await _loadMoreByStreamIds();
       return;
     }
+    final revision = _postWindowRevision;
     _isLoadingMore = true;
 
     try {
@@ -136,6 +171,7 @@ extension LoadingMethods on TopicDetailNotifier {
           // 首屏未到末尾时服务端不下发推荐话题,由向下翻页补一次
           includeSuggested: currentDetail.needsFooterTopics,
         );
+        if (!_isCurrentWindow(revision)) return currentDetail;
 
         final existingIds = currentPosts.map((p) => p.id).toSet();
         final newPosts = newPostStream.posts
@@ -169,7 +205,7 @@ extension LoadingMethods on TopicDetailNotifier {
           relatedMessages: newPostStream.relatedMessages,
         ));
       });
-      if (!ref.mounted) return;
+      if (!_isCurrentWindow(revision)) return;
       if (result.hasError) {
         // 未发射过 AsyncLoading,state 仍是原 AsyncData,无需恢复
         _isLoadMoreFailed = true;
@@ -177,7 +213,7 @@ extension LoadingMethods on TopicDetailNotifier {
         state = result;
       }
     } finally {
-      _isLoadingMore = false;
+      if (_isCurrentWindow(revision)) _isLoadingMore = false;
     }
   }
 
@@ -275,7 +311,10 @@ extension LoadingMethods on TopicDetailNotifier {
 
       // 只排序新增帖(通常一两条)后追加,不再全量重排已加载的数百楼
       newPosts.sort((a, b) => a.postNumber.compareTo(b.postNumber));
-      final mergedPosts = [...updatedCurrentPosts, ...newPosts];
+      // 请求发出后可能已经跳离页尾。此时只补帖子流，正文留在当前窗口。
+      final mergedPosts = _hasMoreAfter
+          ? updatedCurrentPosts
+          : [...updatedCurrentPosts, ...newPosts];
 
       // 新帖 id 与内容**同帧**入 stream(onNewPostCreated 底部分支特意
       // 未先入,避免边界判定的幽灵窗口);按楼层号顺序追加
@@ -336,9 +375,10 @@ extension LoadingMethods on TopicDetailNotifier {
     state = result;
   }
 
-  /// 刷新当前话题详情（保持列表可见）
-  Future<void> refreshWithPostNumber(int postNumber) async {
-    if (state.isLoading) return;
+  /// 刷新当前话题详情（保持列表可见），返回是否应用了此次刷新。
+  Future<bool> refreshWithPostNumber(int postNumber) async {
+    if (state.isLoading) return false;
+    final revision = _postWindowRevision;
     _isLoadMoreFailed = false;
     _isLoadPreviousFailed = false;
 
@@ -354,12 +394,14 @@ extension LoadingMethods on TopicDetailNotifier {
         usernameFilters: _usernameFilter,
       );
 
+      if (!_isCurrentWindow(revision)) return detail;
       _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
 
       return _withSuggestedCache(detail);
     });
-    if (!ref.mounted) return;
+    if (!_isCurrentWindow(revision)) return false;
     state = result;
+    return result.hasValue;
   }
 
   /// 加载指定楼层的帖子（用于跳转）

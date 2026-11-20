@@ -8,6 +8,7 @@ extension _UserActions on _TopicDetailPageState {
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));
     if (detailAsync.isLoading) return;
+    _controller.cancelProgressLoad();
 
     final detail = ref.read(topicDetailProvider(params)).value;
     final notifier = ref.read(topicDetailProvider(params).notifier);
@@ -17,11 +18,12 @@ extension _UserActions on _TopicDetailPageState {
     );
 
     setState(() => _isRefreshing = true);
-    await notifier.refreshWithPostNumber(anchorPostNumber);
+    final applied = await notifier.refreshWithPostNumber(anchorPostNumber);
 
     if (!mounted) return;
     setState(() => _isRefreshing = false);
 
+    if (!applied || _controller.progressLoad.value != null) return;
     final updatedDetail = ref.read(topicDetailProvider(params)).value;
     if (updatedDetail == null) return;
 
@@ -1651,8 +1653,8 @@ extension _UserActions on _TopicDetailPageState {
     TopicDetailNotifier notifier,
     int anchor,
   ) async {
-    await notifier.refreshWithPostNumber(anchor);
-    if (!mounted) return;
+    final applied = await notifier.refreshWithPostNumber(anchor);
+    if (!mounted || !applied || _controller.progressLoad.value != null) return;
     final updated = ref.read(topicDetailProvider(_params)).value;
     if (updated == null) return;
     // 刷新在途(网络往返)期间用户可能已继续滚动:落地时重取当前位置,
@@ -1672,6 +1674,7 @@ extension _UserActions on _TopicDetailPageState {
 
   /// 切换嵌套视图
   void _toggleNestedView() {
+    _controller.cancelProgressLoad();
     if (_isNestedView) {
       setState(() {
         _isNestedView = false;

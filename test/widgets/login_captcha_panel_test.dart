@@ -26,6 +26,7 @@ class _LoginPlatform extends CfTestPlatform {
 class _LoginController extends CfTestController {
   _LoginController(super.cookies);
   int submissions = 0;
+  String document = '';
 
   @override
   Future<dynamic> evaluateJavascript({
@@ -33,6 +34,11 @@ class _LoginController extends CfTestController {
     ContentWorld? contentWorld,
   }) async {
     if (source.startsWith('window.__fluxdoLogin(')) submissions++;
+    if (source.contains('origin: window.location.origin')) {
+      return {'origin': 'https://linux.do'};
+    }
+    final write = RegExp(r'document\.write\(([^\n]+)\);').firstMatch(source);
+    if (write != null) document = jsonDecode(write.group(1)!) as String;
     return super.evaluateJavascript(source: source, contentWorld: contentWorld);
   }
 }
@@ -105,7 +111,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     l = navigator.currentContext!.l10n;
-    platform.webView!.params.onWebViewCreated!(platform.controller.wrapped);
+    final view = platform.webView!.params;
+    view.onWebViewCreated!(platform.controller.wrapped);
+    if (Platform.isWindows) {
+      view.onLoadStop!(
+        platform.controller.wrapped,
+        WebUri('https://linux.do/robots.txt'),
+      );
+      await tester.pump();
+    } else {
+      platform.controller.document = view.initialData!.data;
+    }
   }
 
   void send(String name, [Object? value]) =>
@@ -115,27 +131,80 @@ void main() {
     await open(tester, size: const Size(320, 660), scale: 1.6);
     expect(find.text(l.captcha_loading), findsOneWidget);
     final firstView = platform.webView;
-    send('hcaptcha_ready');
+    expect(platform.controller.document, contains("size: 'normal'"));
+    send('hcaptcha_ready', 78);
     await tester.pump();
     final checkboxHeight = tester.getSize(find.byType(CaptchaPanel)).height;
-    expect(find.text(l.login_captchaCheckbox), findsOneWidget);
+    expect(checkboxHeight, lessThan(130));
+    expect(find.bySemanticsLabel(l.login_captchaCheckbox), findsOneWidget);
+    expect(find.text(l.login_captchaCheckbox), findsNothing);
     send('hcaptcha_open');
     await tester.pump();
     expect(
       tester.getSize(find.byType(CaptchaPanel)).height,
       greaterThan(checkboxHeight),
     );
+    send('hcaptcha_height', 360);
+    await tester.pump();
+    final measured = tester.getSize(find.byType(CaptchaPanel)).height;
+    send('hcaptcha_height', 405);
+    await tester.pump();
+    expect(tester.getSize(find.byType(CaptchaPanel)).height, measured + 45);
     await tester.pump(const Duration(minutes: 1));
-    expect(find.text(l.captcha_challengeHint), findsOneWidget);
+    expect(find.bySemanticsLabel(l.captcha_challengeHint), findsOneWidget);
     send('hcaptcha_close');
     await tester.pump();
-    expect(find.text(l.login_captchaCheckbox), findsOneWidget);
+    send('hcaptcha_height', 600);
+    await tester.pump();
+    expect(tester.getSize(find.byType(CaptchaPanel)).height, checkboxHeight);
     expect(platform.webView, same(firstView));
     expect(platform.controller.submissions, 0);
     navigator.currentState!.pop();
     await tester.pumpAndSettle();
     expect(result?.status, WebViewLoginStatus.canceled);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄于横版勾选框时使用紧凑版，并按实际控件高度留位', (tester) async {
+    await open(tester, size: const Size(290, 600));
+    expect(platform.controller.document, contains("size: 'compact'"));
+    send('hcaptcha_ready', 144);
+    await tester.pump();
+    expect(
+      tester.getSize(find.byType(InAppWebView)).height,
+      greaterThanOrEqualTo(144),
+    );
+    expect(tester.takeException(), isNull);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('横屏的大题目可以滚到操作区，收起时仍沿用原验证视图', (tester) async {
+    await open(tester, size: const Size(700, 320));
+    final firstView = platform.webView;
+    send('hcaptcha_ready', 78);
+    send('hcaptcha_open');
+    send('hcaptcha_height', 500);
+    await tester.pump();
+    final scrollable = find.descendant(
+      of: find.byType(CaptchaPanel),
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollable).position;
+    expect(
+      tester.getSize(find.byType(InAppWebView)).height,
+      greaterThanOrEqualTo(500),
+    );
+    expect(position.maxScrollExtent, greaterThan(0));
+    await tester.drag(scrollable, const Offset(0, -650));
+    await tester.pumpAndSettle();
+    expect(position.pixels, position.maxScrollExtent);
+    send('hcaptcha_close');
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
+    expect(platform.webView, same(firstView));
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('超时或过期可在原处重试，旧视图回调与退出时的回调作废', (tester) async {

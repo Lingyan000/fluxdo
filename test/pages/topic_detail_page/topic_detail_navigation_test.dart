@@ -9,7 +9,10 @@ import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/pages/topic_detail_page/topic_detail_page.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bar_gestures.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_reading_rail.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_indicator.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_toc_panel.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
@@ -18,29 +21,31 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/topic_detail_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/widgets/post/post_item_skeleton.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-TopicDetail _detail(int first, int last) => TopicDetail.fromJson({
-  'id': 42,
-  'title': 'Navigation regression',
-  'posts_count': 120,
-  'post_stream': {
-    'stream': [for (var i = 1; i <= 120; i++) i],
-    'posts': [
-      for (var i = first; i <= last; i++)
-        {
-          'id': i,
-          'post_number': i,
-          'username': 'tester',
-          'avatar_template': '',
-          'created_at': '2026-11-01T00:00:00Z',
-          'cooked': '<p>Content for floor $i.</p>',
-        },
-    ],
-  },
-});
+TopicDetail _detail(int first, int last, {int total = 120}) =>
+    TopicDetail.fromJson({
+      'id': 42,
+      'title': 'Navigation regression',
+      'posts_count': total,
+      'post_stream': {
+        'stream': [for (var i = 1; i <= total; i++) i],
+        'posts': [
+          for (var i = first; i <= last; i++)
+            {
+              'id': i,
+              'post_number': i,
+              'username': 'tester',
+              'avatar_template': '',
+              'created_at': '2026-11-01T00:00:00Z',
+              'cooked': '<p>Content for floor $i.</p>',
+            },
+        ],
+      },
+    });
 
 class _DetailNotifier extends TopicDetailNotifier {
   _DetailNotifier(super.arg, this.initialDetail);
@@ -71,6 +76,35 @@ class _DetailNotifier extends TopicDetailNotifier {
 class _PagingService extends Fake implements DiscourseService {
   late Completer<PostStream> previous;
   int previousCalls = 0;
+  final windows = <({List<int> ids, Completer<PostStream> result})>[];
+  late Completer<TopicDetail> refresh;
+  int detailCalls = 0;
+
+  @override
+  Future<TopicDetail> getTopicDetail(
+    int id, {
+    int? postNumber,
+    bool trackVisit = false,
+    String? filter,
+    String? usernameFilters,
+    bool filterTopLevelReplies = false,
+  }) {
+    detailCalls++;
+    refresh = Completer<TopicDetail>();
+    return refresh.future;
+  }
+
+  @override
+  Future<PostStream> getPosts(
+    int topicId,
+    List<int> postIds, {
+    bool includeSuggested = false,
+  }) {
+    final result = Completer<PostStream>();
+    windows.add((ids: postIds, result: result));
+    return result.future;
+  }
+
   @override
   Future<PostStream> getPostsByNumber(
     int topicId, {
@@ -184,6 +218,269 @@ void main() {
     // 详情页销毁后，内联帖子缓存还有 30 秒的保活期。
     await tester.pump(const Duration(seconds: 31));
   }
+
+  testWidgets('松手后的第一帧定位到屏外已加载楼层，与底栏收起动画同时进行', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 720);
+    addTearDown(tester.view.reset);
+    final original = initialDetail.postStream;
+    // 模拟前面有删楼，进度索引和实际楼号不同。
+    final stream = original.stream.where((id) => id != 8).toList();
+    initialDetail = initialDetail.copyWith(
+      postStream: PostStream(stream: stream, posts: original.posts),
+    );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = find.byType(TopicBarGestures);
+    final finger = await tester.startGesture(tester.getCenter(bar));
+    await finger.moveBy(const Offset(58, 0));
+    await tester.pumpAndSettle();
+    final targetIndex = tester
+        .widget<TopicBarGestures>(bar)
+        .scrubIndexNotifier
+        .value!;
+    final target = stream[targetIndex - 1];
+    final selectedCounter = find.descendant(
+      of: bar,
+      matching: find.text('$targetIndex / ${stream.length}'),
+    );
+    expect(original.posts.any((post) => post.postNumber == target), isTrue);
+    expect(floor(target), findsNothing, reason: '目标正文已在内存，列表尚未创建该行');
+    expect(selectedCounter, findsOneWidget);
+
+    await finger.up();
+    await tester.pump();
+    expectFloorAtTop(tester, target);
+    expect(find.byType(TopicScrubIndicator), findsOneWidget);
+    expect(selectedCounter, findsOneWidget, reason: '底栏收起的第一帧应保留已确认的位置');
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(selectedCounter, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byType(TopicScrubIndicator), findsNothing);
+    expect(
+      tester.widget<TopicBarGestures>(bar).streamIndexListenable.value,
+      targetIndex,
+    );
+    await disposePage(tester);
+  });
+
+  testWidgets('整帖已在一屏内时，连续确认楼层后恢复实际阅读位置', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 1600);
+    addTearDown(tester.view.reset);
+    initialDetail = _detail(1, 3, total: 3);
+    await tester.pumpWidget(app(initialFloor: 3));
+    await tester.pumpAndSettle();
+    final list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    final viewport = list.scrollController.position;
+    expect(viewport.maxScrollExtent, viewport.minScrollExtent);
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    final index = bar.streamIndexListenable;
+    final position = bar.readingPositionListenable!;
+    expect(index.value, 3);
+    expect(position.value, 3);
+
+    bar.onScrubCommit(1);
+    expect(index.value, 1);
+    bar.onScrubCommit(2);
+    expect(index.value, 2);
+    expect(position.value, 1);
+    await tester.pumpAndSettle();
+    expect(index.value, 3, reason: '视口未移动，也应交还给实际可见楼层');
+    expect(position.value, 3);
+    await disposePage(tester);
+  });
+
+  testWidgets('远端选楼首帧显示目标和骨架，一次取回目标与相邻正文', (tester) async {
+    final original = initialDetail.postStream;
+    final stream = original.stream.where((id) => id != 8).toList();
+    // 模拟按票排序，窗口首尾的楼号不再包住目标。
+    final first = stream.indexOf(101);
+    stream[first] = 120;
+    stream[stream.length - 1] = 101;
+    initialDetail = initialDetail.copyWith(
+      postStream: PostStream(posts: original.posts, stream: stream),
+    );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    final targetIndex = stream.indexOf(110) + 1;
+    bar.onScrubCommit(targetIndex);
+    await tester.pump();
+    expect(find.byType(PostListSkeleton), findsOneWidget);
+    expect(find.text('$targetIndex / ${stream.length}'), findsOneWidget);
+    expect(floor(60), findsNothing);
+    final window = service.windows.single;
+    expect(window.ids, containsAllInOrder([109, 110, 111]));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(PostListSkeleton), findsOneWidget);
+    window.result.complete(
+      PostStream(
+        posts: _detail(101, 120).postStream.posts.reversed.toList(),
+        stream: const [],
+      ),
+    );
+    for (var frame = 0; frame < 3; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (find.byType(PostListSkeleton).evaluate().isEmpty) {
+        expectFloorAtTop(tester, 110);
+        final opacity = find.ancestor(
+          of: floor(110),
+          matching: find.byType(Opacity),
+        );
+        expect(
+          tester
+              .widgetList<Opacity>(opacity)
+              .every((widget) => widget.opacity > 0),
+          isTrue,
+        );
+        break;
+      }
+    }
+    expect(find.byType(PostListSkeleton), findsNothing);
+    expectFloorAtTop(tester, 110);
+    expect(bar.streamIndexListenable.value, targetIndex);
+    final loaded = tester
+        .widget<TopicPostList>(find.byType(TopicPostList))
+        .detail
+        .postStream;
+    expect(loaded.posts.map((post) => post.id), window.ids);
+    expect(loaded.stream, stream);
+    expect(service.windows, hasLength(1));
+    expect(service.detailCalls, 0);
+    await disposePage(tester);
+  });
+
+  testWidgets('跳离页尾后迟到的新回复只更新帖子流，正文留在当前楼层', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onScrubCommit(120);
+    service.windows.single.result.complete(_detail(101, 120).postStream);
+    await tester.pumpAndSettle();
+    notifier.onNewPostCreated(121);
+    final incoming = service.windows.last;
+    expect(incoming.ids, [121]);
+    bar.onScrubCommit(20);
+    final window = service.windows.last;
+    window.result.complete(
+      _detail(window.ids.first, window.ids.last).postStream,
+    );
+    await tester.pumpAndSettle();
+    incoming.result.complete(_detail(121, 121, total: 121).postStream);
+    await tester.pumpAndSettle();
+    final stream = tester
+        .widget<TopicPostList>(find.byType(TopicPostList))
+        .detail
+        .postStream;
+    expect(stream.stream.last, 121);
+    expect(stream.posts.last.id, window.ids.last);
+    expectFloorAtTop(tester, 20);
+    await disposePage(tester);
+  });
+
+  testWidgets('旧窗口的分页和刷新在跳楼后才返回，正文仍停在新窗口', (tester) async {
+    enablePrevious = true;
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final paging = notifier.loadPrevious();
+    final previousPage = service.previous;
+    expect(service.previousCalls, 1);
+    final refreshing = notifier.refreshWithPostNumber(60);
+    expect(service.detailCalls, 1);
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onScrubCommit(110);
+    await tester.pump();
+    final window = service.windows.single;
+    window.result.complete(
+      _detail(window.ids.first, window.ids.last).postStream,
+    );
+    await tester.pump();
+    await tester.pump();
+    previousPage.complete(_detail(20, 39).postStream);
+    service.refresh.complete(initialDetail);
+    await tester.pump();
+    await paging;
+    expect(await refreshing, isFalse);
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 110);
+    expect(notifier.firstLoadedPost, window.ids.first);
+    expect(notifier.isLoadingPrevious, isFalse);
+    await disposePage(tester);
+  });
+
+  testWidgets('宽屏等待跳楼时改选，迟到响应不覆盖新目标，相邻楼层复用缓存', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final rail = tester.widget<TopicReadingRail>(find.byType(TopicReadingRail));
+    rail.onJumpToIndex(15);
+    await tester.pump();
+    rail.onJumpToIndex(75);
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 75);
+    expect(find.byType(PostListSkeleton), findsNothing);
+    rail.onJumpToIndex(102);
+    await tester.pump();
+    service.windows.first.result.complete(_detail(10, 29).postStream);
+    await tester.pump();
+    expect(rail.streamIndexListenable.value, 102);
+    expect(find.byType(PostListSkeleton), findsOneWidget);
+    final latest = service.windows.last;
+    expect(latest.ids.first, 100, reason: '99 楼及之前的正文已在本地');
+    latest.result.complete(
+      _detail(latest.ids.first, latest.ids.last).postStream,
+    );
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 102);
+    expect(notifier.firstLoadedPost, 97);
+    expect(service.windows, hasLength(2));
+    await disposePage(tester);
+  });
+
+  testWidgets('远端跳楼失败或目标已删除时保留原阅读位置，能够重试', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    for (final missing in [false, true]) {
+      bar.onScrubCommit(20);
+      await tester.pump();
+      if (missing) {
+        service.windows.last.result.complete(_detail(21, 23).postStream);
+      } else {
+        service.windows.last.result.completeError(StateError('暂时离线'));
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(PostListSkeleton), findsNothing);
+      expect(bar.streamIndexListenable.value, 60);
+      expectFloorAtTop(tester, 60);
+    }
+    expect(service.windows, hasLength(2));
+    await disposePage(tester);
+  });
+
+  testWidgets('确认后目标被移除，底栏继续显示视口中的楼层', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    final previous = bar.streamIndexListenable.value;
+    bar.onScrubCommit(80);
+    final original = initialDetail.postStream;
+    notifier.publish(
+      initialDetail.copyWith(
+        postStream: PostStream(
+          stream: original.stream.where((id) => id != 80).toList(),
+          posts: original.posts.where((post) => post.id != 80).toList(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(bar.streamIndexListenable.value, previous);
+    expectFloorAtTop(tester, previous);
+    await disposePage(tester);
+  });
 
   testWidgets('目录跟随详情窗格宽度切换单一入口，并记住展开选择', (tester) async {
     tester.view.devicePixelRatio = 1;
