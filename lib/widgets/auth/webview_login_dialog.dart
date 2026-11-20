@@ -24,7 +24,9 @@ import '../common/hcaptcha_layout_script.dart';
 /// 登录对话框结果状态。
 enum WebViewLoginStatus { success, failure, canceled }
 
-/// [showWebViewLoginDialog] 的返回结果。
+enum LoginSubmissionPhase { verifying, signingIn }
+
+/// [WebViewLoginHostState.show] 的返回结果。
 class WebViewLoginDialogResult {
   const WebViewLoginDialogResult.success()
     : status = WebViewLoginStatus.success,
@@ -59,50 +61,162 @@ class WebViewLoginNeed2FA {
   final String? message;
 }
 
-/// 显示 WebView 内 JS 全流程登录对话框。
-///
-/// 在一个**与 CF 验证共享 WebView 环境**的 mini WebView 里, 用 data:url
-/// (baseUrl=linux.do, **不加载 Discourse Ember bundle**) 渲染 hcaptcha, 并在
-/// 同一个 WebView 内核里用 JS 同源 `fetch` 跑完整个登录:
-/// `GET /session/csrf` → `POST /hcaptcha/create.json` → `POST /session.json`。
-///
-/// 这样三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 `cf_clearance`
-/// 时一致, 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
-///
-/// 返回结构化结果; 取消返回 [WebViewLoginStatus.canceled]。
-/// [onNeedSecondFactor] 在检测到 2FA 时回调出去 (由 caller 弹 TOTP 对话框),
-/// 返回 6 位 code (null=取消)。
-Future<WebViewLoginDialogResult?> showWebViewLoginDialog(
-  BuildContext context, {
-  required String siteKey,
-  required String identifier,
-  required String password,
-  required Future<String?> Function(WebViewLoginNeed2FA need)
-  onNeedSecondFactor,
-  String? hcaptchaCreateEndpoint,
-}) async {
-  final result = await showCaptchaSheet<WebViewLoginDialogResult>(
-    context: context,
-    title: context.l10n.login_captchaTitle,
-    useRootNavigator: true,
-    barrierDismissible: false,
-    builder: (_) => _WebViewLoginDialog(
+/// 在登录页内持有验证会话。勾选结束时关闭弹层，把同一棵平台视图子树
+/// 移回页面，直到提交、二步验证和会话同步都结束。
+class WebViewLoginHost extends StatefulWidget {
+  const WebViewLoginHost({super.key});
+
+  @override
+  WebViewLoginHostState createState() => WebViewLoginHostState();
+}
+
+class WebViewLoginHostState extends State<WebViewLoginHost> {
+  Widget? _parked;
+  VoidCallback? _cancel;
+  Future<WebViewLoginDialogResult>? _pending;
+
+  void cancel() => _cancel?.call();
+
+  Future<WebViewLoginDialogResult> show({
+    required String siteKey,
+    required String identifier,
+    required String password,
+    required Future<String?> Function(WebViewLoginNeed2FA need)
+    onNeedSecondFactor,
+    required ValueChanged<LoginSubmissionPhase> onProgress,
+    String? hcaptchaCreateEndpoint,
+  }) async {
+    final pending = _pending;
+    if (pending != null) return pending;
+    final result = Completer<WebViewLoginDialogResult>();
+    _pending = result.future;
+    final inSheet = ValueNotifier(true);
+    final expanded = ValueNotifier(false);
+    final key = GlobalKey<_WebViewLoginDialogState>();
+    ModalRoute<void>? sheet;
+    Size? retiringSize;
+
+    void finish(WebViewLoginDialogResult value) {
+      if (!result.isCompleted) result.complete(value);
+    }
+
+    void closeSheet() {
+      final route = sheet;
+      sheet = null;
+      if (route == null || !route.isActive) return;
+      if (route.isCurrent) {
+        route.navigator!.pop();
+      } else {
+        route.navigator!.removeRoute(route);
+      }
+    }
+
+    void cancelFlow() {
+      key.currentState?._abandon();
+      finish(const WebViewLoginDialogResult.canceled());
+    }
+
+    _cancel = () {
+      cancelFlow();
+      // 页面也可能由导航器整体移除，等导航锁释放后只清理自己的弹层。
+      scheduleMicrotask(closeSheet);
+    };
+    late final Widget session;
+    session = _WebViewLoginDialog(
+      key: key,
       siteKey: siteKey,
       identifier: identifier,
       password: password,
       onNeedSecondFactor: onNeedSecondFactor,
       hcaptchaCreateEndpoint: hcaptchaCreateEndpoint,
+      onChallengeChanged: (value) => expanded.value = value,
+      onVerified: () {
+        if (!mounted || result.isCompleted || !inSheet.value) return;
+        retiringSize = key.currentContext?.size;
+        inSheet.value = false;
+        setState(() => _parked = session);
+        closeSheet();
+        onProgress(LoginSubmissionPhase.verifying);
+      },
+      onSigningIn: () {
+        if (!result.isCompleted) onProgress(LoginSubmissionPhase.signingIn);
+      },
+      onResult: finish,
+    );
+    try {
+      final dismissed = showCaptchaSheet<void>(
+        context: context,
+        title: context.l10n.login_captchaTitle,
+        useRootNavigator: true,
+        barrierDismissible: false,
+        challengeExpanded: expanded,
+        onDisposed: () {
+          if (inSheet.value) cancelFlow();
+          inSheet.dispose();
+          expanded.dispose();
+        },
+        builder: (context) {
+          sheet = ModalRoute.of(context);
+          if (result.isCompleted) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => closeSheet());
+            return const SizedBox.shrink();
+          }
+          return PopScope<void>(
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop && inSheet.value) cancelFlow();
+            },
+            child: ValueListenableBuilder<bool>(
+              valueListenable: inSheet,
+              builder: (_, visible, _) =>
+                  visible ? session : SizedBox.fromSize(size: retiringSize),
+            ),
+          );
+        },
+      );
+      // 路由随整个导航器销毁时 popped 可能不会完成，页面的取消同样能结束等待。
+      return await Future.any([
+        result.future,
+        dismissed.then((_) {
+          if (inSheet.value) cancelFlow();
+          return result.future;
+        }),
+      ]);
+    } finally {
+      _pending = null;
+      _cancel = null;
+      if (_parked != null && mounted) setState(() => _parked = null);
+    }
+  }
+
+  @override
+  void dispose() {
+    cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ExcludeFocus(
+    child: Offstage(
+      child: SizedBox(
+        width: CaptchaPanel.normalCheckboxWidth,
+        height: 100,
+        child: _parked,
+      ),
     ),
   );
-  return result ?? const WebViewLoginDialogResult.canceled();
 }
 
 class _WebViewLoginDialog extends StatefulWidget {
   const _WebViewLoginDialog({
+    super.key,
     required this.siteKey,
     required this.identifier,
     required this.password,
     required this.onNeedSecondFactor,
+    required this.onChallengeChanged,
+    required this.onVerified,
+    required this.onSigningIn,
+    required this.onResult,
     this.hcaptchaCreateEndpoint,
   });
 
@@ -110,6 +224,10 @@ class _WebViewLoginDialog extends StatefulWidget {
   final String identifier;
   final String password;
   final Future<String?> Function(WebViewLoginNeed2FA need) onNeedSecondFactor;
+  final ValueChanged<bool> onChallengeChanged;
+  final VoidCallback onVerified;
+  final VoidCallback onSigningIn;
+  final ValueChanged<WebViewLoginDialogResult> onResult;
   final String? hcaptchaCreateEndpoint;
 
   @override
@@ -125,7 +243,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   Timer? _loadTimeout;
   int _attempt = 0;
   bool _expired = false;
-  bool _routeClosed = false;
+  final _abandonment = Completer<void>();
+  bool get _abandoned => _abandonment.isCompleted;
   bool _finished = false; // 防止重复 pop / 回调重入
   bool _cookiesPrimed = false; // 方案 A: 是否已从 jar 预灌 cookie
   bool _windowsInlineHtmlInjected = false;
@@ -166,6 +285,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
       _attemptWebView = null;
       _controller = null;
     });
+    widget.onChallengeChanged(false);
   }
 
   void _retryVerification() {
@@ -183,12 +303,17 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
 
   @override
   void dispose() {
-    _finished = true;
-    _loadTimeout?.cancel();
+    _abandon();
     // 对话框关闭后立即释放 WebView2 原生控制器，避免不可见的平台视图
     // 继续参与外部视图合成并长期占用资源。
     _controller?.dispose();
     super.dispose();
+  }
+
+  void _abandon() {
+    if (!_abandoned) _abandonment.complete();
+    _finished = true;
+    _loadTimeout?.cancel();
   }
 
   /// data:url 内嵌页面: hcaptcha widget + 登录全流程 JS。
@@ -257,6 +382,17 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
           stopLayout = null;
           call(name, value);
         }
+        let checkboxLoaded = false;
+        const ready = () => {
+          const height = Math.ceil(container.getBoundingClientRect().height);
+          if (checkboxLoaded && height > 0) call('hcaptcha_ready', height);
+        };
+        container.addEventListener('load', event => {
+          if (event.target.tagName === 'IFRAME') {
+            checkboxLoaded = true;
+            ready();
+          }
+        }, true);
         hcaptcha.render(container, {
           sitekey: container.dataset.sitekey,
           theme: '${dark ? 'dark' : 'light'}',
@@ -273,7 +409,6 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
           'chalexpired-callback': () => finish('hcaptcha_expired', null),
           'error-callback': () => finish('hcaptcha_error', null)
         });
-        const ready = () => call('hcaptcha_ready', Math.ceil(container.getBoundingClientRect().height));
         if (typeof ResizeObserver === 'function') new ResizeObserver(ready).observe(container);
         ready();
       } catch (e) {
@@ -333,6 +468,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
         }
 
         // 3. session.json — 真正登录
+        call('login_submitting', null);
         var form = 'login=' + encodeURIComponent(identifier) + '&password=' + encodeURIComponent(password);
         if (secondFactorToken) {
           form += '&second_factor_token=' + encodeURIComponent(secondFactorToken) + '&second_factor_method=1';
@@ -379,6 +515,9 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
         if (_phase != phase) _challengeHeight = null;
         _phase = phase;
       });
+      if (phase != CaptchaPanelPhase.submitting) {
+        widget.onChallengeChanged(phase == CaptchaPanelPhase.challenge);
+      }
     }
 
     controller.addJavaScriptHandler(
@@ -430,7 +569,20 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
         final token = args.isNotEmpty ? args.first : null;
         if (current() && token is String && token.isNotEmpty) {
           show(CaptchaPanelPhase.submitting);
+          widget.onVerified();
           unawaited(_runLogin(hcaptchaToken: token, secondFactorToken: null));
+        }
+        return null;
+      },
+    );
+    controller.addJavaScriptHandler(
+      handlerName: 'login_submitting',
+      callback: (_) {
+        if (mounted &&
+            !_finished &&
+            attempt == _attempt &&
+            _phase == CaptchaPanelPhase.submitting) {
+          widget.onSigningIn();
         }
         return null;
       },
@@ -705,9 +857,16 @@ document.close();
             .runOnController(
               controller,
               reason: 'native_login_success',
+              isCancelled: () =>
+                  _abandoned || !AuthSession().isValid(_flowGeneration),
+              cancellationSignal: _abandonment.future,
               pluginCandidates: PreloadedDataService().pluginCandidatesSync,
             );
         bootstrapped = bootstrapResult.ok;
+      }
+      if (_abandoned || !AuthSession().isValid(_flowGeneration)) {
+        _returnResult(const WebViewLoginDialogResult.canceled());
+        return;
       }
       await BoundarySyncService.instance.syncFromWebView(
         controller: controller,
@@ -740,7 +899,11 @@ document.close();
     } catch (e) {
       debugPrint('[WebViewLogin] syncFromWebView 失败: $e');
     }
-    _returnResult(const WebViewLoginDialogResult.success());
+    _returnResult(
+      AuthSession().isValid(_flowGeneration)
+          ? const WebViewLoginDialogResult.success()
+          : const WebViewLoginDialogResult.canceled(),
+    );
   }
 
   void _finishFailure(LoginErrorKind kind, String? message) {
@@ -756,14 +919,7 @@ document.close();
   }
 
   void _returnResult(WebViewLoginDialogResult result) {
-    if (!mounted || _routeClosed) return;
-    final route = ModalRoute.of<WebViewLoginDialogResult>(context);
-    if (route == null || !route.isActive) return;
-    if (route.isCurrent) {
-      route.navigator!.pop(result);
-    } else {
-      route.navigator!.removeRoute(route, result);
-    }
+    if (mounted && !_abandoned) widget.onResult(result);
   }
 
   @override
@@ -777,36 +933,27 @@ document.close();
       CaptchaPanelPhase.failed =>
         _expired ? l.captcha_expired : l.captcha_unavailable,
     };
-    return PopScope<WebViewLoginDialogResult>(
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) {
-          _routeClosed = true;
-          _finished = true;
-          _loadTimeout?.cancel();
-        }
-      },
-      child: CaptchaPanel(
-        phase: _phase,
-        contentHeight: _phase == CaptchaPanelPhase.checkbox
-            ? _checkboxHeight
-            : _challengeHeight,
-        message: message,
-        onRetry: _retryVerification,
-        child: _phase == CaptchaPanelPhase.failed
-            ? null
-            : LayoutBuilder(
-                builder: (context, bounds) {
-                  if (bounds.maxWidth <= 0) return const SizedBox.shrink();
-                  return _attemptWebView ??= _webView(
-                    _attempt,
-                    _inlineHtml(
-                      compact:
-                          bounds.maxWidth < CaptchaPanel.normalCheckboxWidth,
-                    ),
-                  );
-                },
-              ),
-      ),
+    return CaptchaPanel(
+      phase: _phase,
+      expectsCheckbox: true,
+      contentHeight: _phase == CaptchaPanelPhase.checkbox
+          ? _checkboxHeight
+          : _challengeHeight,
+      message: message,
+      onRetry: _retryVerification,
+      child: _phase == CaptchaPanelPhase.failed
+          ? null
+          : LayoutBuilder(
+              builder: (context, bounds) {
+                if (bounds.maxWidth <= 0) return const SizedBox.shrink();
+                return _attemptWebView ??= _webView(
+                  _attempt,
+                  _inlineHtml(
+                    compact: bounds.maxWidth < CaptchaPanel.normalCheckboxWidth,
+                  ),
+                );
+              },
+            ),
     );
   }
 

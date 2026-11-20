@@ -75,6 +75,7 @@
   "login_captchaTitle": "登录验证",
   "login_captchaCheckbox": "勾选下方的 hCaptcha 即可继续登录。",
   "login_captchaSubmitting": "正在登录…",
+  "login_confirmingVerification": "正在确认验证结果…",
   "captcha_loading": "正在加载验证…",
   "captcha_challengeHint": "请完成下方验证。",
   "captcha_expired": "验证已过期，请重新验证。",

@@ -162,6 +162,7 @@ Future<T?> showAppDialog<T>({
   Duration transitionDuration = const Duration(milliseconds: 150),
   ShortcutSurfaceConfig? shortcutSurface,
   bool suspendDynamicContent = true,
+  VoidCallback? onDisposed,
 }) {
   final enableBlur = blur && _isBlurEnabled(context);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -192,6 +193,7 @@ Future<T?> showAppDialog<T>({
     onBlurSigmaChanged: onBlurSigmaChanged,
     blurReady: blurReady,
     filterBackdrop: filterBackdrop,
+    onDisposed: onDisposed,
   );
 
   return _pushOverlayRoute(

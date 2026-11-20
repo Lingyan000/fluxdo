@@ -1,8 +1,8 @@
+import 'dart:async';
+
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
-
-import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 
@@ -12,6 +12,7 @@ class LoginForm extends StatefulWidget {
   const LoginForm({
     super.key,
     required this.onSubmit,
+    this.progressLabel,
     this.onForgotPassword,
     this.savedUsername,
     this.savedPassword,
@@ -24,6 +25,8 @@ class LoginForm extends StatefulWidget {
     required bool rememberCredentials,
   })
   onSubmit;
+
+  final String? progressLabel;
 
   /// 忘记密码点击 (一般跳 webview)。
   final VoidCallback? onForgotPassword;
@@ -44,6 +47,8 @@ class _LoginFormState extends State<LoginForm> {
   bool _obscure = true;
   bool _remember = false;
   bool _submitting = false;
+  Timer? _feedbackDelay;
+  String? _visibleProgress;
 
   @override
   void initState() {
@@ -55,7 +60,24 @@ class _LoginFormState extends State<LoginForm> {
   }
 
   @override
+  void didUpdateWidget(LoginForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.progressLabel == oldWidget.progressLabel) return;
+    _feedbackDelay?.cancel();
+    final label = widget.progressLabel;
+    if (label == null) {
+      _visibleProgress = null;
+    } else {
+      // 仅延迟提示的显示，快速请求直接结束，慢请求仍能说明当前在等什么。
+      _feedbackDelay = Timer(const Duration(milliseconds: 250), () {
+        if (mounted && _submitting) setState(() => _visibleProgress = label);
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _feedbackDelay?.cancel();
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
     _usernameFocus.dispose();
@@ -111,6 +133,7 @@ class _LoginFormState extends State<LoginForm> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final progress = _submitting ? _visibleProgress : null;
 
     return AutofillGroup(
       child: Column(
@@ -183,26 +206,63 @@ class _LoginFormState extends State<LoginForm> {
             ],
           ),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _submitting ? null : _submit,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(double.infinity, 56),
-              shape: RoundedSuperellipseBorder(
-                borderRadius: context.shapes.borderRadius(28),
-              ),
-              elevation: 8,
-              shadowColor: scheme.primary.withValues(alpha: 0.4),
-            ),
-            child: _submitting
-                ? LoadingSpinner(size: 24, color: scheme.onPrimary)
-                : Text(
-                    context.l10n.common_login,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1,
+          Semantics(
+            liveRegion: progress != null,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                FilledButton(
+                  onPressed: _submitting ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 56),
+                    disabledBackgroundColor: scheme.primary,
+                    disabledForegroundColor: scheme.onPrimary,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: context.shapes.borderRadius(28),
+                    ),
+                    elevation: 8,
+                    shadowColor: scheme.primary.withValues(alpha: 0.4),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    child: Text(
+                      progress ?? context.l10n.common_login,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ),
+                ),
+                if (progress != null)
+                  PositionedDirectional(
+                    start: 20,
+                    end: 20,
+                    bottom: 6,
+                    child: ExcludeSemantics(
+                      child:
+                          MediaQuery.disableAnimationsOf(context) ||
+                              MediaQuery.reduceMotionOf(context)
+                          ? SizedBox(
+                              height: 2,
+                              child: ColoredBox(
+                                color: scheme.onPrimary.withValues(alpha: 0.35),
+                              ),
+                            )
+                          : LinearProgressIndicator(
+                              minHeight: 2,
+                              color: scheme.onPrimary,
+                              backgroundColor: scheme.onPrimary.withValues(
+                                alpha: 0.22,
+                              ),
+                              borderRadius: context.shapes.borderRadius(2),
+                            ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

@@ -53,6 +53,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   String? _savedPassword;
   bool _credentialsLoaded = false;
   bool _browserAuthLaunching = false;
+  bool _passwordSubmitting = false;
+  LoginSubmissionPhase? _submissionPhase;
+  final _webLogin = GlobalKey<WebViewLoginHostState>();
 
   late final AnimationController _entryController;
   final List<Animation<double>> _fade = [];
@@ -181,6 +184,29 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     required String password,
     required bool rememberCredentials,
   }) async {
+    if (_passwordSubmitting) return false;
+    setState(() => _passwordSubmitting = true);
+    try {
+      return await _loginWithPassword(
+        identifier,
+        password,
+        rememberCredentials,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _passwordSubmitting = false;
+          _submissionPhase = null;
+        });
+      }
+    }
+  }
+
+  Future<bool> _loginWithPassword(
+    String identifier,
+    String password,
+    bool rememberCredentials,
+  ) async {
     final service = DiscourseService();
 
     // Step 0: jar 必须有 cf_clearance, 否则 native dio 任何请求都被 CF 当 bot
@@ -191,7 +217,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       }
       return false;
     }
-    if (!mounted) return false;
+    if (!mounted || ModalRoute.of(context)?.isActive == false) return false;
 
     // hcaptcha endpoint: 从 SharedPreferences 拿 (站长改 mount 时填到设置里);
     // 没配就让 dialog 用内置 fallback 列表 (/captcha/hcaptcha/create.json →
@@ -199,18 +225,22 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     // riverpod, LoginPage 是普通 StatefulWidget)。
     final prefs = await SharedPreferences.getInstance();
     final hcaptchaEndpoint = prefs.getString('pref_hcaptcha_create_endpoint');
-    if (!mounted) return false;
+    if (!mounted || ModalRoute.of(context)?.isActive == false) return false;
 
     // Step 1-3: WebView 内 JS 全流程登录 (csrf → hcaptcha/create → session)。
     // 三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 cf_clearance 时一致,
     // 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
     // 2FA 通过 onNeedSecondFactor 回调弹 TOTP, 由 dialog 内同一 WebView 重试。
-    final result = await showWebViewLoginDialog(
-      context,
+    final result = await _webLogin.currentState!.show(
       siteKey: _kLinuxDoHcaptchaSiteKey,
       identifier: identifier,
       password: password,
       hcaptchaCreateEndpoint: hcaptchaEndpoint,
+      onProgress: (phase) {
+        if (mounted && _submissionPhase != phase) {
+          setState(() => _submissionPhase = phase);
+        }
+      },
       onNeedSecondFactor: (need) => showTwoFactorDialog(
         context,
         hint: need.totpEnabled
@@ -219,8 +249,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         onUseBackupCode: () => _loginWithWebView(),
       ),
     );
-    if (!mounted) return false;
-    if (result == null || result.status == WebViewLoginStatus.canceled) {
+    if (!mounted || ModalRoute.of(context)?.isActive == false) return false;
+    if (result.status == WebViewLoginStatus.canceled) {
       return false;
     }
 
@@ -236,7 +266,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           debugPrint('[LoginPage] 保存账号失败,不影响登录: $e');
         }
       }
-      if (!mounted) return true;
+      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return true;
       ToastService.showSuccess(S.current.webviewLogin_loginSuccess);
       Navigator.of(context).pop(true);
       return true;
@@ -299,6 +329,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       body: Stack(
         children: [
           const AmbientBackground(),
+          PopScope<Object?>(
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) _webLogin.currentState?.cancel();
+            },
+            child: WebViewLoginHost(key: _webLogin),
+          ),
           SafeArea(
             child: Stack(
               children: [
@@ -325,7 +361,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                       AmbientIconButton(
                         icon: Symbols.delete_rounded,
                         tooltip: context.l10n.login_clearSavedCredentials,
-                        onPressed: _clearSavedCredentials,
+                        onPressed: _passwordSubmitting
+                            ? null
+                            : _clearSavedCredentials,
                       ),
                     ),
                   ),
@@ -440,6 +478,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   )
                 : LoginForm(
                     onSubmit: _handleSubmit,
+                    progressLabel: switch (_submissionPhase) {
+                      LoginSubmissionPhase.verifying =>
+                        context.l10n.login_confirmingVerification,
+                      LoginSubmissionPhase.signingIn =>
+                        context.l10n.login_captchaSubmitting,
+                      null => null,
+                    },
                     onForgotPassword: () =>
                         _loginWithWebView('https://linux.do/password-reset'),
                     savedUsername: _savedUsername,
@@ -460,7 +505,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         _DividerWithLabel(label: context.l10n.login_or),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: _loginWithQrScan,
+          onPressed: _passwordSubmitting ? null : _loginWithQrScan,
           icon: const Icon(Symbols.qr_code_scanner_rounded, size: 20),
           label: Text(context.l10n.login_scanToLogin),
           style: OutlinedButton.styleFrom(
@@ -475,7 +520,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(
-          onPressed: _browserAuthLaunching ? null : _loginWithBrowserAuth,
+          onPressed: _browserAuthLaunching || _passwordSubmitting
+              ? null
+              : _loginWithBrowserAuth,
           icon: _browserAuthLaunching
               ? const SizedBox(
                   width: 20,
@@ -496,7 +543,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 10),
         OutlinedButton.icon(
-          onPressed: () => _loginWithWebView(),
+          onPressed: _passwordSubmitting ? null : () => _loginWithWebView(),
           icon: const Icon(Symbols.open_in_browser_rounded, size: 20),
           label: Text(context.l10n.login_otherMethods),
           style: OutlinedButton.styleFrom(
