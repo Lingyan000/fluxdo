@@ -15,6 +15,16 @@ void main() {
     return StickerMarketService(prefs, dio: Dio()..httpClientAdapter = adapter);
   }
 
+  group('市场地址', () {
+    test('设置后能读回(清缓存不能连地址一起删)', () async {
+      final service = await newService(_RecordingAdapter());
+
+      await service.setBaseUrl('https://example.com/');
+
+      expect(service.baseUrl, 'https://example.com');
+    });
+  });
+
   group('分组详情文件名', () {
     test('id 已带 group- 前缀时不再重复拼接', () async {
       final adapter = _RecordingAdapter();

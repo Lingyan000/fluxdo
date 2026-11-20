@@ -342,7 +342,10 @@ class StickerMarketService {
 
   /// 清除全部缓存
   Future<void> _clearAllCache() async {
-    final keys = _prefs.getKeys().where((k) => k.startsWith(_cachePrefix));
+    // 地址键与缓存同前缀，必须跳过，否则刚设置的地址会被一并删掉
+    final keys = _prefs.getKeys().where(
+      (k) => k.startsWith(_cachePrefix) && k != _baseUrlKey,
+    );
     for (final key in keys.toList()) {
       await _prefs.remove(key);
     }
