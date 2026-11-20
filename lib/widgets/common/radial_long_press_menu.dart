@@ -1,8 +1,8 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -219,7 +219,7 @@ class RadialMenuSession {
   }
 }
 
-/// 径向菜单 Overlay：背景模糊 + 半圆衍生菜单项 + 高亮 tooltip
+/// 径向菜单 Overlay：径向聚光背景、弧形底盘、选中胶囊与标签
 class RadialMenuOverlay extends StatefulWidget {
   const RadialMenuOverlay({
     super.key,
@@ -254,7 +254,7 @@ class RadialMenuOverlay extends StatefulWidget {
   final bool closing;
   final VoidCallback onClosed;
 
-  /// 按压区域替代显示的自定义 builder；null 时用默认的 primary 胶囊 + 触摸图标
+  /// 按压区域替代显示的自定义 builder；null 时用默认的 primary 圆 + 触摸图标
   final Widget Function(BuildContext context, Rect rect, double opacity)?
   pressAreaIndicatorBuilder;
 
@@ -262,15 +262,47 @@ class RadialMenuOverlay extends StatefulWidget {
   State<RadialMenuOverlay> createState() => _RadialMenuOverlayState();
 }
 
+/// 临界阻尼弹簧：目标变化时保留当前速度直接改向，不过冲
+class _CriticalSpring {
+  _CriticalSpring(this.response);
+
+  /// 弹簧周期（秒），越小越快
+  final double response;
+  double value = 0;
+  double velocity = 0;
+
+  void snap(double target) {
+    value = target;
+    velocity = 0;
+  }
+
+  void step(double target, double dt) {
+    final omega = 2 * math.pi / response;
+    // 显式积分在大步长下会发散，按 4ms 细分
+    final steps = math.max(1, (dt / 0.004).ceil());
+    final h = dt / steps;
+    for (var i = 0; i < steps; i++) {
+      final accel = -omega * omega * (value - target) - 2 * omega * velocity;
+      velocity += accel * h;
+      value += velocity * h;
+    }
+  }
+
+  bool settledAt(double target) =>
+      (value - target).abs() < 1e-4 && velocity.abs() < 1e-3;
+}
+
 class _RadialMenuOverlayState extends State<RadialMenuOverlay>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // 菜单整体衍生 / 收回动画时长（出场略快、收回略慢以表达"被吸回去"）
   static const Duration _enterDuration = Duration(milliseconds: 220);
   static const Duration _exitDuration = Duration(milliseconds: 180);
 
-  // 背景模糊与暗化稳态强度
-  static const double _maxBlur = 8.0;
-  static const double _maxDim = 0.22;
+  // 深色主题下聚光整体加深，否则压暗在深色页面上几乎看不出
+  static const double _darkScrimBoost = 1.25;
+
+  // 聚光半径在扇形半径之外延伸的距离
+  static const double _spotlightReach = 220.0;
 
   // 菜单项尺寸
   static const double _itemSize = 48.0;
@@ -278,11 +310,28 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
   // 弧形底盘在菜单项内外两侧各留出的宽度
   static const double _dialPadding = 8.0;
 
-  // 高亮标签与扇形最外一项外沿之间的间距
+  // 选中胶囊的粗细：比底盘窄，四周露出一圈底盘
+  static const double _indicatorSize = 54.0;
+
+  // 标签与选中胶囊外沿之间的间距
   static const double _labelGap = 8.0;
+
+  // 标签方向相对展开正前方的最大偏角（约 57°）：端项的标签斜向外上方
+  // 摆放，避免水平外推后贴到屏幕边上又被挤回扇形
+  static const double _labelMaxTilt = 1.0;
 
   // 展开起点的半径比例：底盘与菜单项从这里同步长到目标半径
   static const double _collapsedRadiusFactor = 0.55;
+
+  // 选中胶囊两端各由一个弹簧驱动：领先端快、尾随端慢，换项时两端拉开
+  // 成胶囊，到位后收拢成圆
+  static const double _leadResponse = 0.13;
+  static const double _trailResponse = 0.30;
+  static const double _labelResponse = 0.22;
+
+  // 选中胶囊与标签出现 / 消失的淡入淡出时长（秒）
+  static const double _indicatorFadeSeconds = 0.10;
+  static const double _labelFadeSeconds = 0.09;
 
   late final AnimationController _controller = AnimationController(
     vsync: this,
@@ -290,7 +339,24 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     reverseDuration: _exitDuration,
   )..forward();
 
+  late final Ticker _springTicker = createTicker(_onSpringTick);
+  final _CriticalSpring _lead = _CriticalSpring(_leadResponse);
+  final _CriticalSpring _trail = _CriticalSpring(_trailResponse);
+  final _CriticalSpring _labelPhi = _CriticalSpring(_labelResponse);
+  double _indicatorOpacity = 0;
+  double _labelOpacity = 0;
+
+  // 最近一次高亮的项：高亮清空后标签淡出期间仍显示它
+  int? _labelIndex;
+  Duration? _lastTick;
+
   bool _closeDispatched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightedIndex != null) _onHighlightChanged();
+  }
 
   @override
   void didUpdateWidget(covariant RadialMenuOverlay oldWidget) {
@@ -302,24 +368,91 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
         widget.onClosed();
       });
     }
+    if (widget.highlightedIndex != oldWidget.highlightedIndex ||
+        widget.closing != oldWidget.closing) {
+      _onHighlightChanged();
+    }
   }
 
   @override
   void dispose() {
+    _springTicker.dispose();
     _controller.dispose();
     super.dispose();
   }
 
+  bool get _showsHighlight =>
+      widget.highlightedIndex != null && !widget.closing;
+
+  void _onHighlightChanged() {
+    final index = widget.highlightedIndex;
+    if (index != null && index >= 0 && index < widget.items.length) {
+      final phi = _itemPhi(index);
+      // 从无高亮进入时直接出现在目标项上，不从上一次的位置滑过来
+      if (_indicatorOpacity < 0.05) {
+        _lead.snap(phi);
+        _trail.snap(phi);
+      }
+      if (_labelOpacity < 0.05) _labelPhi.snap(phi);
+      _labelIndex = index;
+    }
+    if (!_springTicker.isActive) {
+      _lastTick = null;
+      _springTicker.start();
+    }
+  }
+
+  void _onSpringTick(Duration elapsed) {
+    final last = _lastTick;
+    _lastTick = elapsed;
+    final dt = last == null
+        ? 1 / 60
+        : math.min(0.05, (elapsed - last).inMicroseconds / 1e6);
+    if (dt <= 0) return;
+
+    final index = widget.highlightedIndex;
+    final valid = index != null && index >= 0 && index < widget.items.length;
+    var settled = true;
+    if (valid) {
+      final target = _itemPhi(index);
+      _lead.step(target, dt);
+      _trail.step(target, dt);
+      _labelPhi.step(target, dt);
+      settled =
+          _lead.settledAt(target) &&
+          _trail.settledAt(target) &&
+          _labelPhi.settledAt(target);
+    }
+    final targetOpacity = _showsHighlight ? 1.0 : 0.0;
+    _indicatorOpacity = _approach(
+      _indicatorOpacity,
+      targetOpacity,
+      dt / _indicatorFadeSeconds,
+    );
+    _labelOpacity = _approach(
+      _labelOpacity,
+      targetOpacity,
+      dt / _labelFadeSeconds,
+    );
+    settled =
+        settled &&
+        _indicatorOpacity == targetOpacity &&
+        _labelOpacity == targetOpacity;
+    setState(() {});
+    if (settled) _springTicker.stop();
+  }
+
+  static double _approach(double value, double target, double delta) =>
+      value < target
+      ? math.min(target, value + delta)
+      : math.max(target, value - delta);
+
   @override
   Widget build(BuildContext context) {
-    final items = widget.items;
-    final highlightedIndex = widget.highlightedIndex;
-    final highlightedItem =
-        (highlightedIndex != null &&
-            highlightedIndex >= 0 &&
-            highlightedIndex < items.length)
-        ? items[highlightedIndex]
-        : null;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final up = widget.direction == RadialMenuDirection.up;
+    final mid = (widget.sweepStart + widget.sweepEnd) / 2;
 
     return IgnorePointer(
       child: AnimatedBuilder(
@@ -332,16 +465,21 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
           final p = Curves.easeOutCubic.transform(raw);
           final fadeT = raw;
           final revealRadius = _revealRadius(p);
+          final revealScale = _revealScale(p);
           return Stack(
             children: [
+              // 不做模糊：只以菜单为中心渐变压暗，远处页面保持清晰
               Positioned.fill(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: _maxBlur * fadeT,
-                    sigmaY: _maxBlur * fadeT,
-                  ),
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: _maxDim * fadeT),
+                child: CustomPaint(
+                  painter: _SpotlightScrimPainter(
+                    center: _arcPoint(mid, widget.radius * 0.45),
+                    radius: widget.radius + _spotlightReach,
+                    color: colorScheme.scrim,
+                    strength:
+                        fadeT *
+                        (theme.brightness == Brightness.dark
+                            ? _darkScrimBoost
+                            : 1),
                   ),
                 ),
               ),
@@ -352,24 +490,30 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
                     radius: revealRadius,
                     sweepStart: widget.sweepStart,
                     sweepEnd: widget.sweepEnd,
-                    up: widget.direction == RadialMenuDirection.up,
+                    up: up,
                     progress: p,
-                    bandWidth: (_itemSize + _dialPadding * 2) * _revealScale(p),
-                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                    bandWidth: (_itemSize + _dialPadding * 2) * revealScale,
+                    color: colorScheme.surfaceContainerHigh,
+                  ),
+                  foregroundPainter: _RadialIndicatorPainter(
+                    center: widget.center,
+                    radius: revealRadius,
+                    up: up,
+                    midPhi: mid,
+                    progress: p,
+                    leadPhi: _lead.value,
+                    trailPhi: _trail.value,
+                    width: _indicatorSize * revealScale,
+                    color: colorScheme.primary,
+                    opacity: _indicatorOpacity * p,
                   ),
                 ),
               ),
-              for (int i = 0; i < items.length; i++)
-                _buildItem(context, i, items[i], p, revealRadius),
+              for (int i = 0; i < widget.items.length; i++)
+                _buildItem(context, i, widget.items[i], p, revealRadius),
               if (widget.pressArea != null)
-                _buildPressAreaIndicator(
-                  context,
-                  widget.pressArea!,
-                  fadeT,
-                  highlightedItem,
-                ),
-              if (highlightedItem != null && !widget.closing)
-                _buildHeaderTooltip(context, highlightedItem, fadeT),
+                _buildPressAreaIndicator(context, widget.pressArea!, fadeT),
+              ?_buildLabel(context, fadeT, revealRadius),
             ],
           );
         },
@@ -404,6 +548,21 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     );
   }
 
+  /// 第 index 项被选中胶囊覆盖的程度（0~1）：胶囊拉长时，覆盖范围内的
+  /// 项都算被覆盖，图标颜色随之过渡
+  double _coverage(int index) {
+    if (_indicatorOpacity <= 0) return 0;
+    final n = widget.items.length;
+    final step = n > 1
+        ? math.max((widget.sweepEnd - widget.sweepStart) / (n - 1), 0.1)
+        : 1.0;
+    final phi = _itemPhi(index);
+    final lo = math.min(_lead.value, _trail.value);
+    final hi = math.max(_lead.value, _trail.value);
+    final distance = phi < lo ? lo - phi : (phi > hi ? phi - hi : 0.0);
+    return (1 - distance / (step * 0.7)).clamp(0.0, 1.0) * _indicatorOpacity;
+  }
+
   Widget _buildItem(
     BuildContext context,
     int index,
@@ -411,14 +570,13 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     double p,
     double revealRadius,
   ) {
-    final theme = Theme.of(context);
-    final isHighlighted = widget.highlightedIndex == index;
+    final colorScheme = Theme.of(context).colorScheme;
     // 与底盘同一套几何：偏角从角中线按 p 展开，半径同步长大
     final mid = (widget.sweepStart + widget.sweepEnd) / 2;
     final phi = mid + (_itemPhi(index) - mid) * p;
     final pos = _arcPoint(phi, revealRadius);
-    final highlightScale = isHighlighted ? 1.2 : 1.0;
-    final renderSize = _itemSize * _revealScale(p) * highlightScale;
+    final renderSize = _itemSize * _revealScale(p);
+    final coverage = _coverage(index);
 
     return Positioned(
       key: ValueKey('radial_menu_item_$index'),
@@ -428,19 +586,14 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       height: renderSize,
       child: Opacity(
         opacity: p.clamp(0.0, 1.0) * (item.enabled ? 1 : 0.38),
-        // 非高亮项平铺在弧形底盘上，不再各自带阴影
-        child: Material(
-          color: isHighlighted ? theme.colorScheme.primary : Colors.transparent,
-          shape: context.shapes.circle(),
-          elevation: isHighlighted ? 4 : 0,
-          shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
-          child: Center(
-            child: Icon(
-              item.icon,
-              size: 24 * highlightScale * _revealScale(p),
-              color: isHighlighted
-                  ? theme.colorScheme.onPrimary
-                  : theme.colorScheme.onSurface,
+        child: Center(
+          child: Icon(
+            item.icon,
+            size: 24 * _revealScale(p) * (1 + 0.06 * coverage),
+            color: Color.lerp(
+              colorScheme.onSurfaceVariant,
+              colorScheme.onPrimary,
+              coverage,
             ),
           ),
         ),
@@ -448,68 +601,51 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     );
   }
 
-  Widget _buildHeaderTooltip(
-    BuildContext context,
-    RadialMenuItem item,
-    double opacity,
-  ) {
+  /// 标签：向上展开时沿半径方向贴在选中项外侧，换项时沿外圈滑动；
+  /// 向下展开时扇形外侧正是手掌所在，改放到按压区域上方
+  Widget? _buildLabel(BuildContext context, double fadeT, double revealRadius) {
+    final index = _labelIndex;
+    if (index == null || index >= widget.items.length) return null;
+    final opacity = _labelOpacity * fadeT;
+    if (opacity <= 0) return null;
+
     final theme = Theme.of(context);
     final mq = MediaQuery.of(context);
     final up = widget.direction == RadialMenuDirection.up;
-
-    // 固定在整个扇形的外侧（向上展开时在最高一项的上方）、水平对齐全部
-    // 菜单项的中间：不被手指挡住、不压任何一项、贴边时也不会被挤回扇形里，
-    // 切换高亮项时位置也不跳动
-    final positions = [
-      for (var i = 0; i < widget.items.length; i++)
-        _arcPoint(_itemPhi(i), widget.radius),
-    ];
-    final xs = positions.map((p) => p.dx);
-    final ys = positions.map((p) => p.dy);
-    final centerX = (xs.reduce(math.min) + xs.reduce(math.max)) / 2;
-    final itemReach = _itemSize * 1.2 / 2 + _labelGap;
-    final anchor = Offset(
-      centerX,
-      up ? ys.reduce(math.min) - itemReach : ys.reduce(math.max) + itemReach,
-    );
+    final tilt = _labelPhi.value.clamp(-_labelMaxTilt, _labelMaxTilt);
 
     return Positioned.fill(
       child: CustomSingleChildLayout(
-        delegate: _TooltipLayoutDelegate(
-          anchor: anchor,
-          growsDown: !up,
+        delegate: _LabelLayoutDelegate(
+          item: _arcPoint(_labelPhi.value, revealRadius),
+          direction: Offset(math.sin(tilt), -math.cos(tilt)),
+          clearance: _indicatorSize / 2 + _labelGap,
+          above: up
+              ? null
+              : (widget.pressArea ??
+                    Rect.fromCircle(center: widget.center, radius: 0)),
           safeInsets: mq.padding,
         ),
         child: Opacity(
           opacity: opacity,
           child: Material(
-            color: theme.colorScheme.primary,
+            color: theme.colorScheme.inverseSurface,
             shape: RoundedSuperellipseBorder(
               borderRadius: context.shapes.borderRadius(24),
             ),
             elevation: 4,
-            shadowColor: theme.colorScheme.primary.withValues(alpha: 0.35),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(item.icon, size: 18, color: theme.colorScheme.onPrimary),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      item.label,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onPrimary,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              child: Text(
+                widget.items[index].label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.onInverseSurface,
+                  fontWeight: FontWeight.w600,
+                  height: 1.1,
+                  letterSpacing: 0.1,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -518,13 +654,12 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
     );
   }
 
-  /// 在按压区域原位置画替代显示，让用户在模糊背景下仍能看到"我刚才按的入口"。
-  /// 默认实现：primary 实心 pill + 触摸图标（进度悬浮条样式）。
+  /// 在按压区域原位置画替代显示，让用户在压暗背景下仍能看到"我刚才按的入口"。
+  /// 默认实现：primary 实心圆 + 触摸图标（进度悬浮条样式）。
   Widget _buildPressAreaIndicator(
     BuildContext context,
     Rect rect,
     double opacity,
-    RadialMenuItem? highlighted,
   ) {
     final custom = widget.pressAreaIndicatorBuilder;
     if (custom != null) {
@@ -546,15 +681,10 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
             elevation: 4,
             shadowColor: theme.colorScheme.primary.withValues(alpha: 0.4),
             child: Center(
-              // 显示当前高亮项的图标，按压点与选择结果视觉上连成一体
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 120),
-                child: Icon(
-                  highlighted?.icon ?? Symbols.touch_app_rounded,
-                  key: ValueKey(highlighted?.icon),
-                  size: 20,
-                  color: theme.colorScheme.onPrimary,
-                ),
+              child: Icon(
+                Symbols.touch_app_rounded,
+                size: 20,
+                color: theme.colorScheme.onPrimary,
               ),
             ),
           ),
@@ -562,6 +692,122 @@ class _RadialMenuOverlayState extends State<RadialMenuOverlay>
       ),
     );
   }
+}
+
+/// 径向聚光遮罩：以菜单为中心渐变压暗，菜单周围最暗，向外逐渐透出页面
+class _SpotlightScrimPainter extends CustomPainter {
+  const _SpotlightScrimPainter({
+    required this.center,
+    required this.radius,
+    required this.color,
+    required this.strength,
+  });
+
+  final Offset center;
+  final double radius;
+  final Color color;
+
+  /// 整体强度系数（展开进度 × 主题加深系数）
+  final double strength;
+
+  // 圆心、半程、外缘（及以外）的压暗不透明度
+  static const double _innerAlpha = 0.5;
+  static const double _midAlpha = 0.36;
+  static const double _outerAlpha = 0.1;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (strength <= 0) return;
+    Color tone(double alpha) =>
+        color.withValues(alpha: (color.a * alpha * strength).clamp(0.0, 1.0));
+    final shader = RadialGradient(
+      colors: [tone(_innerAlpha), tone(_midAlpha), tone(_outerAlpha)],
+      stops: const [0, 0.5, 1],
+    ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+  }
+
+  @override
+  bool shouldRepaint(_SpotlightScrimPainter old) =>
+      old.center != center ||
+      old.radius != radius ||
+      old.color != color ||
+      old.strength != strength;
+}
+
+/// 选中胶囊：沿底盘圆弧连接领先端与尾随端，两端重合时为圆形
+class _RadialIndicatorPainter extends CustomPainter {
+  const _RadialIndicatorPainter({
+    required this.center,
+    required this.radius,
+    required this.up,
+    required this.midPhi,
+    required this.progress,
+    required this.leadPhi,
+    required this.trailPhi,
+    required this.width,
+    required this.color,
+    required this.opacity,
+  });
+
+  final Offset center;
+  final double radius;
+  final bool up;
+  final double midPhi;
+  final double progress;
+  final double leadPhi;
+  final double trailPhi;
+  final double width;
+  final Color color;
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (opacity <= 0) return;
+    // 与菜单项同一套展开几何：偏角从角中线按 progress 展开
+    double toAngle(double phi) {
+      final shown = midPhi + (phi - midPhi) * progress;
+      return up ? shown - math.pi / 2 : math.pi / 2 - shown;
+    }
+
+    final a = toAngle(leadPhi);
+    final b = toAngle(trailPhi);
+    final start = math.min(a, b);
+    final sweep = (a - b).abs();
+    final shadow = Paint()
+      ..color = color.withValues(alpha: color.a * 0.35 * opacity)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    final fill = Paint()..color = color.withValues(alpha: color.a * opacity);
+
+    if (sweep < 1e-3) {
+      final point = center + Offset(math.cos(start), math.sin(start)) * radius;
+      canvas.drawCircle(point.translate(0, 2), width / 2, shadow);
+      canvas.drawCircle(point, width / 2, fill);
+      return;
+    }
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    for (final paint in [shadow, fill]) {
+      paint
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round;
+    }
+    canvas.drawArc(rect.translate(0, 2), start, sweep, false, shadow);
+    canvas.drawArc(rect, start, sweep, false, fill);
+  }
+
+  @override
+  bool shouldRepaint(_RadialIndicatorPainter old) =>
+      old.center != center ||
+      old.radius != radius ||
+      old.up != up ||
+      old.midPhi != midPhi ||
+      old.progress != progress ||
+      old.leadPhi != leadPhi ||
+      old.trailPhi != trailPhi ||
+      old.width != width ||
+      old.color != color ||
+      old.opacity != opacity;
 }
 
 /// 弧形底盘：沿菜单项所在圆弧画一条圆头宽带，把散落的菜单项归成一组。
@@ -632,21 +878,31 @@ class _RadialDialPainter extends CustomPainter {
       old.color != color;
 }
 
-/// tooltip 药丸定位：以 [anchor] 为水平中心 / 垂直端点摆放，
-/// 测得药丸实际尺寸后整体 clamp 在屏幕安全区内，任何标签长度都不会溢出。
-class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
-  const _TooltipLayoutDelegate({
-    required this.anchor,
-    required this.growsDown,
+/// 标签药丸定位，测得实际尺寸后整体 clamp 在屏幕安全区内：
+/// - [above] 非空：放在该矩形正上方、水平居中
+/// - 否则从 [item] 沿 [direction] 向外摆放，clamp 贴边后仍压着 item
+///   （距离小于 [clearance]）就继续外推
+class _LabelLayoutDelegate extends SingleChildLayoutDelegate {
+  const _LabelLayoutDelegate({
+    required this.item,
+    required this.direction,
+    required this.clearance,
+    required this.above,
     required this.safeInsets,
   });
 
-  /// 锚点：up 方向为药丸底边中点，down 方向（[growsDown]）为顶边中点
-  final Offset anchor;
-  final bool growsDown;
+  final Offset item;
+
+  /// 单位方向向量
+  final Offset direction;
+  final double clearance;
+  final Rect? above;
   final EdgeInsets safeInsets;
 
   static const double _margin = 12.0;
+  static const double _aboveGap = 10.0;
+  static const double _pushStep = 2.0;
+  static const double _maxPush = 160.0;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
@@ -655,31 +911,62 @@ class _TooltipLayoutDelegate extends SingleChildLayoutDelegate {
     );
   }
 
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final double x = (anchor.dx - childSize.width / 2).clamp(
+  Rect _clampedRect(Size size, Size childSize, Offset center) {
+    final double x = (center.dx - childSize.width / 2).clamp(
       _margin,
       math.max(_margin, size.width - _margin - childSize.width),
     );
-    final rawY = growsDown ? anchor.dy : anchor.dy - childSize.height;
-    final double y = rawY.clamp(
-      safeInsets.top + _margin,
+    final minY = safeInsets.top + _margin;
+    final double y = (center.dy - childSize.height / 2).clamp(
+      minY,
       math.max(
-        safeInsets.top + _margin,
+        minY,
         size.height - safeInsets.bottom - _margin - childSize.height,
       ),
     );
-    return Offset(x, y);
+    return Offset(x, y) & childSize;
   }
 
   @override
-  bool shouldRelayout(_TooltipLayoutDelegate oldDelegate) =>
-      anchor != oldDelegate.anchor ||
-      growsDown != oldDelegate.growsDown ||
+  Offset getPositionForChild(Size size, Size childSize) {
+    final above = this.above;
+    if (above != null) {
+      return _clampedRect(
+        size,
+        childSize,
+        Offset(above.center.dx, above.top - _aboveGap - childSize.height / 2),
+      ).topLeft;
+    }
+    // 药丸沿方向的半投影长度：保证朝向 item 的那条边恰好落在 clearance 处
+    final extent =
+        childSize.width / 2 * direction.dx.abs() +
+        childSize.height / 2 * direction.dy.abs();
+    var rect = Rect.zero;
+    for (var push = 0.0; push <= _maxPush; push += _pushStep) {
+      rect = _clampedRect(
+        size,
+        childSize,
+        item + direction * (clearance + push + extent),
+      );
+      final nearest = Offset(
+        item.dx.clamp(rect.left, rect.right),
+        item.dy.clamp(rect.top, rect.bottom),
+      );
+      if ((nearest - item).distance >= clearance) break;
+    }
+    return rect.topLeft;
+  }
+
+  @override
+  bool shouldRelayout(_LabelLayoutDelegate oldDelegate) =>
+      item != oldDelegate.item ||
+      direction != oldDelegate.direction ||
+      clearance != oldDelegate.clearance ||
+      above != oldDelegate.above ||
       safeInsets != oldDelegate.safeInsets;
 }
 
-/// 项放大态的最大半径（48 * 1.2 / 2），加边距用于越界判断
+/// 菜单项占位半径（选中胶囊 54 / 2，再留 2 的余量），加边距用于越界判断
 const double _kRadialItemHalf = 29.0;
 const double _kRadialEdgeMargin = 8.0;
 
