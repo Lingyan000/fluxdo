@@ -388,6 +388,8 @@ class MainActivity : FlutterActivity() {
         FairMemoryReceiver.attachEngine(flutterEngine)
         // 媒体转码通道(音视频压缩到 4MB:media3 Transformer 硬编)
         MediaTranscodeChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        // AVIF 解码(后台任务队列,避开系统解码器让 UI 线程等 IO 线程)
+        AndroidAvifChannel.register(flutterEngine.dartExecutor.binaryMessenger)
         // 公共文件落盘通道(MediaStore 下载目录 / SAF 另存为 / 打开 content uri)
         PublicFileChannel.register(this, flutterEngine.dartExecutor.binaryMessenger)
         // 会话通知快捷方式(系统通知左侧显示发送者头像)

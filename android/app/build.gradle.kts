@@ -191,4 +191,7 @@ dependencies {
     implementation("androidx.media3:media3-transformer:1.10.1")
     implementation("androidx.media3:media3-effect:1.10.1")
     implementation("androidx.media3:media3-common:1.10.1")
+    // AVIF 解码(libavif + dav1d + libyuv,AOMedia 官方发布,只含解码):系统
+    // ImageDecoder 解 AVIF 时会让 UI 线程等 IO 线程,见 AndroidAvifChannel
+    implementation("org.aomedia.avif.android:avif:1.3.0.841110fd")
 }
