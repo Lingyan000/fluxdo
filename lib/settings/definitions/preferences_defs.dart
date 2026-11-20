@@ -294,6 +294,27 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           onChanged: (ref, v) =>
               ref.read(stickerDynamicOrderProvider.notifier).set(v),
         ),
+        IntSliderModel(
+          id: 'stickerInsertScale',
+          title: l10n.preferences_stickerInsertScale,
+          subtitle: l10n.preferences_stickerInsertScaleDesc,
+          icon: Symbols.photo_size_select_large_rounded,
+          min: 10,
+          max: 100,
+          valueSuffix: '%',
+          getValue: (ref) => ref.watch(stickerInsertScaleProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerInsertScaleProvider.notifier).set(v),
+        ),
+        SwitchModel(
+          id: 'stickerTransferExternal',
+          title: l10n.preferences_stickerTransferExternal,
+          subtitle: l10n.preferences_stickerTransferExternalDesc,
+          icon: Symbols.cloud_upload_rounded,
+          getValue: (ref) => ref.watch(stickerTransferExternalProvider),
+          onChanged: (ref, v) =>
+              ref.read(stickerTransferExternalProvider.notifier).set(v),
+        ),
       ],
     ),
     SettingsGroup(

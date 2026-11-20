@@ -42,6 +42,12 @@ class StickerMarketService {
 
   /// 发送表情后把所在分组移到最前(用户设置,默认关闭)。
   static const String _dynamicOrderKey = 'sticker_dynamic_order';
+
+  /// 发送时的显示比例(百分比,用户设置)。
+  static const String _insertScaleKey = 'sticker_insert_scale';
+
+  /// 外站托管的表情先转存到论坛再插入(用户设置,默认开启)。
+  static const String _transferExternalKey = 'sticker_transfer_external';
   static const int _maxRecentStickers = 30;
   static const Duration _cacheDuration = Duration(hours: 24);
 
@@ -84,6 +90,21 @@ class StickerMarketService {
   }
 
   bool get dynamicOrderEnabled => _prefs.getBool(_dynamicOrderKey) ?? false;
+
+  int get insertScale =>
+      (_prefs.getInt(_insertScaleKey) ?? StickerItem.defaultScale).clamp(
+        10,
+        100,
+      );
+
+  Future<void> setInsertScale(int scale) =>
+      _prefs.setInt(_insertScaleKey, scale.clamp(10, 100));
+
+  bool get transferExternalEnabled =>
+      _prefs.getBool(_transferExternalKey) ?? true;
+
+  Future<void> setTransferExternalEnabled(bool enabled) =>
+      _prefs.setBool(_transferExternalKey, enabled);
 
   Future<void> setDynamicOrderEnabled(bool enabled) =>
       _prefs.setBool(_dynamicOrderKey, enabled);

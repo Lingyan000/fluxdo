@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../models/sticker.dart';
 import '../services/app_logger.dart';
 import '../services/sticker_market_service.dart';
+import '../services/sticker_transfer_service.dart';
 import '../services/sticker_thumbnail_provider.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
 
@@ -33,6 +34,48 @@ class StickerDynamicOrderNotifier extends StateNotifier<bool> {
   Future<void> set(bool enabled) async {
     state = enabled;
     await _service.setDynamicOrderEnabled(enabled);
+  }
+}
+
+/// 外站表情转存服务
+final stickerTransferServiceProvider = Provider<StickerTransferService>((ref) {
+  return StickerTransferService(ref.watch(sharedPreferencesProvider));
+});
+
+/// 发送表情时的显示比例（百分比，设置页用）
+final stickerInsertScaleProvider =
+    StateNotifierProvider<StickerInsertScaleNotifier, int>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerInsertScaleNotifier(service);
+    });
+
+class StickerInsertScaleNotifier extends StateNotifier<int> {
+  StickerInsertScaleNotifier(this._service) : super(_service.insertScale);
+
+  final StickerMarketService _service;
+
+  Future<void> set(int scale) async {
+    state = scale.clamp(10, 100);
+    await _service.setInsertScale(state);
+  }
+}
+
+/// 外站表情先转存到论坛的开关（设置页用）
+final stickerTransferExternalProvider =
+    StateNotifierProvider<StickerTransferExternalNotifier, bool>((ref) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return StickerTransferExternalNotifier(service);
+    });
+
+class StickerTransferExternalNotifier extends StateNotifier<bool> {
+  StickerTransferExternalNotifier(this._service)
+    : super(_service.transferExternalEnabled);
+
+  final StickerMarketService _service;
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    await _service.setTransferExternalEnabled(enabled);
   }
 }
 
