@@ -143,13 +143,15 @@ void main() {
     expect(hosts.refreshes, 1);
     await tester.tap(find.text(S.current.metaverse_market));
     await tester.pumpAndSettle();
+    // 页面首次进入读取市场，随后底栏操作应只额外刷新一次。
+    expect(market.refreshes, 1);
     container.read(navActionBusProvider.notifier).state = const NavActionEvent(
       targetId: NavEntryIds.metaverse,
       action: NavAction.refresh,
       nonce: 3,
     );
     await tester.pumpAndSettle();
-    expect(market.refreshes, 1);
+    expect(market.refreshes, 2);
     expect(service.refreshes, 2);
     update(() {
       active = false;
@@ -161,7 +163,7 @@ void main() {
       nonce: 4,
     );
     await tester.pump();
-    expect(market.refreshes, 1);
+    expect(market.refreshes, 2);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
