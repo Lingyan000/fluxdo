@@ -189,9 +189,8 @@ Future<void> launchContentLink(
   if (await openMiniAppLink(context, url)) return;
   if (!context.mounted) return;
 
-  // 已开启的元宇宙服务声明接管的站外链接 → 服务自己的页面。
-  // 站内链接不会走到这里：清单校验禁止声明站点域名。
-  if (!isInternalUrlString(url) && await openMetaverseLink(context, url)) {
+  // 已开启服务的声明式链接；路由层限制第三方不能覆盖论坛内链。
+  if (await openMetaverseLink(context, url)) {
     return;
   }
   if (!context.mounted) return;

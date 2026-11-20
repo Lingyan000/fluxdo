@@ -303,6 +303,20 @@ void main() {
     expect(match.params, {'id': '42'});
   });
 
+  test('CDK 仅在启用后接管自己的领取链接，不改变其他论坛链接', () async {
+    final prefs = container.read(sharedPreferencesProvider);
+    final url = Uri.parse('https://cdk.linux.do/receive/project-1');
+    expect(matchMetaverseLink(container, url), isNull);
+    await prefs.setBool('cdk_enabled', true);
+    final match = matchMetaverseLink(container, url);
+    expect(match?.service.id, 'cdk');
+    expect(match?.params, {'id': 'project-1'});
+    expect(matchMetaverseLink(container, Uri.parse('https://linux.do/t/topic/1')), isNull);
+    expect(matchMetaverseLink(container, Uri.parse('https://cdk.linux.do/dashboard')), isNull);
+    await prefs.setBool('cdk_enabled', false);
+    expect(matchMetaverseLink(container, url), isNull);
+  });
+
   test('挂起的插件不接管链接，恢复后重新接管', () async {
     final controller = container.read(metaversePluginsProvider.notifier);
     await controller.install(await package(const {}));

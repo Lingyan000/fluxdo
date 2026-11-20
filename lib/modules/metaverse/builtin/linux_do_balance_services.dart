@@ -14,6 +14,8 @@ import '../../../services/ldc_oauth_service.dart';
 import '../../../widgets/cdk_balance_card.dart';
 import '../../../widgets/ldc_balance_card.dart';
 import '../core/metaverse_service.dart';
+import '../core/metaverse_link_rule.dart';
+import '../../cdk/ui/cdk_project_page.dart';
 
 /// LDC 与 CDK 的共同实现：linux.do Connect 授权 + 余额卡片。
 ///
@@ -160,6 +162,29 @@ class CdkMetaverseService extends _LinuxDoBalanceService {
 
   @override
   String get id => 'cdk';
+
+  @override
+  List<MetaverseLinkRule> get linkRules => [
+    MetaverseLinkRule.parse(
+      host: 'cdk.linux.do',
+      path: '/receive/:id',
+      page: 'receive',
+    )!,
+  ];
+
+  @override
+  Future<void> openPage(
+    BuildContext context,
+    String page,
+    Map<String, Object?> params,
+  ) async {
+    final id = params['id'];
+    if (page == 'receive' &&
+        id is String &&
+        RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id)) {
+      await CdkProjectPage.open(context, id);
+    }
+  }
 
   @override
   String get enabledKey => CdkUserInfoNotifier.enabledKey;

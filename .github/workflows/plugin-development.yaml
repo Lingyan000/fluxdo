@@ -6,6 +6,13 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/modules/cdk/**'
+      - 'lib/modules/ldc_payment/**'
+      - 'lib/services/ldc_payment_service.dart'
+      - 'lib/widgets/cdk_balance_card.dart'
+      - 'lib/l10n/modules/cdk/**'
+      - 'test/modules/cdk/**'
+      - 'test/services/ldc_payment_service_test.dart'
       - 'lib/navigation/**'
       - 'lib/main.dart'
       - 'lib/pages/metaverse_page.dart'
@@ -29,6 +36,13 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/modules/cdk/**'
+      - 'lib/modules/ldc_payment/**'
+      - 'lib/services/ldc_payment_service.dart'
+      - 'lib/widgets/cdk_balance_card.dart'
+      - 'lib/l10n/modules/cdk/**'
+      - 'test/modules/cdk/**'
+      - 'test/services/ldc_payment_service_test.dart'
       - 'lib/navigation/**'
       - 'lib/main.dart'
       - 'lib/pages/metaverse_page.dart'
@@ -139,6 +153,13 @@ jobs:
           test/modules/metaverse/metaverse_content_components_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
+      - name: Verify native CDK claims and shared checkout without live transactions
+        working-directory: app
+        run: |
+          flutter analyze lib/modules/cdk lib/modules/ldc_payment/ldc_payment_flow.dart lib/services/ldc_payment_service.dart lib/widgets/cdk_balance_card.dart test/modules/cdk test/services/ldc_payment_service_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter test --reporter expanded test/modules/cdk test/services/ldc_payment_service_test.dart
+          exit $LASTEXITCODE
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
         run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
