@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 
@@ -103,7 +104,13 @@ class _LoginFormState extends State<LoginForm> {
         _passwordCtrl.clear();
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      _feedbackDelay?.cancel();
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _visibleProgress = null;
+        });
+      }
     }
   }
 
@@ -129,11 +136,37 @@ class _LoginFormState extends State<LoginForm> {
     );
   }
 
+  Widget _submissionFeedback(ColorScheme scheme) {
+    final progress = _visibleProgress;
+    final label = progress ?? context.l10n.common_loading;
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context);
+    return Semantics(
+      liveRegion: true,
+      label: label,
+      excludeSemantics: true,
+      child: reduceMotion
+          ? Text(label, textAlign: TextAlign.center)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 8,
+              children: [
+                TickerMode(
+                  enabled: ModalRoute.isCurrentOf(context) ?? true,
+                  child: LoadingSpinner(size: 24, color: scheme.primary),
+                ),
+                if (progress != null)
+                  Flexible(child: Text(progress, textAlign: TextAlign.center)),
+              ],
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final progress = _submitting ? _visibleProgress : null;
 
     return AutofillGroup(
       child: Column(
@@ -206,63 +239,27 @@ class _LoginFormState extends State<LoginForm> {
             ],
           ),
           const SizedBox(height: 12),
-          Semantics(
-            liveRegion: progress != null,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                FilledButton(
-                  onPressed: _submitting ? null : _submit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 56),
-                    disabledBackgroundColor: scheme.primary,
-                    disabledForegroundColor: scheme.onPrimary,
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: context.shapes.borderRadius(28),
-                    ),
-                    elevation: 8,
-                    shadowColor: scheme.primary.withValues(alpha: 0.4),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 9),
-                    child: Text(
-                      progress ?? context.l10n.common_login,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ),
-                ),
-                if (progress != null)
-                  PositionedDirectional(
-                    start: 20,
-                    end: 20,
-                    bottom: 6,
-                    child: ExcludeSemantics(
-                      child:
-                          MediaQuery.disableAnimationsOf(context) ||
-                              MediaQuery.reduceMotionOf(context)
-                          ? SizedBox(
-                              height: 2,
-                              child: ColoredBox(
-                                color: scheme.onPrimary.withValues(alpha: 0.35),
-                              ),
-                            )
-                          : LinearProgressIndicator(
-                              minHeight: 2,
-                              color: scheme.onPrimary,
-                              backgroundColor: scheme.onPrimary.withValues(
-                                alpha: 0.22,
-                              ),
-                              borderRadius: context.shapes.borderRadius(2),
-                            ),
-                    ),
-                  ),
-              ],
+          FilledButton(
+            onPressed: _submitting ? null : _submit,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(double.infinity, 56),
+              disabledForegroundColor: scheme.onSurfaceVariant,
+              shape: RoundedSuperellipseBorder(
+                borderRadius: context.shapes.borderRadius(28),
+              ),
+              elevation: _submitting ? 0 : 8,
+              shadowColor: scheme.primary.withValues(alpha: 0.4),
             ),
+            child: _submitting
+                ? _submissionFeedback(scheme)
+                : Text(
+                    context.l10n.common_login,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                    ),
+                  ),
           ),
         ],
       ),
