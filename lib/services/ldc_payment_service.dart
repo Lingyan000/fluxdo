@@ -49,6 +49,10 @@ class LdcPaymentService {
   final Dio _dio;
   static const _base = 'https://credit.linux.do';
 
+  /// LDC 对外部署的易支付入口，兼容已有商户的旧路径。
+  static bool isSubmitPath(String path) =>
+      path == '/epay/submit.php' || path == '/epay/pay/submit.php';
+
   static int? amountCents(Object? value) {
     final text = '$value';
     if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(text)) return null;
@@ -74,7 +78,7 @@ class LdcPaymentService {
         token = uri.queryParameters['order_no'];
         break;
       }
-      if (uri.path != '/epay/submit.php') {
+      if (!isSubmitPath(uri.path)) {
         throw const LdcPaymentException('payment_invalid_url');
       }
       await checkSession();

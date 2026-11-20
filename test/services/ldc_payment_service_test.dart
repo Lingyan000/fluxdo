@@ -20,6 +20,11 @@ class _Cashier implements HttpClientAdapter {
     Future<void>? cancel,
   ) async {
     requests.add(options);
+    if (LdcPaymentService.isSubmitPath(options.uri.path)) {
+      return ResponseBody.fromString('', 302, headers: {
+        'location': ['/paying?order_no=encrypted'],
+      });
+    }
     if (options.uri.path == '/api/v1/order/transactions') {
       expect(options.data, {
         'id': '9000000000000000001',
@@ -137,6 +142,20 @@ void main() {
     service = LdcPaymentService(dio: Dio()..httpClientAdapter = api);
   });
   tearDown(() => service.dispose());
+  for (final path in ['/epay/submit.php', '/epay/pay/submit.php']) {
+    test('易支付入口 $path 跳转后仍核对订单与金额', () async {
+      final order = await service.prepare(
+        Uri.parse('https://credit.linux.do$path'),
+        orderNo: 'store-order',
+        amount: '12.50',
+        username: 'tester',
+        checkSession: () async {},
+      );
+      expect(order.orderNo, 'store-order');
+      expect(api.requests, hasLength(2));
+      expect(api.requests.every((r) => r.method == 'GET'), isTrue);
+    });
+  }
   test('公共支付会话独立从 LDC 核验结果，核对收付款账号和金额', () async {
     final payment = LdcPaymentSession(
       service: service,

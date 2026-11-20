@@ -19,12 +19,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../../constants.dart';
 import '../../../../l10n/s.dart';
-import '../../../../services/ldc_oauth_service.dart';
 import '../../../../services/log/log_writer.dart';
-import '../../../../services/ldc_payment_service.dart';
-import '../../../../services/ldc_payment_session.dart';
-import '../../../../services/ldc_biometric_payment.dart';
-import '../../../../services/network/exceptions/oauth_exception.dart';
 import '../../../../services/network/discourse_dio.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/secret_store_provider.dart';
@@ -50,7 +45,7 @@ import '../runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import '../ui/metaverse_plugin_dialogs.dart';
 import '../ui/metaverse_plugin_page.dart';
-import '../../../ldc_payment/ldc_payment_sheet.dart';
+import '../../../ldc_payment/ldc_payment_flow.dart';
 import '../ui/metaverse_connect_confirmation.dart';
 import '../ui/metaverse_confirmation_sheet.dart';
 import '../ui/metaverse_permission_list.dart';
@@ -849,46 +844,19 @@ class _HostDelegate extends MetaversePluginHostDelegate {
         throw const PluginOperationCancelled();
       }
     }
-    final service = LdcPaymentService();
-    final payment = switch (provider) {
-      MetaversePaymentProvider.linuxDoCredit => LdcPaymentSession(
-        service: service,
-        paymentUrl: url,
+    return switch (provider) {
+      MetaversePaymentProvider.linuxDoCredit => requestLdcPayment(
+        context,
+        url: url,
         reference: reference,
         amount: amount,
+        accountId: account.id,
+        username: account.username,
+        secretStore: _ref.read(secretStoreProvider),
+        preferences: _ref.read(sharedPreferencesProvider),
         checkSession: checkSession,
       ),
     };
-    try {
-      final oauth = LdcOAuthService();
-      var needsPassword = false;
-      try {
-        final user = await oauth.getUserInfo(expectedUsername: account.username);
-        needsPassword = user?.isPayKey != true;
-      } on OAuthExpiredException {
-        await checkSession();
-        if (!context.mounted || !await oauth.authorize(context)) return null;
-        final user = await oauth.getUserInfo(expectedUsername: account.username);
-        needsPassword = user?.isPayKey != true;
-      }
-      await checkSession();
-      if (!context.mounted) return null;
-      return await showLdcPaymentSheet(
-        context,
-        payment: payment,
-        orderNo: reference,
-        username: account.username,
-        needsPassword: needsPassword,
-        biometrics: LdcBiometricPayment(
-          accountId: account.id,
-          store: _ref.read(secretStoreProvider),
-          preferences: _ref.read(sharedPreferencesProvider),
-          checkSession: checkSession,
-        ),
-      );
-    } finally {
-      service.dispose();
-    }
   }
 
   @override
