@@ -16,8 +16,9 @@ import 'package:material_ui/material_ui.dart';
 /// ```
 class Skeleton extends StatefulWidget {
   final Widget child;
+  final bool repeat;
 
-  const Skeleton({required this.child, super.key});
+  const Skeleton({required this.child, this.repeat = true, super.key});
 
   @override
   State<Skeleton> createState() => _SkeletonState();
@@ -48,6 +49,7 @@ class _SkeletonState extends State<Skeleton> {
     return RepaintBoundary(
       child: _Shimmer(
         linearGradient: shimmerGradient,
+        repeat: widget.repeat,
         child: _ShimmerLoading(isLoading: true, child: widget.child),
       ),
     );
@@ -60,9 +62,14 @@ class _Shimmer extends StatefulWidget {
     return context.findAncestorStateOfType<_ShimmerState>();
   }
 
-  const _Shimmer({required this.linearGradient, this.child});
+  const _Shimmer({
+    required this.linearGradient,
+    required this.repeat,
+    this.child,
+  });
 
   final LinearGradient linearGradient;
+  final bool repeat;
   final Widget? child;
 
   @override
@@ -76,8 +83,28 @@ class _ShimmerState extends State<_Shimmer>
   @override
   void initState() {
     super.initState();
-    _shimmerController = AnimationController.unbounded(vsync: this)
-      ..repeat(min: -0.5, max: 1.5, period: const Duration(milliseconds: 1200));
+    _shimmerController = AnimationController.unbounded(vsync: this);
+    _start();
+  }
+
+  @override
+  void didUpdateWidget(_Shimmer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repeat != widget.repeat) _start();
+  }
+
+  void _start() {
+    const duration = Duration(milliseconds: 1200);
+    if (widget.repeat) {
+      _shimmerController.repeat(min: -0.5, max: 1.5, period: duration);
+    } else {
+      _shimmerController.value = -0.5;
+      _shimmerController.animateTo(
+        1.5,
+        duration: duration,
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
@@ -216,12 +243,14 @@ class SkeletonBox extends StatelessWidget {
   final double? width;
   final double height;
   final double borderRadius;
+  final Color? color;
 
   const SkeletonBox({
     super.key,
     this.width,
     required this.height,
     this.borderRadius = 4,
+    this.color,
   });
 
   @override
@@ -231,7 +260,8 @@ class SkeletonBox extends StatelessWidget {
       width: width,
       height: height,
       decoration: ShapeDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withAlpha(100),
+        color:
+            color ?? theme.colorScheme.surfaceContainerHighest.withAlpha(100),
         shape: RoundedSuperellipseBorder(
           borderRadius: context.shapes.borderRadius(borderRadius),
         ),

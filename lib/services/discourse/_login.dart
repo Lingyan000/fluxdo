@@ -14,7 +14,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// 用 hcaptcha token 换 h_captcha_temp_id cookie。
   /// caller 必须先通过 hcaptcha mini webview 让用户人机交互拿到 token。
   @Deprecated(
-    '改用 WebView 内 JS 全流程登录 (showWebViewLoginDialog); '
+    '改用登录页的 WebView 验证会话。'
     'dio GET /session/csrf 实测被 CF 当 bot 403 (TLS 指纹), 仅留兜底',
   )
   Future<bool> verifyHcaptchaToken(String hcaptchaToken) async {
@@ -40,7 +40,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// - 首次返 [LoginErrorKind.secondFactorRequired] 时由 caller 弹 TOTP 对话框
   ///   拿 6 位 code, 再次调本方法带 [secondFactorToken]
   @Deprecated(
-    '改用 WebView 内 JS 全流程登录 (showWebViewLoginDialog); '
+    '改用登录页的 WebView 验证会话。'
     'dio CSRF 依赖 GET /session/csrf, 而它被 CF 403, 仅留兜底',
   )
   Future<LoginResult> loginWithPassword({
@@ -149,8 +149,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   ///
   /// 与 [loginWithPassword] 的响应解析逻辑一致, 但**不发 dio、不做收尾** ——
   /// 收尾由调用方在 cookie 同步落 jar 后显式调 [finalizeNativeLoginSuccess]。
-  /// Discourse 把成功/失败都用 HTTP 200 + JSON body 表达 ([status] 仅用于
-  /// 非 JSON 时的错误消息)。
+  /// 优先识别站点返回的登录错误，其他非成功 HTTP 响应按请求失败处理。
   LoginResult parseSessionJsonBody(int status, String body) {
     Map<String, dynamic>? map;
     try {
@@ -174,6 +173,9 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
         message: map['error']?.toString(),
       );
     }
+    if (status < 200 || status >= 300) {
+      return const LoginResult.error(LoginErrorKind.network);
+    }
     return const LoginResult.success();
   }
 
@@ -183,6 +185,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// WebView JS 全流程登录成功后, 由 login_page 在 dialog 已把会话 cookie
   /// syncFromWebView 落 jar 之后显式调用 (public)。dio 版 [loginWithPassword]
   /// 成功路径也复用它。
+  @override
   Future<void> finalizeNativeLoginSuccess(String identifier) async {
     AuthSession().advance();
 

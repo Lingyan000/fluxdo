@@ -18,6 +18,9 @@ pnpm test   # node 冒烟测试，覆盖 22 个 feature fixture
 
 产物：`assets/cook/discourse-cook.js`（提交进 git，头注释带源 commit）。
 
+同一次构建还会从 `pretty-text/emoji/data` 生成 `lib/utils/emoji_names.g.dart`
+（标准表情名 + 别名），app 展示短代码时据此判断表情是否存在。
+
 ## 运行时 API（bundle 挂在 globalThis）
 
 ```js

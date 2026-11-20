@@ -10,8 +10,10 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+import 'package:fluxdo/widgets/auth/login_form.dart';
 import 'package:fluxdo/widgets/auth/webview_login_dialog.dart';
 import 'package:fluxdo/widgets/common/captcha_panel.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,6 +51,7 @@ void main() {
   late SharedPreferences prefs;
   late Directory directory;
   final navigator = navigatorKey;
+  final host = GlobalKey<WebViewLoginHostState>();
   WebViewLoginDialogResult? result;
   late AppLocalizations l;
 
@@ -71,11 +74,13 @@ void main() {
     WidgetTester tester, {
     Size size = const Size(360, 720),
     double scale = 1,
+    bool reduceMotion = false,
     Future<String?> Function(WebViewLoginNeed2FA)? secondFactor,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
     addTearDown(tester.view.reset);
+    final phase = ValueNotifier<LoginSubmissionPhase?>(null);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
@@ -83,24 +88,53 @@ void main() {
           child: MaterialApp(
             navigatorKey: navigator,
             builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+                disableAnimations: reduceMotion,
+              ),
               child: child!,
             ),
             home: Scaffold(
-              body: Builder(
-                builder: (context) => TextButton(
-                  onPressed: () async {
-                    result = await showWebViewLoginDialog(
-                      context,
-                      siteKey: 'fixture',
-                      identifier: 'test-user',
-                      password: 'fixture',
-                      onNeedSecondFactor: secondFactor ?? (_) async => null,
-                    );
-                  },
-                  child: const Text('登录'),
-                ),
+              body: Stack(
+                children: [
+                  WebViewLoginHost(key: host),
+                  Center(
+                    child: SingleChildScrollView(
+                      child: ValueListenableBuilder(
+                        valueListenable: phase,
+                        builder: (context, value, _) => LoginForm(
+                          savedUsername: 'test-user',
+                          savedPassword: 'fixture',
+                          progressLabel: switch (value) {
+                            LoginSubmissionPhase.verifying =>
+                              context.l10n.login_confirmingVerification,
+                            LoginSubmissionPhase.signingIn =>
+                              context.l10n.login_captchaSubmitting,
+                            null => null,
+                          },
+                          onSubmit:
+                              ({
+                                required identifier,
+                                required password,
+                                required rememberCredentials,
+                              }) async {
+                                result = await host.currentState!.show(
+                                  siteKey: 'fixture',
+                                  identifier: identifier,
+                                  password: password,
+                                  onProgress: (value) => phase.value = value,
+                                  onNeedSecondFactor:
+                                      secondFactor ?? (_) async => null,
+                                );
+                                phase.value = null;
+                                return result?.status ==
+                                    WebViewLoginStatus.success;
+                              },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -129,12 +163,15 @@ void main() {
 
   testWidgets('同一验证视图从勾选展开到做题，关闭题目返回勾选', (tester) async {
     await open(tester, size: const Size(320, 660), scale: 1.6);
-    expect(find.text(l.captcha_loading), findsOneWidget);
+    expect(find.bySemanticsLabel(l.captcha_loading), findsOneWidget);
+    expect(find.byType(Skeleton), findsOneWidget);
+    final initial = tester.getRect(find.byType(CaptchaPanel));
     final firstView = platform.webView;
     expect(platform.controller.document, contains("size: 'normal'"));
     send('hcaptcha_ready', 78);
     await tester.pump();
     final checkboxHeight = tester.getSize(find.byType(CaptchaPanel)).height;
+    expect(tester.getRect(find.byType(CaptchaPanel)), initial);
     expect(checkboxHeight, lessThan(130));
     expect(find.bySemanticsLabel(l.login_captchaCheckbox), findsOneWidget);
     expect(find.text(l.login_captchaCheckbox), findsNothing);
@@ -167,9 +204,11 @@ void main() {
 
   testWidgets('窄于横版勾选框时使用紧凑版，并按实际控件高度留位', (tester) async {
     await open(tester, size: const Size(290, 600));
+    final initial = tester.getRect(find.byType(CaptchaPanel));
     expect(platform.controller.document, contains("size: 'compact'"));
     send('hcaptcha_ready', 144);
     await tester.pump();
+    expect(tester.getRect(find.byType(CaptchaPanel)), initial);
     expect(
       tester.getSize(find.byType(InAppWebView)).height,
       greaterThanOrEqualTo(144),
@@ -219,7 +258,7 @@ void main() {
     oldReady([]);
     oldPass(['stale']);
     await tester.pump();
-    expect(find.text(l.captcha_loading), findsOneWidget);
+    expect(find.bySemanticsLabel(l.captcha_loading), findsOneWidget);
     send('hcaptcha_ready');
     send('hcaptcha_expired');
     await tester.pumpAndSettle();
@@ -245,12 +284,25 @@ void main() {
     );
     final firstView = platform.webView;
     send('hcaptcha_ready');
+    final element = tester.element(find.byType(InAppWebView));
     send('hcaptcha_pass', 'sample');
     send('hcaptcha_pass', 'duplicate');
     send('hcaptcha_expired');
     await tester.pump();
-    expect(find.text(l.login_captchaSubmitting), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text(l.login_captchaTitle), findsNothing);
+    expect(find.byType(CaptchaPanel), findsNothing);
+    expect(find.text(l.login_confirmingVerification), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
     expect(platform.controller.submissions, 1);
+    send('login_submitting');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.text(l.login_captchaSubmitting), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
     send(
       'login_result',
       jsonEncode({
@@ -265,6 +317,10 @@ void main() {
     await tester.pump();
     expect(platform.controller.submissions, 2);
     expect(platform.webView, same(firstView));
+    expect(
+      tester.element(find.byType(InAppWebView, skipOffstage: false)),
+      same(element),
+    );
     send(
       'login_result',
       jsonEncode({
@@ -276,5 +332,140 @@ void main() {
     await tester.pumpAndSettle();
     expect(result?.status, WebViewLoginStatus.failure);
     expect(find.text('登录'), findsOneWidget);
+  });
+
+  testWidgets('桌面勾选前后等高，只有做题时加宽弹框', (tester) async {
+    await open(tester, size: const Size(1080, 720));
+    final initial = tester.getRect(find.byType(CaptchaPanel));
+    expect(initial.width, 368);
+    send('hcaptcha_ready', 78);
+    await tester.pump();
+    expect(tester.getRect(find.byType(CaptchaPanel)), initial);
+    send('hcaptcha_open');
+    await tester.pump();
+    expect(tester.getSize(find.byType(CaptchaPanel)).width, 560);
+    send('hcaptcha_close');
+    await tester.pump();
+    expect(tester.getRect(find.byType(CaptchaPanel)), initial);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('快速返回跳过等待文案，失败保留账号和密码', (tester) async {
+    await open(tester);
+    send('hcaptcha_pass', 'fixture');
+    await tester.pump(const Duration(milliseconds: 50));
+    send('login_submitting');
+    send(
+      'login_result',
+      jsonEncode({'phase': 'session', 'status': 403, 'body': '{}'}),
+    );
+    await tester.pumpAndSettle();
+    expect(result?.status, WebViewLoginStatus.failure);
+    expect(find.text(l.login_confirmingVerification), findsNothing);
+    expect(find.text(l.login_captchaSubmitting), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNotNull,
+    );
+    expect(find.text('test-user'), findsOneWidget);
+    expect(
+      tester
+          .widgetList<TextField>(find.byType(TextField))
+          .last
+          .controller!
+          .text,
+      'fixture',
+    );
+  });
+
+  testWidgets('离开登录页会结束已收起的验证会话并忽略迟到结果', (tester) async {
+    await open(tester);
+    send('hcaptcha_pass', 'fixture');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    final lateResult = platform.controller.handlers['login_result']!;
+    await tester.pumpWidget(const SizedBox.shrink());
+    lateResult([
+      jsonEncode({'phase': 'session', 'status': 200, 'body': '{}'}),
+    ]);
+    await tester.pump();
+    expect(result?.status, WebViewLoginStatus.canceled);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('关闭承载验证弹层的导航器会取消尚未提交的登录', (tester) async {
+    await open(tester);
+    final latePass = platform.controller.handlers['hcaptcha_pass']!;
+    await tester.pumpWidget(const SizedBox.shrink());
+    latePass(['fixture']);
+    await tester.pump();
+    expect(result?.status, WebViewLoginStatus.canceled);
+    expect(platform.controller.submissions, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('减少动态效果时使用静态骨架和按钮状态，并可取消二步验证', (tester) async {
+    final factor = Completer<String?>();
+    await open(
+      tester,
+      size: const Size(320, 580),
+      scale: 1.8,
+      reduceMotion: true,
+      secondFactor: (_) => factor.future,
+    );
+    expect(find.byType(Skeleton), findsNothing);
+    expect(find.byType(SkeletonBox), findsWidgets);
+    send('hcaptcha_ready', 78);
+    send('hcaptcha_pass', 'fixture');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(l.login_confirmingVerification), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    send(
+      'login_result',
+      jsonEncode({
+        'phase': 'session',
+        'status': 200,
+        'body': jsonEncode({'reason': 'second_factor', 'totp_enabled': true}),
+      }),
+    );
+    await tester.pump();
+    factor.complete(null);
+    await tester.pumpAndSettle();
+    expect(result?.status, WebViewLoginStatus.canceled);
+    expect(platform.controller.submissions, 1);
+    expect(find.byType(InAppWebView, skipOffstage: false), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('登录成功等待原会话同步，快速响应不展示中间文案', (tester) async {
+    await open(tester);
+    send('hcaptcha_pass', 'fixture');
+    await tester.pump();
+    send('login_submitting');
+    send(
+      'login_result',
+      jsonEncode({
+        'phase': 'session',
+        'status': 200,
+        'body': jsonEncode({
+          'user': {'id': 1},
+        }),
+      }),
+    );
+    await tester.pump();
+    expect(result, isNull);
+    final bootstrap = platform.controller.handlers.keys.singleWhere(
+      (name) => name.startsWith('fluxdo_session_bootstrap_'),
+    );
+    send(bootstrap, jsonEncode({'ok': true}));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(result?.status, WebViewLoginStatus.success);
+    expect(find.text(l.login_confirmingVerification), findsNothing);
+    expect(find.text(l.login_captchaSubmitting), findsNothing);
+    expect(find.byType(InAppWebView, skipOffstage: false), findsNothing);
   });
 }

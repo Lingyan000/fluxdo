@@ -5,7 +5,7 @@
   "description": "把 Discourse 官方 markdown-it cook 管线（frontend/discourse-markdown-it + frontend/pretty-text + 官方插件 markdown features）用 esbuild 打成无 DOM 依赖的 IIFE bundle，供 app 内 fluxdo_js_runtime（QuickJS）执行，实现与服务端 1:1 的预览 cook。产物输出到 ../../assets/cook/discourse-cook.js。源码取自 DISCOURSE_SRC 环境变量指向的 discourse 仓库（默认 ~/f/discourse）。",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
+    "build": "node build.mjs && node gen-emoji-names.mjs",
     "test": "node test/smoke.mjs"
   },
   "devDependencies": {
