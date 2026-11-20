@@ -2,6 +2,293 @@
 
 所有版本的变更记录。beta / rc 版本提交在 stable 发版时会折叠并入对应 stable 版本。
 
+## [0.2.31] - 2026-11-20
+
+
+### 🌟 新功能
+
+- 支持为引用、代码和折叠详情添加 AI 标识 by @Lingyan000
+
+- 在私信末尾展示相关消息 by @Lingyan000
+
+- 支持话题底栏分档选楼与渐变预览 by @Lingyan000
+
+- 打磨话题底栏：拖动定位手感与指示、快捷回复细节 by @Lingyan000
+
+- 快捷回复支持键盘内切换表情并提示最低字数 by @Lingyan000
+
+- 快捷回复支持发送快捷键 by @Lingyan000
+
+- 重做话题底栏：拖动定位、时间线、快捷回复与宽屏阅读栏 by @Lingyan000
+
+- 话题数据补充时间线日期、楼层摘要与回复权限 by @Lingyan000
+
+- 长按扇形菜单任何位置完整展示，展开与底盘同步 by @Lingyan000
+
+- 用关注动态替换追觅并完善迁移引导 by @Lingyan000
+
+- 通知支持分类与已读筛选，卡片改为动作者优先 by @Lingyan000
+
+- 栏目导航支持常驻文字形态与未读数 by @Lingyan000
+
+- 话题浏览量可点开查看近 30 天每日趋势 by @Lingyan000
+
+- 支持选择全部或本次启动的日志导出范围 by @Lingyan000
+
+
+### 🐛 修复
+
+- 优化编辑器关闭确认与草稿保护 by @Lingyan000
+
+- HTTP/2 请求优先级按 Chromium 链式依赖 by @Lingyan000
+
+- 修复滚动帖子时底栏进度线逐楼跳动 by @Lingyan000
+
+- 更新器单测跳过资源转换 by @Lingyan000
+
+- 修复动态页迁移提示间距和重复加载指示 by @Lingyan000
+
+- 修复图片查看器渐变闪烁与拖动回弹跳位 by @Lingyan000
+
+- 修复图片画廊页间距与旋转后的对齐 by @Lingyan000
+
+- 按帖子内容切换鼠标光标并修复触屏选词选段 by @Lingyan000
+
+- 修复聊天输入栏在打开菜单、收起键盘后下沉 by @Lingyan000
+
+- 修复桌面端聊天输入框底色偏上 by @Lingyan000
+
+- 话题进度拖动从当前楼层起步 by @Lingyan000
+
+- 快捷回复展开为完整编辑器时由面板截图接替，消除闪烁 by @Lingyan000
+
+- 修复全屏回复编辑器的退场动画与下拉关闭 by @Lingyan000
+
+- 修复快捷回复和 Boost 的键盘切换卡顿 by @Lingyan000
+
+- 修复首页 FAB 的主题配色与菜单动效 by @Lingyan000
+
+- 修复话题详情切回竖屏后回复栏下方的留白 by @Lingyan000
+
+- 补齐网络回归 CI 的 Linux 原生依赖 by @Lingyan000
+
+- 修复 Android profile 构建兼容性 by @Lingyan000
+
+- 让 just 使用项目固定的 Flutter SDK by @Lingyan000
+
+- 修复通知未读总数和全部已读后的状态同步 by @Lingyan000
+
+- 长回复区或长父帖从底部收起时不再越过其后的帖子 by @Lingyan000
+
+- 修复收起小程序广场后首页列表无法连续滑动 by @Lingyan000
+
+- 帖子内联展开状态改为跟随话题页实例，关闭页面后不再保留 by @Lingyan000
+
+- 长按菜单功能标签固定在扇形外侧 by @Lingyan000
+
+- 修复 Android 发布包卡在启动画面 by @Lingyan000
+
+- 修复旧 Android 插件编译 SDK 过低导致的发布构建失败 by @Lingyan000
+
+- 修复关闭内置 Kotlin 时插件漏编译 by @Lingyan000
+
+- 兼容 Gradle 9 下的 Cargokit 原生构建 by @Lingyan000
+
+- 修复 Android 无 OCSP 地址时误拒绝证书 by @Lingyan000
+
+- 解决方案横幅直接展示答案内容，长答案只渲染开头 by @Lingyan000
+
+- 表情输入组字不闪回短代码、补位不占宽 by @Lingyan000
+
+- 修复长帖脚注内容提取并同步脚注展示逻辑 by @Lingyan000
+
+- 修复关闭大图时重复切换系统栏导致聊天底栏抖动 by @Lingyan000
+
+- 修复聊天与私信 FAB 未避让底栏 by @Lingyan000
+
+- 补齐 Android 不支持撤销接口时的 OCSP 本地验证 by @Lingyan000
+
+- 修复设备 CA 并发存储与失效回退处理 by @Lingyan000
+
+- 修复 Android 可选撤销检查不支持时误拒绝证书 by @Lingyan000
+
+- 修正统计项图标偏高，同步更新话题统计测试 by @Lingyan000
+
+- 修复跨平台指纹校准与 H3 回放并接入网络回归 CI (#432) ([#432](https://github.com/lingyan000/fluxdo/pull/432)) by @Lingyan000
+
+- 统一全站 emoji 短代码识别，补齐漏渲染的标题与摘要 by @Lingyan000
+
+- 修复用户资料页切换 tab 时先闪空状态再出骨架 by @Lingyan000
+
+- 修复浏览器安全区未转发到 WebView 内核 by @Lingyan000
+
+- 按实际视口处理浏览器动态安全区和全屏切换 by @Lingyan000
+
+- 修复内置浏览器网页重复避让上下安全区 by @Lingyan000
+
+- 修复 WebView 信任等级跳转与过盾请求恢复 by @Lingyan000
+
+- 修复编辑器浮动面板在键盘弹出时的布局异常 by @Lingyan000
+
+- 修复过盾后的 Cookie 同步竞态并完善诊断 by @Lingyan000
+
+- 悬浮底栏上方不再出现横贯全屏的细线 by @Lingyan000
+
+- 恢复首页下拉刷新与小程序入口的专属动画 by @Lingyan000
+
+- 随 Windows 安装包分发 VC++ 运行库 by @Lingyan000
+
+
+### ⚡ 性能
+
+- ️ 出站 TCP 关闭 Nagle 并在桌面端开启保活 by @Lingyan000
+
+- ️ 冷启动重新校准指纹时复用已建立的连接 by @Lingyan000
+
+- ️ 握手时不再联网查询证书吊销 by @Lingyan000
+
+- ️ 原生平台剔除依赖包的 Web 专用资源 by @Lingyan000
+
+- ️ Android 原生库压缩打包，安装包缩小约 40MB by @Lingyan000
+
+- ️ 构建时将内置 SVG 编译为 SI by @Lingyan000
+
+- ️ 应用广场翻页只重建底部与新增卡片 by @Lingyan000
+
+- ️ SVG 解析结果全局复用，较大的源码移到后台解析 by @Lingyan000
+
+- ️ 应用广场卡片水印预先栅格化，下拉显现不再整页离屏合成 by @Lingyan000
+
+- ️ 提高玻璃背景截取精度，滚动时背景不再一格一格地跳 by @Lingyan000
+
+- ️ Android WebView 取样改为原生缩小绘制，小程序侧栏不再卡主线程 by @Lingyan000
+
+- ️ 玻璃改为根部统一截取背景，折射全平台可用 by @Lingyan000
+
+- ️ shader 空闲预加载、玻璃复用 shader，剧透与光标去掉空帧 by @Lingyan000
+
+- ️ 展开完整编辑器时在后台交接快捷回复草稿 by @Lingyan000
+
+- ️ 适配减少动态效果并优化列表与键盘跟手 by @Lingyan000
+
+- ️ 复用图片解码缓存并预解码相邻静态图 by @Lingyan000
+
+
+### ♻️ 重构
+
+- 重构关注动态迁移引导与旧名单入口 by @Lingyan000
+
+- 抽出后台 QuickJS 运行时并接入编辑器预览 by @Lingyan000
+
+- 回复编辑器：共用发送流程、停靠形态与变形展开 by @Lingyan000
+
+- 升级 Flutter 3.50 并迁移独立界面组件 by @Lingyan000
+
+
+### 📝 文档
+
+- 添加 v0.2.31 版本亮点 by @Lingyan000
+
+- 新增 docs 写作规范 skill by @Lingyan000
+
+- 精简 docs，只保留长期参考文档 by @Lingyan000
+
+- 补充 Homebrew 安装命令并精简更新说明 by @Lingyan000
+
+- 补充 BrowserStack 测试声明与验证记录 by @Lingyan000
+
+
+### 🔧 其他
+
+- 发布 0.2.31 by @Lingyan000
+
+- 💄 优化长按径向菜单的选中反馈、标签位置与背景 by @Lingyan000
+
+- 💄 用双色分界标示底栏阅读进度 by @Lingyan000
+
+- 发布 0.2.31-beta.10 by @Lingyan000
+
+- 💄 合并富文本 AI 内容工具为分级入口 by @Lingyan000
+
+- 发布 0.2.31-beta.9 by @Lingyan000
+
+- 💄 优化图片长按预览动效并适配宽屏菜单 by @Lingyan000
+
+- 💄 父帖改用分段卡片，展开回复改为头像串在竖线上 by @Lingyan000
+
+- 💄 优化话题目录布局与章节导航 by @Lingyan000
+
+- 💄 统一私信页头与成员入口的布局 by @Lingyan000
+
+- 💄 让话题悬浮底栏的进度线和渐变沿顶边衔接 by @Lingyan000
+
+- 💄 平滑话题拖动摘要在帖子图片上的渐变 by @Lingyan000
+
+- 💄 统一话题进度条的展开动效与拖动预览 by @Lingyan000
+
+- 💄 优化私信成员展示和邀请体验 by @Lingyan000
+
+- 💄 重做编辑页顶栏：实色胶囊、渐隐遮罩与统一布局网格 by @Lingyan000
+
+- 💄 统一通知弹框、历史列表和栏目选中态 by @Lingyan000
+
+- ⬆️ 更新 Rust 网络核心兼容范围内的依赖 by @Lingyan000
+
+- ⬆️ 升级 Markdown 预览、编辑器校验和兼容脚本工具链 by @Lingyan000
+
+- ⬆️ 升级 Flutter 插件与 AI SDK 并适配平台接口 by @Lingyan000
+
+- 💄 将追觅迁移提示收进关注动态入口 by @Lingyan000
+
+- 💄 父帖卡与回复收起按钮改为 M3E 样式 by @Lingyan000
+
+- 🔧 使用 JDK 21 运行 Android 发布构建 by @Lingyan000
+
+- 🚀 发布修复构建的 0.2.31-beta.8 by @Lingyan000
+
+- 🚀 重新发布 0.2.31-beta.8 by @Lingyan000
+
+- 🚀 发布 0.2.31-beta.9 by @Lingyan000
+
+- 🔧 对齐 Flutter 3.50 的 Android 构建工具版本 by @Lingyan000
+
+- 💄 父帖改为引用卡，展开的回复改为与主帖同构的迷你帖 by @Lingyan000
+
+- 🚀 发布 0.2.31-beta.8 by @Lingyan000
+
+- 🔒 补齐会话失败诊断并脱敏日志中的用户名 by @Lingyan000
+
+- 💄 回复与父帖改为竖线串联样式，展开状态滑出屏幕后保留 by @Lingyan000
+
+- 💄 统一分页加载指示器的标准尺寸与留白 by @Lingyan000
+
+- 🔧 补齐 macOS 多窗口与更新组件依赖锁文件 by @Lingyan000
+
+- 🚀 发布 0.2.31-beta.7 by @Lingyan000
+
+- 🔒 限制代理 CA 信任范围并补充真实 TLS 回归 by @Lingyan000
+
+- 🔒 补齐 WebView 证书用途与代理 CA 材料校验 by @Lingyan000
+
+- 🔒 避免请求路径和 DoH 错误回显泄露密钥 by @Lingyan000
+
+- 🔒 脱敏日志导出头与网络配置摘要 by @Lingyan000
+
+- 🔎 保留上游证书拒绝原因与失败连接诊断 ([#434](https://github.com/lingyan000/fluxdo/pull/434)) by @Lingyan000
+
+- 💄 资料页活动卡片在卡片形态下与栏边留出间距 by @Lingyan000
+
+- 💄 话题统计弹层改用分段卡片，修正统计项图标与文字对齐 by @Lingyan000
+
+- 💄 M3E 下拉刷新改为同一形状贯穿拉动与加载 by @Lingyan000
+
+- 💄 话题统计区改为常驻统计行，明细在底部弹层浏览 by @Lingyan000
+
+
+
+
+**Full Changelog**: https://github.com/lingyan000/fluxdo/compare/v0.2.30...v0.2.31
+
 ## [0.2.30] - 2026-11-13
 
 
