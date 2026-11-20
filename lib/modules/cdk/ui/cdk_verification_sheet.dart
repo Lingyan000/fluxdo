@@ -6,14 +6,13 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/cookie/webview_cookie_priming.dart';
 import '../../../services/webview_settings.dart';
 import '../../../services/windows_webview_environment_service.dart';
 import '../../../utils/link_launcher.dart';
-import '../../../widgets/common/app_bottom_sheet.dart';
+import '../../../widgets/common/captcha_panel.dart';
 import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import 'cdk_project_widgets.dart';
@@ -26,15 +25,11 @@ Future<String?> showCdkVerification(
   CdkClient client,
   CdkProject project, {
   Future<String?> Function()? verify,
-}) => AppBottomSheet.show<String>(
+}) => showCaptchaSheet<String>(
   context: context,
   title: project.paid
       ? context.l10n.cdk_confirmPaid
       : context.l10n.cdk_confirmReceive,
-  style: AppSheetStyle.card,
-  showDragHandle: true,
-  maxHeightFactor: 0.95,
-  contentPadding: EdgeInsets.zero,
   builder: (_) => CdkSessionContent(
     client: client,
     builder: (_) =>
@@ -189,10 +184,12 @@ class _CdkClaimContentState extends State<CdkClaimContent> {
     final t = Theme.of(context);
     final p = widget.project;
     final attempt = _attempt;
+    void onEvent(CdkVerificationEvent event) =>
+        unawaited(_event(event, attempt));
     final failed = _phase == CdkVerificationPhase.failed;
     final challenge = _phase == CdkVerificationPhase.challenge;
     final errorText = switch (_failure) {
-      'expired' => l.cdk_verifyExpired,
+      'expired' => l.captcha_expired,
       'closed' => l.cdk_verifyClosed,
       'interrupted' => l.cdk_verifyInterrupted,
       _ => l.cdk_verifyFailed,
@@ -206,72 +203,24 @@ class _CdkClaimContentState extends State<CdkClaimContent> {
         children: [
           Flexible(
             child: _running
-                ? SizedBox(
-                    height: MediaQuery.sizeOf(context).height * 0.68,
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                          child: Text(
-                            challenge
-                                ? l.cdk_verifyHint
-                                : l.cdk_verifyPreparing,
-                            style: t.textTheme.bodyMedium,
-                          ),
-                        ),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              if (widget.verify == null)
-                                Positioned.fill(
-                                  child: ExcludeSemantics(
-                                    excluding: !challenge,
-                                    child: IgnorePointer(
-                                      ignoring: !challenge,
-                                      child: Opacity(
-                                        opacity: challenge ? 1 : 0,
-                                        child: KeyedSubtree(
-                                          key: ValueKey(attempt),
-                                          child:
-                                              widget.challengeBuilder?.call(
-                                                context,
-                                                (event) => unawaited(
-                                                  _event(event, attempt),
-                                                ),
-                                              ) ??
-                                              _CdkChallenge(
-                                                client: widget.client,
-                                                projectId: p.id,
-                                                onEvent: (event) => unawaited(
-                                                  _event(event, attempt),
-                                                ),
-                                              ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                ? CaptchaPanel(
+                    phase: challenge
+                        ? CaptchaPanelPhase.challenge
+                        : CaptchaPanelPhase.loading,
+                    message: challenge
+                        ? l.cdk_verifyHint
+                        : l.cdk_verifyPreparing,
+                    child: widget.verify == null
+                        ? KeyedSubtree(
+                            key: ValueKey(attempt),
+                            child: widget.challengeBuilder?.call(context, onEvent) ??
+                                _CdkChallenge(
+                                  client: widget.client,
+                                  projectId: p.id,
+                                  onEvent: onEvent,
                                 ),
-                              if (!challenge)
-                                Positioned.fill(
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const LoadingSpinner(size: 40),
-                                        const SizedBox(height: 20),
-                                        Text(
-                                          l.cdk_verifyTitle,
-                                          style: t.textTheme.titleMedium,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                          )
+                        : null,
                   )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),

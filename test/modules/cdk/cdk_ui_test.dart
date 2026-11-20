@@ -16,7 +16,7 @@ import 'package:fluxdo/modules/cdk/ui/cdk_project_page.dart';
 import 'package:fluxdo/modules/cdk/ui/cdk_widgets.dart';
 import 'package:fluxdo/modules/cdk/ui/cdk_verification_sheet.dart';
 import 'package:fluxdo/modules/cdk/models/cdk_models.dart';
-import 'package:fluxdo/widgets/common/app_bottom_sheet.dart';
+import 'package:fluxdo/widgets/common/captcha_panel.dart';
 import 'package:fluxdo/providers/cdk_providers.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
@@ -344,12 +344,9 @@ void main() {
           Builder(
             builder: (context) => TextButton(
               onPressed: () async {
-                result = await AppBottomSheet.show<String>(
+                result = await showCaptchaSheet<String>(
                   context: context,
                   title: S.current.cdk_confirmReceive,
-                  showDragHandle: true,
-                  contentPadding: EdgeInsets.zero,
-                  maxHeightFactor: 0.95,
                   builder: (_) => CdkSessionContent(
                     client: api.client,
                     builder: (_) => CdkClaimContent(
@@ -379,13 +376,16 @@ void main() {
       expect(find.text(S.current.cdk_verifyPreparing), findsOneWidget);
       await snapshot(tester, 'verification-loading-${brightness.name}');
       final old = callbacks.last;
+      final panel = find.byType(CaptchaPanel);
+      final loadingHeight = tester.getSize(panel).height;
       old(const CdkVerificationEvent('challenge'));
       await tester.pumpAndSettle();
+      expect(tester.getSize(panel).height, greaterThan(loadingHeight));
       expect(find.text(S.current.cdk_verifyHint), findsOneWidget);
       await snapshot(tester, 'verification-challenge-${brightness.name}');
       old(const CdkVerificationEvent('error', 'expired'));
       await tester.pumpAndSettle();
-      expect(find.text(S.current.cdk_verifyExpired), findsOneWidget);
+      expect(find.text(S.current.captcha_expired), findsOneWidget);
       await snapshot(tester, 'verification-expired-${brightness.name}');
       await tester.tap(find.text(S.current.common_retry));
       await tester.pump();

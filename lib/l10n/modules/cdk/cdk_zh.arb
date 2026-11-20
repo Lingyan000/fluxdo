@@ -1,13 +1,11 @@
 {
   "@@locale": "zh",
-  "cdk_verifyTitle": "完成领取验证",
   "cdk_verifyHint": "请完成下方验证，完成后自动继续领取。",
   "cdk_verifyFailed": "验证暂时无法加载，可以直接重试。如果官网要求重新登录，请先打开网站完成登录。",
   "cdk_verifyPreparing": "正在连接 CDK 验证服务…",
   "cdk_captchaDisclosure": "本次验证由 hCaptcha 提供，适用其隐私政策与服务条款。",
   "cdk_captchaPrivacy": "隐私政策",
   "cdk_captchaTerms": "服务条款",
-  "cdk_verifyExpired": "验证已过期，请重新验证。",
   "cdk_verifyClosed": "验证已取消，尚未提交领取。",
   "cdk_verifyInterrupted": "验证已暂停，请重新验证后继续。",
   "cdk_verifyAndContinue": "继续领取",

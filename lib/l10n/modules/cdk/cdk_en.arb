@@ -1,13 +1,11 @@
 {
   "@@locale": "en",
-  "cdk_verifyTitle": "Verify your claim",
   "cdk_verifyHint": "Complete the challenge below to continue your claim automatically.",
   "cdk_verifyFailed": "Verification could not load. Try again here, or open the website if you need to sign in again.",
   "cdk_verifyPreparing": "Connecting to CDK verification…",
   "cdk_captchaDisclosure": "Verification is provided by hCaptcha. Its Privacy Policy and Terms of Service apply.",
   "cdk_captchaPrivacy": "Privacy Policy",
   "cdk_captchaTerms": "Terms of Service",
-  "cdk_verifyExpired": "Verification expired. Please try again.",
   "cdk_verifyClosed": "Verification was canceled. No claim was submitted.",
   "cdk_verifyInterrupted": "Verification was paused. Verify again to continue.",
   "cdk_verifyAndContinue": "Continue",

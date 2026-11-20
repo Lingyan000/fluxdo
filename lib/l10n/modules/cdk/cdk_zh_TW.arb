@@ -1,13 +1,11 @@
 {
   "@@locale": "zh_TW",
-  "cdk_verifyTitle": "完成領取驗證",
   "cdk_verifyHint": "請完成下方驗證，完成後自動繼續領取。",
   "cdk_verifyFailed": "暫時無法載入驗證，可直接重試。如果官網要求重新登入，請先開啟網站完成登入。",
   "cdk_verifyPreparing": "正在連線至 CDK 驗證服務…",
   "cdk_captchaDisclosure": "本次驗證由 hCaptcha 提供，適用其隱私權政策與服務條款。",
   "cdk_captchaPrivacy": "隱私權政策",
   "cdk_captchaTerms": "服務條款",
-  "cdk_verifyExpired": "驗證已過期，請重新驗證。",
   "cdk_verifyClosed": "驗證已取消，尚未提交領取。",
   "cdk_verifyInterrupted": "驗證已暫停，請重新驗證後繼續。",
   "cdk_verifyAndContinue": "繼續領取",
