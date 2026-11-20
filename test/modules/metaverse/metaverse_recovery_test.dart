@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_backup.dart';
+import 'package:fluxdo/modules/metaverse/market/metaverse_update_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
@@ -151,6 +152,34 @@ void main() {
       }),
       throwsFormatException,
     );
+  });
+
+  test('恢复队列满时保持原有更新计划，成功暂存后才恢复设置', () {
+    final backup = MetaversePluginBackup(directory);
+    final updates = MetaverseUpdateStore(directory);
+    Map<String, dynamic> record(int index) => {
+      'manifest': {...updateManifest('1.0.0'), 'id': 'example.restore$index'},
+      'source': 'file:example.restore$index',
+      'data': <String, dynamic>{},
+    };
+    backup.stage({
+      'version': 1,
+      'plugins': [for (var i = 0; i < 32; i++) record(i)],
+    });
+    final section = {
+      'version': 1,
+      'plugins': [record(32)],
+      'updates': {'frequency': 'sixHours', 'preview': true},
+    };
+    expect(() => backup.stage(section), throwsFormatException);
+    expect(backup.pending(), hasLength(32));
+    expect(updates.snapshot().frequency, MetaverseUpdateFrequency.daily);
+    expect(updates.snapshot().preview, false);
+    backup.remove('example.restore0');
+    backup.stage(section);
+    expect(backup.pending(), hasLength(32));
+    expect(updates.snapshot().frequency, MetaverseUpdateFrequency.sixHours);
+    expect(updates.snapshot().preview, true);
   });
 
   test('权限减少可自动更新，扩大域名及凭证路径须审阅', () {

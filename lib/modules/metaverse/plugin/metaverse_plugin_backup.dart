@@ -163,16 +163,6 @@ class MetaversePluginBackup {
 
   void stage(Object? section) {
     final entries = validate(section);
-    if (section is Map && section['updates'] is Map) {
-      final updates = section['updates'] as Map;
-      MetaverseUpdateStore(root)
-        ..setFrequency(
-          MetaverseUpdateFrequency.values.firstWhere(
-            (f) => f.name == updates['frequency'],
-          ),
-        )
-        ..setPreview(updates['preview'] as bool);
-    }
     _database((db) {
       db.execute('BEGIN IMMEDIATE');
       try {
@@ -193,6 +183,16 @@ class MetaversePluginBackup {
         rethrow;
       }
     });
+    if (section is Map && section['updates'] is Map) {
+      final updates = section['updates'] as Map;
+      MetaverseUpdateStore(root)
+        ..setFrequency(
+          MetaverseUpdateFrequency.values.firstWhere(
+            (f) => f.name == updates['frequency'],
+          ),
+        )
+        ..setPreview(updates['preview'] as bool);
+    }
   }
 
   List<Map<String, dynamic>> pending() => _database(
