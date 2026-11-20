@@ -413,7 +413,12 @@ Future<ui.Image> _acquireThumbnail({
   final generation = _thumbnailGeneration;
   final thumbKey = _thumbnailCacheKey(url, targetSize);
   final taskKey = '$bucket:$thumbKey';
-  if (priority == DownloadPriority.high) BlobImageCache.bump(bucket, url);
+  if (priority == DownloadPriority.high) {
+    BlobImageCache.bump(bucket, url);
+    if (bucket == BlobImageCache.stickerOriginalBucket) {
+      StickerThumbnailSource.bump(url, displayUrl, targetSize);
+    }
+  }
   var cold = false;
   _SharedThumbnailFrame? sharedTask;
   bool canContinue() =>

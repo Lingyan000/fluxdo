@@ -2,8 +2,6 @@ import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/sticker.dart';
@@ -19,6 +17,7 @@ import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import 'sticker_market_sheet.dart';
+import 'sticker_preview.dart';
 import '../../../../../l10n/s.dart';
 
 /// 表情包选择器
@@ -70,8 +69,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
   bool _marketOpen = false;
 
   // ==================== 长按预览 ====================
-  OverlayEntry? _previewEntry;
-  final _previewNotifier = ValueNotifier<_PreviewData?>(null);
+  final _preview = StickerPreviewController();
 
   @override
   bool get wantKeepAlive => true;
@@ -94,8 +92,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     // _ThumbnailCancelled。
     // 打开市场前已取消旧一代任务；此时销毁不能再取消市场的新任务。
     if (!_marketOpen) StickerThumbnailProvider.cancelInflight();
-    _endPreview();
-    _previewNotifier.dispose();
+    _preview.dispose();
     _activeGroupIndex.dispose();
     _scrollController.dispose();
     _tabScrollController.dispose();
@@ -211,52 +208,6 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
-  }
-
-  // ==================== 长按预览 ====================
-
-  void _startPreview(StickerItem sticker, Rect itemRect) {
-    HapticFeedback.mediumImpact();
-    final screenSize = MediaQuery.of(context).size;
-    _previewNotifier.value = _PreviewData(sticker, itemRect, screenSize);
-    _previewEntry = OverlayEntry(
-      builder: (_) => _StickerPreviewOverlay(notifier: _previewNotifier),
-    );
-    Overlay.of(context).insert(_previewEntry!);
-  }
-
-  void _movePreview(Offset globalPosition) {
-    final found = _findStickerAt(globalPosition);
-    if (found != null && found.$1.id != _previewNotifier.value?.sticker.id) {
-      HapticFeedback.selectionClick();
-      final screenSize = _previewNotifier.value!.screenSize;
-      _previewNotifier.value = _PreviewData(found.$1, found.$2, screenSize);
-    }
-  }
-
-  void _endPreview() {
-    _previewEntry?.remove();
-    _previewEntry = null;
-    _previewNotifier.value = null;
-  }
-
-  (StickerItem, Rect)? _findStickerAt(Offset globalPosition) {
-    final result = HitTestResult();
-    WidgetsBinding.instance.hitTestInView(
-      result,
-      globalPosition,
-      View.of(context).viewId,
-    );
-    for (final entry in result.path) {
-      if (entry.target is RenderMetaData) {
-        final meta = entry.target as RenderMetaData;
-        if (meta.metaData is StickerItem) {
-          final rect = meta.localToGlobal(Offset.zero) & meta.size;
-          return (meta.metaData as StickerItem, rect);
-        }
-      }
-    }
-    return null;
   }
 
   // ==================== 构建 ====================
@@ -533,9 +484,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
         _StickerGroupSliverContent(
           groupId: group.id,
           onStickerTap: _onStickerTap,
-          onPreviewStart: _startPreview,
-          onPreviewMove: _movePreview,
-          onPreviewEnd: _endPreview,
+          preview: _preview,
         ),
       );
       keyIndex++;
@@ -571,12 +520,10 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       padding: const EdgeInsets.symmetric(horizontal: 12),
       sliver: SliverGrid(
         delegate: SliverChildBuilderDelegate(
-          (_, index) => _StickerItemWidget(
+          (_, index) => StickerGridCell(
             sticker: stickers[index],
+            preview: _preview,
             onTap: () => _onStickerTap(stickers[index]),
-            onPreviewStart: _startPreview,
-            onPreviewMove: _movePreview,
-            onPreviewEnd: _endPreview,
           ),
           childCount: stickers.length,
         ),
@@ -594,16 +541,12 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
 class _StickerGroupSliverContent extends ConsumerWidget {
   final String groupId;
   final ValueChanged<StickerItem> onStickerTap;
-  final void Function(StickerItem, Rect) onPreviewStart;
-  final void Function(Offset) onPreviewMove;
-  final VoidCallback onPreviewEnd;
+  final StickerPreviewController preview;
 
   const _StickerGroupSliverContent({
     required this.groupId,
     required this.onStickerTap,
-    required this.onPreviewStart,
-    required this.onPreviewMove,
-    required this.onPreviewEnd,
+    required this.preview,
   });
 
   @override
@@ -673,12 +616,10 @@ class _StickerGroupSliverContent extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       sliver: SliverGrid(
         delegate: SliverChildBuilderDelegate(
-          (_, index) => _StickerItemWidget(
+          (_, index) => StickerGridCell(
             sticker: detail.emojis[index],
+            preview: preview,
             onTap: () => onStickerTap(detail.emojis[index]),
-            onPreviewStart: onPreviewStart,
-            onPreviewMove: onPreviewMove,
-            onPreviewEnd: onPreviewEnd,
           ),
           childCount: detail.emojis.length,
         ),
@@ -686,212 +627,6 @@ class _StickerGroupSliverContent extends ConsumerWidget {
           maxCrossAxisExtent: 80,
           mainAxisSpacing: 8,
           crossAxisSpacing: 8,
-        ),
-      ),
-    );
-  }
-}
-
-/// 单个表情包图片（支持长按滑动预览）
-class _StickerItemWidget extends StatelessWidget {
-  final StickerItem sticker;
-  final VoidCallback onTap;
-  final void Function(StickerItem, Rect) onPreviewStart;
-  final void Function(Offset) onPreviewMove;
-  final VoidCallback onPreviewEnd;
-
-  const _StickerItemWidget({
-    required this.sticker,
-    required this.onTap,
-    required this.onPreviewStart,
-    required this.onPreviewMove,
-    required this.onPreviewEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // RepaintBoundary 隔离单 cell 的重绘 — 一张 sticker 解码完 setImage 时
-    // 只这一格重绘,不连累整个 grid。30 张同时陆续 setImage 时这是关键优化。
-    return RepaintBoundary(
-      child: MetaData(
-        metaData: sticker,
-        behavior: HitTestBehavior.opaque,
-        child: GestureDetector(
-          onTap: onTap,
-          onLongPressStart: (_) {
-            final box = context.findRenderObject() as RenderBox;
-            final rect = box.localToGlobal(Offset.zero) & box.size;
-            onPreviewStart(sticker, rect);
-          },
-          onLongPressMoveUpdate: (details) {
-            onPreviewMove(details.globalPosition);
-          },
-          onLongPressEnd: (_) => onPreviewEnd(),
-          onLongPressCancel: onPreviewEnd,
-          child: Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: CachedImage(
-              url: sticker.url,
-              fit: BoxFit.contain,
-              memCacheWidth: 160,
-              memCacheHeight: 160,
-              thumbnailMode: true,
-              thumbnailDisplayUrl: sticker.displayUrl,
-              bucket: BlobImageCache.stickerOriginalBucket,
-              // 解码期占位:Telegram/微信 风格 — 灰色圆角骨架,不用 spinner
-              // (每格一个 spinner 会让 grid 视觉吵)。配合 gaplessPlayback 平滑切到图。
-              placeholder: (ctx) => DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                  shape: RoundedSuperellipseBorder(
-                    borderRadius: context.shapes.borderRadius(6),
-                  ),
-                ),
-              ),
-              errorBuilder: (_, _, _) => Icon(
-                Symbols.broken_image_rounded,
-                size: 24,
-                color: Theme.of(context).colorScheme.outline,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 预览数据
-class _PreviewData {
-  final StickerItem sticker;
-  final Rect itemRect;
-  final Size screenSize;
-  const _PreviewData(this.sticker, this.itemRect, this.screenSize);
-}
-
-/// 预览 Overlay（监听 ValueNotifier 实时更新）
-class _StickerPreviewOverlay extends StatelessWidget {
-  final ValueNotifier<_PreviewData?> notifier;
-  const _StickerPreviewOverlay({required this.notifier});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<_PreviewData?>(
-      valueListenable: notifier,
-      builder: (context, data, _) {
-        if (data == null) return const SizedBox.shrink();
-        return _StickerPreviewPopup(
-          sticker: data.sticker,
-          itemRect: data.itemRect,
-          screenSize: data.screenSize,
-        );
-      },
-    );
-  }
-}
-
-/// 长按弹出的表情包放大预览
-class _StickerPreviewPopup extends StatelessWidget {
-  final StickerItem sticker;
-  final Rect itemRect;
-  final Size screenSize;
-
-  static const double _previewSize = 180;
-  static const double _nameHeight = 28;
-  static const double _cardPadding = 8;
-  static const double _totalHeight =
-      _previewSize + _nameHeight + _cardPadding * 2;
-  static const double _totalWidth = _previewSize + _cardPadding * 2;
-  static const double _screenMargin = 12;
-
-  const _StickerPreviewPopup({
-    required this.sticker,
-    required this.itemRect,
-    required this.screenSize,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    // 垂直定位：优先上方，空间不足时改下方
-    final spaceAbove = itemRect.top - _screenMargin;
-    final showAbove = spaceAbove >= _totalHeight;
-    final dy = showAbove
-        ? itemRect.top - _totalHeight - 8
-        : itemRect.bottom + 8;
-
-    // 水平居中对齐缩略图，clamp 防溢出
-    final dx = (itemRect.center.dx - _totalWidth / 2).clamp(
-      _screenMargin,
-      screenSize.width - _totalWidth - _screenMargin,
-    );
-
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
-      left: dx,
-      top: dy,
-      child: IgnorePointer(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.0, end: 1.0),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutBack,
-          builder: (context, value, child) => Opacity(
-            opacity: value.clamp(0.0, 1.0),
-            child: Transform.scale(
-              scale: 0.6 + 0.4 * value,
-              alignment: showAbove
-                  ? Alignment.bottomCenter
-                  : Alignment.topCenter,
-              child: child,
-            ),
-          ),
-          child: Material(
-            elevation: 8,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: context.shapes.borderRadius(16),
-            ),
-            color: theme.colorScheme.surfaceContainerHigh,
-            child: Padding(
-              padding: const EdgeInsets.all(_cardPadding),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: _previewSize,
-                    height: _previewSize,
-                    child: CachedImage(
-                      url: sticker.url,
-                      fit: BoxFit.contain,
-                      // 不传 memCacheWidth → AVIF 完整解码（含动画）
-                      bucket: BlobImageCache.stickerOriginalBucket,
-                      errorBuilder: (_, _, _) => Icon(
-                        Symbols.broken_image_rounded,
-                        size: 48,
-                        color: theme.colorScheme.outline,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: _previewSize,
-                    height: _nameHeight,
-                    child: Center(
-                      child: Text(
-                        sticker.name,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
       ),
     );

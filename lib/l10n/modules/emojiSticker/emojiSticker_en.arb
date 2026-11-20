@@ -20,6 +20,8 @@
   "sticker_addFromMarket": "Add from market",
   "sticker_addTooltip": "Add stickers",
   "sticker_added": "Added",
+  "sticker_addGroupCount": "Add {count} stickers",
+  "sticker_removeGroup": "Remove sticker pack",
   "sticker_emojiCount": "{count} emoji",
   "sticker_groupEmpty": "No stickers in this group",
   "sticker_loadFailed": "Failed to load stickers",

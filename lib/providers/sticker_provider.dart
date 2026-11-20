@@ -69,6 +69,30 @@ final stickerGroupDetailProvider =
       }
     });
 
+/// 市场卡片预览条:分组的前几张表情。
+///
+/// 卡片进视口才拉详情(文件缓存 24h),只保留前 [marketPreviewCount] 张,
+/// 完整详情随即释放;离开视口后保留一会儿,来回滚动不重复解析。
+const int marketPreviewCount = 5;
+
+final marketGroupPreviewProvider = FutureProvider.autoDispose
+    .family<List<StickerItem>, String>((ref, groupId) async {
+      final link = ref.keepAlive();
+      final timer = Timer(const Duration(minutes: 2), link.close);
+      ref.onDispose(timer.cancel);
+      final service = ref.watch(stickerMarketServiceProvider);
+      final detail = await service.getGroupDetail(groupId);
+      return detail.emojis.take(marketPreviewCount).toList(growable: false);
+    });
+
+/// 市场分组预览页的完整详情。与 [stickerGroupDetailProvider] 分开:那个常驻
+/// 内存并带面板预热,只给已订阅分组;这里随预览页关闭释放。
+final marketGroupDetailProvider = FutureProvider.autoDispose
+    .family<StickerGroupDetail, String>((ref, groupId) {
+      final service = ref.watch(stickerMarketServiceProvider);
+      return service.getGroupDetail(groupId);
+    });
+
 /// 当前活跃 prefetch 的 groupId。每次新组进来就覆盖,旧组 task 通过
 /// `_activePrefetchGroupId != myGroupId` 自我作废,避免用户快速切组后
 /// 老组的 30 张 thumbnail 还在后台占 CPU + ImageCache。

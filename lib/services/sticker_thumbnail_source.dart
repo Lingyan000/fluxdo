@@ -70,7 +70,8 @@ class StickerThumbnailSource {
           proxyUri(source, targetSize),
           channel: DownloadChannel.stickerThumb,
           priority: priority(),
-          callTimeout: const Duration(seconds: 20),
+          // 代理偶发整条请求卡住(实测约 1/60 卡满 30s),不能让它长时间占槽
+          callTimeout: const Duration(seconds: 8),
         );
         _proxyServiceFailures = 0;
         if (_looksLikeWebp(bytes)) return bytes;
@@ -86,6 +87,20 @@ class StickerThumbnailSource {
       if (bytes != null) return bytes;
     }
     return BlobImageCache.fetch(bucket, source, priority: priority());
+  }
+
+  /// 把排队中的取源请求提到前台(同一张图先被预览条以普通优先级请求、
+  /// 随后在预览页里可见时用)。在途与未排队的请求不受影响。
+  static void bump(String url, String? displayUrl, int targetSize) {
+    final source =
+        (displayUrl != null && displayUrl.isNotEmpty && displayUrl != url)
+        ? displayUrl
+        : url;
+    DioHttpClient.bumpPending(
+      DownloadChannel.stickerThumb,
+      proxyUri(source, targetSize).toString(),
+    );
+    DioHttpClient.bumpPending(DownloadChannel.stickerThumb, source);
   }
 
   static bool _proxyUsable(String url) {

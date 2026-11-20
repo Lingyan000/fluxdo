@@ -20,6 +20,8 @@
   "sticker_addFromMarket": "從市場添加",
   "sticker_addTooltip": "添加表情包",
   "sticker_added": "已添加",
+  "sticker_addGroupCount": "加入 {count} 個表情",
+  "sticker_removeGroup": "移除表情包",
   "sticker_emojiCount": "{count} 個表情",
   "@sticker_emojiCount": {
     "placeholders": {

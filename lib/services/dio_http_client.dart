@@ -82,7 +82,7 @@ class DioHttpClient extends http.BaseClient {
   /// 头像与 emoji 共享 12 槽小图池；静态头像最多 6 个、可能的动图
   /// 头像最多 2 个，组间公平轮转，避免大动图阻塞静态头像。
   /// 没有头像时 emoji 仍可使用原有 12 槽，不因固定分配而降低吞吐。
-  /// 正文/原图等 6 槽、贴纸原文件 3 槽、贴纸缩略图 6 槽各自独立，总上限 27。
+  /// 正文/原图等 6 槽、贴纸原文件 3 槽、贴纸缩略图 12 槽各自独立，总上限 33。
   /// 槽位覆盖响应体消费及写盘背压，不随域名数量扩容；任务数约束
   /// 不等同于字节预算或进程总内存上限，动图头像也受头像组上限约束。
   static final DownloadRequestQueue _smallSemaphore = DownloadRequestQueue(
@@ -99,9 +99,10 @@ class DioHttpClient extends http.BaseClient {
   );
 
   /// 贴纸缩略图源（缩放代理 / Range 首帧）：响应只有几 KB，耗时主要在
-  /// 服务端处理，与原文件共用 3 槽会让整屏缩略图排长队。
+  /// 服务端处理（冷请求约 0.9s/张），吞吐受并发数限制。实测 60 张冷请求
+  /// 6 槽 13.6s、12 槽约 6s；预留 2 槽给前台(预览页、面板可见格子)。
   static final DownloadRequestQueue _stickerThumbSemaphore =
-      DownloadRequestQueue(6, reservedHighSlots: 1);
+      DownloadRequestQueue(12, reservedHighSlots: 2);
 
   /// [send](http.BaseClient 接口,现无常驻调用方)沿用内容通道。
   static DownloadRequestQueue get _downloadSemaphore => _contentSemaphore;

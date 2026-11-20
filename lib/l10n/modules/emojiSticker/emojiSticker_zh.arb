@@ -20,6 +20,15 @@
   "sticker_addFromMarket": "从市场添加",
   "sticker_addTooltip": "添加表情包",
   "sticker_added": "已添加",
+  "sticker_addGroupCount": "添加 {count} 个表情",
+  "@sticker_addGroupCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "sticker_removeGroup": "移除表情包",
   "sticker_emojiCount": "{count} 个表情",
   "@sticker_emojiCount": {
     "placeholders": {
