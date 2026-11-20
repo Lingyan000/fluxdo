@@ -19,6 +19,7 @@ import '../../services/webview_session_cookie_refresh_service.dart';
 import '../../services/webview_settings.dart';
 import '../../services/windows_webview_environment_service.dart';
 import '../common/captcha_panel.dart';
+import '../common/hcaptcha_layout_script.dart';
 
 /// 登录对话框结果状态。
 enum WebViewLoginStatus { success, failure, canceled }
@@ -119,6 +120,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   InAppWebViewController? _controller;
   Widget? _attemptWebView;
   CaptchaPanelPhase _phase = CaptchaPanelPhase.loading;
+  double? _checkboxHeight;
+  double? _challengeHeight;
   Timer? _loadTimeout;
   int _attempt = 0;
   bool _expired = false;
@@ -169,6 +172,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     if (_finished || _phase != CaptchaPanelPhase.failed) return;
     setState(() {
       _attempt++;
+      _checkboxHeight = null;
+      _challengeHeight = null;
       _controller = null;
       _windowsInlineHtmlInjected = false;
       _phase = CaptchaPanelPhase.loading;
@@ -207,8 +212,13 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   WebUri get _windowsBootstrapUrl =>
       WebUri('${AppConstants.baseUrl}/robots.txt');
 
-  String get _inlineHtml {
+  String _inlineHtml({required bool compact}) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = Theme.of(context).colorScheme.surface
+        .toARGB32()
+        .toRadixString(16)
+        .padLeft(8, '0')
+        .substring(2);
     final locale = Localizations.localeOf(context);
     final language =
         locale.languageCode == 'zh' &&
@@ -225,13 +235,14 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    html, body { margin: 0; min-height: 100%; background: transparent; }
-    #cap { min-height: 100vh; display: grid; place-items: center; }
+    html, body { margin: 0; min-height: 100%; background: #$surface; color-scheme: ${dark ? 'dark' : 'light'}; }
+    main { min-height: 100vh; display: grid; align-items: center; justify-content: center; justify-content: safe center; }
   </style>
 </head>
 <body>
-  <div id="cap" data-sitekey="${const HtmlEscape().convert(widget.siteKey)}"></div>
+  <main><div id="cap" data-sitekey="${const HtmlEscape().convert(widget.siteKey)}"></div></main>
   <script>
+    $hCaptchaLayoutScript
     function call(name, payload) {
       const send = () => window.flutter_inappwebview.callHandler(name, payload);
       if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) send();
@@ -240,19 +251,31 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     function renderCheckbox() {
       try {
         const container = document.getElementById('cap');
+        let stopLayout;
+        function finish(name, value) {
+          stopLayout?.();
+          stopLayout = null;
+          call(name, value);
+        }
         hcaptcha.render(container, {
           sitekey: container.dataset.sitekey,
           theme: '${dark ? 'dark' : 'light'}',
           hl: ${jsonEncode(language)},
-          size: window.innerWidth < 320 ? 'compact' : 'normal',
-          callback: token => call('hcaptcha_pass', token),
-          'open-callback': () => call('hcaptcha_open', null),
-          'close-callback': () => call('hcaptcha_close', null),
-          'expired-callback': () => call('hcaptcha_expired', null),
-          'chalexpired-callback': () => call('hcaptcha_expired', null),
-          'error-callback': () => call('hcaptcha_error', null)
+          size: '${compact ? 'compact' : 'normal'}',
+          callback: token => finish('hcaptcha_pass', token),
+          'open-callback': () => {
+            call('hcaptcha_open', null);
+            stopLayout?.();
+            stopLayout = watchHCaptchaLayout(container, height => call('hcaptcha_height', height));
+          },
+          'close-callback': () => finish('hcaptcha_close', null),
+          'expired-callback': () => finish('hcaptcha_expired', null),
+          'chalexpired-callback': () => finish('hcaptcha_expired', null),
+          'error-callback': () => finish('hcaptcha_error', null)
         });
-        call('hcaptcha_ready', null);
+        const ready = () => call('hcaptcha_ready', Math.ceil(container.getBoundingClientRect().height));
+        if (typeof ResizeObserver === 'function') new ResizeObserver(ready).observe(container);
+        ready();
       } catch (e) {
         call('hcaptcha_error', null);
       }
@@ -352,13 +375,51 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
 
     void show(CaptchaPanelPhase phase) {
       _loadTimeout?.cancel();
-      setState(() => _phase = phase);
+      setState(() {
+        if (_phase != phase) _challengeHeight = null;
+        _phase = phase;
+      });
     }
 
-    onCaptcha('hcaptcha_ready', () {
-      if (_phase == CaptchaPanelPhase.loading) show(CaptchaPanelPhase.checkbox);
-    });
+    controller.addJavaScriptHandler(
+      handlerName: 'hcaptcha_ready',
+      callback: (args) {
+        if (!current() ||
+            (_phase != CaptchaPanelPhase.loading &&
+                _phase != CaptchaPanelPhase.checkbox)) {
+          return null;
+        }
+        final height = args is List && args.isNotEmpty ? args.first : null;
+        final measured = height is num && height.isFinite && height > 0
+            ? height.toDouble()
+            : null;
+        if (_phase == CaptchaPanelPhase.loading ||
+            (measured != null && measured != _checkboxHeight)) {
+          _loadTimeout?.cancel();
+          setState(() {
+            _phase = CaptchaPanelPhase.checkbox;
+            _checkboxHeight = measured ?? _checkboxHeight;
+          });
+        }
+        return null;
+      },
+    );
     onCaptcha('hcaptcha_open', () => show(CaptchaPanelPhase.challenge));
+    controller.addJavaScriptHandler(
+      handlerName: 'hcaptcha_height',
+      callback: (args) {
+        final height = args is List && args.isNotEmpty ? args.first : null;
+        if (current() &&
+            _phase == CaptchaPanelPhase.challenge &&
+            height is num &&
+            height.isFinite &&
+            height > 0 &&
+            height != _challengeHeight) {
+          setState(() => _challengeHeight = height.toDouble());
+        }
+        return null;
+      },
+    );
     onCaptcha('hcaptcha_close', () => show(CaptchaPanelPhase.checkbox));
     onCaptcha('hcaptcha_error', _failVerification);
     onCaptcha('hcaptcha_expired', () => _failVerification(expired: true));
@@ -414,6 +475,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   Future<void> _injectWindowsInlineHtml(
     InAppWebViewController controller,
     int attempt,
+    String document,
   ) async {
     if (!_verifying || attempt != _attempt || _windowsInlineHtmlInjected) {
       return;
@@ -438,7 +500,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
         return;
       }
 
-      final html = jsonEncode(_inlineHtml);
+      final html = jsonEncode(document);
       _windowsInlineHtmlInjected = true;
       await controller.evaluateJavascript(
         source:
@@ -725,16 +787,30 @@ document.close();
       },
       child: CaptchaPanel(
         phase: _phase,
+        contentHeight: _phase == CaptchaPanelPhase.checkbox
+            ? _checkboxHeight
+            : _challengeHeight,
         message: message,
         onRetry: _retryVerification,
         child: _phase == CaptchaPanelPhase.failed
             ? null
-            : (_attemptWebView ??= _webView(_attempt)),
+            : LayoutBuilder(
+                builder: (context, bounds) {
+                  if (bounds.maxWidth <= 0) return const SizedBox.shrink();
+                  return _attemptWebView ??= _webView(
+                    _attempt,
+                    _inlineHtml(
+                      compact:
+                          bounds.maxWidth < CaptchaPanel.normalCheckboxWidth,
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }
 
-  Widget _webView(int attempt) => InAppWebView(
+  Widget _webView(int attempt, String document) => InAppWebView(
     key: ValueKey(attempt),
     webViewEnvironment: Platform.isWindows
         ? WindowsWebViewEnvironmentService.instance.environment
@@ -745,7 +821,7 @@ document.close();
     initialData: Platform.isWindows
         ? null
         : InAppWebViewInitialData(
-            data: _inlineHtml,
+            data: document,
             baseUrl: WebUri(AppConstants.baseUrl),
             mimeType: 'text/html',
             encoding: 'utf-8',
@@ -773,18 +849,18 @@ document.close();
     },
     onLoadStop: (controller, _) async {
       if (Platform.isWindows) {
-        await _injectWindowsInlineHtml(controller, attempt);
+        await _injectWindowsInlineHtml(controller, attempt, document);
       }
     },
     onProgressChanged: (controller, progress) async {
       if (Platform.isWindows && progress >= 100) {
-        await _injectWindowsInlineHtml(controller, attempt);
+        await _injectWindowsInlineHtml(controller, attempt, document);
       }
     },
     onReceivedError: (controller, request, _) async {
       if (request.isForMainFrame != true || attempt != _attempt) return;
       if (Platform.isWindows) {
-        await _injectWindowsInlineHtml(controller, attempt);
+        await _injectWindowsInlineHtml(controller, attempt, document);
       } else {
         _failVerification();
       }

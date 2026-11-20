@@ -19,7 +19,23 @@ Future<T?> showCaptchaSheet<T>({
 }) {
   final compact = MediaQuery.sizeOf(context).width < Breakpoints.mobile;
   Widget shell(BuildContext context) => AppSheetScaffold(
-    title: title,
+    titleWidget: Row(
+      children: [
+        Icon(
+          Symbols.verified_user_rounded,
+          size: 22,
+          color: context.emphasis.accent,
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
     style: AppSheetStyle.card,
     showDragHandle: compact,
     borderRadius: compact ? null : context.shapes.borderRadius(24),
@@ -65,6 +81,7 @@ class CaptchaPanel extends StatelessWidget {
     required this.message,
     this.child,
     this.onRetry,
+    this.contentHeight,
   });
 
   final CaptchaPanelPhase phase;
@@ -72,41 +89,88 @@ class CaptchaPanel extends StatelessWidget {
   final Widget? child;
   final VoidCallback? onRetry;
 
+  /// 当前控件在网页内实际占用的逻辑高度，未知时按可用宽度布局。
+  final double? contentHeight;
+
+  /// 横版勾选控件的宽度（含边框）。留白优先让给控件本身。
+  static const double normalCheckboxWidth = 304;
+
   @override
   Widget build(BuildContext context) {
     final interactive =
         phase == CaptchaPanelPhase.checkbox ||
         phase == CaptchaPanelPhase.challenge;
-    final failed = phase == CaptchaPanelPhase.failed;
     final theme = Theme.of(context);
     return LayoutBuilder(
       builder: (context, bounds) {
-        final height = math.min(
-          bounds.maxHeight,
-          phase == CaptchaPanelPhase.challenge ? 640.0 : 220.0,
-        );
-        return SizedBox(
-          width: double.infinity,
-          height: height,
-          child: Column(
-            children: [
-              if (interactive)
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: height * 0.3),
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                    child: Semantics(
+        final gutter = bounds.maxWidth < normalCheckboxWidth
+            ? 8.0
+            : ((bounds.maxWidth - normalCheckboxWidth) / 2).clamp(0.0, 16.0);
+        final width = bounds.maxWidth - 2 * gutter;
+        final measured = contentHeight;
+        final challenge = phase == CaptchaPanelPhase.challenge;
+        final double height;
+        if (measured != null && measured.isFinite && measured > 0) {
+          height = measured + (challenge ? 24 : 12);
+        } else if (challenge) {
+          height = (width * 1.35 + 24).clamp(340.0, 580.0);
+        } else {
+          height = width >= normalCheckboxWidth ? 92 : 158;
+        }
+        return Padding(
+          padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 16),
+          child: ClipRRect(
+            borderRadius: context.shapes.borderRadius(challenge ? 16 : 8),
+            child: SingleChildScrollView(
+              primary: false,
+              child: Stack(
+                children: [
+                  if (interactive)
+                    Semantics(
                       liveRegion: true,
-                      child: Text(message, style: theme.textTheme.bodyMedium),
+                      label: message,
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: math.min(
+                          height,
+                          MediaQuery.sizeOf(context).longestSide * 2,
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Row(
+                        children: [
+                          if (phase == CaptchaPanelPhase.failed)
+                            Icon(
+                              Symbols.error_outline_rounded,
+                              color: theme.colorScheme.error,
+                            )
+                          else
+                            const LoadingSpinner(size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                message,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ),
+                          if (phase == CaptchaPanelPhase.failed &&
+                              onRetry != null)
+                            TextButton(
+                              onPressed: onRetry,
+                              child: Text(context.l10n.common_retry),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (child != null)
-                      ExcludeFocus(
+                  if (child != null)
+                    Positioned.fill(
+                      child: ExcludeFocus(
                         excluding: !interactive,
                         child: ExcludeSemantics(
                           excluding: !interactive,
@@ -119,44 +183,10 @@ class CaptchaPanel extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (!interactive)
-                      Center(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (failed)
-                                Icon(
-                                  Symbols.error_outline_rounded,
-                                  color: theme.colorScheme.error,
-                                )
-                              else
-                                const LoadingSpinner(size: 32),
-                              const SizedBox(height: 12),
-                              Semantics(
-                                liveRegion: true,
-                                child: Text(
-                                  message,
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                              if (failed && onRetry != null) ...[
-                                const SizedBox(height: 12),
-                                FilledButton.tonal(
-                                  onPressed: onRetry,
-                                  child: Text(context.l10n.common_retry),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
