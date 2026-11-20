@@ -137,8 +137,9 @@ class MetaversePluginBackup {
                   .hasMatch(item['publisherKey'] as String))) {
         throw const FormatException('备份公钥指纹无效');
       }
-      if (item['autoUpdate'] != null && item['autoUpdate'] is! bool)
+      if (item['autoUpdate'] != null && item['autoUpdate'] is! bool) {
         throw const FormatException('备份更新开关无效');
+      }
       final preferences = item['preferences'] ?? <String, Object?>{};
       if (preferences is! Map ||
           preferences.length > 24 ||

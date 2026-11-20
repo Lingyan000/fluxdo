@@ -30,20 +30,24 @@ extension MetaverseApprovalChange on MetaversePluginManifest {
     final next = capabilities, before = old.capabilities;
     for (final entry in next.credentials.entries) {
       final previous = before.credentials[entry.key];
-      if (previous == null || !entry.value.isWithin(previous))
+      if (previous == null || !entry.value.isWithin(previous)) {
         changes.add('credentials.${entry.key}');
+      }
     }
-    if (!before.connectCallbacks.toSet().containsAll(next.connectCallbacks))
+    if (!before.connectCallbacks.toSet().containsAll(next.connectCallbacks)) {
       changes.add('connect');
+    }
     if (!before.payments.containsAll(next.payments)) changes.add('payments');
     for (final scope in next.forum.difference(before.forum)) {
       changes.add('forum.${scope.name}');
     }
     if (next.background && !before.background) changes.add('background');
-    if (next.notifications && !before.notifications)
+    if (next.notifications && !before.notifications) {
       changes.add('notifications');
-    if (!old.tasks.map((t) => t.id).toSet().containsAll(tasks.map((t) => t.id)))
+    }
+    if (!old.tasks.map((t) => t.id).toSet().containsAll(tasks.map((t) => t.id))) {
       changes.add('tasks');
+    }
     // 路由顺序影响匹配结果。只允许删除旧条目且不改变剩余条目的顺序。
     var position = 0;
     for (final rule in links) {

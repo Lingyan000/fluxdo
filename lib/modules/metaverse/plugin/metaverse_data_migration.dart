@@ -15,10 +15,11 @@ Future<Map<String, Object?>> migrateMetaverseData({
 }) async {
   final target = package.manifest.dataVersion;
   if (fromVersion == target) return data;
-  if (target < fromVersion)
+  if (target < fromVersion) {
     throw const MetaversePluginCallException(
       'data_downgrade_requires_snapshot',
     );
+  }
   if (data.isEmpty) return {};
   final groups = <String, Map<String, Object?>>{};
   for (final entry in data.entries) {
@@ -30,8 +31,9 @@ Future<Map<String, Object?>> migrateMetaverseData({
   final result = <String, Object?>{};
   final watch = Stopwatch()..start();
   for (final group in groups.entries) {
-    if (watch.elapsed >= const Duration(seconds: 20))
+    if (watch.elapsed >= const Duration(seconds: 20)) {
       throw const MetaversePluginCallException('migration_timeout');
+    }
     final bridge = _MigrationBridge(Map.of(group.value));
     final runtime = await MetaversePluginRuntime.start(
       engineFactory: engineFactory,
@@ -96,16 +98,18 @@ class _MigrationBridge implements MetaversePluginBridge {
         data.remove(key(params['key']));
       case 'storage.setMany':
         final entries = params['entries'];
-        if (entries is! Map || entries.length > 128)
+        if (entries is! Map || entries.length > 128) {
           throw const MetaversePluginCallException('storage_invalid_arguments');
+        }
         for (final k in entries.keys) {
           key(k);
         }
         entries.forEach((k, value) => put(k as String, value));
       case 'storage.compareAndSet':
         final k = key(params['key']);
-        if (!const DeepCollectionEquality().equals(data[k], params['expected']))
+        if (!const DeepCollectionEquality().equals(data[k], params['expected'])) {
           return false;
+        }
         put(k, params['value']);
         return true;
       default:

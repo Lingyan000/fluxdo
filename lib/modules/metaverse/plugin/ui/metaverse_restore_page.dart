@@ -54,8 +54,9 @@ class _RestoreState extends ConsumerState<MetaverseRestorePage> {
             )
             .firstOrNull;
         if (!mounted) return;
-        if (entry == null)
+        if (entry == null) {
           throw StateError(context.l10n.metaverse_restoreSourceRequired);
+        }
         package = await ref
             .read(metaverseMarketProvider.notifier)
             .download(entry);
@@ -85,10 +86,11 @@ class _RestoreState extends ConsumerState<MetaverseRestorePage> {
       await controller.restoreBackup(package, item, choices);
       if (mounted) ToastService.showSuccess(context.l10n.metaverse_restoreDone);
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         ToastService.showError(
           '${context.l10n.metaverse_restoreFailed}\n$error',
         );
+      }
     } finally {
       if (mounted) setState(() => _busy = null);
     }

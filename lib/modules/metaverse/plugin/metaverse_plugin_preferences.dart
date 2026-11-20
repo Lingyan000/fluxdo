@@ -17,8 +17,9 @@ class MetaversePreference {
   };
   static List<MetaversePreference> parse(Object? raw) {
     if (raw == null) return const [];
-    if (raw is! List || raw.length > 24)
+    if (raw is! List || raw.length > 24) {
       throw const FormatException('偏好设置须为至多 24 项的数组');
+    }
     final keys = <String>{}, result = <MetaversePreference>[];
     for (final field in raw) {
       if (field is! Map ||
@@ -51,8 +52,9 @@ class MetaversePreference {
         field['default'] ?? (field['type'] == 'toggle' ? false : ''),
         options.cast<String, String>(),
       );
-      if (!preference.accepts(preference.defaultValue))
+      if (!preference.accepts(preference.defaultValue)) {
         throw const FormatException('偏好默认值无效');
+      }
       result.add(preference);
     }
     return List.unmodifiable(result);

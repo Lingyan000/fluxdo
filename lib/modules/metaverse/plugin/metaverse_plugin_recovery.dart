@@ -122,8 +122,9 @@ extension MetaversePluginRecovery on MetaversePluginStore {
               });
               state.remove('reason');
             }
-            if (prepared['preferences'] is Map)
+            if (prepared['preferences'] is Map) {
               state['preferences'] = prepared['preferences'];
+            }
             if (prepared['rollback'] == true) {
               state
                 ..remove('previous')
@@ -160,8 +161,9 @@ extension MetaversePluginRecovery on MetaversePluginStore {
     await settleRelease(installed);
     final state = await releaseStatus(installed.id);
     if (state['target'] != installed.codeRevision ||
-        (probationOnly && state['healthy'] == true))
+        (probationOnly && state['healthy'] == true)) {
       return null;
+    }
     final previous = state['previous'];
     if (previous is! Map<String, dynamic>) return null;
     final record = InstalledMetaversePlugin.fromJson(
@@ -170,8 +172,9 @@ extension MetaversePluginRecovery on MetaversePluginStore {
     );
     if (record.source != installed.source ||
         !record.manifest.runtimeSupported ||
-        record.codeRevision == null)
+        record.codeRevision == null) {
       return null;
+    }
     await readCodeRevision(record.id, record.codeRevision!);
     return record;
   }
@@ -184,8 +187,9 @@ extension MetaversePluginRecovery on MetaversePluginStore {
     current.id,
     () => _dataTransaction(current.id, (db) {
       final state = _release(db);
-      if (state['target'] != current.codeRevision || state['snapshot'] is! Map)
+      if (state['target'] != current.codeRevision || state['snapshot'] is! Map) {
         throw StateError('没有可恢复的数据快照');
+      }
       state['rejected'] = <String>{
         ...List<String>.from(state['rejected'] as List? ?? []),
         current.codeRevision!,

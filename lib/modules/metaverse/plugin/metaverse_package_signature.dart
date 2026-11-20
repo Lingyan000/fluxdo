@@ -13,8 +13,9 @@ class MetaversePackageSignature {
   static MetaversePackageSignature? verify(Map<String, dynamic> bundle) {
     final raw = bundle['publisher'];
     if (raw == null) return null;
-    if (raw is! Map || raw['algorithm'] != 'RSA-SHA256')
+    if (raw is! Map || raw['algorithm'] != 'RSA-SHA256') {
       throw const FormatException('插件签名格式无效');
+    }
     final key = _key(raw['key']);
     final fingerprint = _fingerprint(raw['key'] as Map);
     final manifest = bundle['manifest'] as Map;
@@ -48,8 +49,9 @@ class MetaversePackageSignature {
       return '{${keys.map((k) => '${jsonEncode(k)}:${_canonical(value[k])}').join(',')}}';
     }
     if (value is List) return '[${value.map(_canonical).join(',')}]';
-    if (value is num && (value is! int || value.abs() > 9007199254740991))
+    if (value is num && (value is! int || value.abs() > 9007199254740991)) {
       throw const FormatException('签名清单包含非整数');
+    }
     return jsonEncode(value);
   }
 
@@ -65,15 +67,17 @@ class MetaversePackageSignature {
   }
 
   static RSAPublicKey _key(Object? raw) {
-    if (raw is! Map || raw['kty'] != 'RSA')
+    if (raw is! Map || raw['kty'] != 'RSA') {
       throw const FormatException('发布者公钥无效');
+    }
     BigInt number(Object? value, int max) => BigInt.parse(
       _bytes(value, max).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
       radix: 16,
     );
     final n = number(raw['n'], 512), e = number(raw['e'], 4);
-    if (n.bitLength < 2048 || n.bitLength > 4096 || e != BigInt.from(65537))
+    if (n.bitLength < 2048 || n.bitLength > 4096 || e != BigInt.from(65537)) {
       throw const FormatException('发布者公钥参数无效');
+    }
     return RSAPublicKey(n, e);
   }
 
