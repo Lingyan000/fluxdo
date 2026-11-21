@@ -28,6 +28,8 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart';
 import 'package:fluxdo/theme/app_colors.dart';
 import 'package:fluxdo/theme/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -88,6 +90,49 @@ class _Hosts implements MetaversePluginHosts {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('替换步骤页后返回前一页，不返回已完成的表单', (tester) async {
+    final nav = navigatorKey;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [metaversePluginsProvider.overrideWith(_Plugins.new)],
+      child: TranslationProvider(child: MaterialApp(navigatorKey: nav,
+        home: const Scaffold(body: Text('前一页')))),
+    ));
+    nav.currentState!.push(InteractionPageRoute<void>(builder: (_) =>
+      const MetaversePluginPage(pluginId: 'test.plugin', page: 'form')));
+    await tester.pumpAndSettle();
+    final source = tester.element(find.byType(MetaversePluginErrorView));
+    expect(() => MetaversePluginPage.replace(source, 'another.plugin', 'result'),
+      throwsStateError);
+    MetaversePluginPage.replace(source, 'test.plugin', 'result');
+    await tester.pumpAndSettle();
+    expect(tester.widget<MetaversePluginPage>(find.byType(MetaversePluginPage)).page, 'result');
+    nav.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('前一页'), findsOneWidget);
+    expect(nav.currentState!.canPop(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+  for (final mode in ['workspace', 'modal', 'covered']) {
+    testWidgets('替换导航不替换底栏、弹框或被覆盖的页面 $mode', (tester) async {
+      final nav = navigatorKey;
+      await tester.pumpWidget(ProviderScope(
+        overrides: [metaversePluginsProvider.overrideWith(_Plugins.new)],
+        child: TranslationProvider(child: MaterialApp(navigatorKey: nav,
+          home: MetaversePluginPage(pluginId: 'test.plugin', page: 'form',
+            modal: mode == 'modal', workspace: mode == 'workspace'))),
+      ));
+      await tester.pumpAndSettle();
+      final source = tester.element(find.byType(MetaversePluginErrorView));
+      if (mode == 'covered') {
+        nav.currentState!.push(InteractionPageRoute<void>(builder: (_) =>
+          const Scaffold(body: Text('覆盖页'))));
+        await tester.pumpAndSettle();
+      }
+      expect(() => MetaversePluginPage.replace(source, 'test.plugin', 'result'),
+        throwsStateError);
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('元宇宙入口按当前子页回顶和刷新，隐藏时不响应底栏动作', (tester) async {
     final service = _Service(), market = _Market(), hosts = _Hosts();
     final container = ProviderContainer(

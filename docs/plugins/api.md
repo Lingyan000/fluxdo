@@ -207,8 +207,8 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 
 | 方法 | 参数与结果 | 行为 |
 | --- | --- | --- |
-| `fluxdo.navigate(page, params?)` | string、object → Promise<null> | 打开清单声明的页面，Promise 在发起导航后完成 |
-| `fluxdo.prepareNavigation(page)` | string → Promise<function(params)> | 用户点击时预约一次目标页面，返回可用于异步完成后的导航函数 |
+| `fluxdo.navigate(page, params?, options?)` | string、object → Promise<null> | 打开清单声明的页面，Promise 在发起导航后完成 |
+| `fluxdo.prepareNavigation(page, options?)` | string → Promise<function(params)> | 用户点击时预约一次目标页面，返回可用于异步完成后的导航函数 |
 | `fluxdo.openUrl(url)` | string → Promise<null> | 通过应用链接策略打开 HTTP(S) 地址 |
 | `fluxdo.browser.open(url, options?)` | string、`{mode?}` → Promise<null> | `mode` 可选 `ask`（默认）、`inApp`、`external`、`preference` |
 | `fluxdo.session.login()` | Promise<null> | 打开清单的 `webLogin` 地址 |
@@ -217,7 +217,11 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 
 普通导航、授权和网页入口需要用户操作后的 10 秒内调用，一次点击可消耗一次普通界面操作。同一时间只允许一个正在执行的界面操作。Toast 最短间隔一秒，消息最多 200 字符，具体提示样式由宿主 delegate 决定。
 
-预约绑定目标页面、原始 surface 和账号，成功使用后失效。新的插件点击、离开原页面、关闭页面或应用进入后台使预约失效。本次原生确认框可临时覆盖页面，待 `page.resume` 后调用预约函数。预约可跨越普通点击的 10 秒窗口。`prepareNavigation` 自 `8679b7ab` 提供，使用前检查方法是否存在。
+`options: {replace: true}` 使用 `navigationReplacement` 能力，替换当前插件的普通页面；
+返回时不再进入已经完成的表单。不能替换底栏主页、其他插件页面或弹层。目标页以普通页面展示。
+开发预览也支持替换；生产环境的替换始终受用户点击或有效预约约束。
+
+预约绑定目标页面、替换方式、原始 surface 和账号，成功使用后失效。新的插件点击、离开原页面、关闭页面或应用进入后台使预约失效。本次原生确认框可临时覆盖页面，待 `page.resume` 后调用预约函数。预约可跨越普通点击的 10 秒窗口。`prepareNavigation` 自 `8679b7ab` 提供，使用前检查方法是否存在。
 
 `browser.open` 需要用户点击触发。`inApp` 直接使用内置浏览器，`external` 使用外部浏览器，`ask` 每次展示打开方式选择，`preference` 沿用应用设置。直接打开模式仍执行链接安全检查，高风险地址保留确认，阻止地址按应用规则处理。
 

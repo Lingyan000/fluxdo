@@ -186,13 +186,13 @@ const metaverseApiExamples = [
   }, permission: 'identity'),
   MetaverseApiExample(
     'navigate',
-    "'detail', {id: 'example'}",
+    "'detail', {id: 'example'}, {replace: false}",
     null,
     userAction: true,
   ),
   MetaverseApiExample(
     'prepareNavigation',
-    "'detail'",
+    "'detail', {replace: false}",
     1,
     userAction: true,
     afterCall:

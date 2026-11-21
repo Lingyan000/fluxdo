@@ -235,6 +235,10 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
       {},
       description: l.metaverse_componentDivider,
     ),
+    MetaverseComponentExample('Skeleton', 'Skeleton(child: Column(crossAxisAlignment: "stretch", children: [SkeletonBox(height: data.height), Gap(), SkeletonBox(width: data.width, height: data.height)]))',
+      {'width': 140.0, 'height': 20.0}, description: l.metaverse_componentSkeleton),
+    MetaverseComponentExample('SkeletonBox', 'SkeletonBox(width: data.width, height: data.height, radius: data.radius)',
+      {'width': 140.0, 'height': 20.0, 'radius': 8.0}, description: l.metaverse_componentSkeletonBox),
     MetaverseComponentExample('Spinner', 'Spinner(size: data.size)', {
       'size': 32.0,
     }, description: l.metaverse_componentSpinner),

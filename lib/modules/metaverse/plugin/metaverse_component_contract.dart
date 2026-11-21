@@ -680,6 +680,7 @@ const metaverseComponentContract = {
       "layout",
       "loading",
       "loadingMore",
+      "loadingPlaceholder",
       "minTileWidth",
       "moreLabel",
       "onLoadMore",
@@ -716,6 +717,9 @@ const metaverseComponentContract = {
       ],
       "loadingMore": [
         "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
       ],
       "minTileWidth": [
         "integer",
@@ -986,6 +990,7 @@ const metaverseComponentContract = {
       "items",
       "loading",
       "loadingMore",
+      "loadingPlaceholder",
       "moreLabel",
       "onLoadMore",
       "onRefresh",
@@ -1020,6 +1025,9 @@ const metaverseComponentContract = {
       ],
       "loadingMore": [
         "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
       ],
       "moreLabel": [
         "string"
@@ -1484,6 +1492,37 @@ const metaverseComponentContract = {
     "types": {
       "child": [
         "widget"
+      ]
+    }
+  },
+  "Skeleton": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "SkeletonBox": {
+    "parameters": [
+      "height",
+      "radius",
+      "width"
+    ],
+    "types": {
+      "height": [
+        "integer",
+        "number"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ],
+      "width": [
+        "integer",
+        "number"
       ]
     }
   },

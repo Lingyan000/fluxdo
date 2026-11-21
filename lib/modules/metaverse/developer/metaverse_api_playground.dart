@@ -267,9 +267,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
         return null;
       case 'forum.open':
       case 'navigate':
-        unawaited(
-          Navigator.of(context).push(
-            InteractionPageRoute<void>(
+        final route = InteractionPageRoute<void>(
               builder: (ctx) => Scaffold(
                 appBar: AppBar(title: Text('${params['page'] ?? params['type']}')),
                 body: Padding(
@@ -281,9 +279,12 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
                   ),
                 ),
               ),
-            ),
-          ),
-        );
+            );
+        if (method == 'navigate' && params['replace'] == true) {
+          unawaited(Navigator.of(context).pushReplacement<void, void>(route));
+        } else {
+          unawaited(Navigator.of(context).push(route));
+        }
         return null;
       case 'navigation.prepare':
         return 1;

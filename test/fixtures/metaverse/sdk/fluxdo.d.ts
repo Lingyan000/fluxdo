@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement';
   type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
   type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
@@ -113,8 +113,8 @@ declare namespace FluxDO {
       signOut(): Promise<null>;
     };
     user: { get(): Promise<{ id: number; username: string } | null> };
-    navigate(page: string, params?: Record): Promise<null>;
-    prepareNavigation(page: string): Promise<(params?: Record) => Promise<null>>;
+    navigate(page: string, params?: Record, options?: { replace?: boolean }): Promise<null>;
+    prepareNavigation(page: string, options?: { replace?: boolean }): Promise<(params?: Record) => Promise<null>>;
     session: { login(): Promise<null>; open(path: string): Promise<null> };
     openUrl(url: string): Promise<null>;
     browser: { open(url: string, options?: { mode: BrowserMode }): Promise<null> };

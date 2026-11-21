@@ -186,13 +186,14 @@ const metaversePluginPrelude = r'''
       get: function () { return call('user.get'); }
     }),
 
-    navigate: function (page, params) { return call('navigate', { page: String(page), params: params || {} }); },
+    navigate: function (page, params, options) { return call('navigate', { page: String(page), params: params || {}, replace: !!(options && options.replace) }); },
     /** 在用户点击时预约一次页面导航，用于异步操作成功后的跳转。 */
-    prepareNavigation: function (page) {
+    prepareNavigation: function (page, options) {
       page = String(page);
-      return call('navigation.prepare', {page: page}).then(function (token) {
+      var replace = !!(options && options.replace);
+      return call('navigation.prepare', {page: page, replace: replace}).then(function (token) {
         return function (params) {
-          return call('navigate', {page: page, params: params || {}, continuation: token});
+          return call('navigate', {page: page, params: params || {}, continuation: token, replace: replace});
         };
       });
     },

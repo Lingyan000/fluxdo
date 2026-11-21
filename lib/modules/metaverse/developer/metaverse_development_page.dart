@@ -75,6 +75,15 @@ class _DevelopmentPageState extends ConsumerState<MetaverseDevelopmentPage>
   Widget build(BuildContext context) {
     final session = ref.watch(metaverseDevelopmentSessionProvider);
     _session = session;
+    session.replace = (source, page, params) {
+      final owner = source.findAncestorWidgetOfExactType<_DevelopmentPreviewPage>();
+      if (owner?.session != session || ModalRoute.of(source)?.isCurrent != true) {
+        throw StateError('navigation_replace_unavailable');
+      }
+      Navigator.of(source).pushReplacement<void, void>(InteractionPageRoute(
+        builder: (_) => _DevelopmentPreviewPage(session: session, page: page, params: params),
+      ));
+    };
     session.navigate = (context, page, params) {
       Navigator.of(context).push<void>(
         InteractionPageRoute(
@@ -338,7 +347,9 @@ class _DevelopmentPreviewPage extends StatelessWidget {
             ? AbsorbPointer(absorbing: blocked, child: render(spec!.appBarActions!)) : null,
         child: AbsorbPointer(absorbing: blocked, child: spec?.scroll == false
             ? child
-            : SingleChildScrollView(padding: const EdgeInsets.all(16), child: child)),
+            : Builder(builder: (context) => SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(16, 16, 16,
+                  16 + MediaQuery.paddingOf(context).bottom), child: child))),
       );
       if (host == null || spec == null) return frame(const SizedBox.shrink());
       return MetaversePluginSurfaceView(

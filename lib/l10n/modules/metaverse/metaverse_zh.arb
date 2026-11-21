@@ -137,6 +137,8 @@
   "metaverse_componentListItem": "列表项 · 标题、说明与两侧内容",
   "metaverse_componentDivider": "分隔线 · 划分相邻内容",
   "metaverse_componentSpinner": "加载指示 · 表示正在等待结果",
+  "metaverse_componentSkeleton": "骨架容器 · 首次加载时保留内容轮廓，刷新时保留已有内容",
+  "metaverse_componentSkeletonBox": "骨架占位 · 可配置宽高和圆角，跟随应用主题",
   "metaverse_componentProgressBar": "进度条 · 展示任务完成比例",
   "metaverse_componentChip": "标签 · 展示简短状态与分类",
   "metaverse_componentGap": "间距 · 调整内容之间的留白",

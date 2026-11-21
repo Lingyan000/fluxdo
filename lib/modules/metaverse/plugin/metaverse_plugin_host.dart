@@ -82,6 +82,10 @@ abstract class MetaversePluginHostDelegate {
     Map<String, Object?> params,
   );
 
+  void replacePage(BuildContext context, MetaversePluginManifest manifest,
+      String page, Map<String, Object?> params) =>
+      throw const MetaversePluginCallException('navigation_replace_unavailable');
+
   /// 打开外部链接；是否需要离站确认由应用的链接安全策略决定。
   Future<void> openUrl(BuildContext context, Uri url);
 
@@ -250,7 +254,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   bool _uiBusy = false;
   DateTime? _activatedAt;
   MetaversePluginSurface? _activatedSurface;
-  ({int token, String page, MetaversePluginSurface surface, int? account})?
+  ({int token, String page, MetaversePluginSurface surface, int? account, bool replace})?
   _preparedNavigation;
   int _navigationSequence = 0;
   DateTime? _lastToast;
@@ -1009,6 +1013,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           page: page,
           surface: surface,
           account: _delegate.currentAccountId(),
+          replace: params['replace'] == true,
         );
         return token;
 
@@ -1035,7 +1040,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
           if (context == null || !context.mounted) {
             throw const MetaversePluginCallException('没有可见的界面');
           }
-          _delegate.openPage(
+          if ((params['replace'] == true) != prepared.replace) {
+            throw const MetaversePluginCallException('导航预约方式不匹配');
+          }
+          (prepared.replace ? _delegate.replacePage : _delegate.openPage)(
             context,
             manifest,
             page,
@@ -1044,7 +1052,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           return null;
         }
         await _userInitiatedUi((context) async {
-          _delegate.openPage(
+          (params['replace'] == true ? _delegate.replacePage : _delegate.openPage)(
             context,
             manifest,
             page,

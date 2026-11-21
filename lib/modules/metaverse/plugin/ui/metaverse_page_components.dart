@@ -59,12 +59,11 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
           search,
           const SizedBox(height: 16),
         ],
-        if (source.optionalChild(['header']) case final header?) ...[
-          header,
-          const SizedBox(height: 16),
-        ],
+        if (source.optionalChild(['header']) case final header?)
+          _PluginOptionalPadding(padding: const EdgeInsets.only(bottom: 16), child: header),
         if (items.isEmpty)
-          (loading || error.isNotEmpty ? null : source.optionalChild(['empty'])) ?? _PluginPageStatus(
+          (loading ? source.optionalChild(['loadingPlaceholder']) :
+            error.isNotEmpty ? null : source.optionalChild(['empty'])) ?? _PluginPageStatus(
             loading: loading,
             error: error,
             emptyTitle: source.v<String>(['emptyTitle']),

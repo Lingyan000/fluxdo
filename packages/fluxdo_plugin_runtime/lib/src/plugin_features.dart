@@ -22,6 +22,8 @@ enum PluginFeature {
   hostEnvironment,
   pluginPreferences,
   pageChrome,
+  loadingPlaceholders,
+  navigationReplacement,
 }
 
 class PluginFeatures {

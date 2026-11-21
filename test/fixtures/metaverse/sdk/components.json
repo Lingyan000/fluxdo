@@ -679,6 +679,7 @@
       "layout",
       "loading",
       "loadingMore",
+      "loadingPlaceholder",
       "minTileWidth",
       "moreLabel",
       "onLoadMore",
@@ -715,6 +716,9 @@
       ],
       "loadingMore": [
         "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
       ],
       "minTileWidth": [
         "integer",
@@ -985,6 +989,7 @@
       "items",
       "loading",
       "loadingMore",
+      "loadingPlaceholder",
       "moreLabel",
       "onLoadMore",
       "onRefresh",
@@ -1019,6 +1024,9 @@
       ],
       "loadingMore": [
         "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
       ],
       "moreLabel": [
         "string"
@@ -1483,6 +1491,37 @@
     "types": {
       "child": [
         "widget"
+      ]
+    }
+  },
+  "Skeleton": {
+    "parameters": [
+      "child"
+    ],
+    "types": {
+      "child": [
+        "widget"
+      ]
+    }
+  },
+  "SkeletonBox": {
+    "parameters": [
+      "height",
+      "radius",
+      "width"
+    ],
+    "types": {
+      "height": [
+        "integer",
+        "number"
+      ],
+      "radius": [
+        "integer",
+        "number"
+      ],
+      "width": [
+        "integer",
+        "number"
       ]
     }
   },

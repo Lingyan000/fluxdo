@@ -635,11 +635,12 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     'platform': Platform.operatingSystem,
     'timeZoneOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
   };
-  _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentSuspended, this.worker = false});
+  _HostDelegate(this._ref, this._manifest, {this.developmentStore, this.developmentActive, this.developmentNavigate, this.developmentReplace, this.developmentSuspended, this.worker = false});
   final bool worker;
   final MetaversePluginStore? developmentStore;
   final bool Function()? developmentActive;
   final void Function(BuildContext, String, Map<String, Object?>)? developmentNavigate;
+  final void Function(BuildContext, String, Map<String, Object?>)? developmentReplace;
   final void Function(String)? developmentSuspended;
 
   final Ref _ref;
@@ -878,6 +879,17 @@ class _HostDelegate extends MetaversePluginHostDelegate {
   }
 
   @override
+  void replacePage(BuildContext context, MetaversePluginManifest manifest,
+      String page, Map<String, Object?> params) {
+    if (developmentNavigate != null) {
+      if (developmentReplace == null) throw const MetaversePluginCallException('navigation_replace_unavailable');
+      developmentReplace!(context, page, params);
+      return;
+    }
+    MetaversePluginPage.replace(context, manifest.id, page, params: params);
+  }
+
+  @override
   void openPage(
     BuildContext context,
     MetaversePluginManifest manifest,
@@ -928,11 +940,12 @@ MetaversePluginHost createDevelopmentPluginHost(Ref ref, {
   required Future<MetaversePluginCode> Function() codeLoader,
   required bool Function() active,
   required void Function(BuildContext, String, Map<String, Object?>) navigate,
+  void Function(BuildContext, String, Map<String, Object?>)? replace,
   required void Function(String) suspended,
 }) => MetaversePluginHost(
   manifest: manifest, store: store, blockedPermissions: blockedPermissions,
   network: ref.read(metaversePluginNetworkProvider),
   engineFactory: engineFactory, codeLoader: codeLoader,
   delegate: _HostDelegate(ref, manifest, developmentStore: store,
-    developmentActive: active, developmentNavigate: navigate, developmentSuspended: suspended),
+    developmentActive: active, developmentNavigate: navigate, developmentReplace: replace, developmentSuspended: suspended),
 );

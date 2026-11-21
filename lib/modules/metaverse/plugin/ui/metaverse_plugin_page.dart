@@ -91,6 +91,20 @@ class MetaversePluginPage extends ConsumerStatefulWidget {
     );
   }
 
+  /// 仅替换当前插件的普通页面；完成步骤后不再返回已经结束的表单。
+  static void replace(BuildContext source, String pluginId, String page,
+      {Map<String, Object?> params = const {}}) {
+    final owner = source.findAncestorWidgetOfExactType<MetaversePluginPage>();
+    final route = ModalRoute.of(source);
+    if (owner == null || owner.pluginId != pluginId || owner.modal || owner.workspace ||
+        route == null || route is PopupRoute || !route.isCurrent) {
+      throw StateError('navigation_replace_unavailable');
+    }
+    Navigator.of(source).pushReplacement<void, void>(InteractionPageRoute(
+      builder: (_) => MetaversePluginPage(pluginId: pluginId, page: page, params: params),
+    ));
+  }
+
   @override
   ConsumerState<MetaversePluginPage> createState() => _MetaversePluginPageState();
 }
@@ -121,7 +135,9 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
     Widget frame(Widget body, [Widget Function(String name)? render]) {
       final content = spec?.scroll == false
           ? body
-          : SingleChildScrollView(controller: _scroll, padding: const EdgeInsets.all(16), child: body);
+          : Builder(builder: (context) => SingleChildScrollView(controller: _scroll,
+              padding: EdgeInsets.fromLTRB(16, 16, 16,
+                  16 + MediaQuery.paddingOf(context).bottom), child: body));
       return MetaversePluginPageFrame(
           title: spec?.title ?? plugin?.manifest.name ?? pluginId,
           customTitle: render != null && spec?.appBarTitle != null ? render(spec!.appBarTitle!) : null,
@@ -220,7 +236,7 @@ class MetaversePluginPageFrame extends StatelessWidget {
     }
     return Scaffold(
       appBar: AppBar(title: titleWidget, actions: buttons, automaticallyImplyLeading: !workspace),
-      body: SafeArea(child: child),
+      body: SafeArea(top: false, bottom: false, child: child),
     );
   }
 }

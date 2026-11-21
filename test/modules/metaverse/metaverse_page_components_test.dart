@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
+import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_plugin_page.dart';
+import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:rfw/formats.dart';
@@ -43,8 +45,8 @@ void main() {
                 .copyWith(textScaler: TextScaler.linear(scale)),
             child: child!,
           ),
-          home: Scaffold(
-            body: RemoteWidget(
+          home: MetaversePluginPageFrame(title: '测试页面',
+            child: RemoteWidget(
               runtime: runtime,
               widget: const FullyQualifiedWidgetName(
                 metaversePluginLibraryName,
@@ -287,4 +289,39 @@ void main() {
     expect(events.last.name, 'retry');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('空底栏不占位，滚动延伸到手势区，末项和固定按钮留安全间距', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390,844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPadding);
+    await show(tester, 'PageLayout(loading:false,footer:switch data.footer {true: Button(label:"确认"),default:SizedBoxShrink()},children:[...for row in data.rows:SizedBox(height:100.0,child:Label(text:row))])');
+    data.update('rows', [for(var i=0;i<20;i++) '行 $i']);
+    await tester.pumpAndSettle();
+    final screenHeight=tester.view.physicalSize.height/tester.view.devicePixelRatio;
+    expect(tester.getRect(find.byType(SingleChildScrollView).last).bottom, screenHeight);
+    final scroll=Scrollable.of(tester.element(find.text('行 19'))).position;
+    scroll.jumpTo(scroll.maxScrollExtent);await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('行 19')).bottom, lessThan(screenHeight-34));
+    data.update('footer',true);await tester.pumpAndSettle();
+    expect(tester.getRect(find.widgetWithText(FilledButton,'确认')).bottom, lessThanOrEqualTo(screenHeight-34));
+    expect(tester.takeException(),isNull);
+  });
+
+  for(final page in ['ListPage','GridPage']) {
+    testWidgets('$page 首屏骨架可替换，刷新有内容时不插入占位或移动首项', (tester) async {
+      data.update('loading',true);data.update('items',<Object>[]);
+      await show(tester, '$page(loading:data.loading,header:SizedBoxShrink(),actions:SizedBoxShrink(),loadingPlaceholder:Skeleton(child:SkeletonBox(height:80)),items:[...for item in data.items:ListItem(title:item)])');
+      expect(find.byType(SkeletonBox),findsOneWidget);
+      data.update('items',['已有内容']);data.update('loading',false);
+      await tester.pumpAndSettle();
+      final before=tester.getRect(find.text('已有内容'));
+      data.update('loading',true);await tester.pump();
+      expect(find.byType(SkeletonBox),findsNothing);
+      expect(tester.getRect(find.text('已有内容')),before);
+      expect(tester.takeException(),isNull);
+    });
+  }
 }

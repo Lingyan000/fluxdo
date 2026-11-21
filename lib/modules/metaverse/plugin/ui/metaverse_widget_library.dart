@@ -332,6 +332,18 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     footer: source.optionalChild(['footer']),
     children: source.childList(['children']),
   ),
+  'Skeleton': (context, source) => Semantics(
+    label: context.l10n.common_loading,
+    child: ExcludeSemantics(child: IgnorePointer(child: TickerMode(
+      enabled: !MediaQuery.disableAnimationsOf(context),
+      child: Skeleton(child: source.child(['child'])),
+    ))),
+  ),
+  'SkeletonBox': (context, source) => SkeletonBox(
+    width: _number(source, ['width'])?.clamp(0.0, 2048.0),
+    height: (_number(source, ['height']) ?? 16).clamp(0.0, 2048.0),
+    borderRadius: (_number(source, ['radius']) ?? 4).clamp(0.0, 1024.0),
+  ),
   'TileGrid': (context, source) => _PluginTileGrid(
     settings: (
       layout: ArgumentDecoders.enumValue(
@@ -667,11 +679,13 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      final bottomInset = MediaQuery.paddingOf(context).bottom;
+      final scrollPadding = EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset);
       final content = Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 960),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: scrollPadding,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: widget.children,
@@ -697,7 +711,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             constraints: const BoxConstraints(maxWidth: 960),
             child: ListView.builder(
               controller: PrimaryScrollController.maybeOf(context),
-              padding: const EdgeInsets.all(16),
+              padding: scrollPadding,
               physics: const AlwaysScrollableScrollPhysics(),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               itemCount: widget.children.length,
@@ -719,7 +733,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
                   : const NeverScrollableScrollPhysics(),
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               slivers: [SliverPadding(
-                padding: const EdgeInsets.all(16),
+                padding: scrollPadding,
                 sliver: SliverMainAxisGroup(slivers: widget.slivers!),
               )],
             ),
@@ -758,8 +772,8 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
           Expanded(child: scroll),
           if (widget.footer != null)
             PageBackdrop(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: _PluginOptionalPadding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
                 child: widget.footer,
               ),
             ),
@@ -767,6 +781,43 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
       );
     },
   );
+}
+
+/// 声明式插槽可能在运行时变成空组件，不能为它保留操作栏或标题间距。
+class _PluginOptionalPadding extends SingleChildRenderObjectWidget {
+  const _PluginOptionalPadding({required this.padding, super.child});
+  final EdgeInsets padding;
+  @override
+  RenderObject createRenderObject(BuildContext context) => _OptionalPaddingRender(padding);
+  @override
+  void updateRenderObject(BuildContext context, _OptionalPaddingRender renderObject) {
+    renderObject.padding = padding;
+  }
+}
+
+class _OptionalPaddingRender extends RenderShiftedBox {
+  _OptionalPaddingRender(this._padding) : super(null);
+  EdgeInsets _padding;
+  set padding(EdgeInsets value) {
+    if (_padding == value) return;
+    _padding = value;
+    markNeedsLayout();
+  }
+  Size _size(BoxConstraints constraints, Size childSize) => constraints.constrain(
+    Size(childSize.width + _padding.horizontal,
+      childSize.height == 0 ? 0 : childSize.height + _padding.vertical),
+  );
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => _size(constraints,
+    child?.getDryLayout(constraints.deflate(_padding)) ?? Size.zero);
+  @override
+  void performLayout() {
+    child?.layout(constraints.deflate(_padding), parentUsesSize: true);
+    size = _size(constraints, child?.size ?? Size.zero);
+    if (child != null) {
+      (child!.parentData! as BoxParentData).offset = Offset(_padding.left, _padding.top);
+    }
+  }
 }
 
 class _PluginImage extends StatefulWidget {

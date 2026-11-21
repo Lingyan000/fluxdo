@@ -135,6 +135,8 @@
   "metaverse_componentListItem": "List item · Title, subtitle and side content",
   "metaverse_componentDivider": "Divider · Separate adjacent content",
   "metaverse_componentSpinner": "Loading indicator · Show a pending operation",
+  "metaverse_componentSkeleton": "Skeleton container · Reserve the content layout during initial loading; keep content on refresh",
+  "metaverse_componentSkeletonBox": "Skeleton block · Configurable size and corners using the app theme",
   "metaverse_componentProgressBar": "Progress bar · Show task completion",
   "metaverse_componentChip": "Chip · Short status and category labels",
   "metaverse_componentGap": "Spacing · Adjust space between elements",

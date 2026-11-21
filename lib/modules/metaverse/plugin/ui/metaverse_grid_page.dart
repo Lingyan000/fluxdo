@@ -32,11 +32,11 @@ Widget _buildGridPage(BuildContext context, DataSource source) {
     footer: source.optionalChild(['actions']),
     slivers: [
       if (source.optionalChild(['header']) case final header?)
-        SliverToBoxAdapter(child: Padding(
+        SliverToBoxAdapter(child: _PluginOptionalPadding(
           padding: const EdgeInsets.only(bottom: 16), child: header,
         )),
       if (items.isEmpty)
-        SliverToBoxAdapter(child: _PluginPageStatus(
+        SliverToBoxAdapter(child: (loading ? source.optionalChild(['loadingPlaceholder']) : null) ?? _PluginPageStatus(
           loading: loading, error: error,
           emptyTitle: source.v<String>(['emptyTitle']), onRetry: retry,
         ))

@@ -62,6 +62,8 @@ widget SearchPage = PageLayout(
 | `CopyButton` | `text`、`label` | 点击后复制并显示应用提示；空文本禁用，不读取剪贴板 |
 | `ListItem` | `title`、`subtitle`、`leading`、`trailing` | `onTap`，空 subtitle 隐藏 |
 | `Divider` | 无参数 | 高度 1 的分隔组件 |
+| `Skeleton` | `child` | 原生骨架容器，禁用子树交互与重复朗读，跟随减少动画设置；声明 `loadingPlaceholders` |
+| `SkeletonBox` | `width`、`height: 16`、`radius: 4` | 骨架块使用主题颜色和圆角；与 Skeleton 组合描述内容轮廓 |
 | `Spinner` | `size: 32` | 应用统一加载指示器 |
 | `ProgressBar` | 可选 `value` | 数值限制在 0–1，省略时为不定进度 |
 | `Chip` | `label`、`color: secondaryContainer`、`textColor: onSecondaryContainer` | 状态文字标签 |
@@ -229,3 +231,13 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 `Image(preview: true)` 和 Markdown 图片点击后使用应用公共图片查看器，支持双击缩放、拖动关闭、保存及平台支持的分享操作。首次预览复用图片现有的加载请求，重试仍通过插件的图片权限与网络出口；查看器和导出操作只消费图片字节，不另行按 URL 下载或附带论坛凭据。SVG 以静态位图预览和导出，不执行脚本或加载外链子资源。上述展示能力需要声明 `requiredFeatures: ["contentPresentation"]`。
 
 清单可声明 `card: {"widget":"Card", "page":"home"}` 并包含 `cardNavigation` 必需能力。`page` 必须指向普通页面。宿主使整张卡片可点击，卡片内部的按钮和更多菜单仍独立响应。`Card` 的内容仍由插件任意组合组件；例如只放 `Statistics(items: data.stats)`，不必再放一个“进入”按钮。未声明 `page` 的历史卡片行为不变。
+
+## 加载与刷新
+
+声明 `loadingPlaceholders` 后，首次取数可用 `Skeleton` 与 `SkeletonBox` 按内容布局组合占位，`ListPage` 和
+`GridPage` 的 `loadingPlaceholder` 接收这一组件。已有条目时忽略占位，继续显示原列表。
+`loading` 表示请求仍在进行，结束请求后必须还原为 false；不要在同一份数据刷新时先清空条目。
+只有账号、筛选等内容身份变化时才清空旧内容。报价等局部请求在对应区域显示占位，不在整页顶部增加加载块。
+
+页面滚动区延伸至系统手势区域，末尾 padding 保护最后一项；固定底部操作在手势区域上方。
+空的底部插槽不会保留操作栏间距。普通声明式页面由宿主提供安全间距，不需要再包整页 SafeArea。

@@ -158,6 +158,7 @@ class DevelopmentSession extends ChangeNotifier {
   bool get waiting => _updates.isNotEmpty;
   bool get busy => host?.hasActiveUi ?? false;
   void Function(BuildContext, String, Map<String, Object?>)? navigate;
+  void Function(BuildContext, String, Map<String, Object?>)? replace;
 
   void _notify() {
     if (!_closed) {
@@ -424,6 +425,7 @@ class DevelopmentSession extends ChangeNotifier {
           !_closed && generation == _generation && identical(host, created),
       navigate: (context, page, params) =>
           navigate?.call(context, page, params),
+      replace: (context, page, params) => replace?.call(context, page, params),
       suspended: diagnostic,
     );
     host = created;
