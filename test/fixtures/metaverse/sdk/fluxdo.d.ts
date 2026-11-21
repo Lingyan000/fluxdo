@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement' | 'credentialClaims' | 'iconButtonContent';
   type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
   type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
@@ -17,7 +17,7 @@ declare namespace FluxDO {
     status: number; ok: boolean; headers: { [key: string]: string }; body: string;
     json<T = Json>(): T;
   }
-  interface CredentialStatus { authorized: boolean; expiresAt: number | null }
+  interface CredentialStatus { authorized: boolean; expiresAt: number | null; claims?: Record }
   interface Confirmation {
     title: string; message: string; confirmLabel: string;
     /** 默认不勾选，用户点击协议链接阅读，再自行勾选。 */
@@ -90,7 +90,7 @@ declare namespace FluxDO {
     };
     navigation: {dismiss(): Promise<boolean>; setBadge(page: string, count: number): Promise<null>};
     credentials: {
-      status(name: string): Promise<CredentialStatus>;
+      status(name: string, options?: {jwt?: boolean}): Promise<CredentialStatus>;
       request(name: string): Promise<boolean>;
       remove(name: string): Promise<null>;
       capture(name: string, request: FetchOptions & { url: string }, options: {

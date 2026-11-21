@@ -4,13 +4,13 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=readFileSync(new URL('../../fixtures/metaverse/ld-store/main.js',import.meta.url),'utf8');
 const campaign={id:'c1',name:'测试券',discountType:'fixed_amount',fixedAmount:2,minSpend:5,scopeType:'product',productId:'p1',sellerUsername:'seller',claimable:true};
-function setup({authorized=true,consent=true,respond=()=>({}),timers=false,streams=false}={}) {
+function setup({authorized=true,claims=null,consent=true,respond=()=>({}),timers=false,streams=false}={}) {
   const handlers=new Map(),calls=[],nav=[],confirmations=[];
   const pendingTimers=new Map(),streamCalls=[];let timerId=0;
   const api={
     on:(name,handler)=>handlers.set(name,handler),
     user:{get:async()=>({id:42,username:'tester'})},
-    credentials:{status:async()=>({authorized}),remove:async()=>{},capture:async()=>{throw Error('unexpected capture');}},
+    credentials:{status:async(_name,options)=>({authorized,...(authorized && options?.jwt && claims ? {claims} : {})}),remove:async()=>{authorized=false;},capture:async()=>{throw Error('unexpected capture');}},
     permissions:{status:async()=>({identity:true,serviceAccount:true,payments:true}),request:async()=>true},
     crypto:{pkce:async()=>({verifier:'v',challenge:'c',method:'S256'}),uuid:async()=> 'uuid'},
     storage:{get:async()=>null},
@@ -37,7 +37,7 @@ function setup({authorized=true,consent=true,respond=()=>({}),timers=false,strea
     await handlers.get('page.open')(ctx);return {ctx,data};
   }
   const fire=(p,name,args={})=>handlers.get(name)(p.ctx,args);
-  return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,streamCalls,async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
+  return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,streamCalls,setAuthorized(value){authorized=value;},async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
 }
 test('不同意士多协议时不初始化授权也不调用 Connect',async()=>{
   const t=setup({consent:false});const ctx={api:t.api,setData:()=>{}};
@@ -218,7 +218,7 @@ test('订单明细包括优惠和时间线，交付内容默认隐藏且离开�
  const p=await t.page('order',{no:'O1'});assert.equal(p.data.deliveryText,'');assert.equal(p.data.hasDelivery,true);
  assert.equal(p.data.fields.find(f=>f.label==='优惠金额').value,'− 2.00 LDC');assert.equal(p.data.orderEvents[0].title,'发货完成');
  assert.equal(p.data.tradeNo,'T1');assert.equal(p.data.usage,'**使用说明**');await t.fire(p,'delivery');assert.equal(p.data.deliveryText,'code-1\ncode-2');
- await t.fire(p,'page.hide');assert.equal(p.data.deliveryText,'');await t.fire(p,'page.resume');assert.equal(t.calls.length,1);
+ await t.fire(p,'page.hide');assert.equal(p.data.deliveryText,'');await t.fire(p,'page.resume');assert.equal(t.calls.filter(r=>r.url.pathname.includes('/orders/')).length,1);
  await t.fire(p,'repurchase');assert.equal(t.nav.at(-1).args.id,'p1');
 });
 test('支付未明确时禁再次付款和取消，可见订单才轮询且完成后停止',async()=>{
@@ -403,4 +403,69 @@ test('订单手动刷新保留交付区域并收起敏感内容',async()=>{
  await t.fire(p,'delivery');assert.equal(p.data.deliveryText,'fixture-only');hold=true;
  const refreshing=t.fire(p,'ordersRefresh');assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
  release({order});await refreshing;assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
+});
+const restoredClaims={sub:'42',username:'tester',avatar_template:'/user_avatar/linux.do/tester/{size}/321.png'};
+test('恢复已有会话从凭证声明取得头像，商城与我的士多共用资料并保留商品',async()=>{
+ const t=setup({claims:restoredClaims,respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42}}:{products:[],pagination:{},categories:[]}});
+ const p=await t.page('market');await flush();
+ assert.equal(p.data.authorized,true);assert.match(decodeURIComponent(p.data.accountAvatar),/128\/321.png$/);
+ await t.fire(p,'account');assert.equal(t.nav.at(-1).page,'account');
+ const a=await t.page('account');assert.equal(a.data.accountAvatar,p.data.accountAvatar);
+ assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/auth/verify')).length,1);
+ await t.fire(a,'signOut');assert.equal(p.data.authorized,false);assert.equal(p.data.accountAvatar,'');
+ const count=t.calls.filter(r=>r.url.pathname.endsWith('/products')).length;
+ await t.fire(p,'page.resume');assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/products')).length,count);
+});
+test('游客商城不请求头像，仍可点击进入我的士多',async()=>{
+ const t=setup({authorized:false,respond:()=>({products:[],pagination:{},categories:[]})});
+ const p=await t.page('market');await flush();await t.fire(p,'account');
+ assert.equal(p.data.authorized,false);assert.equal(p.data.accountAvatar,'');
+ assert.equal(t.calls.some(r=>r.url.pathname.endsWith('/auth/verify')),false);assert.equal(t.nav.at(-1).page,'account');
+});
+test('商城已打开时完成登录立即显示头像，退出后的迟到验证不能恢复头像',async()=>{
+ let held=false,release;
+ const t=setup({authorized:false,claims:restoredClaims,respond:r=>r.url.pathname.endsWith('/auth/init')?
+  {state:'s',auth_url:'https://connect.linux.do/oauth2/authorize?redirect_uri=https%3A%2F%2Fapi.ldspro.qzz.io%2Fapi%2Fauth%2Fcallback&state=s'}:
+  r.url.pathname.endsWith('/auth/verify') ? held ? new Promise(resolve=>release=resolve) : {authenticated:true,user:{id:42}} : {products:[],categories:[],pagination:{}}});
+ const p=await t.page('market');await flush();
+ t.api.connect.authorize=async()=> 'https://ldcstore.com/auth/callback#ldsp_oauth='+Buffer.from(JSON.stringify({s:'s',exp:1,c:'x'.repeat(43)})).toString('base64url');
+ t.api.credentials.capture=async()=>{t.setAuthorized(true);return {claims:{...restoredClaims,exp:Math.floor(Date.now()/1000)+3600}};};
+ const a=await t.page('account');await t.fire(a,'login');
+ assert.equal(p.data.authorized,true);assert.ok(p.data.accountAvatar);
+ held=true;const refresh=t.fire(a,'overviewRefresh');await flush();assert.ok(release);
+ await t.fire(a,'signOut');release({authenticated:true,user:{id:42}});await refresh;
+ assert.equal(p.data.accountAvatar,'');assert.equal(a.data.accountAvatar,'');assert.equal(p.data.authorized,false);
+});
+test('凭证声明属于其他账号时不展示其中头像',async()=>{
+ const t=setup({claims:{...restoredClaims,sub:'99'},respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42}}:{}});
+ const p=await t.page('account');assert.equal(p.data.accountAvatar,'');
+});
+test('订单缺图按商品合并查询，已有图片不查询，详情复用补图结果',async()=>{
+ const orders=[{order_no:'O1',product_id:'p1',status:'delivered'},{order_no:'O2',product_id:'p1',status:'expired'},
+  {order_no:'O3',product_id:'p2',status:'expired',product_image_url:'//images.example.org/p2.png'}];
+ const t=setup({respond:r=>r.url.pathname.endsWith('/products/p1')?{product:{id:'p1',image_url:'https://images.example.org/p1.png'}}:
+  r.url.pathname.endsWith('/orders/O1')?{order:orders[0]}:{orders,pagination:{totalPages:1}}});
+ const p=await t.page('orders');await flush();
+ assert.equal(t.calls.filter(r=>r.url.pathname.includes('/products/')).length,1);
+ assert.equal(p.data.rows[0].image,'https://images.example.org/p1.png');assert.equal(p.data.rows[1].image,p.data.rows[0].image);
+ assert.equal(p.data.rows[2].image,'https://images.example.org/p2.png');
+ const detail=await t.page('order',{no:'O1'});assert.equal(detail.data.orderImage,p.data.rows[0].image);
+ assert.equal(t.calls.filter(r=>r.url.pathname.includes('/products/')).length,1);
+});
+test('订单补图最多三个并发，隐藏后不继续发起查询，过期结果不覆盖新筛选',async()=>{
+ const pending=[];let active=0,maximum=0;
+ const t=setup({respond:r=>{
+  if(r.url.pathname.includes('/products/')){active++;maximum=Math.max(maximum,active);return new Promise(resolve=>pending.push(()=>{active--;resolve({product:{id:r.url.pathname.split('/').at(-1),image_url:'https://images.example.org/product.png'}});}));}
+  return {orders:r.url.searchParams.get('status')?[]:Array.from({length:7},(_,i)=>({orderNo:'O'+i,productId:'p'+i,status:'expired'})),pagination:{}};
+ }});
+ const p=await t.page('orders');await flush();assert.equal(p.data.rows.length,7);assert.equal(active,3);assert.equal(p.data.rows[0].imageLoading,true);
+ await t.fire(p,'page.hide');pending.splice(0).forEach(fn=>fn());await flush();assert.equal(t.calls.filter(r=>r.url.pathname.includes('/products/')).length,3);
+ await t.fire(p,'page.resume');await flush();assert.equal(active,3);
+ await t.fire(p,'ordersFilter',{status:'pending',name:'待付款'});pending.splice(0).forEach(fn=>fn());await flush();
+ assert.equal(maximum,3);assert.equal(p.data.rows.length,0);
+});
+test('商品没有图片或已下架时订单仍可用，重复订单不反复请求',async()=>{
+ const t=setup({respond:r=>r.url.pathname.includes('/products/')?{failure:404}:{orders:[{orderNo:'O1',productId:'p1',status:'expired'}],pagination:{}}});
+ const p=await t.page('orders');await flush();assert.equal(p.data.rows[0].image,'');assert.equal(p.data.rows[0].imageLoading,false);assert.equal(p.data.error,'');
+ await t.fire(p,'ordersRefresh');await flush();assert.equal(t.calls.filter(r=>r.url.pathname.includes('/products/')).length,1);
 });

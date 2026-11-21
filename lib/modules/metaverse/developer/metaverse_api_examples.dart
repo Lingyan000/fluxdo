@@ -118,8 +118,8 @@ const metaverseApiExamples = [
   ),
   MetaverseApiExample(
     'credentials.status',
-    "'account'",
-    {'authorized': true, 'expiresAt': 2000000000},
+    "'account', {jwt: true}",
+    {'authorized': true, 'expiresAt': 2000000000, 'claims': {'sub': '42', 'name': 'Lin'}},
     permission: 'credentials',
     apiVersion: 2,
   ),

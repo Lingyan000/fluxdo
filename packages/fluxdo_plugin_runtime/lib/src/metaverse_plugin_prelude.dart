@@ -126,7 +126,7 @@ const metaversePluginPrelude = r'''
 
     credentials: Object.freeze({
       request: function (name) { return call('credentials.request', {name: String(name)}); },
-      status: function (name) { return call('credentials.status', {name: String(name)}); },
+      status: function (name, options) { return call('credentials.status', {name: String(name), jwt: options && options.jwt === true}); },
       capture: function (name, request, options) {
         request = Object.assign({}, request);
         if (request.body !== undefined && typeof request.body !== 'string') {

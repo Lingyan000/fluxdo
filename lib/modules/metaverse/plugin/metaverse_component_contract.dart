@@ -807,6 +807,7 @@ const metaverseComponentContract = {
   },
   "IconButton": {
     "parameters": [
+      "child",
       "enabled",
       "icon",
       "loading",
@@ -815,6 +816,9 @@ const metaverseComponentContract = {
       "tooltip"
     ],
     "types": {
+      "child": [
+        "widget"
+      ],
       "enabled": [
         "boolean"
       ],

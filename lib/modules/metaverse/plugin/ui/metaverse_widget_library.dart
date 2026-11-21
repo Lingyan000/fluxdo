@@ -473,13 +473,14 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   'IconButton': (context, source) {
     final loading = source.v<bool>(['loading']) == true;
     final icon = metaversePluginIcon(source.v<String>(['icon']));
+    final child = source.optionalChild(['child']);
     return IconButton(
       onPressed: source.v<bool>(['enabled']) == false || loading
           ? null : source.voidHandler(['onPressed']),
       tooltip: source.v<String>(['tooltip']),
       isSelected: source.v<bool>(['selected']),
-      selectedIcon: loading ? const LoadingSpinner(size: 20) : Icon(icon, fill: 1),
-      icon: loading ? const LoadingSpinner(size: 20) : Icon(icon),
+      selectedIcon: loading ? const LoadingSpinner(size: 20) : child ?? Icon(icon, fill: 1),
+      icon: loading ? const LoadingSpinner(size: 20) : child ?? Icon(icon),
     );
   },
 

@@ -132,6 +132,22 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('头像图标按钮保留提示、点击和禁用语义', (tester) async {
+    validImage = true;
+    data.updateAll({'enabled':true});
+    await show(tester, 'IconButton(tooltip:"我的士多",enabled:data.enabled,child:Avatar(label:"测试用户",url:"https://images.example/avatar.png",size:28),onPressed:event "account" {})');
+    await tester.pumpAndSettle();
+    final button = find.byType(IconButton);
+    expect(tester.getSize(button).width, greaterThanOrEqualTo(40));
+    expect(tester.widget<IconButton>(button).tooltip, '我的士多');
+    expect(find.byType(Image), findsOneWidget);
+    await tester.tap(button);
+    expect(events.single.name, 'account');
+    data.update('enabled', false);
+    await tester.pump();
+    expect(tester.widget<IconButton>(button).onPressed, isNull);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('统计响应数据更新，在小屏大字下自动换行', (tester) async {
     tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;

@@ -181,9 +181,9 @@ const ldStore = (() => {
     }
   }
 
-  async function status() {
+  async function status(withClaims=false) {
     if (loginTask) await loginTask.catch(() => false);
-    const current = await fluxdo.credentials.status('account');
+    const current = await fluxdo.credentials.status('account',withClaims ? {jwt:true} : undefined);
     const permissions = await fluxdo.permissions.status();
     if (!permissions.identity || !permissions.serviceAccount) current.authorized = false;
     return {...current, paymentSupported:true, checkoutUnit:'LDC', queries:['orderQuote']};
@@ -530,7 +530,7 @@ function orderChanged(order,except) {
     if(page==='orders' && no && order.status) {
       const row=orderSummary(normalizeOrderData(order));
       s.rows=(s.rows || []).flatMap(old=>old.no!==no ? [old] :
-        s.orderStatus && !s.orderStatus.split(',').includes(order.status) ? [] : [{...old,...row}]);
+        s.orderStatus && !s.orderStatus.split(',').includes(order.status) ? [] : [{...old,...row,image:row.image || old.image}]);
       s.ctx.setData('rows',s.rows);
     } else if(page==='order' && s.ctx.params.no===no) s.dirty=true;
     else if(page==='account' || page==null || page==='coupons') s.dirty=true;
@@ -549,11 +549,12 @@ function refreshView(ctx) {
 }
 function productView(raw) {
   const p=normalizeOrderData(raw), base=Number(p.price), rawDiscount=Number(p.discount);
+  const image=mediaUrl(p.imageUrl);if(p.id!=null)rememberProductImage(String(p.id),image);
   const discount=rawDiscount>0 && rawDiscount<=1 ? rawDiscount : 1;
   const value=p.finalPrice == null ? base*discount : Number(p.finalPrice);
   const original=Number.isFinite(base) && base>value ? base.toFixed(2) : '';
   const type=p.productType || p.type || 'normal';
-  return {id:display(p.id),title:display(p.name),image:display(p.imageUrl),
+  return {id:display(p.id),title:display(p.name),image,
     price:money(value),value:Number.isFinite(value) ? value.toFixed(2) : '—',original,
     discount:original ? Math.round((1-value/base)*100)+'% 优惠' : '',originalLabel:original ? '原价 '+original : '',
     type, typeLabel:({cdk:'自动发卡',normal:flag(p.autoDelivery) ? '自动发货' : '手动发货',link:'外链商品',store:'小店'})[type] || '商品',
@@ -756,17 +757,72 @@ function normalizeOrderData(value) {
   }
   return result;
 }
+function mediaUrl(value) {
+  if(typeof value!=='string')return '';
+  const url=value.trim();if(!url || url.length>8192)return '';
+  if(url.startsWith('//'))return 'https:'+url;
+  if(url.startsWith('/'))return 'https://ldcstore.com'+url;
+  return /^https?:\/\/[^/\s]+\//i.test(url) ? url : '';
+}
+// 订单只保证商品标识。复用已浏览商品的图片，缺失时按商品合并公开查询。
+const productImages=new Map();
+function rememberProductImage(id,url,ttl=600000) {
+  productImages.delete(id);productImages.set(id,{url,expires:Date.now()+ttl});
+  while(productImages.size>128)productImages.delete(productImages.keys().next().value);
+  return url;
+}
+function cachedProductImage(id) {
+  const entry=productImages.get(String(id));return entry?.expires>Date.now() ? entry.url : '';
+}
+let imageWorkers=0;
+const imageQueue=[],imageRequests=new Map();
+function lookupProductImage(id,current) {
+  const pending=imageRequests.get(id);
+  if(pending){pending.watchers.push(current);return pending.promise;}
+  const cached=productImages.get(id);
+  if(cached?.expires>Date.now())return Promise.resolve(cached.url);
+  const task={id,watchers:[current]};task.promise=new Promise(resolve=>{task.resolve=resolve;});
+  imageRequests.set(id,task);imageQueue.push(task);drainProductImages();return task.promise;
+}
+function drainProductImages() {
+  while(imageWorkers<3 && imageQueue.length) {
+    const item=imageQueue.shift();
+    if(!item.watchers.some(current=>current())){imageRequests.delete(item.id);item.resolve('');continue;}
+    imageWorkers++;
+    read('/products/'+encodeURIComponent(item.id)).then(data=>{
+      const p=normalizeOrderData(data.product);
+      return rememberProductImage(item.id,String(p?.id)===item.id ? mediaUrl(p.imageUrl) : '');
+    }).catch(()=>rememberProductImage(item.id,'',60000)).then(url=>{
+      imageRequests.delete(item.id);imageWorkers--;item.resolve(url);drainProductImages();
+    });
+  }
+}
+function fillOrderImages(ctx,s) {
+  const seq=s.seq,current=()=>market(ctx)===s && s.seq===seq && !s.hidden;
+  const rows=ctx.page==='order' && s.order ? [orderSummary(s.order)] : s.rows || [];
+  if(ctx.page==='order' && rows[0]?.image && current())ctx.setData('orderImage',rows[0].image);
+  for(const row of rows) {
+    if(row.image || !/^[A-Za-z0-9_-]{1,128}$/.test(row.productId))continue;
+    lookupProductImage(row.productId,current).then(url=>{
+      if(!current())return;
+      if(ctx.page==='order')write(ctx,{orderImage:url,orderImageLoading:false});
+      else {s.rows=s.rows.map(r=>r.productId===row.productId && !r.image ? {...r,image:url,imageLoading:false} : r);ctx.setData('rows',s.rows);}
+    });
+  }
+}
 function orderSummary(o) {
   if (!o || typeof o.orderNo !== 'string' || !o.orderNo || typeof o.status !== 'string') {
     throw Error('订单数据格式有误');
   }
   const status = o.displayStatus || o.status;
   const amount = o.amount == null ? o.totalPrice : o.amount;
+  const productId=display(o.productId || o.product?.id);
+  const image=mediaUrl(o.product?.imageUrl || o.productImage || o.productImageUrl || o.imageUrl) || cachedProductImage(productId);
   return {no:o.orderNo, title:display(o.product && o.product.name || o.productName) || '商品订单',
     state:Object.prototype.hasOwnProperty.call(statusLabels,status) ? statusLabels[status] : '未知状态',
     amount:amount == null || amount === '' ? '—' : money(amount),
-    image:display(o.product?.imageUrl || o.productImage || o.productImageUrl || o.imageUrl),
-    productId:display(o.productId || o.product?.id),seller:display(o.sellerUsername || o.seller?.username),
+    image,imageLoading:!image && /^[A-Za-z0-9_-]{1,128}$/.test(productId) && !(productImages.get(productId)?.expires>Date.now()),
+    productId,seller:display(o.sellerUsername || o.seller?.username),
     quantity:'× '+display(o.quantity || 1),created:storeDate(o.createdAt),time:display(o.createdAt)};
 }
 async function loadOrders(ctx, append, silent=false) {
@@ -820,7 +876,7 @@ async function loadOrders(ctx, append, silent=false) {
         .filter(([,time])=>!!time).map(([label,time])=>({label,value:storeDate(time)}));
       const logs={create:'创建订单',pay:'支付成功',deliver:'发货完成',complete:'确认收货',cancel:'取消订单',expire:'订单过期',refund:'订单退款',refund_request:'申请退款',refund_reject:'拒绝退款',repay:'重新发起支付',lock_cdk:'锁定卡密',unlock_cdk:'释放卡密',admin_complete:'管理员完结'};
       const deadline=data.order.payExpiredAt || data.order.expireAt || data.order.expiredAt;
-      write(ctx,{orderImage:row.image,productId:row.productId,quantity:row.quantity,sellerName:row.seller,fields,times,
+      write(ctx,{orderImage:row.image,orderImageLoading:row.imageLoading,productId:row.productId,quantity:row.quantity,sellerName:row.seller,fields,times,
         tradeNo:display(data.order.ldcTradeNo),usage:display(data.order.product?.description || data.order.productDescription),
         orderEvents:(data.logs || []).slice().reverse().map(e=>({title:logs[e.action] || display(e.action) || '订单更新',message:display(e.remark || e.note || e.message),time:storeDate(e.createdAt || e.time)})),
         statusNote:awaiting ? confirming ? '支付结果确认中，请勿重复兑换。' : deadline ? '请在 '+storeDate(deadline)+' 前完成付款' : '订单待付款，付款后将按商品约定交付。' : data.order.status==='paid' ? '付款已确认，等待交付。' : '',
@@ -858,7 +914,7 @@ async function loadOrders(ctx, append, silent=false) {
     else if (e.status === 403) sessionMissing('当前账号无权查看这些订单。');
     else {write(ctx,{error:String(e.message),more:s.more});if(silent)scheduleOrderPoll(ctx,s);}
   } finally {
-    if (current()) {s.loading = false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});}
+    if (current()) {s.loading = false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});fillOrderImages(ctx,s);}
   }
 }
 function scheduleOrderPoll(ctx,s) {
@@ -877,7 +933,7 @@ function showOrderFilters(ctx) {
   ctx.setData('orderFilters',orderFilters.map(filter => ({...filter,selected:filter.status === status})));
 }
 function accountAvatar(user) {
-  for(const raw of [user.avatar,user.avatarUrl,user.avatarTemplate,user.animatedAvatar]) {
+  for(const raw of [user.animatedAvatar,user.avatar,user.avatarUrl,user.avatarTemplate]) {
     if(typeof raw!=='string' || !raw.trim())continue;
     let url=raw.trim().replace(/\{size\}/g,'128');
     if(url.startsWith('//'))url='https:'+url;
@@ -888,6 +944,44 @@ function accountAvatar(user) {
     return url;
   }
   return '';
+}
+let identityRevision=0,identityTask=null,identityValue=null,identitySigningOut=false;
+function clearAccountIdentity() {
+  identityRevision++;identityTask=null;identityValue=null;
+  publishAccountIdentity({authorized:false,accountName:'',accountAvatar:''});
+}
+function publishAccountIdentity(value) {
+  for(const s of views.values())if(['market','account'].includes(s.ctx?.page))write(s.ctx,value);
+}
+async function loadAccountIdentity(ctx,refresh=false) {
+  if(identitySigningOut)return null;
+  const revision=identityRevision;
+  const auth=await ldStore.status(true),account=auth.authorized ? await ctx.api.user.get() : null;
+  if(revision!==identityRevision)return null;
+  if(!auth.authorized || !account?.id){clearAccountIdentity();return null;}
+  const claims=normalizeOrderData(auth.claims || {});
+  const key=JSON.stringify([account.id,auth.expiresAt,claims]);
+  if(!refresh && identityValue?.key===key){publishAccountIdentity(identityValue.value);return identityValue.value;}
+  if(identityTask?.key===key)return identityTask.promise;
+  const promise=(async()=>{
+    try {
+      const profile=normalizeOrderData(await read('/auth/verify',true));
+      if(revision!==identityRevision)return null;
+      if(profile.authenticated!==true || String(profile.user?.id)!==String(account.id) ||
+        (profile.user?.site || 'linux.do')!=='linux.do') {
+        clearAccountIdentity();const error=Error('士多会话已失效。');error.status=401;throw error;
+      }
+      // 旧会话可直接读取声明，头像不依赖校验接口是否附带完整用户资料。
+      const sameClaims=String(claims.sub ?? claims.id)===String(account.id) && (claims.site || 'linux.do')==='linux.do';
+      const value={authorized:true,accountName:display(profile.user.name || (sameClaims && claims.name) || profile.user.username || account.username),
+        accountAvatar:accountAvatar(profile.user) || (sameClaims ? accountAvatar(claims) : '')};
+      identityValue={key,value};publishAccountIdentity(value);return value;
+    } catch(error) {
+      if(revision===identityRevision && error.status===401)clearAccountIdentity();
+      throw error;
+    } finally {if(revision===identityRevision)identityTask=null;}
+  })();
+  identityTask={key,promise};return promise;
 }
 async function loadOverview(ctx) {
   const s=market(ctx);
@@ -900,14 +994,10 @@ async function loadOverview(ctx) {
       const account=await ctx.api.user.get();if(!current())return;
       if(!s.overviewLoaded)ctx.setData('accountName',display(account?.username));
       if(ctx.page==='account') {
-        try {
-          const profile=normalizeOrderData(await read('/auth/verify',true));
-          if(!current())return;
-          if(profile.authenticated===true && String(profile.user?.id)===String(account?.id)) {
-            write(ctx,{accountName:display(profile.user.name || profile.user.username || account.username),accountAvatar:accountAvatar(profile.user)});
-          } else ctx.setData('accountAvatar','');
-        } catch(error) {if(error.status===401){write(ctx,{accountName:'',accountAvatar:'',authorized:false});throw error;}}
+        try {await loadAccountIdentity(ctx,!!s.overviewLoaded);if(!current())return;}
+        catch(error) {if(error.status===401)throw error;}
       }
+      if(!current())return;
       const [raw,unread]=await Promise.all([read('/user/attention',true),read('/messages/unread-summary',true)]);
       const data=normalizeOrderData(raw);
       if(!current())return;
@@ -923,7 +1013,7 @@ async function loadOverview(ctx) {
     }
     s.overviewLoaded=true;ctx.setData('overviewError','');
   } catch (error) {if(current()){
-    if(error.status===401){s.overviewLoaded=false;s.overviewStats=null;write(ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[],refundHint:'',couponHint:''});}
+    if(error.status===401){clearAccountIdentity();s.overviewLoaded=false;s.overviewStats=null;write(ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[],refundHint:'',couponHint:''});}
     write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});
   }}
   finally {if(current())write(ctx,{overviewLoading:false,overviewInitialLoading:false});}
@@ -954,6 +1044,8 @@ fluxdo.on('page.open',ctx => {
   if (ctx.page === 'product' || ctx.page === 'review') return detail(ctx);
   write(ctx,{selection:'全部 · 默认排序',stock:false,categoryMessage:'',filters:false,
     filterLabel:'筛选与排序'});
+  write(ctx,{accountName:'',accountAvatar:'',authorized:false});
+  loadAccountIdentity(ctx).catch(()=>{});
   return Promise.all([categories(ctx),load(ctx,false)]);
 });
 fluxdo.on('surface.close',ctx => {const s=market(ctx);if(s?.poll)clearTimeout(s.poll);if(s?.searchTimer)clearTimeout(s.searchTimer);views.delete(ctx.surface);return syncNotifications();});
@@ -976,11 +1068,13 @@ fluxdo.on('page.resume',(ctx,args) => {
   if (!s) return;
   s.hidden = false;
   syncNotifications();
+  if(ctx.page==='market')loadAccountIdentity(ctx).catch(()=>{});
   if(ctx.page==='messages')syncMessageView(s).catch(()=>{});
   if(s.commentsStale && ctx.page==='product'){s.commentsStale=false;loadComments(ctx,false);}
   if (s.createdNavigation) return openCreatedOrder(ctx,s);
   if (s.dirty) {showFilters(ctx,s);return refreshView(ctx);}
   if(ctx.page==='order')scheduleOrderPoll(ctx,s);
+  if(ctx.page==='order' || ctx.page==='orders')fillOrderImages(ctx,s);
 });
 fluxdo.on('market',() => fluxdo.navigate('market'));
 fluxdo.on('product',(ctx,a) => fluxdo.navigate('product',{id:a.id}));
@@ -989,11 +1083,12 @@ fluxdo.on('login',async ctx => {
   write(ctx,{loggingIn:true,loginError:''});
   try {
     if (!await ldStore.login(ctx.api)) return;
+    clearAccountIdentity();await loadAccountIdentity(ctx).catch(()=>{});
     notificationBlocked=false;notificationSummary=null;notificationRetryAt=0;
     if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
     if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
     notificationOwner=null;syncNotifications();
-    invalidateViews(s);
+    invalidateViews(s,v=>v.ctx?.page!=='market');
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
     else if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) await loadBuyerPage(ctx,false);
@@ -1243,7 +1338,7 @@ async function openExternalProduct(ctx) {
 }
 fluxdo.on('buy',openExternalProduct);
 fluxdo.on('retry',ctx => detail(ctx));
-fluxdo.on('refresh',ctx => {ctx.setData('categoryMessage',''); return Promise.all([categories(ctx),load(ctx,false)]);});
+fluxdo.on('refresh',ctx => {ctx.setData('categoryMessage','');loadAccountIdentity(ctx,true).catch(()=>{});return Promise.all([categories(ctx),load(ctx,false)]);});
 fluxdo.on('more',ctx => load(ctx,true));
 fluxdo.on('filters',ctx => fluxdo.navigate('filters',{source:ctx.surface}));
 fluxdo.on('applyFilters',async ctx=>{
@@ -1488,12 +1583,15 @@ fluxdo.on('messages',()=>fluxdo.navigate('messages'));
 fluxdo.on('overviewRefresh',loadOverview);
 fluxdo.on('signOut',async ctx=>{
   if(!await ctx.api.dialogs.confirm({title:'退出士多登录',message:'退出后仍可浏览商品。再次兑换时需要重新授权。',confirmLabel:'退出登录'}))return;
+  identitySigningOut=true;clearAccountIdentity();
   notificationBlocked=true;notificationSummary=null;notificationRetryAt=0;stopNotificationFallback();
   if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
   if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
   notificationOwner=null;
   for(const v of views.values())if(v.ctx){v.seq++;v.overviewLoaded=false;v.overviewStats=null;v.overviewRevision=(v.overviewRevision || 0)+1;write(v.ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[]});}
-  await ctx.api.credentials.remove('account');invalidateViews();await loadOverview(ctx);
+  try {await ctx.api.credentials.remove('account');}
+  finally {clearAccountIdentity();identitySigningOut=false;}
+  invalidateViews(null,v=>v.ctx?.page!=='market');await loadOverview(ctx);
 });
 fluxdo.on('seller',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername)return fluxdo.navigate('merchant',{username:p.sellerUsername,userId:display(p.sellerUserId),site:p.sellerSite || 'linux.do'});});
 fluxdo.on('contentLink',(ctx,a)=>{if(typeof a.url==='string' && /^https?:\/\//i.test(a.url))return ctx.api.browser.open(a.url,{mode:'ask'});});

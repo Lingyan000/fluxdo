@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_connect_capability.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential_manager.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
@@ -224,6 +225,28 @@ Future<void> main() async {
       adapter.requests.last.headers['Authorization'],
       'Bearer opaque-fixture-secret',
     );
+  });
+
+  test('已有 JWT 仅按需返回声明，过期、换账号与关闭权限不会泄露资料', () async {
+    final claims = {'sub': '7', 'avatar': 'https://images.example/avatar.png'};
+    final token = 'e30.${base64Url.encode(utf8.encode(jsonEncode(claims)))}.fixture';
+    await store.writeCredential(manifest.id, 'account', MetaverseCredential(token, accountId: 7), isActive: () => true, revision: store.credentialRevision(manifest.id, 'account'));
+    expect((await manager.status('account', 7))['claims'], isNull);
+    final status = await manager.status('account', 7, includeClaims: true);
+    expect(status['claims'], claims);
+    expect(jsonEncode(status), isNot(contains(token)));
+    expect((await manager.status('account', 8, includeClaims: true))['claims'], isNull);
+    final host = MetaversePluginHost(manifest: manifest, store: store, network: network,
+      engineFactory: createMetaverseScriptEngine, delegate: _Delegate(),
+      blockedPermissions: {MetaversePluginPermission.serviceAccount});
+    addTearDown(host.retire);
+    expect(await host.call('credentials.status', {'name':'account','jwt':true}), {'authorized':false,'expiresAt':null});
+    await store.writeCredential(manifest.id, 'account', MetaverseCredential(token, accountId: 7, expiresAt: 1), isActive: () => true, revision: store.credentialRevision(manifest.id, 'account'));
+    expect((await manager.status('account', 7, includeClaims: true))['claims'], isNull);
+    for (final secret in ['fixture-opaque', 'a.invalid.c', 'a.W10.c']) {
+      await store.writeCredential(manifest.id, 'account', MetaverseCredential(secret, accountId: 7), isActive: () => true, revision: store.credentialRevision(manifest.id, 'account'));
+      expect((await manager.status('account', 7, includeClaims: true))['claims'], isNull);
+    }
   });
 
   for (final target in [

@@ -30,7 +30,8 @@ widget Card = Column(mainAxisSize: "min", crossAxisAlignment: "stretch", childre
 
 widget MarketActions = Row(mainAxisSize: "min", children: [
   IconButton(icon: "settings", tooltip: "筛选商品", onPressed: event "filters" {}),
-  IconButton(icon: "person", tooltip: "我的士多", onPressed: event "account" {}),
+  IconButton(icon: "person", tooltip: "我的士多", onPressed: event "account" {},
+    child: switch data.authorized {true: Avatar(label: data.accountName, url: data.accountAvatar, size: 28), default: Symbol(name: "person")}),
 ]);
 widget ProductActions = Row(mainAxisSize: "min", children: [
   IconButton(icon: "favorite", selected: data.favorited, tooltip: data.favoriteLabel,
@@ -143,7 +144,7 @@ widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
 
 widget SectionTitle = Label(text: args.title, style: "titleMedium", bold: true);
 widget ProductSummary = Row(crossAxisAlignment: "start", children: [
-  Image(url: args.image, width: 72, height: 72, radius: 12), Gap(size: 12),
+  switch args.image {"": switch args.loading {true: Padding(padding: [0.0, 0.0, 12.0, 0.0], child: Skeleton(child: SkeletonBox(width: 72, height: 72, radius: 12))), default: SizedBoxShrink()}, default: Padding(padding: [0.0, 0.0, 12.0, 0.0], child: Image(url: args.image, width: 72, height: 72, radius: 12))},
   Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: args.title, style: "titleSmall", maxLines: 3), Gap(size: 6), Label(text: args.subtitle, style: "bodySmall", color: "onSurfaceVariant")]))
 ]);
 widget Review = PageLayout(loading: data.loading, onRefresh: event "retry" {}, footer: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [ExternalFeedback(), ReviewAction()]), children: [
@@ -196,7 +197,7 @@ widget BuyerOrders = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.
   header: BuyerLogin(),
   items: [...for order in data.rows: Surface(padding: [16.0], onTap: event "order" {no: order.no}, child: Column(crossAxisAlignment: "stretch", children: [
     Row(children: [Expanded(child: Label(text: order.seller, style: "labelMedium", color: "onSurfaceVariant")), Label(text: order.state, style: "labelMedium", color: "primary")]), Gap(size: 12),
-    ProductSummary(image: order.image, title: order.title, subtitle: order.quantity), Gap(size: 12),
+    ProductSummary(image: order.image, loading: order.imageLoading, title: order.title, subtitle: order.quantity), Gap(size: 12),
     Row(children: [Expanded(child: RelativeTime(value: order.time)), Label(text: order.amount, style: "titleMedium", bold: true), Gap(size: 8), Symbol(name: "chevron_right", size: 18.0)]),
   ]))],
 );
@@ -210,7 +211,7 @@ widget BuyerOrder = PageLayout(loading: data.loading, onRefresh: event "ordersRe
     Label(text: data.state, style: "headlineSmall", bold: true, color: "primary"), Gap(size: 8),
     Label(text: data.statusNote, color: "onSurfaceVariant"), Gap(size: 24),
     Surface(child: Column(crossAxisAlignment: "stretch", children: [
-      ProductSummary(image: data.orderImage, title: data.orderTitle, subtitle: data.quantity), Gap(size: 20),
+      ProductSummary(image: data.orderImage, loading: data.orderImageLoading, title: data.orderTitle, subtitle: data.quantity), Gap(size: 20),
       ...for row in data.fields: Padding(padding: [0.0, 5.0, 0.0, 5.0], child: DetailRow(label: row.label, value: row.value)),
     ])),
     switch data.hasDelivery {true: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: Surface(child: Column(crossAxisAlignment: "stretch", children: [

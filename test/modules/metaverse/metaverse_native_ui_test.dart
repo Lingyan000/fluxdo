@@ -1700,6 +1700,58 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     ],
   };
   for (final brightness in Brightness.values) {
+    testWidgets('商城头像与订单补图 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final bytes = base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+      Uint8List fixture(String name) {
+        final file = File('build/ld-store-images/$name');
+        return snapshots && file.existsSync() ? file.readAsBytesSync() : bytes;
+      }
+      final avatarBytes = fixture('avatar.png'), productBytes = fixture('product.webp');
+      final requests = <String>[];
+      final events = <String>[];
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (uri) async {
+          requests.add(uri.path);
+          return uri.path == '/avatar.png' ? avatarBytes : productBytes;
+        }))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final values = DynamicContent({...data, 'authorized': true, 'accountName':'Lin', 'accountAvatar':'https://images.example/avatar.png'});
+      Widget render(String name) => RemoteWidget(runtime:runtime,
+        widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name), data:values,
+        onEvent:(event,args)=>events.add(event));
+      await tester.pumpWidget(app(render('Market'), barActions:render('MarketActions'), brightness:brightness));
+      await tester.runAsync(() async {
+        for (final image in [avatarBytes, productBytes]) {
+          await precacheImage(ResizeImage(MemoryImage(image),width:1024,height:1024,policy:ResizeImagePolicy.fit), tester.element(find.byType(Scaffold)));
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(requests,contains('/avatar.png'));
+      final account = findMaterialTooltip('我的士多');
+      expect(find.descendant(of:account, matching:find.byType(Image)),findsOneWidget);
+      expect(tester.widget<RawImage>(find.descendant(of:account,matching:find.byType(RawImage))).image,isNotNull);
+      await tester.tap(account);expect(events.last,'account');
+      await snapshot(tester,'market-avatar-${brightness.name}');
+      values.update('authorized',false);await tester.pumpAndSettle();
+      expect(find.descendant(of:account,matching:find.byType(Image)),findsNothing);
+      await tester.tap(account);expect(events.last,'account');
+      values.updateAll({'rows':[
+        {...(data['rows'] as List).first as Map<String,dynamic>, 'image':'https://images.example/product.webp','seller':'Lin','quantity':'× 1','time':'2026-11-21T00:00:00Z'},
+        {...(data['rows'] as List).last as Map<String,dynamic>, 'image':'','seller':'seller','quantity':'× 1','time':'2026-11-20T00:00:00Z'},
+      ]});
+      await tester.pumpWidget(app(render('BuyerOrders'),title:'我的订单',brightness:brightness));
+      await tester.pumpAndSettle();
+      expect(find.byType(Image),findsOneWidget);
+      await snapshot(tester,'orders-images-${brightness.name}');
+      expect(tester.takeException(),isNull);
+    });
+  }
+  for (final brightness in Brightness.values) {
     for (final width in [320.0, 390.0, 800.0]) {
       testWidgets('士多页面 ${brightness.name} $width 布局与底部操作区', (tester) async {
         tester.view.physicalSize = Size(width, 844);

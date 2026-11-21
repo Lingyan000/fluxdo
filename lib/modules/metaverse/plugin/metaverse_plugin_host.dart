@@ -855,7 +855,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         if (blockedPermissions.contains(MetaversePluginPermission.serviceAccount)) {
           return {'authorized': false, 'expiresAt': null};
         }
-        final status = await _credentials.status(params['name'], _delegate.currentAccountId());
+        final status = await _credentials.status(params['name'], _delegate.currentAccountId(), includeClaims: params['jwt'] == true);
         checkActive();
         return status;
       case 'credentials.capture':

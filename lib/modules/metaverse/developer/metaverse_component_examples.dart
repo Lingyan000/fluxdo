@@ -200,8 +200,8 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'IconButton',
       description: l.metaverse_componentIconButton,
-      'IconButton(icon: data.icon, tooltip: data.label, enabled: data.enabled, loading: data.loading, selected: data.selected, onPressed: event "press" {})',
-      {...label, 'icon': 'favorite', 'enabled': true, 'loading': false, 'selected': false},
+      'switch data.avatar {true: IconButton(child: Avatar(label: data.label, size: 28), tooltip: data.label, enabled: data.enabled, loading: data.loading, onPressed: event "press" {}), default: IconButton(icon: data.icon, tooltip: data.label, enabled: data.enabled, loading: data.loading, selected: data.selected, onPressed: event "press" {})}',
+      {...label, 'icon': 'favorite', 'avatar': false, 'enabled': true, 'loading': false, 'selected': false},
     ),
     MetaverseComponentExample(
       'Symbol',

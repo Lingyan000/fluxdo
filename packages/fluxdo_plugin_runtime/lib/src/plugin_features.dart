@@ -24,6 +24,8 @@ enum PluginFeature {
   pageChrome,
   loadingPlaceholders,
   navigationReplacement,
+  credentialClaims,
+  iconButtonContent,
 }
 
 class PluginFeatures {

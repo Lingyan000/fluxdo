@@ -806,6 +806,7 @@
   },
   "IconButton": {
     "parameters": [
+      "child",
       "enabled",
       "icon",
       "loading",
@@ -814,6 +815,9 @@
       "tooltip"
     ],
     "types": {
+      "child": [
+        "widget"
+      ],
       "enabled": [
         "boolean"
       ],

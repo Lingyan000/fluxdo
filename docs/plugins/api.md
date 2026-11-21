@@ -53,9 +53,11 @@
 
 以上片段展示新增字段，完整清单仍须包含身份、版本及界面资源。API 2 清单通过 `permissions` 声明能力。`credentials` 的名称由插件定义，请求限制按 origin、路径前缀和方法共同匹配，路径按段匹配。凭证头默认为 `Authorization`，scheme 默认为 `Bearer`，空 scheme 可用于 API key。Connect 回调须为网络权限内的 HTTPS 精确地址。
 
-### `credentials.status(name)`、`credentials.remove(name)`
+### `credentials.status(name, {jwt?: boolean})`、`credentials.remove(name)`
 
 `status` 返回 `{authorized, expiresAt}`，过期时间为 Unix 秒或 null。有效性包含当前应用账号绑定和过期检查。`remove` 返回 null，移除该具名凭证，并取消正在保存或使用旧版本凭证的调用。清空插件数据也会移除全部凭证。
+
+宿主支持 `credentialClaims` 时，`status(name, {jwt: true})` 对有效 JWT 额外返回 `claims`，与 `capture(..., {jwt: true})` 的声明一致，方便恢复已有会话的用户资料。非 JWT 或无法解析的凭证省略该字段，过期、账号不符或关闭服务账号权限时也不返回。声明是解码数据，不能替代服务端的签名与身份校验；不得将完整声明写入日志，宿主不会返回凭证原文。
 
 ### `credentials.request(name)`
 

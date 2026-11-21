@@ -27,12 +27,28 @@ class MetaverseCredentialManager {
     return credential?.validFor(accountId) == true ? credential : null;
   }
 
-  Future<Map<String, Object?>> status(Object? name, int? accountId) async {
-    final credential = await read(name, accountId);
+  Future<Map<String, Object?>> status(Object? name, int? accountId, {bool includeClaims = false}) async {
+    final declaration = spec(name);
+    final revision = store.credentialRevision(manifest.id, declaration.name);
+    final stored = await read(name, accountId);
+    final credential = revision == store.credentialRevision(manifest.id, declaration.name) ? stored : null;
+    final claims = includeClaims && credential != null ? _claims(credential.secret) : null;
     return {
       'authorized': credential != null,
       'expiresAt': credential?.expiresAt,
+      'claims': ?claims,
     };
+  }
+
+  // 声明与捕获时保持相同边界，身份真实性仍由服务端校验，凭证原文不会交给脚本。
+  static Map<String, dynamic>? _claims(String secret) {
+    if (secret.split('.').length != 3) return null;
+    try {
+      final value = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(secret.split('.')[1]))));
+      return value is Map<String, dynamic> ? value : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   /// 将远端 JSON 中指定的凭证直接保存，脚本只收到状态及可选的 JWT 声明。

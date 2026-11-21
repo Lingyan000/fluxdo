@@ -52,7 +52,7 @@ widget SearchPage = PageLayout(
 | `Label` | `text`、`style: bodyMedium`、`color`、`bold: false`、`maxLines`、`align` | bold 使用 w600，指定 maxLines 后溢出显示省略号 |
 | `Surface` | `child`、`radius: 16`、`padding: [16.0]`、`color` | `onTap`。圆角经过应用形状 token，默认颜色结合当前页面背景 |
 | `Button` | `label`、`icon`、`variant`、`enabled: true`、`loading: false`、`fullWidth: false` | `onPressed`。variant 支持 tonal、outlined、text，默认填充按钮。loading 时显示进度并禁用；fullWidth 填满父级分配的宽度，在 Row 中应包入 Expanded |
-| `IconButton` | `icon`、`tooltip`、`enabled: true`、`loading: false`、可选 `selected` | `onPressed`。加载或禁用时不能点击；选中图标使用实心填充。未知图标使用 extension，省略回调时禁用 |
+| `IconButton` | `icon`、可选 `child`、`tooltip`、`enabled: true`、`loading: false`、可选 `selected` | `onPressed`。加载或禁用时不能点击；选中图标使用实心填充。`iconButtonContent` 能力允许用 `child` 替换图标，例如 `Avatar(size: 28)`，保留按钮触区、提示、键盘焦点和禁用语义。未知图标使用 extension，省略回调时禁用 |
 | `Symbol` | `name`、`size`、`color` | 未知图标使用 extension |
 | `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0`、`preview: false` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
 | `Statistics` | `items: [{value, label}]`，最多 12 项；`loading: false` | 数字与标签自动分列，大字与窄屏换行。加载期间显示骨架，不把未知值当作 0。无内置点击行为，可放在整卡入口中 |
