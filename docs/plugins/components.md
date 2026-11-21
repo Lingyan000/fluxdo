@@ -226,6 +226,6 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 
 `PageLayout`、`ListPage`、`DetailPage`、`GridPage` 的 `toolbar` 固定在内容区上方，适合搜索和分类。普通 `header` 随列表滚动。工具区最高占页面 45%，大字下内部可滚动；`footer` / `actions` 放主要操作。
 
-`Image(preview: true)` 支持点击查看和缩放，预览沿用同一图片权限与网络出口。上述新增展示能力需要声明 `requiredFeatures: ["contentPresentation"]`。
+`Image(preview: true)` 和 Markdown 图片点击后使用应用公共图片查看器，支持双击缩放、拖动关闭、保存及平台支持的分享操作。首次预览复用图片现有的加载请求，重试仍通过插件的图片权限与网络出口；查看器和导出操作只消费图片字节，不另行按 URL 下载或附带论坛凭据。SVG 以静态位图预览和导出，不执行脚本或加载外链子资源。上述展示能力需要声明 `requiredFeatures: ["contentPresentation"]`。
 
 清单可声明 `card: {"widget":"Card", "page":"home"}` 并包含 `cardNavigation` 必需能力。`page` 必须指向普通页面。宿主使整张卡片可点击，卡片内部的按钮和更多菜单仍独立响应。`Card` 的内容仍由插件任意组合组件；例如只放 `Statistics(items: data.stats)`，不必再放一个“进入”按钮。未声明 `page` 的历史卡片行为不变。

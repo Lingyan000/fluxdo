@@ -1,4 +1,5 @@
 import 'dart:async' show Timer, unawaited;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
@@ -6,6 +7,8 @@ import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:jovial_svg/jovial_svg.dart';
+import 'package:mime/mime.dart';
+import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:super_clipboard/super_clipboard.dart';
 
 import '../services/discourse_cache_manager.dart';
@@ -16,7 +19,7 @@ import '../services/svg_image_cache.dart';
 import '../utils/double_tap_zoom_controller.dart';
 import '../utils/hero_visibility_controller.dart';
 import '../utils/image_save_utils.dart';
-import '../utils/screenshot_utils.dart';
+import '../utils/image_format.dart';
 import '../utils/svg_utils.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/layout/immersive_insets_hold.dart';
@@ -37,9 +40,15 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../l10n/s.dart';
 
+part 'image_viewer_memory_source.dart';
+
 class ImageViewerPage extends ConsumerStatefulWidget {
   final String? imageUrl;
   final Uint8List? imageBytes;
+
+  /// 由调用方读取图片，查看器不接触 URL、凭据或网络缓存。
+  /// 首次打开和用户重试时调用；适用于有独立访问策略的图片来源。
+  final Future<Uint8List> Function()? imageLoader;
   final String? heroTag;
   final List<String>? galleryImages;
 
@@ -72,6 +81,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     super.key,
     this.imageUrl,
     this.imageBytes,
+    this.imageLoader,
     this.heroTag,
     this.galleryImages,
     this.heroTags,
@@ -83,7 +93,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     this.heroSourceFit,
     this.heroSourceRadius = 0,
     this.heroSourceCircular = false,
-  }) : assert(imageUrl != null || imageBytes != null);
+  }) : assert(imageUrl != null || imageBytes != null || imageLoader != null),
+       assert(imageLoader == null || (imageUrl == null && imageBytes == null));
 
   /// 查看器路由的黑底/整页淡入淡出曲线:与 Hero 飞行(吃路由原始
   /// animation,全程 300ms)异速 —— push 前 60%(~180ms)完成淡入、
@@ -222,14 +233,26 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   }
 
   /// 打开内存图片查看器
-  static void openBytes(BuildContext context, Uint8List bytes) {
-    Navigator.push(
+  static Future<void> openBytes(BuildContext context, Uint8List bytes) =>
+      _openMemory(context, ImageViewerPage(imageBytes: bytes));
+
+  /// 打开受控来源的大图。加载、重试与图片操作均复用同一份内存数据。
+  static Future<void> openWithLoader(
+    BuildContext context, {
+    required Future<Uint8List> Function() loadImage,
+  }) => _openMemory(
+    context,
+    ImageViewerPage(imageLoader: loadImage, enableShare: true),
+  );
+
+  static Future<void> _openMemory(BuildContext context, ImageViewerPage page) {
+    return Navigator.push(
       context,
       InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {
-          return ImageViewerPage(imageBytes: bytes);
+          return page;
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) =>
             buildPredictiveBackPageTransitions(
@@ -296,6 +319,66 @@ class _RouteFadeState extends State<_RouteFade> {
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     with TickerProviderStateMixin, DoubleTapZoomMixin, WidgetsBindingObserver {
+  _ViewerMemoryImage? _memoryImage;
+  bool _memoryLoading = false;
+  bool get _usesMemory =>
+      widget.imageBytes != null || widget.imageLoader != null;
+
+  int get _viewerMaxDimension => (View.of(context).physicalSize.longestSide * 3)
+      .clamp(2048.0, 8192.0)
+      .round();
+
+  Future<void> _loadMemoryImage() async {
+    if (_memoryLoading) return;
+    setState(() {
+      _memoryLoading = true;
+      _memoryImage = null;
+    });
+    try {
+      final bytes = await (widget.imageBytes != null
+          ? Future.value(widget.imageBytes!)
+          : widget.imageLoader!());
+      if (!mounted) return;
+      final image = await _ViewerMemoryImage.prepare(
+        bytes,
+        _viewerMaxDimension,
+      );
+      if (!mounted) return;
+      setState(() => _memoryImage = image);
+    } catch (_) {
+      // 错误详情由来源的日志系统记录，查看器只呈现统一的失败与重试。
+    } finally {
+      if (mounted) setState(() => _memoryLoading = false);
+    }
+  }
+
+  Widget _buildMemoryError() => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Symbols.broken_image_rounded,
+          color: Colors.white70,
+          size: 48,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          S.current.common_imageUnavailable,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        if (widget.imageLoader != null) ...[
+          const SizedBox(height: 12),
+          TextButton.icon(
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            onPressed: _loadMemoryImage,
+            icon: const Icon(Symbols.refresh_rounded),
+            label: Text(S.current.common_retry),
+          ),
+        ],
+      ],
+    ),
+  );
+
   late int currentIndex;
   final _predecoder = ImagePredecodeController();
   final _dismissOffset = ValueNotifier(Offset.zero);
@@ -538,9 +621,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   double _dismissOpacity(Offset offset, Size pageSize) {
     if (pageSize.height <= 0) return 1;
     // 网络图只响应纵向关闭，内存图允许向任意方向拖出。
-    final distance = widget.imageBytes == null
-        ? offset.dy.abs() * 2
-        : offset.distance;
+    final distance = !_usesMemory ? offset.dy.abs() * 2 : offset.distance;
     return (1 - distance / pageSize.height).clamp(0.0, 1.0);
   }
 
@@ -559,6 +640,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
     currentIndex = widget.initialIndex;
     _activeHeroPage = ValueNotifier(currentIndex);
+    if (widget.imageBytes case final bytes?) {
+      // 已有位图立即显示；SVG 需先转换为不含外链资源的本地位图。
+      if (!SvgUtils.isSvgBytes(bytes)) {
+        _memoryImage = _ViewerMemoryImage(bytes);
+      }
+    }
+    if (_usesMemory && _memoryImage == null) {
+      unawaited(_loadMemoryImage());
+    }
     // 初始化双击缩放
     initDoubleTapZoom();
     // 预加载相邻图片
@@ -786,6 +876,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 预加载相邻图片
   void _preloadAdjacentImages() {
+    if (_usesMemory) return;
     _scheduleAdjacentPredecode();
     final images = widget.galleryImages;
     if (images == null || images.length <= 1) return;
@@ -816,6 +907,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   void _scheduleAdjacentPredecode() {
     _cancelPredecode();
+    if (_usesMemory) return;
     final images = widget.galleryImages;
     if (_predecodePaused ||
         images == null ||
@@ -905,12 +997,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 保存内存图片（移动端进相册、桌面端另存为文件）
   Future<void> _saveMemoryImage() async {
-    if (_isSaving.value || widget.imageBytes == null) return;
+    final image = _memoryImage;
+    if (_isSaving.value || image == null) return;
     _isSaving.value = true;
     try {
       await ImageSaveUtils.saveBytes(
-        widget.imageBytes!,
-        fileName: 'fluxdo_${DateTime.now().millisecondsSinceEpoch}.png',
+        image.bytes,
+        fileName:
+            'fluxdo_${DateTime.now().millisecondsSinceEpoch}.${image.extension}',
       );
     } finally {
       if (mounted) _isSaving.value = false;
@@ -919,8 +1013,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 复制内存图片到剪贴板
   Future<void> _copyMemoryImage() async {
-    final bytes = widget.imageBytes;
-    if (bytes == null || bytes.isEmpty) return;
+    final image = _memoryImage;
+    if (image == null) return;
     try {
       final clipboard = SystemClipboard.instance;
       if (clipboard == null) {
@@ -928,7 +1022,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         return;
       }
       final item = DataWriterItem();
-      item.add(Formats.png(bytes));
+      item.add(Formats.png(await image.clipboardPng()));
+      if (!mounted) return;
       await clipboard.write([item]);
       if (mounted) ToastService.showSuccess(S.current.image_copied);
     } catch (e) {
@@ -939,19 +1034,29 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 分享内存图片
   Future<void> _shareMemoryImage() async {
-    final bytes = widget.imageBytes;
-    if (bytes == null || bytes.isEmpty) return;
+    final image = _memoryImage;
+    if (image == null || _isSharing.value) return;
+    _isSharing.value = true;
     try {
-      await ScreenshotUtils.shareImage(bytes);
+      final file = await ShareUtils.createOutboxFile(
+        'fluxdo_${DateTime.now().millisecondsSinceEpoch}.${image.extension}',
+      );
+      await file.writeAsBytes(image.bytes);
+      if (!mounted) return;
+      await ShareUtils.shareFile(
+        XFile(file.path, mimeType: ShareUtils.imageMimeType(image.extension)),
+      );
     } catch (e) {
       debugPrint('[ImageViewerPage] shareMemoryImage error: $e');
       if (mounted) ToastService.showError(S.current.common_shareFailed);
+    } finally {
+      if (mounted) _isSharing.value = false;
     }
   }
 
   /// 内存图片的长按 / 右键菜单（保存 / 复制 / 分享）
   void _showBytesContextMenu(BuildContext context, {Offset? position}) {
-    if (widget.imageBytes == null) return;
+    if (_memoryImage == null) return;
 
     if (PlatformUtils.isDesktop && position != null) {
       final overlayRenderObject = Overlay.of(context).context
@@ -1096,7 +1201,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   @override
   Widget build(BuildContext context) {
     // 内存图片模式
-    if (widget.imageBytes != null) {
+    if (_usesMemory) {
       return _wrapDesktopShortcuts(
         context,
         AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1127,21 +1232,32 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       context,
                       position: details.globalPosition,
                     ),
-                    child: GestureImageView(
-                      image: MemoryImage(widget.imageBytes!),
-                      controller: _obtainGestureController(
-                        0,
-                        inPageView: false,
-                        maxScale: 5.0,
-                        animationMaxScale: 5.5,
-                      ),
-                      fit: BoxFit.contain,
-                      enableSlideOutPage: true,
-                      onDoubleTap: (state) {
-                        _hideUI();
-                        handleDoubleTapZoom(state);
-                      },
-                    ),
+                    child: _memoryImage == null
+                        ? (_memoryLoading
+                              ? _buildImageLoadingProgress(context, null)
+                              : _buildMemoryError())
+                        : GestureImageView(
+                            image: ResizeImage(
+                              MemoryImage(_memoryImage!.bytes),
+                              width: _viewerMaxDimension,
+                              height: _viewerMaxDimension,
+                              policy: ResizeImagePolicy.fit,
+                            ),
+                            controller: _obtainGestureController(
+                              0,
+                              inPageView: false,
+                              maxScale: 5.0,
+                              animationMaxScale: 5.5,
+                            ),
+                            fit: BoxFit.contain,
+                            enableSlideOutPage: true,
+                            onDoubleTap: (state) {
+                              _hideUI();
+                              handleDoubleTapZoom(state);
+                            },
+                            failedBuilder: (_, _) => _buildMemoryError(),
+                            progressBuilder: _buildImageLoadingProgress,
+                          ),
                   ),
                   _buildControls(),
                 ],
@@ -1374,8 +1490,16 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     key: _controlsKey,
     listenable: _controlChanges,
     builder: (context, _) {
-      if (widget.imageBytes != null) {
-        return _buildControlBar(onSave: _saveMemoryImage);
+      if (_usesMemory) {
+        return _buildControlBar(
+          onSave: _memoryImage == null ? null : _saveMemoryImage,
+          onShare:
+              _memoryImage != null &&
+                  widget.enableShare &&
+                  ShareUtils.canShareFiles
+              ? _shareMemoryImage
+              : null,
+        );
       }
       return _buildControlBar(
         onSave: _saveCurrentImage,
@@ -1389,7 +1513,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   );
 
   Widget _buildControlBar({
-    required VoidCallback onSave,
+    required VoidCallback? onSave,
     VoidCallback? onShare,
     int pageCount = 1,
     String? filename,
@@ -1524,7 +1648,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 圆形底色保持 40，按钮本身留足 48 的点击范围。
   Widget _controlButton(
     IconData icon,
-    VoidCallback action, {
+    VoidCallback? action, {
     bool busy = false,
   }) {
     return SizedBox.square(
@@ -1541,7 +1665,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               onPressed: busy ? null : action,
               icon: busy
                   ? const LoadingSpinner(size: 16, color: Colors.white)
-                  : Icon(icon, color: Colors.white),
+                  : Icon(
+                      icon,
+                      color: action == null ? Colors.white38 : Colors.white,
+                    ),
             ),
           ),
         ],

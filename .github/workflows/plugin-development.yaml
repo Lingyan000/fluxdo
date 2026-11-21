@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/pages/image_viewer*.dart'
+      - 'test/widgets/image_viewer*_test.dart'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
       - 'packages/common_ui/lib/src/pin_input.dart'
@@ -39,6 +41,8 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/pages/image_viewer*.dart'
+      - 'test/widgets/image_viewer*_test.dart'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
       - 'packages/common_ui/lib/src/pin_input.dart'
@@ -159,6 +163,13 @@ jobs:
           test/modules/metaverse/metaverse_content_components_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
+      - name: Verify shared image viewer and controlled image sources
+        working-directory: app
+        run: |
+          flutter analyze lib/pages/image_viewer_page.dart lib/pages/image_viewer_memory_source.dart lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/modules/metaverse/metaverse_content_components_test.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          flutter test --reporter expanded test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_viewer_fade_continuity_test.dart test/widgets/image_viewer_gradient_transition_test.dart
+          exit $LASTEXITCODE
       - name: Verify native CDK claims and shared checkout without live transactions
         working-directory: app
         run: |

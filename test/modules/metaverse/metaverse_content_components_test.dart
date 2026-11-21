@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:app_icons/app_icons.dart';
+import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/widgets/common/skeleton.dart';
+import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
+import 'package:fluxdo/utils/dialog_utils.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/l10n/s.dart';
+import 'package:fluxdo/pages/image_viewer_page.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
@@ -19,6 +25,10 @@ void main() {
   late Runtime runtime;
   late DynamicContent data;
   var validImage = false;
+  Future<Uint8List> Function(Uri)? imageLoader;
+  final imageBytes = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  );
   late SharedPreferences preferences;
   final requests = <Uri>[];
   final events = <({String name, DynamicMap args})>[];
@@ -26,6 +36,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     preferences = await SharedPreferences.getInstance();
     validImage = false;
+    imageLoader = null;
     requests.clear();
     events.clear();
     data = DynamicContent();
@@ -35,11 +46,8 @@ void main() {
         createMetaverseWidgetLibrary(
           loadImage: (uri) async {
             requests.add(uri);
-            return validImage
-                ? base64Decode(
-                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-                  )
-                : Uint8List(0);
+            if (imageLoader != null) return imageLoader!(uri);
+            return validImage ? imageBytes : Uint8List(0);
           },
         ),
       );
@@ -49,6 +57,7 @@ void main() {
     WidgetTester tester,
     String widget, {
     double scale = 1,
+    bool modal = false,
   }) async {
     runtime.update(
       metaversePluginLibraryName,
@@ -63,23 +72,63 @@ void main() {
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context)
                   .copyWith(textScaler: TextScaler.linear(scale)),
-              child: child!,
+              child: ImmersiveInsetsHoldScope(child: child!),
             ),
             home: Scaffold(
-              body: RemoteWidget(
-                runtime: runtime,
-                widget: const FullyQualifiedWidgetName(
-                  metaversePluginLibraryName,
-                  'Test',
-                ),
-                data: data,
-                onEvent: (name, args) => events.add((name: name, args: args)),
+              body: Builder(
+                builder: (context) {
+                  Widget remote() => RemoteWidget(
+                    runtime: runtime,
+                    widget: const FullyQualifiedWidgetName(
+                      metaversePluginLibraryName,
+                      'Test',
+                    ),
+                    data: data,
+                    onEvent: (name, args) =>
+                        events.add((name: name, args: args)),
+                  );
+                  if (!modal) return remote();
+                  return TextButton(
+                    onPressed: () => showAppDialog<void>(
+                      context: context,
+                      builder: (_) => Dialog(
+                        child: SizedBox(
+                          width: 300,
+                          height: 400,
+                          child: remote(),
+                        ),
+                      ),
+                    ),
+                    child: const Text('详情'),
+                  );
+                },
               ),
             ),
           ),
         ),
       ),
     );
+    if (modal) {
+      await tester.tap(find.text('详情'));
+      await tester.pumpAndSettle();
+    }
+    if (validImage) {
+      await tester.runAsync(
+        () => precacheImage(
+          ResizeImage(
+            MemoryImage(imageBytes),
+            width: (tester.view.physicalSize.longestSide * 3)
+                .clamp(2048, 8192)
+                .round(),
+            height: (tester.view.physicalSize.longestSide * 3)
+                .clamp(2048, 8192)
+                .round(),
+            policy: ResizeImagePolicy.fit,
+          ),
+          tester.element(find.byType(RemoteWidget)),
+        ),
+      );
+    }
     await tester.pumpAndSettle();
   }
 
@@ -194,26 +243,156 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('图片预览使用同一受控出口，关闭只关闭预览层', (tester) async {
+  Finder previewButton() => find.byWidgetPredicate(
+    (w) =>
+        w is Semantics &&
+        w.properties.label == S.current.metaverse_imagePreview,
+  );
+
+  testWidgets('图片复用公共查看器与现有请求，双击缩放后关闭只退出预览', (tester) async {
     validImage = true;
     await show(
       tester,
       'Image(url:"https://images.example/p.png",width:160,height:120,preview:true)',
     );
-    await tester.tap(
-      find.byWidgetPredicate(
-        (w) =>
-            w is Semantics &&
-            w.properties.label == S.current.metaverse_imagePreview,
+    await tester.tap(previewButton());
+    await tester.pumpAndSettle();
+    final viewer = tester.widget<ImageViewerPage>(find.byType(ImageViewerPage));
+    expect(viewer.imageUrl, isNull);
+    expect(viewer.galleryImages, isNull);
+    expect(viewer.imageLoader, isNotNull);
+    expect(find.byType(Dialog), findsNothing);
+    expect(requests.map((u) => u.toString()), ['https://images.example/p.png']);
+    expect(find.byIcon(Symbols.save_alt_rounded), findsOneWidget);
+    final image = tester.widget<GestureImageView>(
+      find.byType(GestureImageView),
+    );
+    final point = tester.getCenter(find.byType(GestureImageView));
+    await tester.tapAt(point);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(point);
+    await tester.pumpAndSettle();
+    expect(image.controller.details!.totalScale, greaterThan(1));
+    // 双击会收起工具栏，普通返回仍只退出查看器。
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(find.byType(RemoteWidget), findsOneWidget);
+    expect(requests, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('图片尚在加载时可以打开和关闭，迟到结果不会重新打开页面', (tester) async {
+    final pending = Completer<Uint8List>();
+    imageLoader = (_) => pending.future;
+    await show(
+      tester,
+      'Image(url:"https://images.example/slow.png",width:160,height:120,preview:true)',
+    );
+    await tester.tap(previewButton());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+    final save = find.widgetWithIcon(IconButton, Symbols.save_alt_rounded);
+    expect(tester.widget<IconButton>(save).onPressed, isNull);
+    await tester.tap(find.byIcon(Symbols.close_rounded));
+    await tester.pumpAndSettle();
+    pending.complete(imageBytes);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(find.byType(RemoteWidget), findsOneWidget);
+    expect(requests, hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('查看器重试再次经过插件加载器，拒绝时不回退到公共 URL 下载', (tester) async {
+    final pending = Completer<Uint8List>();
+    var allowed = false;
+    imageLoader = (_) {
+      if (requests.length == 1) return pending.future;
+      if (!allowed) throw StateError('permission_denied');
+      return Future.value(imageBytes);
+    };
+    await show(
+      tester,
+      'Image(url:"https://images.example/retry.png",width:160,height:120,preview:true)',
+    );
+    await tester.tap(previewButton());
+    await tester.pump();
+    pending.completeError(StateError('permission_denied'));
+    await tester.pumpAndSettle();
+    expect(find.text(S.current.common_retry), findsOneWidget);
+    await tester.tap(find.text(S.current.common_retry));
+    await tester.pumpAndSettle();
+    expect(requests, hasLength(2));
+    expect(find.text(S.current.common_retry), findsOneWidget);
+    allowed = true;
+    await tester.runAsync(
+      () => precacheImage(
+        ResizeImage(
+          MemoryImage(imageBytes),
+          width: 2400,
+          height: 2400,
+          policy: ResizeImagePolicy.fit,
+        ),
+        tester.element(find.byType(ImageViewerPage)),
       ),
     );
+    await tester.tap(find.text(S.current.common_retry));
     await tester.pumpAndSettle();
-    expect(find.byType(InteractiveViewer), findsOneWidget);
-    expect(requests.every((u) => u.host == 'images.example'), isTrue);
-    await tester.tap(find.byType(CloseButton));
+    expect(requests, hasLength(3));
+    expect(find.text(S.current.common_retry), findsNothing);
+    expect(find.byType(GestureImageView), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Symbols.save_alt_rounded),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.byIcon(Symbols.close_rounded));
     await tester.pumpAndSettle();
-    expect(find.byType(InteractiveViewer), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Markdown 图片也复用公共查看器，预览开关关闭时不响应点击', (tester) async {
+    validImage = true;
+    data.update('text', '![示例](https://images.example/markdown.png)');
+    await show(tester, 'Markdown(text:data.text)');
+    await tester.tap(previewButton());
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+    expect(requests, hasLength(1));
+    await tester.tap(find.byIcon(Symbols.close_rounded));
+    await tester.pumpAndSettle();
+    await show(
+      tester,
+      'Image(url:"https://images.example/plain.png",width:160,height:120)',
+    );
+    expect(previewButton(), findsNothing);
+    expect(find.byType(ImageViewerPage), findsNothing);
+  });
+
+  testWidgets('详情弹层内打开大图，关闭后仍保留详情和底层页面', (tester) async {
+    validImage = true;
+    await show(
+      tester,
+      'Image(url:"https://images.example/modal.png",width:160,height:120,preview:true)',
+      modal: true,
+    );
+    await tester.tap(previewButton());
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+    await tester.tap(find.byIcon(Symbols.close_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(find.byType(Dialog), findsOneWidget);
     expect(find.byType(RemoteWidget), findsOneWidget);
+    navigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('详情'), findsOneWidget);
+    expect(requests, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 

@@ -16,6 +16,7 @@ import 'package:html/parser.dart' as html;
 import 'package:rfw/rfw.dart' hide Switch;
 
 import '../../../../l10n/s.dart';
+import '../../../../pages/image_viewer_page.dart';
 import '../../../../utils/svg_utils.dart';
 import '../../../../widgets/common/image_placeholder.dart';
 import '../../../../widgets/common/paged_list_footer.dart';
@@ -23,7 +24,6 @@ import '../../../../widgets/common/skeleton.dart';
 import '../../../../utils/time_utils.dart';
 import '../../../../widgets/common/relative_time_text.dart';
 import '../../../../widgets/layout/master_detail_layout.dart';
-import '../../../../utils/dialog_utils.dart';
 import '../../../../services/toast_service.dart';
 
 part 'metaverse_page_components.dart';
@@ -794,6 +794,30 @@ class _PluginImage extends StatefulWidget {
 class _PluginImageState extends State<_PluginImage> {
   Future<Uint8List>? _request;
   ScalableImage? _svg;
+  bool _previewOpen = false;
+
+  Future<void> _openPreview() async {
+    if (_previewOpen) return;
+    var request = _request;
+    if (request == null) return;
+    final uri = Uri.parse(widget.url);
+    final load = widget.load;
+    _previewOpen = true;
+    try {
+      await ImageViewerPage.openWithLoader(
+        context,
+        loadImage: () {
+          // 首次查看共享已经发出的请求，重试仍须经过原来的权限和网络出口。
+          final initial = request;
+          request = null;
+          return initial ?? load(uri);
+        },
+      );
+    } finally {
+      _previewOpen = false;
+    }
+  }
+
   void _update() {
     _svg = null;
     final uri = Uri.tryParse(widget.url);
@@ -861,16 +885,11 @@ class _PluginImageState extends State<_PluginImage> {
       ),
     );
     if (!widget.preview || _request == null) return image;
-    return Semantics(button: true, label: context.l10n.metaverse_imagePreview,
-      child: GestureDetector(onTap: () => showAppDialog<void>(
-        context: context,
-        builder: (context) => Dialog.fullscreen(child: Scaffold(
-          appBar: AppBar(title: Text(context.l10n.metaverse_imagePreview), leading: CloseButton()),
-          body: Center(child: InteractiveViewer(minScale: .5, maxScale: 5,
-            child: _PluginImage(url: widget.url, width: double.infinity, height: double.infinity,
-              fit: BoxFit.contain, radius: BorderRadius.zero, load: widget.load))),
-        )),
-      ), child: image));
+    return Semantics(
+      button: true,
+      label: context.l10n.metaverse_imagePreview,
+      child: GestureDetector(onTap: _openPreview, child: image),
+    );
   }
 }
 

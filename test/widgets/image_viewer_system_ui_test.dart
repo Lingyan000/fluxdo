@@ -68,6 +68,17 @@ void main() {
       ),
     );
     if (open == null) {
+      await tester.runAsync(
+        () => precacheImage(
+          ResizeImage(
+            MemoryImage(imageBytes),
+            width: 2400,
+            height: 2400,
+            policy: ResizeImagePolicy.fit,
+          ),
+          homeContext,
+        ),
+      );
       ImageViewerPage.openBytes(homeContext, imageBytes);
     } else {
       await open(homeContext);
