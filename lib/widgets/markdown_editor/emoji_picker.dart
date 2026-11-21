@@ -12,6 +12,7 @@ import '../../services/emoji_handler.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
+import 'picker_search_header.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -734,58 +735,12 @@ class _EmojiSearchViewState extends State<_EmojiSearchView> {
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Symbols.arrow_back_rounded, size: 20),
-                color: theme.colorScheme.onSurfaceVariant,
-                visualDensity: VisualDensity.compact,
-                onPressed: widget.onClose,
-                tooltip: S.current.common_cancel,
-              ),
-              Expanded(
-                child: InputFieldShell(
-                  height: 36,
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(
-                    alpha: 0.5,
-                  ),
-                  radius: 10,
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    autofocus: true,
-                    textAlignVertical: TextAlignVertical.center,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: S.current.emoji_searchHint,
-                      hintStyle: TextStyle(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.only(right: 12),
-                      prefixIcon: Icon(
-                        Symbols.search_rounded,
-                        size: 18,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      suffixIcon: _query.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Symbols.cancel_rounded,
-                                size: 16,
-                              ),
-                              color: theme.colorScheme.onSurfaceVariant,
-                              onPressed: () => _searchController.clear(),
-                            )
-                          : null,
-                    ).withoutBorder(),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        PickerSearchInlineHeader(
+          controller: _searchController,
+          focusNode: _searchFocusNode,
+          hintText: S.current.emoji_searchHint,
+          showClear: _query.isNotEmpty,
+          onClose: widget.onClose,
         ),
         Expanded(
           child: _query.isEmpty
@@ -899,75 +854,11 @@ class _EmojiSearchSheetState extends State<_EmojiSearchSheet> {
       maxHeightFactor: 0.8,
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: theme.colorScheme.outlineVariant.withValues(
-                    alpha: 0.5,
-                  ),
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InputFieldShell(
-                    height: 44,
-                    color: theme.colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
-                    radius: 12,
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      textAlignVertical: TextAlignVertical.center,
-                      style: const TextStyle(fontSize: 16),
-                      decoration: InputDecoration(
-                        hintText: S.current.emoji_searchHint,
-                        hintStyle: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.only(
-                          left: 0,
-                          right: 12,
-                        ),
-                        prefixIcon: Icon(
-                          Symbols.search_rounded,
-                          size: 20,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        suffixIcon: _query.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Symbols.cancel_rounded,
-                                  size: 18,
-                                ),
-                                color: theme.colorScheme.onSurfaceVariant,
-                                onPressed: () => _searchController.clear(),
-                              )
-                            : null,
-                      ).withoutBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () {
-                    FocusScope.of(context).unfocus();
-                    Navigator.pop(context);
-                  },
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  child: Text(S.current.common_cancel),
-                ),
-              ],
-            ),
+          PickerSearchSheetHeader(
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            hintText: S.current.emoji_searchHint,
+            showClear: _query.isNotEmpty,
           ),
 
           // 内容区域

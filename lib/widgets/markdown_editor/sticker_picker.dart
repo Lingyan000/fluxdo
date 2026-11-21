@@ -183,6 +183,15 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       showTitleDivider: true,
       initialSize: 0.8,
       actions: [
+        // 「我的表情包」(排序、移除、收藏分类)放在市场里,面板顶栏只留「+」
+        Builder(
+          builder: (sheetContext) => IconButton(
+            icon: const Icon(Symbols.tune_rounded, size: 20),
+            visualDensity: VisualDensity.compact,
+            tooltip: S.current.sticker_manageTooltip,
+            onPressed: () => StickerManageSheet.show(sheetContext),
+          ),
+        ),
         Builder(
           builder: (sheetContext) => TextButton(
             // 按钮属于市场路由，不能引用已随选择器销毁的 State.context。
@@ -393,20 +402,13 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
       setState(() => _searching = true);
       return;
     }
-    _openForegroundSheet(
-      (context) => AppBottomSheet.showDraggable(
-        context: context,
-        initialSize: 0.9,
-        bodyBuilder: (sheetContext, scrollController) => StickerSearchView(
-          search: _search,
-          scrollController: scrollController,
-          onSelected: (sticker) {
-            Navigator.of(sheetContext).pop();
-            _onStickerTap(sticker);
-          },
-        ),
-      ),
-    );
+    _openForegroundSheet((context) async {
+      final sticker = await StickerSearchView.showSheet(
+        context,
+        search: _search,
+      );
+      if (sticker != null && mounted) _onStickerTap(sticker);
+    });
   }
 
   // ==================== 滚动锚点 ====================
@@ -622,6 +624,18 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
     return RepaintBoundary(
       child: Row(
         children: [
+          // 搜索在最左,与表情面板同一位置
+          IconButton(
+            icon: const Icon(Symbols.search_rounded, size: 20),
+            visualDensity: compact ? VisualDensity.compact : null,
+            onPressed: _openSearch,
+            tooltip: S.current.sticker_searchTooltip,
+          ),
+          Container(
+            height: 20,
+            width: 1,
+            color: theme.colorScheme.outlineVariant,
+          ),
           Expanded(
             child: SizedBox(
               key: _tabStripKey,
@@ -720,18 +734,6 @@ class _StickerPickerState extends ConsumerState<StickerPicker>
             height: 20,
             width: 1,
             color: theme.colorScheme.outlineVariant,
-          ),
-          IconButton(
-            icon: const Icon(Symbols.search_rounded, size: 20),
-            visualDensity: compact ? VisualDensity.compact : null,
-            onPressed: _openSearch,
-            tooltip: S.current.sticker_searchTooltip,
-          ),
-          IconButton(
-            icon: const Icon(Symbols.tune_rounded, size: 20),
-            visualDensity: compact ? VisualDensity.compact : null,
-            onPressed: () => _openForegroundSheet(StickerManageSheet.show),
-            tooltip: S.current.sticker_manageTooltip,
           ),
           IconButton(
             icon: const Icon(Symbols.add_circle_rounded, size: 20),
