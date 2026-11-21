@@ -8,6 +8,9 @@ on:
       - 'lib/modules/metaverse/**'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
+      - 'packages/common_ui/lib/src/pin_input.dart'
+      - 'test/widgets/common/pin_input_test.dart'
+      - 'lib/l10n/modules/ldc/**'
       - 'lib/services/ldc_payment_service.dart'
       - 'lib/widgets/cdk_balance_card.dart'
       - 'lib/l10n/modules/cdk/**'
@@ -38,6 +41,9 @@ on:
       - 'lib/modules/metaverse/**'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
+      - 'packages/common_ui/lib/src/pin_input.dart'
+      - 'test/widgets/common/pin_input_test.dart'
+      - 'lib/l10n/modules/ldc/**'
       - 'lib/services/ldc_payment_service.dart'
       - 'lib/widgets/cdk_balance_card.dart'
       - 'lib/l10n/modules/cdk/**'
@@ -156,9 +162,9 @@ jobs:
       - name: Verify native CDK claims and shared checkout without live transactions
         working-directory: app
         run: |
-          flutter analyze lib/modules/cdk lib/modules/ldc_payment/ldc_payment_flow.dart lib/services/ldc_payment_service.dart lib/widgets/cdk_balance_card.dart test/modules/cdk test/services/ldc_payment_service_test.dart
+          flutter analyze lib/modules/cdk lib/modules/ldc_payment packages/common_ui/lib/src/pin_input.dart lib/services/ldc_payment_service.dart lib/widgets/cdk_balance_card.dart test/modules/cdk test/widgets/common/pin_input_test.dart test/services/ldc_payment_service_test.dart test/services/ldc_biometric_payment_test.dart
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter test --reporter expanded test/modules/cdk test/services/ldc_payment_service_test.dart
+          flutter test --reporter expanded test/modules/cdk test/widgets/common/pin_input_test.dart test/services/ldc_payment_service_test.dart test/services/ldc_biometric_payment_test.dart
           exit $LASTEXITCODE
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app

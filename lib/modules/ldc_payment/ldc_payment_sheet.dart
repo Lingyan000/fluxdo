@@ -60,6 +60,7 @@ class _PaymentContentState extends State<_PaymentContent> {
   bool _biometricAvailable = false, _biometricEnabled = false;
   bool _useBiometric = false, _rememberBiometric = false;
   bool _confirmingPassword = false;
+  bool _passwordPaymentPending = false;
 
   @override
   void initState() {
@@ -121,6 +122,7 @@ class _PaymentContentState extends State<_PaymentContent> {
     }
     setState(() {
       _paying = true;
+      _passwordPaymentPending = !biometric;
       _error = null;
     });
     FocusScope.of(context).unfocus();
@@ -183,7 +185,12 @@ class _PaymentContentState extends State<_PaymentContent> {
       _submitted = true;
       await _refreshResult();
     } finally {
-      if (mounted) setState(() => _paying = false);
+      if (mounted) {
+        setState(() {
+          _paying = false;
+          _passwordPaymentPending = false;
+        });
+      }
     }
   }
 
@@ -448,6 +455,14 @@ class _PaymentContentState extends State<_PaymentContent> {
                         keyboardType: TextInputType.none,
                         enabled: !_paying,
                         label: l.metaverse_nativePayPassword,
+                        statusLabel: _passwordPaymentPending
+                            ? l.ldc_processingPayment
+                            : null,
+                        statusIcon: _passwordPaymentPending &&
+                                !MediaQuery.disableAnimationsOf(context) &&
+                                !MediaQuery.reduceMotionOf(context)
+                            ? const LoadingSpinner(size: 18)
+                            : null,
                         textInputAction: _needsPassword
                             ? TextInputAction.next
                             : TextInputAction.done,
@@ -594,7 +609,7 @@ class _PaymentContentState extends State<_PaymentContent> {
       onPressed: _paying || (!_useBiometric && _password.text.length != 6)
           ? null
           : () => _pay(biometric: _useBiometric),
-      icon: _paying
+      icon: _paying && !_passwordPaymentPending
           ? const LoadingSpinner(size: 18)
           : Icon(
               _useBiometric

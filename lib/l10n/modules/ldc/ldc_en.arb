@@ -1,4 +1,5 @@
 {
+  "ldc_processingPayment": "Processing payment…",
   "@@locale": "en",
   "ldc_paymentMethod": "Payment method",
   "ldc_deleteDigit": "Delete last digit",

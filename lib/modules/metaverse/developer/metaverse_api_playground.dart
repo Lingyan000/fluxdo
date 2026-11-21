@@ -534,6 +534,7 @@ class _DocumentationPayment implements LdcPaymentDelegate {
 
   @override
   Future<void> pay(LdcPaymentOrder order, String password) async {
+    await Future<void>.delayed(const Duration(milliseconds: 900));
     _paid = true;
   }
 

@@ -127,6 +127,7 @@ class _Payment implements LdcPaymentDelegate {
   int payments = 0, refreshes = 0;
   int passwords = 0;
   bool timeout = false, refreshFails = false;
+  bool rejectPassword = false;
   String status = 'completed';
   Completer<void>? pending;
   final order = LdcPaymentOrder(
@@ -152,6 +153,7 @@ class _Payment implements LdcPaymentDelegate {
     payments++;
     expect(password, '123456');
     if (pending != null) await pending!.future;
+    if (rejectPassword) throw const LdcPaymentException('支付密码不正确');
     if (timeout) {
       throw DioException.receiveTimeout(
         timeout: const Duration(seconds: 1),
@@ -514,6 +516,11 @@ void main() {
     await tester.tap(confirm);
     await tester.pump();
     expect(payment.payments, 1);
+    final pin = tester.widget<PinInput>(find.byType(PinInput));
+    expect(pin.statusLabel, S.current.ldc_processingPayment);
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.byType(LoadingSpinner), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       isEmpty,
@@ -542,6 +549,27 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(M3eSuccessIndicator), findsNothing);
+  });
+
+  testWidgets('支付密码拒绝后展开输入，重新填写六位仍需确认', (tester) async {
+    final payment = _Payment()..rejectPassword = true;
+    await openPayment(tester, payment);
+    final l = tester.element(find.byType(Scaffold).first).l10n;
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l.metaverse_nativePayConfirm('12.50')));
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    expect(find.byType(M3eSuccessIndicator), findsNothing);
+    expect(find.text('支付密码不正确'), findsOneWidget);
+    expect(tester.widget<PinInput>(find.byType(PinInput)).statusLabel, isNull);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pumpAndSettle();
+    expect(payment.payments, 1);
+    await tester.tap(findMaterialTooltip(l.common_cancel));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('付款响应丢失后仅提供查单，查单恢复也不重放扣款', (tester) async {

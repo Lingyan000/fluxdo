@@ -1,4 +1,5 @@
 {
+  "ldc_processingPayment": "正在付款…",
   "@@locale": "zh_HK",
   "ldc_paymentMethod": "付款方式",
   "ldc_deleteDigit": "刪除上一位",
