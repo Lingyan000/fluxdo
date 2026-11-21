@@ -16,6 +16,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/emoji.dart';
+import 'package:fluxdo/models/mention_user.dart';
+import 'package:fluxdo/widgets/mention/mention_candidate_list.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/emoji_provider.dart';
@@ -48,7 +50,7 @@ import 'package:fluxdo/widgets/markdown_editor/rich_composer/composer_import_pip
 import 'package:fluxdo_render/src/editor/widget/editor_caret.dart';
 import 'package:fluxdo_render/src/editor/widget/editor_table_grid.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
-    show ImageRun, ImageGridNode, LinkRun, TextRun;
+    show ImageRun, ImageGridNode, LinkRun, TextRun, MentionRun;
 
 Future<void> _pump(
   WidgetTester tester,
@@ -213,6 +215,106 @@ class _NoCurrentUser extends CurrentUserNotifier {
 void main() {
   setUp(() => PlatformUtils.debugDesktopOverride = false);
   tearDown(() => PlatformUtils.debugDesktopOverride = null);
+
+  for (final (scale, keyboardHeight) in [
+    (1.0, 0.0),
+    (2.0, 0.0),
+    (1.0, 620.0),
+  ]) {
+    testWidgets(
+      '富文本提及上下选择滚动到完整可见，确认后立即收起 scale=$scale keyboard=$keyboardHeight',
+      (tester) async {
+        final controller = TextEditingController();
+        final focus = FocusNode();
+        await _pump(
+          tester,
+          RichComposerEditor(
+            controller: controller,
+            focusNode: focus,
+            mentionDataSource: (_) async => MentionSearchResult(
+              users: [
+                for (var i = 0; i < 12; i++)
+                  MentionUser(
+                    username: 'user_$i',
+                    name: i.isEven ? '社区用户 $i' : null,
+                  ),
+              ],
+              groups: [],
+            ),
+          ),
+          desktop: true,
+          scale: scale,
+        );
+        await tester.pump(const Duration(milliseconds: 800));
+        tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+        await tester.pump();
+        final editor = tester
+            .widget<FluxdoEditor>(find.byType(FluxdoEditor))
+            .state;
+        focus.requestFocus();
+        editor.insertText('@');
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pumpAndSettle();
+        final list = find.byType(MentionCandidateList);
+        expect(tester.getRect(list).top, greaterThanOrEqualTo(8));
+        expect(
+          tester.getRect(list).bottom,
+          lessThanOrEqualTo(760 - keyboardHeight),
+        );
+        final position = tester
+            .state<ScrollableState>(
+              find.descendant(of: list, matching: find.byType(Scrollable)),
+            )
+            .position;
+        void expectVisible(int index) {
+          final row = find
+              .ancestor(
+                of: find.text('@user_$index'),
+                matching: find.byType(InkWell),
+              )
+              .first;
+          final rect = tester.getRect(row);
+          final viewport = tester.getRect(list);
+          expect(rect.top, greaterThanOrEqualTo(viewport.top - 0.1));
+          expect(rect.bottom, lessThanOrEqualTo(viewport.bottom + 0.1));
+        }
+
+        for (var i = 1; i < 12; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+          await tester.pumpAndSettle();
+          expectVisible(i);
+        }
+        expect(position.pixels, greaterThan(0));
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+        expectVisible(0);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pumpAndSettle();
+        expectVisible(11);
+        for (var i = 10; i >= 0; i--) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+          await tester.pumpAndSettle();
+          expectVisible(i);
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        expect(list, findsNothing);
+        final atom = editor.blocks
+            .whereType<TextBlock>()
+            .single
+            .content
+            .atoms
+            .values
+            .whereType<MentionRun>()
+            .single;
+        expect(atom.username, 'user_0');
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        focus.dispose();
+        controller.dispose();
+      },
+    );
+  }
 
   testWidgets('富文本导入中允许沿用原文关闭，提交仍等待导入完成', (tester) async {
     final controller = TextEditingController(text: '尚在导入的原始正文');

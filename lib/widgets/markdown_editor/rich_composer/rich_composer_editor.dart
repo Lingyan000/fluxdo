@@ -91,6 +91,7 @@ import '../../common/fading_edge_scroll_view.dart';
 import '../../common/smart_avatar.dart';
 import '../../content/discourse_html_content/image_utils.dart';
 import '../../mention/mention_autocomplete.dart';
+import '../../mention/mention_candidate_list.dart';
 import '../composer_workbench.dart';
 import '../composer_table_panel.dart';
 import '../composer_anchored_panel.dart';
@@ -1653,16 +1654,10 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           final above = caret.top - safeTop;
           if (below >= menuMaxHeight + 16 || below >= above) {
             top = caret.bottom + 4;
-            menuMaxHeight = menuMaxHeight.clamp(
-              120.0,
-              (below - 12).clamp(120.0, 220.0),
-            );
+            menuMaxHeight = (below - 12).clamp(0.0, 220.0);
           } else {
             bottom = screen.height - caret.top + 4;
-            menuMaxHeight = menuMaxHeight.clamp(
-              120.0,
-              (above - 12).clamp(120.0, 220.0),
-            );
+            menuMaxHeight = (above - 12).clamp(0.0, 220.0);
           }
         } else {
           left = 16;
@@ -1675,18 +1670,17 @@ class RichComposerEditorState extends State<RichComposerEditor> {
           width: menuWidth,
           child: _FloatingPanel(
             maxHeight: menuMaxHeight,
-            child: ListView.builder(
-              shrinkWrap: true,
+            child: MentionCandidateList(
+              selectedIndex: _mentionSelected,
               padding: const EdgeInsets.all(4),
-              itemCount: _mentionCandidates.length,
-              itemBuilder: (context, i) {
-                final user = _mentionCandidates[i];
-                return _MentionRow(
-                  user: user,
-                  selected: i == _mentionSelected,
-                  onTap: () => _insertMention(user),
-                );
-              },
+              children: [
+                for (final (index, user) in _mentionCandidates.indexed)
+                  _MentionRow(
+                    user: user,
+                    selected: index == _mentionSelected,
+                    onTap: () => _insertMention(user),
+                  ),
+              ],
             ),
           ),
         );

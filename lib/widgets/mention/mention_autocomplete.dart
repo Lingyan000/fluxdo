@@ -9,6 +9,7 @@ import '../../models/mention_user.dart';
 import '../../constants.dart';
 import '../common/smart_avatar.dart';
 import '../../../../../l10n/s.dart';
+import 'mention_candidate_list.dart';
 
 /// 搜索用户的数据源类型
 typedef MentionDataSource = Future<MentionSearchResult> Function(String term);
@@ -79,7 +80,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     widget.controller.removeListener(_onTextChanged);
     widget.focusNode?.removeListener(_onFocusChanged);
     _debounceTimer?.cancel();
-    _removeOverlay();
+    _removeOverlay(rebuild: false);
     super.dispose();
   }
 
@@ -188,13 +189,16 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     _overlayEntry?.markNeedsBuild();
   }
 
-  void _removeOverlay() {
+  void _removeOverlay({bool rebuild = true}) {
     _debounceTimer?.cancel();
+    final hadOverlay = _overlayEntry != null;
     _overlayEntry?.remove();
+    _overlayEntry?.dispose();
     _overlayEntry = null;
     _results = [];
     _mentionStartIndex = null;
     _currentSearchTerm = '';
+    if (hadOverlay && rebuild) setState(() {});
   }
 
   void _selectItem(MentionItem item) {
@@ -222,28 +226,15 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     _removeOverlay();
   }
 
-  void _handleKeyEvent(KeyEvent event) {
+  void _moveSelection(int delta) {
     if (_overlayEntry == null || _results.isEmpty) return;
+    setState(() => _selectedIndex = (_selectedIndex + delta) % _results.length);
+    _updateOverlay();
+  }
 
-    if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        setState(() {
-          _selectedIndex = (_selectedIndex + 1) % _results.length;
-        });
-        _updateOverlay();
-      } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        setState(() {
-          _selectedIndex =
-              (_selectedIndex - 1 + _results.length) % _results.length;
-        });
-        _updateOverlay();
-      } else if (event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.tab) {
-        _selectItem(_results[_selectedIndex]);
-      } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-        _removeOverlay();
-      }
-    }
+  void _selectCurrentItem() {
+    if (_overlayEntry == null || _results.isEmpty) return;
+    _selectItem(_results[_selectedIndex]);
   }
 
   Widget _buildOverlay(BuildContext context) {
@@ -254,7 +245,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
     double anchorY = 0; // 锚点 Y 坐标（相对于组件顶部）
     double effectiveMaxHeight = 250.0; // 默认最大高度
 
-    final renderBox = context.findRenderObject() as RenderBox?;
+    final renderBox = this.context.findRenderObject() as RenderBox?;
     if (renderBox != null) {
       final pos = renderBox.localToGlobal(Offset.zero);
       final size = renderBox.size;
@@ -281,6 +272,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         final painter = TextPainter(
           text: TextSpan(text: text, style: style),
           textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(context),
           maxLines: null,
         );
 
@@ -293,6 +285,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
         );
         cursorY = caretOffset.dy;
         lineHeight = painter.preferredLineHeight;
+        painter.dispose();
       }
 
       // 添加垂直 padding 偏移
@@ -343,7 +336,7 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
 
       // 计算实际可用高度
       final availableHeight = showAbove ? spaceAbove : spaceBelow;
-      effectiveMaxHeight = availableHeight < 250.0 ? availableHeight : 250.0;
+      effectiveMaxHeight = (availableHeight - 4).clamp(0.0, 250.0);
 
       return Positioned(
         width: 280,
@@ -414,20 +407,16 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
           Flexible(
             child: ClipRSuperellipse(
               borderRadius: context.shapes.borderRadius(8),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: _results.length,
-                itemBuilder: (context, index) {
-                  final item = _results[index];
-                  final isSelected = index == _selectedIndex;
-
-                  return _MentionItemTile(
-                    item: item,
-                    isSelected: isSelected,
-                    onTap: () => _selectItem(item),
-                  );
-                },
+              child: MentionCandidateList(
+                selectedIndex: _selectedIndex,
+                children: [
+                  for (final (index, item) in _results.indexed)
+                    _MentionItemTile(
+                      item: item,
+                      isSelected: index == _selectedIndex,
+                      onTap: () => _selectItem(item),
+                    ),
+                ],
               ),
             ),
           ),
@@ -437,9 +426,22 @@ class _MentionAutocompleteState extends State<MentionAutocomplete> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode(skipTraversal: true),
-      onKeyEvent: _handleKeyEvent,
+    return CallbackShortcuts(
+      bindings: {
+        if (_overlayEntry != null && _results.isNotEmpty) ...{
+          const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+              _moveSelection(1),
+          const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+              _moveSelection(-1),
+          const SingleActivator(LogicalKeyboardKey.escape): _removeOverlay,
+          for (final key in [
+            LogicalKeyboardKey.enter,
+            LogicalKeyboardKey.numpadEnter,
+            LogicalKeyboardKey.tab,
+          ])
+            SingleActivator(key): _selectCurrentItem,
+        },
+      },
       child: CompositedTransformTarget(link: _layerLink, child: widget.child),
     );
   }
