@@ -323,7 +323,7 @@ const ldStore = (() => {
       const result = await client.payments.request({provider:'linuxDoCredit',
         url:payment.paymentUrl ?? payment.payment_url, reference:no,
         amount:order.amount ?? order.totalPrice ?? order.total_price});
-      if (result) {
+      if (result && result.state !== 'cancelled') {
         await checkSession(account);
         try { await jsonRequest(client, orderPath + '/refresh', {credential:'account', method:'POST'}); }
         catch (_) { console.warn('delivery refresh pending'); }
@@ -355,7 +355,7 @@ function scheduleNotificationFallback() {
   notificationFallback=setTimeout(async()=>{
     notificationFallback=null;
     const owner=notificationOwner;
-    try {await refreshNotificationSnapshot(owner);await updateMessageViews();} catch(_) {}
+    try {await refreshNotificationSnapshot(owner);await updateMessageViews(false);} catch(_) {}
     if(owner===notificationOwner)scheduleNotificationFallback();
   },60000);
 }
@@ -377,12 +377,25 @@ async function refreshNotificationSnapshot(owner) {
   const value=await read('/messages/unread-summary',true);
   if(owner===notificationOwner && !owner.hidden && revision===notificationRevision)setNotificationSummary(value);
 }
-async function updateMessageViews() {
+function messageSignature(rows) {
+  return JSON.stringify(rows.map(m=>[String(m.id),m.title,m.content,flag(m.isRead ?? m.is_read ?? m.read),m.link]));
+}
+async function updateMessageViews(changed=true) {
   await Promise.all([...views.values()].filter(s=>s.ctx?.page==='messages').map(async s=>{
-    s.messagesChanged=true;s.messagesRevision=(s.messagesRevision || 0)+1;
-    s.ctx.setData('messagesChanged',true);
-    if(!s.hidden && !s.loading && !s.buyerBusy && (s.page || 1)===1)await loadMessages(s.ctx,false,true);
+    s.messagesCheckPending=true;
+    if(changed) {
+      s.messagesRevision=(s.messagesRevision || 0)+1;
+      if(s.messagesLoaded && (s.hidden || s.page>1)) {
+        s.messagesChanged=true;s.ctx.setData('messagesChanged',true);
+      }
+    }
+    await syncMessageView(s);
   }));
+}
+async function syncMessageView(s) {
+  if(s.hidden || s.loading || s.buyerBusy || (s.page>1 && s.messagesChanged) || !s.messagesCheckPending || market(s.ctx)!==s)return;
+  s.messagesCheckPending=false;
+  await loadMessages(s.ctx,false,true);
 }
 function waitNotificationRetry(delay) {
   if(notificationRetryTimer)clearTimeout(notificationRetryTimer);
@@ -426,7 +439,7 @@ fluxdo.on('stream.event',(ctx,args)=>{
     waitNotificationRetry(delay);return;
   }
   if(args.event==='summary.updated')setNotificationSummary(value);
-  if(args.event==='system-message.changed')updateMessageViews().catch(()=>{});
+  if(args.event==='system-message.changed')return updateMessageViews().catch(()=>{});
 });
 fluxdo.on('stream.state',(ctx,args)=>{
   const owner=notificationOwner;
@@ -434,12 +447,15 @@ fluxdo.on('stream.state',(ctx,args)=>{
   if(args.state==='open') {
     stopNotificationFallback();
     // 补查摘要和已打开的消息页，恢复断线期间的遗漏；不刷新商品或重置订单。
-    Promise.all([refreshNotificationSnapshot(owner),updateMessageViews()]).catch(()=>{});
+    return Promise.all([refreshNotificationSnapshot(owner),updateMessageViews(false)]).catch(()=>{});
   } else if(args.state==='retrying')scheduleNotificationFallback();
   else if(args.state==='closed') {
     if(args.status===401 || args.status===403 || /credential/.test(args.reason || '')) {
       notificationBlocked=true;stopNotificationFallback();
-      for(const s of views.values())if(s.ctx?.page==='messages')write(s.ctx,{needsSession:true,authorized:false,error:'士多会话已失效，请重新登录。'});
+      for(const s of views.values())if(s.ctx?.page==='messages'){
+        s.seq++;s.rows=[];s.more=false;s.loading=false;s.messagesChanged=false;s.messagesLoaded=false;s.messagesCheckPending=false;
+        write(s.ctx,{rows:[],more:false,loading:false,loadingMore:false,messagesChanged:false,needsSession:true,authorized:false,error:'士多会话已失效，请重新登录。'});
+      }
     } else scheduleNotificationFallback();
   }
 });
@@ -500,9 +516,24 @@ function write(ctx, values) {
 function market(ctx) {
   return views.get(ctx.surface);
 }
-function invalidateViews(except) {
+function invalidateViews(except, affected=()=>true) {
   for (const state of views.values()) {
-    if (state !== except) state.dirty = true;
+    if (state !== except && affected(state)) state.dirty = true;
+  }
+}
+function orderChanged(order,except) {
+  const no=order?.orderNo || order?.order_no;
+  // 已加载列表直接替换该笔订单，保留分页与滚动；再次兑换时由详情和核价重新检查资格。
+  for(const s of views.values()) {
+    if(s===except || !s.ctx)continue;
+    const page=s.ctx.page;
+    if(page==='orders' && no && order.status) {
+      const row=orderSummary(normalizeOrderData(order));
+      s.rows=(s.rows || []).flatMap(old=>old.no!==no ? [old] :
+        s.orderStatus && !s.orderStatus.split(',').includes(order.status) ? [] : [{...old,...row}]);
+      s.ctx.setData('rows',s.rows);
+    } else if(page==='order' && s.ctx.params.no===no) s.dirty=true;
+    else if(page==='account' || page==null || page==='coupons') s.dirty=true;
   }
 }
 function refreshView(ctx) {
@@ -550,7 +581,9 @@ async function load(ctx, more) {
   if (s.searchTimer) {clearTimeout(s.searchTimer);s.searchTimer=null;}
   const seq = ++s.seq;
   const page = more ? s.page + 1 : 1;
-  if (!more) { s.rows = []; s.more = false; s.cursor = ''; s.page = 0; }
+  const queryKey=JSON.stringify([s.search,s.cat,s.sort,s.direction,s.stock,s.min,s.max]);
+  if (!more && s.queryKey!==queryKey) {s.rows=[];s.more=false;s.cursor='';s.page=0;}
+  s.queryKey=queryKey;
   s.loading = true;
   write(ctx, {loading:!more, loadingMore:more, more:false, message:'', webFallback:false, rows:s.rows});
   try {
@@ -562,9 +595,9 @@ async function load(ctx, more) {
     if (market(ctx) !== s || seq !== s.seq) return;
     const products = result.products;
     if (!Array.isArray(products)) throw Error('商品列表格式有误');
-    const seen = new Set(s.rows.map(r => r.id));
+    const seen = new Set(more ? s.rows.map(r => r.id) : []);
     const rows = products.filter(p => p && p.id != null && !seen.has(String(p.id))).map(productView);
-    s.rows = s.rows.concat(rows); s.page = page;
+    s.rows = more ? s.rows.concat(rows) : rows; s.page = page;
     const paging = result.pagination || {};
     s.cursor = paging.nextCursor || '';
     s.more = typeof paging.hasMore === 'boolean' ? paging.hasMore :
@@ -593,9 +626,9 @@ async function detail(ctx) {
   const s = market(ctx);
   if (!s) return;
   s.quoteEnabled = false;
-  clearQuote(ctx,s);
+  clearQuote(ctx,s,!!s.product);
   const seq = ++s.seq;
-  write(ctx,{ready:false,loading:true,error:'',externalError:'',buy:false});
+  write(ctx,{ready:!!s.product,initialLoading:!s.product,loading:true,error:'',externalError:'',buy:false});
   try {
     const auth = await ldStore.status();
     if (seq !== s.seq || market(ctx) !== s) return;
@@ -656,8 +689,8 @@ async function detail(ctx) {
     s.limit = bounds.limit;
     s.quantity = Math.max(1,Math.min(s.quantity || 1,s.limit));
     s.quoteEnabled = ctx.page === 'review' && s.buy && !s.linkProduct && auth.authorized && (auth.queries || []).includes('orderQuote');
-    clearQuote(ctx,s);
-    write(ctx,{ready:true,title:display(p.name),description:display(p.description),image:view.image,
+    clearQuote(ctx,s,!!s.quoteDisplayed && s.quoteEnabled);
+    write(ctx,{ready:true,initialLoading:false,title:display(p.name),description:display(p.description),image:view.image,
       seller:'卖家：' + (display(p.sellerName || p.sellerUsername) || '未提供'),
       price:money(s.unit),canAdd:s.buy && s.quantity < s.limit,canRemove:s.buy && s.quantity > 1,
       quantity:String(s.quantity),quantityValue:s.quantity,quantityMax:s.limit,estimate:money(s.unit*s.quantity),
@@ -669,7 +702,7 @@ async function detail(ctx) {
     if (s.quoteEnabled && (!s.record || s.record.state === 'idle')) await quote(ctx);
     if (ctx.page === 'product') loadComments(ctx,false);
   } catch (e) {if (seq === s.seq) ctx.setData('error',String(e.message));}
-  finally {if (seq === s.seq) ctx.setData('loading',false);}
+  finally {if (seq === s.seq) write(ctx,{loading:false,initialLoading:false});}
 }
 async function loadComments(ctx,more) {
   const s = market(ctx);
@@ -740,11 +773,12 @@ async function loadOrders(ctx, append, silent=false) {
   const s = market(ctx), detailPage = ctx.page === 'order';
   if (!s || (append && (s.loading || !s.more || detailPage))) return;
   const seq = ++s.seq, current = () => market(ctx) === s && seq === s.seq;
-  if (!silent) {s.deliveryText = ''; s.revealed = false;}
-  if (!append) {s.page = 0; s.more = false; s.rows = [];}
+  if (!silent) s.revealed = false;
+  const page=append ? (s.page || 0)+1 : 1;
+  if(!detailPage && s.ordersQuery!==s.orderStatus){s.rows=[];s.more=false;s.ordersQuery=s.orderStatus;}
   s.loading = true;
-  if (!silent) write(ctx,{loading:!append,loadingMore:append,ready:false,needsSession:false,error:'',empty:false,rows:s.rows,more:false,
-    hasDelivery:false,deliveryText:'',deliveryAction:'查看交付内容'});
+  if (!silent) write(ctx,{loading:!append,loadingMore:append,initialLoading:detailPage && !s.order,ready:!!s.order,needsSession:false,error:'',empty:false,rows:s.rows,more:false,
+    hasDelivery:!!s.deliveryText,deliveryText:'',deliveryAction:'查看交付内容'});
   const sessionMissing = message => {
     s.rows = []; s.more = false; s.order=null;s.deliveryText='';s.revealed=false;
     if(s.poll) {clearTimeout(s.poll);s.poll=null;}
@@ -765,7 +799,9 @@ async function loadOrders(ctx, append, silent=false) {
       if (!current()) return;
       const row = orderSummary(data.order);
       if (row.no !== no) throw Error('订单号与请求不一致');
+      const previous=s.order;
       s.order=data.order;
+      if(previous && previous.status!==data.order.status)orderChanged(data.order,s);
       const delivery = data.order.deliveryType;
       const rawContent = data.order.cdk || data.order.deliveryContent;
       const content = Array.isArray(rawContent) ? rawContent.filter(x=>typeof x==='string').join('\n') : rawContent;
@@ -799,7 +835,6 @@ async function loadOrders(ctx, append, silent=false) {
         delivery:delivery === 'auto' || data.order.productType==='cdk' ? '自动发货' : '手动发货'});
       scheduleOrderPoll(ctx,s);
     } else {
-      const page = s.page + 1;
       const data = normalizeOrderData(
         await read('/orders?' + params({
           role: 'buyer', page: page, pageSize: 20, status: s.orderStatus || ''
@@ -807,7 +842,8 @@ async function loadOrders(ctx, append, silent=false) {
       );
       if (!current()) return;
       if (!Array.isArray(data.orders) || !data.pagination) throw Error('订单列表格式有误');
-      const rows = data.orders.map(orderSummary), seen = new Set(s.rows.map(r => r.no));
+      const rows = data.orders.map(orderSummary), seen = new Set(append ? s.rows.map(r => r.no) : []);
+      if(!append)s.rows=[];
       for (const row of rows) {
         if (seen.has(row.no)) continue;
         seen.add(row.no); s.rows.push(row);
@@ -822,7 +858,7 @@ async function loadOrders(ctx, append, silent=false) {
     else if (e.status === 403) sessionMissing('当前账号无权查看这些订单。');
     else {write(ctx,{error:String(e.message),more:s.more});if(silent)scheduleOrderPoll(ctx,s);}
   } finally {
-    if (current()) {s.loading = false;write(ctx,{loading:false,loadingMore:false});}
+    if (current()) {s.loading = false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});}
   }
 }
 function scheduleOrderPoll(ctx,s) {
@@ -840,16 +876,38 @@ function showOrderFilters(ctx) {
   const status = market(ctx).orderStatus || '';
   ctx.setData('orderFilters',orderFilters.map(filter => ({...filter,selected:filter.status === status})));
 }
+function accountAvatar(user) {
+  for(const raw of [user.avatar,user.avatarUrl,user.avatarTemplate,user.animatedAvatar]) {
+    if(typeof raw!=='string' || !raw.trim())continue;
+    let url=raw.trim().replace(/\{size\}/g,'128');
+    if(url.startsWith('//'))url='https:'+url;
+    else if(url.startsWith('/'))url='https://linux.do'+url;
+    if(!/^https?:\/\//i.test(url))continue;
+    // 士多公开头像代理用于论坛头像，仍由宿主匿名图片出口获取。
+    if(/^https?:\/\/(?:linux\.do|idcflare\.com)\/(?:user_avatar|letter_avatar_proxy)\//i.test(url))return api+'/avatar-proxy?url='+encodeURIComponent(url);
+    return url;
+  }
+  return '';
+}
 async function loadOverview(ctx) {
-  write(ctx,{refundHint:'',couponHint:'',accountName:'',overviewLoading:true,overviewError:''});
   const s=market(ctx);
+  write(ctx,{overviewLoading:true,overviewInitialLoading:!s?.overviewLoaded,overviewError:''});
   const revision=s ? s.overviewRevision=(s.overviewRevision || 0)+1 : 0;
   const current=()=>!s || (market(ctx)===s && s.overviewRevision===revision);
   try {
     const auth=await ldStore.status();if(!current())return;ctx.setData('authorized',auth.authorized);
     if(auth.authorized) {
       const account=await ctx.api.user.get();if(!current())return;
-      ctx.setData('accountName',display(account?.username));
+      if(!s.overviewLoaded)ctx.setData('accountName',display(account?.username));
+      if(ctx.page==='account') {
+        try {
+          const profile=normalizeOrderData(await read('/auth/verify',true));
+          if(!current())return;
+          if(profile.authenticated===true && String(profile.user?.id)===String(account?.id)) {
+            write(ctx,{accountName:display(profile.user.name || profile.user.username || account.username),accountAvatar:accountAvatar(profile.user)});
+          } else ctx.setData('accountAvatar','');
+        } catch(error) {if(error.status===401){write(ctx,{accountName:'',accountAvatar:'',authorized:false});throw error;}}
+      }
       const [raw,unread]=await Promise.all([read('/user/attention',true),read('/messages/unread-summary',true)]);
       const data=normalizeOrderData(raw);
       if(!current())return;
@@ -858,13 +916,17 @@ async function loadOverview(ctx) {
       ctx.setData('stats',s.overviewStats);
       write(ctx,{refundHint:Number(data.refundAttentionCount)>0 ? display(data.refundAttentionCount)+' 笔售后待处理' : '',couponHint:Number(data.expiringCouponCount)>0 ? display(data.expiringCouponCount)+' 张即将到期' : ''});
     } else {
+      write(ctx,{accountName:'',accountAvatar:'',refundHint:'',couponHint:''});
       const data=await read('/stats');
       if(!current())return;
       ctx.setData('stats',[{label:'在售商品',value:display(data.products?.online ?? '—')},{label:'今日订单',value:display(data.orders?.today ?? '—')},{label:'店铺',value:display(data.stores ?? '—')}]);
     }
-    ctx.setData('overviewError','');
-  } catch (_) {if(current())write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});}
-  finally {if(current())ctx.setData('overviewLoading',false);}
+    s.overviewLoaded=true;ctx.setData('overviewError','');
+  } catch (error) {if(current()){
+    if(error.status===401){s.overviewLoaded=false;s.overviewStats=null;write(ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[],refundHint:'',couponHint:''});}
+    write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});
+  }}
+  finally {if(current())write(ctx,{overviewLoading:false,overviewInitialLoading:false});}
 }
 fluxdo.on('card.load',ctx=>{views.set(ctx.surface,{ctx,seq:0,visibility:0});syncNotifications();return loadOverview(ctx);});
 fluxdo.on('card.hide',ctx=>{const s=market(ctx);if(s)s.hidden=true;return syncNotifications();});
@@ -914,7 +976,8 @@ fluxdo.on('page.resume',(ctx,args) => {
   if (!s) return;
   s.hidden = false;
   syncNotifications();
-  if(s.messagesChanged && ctx.page==='messages')updateMessageViews();
+  if(ctx.page==='messages')syncMessageView(s).catch(()=>{});
+  if(s.commentsStale && ctx.page==='product'){s.commentsStale=false;loadComments(ctx,false);}
   if (s.createdNavigation) return openCreatedOrder(ctx,s);
   if (s.dirty) {showFilters(ctx,s);return refreshView(ctx);}
   if(ctx.page==='order')scheduleOrderPoll(ctx,s);
@@ -957,9 +1020,12 @@ async function payOrder(ctx,cancel) {
   try {
     const result = cancel ? await ldStore.cancel(ctx.api,ctx.params.no) :
       await ldStore.pay(ctx.api,ctx.params.no);
-    if (result != null) invalidateViews();
+    if (result != null && result !== false && (cancel || result.state !== 'cancelled')) {
+      await loadOrders(ctx,false,true);
+      if(market(ctx)===s)orderChanged(s.order,s);
+    }
   } catch (_) {
-    invalidateViews();
+    await loadOrders(ctx,false,true);
     ctx.setData('paymentNote','操作未完成，请刷新订单核对当前状态。');
   }
   finally {
@@ -994,11 +1060,13 @@ fluxdo.on('review',ctx => {
   if (s.linkProduct) return openExternalProduct(ctx);
   return fluxdo.navigate('review',{id:s.id});
 });
-function clearQuote(ctx,s) {
+function clearQuote(ctx,s,preserve=false) {
   if (ctx.page !== 'review') return;
   s.quoteSeq = (s.quoteSeq || 0) + 1; s.quote = null; s.quoting = false;
   s.orderIntent = null;
-  write(ctx,{canQuote:s.quoteEnabled,canSubmit:false,quoteReady:false,quoting:false,quoteNote:'',couponRows:[],payable:''});
+  if(!preserve)s.quoteDisplayed=false;
+  write(ctx,{canQuote:s.quoteEnabled,canSubmit:false,quoting:false,quoteNote:'',
+    ...(!preserve ? {quoteReady:false,couponRows:[],payable:''} : {})});
 }
 function showQuote(ctx,s) {
   const q = s.quote;
@@ -1011,6 +1079,7 @@ function showQuote(ctx,s) {
   s.orderIntent = {productId:s.id,quantity:s.quantity,expectedAmount:coupon ? coupon.amount : q.base,
     ...(coupon ? {couponClaimId:coupon.id} : {})};
   ctx.setData('canSubmit',s.checkoutEnabled && s.record?.state === 'idle' && !s.orderBusy);
+  s.quoteDisplayed=true;
   write(ctx,{quoteReady:true,couponRows:q.coupons.map(c => ({
       id:c.id,label:c.name + ' · ' + money(c.amount),selected:c === coupon,variant:c === coupon ? 'tonal' : 'text'
     })),choice:coupon ? coupon.name : '不使用优惠券',noCoupon:!coupon,noneVariant:coupon ? 'text' : 'tonal',
@@ -1021,9 +1090,10 @@ const validAmount = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
 async function quote(ctx) {
   const s = market(ctx);
   if (!s || ctx.page !== 'review' || !s.quoteEnabled || s.quoting) return;
-  clearQuote(ctx,s);
+  const hasQuote=!!s.quoteDisplayed;
+  clearQuote(ctx,s,true);
   const seq = s.quoteSeq, quantity = s.quantity, current = () => market(ctx) === s && seq === s.quoteSeq;
-  s.quoting = true; ctx.setData('quoting',true);
+  s.quoting = true; write(ctx,{quoting:true,quoteInitialLoading:!hasQuote});
   try {
     const response = await ctx.api.fetch(api + '/orders/quote', {
       credential:'account', method:'POST', body:{productId:s.id,quantity},
@@ -1050,13 +1120,13 @@ async function quote(ctx) {
   } catch (e) {
     if (current()) ctx.setData('quoteNote',e.message === 'query_not_granted' ? '当前会话没有报价权限' : String(e.message));
   } finally {
-    if (current()) {s.quoting=false;ctx.setData('quoting',false);}
+    if (current()) {s.quoting=false;write(ctx,{quoting:false,quoteInitialLoading:false});}
   }
 }
 fluxdo.on('quote',quote);
 fluxdo.on('quoteCoupon',(ctx,a) => {
   const s = market(ctx);
-  if (s && s.quote && ctx.page === 'review' && (a.id === '' || s.quote.coupons.some(c => c.id === a.id))) {
+  if (s && s.quote && !s.quoting && ctx.page === 'review' && (a.id === '' || s.quote.coupons.some(c => c.id === a.id))) {
     s.couponChoice = a.id;showQuote(ctx,s);
   }
 });
@@ -1087,10 +1157,10 @@ async function checkoutAction(ctx,kind) {
   let note='';
   try {
     const openOrder = kind !== 'finish' && typeof fluxdo.prepareNavigation === 'function'
-      ? await fluxdo.prepareNavigation('order') : null;
+      ? await fluxdo.prepareNavigation('order',{replace:true}) : null;
     const result = await ldStore.submission(kind,
       kind === 'submit' ? s.orderIntent : kind === 'finish' ? s.record.orderNo : null);
-    if (result?.state === 'created' || result?.state === 'pending') invalidateViews(s);
+    if (result?.state === 'created' || result?.state === 'pending')orderChanged(result,s);
     if (result?.state === 'created') {
       showSubmission(ctx,s,result);
       if (openOrder) s.createdNavigation = {open:openOrder,orderNo:result.orderNo};
@@ -1120,7 +1190,6 @@ async function openCreatedOrder(ctx,s) {
     await ldStore.submission('finish',navigation.orderNo);
     showSubmission(ctx,s,{state:'idle'});
     clearQuote(ctx,s);
-    s.dirty = true;
   } catch (_) {
     write(ctx,{orderNote:'订单已创建，请打开订单查看详情。'});
   }
@@ -1134,7 +1203,7 @@ fluxdo.on('createdOrder',async ctx => {
   if (r?.state === 'created') {
     await ldStore.submission('finish',r.orderNo);
     showSubmission(ctx,market(ctx),{state:'idle'});
-    return fluxdo.navigate('order',{no:r.orderNo});
+    return fluxdo.navigate('order',{no:r.orderNo},{replace:true});
   }
 });
 fluxdo.on('quantity',(ctx,a) => {
@@ -1270,9 +1339,11 @@ async function loadBuyerPage(ctx, more) {
   if (!s || s.buyerBusy || (more && (s.loading || !s.more))) return;
   const revision = ++s.seq, current = () => market(ctx) === s && s.seq === revision;
   const page = more ? (s.page || 1) + 1 : 1;
-  if (!more) {s.rows=[];s.more=false;}
+  const queryKey=JSON.stringify([s.search,s.couponTab]);
+  if(!more && s.buyerQuery!==queryKey){s.rows=[];s.more=false;s.buyerReady=false;}
+  s.buyerQuery=queryKey;
   s.loading = true;
-  write(ctx,{loading:!more,loadingMore:more,error:'',buyerError:'',needsSession:false,ready:false,more:false,rows:s.rows});
+  write(ctx,{loading:!more,loadingMore:more,error:'',buyerError:'',needsSession:false,ready:!!s.buyerReady,initialLoading:!s.buyerReady,more:false,rows:s.rows});
   try {
     const auth = await ldStore.status();
     if (!current()) return;
@@ -1293,8 +1364,8 @@ async function loadBuyerPage(ctx, more) {
       const entries = coupons ? data.items : data.products;
       if (!Array.isArray(entries)) throw Error('列表数据格式有误');
       const rows = entries.map(row=>coupons ? couponRow(row.campaign || {},row) : buyerRow(row));
-      const ids = new Set(s.rows.map(row=>row.id));
-      s.rows=s.rows.concat(rows.filter(row=>!ids.has(row.id)));s.page=page;
+      const ids = new Set(more ? s.rows.map(row=>row.id) : []);
+      s.rows=(more ? s.rows : []).concat(rows.filter(row=>!ids.has(row.id)));s.page=page;
       s.more=hasNextPage(data.pagination,page,rows.length);
       write(ctx,{ready:true,rows:s.rows,more:s.more});
     } else if (ctx.page === 'coupon') {
@@ -1335,10 +1406,11 @@ async function loadBuyerPage(ctx, more) {
           {name:'buyerContactedSeller',label:'已联系卖家协商',type:'toggle',value:false}],
         hasGuide:typeof data.disputeGuideUrl === 'string' && data.disputeGuideUrl.startsWith('https://')});
     }
+    if(current())s.buyerReady=true;
   } catch (error) {
     if (current()) write(ctx,{error:error.message,needsSession:error.status===401,more:s.more,canApply:false,
       ...(error.status===401 ? {authorized:false,rows:[]} : {})});
-  } finally {if (current()) {s.loading=false;write(ctx,{loading:false,loadingMore:false});}}
+  } finally {if (current()) {s.loading=false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});}}
 }
 async function buyerAction(ctx, action) {
   const s=market(ctx);
@@ -1346,7 +1418,7 @@ async function buyerAction(ctx, action) {
   s.buyerBusy=true;write(ctx,{buyerBusy:true,buyerError:''});
   try { await action(s); }
   catch(error) {if (market(ctx)===s) write(ctx,{buyerError:error.message,...(error.status===401 ? {authorized:false,needsSession:true} : {})});}
-  finally {s.buyerBusy=false;if(market(ctx)===s) ctx.setData('buyerBusy',false);}
+  finally {s.buyerBusy=false;if(market(ctx)===s){ctx.setData('buyerBusy',false);if(ctx.page==='messages')await syncMessageView(s);}}
 }
 fluxdo.on('favorites',()=>fluxdo.navigate('favorites'));
 fluxdo.on('coupons',()=>fluxdo.navigate('coupons'));
@@ -1357,7 +1429,7 @@ fluxdo.on('couponTab',(ctx,a)=>{const s=market(ctx);if(s && couponTabs.some(t=>t
 fluxdo.on('favorite',ctx=>buyerAction(ctx,async s=>{
   if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error('请先登录士多');}
   await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/favorite',s.favorited ? 'DELETE' : 'POST');
-  s.favorited=!s.favorited;invalidateViews(s);
+  s.favorited=!s.favorited;invalidateViews(s,v=>v.ctx?.page==='favorites');
   write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? '已收藏' : '收藏商品'});
 }));
 fluxdo.on('comment',ctx=>fluxdo.navigate('comment',{id:ctx.params.id}));
@@ -1367,14 +1439,15 @@ fluxdo.on('postComment',(ctx,a)=>buyerAction(ctx,async s=>{
   const body={content};
   if(s.canRate && Number.isInteger(rating) && rating>=1 && rating<=5) body.rating=rating;
   const result=await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments','POST',body);
-  invalidateViews(s);s.canComment=false;
+  for(const v of views.values())if(v.ctx?.page==='product' && v.ctx.params.id===ctx.params.id)v.commentsStale=true;
+  s.canComment=false;
   write(ctx,{commentSubmitted:true,canComment:false,commentResult:result?.message || '评论已提交，以士多审核结果为准'});
 }));
 fluxdo.on('claimCoupon',ctx=>buyerAction(ctx,async s=>{
   if (!s.coupon?.claimable || s.coupon.claimed) return;
   const result=await buyerRequest(ctx, '/coupons/'+encodeURIComponent(ctx.params.token)+'/claim','POST');
   if (!result?.claim || !result.campaign) throw Error('领取结果待确认，请刷新优惠券');
-  s.coupon={...result.campaign,claimed:true,claim:result.claim};invalidateViews(s);
+  s.coupon={...result.campaign,claimed:true,claim:result.claim};invalidateViews(s,v=>['coupons','review','account'].includes(v.ctx?.page) || v.ctx?.page==null);
   write(ctx,{coupon:couponRow(result.campaign,result.claim),claimed:true,canClaim:false,claimLabel:'已领取'});
 }));
 fluxdo.on('couponUse',(ctx,a)=>{
@@ -1396,7 +1469,7 @@ fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
   try {
     await buyerRequest(ctx, '/orders/'+encodeURIComponent(ctx.params.no)+'/refund','POST',{
       reasonCode:values.reasonCode,reasonDetail:reason,buyerContactedSeller:values.buyerContactedSeller===true});
-    invalidateViews(s);
+    invalidateViews(s,v=>['order','refund'].includes(v.ctx?.page) && v.ctx.params.no===ctx.params.no || v.ctx?.page==='account' || v.ctx?.page==null);
   } catch(error) {
     // 发送后只查询状态，不自动重复提交。
     note=error.message+'。请核对最新售后状态后再操作。';
@@ -1419,6 +1492,7 @@ fluxdo.on('signOut',async ctx=>{
   if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
   if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
   notificationOwner=null;
+  for(const v of views.values())if(v.ctx){v.seq++;v.overviewLoaded=false;v.overviewStats=null;v.overviewRevision=(v.overviewRevision || 0)+1;write(v.ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[]});}
   await ctx.api.credentials.remove('account');invalidateViews();await loadOverview(ctx);
 });
 fluxdo.on('seller',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername)return fluxdo.navigate('merchant',{username:p.sellerUsername,userId:display(p.sellerUserId),site:p.sellerSite || 'linux.do'});});
@@ -1427,7 +1501,7 @@ fluxdo.on('repurchase',ctx=>{const o=market(ctx)?.order;const id=o?.productId ||
 fluxdo.on('checkPayment',async ctx=>{
   const s=market(ctx);if(!s || s.paymentBusy)return;
   s.paymentBusy=true;write(ctx,{paymentBusy:true,paymentNote:''});
-  try {await buyerRequest(ctx,'/orders/'+encodeURIComponent(ctx.params.no)+'/refresh','POST');await loadOrders(ctx,false);}
+  try {await buyerRequest(ctx,'/orders/'+encodeURIComponent(ctx.params.no)+'/refresh','POST');await loadOrders(ctx,false,true);}
   catch(e){ctx.setData('paymentNote',e.message);}
   finally {s.paymentBusy=false;ctx.setData('paymentBusy',false);}
 });
@@ -1437,29 +1511,47 @@ fluxdo.on('sellerProfile',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsernam
 const messageTabs=[{value:'',label:'全部'},{value:'unread',label:'未读'},{value:'read',label:'已读'}];
 async function loadMessages(ctx,more,silent=false) {
   const s=market(ctx);if(!s || s.buyerBusy || (more && (s.loading || !s.more)))return;
+  if(silent && s.loading){s.messagesCheckPending=true;return;}
   const revision=++s.seq,current=()=>market(ctx)===s && revision===s.seq;
   const page=more ? (s.page || 1)+1 : 1;
+  const queryKey=JSON.stringify([s.readStatus || '',s.search || '']);
+  const probe=silent && s.page>1 && s.messagesQuery===queryKey;
   const messagesRevision=s.messagesRevision || 0;
-  if(!more && !silent)s.rows=[];
-  s.loading=true;
+  if(s.messagesQuery!==queryKey){s.rows=[];s.page=0;s.more=false;s.messagesLoaded=false;s.messagesFirstSignature=null;s.messagesQuery=queryKey;}
+  s.messagesCheckPending=false;s.loading=true;
   write(ctx,{rows:s.rows,loading:!more && !silent,loadingMore:more,error:'',buyerError:'',needsSession:false,
     tabs:messageTabs.map(t=>({...t,selected:t.value===(s.readStatus || '')}))});
   try {
     const auth=await ldStore.status();if(!current())return;
     ctx.setData('authorized',auth.authorized);
-    if(!auth.authorized){write(ctx,{needsSession:true,error:'登录士多后查看消息',rows:[],more:false});return;}
+    if(!auth.authorized){s.rows=[];s.more=false;s.messagesLoaded=false;s.messagesChanged=false;s.messagesCheckPending=false;write(ctx,{needsSession:true,error:'登录士多后查看消息',rows:[],more:false,messagesChanged:false});return;}
     const data=await buyerRequest(ctx,'/messages/system?'+params({page,pageSize:20,readStatus:s.readStatus || '',search:s.search || ''}));
     if(!current())return;
-    if(silent && s.hidden)return;
+    if(silent && s.hidden){s.messagesCheckPending=true;return;}
     if(!Array.isArray(data.messages))throw Error('消息数据格式有误');
-    const ids=new Set(more ? s.rows.map(r=>r.id) : []);
-    s.messagesChanged=messagesRevision!==(s.messagesRevision || 0);ctx.setData('messagesChanged',s.messagesChanged);
-    const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),
-      time:display(m.createdAt),read:flag(m.isRead),link:display(m.link)})).filter(r=>!ids.has(r.id));
-    s.rows=more ? s.rows.concat(rows) : rows;s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
-    write(ctx,{rows:s.rows,more:s.more,unread:Number(data.summary?.totalUnread || 0)>0});
-  } catch(e) {if(current())write(ctx,{error:e.message,more:!!s.more,...(e.status===401 ? {rows:[],authorized:false,needsSession:true} : {})});}
-  finally {if(current()){s.loading=false;write(ctx,{loading:false,loadingMore:false});}}
+    const signature=messageSignature(data.messages);
+    if(probe) {
+      s.messagesChanged=s.messagesChanged || s.messagesFirstSignature!==signature;
+    } else {
+      const ids=new Set(more ? s.rows.map(r=>r.id) : []);
+      const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),
+        time:display(m.createdAt),read:flag(m.isRead ?? m.is_read ?? m.read),link:display(m.link)})).filter(r=>!ids.has(r.id));
+      s.rows=more ? s.rows.concat(rows) : rows;s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
+      s.messagesLoaded=true;
+      if(!more) {s.messagesFirstSignature=signature;s.messagesChanged=messagesRevision!==(s.messagesRevision || 0);}
+      write(ctx,{rows:s.rows,more:s.more,unread:Number(data.summary?.totalUnread || 0)>0});
+    }
+    ctx.setData('messagesChanged',!!s.messagesChanged);
+  } catch(e) {if(current()){
+    if(e.status===401){s.rows=[];s.more=false;s.messagesLoaded=false;s.messagesChanged=false;s.messagesCheckPending=false;write(ctx,{rows:[],authorized:false,needsSession:true,messagesChanged:false});}
+    write(ctx,{error:e.message,more:!!s.more});
+  }}
+  finally {
+    if(current()) {
+      s.loading=false;write(ctx,{loading:false,loadingMore:false});
+      if(s.messagesCheckPending && !s.hidden)await syncMessageView(s);
+    }
+  }
 }
 fluxdo.on('messagesRefresh',ctx=>loadMessages(ctx,false));
 fluxdo.on('messagesMore',ctx=>loadMessages(ctx,true));
@@ -1469,12 +1561,14 @@ fluxdo.on('messageRead',(ctx,a)=>buyerAction(ctx,async s=>{
   const row=s.rows.find(r=>r.id===a.id);if(!row || row.read)return;
   await buyerRequest(ctx,'/messages/system/'+encodeURIComponent(row.id)+'/read','POST');
   if(market(ctx)!==s)return;
-  row.read=true;ctx.setData('rows',s.rows);invalidateViews(s);
+  row.read=true;ctx.setData('rows',s.rows);invalidateViews(s,v=>v.ctx?.page==='account' || v.ctx?.page==null);
+  if(s.readStatus==='unread'){s.rows=s.rows.filter(r=>r.id!==row.id);ctx.setData('rows',s.rows);}
+  if(s.page===1)s.messagesFirstSignature=messageSignature(s.rows);
 }));
 fluxdo.on('messagesReadAll',ctx=>buyerAction(ctx,async s=>{
   if(!await ctx.api.dialogs.confirm({title:'全部标记已读',message:'将士多的全部系统消息标记为已读。',confirmLabel:'标记已读'}))return;
   if(market(ctx)!==s)return;
-  await buyerRequest(ctx,'/messages/system/read-all','POST');invalidateViews(s);
+  await buyerRequest(ctx,'/messages/system/read-all','POST');invalidateViews(s,v=>v.ctx?.page==='account' || v.ctx?.page==null);
   s.buyerBusy=false;await loadMessages(ctx,false);
 }));
 fluxdo.on('messageOpen',(ctx,a)=>{

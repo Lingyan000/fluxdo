@@ -296,3 +296,111 @@ test('服务端连接数限制按业务提示冷却，页面切换不会提前�
  assert.equal(t.streamCalls.filter(c=>c.open).length,1);
  await t.tick();await flush();assert.equal(t.streamCalls.filter(c=>c.open).length,2);
 });
+
+test('消息初次加载与连接事件交错时不误报，真实事件到达后合并补查',async()=>{
+ let release,reads=0;const waiting=new Promise(r=>release=r);
+ const t=setup({streams:true,respond:r=>r.url.pathname.endsWith('unread-summary')?{systemUnread:1}:
+   ++reads===1 ? waiting : {...messageResult,messages:[{...messageResult.messages[0],id:'new'}]}});
+ const data={},writes=[],ctx={surface:'first',page:'messages',params:{},api:t.api,setData:(k,v)=>{data[k]=v;writes.push([k,v]);}};
+ const opening=t.handlers.get('page.open')(ctx);await flush();
+ await t.handlers.get('stream.state')(ctx,{id:'notifications',state:'open'});
+ await t.handlers.get('stream.event')(ctx,{id:'notifications',event:'system-message.changed',data:'{}'});
+ assert.notEqual(data.messagesChanged,true);
+ release(messageResult);await opening;
+ assert.equal(reads,2);assert.equal(data.rows[0].id,'new');assert.equal(data.messagesChanged,false);
+ assert.equal(writes.some(([k,v])=>k==='loading' && v===true),true);
+});
+test('消息翻页后重连先比较快照，无变化不提示，有变化不清空列表',async()=>{
+ let changed=false;
+ const t=setup({streams:true,respond:r=>r.url.pathname.endsWith('unread-summary')?{systemUnread:1}:
+  {...messageResult,messages:[{...messageResult.messages[0],id:r.url.searchParams.get('page')==='2'?'m2':changed?'new':'m1'}]}});
+ const p=await t.page('messages');await flush();await t.fire(p,'messagesMore');
+ await t.fire(p,'stream.state',{id:'notifications',state:'open'});
+ assert.equal(p.data.rows.length,2);assert.equal(p.data.messagesChanged,false);
+ changed=true;await t.fire(p,'stream.state',{id:'notifications',state:'open'});
+ assert.equal(p.data.rows.length,2);assert.equal(p.data.messagesChanged,true);
+ await t.fire(p,'messagesRefresh');assert.equal(p.data.rows[0].id,'new');assert.equal(p.data.messagesChanged,false);
+});
+test('消息刷新保留已有条目，失败保留原内容，切换筛选不会混用',async()=>{
+ let hold=false,release;const waiting=new Promise(r=>release=r);
+ const t=setup({respond:()=>hold?waiting:messageResult});const p=await t.page('messages');
+ hold=true;const refresh=t.fire(p,'messagesRefresh');await flush();
+ assert.equal(p.data.rows[0].id,'m1');assert.equal(p.data.loading,true);
+ release({failure:503,message:'暂不可用'});await refresh;
+ assert.equal(p.data.rows[0].id,'m1');assert.equal(p.data.loading,false);
+ const filter=t.fire(p,'messageTab',{value:'read'});assert.equal(p.data.rows.length,0);await filter;
+});
+test('详情报价等待只影响券与金额区域，已有商品保持可见',async()=>{
+ let release;const waiting=new Promise(r=>release=r);
+ const t=setup({respond:r=>r.url.pathname.endsWith('/quote')?waiting:{product:{id:'p1',name:'商品',price:5,stock:3}}});
+ const data={},ctx={surface:'review',page:'review',params:{id:'p1'},api:t.api,setData:(k,v)=>data[k]=v};
+ const opening=t.handlers.get('page.open')(ctx);await flush();
+ assert.equal(data.ready,true);assert.equal(data.initialLoading,false);assert.equal(data.quoteInitialLoading,true);
+ release({productId:'p1',quantity:1,payableAmount:5,productSubtotal:5,coupons:[]});await opening;
+ assert.equal(data.payable,'5.00 LDC');assert.equal(data.quoteInitialLoading,false);
+});
+test('支付成功仅核对当前订单并更新已有订单行，返回商品与商城不重新加载',async()=>{
+ let paid=false;const product={id:'p1',name:'商品',price:5,stock:8};
+ const order=()=>({orderNo:'O1',productId:'p1',product,status:paid?'delivered':'pending',amount:5});
+ const t=setup({respond:r=>{
+  const path=r.url.pathname;
+  if(path.endsWith('/categories'))return {categories:[]};
+  if(path.endsWith('/products'))return {products:[product],pagination:{}};
+  if(path.endsWith('/comments'))return {comments:[],pagination:{}};
+  if(path.endsWith('/products/p1'))return {product};
+  if(path.endsWith('/orders'))return {orders:[order()],pagination:{totalPages:1}};
+  if(path.endsWith('/payment-url'))return {paymentUrl:'https://credit.linux.do/pay/test'};
+  return {order:order()};
+ }});
+ t.api.payments={request:async()=>{paid=true;return {status:'success'};}};
+ const market=await t.page('market'),productPage=await t.page('product',{id:'p1'}),orders=await t.page('orders'),detail=await t.page('order',{no:'O1'});
+ await flush();const before=t.calls.length;await t.fire(detail,'payOrder');
+ assert.equal(detail.data.state,'已交付');assert.equal(detail.data.ready,true);assert.equal(orders.data.rows[0].state,'已交付');
+ assert.ok(t.calls.slice(before).every(r=>r.url.pathname.startsWith('/api/shop/orders/O1')));
+ const after=t.calls.length;await t.fire(productPage,'page.resume');await t.fire(market,'page.resume');await t.fire(orders,'page.resume');
+ assert.equal(t.calls.length,after);
+});
+test('我的士多读取服务账号头像模板，经公开图片代理加载，匿名时不查账号',async()=>{
+ const t=setup({respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42,name:'展示名',avatar_template:'/user_avatar/linux.do/tester/{size}/123.png'}}:{}});
+ const p=await t.page('account');assert.equal(p.data.accountName,'展示名');
+ assert.match(p.data.accountAvatar,/^https:\/\/api2.ldspro.qzz.io\/api\/shop\/avatar-proxy\?url=/);
+ assert.match(decodeURIComponent(p.data.accountAvatar),/\/128\/123.png$/);
+ const guest=setup({authorized:false,respond:()=>({})}),g=await guest.page('account');
+ assert.equal(g.data.accountAvatar,'');assert.equal(guest.calls.some(r=>r.url.pathname.endsWith('/auth/verify')),false);
+});
+test('刷新报价和详情保留原券与金额，等待期间不允许使用旧报价提交',async()=>{
+ let hold=false,release;const waiting=new Promise(r=>release=r);
+ const quote={productId:'p1',quantity:1,payableAmount:5,productSubtotal:5,coupons:[]};
+ const t=setup({respond:r=>r.url.pathname.endsWith('/quote')?(hold?waiting:quote):{product:{id:'p1',price:5,stock:3}}});
+ const p=await t.page('review',{id:'p1'});hold=true;
+ const refreshing=t.fire(p,'retry');await flush();
+ assert.equal(p.data.payable,'5.00 LDC');assert.equal(p.data.quoteReady,true);
+ assert.equal(p.data.quoteInitialLoading,false);assert.equal(p.data.canSubmit,false);
+ assert.equal(p.data.initialLoading,false);
+ release(quote);await refreshing;assert.equal(p.data.canSubmit,true);
+});
+test('取消收银台不刷新交付，不让其他页面失效',async()=>{
+ const t=setup({respond:r=>r.url.pathname.endsWith('/payment-url')?{paymentUrl:'https://credit.linux.do/pay/test'}:{order:{orderNo:'O1',status:'pending',amount:5}}});
+ t.api.payments={request:async()=>({state:'cancelled'})};
+ const p=await t.page('order',{no:'O1'});await t.fire(p,'payOrder');
+ assert.equal(t.calls.filter(r=>r.method==='POST').length,0);
+ assert.equal(t.calls.length,3);assert.equal(p.data.state,'待付款');
+});
+test('统计刷新保留已读数据，失效会话清除头像和私人消息',async()=>{
+ let fail=false;
+ const t=setup({respond:r=>fail?{failure:401}:r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42,avatar:'https://example.org/avatar.png'}}:r.url.pathname.endsWith('/attention')?{pendingPaymentCount:3}:r.url.pathname.endsWith('/messages/system')?messageResult:{}});
+ const p=await t.page('account'),messages=await t.page('messages');
+ assert.equal(p.data.accountAvatar,'https://example.org/avatar.png');
+ const refreshing=t.fire(p,'overviewRefresh');assert.equal(p.data.overviewInitialLoading,false);await refreshing;
+ fail=true;await t.fire(p,'overviewRefresh');await t.fire(messages,'messagesRefresh');
+ assert.equal(p.data.accountAvatar,'');assert.equal(p.data.stats.length,0);
+ assert.equal(messages.data.rows.length,0);assert.equal(messages.data.more,false);
+});
+test('订单手动刷新保留交付区域并收起敏感内容',async()=>{
+ let hold=false,release;const waiting=new Promise(r=>release=r);
+ const order={orderNo:'O1',status:'delivered',amount:5,deliveryContent:'fixture-only'};
+ const t=setup({respond:()=>hold?waiting:{order}}),p=await t.page('order',{no:'O1'});
+ await t.fire(p,'delivery');assert.equal(p.data.deliveryText,'fixture-only');hold=true;
+ const refreshing=t.fire(p,'ordersRefresh');assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
+ release({order});await refreshing;assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
+});

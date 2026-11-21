@@ -408,6 +408,12 @@ class _Delegate extends MetaversePluginHostDelegate {
   }
 
   @override
+  void replacePage(BuildContext context, _, String page, Map<String, Object?> p) {
+    pages.add('replace:$page');
+    pageArguments.add(p);
+  }
+
+  @override
   Future<void> openUrl(BuildContext context, Uri url) async =>
       opened.add(url.toString());
 
@@ -782,7 +788,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       await tester.tap(find.text('立即支付'));
       await settle(
         tester,
-        () => delegate.payments.length == 1 && service.requests.length == 5,
+        () => delegate.payments.length == 1 && service.requests.length == 5 &&
+            tester.widget<TextButton>(find.widgetWithText(TextButton, '取消订单')).onPressed != null,
       );
       await settle(tester, () => find.text('取消订单').evaluate().isNotEmpty);
       await tester.ensureVisible(find.text('取消订单'));
@@ -798,7 +805,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       expect(delegate.payments, ['pay:FIX-1']);
       expect(delegate.opened, isEmpty);
       delegate.paymentResult = null;
-      await settle(tester, () => find.text('立即支付').evaluate().isNotEmpty);
+      await settle(tester, () => tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '立即支付')).onPressed != null);
       await tester.ensureVisible(find.text('立即支付'));
       await tester.tap(find.text('立即支付'));
       await settle(
@@ -1219,8 +1227,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         expect(submit, isEmpty);
         await click('确认兑换');
         if (immediate) {
-          await settle(tester, () => delegate.pages.contains('order'));
-          expect(delegate.pages, ['order']);
+          await settle(tester, () => delegate.pages.contains('replace:order'));
+          expect(delegate.pages, ['replace:order']);
           expect(delegate.pageArguments, [
             {'no': 'FIX-1'},
           ]);
@@ -1258,8 +1266,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         expect(jsonDecode(submit.last.data as String), first);
         service.lookupExists = true;
         await click('查询提交结果');
-        await settle(tester, () => delegate.pages.contains('order'));
-        expect(delegate.pages, ['order']);
+        await settle(tester, () => delegate.pages.contains('replace:order'));
+        expect(delegate.pages, ['replace:order']);
         expect(delegate.pageArguments, [
           {'no': 'FIX-1'},
         ]);
@@ -1345,7 +1353,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       });
     }
 
-    pluginTest('详情付款后只更新相关订单，返回列表重新读取一次', (tester) async {
+    pluginTest('详情付款后更新已有订单行，返回列表保留分页且不发请求', (tester) async {
       final service = _ShopApi()..orderStatus = 'pending';
       await tester.runAsync(() async {
         await openShop(
@@ -1386,16 +1394,11 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         service.requests.where((r) => r.uri.path == '/api/shop/orders'),
         hasLength(1),
       );
+      final count = service.requests.length;
       navigator.currentState!.pop();
-      await settle(
-        tester,
-        () =>
-            find.text('已交付').evaluate().isNotEmpty &&
-            service.requests
-                    .where((r) => r.uri.path == '/api/shop/orders')
-                    .length ==
-                2,
-      );
+      await settle(tester, () => find.text('已交付').evaluate().isNotEmpty);
+      expect(service.requests, hasLength(count));
+      expect(service.requests.where((r) => r.uri.path == '/api/shop/orders'), hasLength(1));
       expect(
         service.requests.where((r) => r.uri.path == '/api/shop/orders/FIX-1'),
         hasLength(3),
@@ -1793,6 +1796,24 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         throwsA(isA<MetaversePluginCallException>()),
       );
       expect(delegate.pages, ['order', 'order']);
+    });
+
+    pluginTest('替换导航绑定预约方式并消耗一次用户点击', (tester) async {
+      await tester.runAsync(() => install(script: ''));
+      final surface = (await tester.runAsync(() => host.open(kind: 'card')))!;
+      await tester.pumpWidget(app(const SizedBox()));
+      host.attachSurface(surface, tester.element(find.byType(Scaffold)));
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final token = await host.call('navigation.prepare', {'page':'order','replace':true});
+      await host.call('navigate', {'page':'order','replace':true,'continuation':token});
+      expect(delegate.pages,['replace:order']);
+      await expectLater(host.call('navigate',{'page':'order','replace':true}),
+        throwsA(isA<MetaversePluginCallException>()));
+      host.dispatchUserEvent(surface, 'refresh', const {});
+      final next = await host.call('navigation.prepare', {'page':'order'});
+      await expectLater(host.call('navigate',{'page':'order','replace':true,'continuation':next}),
+        throwsA(isA<MetaversePluginCallException>()));
+      expect(delegate.pages,['replace:order']);
     });
 
     for (final invalidate in [

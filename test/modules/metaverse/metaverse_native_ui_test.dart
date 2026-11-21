@@ -1322,8 +1322,8 @@ widget Search = SearchInput(hint: "搜索", value: data.query,
       addTearDown(tester.view.resetDevicePixelRatio);
       final store = _FixtureCodeStore(preferences)..written = (
         ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
-        script: '''fluxdo.on('card.load',ctx=>ctx.setData('overviewLoading',true));
-fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'},{value:'2',label:'待发货'},{value:'4',label:'优惠券'},{value:'5',label:'未读消息'}]);ctx.setData('overviewLoading',false);});''',
+        script: '''fluxdo.on('card.load',ctx=>ctx.setData('overviewInitialLoading',true));
+fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'},{value:'2',label:'待发货'},{value:'4',label:'优惠券'},{value:'5',label:'未读消息'}]);ctx.setData('overviewInitialLoading',false);});''',
       );
       final plugin = InstalledMetaversePlugin(
         manifest: MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync())),
@@ -1835,4 +1835,39 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
       });
     }
   }
+  for(final brightness in Brightness.values) {
+    testWidgets('士多加载与刷新保留布局 ${brightness.name}', (tester) async {
+      tester.view.physicalSize=const Size(390,844);tester.view.devicePixelRatio=1;
+      tester.view.padding=const FakeViewPadding(bottom:34);
+      addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);addTearDown(tester.view.resetPadding);
+      final runtime=Runtime()
+        ..update(metaverseWidgetLibraryName,createMetaverseWidgetLibrary(loadImage:(_)async=>Uint8List(0)))
+        ..update(metaversePluginLibraryName,parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n','\n')));
+      addTearDown(runtime.dispose);
+      for(final name in ['Market','Messages','Review','BuyerOrder']) {
+        final state=DynamicContent({...data,'ready':false,'initialLoading':true,'loading':true,'rows':<Object>[],
+          'tabs':<Object>[],'needsSession':false,'buyerError':'','messagesChanged':false,'quoteInitialLoading':false});
+        Widget page()=>RemoteWidget(runtime:runtime,widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name),data:state);
+        await tester.pumpWidget(app(page(),brightness:brightness,title:name));
+        await tester.pump(const Duration(milliseconds:200));
+        expect(find.byType(SkeletonBox),findsWidgets,reason:name);
+        expect(tester.takeException(),isNull,reason:name);
+        await snapshot(tester,'loading-${name.toLowerCase()}-${brightness.name}',settle:false);
+        if(name=='Review') {
+          state.update('initialLoading',false);state.update('ready',true);state.update('quoteReady',false);
+          state.update('quoting',true);state.update('quoteInitialLoading',true);state.update('canSubmit',false);
+          await tester.pump();
+          final summary=find.text('开发者工具包');final top=tester.getTopLeft(summary);
+          await snapshot(tester,'quote-loading-${brightness.name}',settle:false);
+          state.update('quoteInitialLoading',false);state.update('quoting',false);state.update('quoteReady',true);state.update('loading',false);
+          await tester.pumpAndSettle();expect(tester.getTopLeft(summary),top);
+          state.update('loading',true);await tester.pump();expect(tester.getTopLeft(summary),top);
+          expect(find.byType(SkeletonBox),findsNothing);
+          expect(tester.takeException(),isNull);
+        }
+      }
+      await tester.pumpWidget(app(const SizedBox()));await tester.pumpAndSettle();
+    });
+  }
+
 }
