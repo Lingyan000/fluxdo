@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: 722503fe7c04e0fb3cc4b1ea29cb4682933e669c
+          ref: f9307a3680c7f9173887448a0e1602ba219e9a91
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -161,6 +161,7 @@ jobs:
           test/modules/metaverse/metaverse_event_stream_test.dart
           test/modules/metaverse/metaverse_plugin_contract_test.dart
           test/modules/metaverse/metaverse_content_components_test.dart
+          test/modules/metaverse/metaverse_page_components_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
       - name: Verify shared image viewer and controlled image sources
