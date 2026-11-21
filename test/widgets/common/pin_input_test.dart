@@ -56,8 +56,20 @@ void main() {
   );
 
   Finder dotTransform() => find
-      .ancestor(of: find.text('•').last, matching: find.byType(Transform))
+      .ancestor(of: find.text('•').first, matching: find.byType(Transform))
       .first;
+
+  double dotOpacity(WidgetTester tester, int index) => tester
+      .widget<Opacity>(
+        find.descendant(of: slot(index), matching: find.byType(Opacity)),
+      )
+      .opacity;
+
+  double statusOpacity(WidgetTester tester) => tester
+      .widget<Opacity>(
+        find.ancestor(of: find.text('正在支付…'), matching: find.byType(Opacity)),
+      )
+      .opacity;
 
   testWidgets('圆点按弹簧落入，焦点与删除跟随输入且不显示密码', (tester) async {
     final semantics = tester.ensureSemantics();
@@ -102,7 +114,8 @@ void main() {
     expect(tester.getSemantics(find.byType(EditableText)).value, '•');
     controller.clear();
     await tester.pumpAndSettle();
-    expect(find.text('•'), findsNothing);
+    expect(dotOpacity(tester, 0), 0);
+    expect(tester.getSemantics(find.byType(EditableText)).value, isEmpty);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     semantics.dispose();
@@ -132,7 +145,9 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     expect(tester.getRect(slot(0)), before);
-    expect(find.text('•'), findsNothing);
+    for (var index = 0; index < 6; index++) {
+      expect(dotOpacity(tester, index), 0);
+    }
     expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
     await tester.enterText(find.byType(TextField), '12a345678');
     await tester.pumpAndSettle();
@@ -140,7 +155,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('同位替换和控制器替换后重新落入，过渡中退出释放计时器', (tester) async {
+  testWidgets('同位替换保持遮罩，控制器替换与过渡中退出安全', (tester) async {
     await tester.pumpWidget(app());
     controller.text = '1';
     await tester.pumpAndSettle();
@@ -148,7 +163,7 @@ void main() {
     await tester.pump();
     expect(
       tester.widget<Transform>(dotTransform()).transform.getTranslation().y,
-      -14,
+      closeTo(0, .001),
     );
     final previous = controller;
     controller = TextEditingController(text: '3');
@@ -156,6 +171,93 @@ void main() {
     previous.dispose();
     await tester.pumpWidget(app(status: '正在支付…'));
     await tester.pump(const Duration(milliseconds: 20));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('合拢保持遮罩再淡出，控制器立即清空且动画不重建输入框', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(app());
+    controller.text = '123456';
+    await tester.pumpAndSettle();
+    controller.clear();
+    await tester.pumpWidget(app(status: '正在支付…'));
+    final input = tester.widget<TextField>(find.byType(TextField));
+    expect(input.controller!.text, isEmpty);
+    expect(
+      tester.getSemantics(find.byType(PinInput)).toStringDeep(),
+      isNot(contains('123456')),
+    );
+    expect(dotOpacity(tester, 0), 1);
+    expect(statusOpacity(tester), 0);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(dotOpacity(tester, 0), 1);
+    expect(tester.widget<TextField>(find.byType(TextField)), same(input));
+    await tester.pump(const Duration(milliseconds: 160));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(dotOpacity(tester, 0), inExclusiveRange(0, 1));
+    expect(statusOpacity(tester), inExclusiveRange(0, 1));
+    expect(tester.widget<TextField>(find.byType(TextField)), same(input));
+    await tester.pumpAndSettle();
+    expect(dotOpacity(tester, 0), 0);
+    expect(statusOpacity(tester), 1);
+    await tester.pumpWidget(const SizedBox());
+    semantics.dispose();
+  });
+
+  testWidgets('删除后快速重填不闪回起点，退出处理态连续淡出', (tester) async {
+    await tester.pumpWidget(app());
+    controller.text = '1';
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final beforeDelete = dotOpacity(tester, 0);
+    controller.clear();
+    await tester.pump();
+    expect(dotOpacity(tester, 0), closeTo(beforeDelete, .001));
+    await tester.pump(const Duration(milliseconds: 40));
+    final beforeRefill = dotOpacity(tester, 0);
+    final beforeY = tester
+        .widget<Transform>(dotTransform())
+        .transform
+        .getTranslation()
+        .y;
+    controller.text = '2';
+    await tester.pump();
+    expect(dotOpacity(tester, 0), closeTo(beforeRefill, .001));
+    expect(
+      tester.widget<Transform>(dotTransform()).transform.getTranslation().y,
+      closeTo(beforeY, .001),
+    );
+    await tester.pumpAndSettle();
+    controller.clear();
+    await tester.pumpWidget(app(status: '正在支付…'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(app());
+    expect(statusOpacity(tester), 1);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(statusOpacity(tester), inExclusiveRange(0, 1));
+    await tester.pumpAndSettle();
+    expect(find.text('正在支付…'), findsNothing);
+    expect(dotOpacity(tester, 0), 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('合拢中取消再提交不会遗留延时状态', (tester) async {
+    await tester.pumpWidget(app());
+    controller.text = '123456';
+    await tester.pumpAndSettle();
+    controller.clear();
+    await tester.pumpWidget(app(status: '正在支付…'));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pumpWidget(app());
+    await tester.pump(const Duration(milliseconds: 80));
+    controller.text = '123456';
+    await tester.pumpWidget(app(status: '正在支付…'));
+    await tester.pumpAndSettle();
+    expect(statusOpacity(tester), 1);
+    await tester.pumpWidget(app(reduceMotion: true));
+    expect(find.text('正在支付…'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
     expect(tester.takeException(), isNull);

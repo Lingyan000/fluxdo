@@ -518,7 +518,16 @@ void main() {
     expect(payment.payments, 1);
     final pin = tester.widget<PinInput>(find.byType(PinInput));
     expect(pin.statusLabel, S.current.ldc_processingPayment);
-    await tester.pump(const Duration(milliseconds: 650));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.text('•'), findsNWidgets(6));
+    for (final dot in find.text('•').evaluate()) {
+      expect(dot.findAncestorWidgetOfExactType<Opacity>()!.opacity, greaterThan(0));
+    }
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.byType(M3eSuccessIndicator), findsNothing);
     expect(find.byType(LoadingSpinner), findsOneWidget);
     expect(
@@ -755,19 +764,27 @@ void main() {
   });
 
   testWidgets('密码输入仅保留六位数字，删除与清空同步格子，读屏隐藏原文', (tester) async {
+    final semantics = tester.ensureSemantics();
+    int visibleDots() => find.text('•').evaluate().where((element) {
+      final opacity = element.findAncestorWidgetOfExactType<Opacity>();
+      return opacity != null && opacity.opacity > 0;
+    }).length;
     await openPayment(tester, _Payment());
     await tester.enterText(find.byType(TextField), '1a23456789');
-    await tester.pump();
+    await tester.pumpAndSettle();
     final input = tester.widget<TextField>(find.byType(TextField));
     expect(input.controller!.text, '123456');
     expect(input.obscureText, isTrue);
-    expect(find.text('•'), findsNWidgets(6));
+    expect(visibleDots(), 6);
+    expect(tester.getSemantics(find.byType(EditableText)).value, '••••••');
     await tester.enterText(find.byType(TextField), '123');
-    await tester.pump();
-    expect(find.text('•'), findsNWidgets(3));
+    await tester.pumpAndSettle();
+    expect(visibleDots(), 3);
     input.controller!.clear();
-    await tester.pump();
-    expect(find.text('•'), findsNothing);
+    await tester.pumpAndSettle();
+    expect(visibleDots(), 0);
+    expect(tester.getSemantics(find.byType(EditableText)).value, isEmpty);
+    semantics.dispose();
   });
 
   for (final width in [390.0, 800.0]) {
