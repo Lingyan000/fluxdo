@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
@@ -21,7 +22,12 @@ class CfVerifyCard extends ConsumerWidget {
     return SegmentedCardGroup(
       children: [
         SwitchListTile(
-          secondary: const Icon(Symbols.shield_rounded),
+          secondary: Icon(
+            Symbols.shield_rounded,
+            color: autoEnabled
+                ? context.emphasis.selected
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           title: Text(context.l10n.cfVerify_autoTitle),
           subtitle: Text(context.l10n.cfVerify_autoDesc),
           value: autoEnabled,

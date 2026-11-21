@@ -1,4 +1,5 @@
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -28,7 +29,12 @@ class EchSettingsCard extends StatelessWidget {
       children: [
         serverSelector,
         SwitchListTile(
-          secondary: const Icon(Symbols.encrypted_rounded),
+          secondary: Icon(
+            Symbols.encrypted_rounded,
+            color: policy.enabled
+                ? context.emphasis.selected
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           title: Text(l10n.dohDetail_publicEch),
           subtitle: Text(
             policy.enabled

@@ -56,7 +56,7 @@ class SettingsRenderer extends ConsumerWidget {
       secondary: Icon(
         m.icon,
         color: value
-            ? theme.colorScheme.primary
+            ? context.emphasis.selected
             : theme.colorScheme.onSurfaceVariant,
       ),
       value: value,
