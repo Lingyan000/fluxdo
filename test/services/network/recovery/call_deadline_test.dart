@@ -59,6 +59,49 @@ void main() {
     dio.close(force: true);
   });
 
+  testWidgets('验证后传输重新获得完整网络时限，耗尽后仍取消传输', (tester) async {
+    final adapter = _Adapter((_, cancelled) async {
+      await cancelled;
+      return ResponseBody.fromString('{}', 200);
+    });
+    const limit = Duration(seconds: 30);
+    final dio = _client(adapter, limit);
+    addTearDown(() => dio.close(force: true));
+    final verified = Completer<void>();
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          await Future<void>.delayed(const Duration(seconds: 25));
+          await DeadlineDio.waitForCfVerification(options, verified.future);
+          handler.next(options);
+        },
+      ),
+    );
+    var expired = false;
+    final request = expectLater(
+      dio.get<dynamic>('https://example.test'),
+      throwsA(
+        isA<DioException>().having(
+          (e) => e.error,
+          'deadline',
+          isA<CallDeadlineExceeded>().having((e) => e.limit, 'limit', limit),
+        ),
+      ),
+    ).then((_) => expired = true);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 25));
+    await tester.pump(const Duration(seconds: 119));
+    expect(expired, isFalse);
+    verified.complete();
+    await tester.pump(Duration.zero);
+    expect(adapter.calls, 1);
+    await tester.pump(const Duration(seconds: 29));
+    expect(expired, isFalse);
+    await tester.pump(const Duration(seconds: 1));
+    expect(expired, isTrue);
+    await request;
+  });
+
   test('取消退避立即结束，不等下一次重试', () async {
     final adapter = _Adapter((_, _) async => ResponseBody.fromString('', 503));
     final dio = DeadlineDio(BaseOptions(), const Duration(seconds: 10))
