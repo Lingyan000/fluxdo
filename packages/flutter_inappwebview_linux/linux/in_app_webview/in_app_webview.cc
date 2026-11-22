@@ -126,6 +126,19 @@ namespace flutter_inappwebview_plugin {
 
 namespace {
 
+std::optional<std::map<std::string, std::string>> ReadHttpHeaders(SoupMessageHeaders* headers) {
+  if (headers == nullptr) return std::nullopt;
+  std::map<std::string, std::string> result;
+  SoupMessageHeadersIter iter;
+  const char* name;
+  const char* value;
+  soup_message_headers_iter_init(&iter, headers);
+  while (soup_message_headers_iter_next(&iter, &name, &value)) {
+    if (name != nullptr && value != nullptr) result[name] = value;
+  }
+  return result;
+}
+
 const char* SafeEnv(const char* key) {
   const char* value = g_getenv(key);
   return value != nullptr ? value : "<unset>";
@@ -3964,6 +3977,7 @@ gboolean InAppWebView::OnDecidePolicy(WebKitWebView* web_view, WebKitPolicyDecis
           mimeType != nullptr ? std::optional<std::string>(mimeType) : std::nullopt,
           contentLength,
           static_cast<int>(statusCode),
+          ReadHttpHeaders(webkit_uri_response_get_http_headers(response)),
           is_main_frame != FALSE,
           is_mime_type_supported != FALSE,
           std::move(callback));
@@ -8012,23 +8026,8 @@ void InAppWebView::OnCustomSchemeRequest(WebKitURISchemeRequest* request, gpoint
       http_method != nullptr ? std::optional<std::string>(http_method) : std::nullopt;
 
   // Get HTTP headers if available
-  std::optional<std::map<std::string, std::string>> headers_map = std::nullopt;
-  SoupMessageHeaders* headers = webkit_uri_scheme_request_get_http_headers(request);
-  if (headers != nullptr) {
-    std::map<std::string, std::string> hdrs;
-    SoupMessageHeadersIter iter;
-    const char* name;
-    const char* value;
-    soup_message_headers_iter_init(&iter, headers);
-    while (soup_message_headers_iter_next(&iter, &name, &value)) {
-      if (name != nullptr && value != nullptr) {
-        hdrs[name] = value;
-      }
-    }
-    if (!hdrs.empty()) {
-      headers_map = hdrs;
-    }
-  }
+  auto headers_map = ReadHttpHeaders(webkit_uri_scheme_request_get_http_headers(request));
+  if (headers_map && headers_map->empty()) headers_map.reset();
 
   auto webResourceRequest =
       std::make_shared<WebResourceRequest>(url_str, method_str, headers_map, true);
