@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter/rendering.dart'
     show PlatformViewLayer, PlatformViewHitTestBehavior;
 import 'package:flutter/services.dart';
@@ -27,11 +28,37 @@ class _SurfaceController extends Fake implements PlatformViewController {
   int get viewId => 87;
 }
 
-class _HomeProbe extends StatelessWidget {
+class _HomeProbe extends StatefulWidget {
   const _HomeProbe();
 
   @override
-  Widget build(BuildContext context) => const SizedBox.expand();
+  State<_HomeProbe> createState() => _HomeProbeState();
+}
+
+class _HomeProbeState extends State<_HomeProbe> {
+  int paints = 0;
+  bool moving = false;
+
+  @override
+  Widget build(BuildContext context) {
+    moving = PageMotionScope.of(context);
+    return CustomPaint(painter: _CountPaint(() => paints++));
+  }
+}
+
+class _CountPaint extends CustomPainter {
+  _CountPaint(this.onPaint);
+
+  final VoidCallback onPaint;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    onPaint();
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.blue);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CountPaint oldDelegate) => false;
 }
 
 void main() {
@@ -406,6 +433,50 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
+  for (final width in [390.0, 1024.0]) {
+    testWidgets('退场在半秒内结束，首页状态与绘制结果复用 width=$width', (tester) async {
+      await pumpGate(tester, width: width);
+      final home = tester.state<_HomeProbeState>(find.byType(_HomeProbe));
+      expect(home.moving, isFalse);
+      expect(find.byType(PreheatLogo), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 1016));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(home.moving, isTrue);
+      expect(
+        TickerMode.valuesOf(tester.element(find.byType(PreheatLogo))).enabled,
+        isFalse,
+        reason: '退场时光晕停止刷新',
+      );
+
+      // 亚克力窗口里的首页此时已开始淡入，先完成首次绘制。
+      await tester.pump(const Duration(milliseconds: 160));
+      final paints = home.paints;
+      expect(paints, greaterThan(0));
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(home.paints, paints, reason: '缩放和淡入不能导致首页逐帧重绘');
+      expect(find.byType(PreheatLogo), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 244));
+      await tester.pump();
+      expect(find.byType(PreheatLogo), findsNothing);
+      expect(tester.state(find.byType(_HomeProbe)), same(home));
+      expect(home.moving, isFalse);
+      expect(
+        tester
+            .renderObject(find.byType(_HomeProbe))
+            .getTransformTo(null)
+            .getMaxScaleOnAxis(),
+        closeTo(1, 0.0001),
+      );
+      expect(tester.takeException(), isNull);
+    }, variant: TargetPlatformVariant.all());
+  }
+
   testWidgets('启动状态显示最新验证文案，切换阶段时淡入淡出', (tester) async {
     final cf = CfChallengeService();
     final pageState = cf.pageState as ValueNotifier<CfVerificationState?>;
@@ -459,4 +530,22 @@ void main() {
     expect(find.text(l10n.preheat_statusBrowser), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final features in [
+    const FakeAccessibilityFeatures(disableAnimations: true),
+    const FakeAccessibilityFeatures(reduceMotion: true),
+  ]) {
+    testWidgets('减少动态效果时直接结束启动页 $features', (tester) async {
+      tester.platformDispatcher.accessibilityFeaturesTestValue = features;
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await pumpGate(tester);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(PreheatLogo), findsNothing);
+      expect(find.byType(_HomeProbe), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
