@@ -40,6 +40,9 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   final VoidCallback onReplyEntryTap;
   final VoidCallback onScrollToTop;
 
+  /// 树形视图中的下一条主回复操作，null 表示当前没有下一条。
+  final ValueListenable<VoidCallback?>? nextRootListenable;
+
   /// 目录按钮（窄屏、有目录时由页面提供）与其显隐
   final Widget? tocButton;
   final ValueListenable<bool>? tocVisibleListenable;
@@ -70,6 +73,7 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     this.replyDraftListenable,
     required this.onReplyEntryTap,
     required this.onScrollToTop,
+    this.nextRootListenable,
     this.tocButton,
     this.tocVisibleListenable,
     required this.onOpenTimeline,
@@ -239,7 +243,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             child: child!,
           ),
         ),
-        // 悬浮按钮列（目录、回顶）：整列随底栏一起移动；单个按钮出现 /
+        // 悬浮按钮列（目录、下一条主回复、回顶）：整列随底栏一起移动；单个按钮出现 /
         // 消失时高度折叠，其余按钮同步让位，而不是各自跳位
         ListenableBuilder(
           listenable: Listenable.merge([
@@ -254,6 +258,19 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  if (widget.nextRootListenable != null)
+                    ValueListenableBuilder<VoidCallback?>(
+                      valueListenable: widget.nextRootListenable!,
+                      builder: (context, nextRoot, _) => _FloatingButtonSlot(
+                        visible: nextRoot != null,
+                        child: FloatingActionButton.small(
+                          heroTag: null,
+                          onPressed: nextRoot,
+                          tooltip: context.l10n.nested_nextRoot,
+                          child: const Icon(Symbols.skip_next_rounded),
+                        ),
+                      ),
+                    ),
                   if (widget.tocButton != null &&
                       widget.tocVisibleListenable != null)
                     ValueListenableBuilder<bool>(

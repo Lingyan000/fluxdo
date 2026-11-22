@@ -6,17 +6,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
+import 'package:fluxdo/models/nested_topic.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/pages/topic_detail_page/topic_detail_page.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bar_gestures.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/nested_post_list.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bottom_bar.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_overlay.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_reading_rail.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_indicator.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_toc_panel.dart';
 import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/message_bus_providers.dart';
+import 'package:fluxdo/providers/nested_topic_provider.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/topic_detail_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
@@ -140,12 +146,21 @@ class _MessageBusInit extends MessageBusInitNotifier {
   void build() {}
 }
 
+class _NestedNotifier extends NestedTopicNotifier {
+  _NestedNotifier(super.params, this.initial);
+  final NestedTopicState initial;
+
+  @override
+  Future<NestedTopicState> build() async => initial;
+}
+
 void main() {
   late _DetailNotifier notifier;
   late SharedPreferences prefs;
   late ProviderContainer container;
   late _PagingService service;
   late TopicDetail initialDetail;
+  late NestedTopicState nestedState;
   var enablePrevious = false;
 
   setUp(() async {
@@ -154,6 +169,7 @@ void main() {
     LocaleSettings.setLocale(AppLocale.zh);
     service = _PagingService();
     initialDetail = _detail(40, 99);
+    nestedState = const NestedTopicState();
     enablePrevious = false;
     container = ProviderContainer(
       overrides: [
@@ -167,6 +183,14 @@ void main() {
         topicChannelProvider(42).overrideWith(() => _TopicChannel(42)),
         topicTrackingStateProvider.overrideWith(_Tracking.new),
         messageBusInitProvider.overrideWith(_MessageBusInit.new),
+        nestedTopicProvider(
+          const NestedTopicParams(topicId: 42, instanceId: 'navigation-test'),
+        ).overrideWith(
+          () => _NestedNotifier(
+            const NestedTopicParams(topicId: 42, instanceId: 'navigation-test'),
+            nestedState,
+          ),
+        ),
         topicDetailProvider(
           const TopicDetailParams(42, instanceId: 'navigation-test'),
         ).overrideWith(
@@ -218,6 +242,115 @@ void main() {
     // 详情页销毁后，内联帖子缓存还有 30 秒的保活期。
     await tester.pump(const Duration(seconds: 31));
   }
+
+  testWidgets('树形视图悬浮按钮同尺寸同列排列，随底栏移动且保留跳转功能', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 812);
+    addTearDown(tester.view.reset);
+    initialDetail = _detail(1, 3, total: 3);
+    final posts = initialDetail.postStream.posts;
+    nestedState = NestedTopicState(
+      opPost: posts.first,
+      roots: [
+        NestedNode(
+          post: posts[1].copyWith(
+            cooked: List.filled(40, '<p>用于滚动定位的长回复内容。</p>').join(),
+          ),
+        ),
+        NestedNode(
+          post: posts[2].copyWith(
+            cooked: List.filled(40, '<p>最后一条主回复的内容。</p>').join(),
+          ),
+        ),
+      ],
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setDefaultNestedView(true);
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    final list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    list.scrollController.jumpTo(600);
+    await tester.pumpAndSettle();
+
+    final overlay = tester.widget<TopicDetailOverlay>(
+      find.byType(TopicDetailOverlay),
+    );
+    final bottomBar = overlay.showBottomBarListenable as ValueNotifier<bool>;
+    final backToTop = overlay.showBackToTopListenable as ValueNotifier<bool>;
+    bottomBar.value = true;
+    backToTop.value = true;
+    await tester.pumpAndSettle();
+
+    final nextFab = find.byWidgetPredicate(
+      (widget) => widget is FloatingActionButton && widget.tooltip == '下一条主回复',
+    );
+    final topFab = find.byWidgetPredicate(
+      (widget) => widget is FloatingActionButton && widget.tooltip == '回到顶部',
+    );
+    final nextRect = tester.getRect(nextFab);
+    final topRect = tester.getRect(topFab);
+    expect(nextRect.size, topRect.size);
+    expect(nextRect.right, topRect.right);
+    expect(topRect.top - nextRect.bottom, TopicBottomBarMetrics.gap);
+    expect(nextFab.hitTestable(), findsOneWidget);
+    expect(topFab.hitTestable(), findsOneWidget);
+
+    bottomBar.value = false;
+    await tester.pumpAndSettle();
+    expect(topFab.hitTestable(), findsNothing);
+    expect(nextFab.hitTestable(), findsOneWidget);
+    expect(tester.getRect(nextFab).top, greaterThan(nextRect.top));
+    bottomBar.value = true;
+    await tester.pumpAndSettle();
+    expect(tester.getRect(nextFab), nextRect);
+
+    tester.view.physicalSize = const Size(900, 812);
+    await tester.pumpAndSettle();
+    final tabletNextRect = tester.getRect(nextFab);
+    final tabletTopRect = tester.getRect(topFab);
+    expect(tabletNextRect.size, tabletTopRect.size);
+    expect(tabletNextRect.right, tabletTopRect.right);
+    expect(
+      tabletTopRect.top - tabletNextRect.bottom,
+      TopicBottomBarMetrics.gap,
+    );
+
+    tester.view.physicalSize = const Size(1500, 900);
+    await tester.pumpAndSettle();
+    expect(find.byType(TopicDetailOverlay), findsNothing);
+    expect(
+      find
+          .descendant(
+            of: find.byType(TopicReadingRail),
+            matching: find.byTooltip('下一条主回复'),
+          )
+          .hitTestable(),
+      findsOneWidget,
+    );
+    tester.view.physicalSize = const Size(390, 812);
+    await tester.pumpAndSettle();
+    expect(nextFab.hitTestable(), findsOneWidget);
+    await tester.tap(nextFab);
+    await tester.pumpAndSettle();
+    expect(list.session?.position?.rootPostNumber, 3);
+    expect(nextFab.hitTestable(), findsNothing);
+    bottomBar.value = true;
+    await tester.pumpAndSettle();
+    await tester.tap(topFab);
+    await tester.pumpAndSettle();
+    expect(list.scrollController.offset, 0);
+    overlay.filter.onShowNestedView!();
+    await tester.pumpAndSettle();
+    expect(find.byType(NestedPostList), findsNothing);
+    expect(nextFab, findsNothing);
+    expect(overlay.nextRootListenable!.value, isNull);
+    overlay.filter.onShowNestedView!();
+    await tester.pumpAndSettle();
+    expect(nextFab.hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await disposePage(tester);
+  });
 
   testWidgets('松手后的第一帧定位到屏外已加载楼层，与底栏收起动画同时进行', (tester) async {
     tester.view.devicePixelRatio = 1;

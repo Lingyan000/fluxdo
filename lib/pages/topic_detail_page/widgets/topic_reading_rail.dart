@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:common_ui/common_ui.dart';
+import 'package:app_icons/app_icons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../providers/preferences_provider.dart';
+import '../../../l10n/s.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
@@ -37,6 +39,7 @@ class TopicReadingRail extends StatefulWidget {
     required this.onAction,
     this.lastReadIndex,
     this.replyDraftListenable,
+    this.nextRootListenable,
   });
 
   /// 栏宽（不含与帖子列的间距）
@@ -65,6 +68,7 @@ class TopicReadingRail extends StatefulWidget {
   final ValueChanged<ProgressGestureAction> onAction;
   final int? lastReadIndex;
   final ValueListenable<String?>? replyDraftListenable;
+  final ValueListenable<VoidCallback?>? nextRootListenable;
 
   @override
   State<TopicReadingRail> createState() => _TopicReadingRailState();
@@ -112,6 +116,20 @@ class _TopicReadingRailState extends State<TopicReadingRail> {
           alignment: Alignment.centerLeft,
           child: TopicFilterButton(controls: widget.filter, showLabel: true),
         ),
+        if (widget.nextRootListenable != null)
+          ValueListenableBuilder<VoidCallback?>(
+            valueListenable: widget.nextRootListenable!,
+            builder: (context, nextRoot, _) => nextRoot == null
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: nextRoot,
+                      tooltip: context.l10n.nested_nextRoot,
+                      icon: const Icon(Symbols.skip_next_rounded),
+                    ),
+                  ),
+          ),
         if (actions.isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(
