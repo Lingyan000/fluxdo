@@ -364,18 +364,16 @@ class _ChannelListView extends StatelessWidget {
       itemCount: channels.length,
       itemBuilder: (context, index) {
         final channel = channels[index];
-        return Padding(
-          padding: EdgeInsets.only(top: index == 0 ? 0 : 3),
-          child: SegmentedCardItem(
-            index: index,
-            count: channels.length,
-            child: _ChatChannelTile(
-              channel: channel,
-              tracking: tracking[channel.id] ?? const ChatChannelTracking(),
-              selected: selectedId == channel.id,
-              onTap: () => onTap(channel),
-              onLongPress: () => onLongPress(channel),
-            ),
+        return SegmentedCardItem(
+          index: index,
+          count: channels.length,
+          gap: 3,
+          child: _ChatChannelTile(
+            channel: channel,
+            tracking: tracking[channel.id] ?? const ChatChannelTracking(),
+            selected: selectedId == channel.id,
+            onTap: () => onTap(channel),
+            onLongPress: () => onLongPress(channel),
           ),
         );
       },
@@ -720,33 +718,31 @@ class _ChatListSkeleton extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
         itemCount: 8,
-        itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.only(top: index == 0 ? 0 : 3),
-          child: SegmentedCardItem(
-            index: index,
-            count: 8,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  SkeletonCircle(size: 48),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SkeletonBox(width: 140, height: 14, borderRadius: 7),
-                        SizedBox(height: 8),
-                        SkeletonBox(
-                          width: double.infinity,
-                          height: 12,
-                          borderRadius: 6,
-                        ),
-                      ],
-                    ),
+        itemBuilder: (context, index) => SegmentedCardItem(
+          index: index,
+          count: 8,
+          gap: 3,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                SkeletonCircle(size: 48),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(width: 140, height: 14, borderRadius: 7),
+                      SizedBox(height: 8),
+                      SkeletonBox(
+                        width: double.infinity,
+                        height: 12,
+                        borderRadius: 6,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

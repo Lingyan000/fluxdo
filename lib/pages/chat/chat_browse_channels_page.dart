@@ -184,69 +184,64 @@ class _ChatBrowseChannelsPageState
       itemBuilder: (context, index) {
         final channel = channels[index];
         final following = _isFollowing(channel);
-        return Padding(
-          padding: EdgeInsets.only(top: index == 0 ? 0 : 3),
-          child: SegmentedCardItem(
-            index: index,
-            count: channels.length,
-            child: InkWell(
-              onTap: following ? () => _open(channel) : null,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    ChatChannelAvatar(channel: channel, radius: 22),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          EmojiText(
-                            channel.title ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+        return SegmentedCardItem(
+          index: index,
+          count: channels.length,
+          gap: 3,
+          child: InkWell(
+            onTap: following ? () => _open(channel) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  ChatChannelAvatar(channel: channel, radius: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        EmojiText(
+                          channel.title ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
-                          if (channel.description?.isNotEmpty == true) ...[
-                            const SizedBox(height: 2),
-                            EmojiText(
-                              channel.description!,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+                        ),
+                        if (channel.description?.isNotEmpty == true) ...[
                           const SizedBox(height: 2),
-                          Text(
-                            context.l10n.chat_memberCount(
-                              channel.membershipsCount ?? 0,
-                            ),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.outline,
+                          EmojiText(
+                            channel.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    following
-                        ? FilledButton.tonal(
-                            onPressed: () => _open(channel),
-                            child: Text(context.l10n.chat_enterChannel),
-                          )
-                        : FilledButton(
-                            onPressed: () => _join(channel),
-                            child: Text(context.l10n.chat_joinChannel),
+                        const SizedBox(height: 2),
+                        Text(
+                          context.l10n.chat_memberCount(
+                            channel.membershipsCount ?? 0,
                           ),
-                  ],
-                ),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  following
+                      ? FilledButton.tonal(
+                          onPressed: () => _open(channel),
+                          child: Text(context.l10n.chat_enterChannel),
+                        )
+                      : FilledButton(
+                          onPressed: () => _join(channel),
+                          child: Text(context.l10n.chat_joinChannel),
+                        ),
+                ],
               ),
             ),
           ),

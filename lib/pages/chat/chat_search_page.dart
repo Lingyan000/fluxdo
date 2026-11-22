@@ -228,70 +228,69 @@ class _ChatSearchPageState extends ConsumerState<ChatSearchPage> {
             );
           }
           final message = _results[index];
-          return Padding(
-            padding: EdgeInsets.only(top: index == 0 ? 0 : 3),
-            child: SegmentedCardItem(
-              index: index,
-              count: _results.length,
-              child: InkWell(
-                onTap: () => _openResult(message),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SmartAvatar(
-                        imageUrl: message.user?.getAvatarUrl(size: 64),
-                        radius: 16,
-                        fallbackText: message.user?.username,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    message.user?.username ?? '',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
+          return SegmentedCardItem(
+            index: index,
+            count: _results.length,
+            gap: 3,
+            child: InkWell(
+              onTap: () => _openResult(message),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SmartAvatar(
+                      imageUrl: message.user?.getAvatarUrl(size: 64),
+                      radius: 16,
+                      fallbackText: message.user?.username,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  message.user?.username ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                if (message.createdAt != null)
-                                  RelativeTimeText(
-                                    dateTime: message.createdAt!,
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.outline,
-                                    ),
+                              ),
+                              if (message.createdAt != null)
+                                RelativeTimeText(
+                                  dateTime: message.createdAt!,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.outline,
                                   ),
-                              ],
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          EmojiText(
+                            chatPreviewText(
+                              context,
+                              message.excerpt?.isNotEmpty == true
+                                  ? message.excerpt!
+                                  : message.message,
                             ),
-                            const SizedBox(height: 2),
-                            EmojiText(
-                              chatPreviewText(
-                                context,
-                                message.excerpt?.isNotEmpty == true
-                                    ? message.excerpt!
-                                    : message.message,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
