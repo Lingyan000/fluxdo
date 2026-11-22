@@ -31,6 +31,7 @@ import '../../services/crypto/crypto_cipher_format.dart';
 import 'post_item/widgets/post_footer_section/post_footer_section.dart';
 import 'post_item/widgets/post_header_section.dart';
 import 'reply_sheet.dart';
+import 'quote_navigation_scope.dart';
 import 'small_action_item.dart';
 
 /// 打开帖子递归回复弹框
@@ -339,7 +340,13 @@ class _PostRepliesSheetContentState
           showTitleDivider: true,
           contentPadding: EdgeInsets.zero,
           title: '#${widget.post.postNumber} ${context.l10n.post_detail}',
-          child: _buildContent(context, theme, scrollController),
+          child: widget.onJumpToPost == null
+              ? _buildContent(context, theme, scrollController)
+              : QuoteNavigationScope(
+                  topicId: widget.topicId,
+                  onJump: _jumpToPost,
+                  child: _buildContent(context, theme, scrollController),
+                ),
         );
       },
     );

@@ -53,6 +53,7 @@ import '../../services/discourse/discourse_service.dart';
 import '../../services/drafts_signal.dart';
 import '../../providers/draft_store_provider.dart';
 import '../../widgets/post/inline_posts_scope.dart';
+import '../../widgets/post/quote_navigation_scope.dart';
 import '../../widgets/post/reply_submission.dart';
 import '../../utils/markdown_block_format.dart';
 import '../../services/preloaded_data_service.dart';
@@ -3291,6 +3292,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   /// 分栏本身没问题，但链接点击时 stackProvider 始终为 null——根因就是
   /// 这个分支漏包）。
   Widget _wrapEmbeddedStack(Widget child) {
+    child = QuoteNavigationScope(
+      topicId: widget.topicId,
+      onJump: _jumpToPostInTopic,
+      child: child,
+    );
     child = InlinePostsScope(store: _inlinePostsStore, child: child);
     if (widget.embeddedMode) {
       return EmbeddedStackScope(
