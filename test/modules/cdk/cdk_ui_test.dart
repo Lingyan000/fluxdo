@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -79,6 +80,7 @@ void main() {
     Widget child, {
     Brightness brightness = Brightness.light,
     double scale = 1,
+    bool reduceMotion = false,
   }) {
     const seed = Colors.indigo;
     var theme = buildAppTheme(
@@ -109,7 +111,10 @@ void main() {
             theme: theme,
             builder: (context, child) => MediaQuery(
               data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
+                  .copyWith(
+                    textScaler: TextScaler.linear(scale),
+                    reduceMotion: reduceMotion,
+                  ),
               child: child!,
             ),
             home: Scaffold(
@@ -141,6 +146,107 @@ void main() {
       Directory('build/cdk-ui').createSync(recursive: true);
       File('build/cdk-ui/$name.png')
           .writeAsBytesSync(png!.buffer.asUint8List());
+    });
+  }
+
+  // Dio 通过异步拦截器和响应流交付，请等标签真正到达页面后再测画面中间帧。
+  Future<void> pumpUntil(WidgetTester tester, bool Function() ready) async {
+    for (var i = 0; i < 60 && !ready(); i++) {
+      await tester.pump(const Duration(milliseconds: 1));
+    }
+    expect(ready(), isTrue);
+  }
+
+  testWidgets('筛选标签晚到时在原位淡入，滚动中的项目不移动也不重载', (tester) async {
+    size(tester, 320);
+    final pending = api.pendingTags = Completer<List<String>>();
+    await tester.pumpWidget(
+      app(CdkHomeContent(client: api.client), scale: 1.4),
+    );
+    await tester.pumpAndSettle();
+    final all = find.widgetWithText(ChoiceChip, S.current.common_all);
+    final tag = find.widgetWithText(ChoiceChip, '工具');
+    expect(all.hitTestable(), findsOneWidget);
+    expect(tag, findsNothing);
+    final list = find.byType(ListView).first;
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(of: list, matching: find.byType(Scrollable)).first,
+        )
+        .position;
+    position.jumpTo(110);
+    await tester.pumpAndSettle();
+    final item = find.text('社区工具体验码 2');
+    final readingY = tester.getTopLeft(item).dy;
+    await snapshot(tester, 'filter-pending');
+    pending.complete(['工具', '体验']);
+    await pumpUntil(tester, () => tag.evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 45));
+    final fades = tester
+        .widgetList<FadeTransition>(
+          find.ancestor(of: tag, matching: find.byType(FadeTransition)),
+        )
+        .map((w) => w.opacity.value);
+    expect(fades.any((value) => value > 0 && value < 1), isTrue);
+    expect(tester.getTopLeft(item).dy, closeTo(readingY, 0.1));
+    await snapshot(tester, 'filter-revealing');
+    await tester.pumpAndSettle();
+    expect(position.pixels, 110);
+    expect(tester.getTopLeft(item).dy, closeTo(readingY, 0.1));
+    expect(
+      api.requests.where((r) => r.path.endsWith('/projects')),
+      hasLength(1),
+    );
+    await snapshot(tester, 'filter-ready');
+    await tester.tap(tag);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(tag).selected, isTrue);
+    expect(
+      api.requests.where((r) => r.uri.queryParameters['tags'] == '工具'),
+      hasLength(1),
+    );
+    await tester.tap(find.text(S.current.cdk_myReceipts));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(S.current.cdk_explore));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(tag).selected, isTrue);
+    expect(api.requests.where((r) => r.path.endsWith('/tags')), hasLength(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final failed in [false, true]) {
+    testWidgets('筛选无结果时收回占位，不遮住项目：${failed ? '请求失败' : '空标签'}', (tester) async {
+      size(tester, 390);
+      final pending = api.pendingTags = Completer<List<String>>();
+      await tester.pumpWidget(
+        app(CdkHomeContent(client: api.client), reduceMotion: failed),
+      );
+      await tester.pumpAndSettle();
+      final tabs = tester.getBottomLeft(find.byType(TabBar)).dy;
+      final list = find.byType(ListView).first;
+      final before = tester.getTopLeft(list).dy;
+      expect(before, greaterThan(tabs));
+      if (failed) {
+        pending.completeError(StateError('offline'));
+      } else {
+        pending.complete([]);
+      }
+      await pumpUntil(tester, () => tester.getTopLeft(list).dy < before);
+      if (!failed) {
+        await tester.pump(const Duration(milliseconds: 90));
+        expect(
+          tester.getTopLeft(list).dy,
+          allOf(greaterThan(tabs), lessThan(before)),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(tester.getTopLeft(list).dy, closeTo(tabs, 0.1));
+      expect(
+        find.widgetWithText(ChoiceChip, S.current.common_all).hitTestable(),
+        findsNothing,
+      );
+      expect(find.text('社区工具体验码 1').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   }
 

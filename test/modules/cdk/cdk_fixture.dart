@@ -48,6 +48,7 @@ class CdkFixture implements HttpClientAdapter {
   int stock = 3, total = 21, status = 200, verificationCount = 0;
   String? errorMessage;
   Completer<void>? hold, entered;
+  Completer<List<String>>? pendingTags;
   late final client = CdkClient(
     dio: Dio()..httpClientAdapter = this,
     checkSession: () async {
@@ -90,7 +91,7 @@ class CdkFixture implements HttpClientAdapter {
     } else if (path.endsWith('/pending-payment')) {
       data = hasPending ? cdkPending() : {'has_pending': false};
     } else if (path.endsWith('/tags')) {
-      data = ['工具', '体验'];
+      data = await pendingTags?.future ?? ['工具', '体验'];
     } else if (path.endsWith('/projects')) {
       final page = int.parse('${request.queryParameters['current']}');
       data = {

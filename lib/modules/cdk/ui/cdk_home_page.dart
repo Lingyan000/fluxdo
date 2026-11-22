@@ -13,6 +13,7 @@ import '../../../utils/link_launcher.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/paged_list_footer.dart';
+import '../../../widgets/common/skeleton.dart';
 import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import 'cdk_project_page.dart';
@@ -96,47 +97,28 @@ class _Explore extends StatefulWidget {
 }
 
 class _ExploreState extends State<_Explore> with AutomaticKeepAliveClientMixin {
-  List<String> _tags = [];
+  late final _tags = widget.client.tags();
   String? _tag;
   @override
   bool get wantKeepAlive => true;
-  @override
-  void initState() {
-    super.initState();
-    widget.client
-        .tags()
-        .then((tags) {
-          if (mounted) setState(() => _tags = tags);
-        })
-        .catchError((Object _) {});
-  }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     return Column(
       children: [
-        if (_tags.isNotEmpty)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Row(
-                children: [
-                  for (final tag in <String?>[null, ..._tags])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(tag ?? context.l10n.common_all),
-                        selected: _tag == tag,
-                        onSelected: (_) => setState(() => _tag = tag),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+        FutureBuilder<List<String>>(
+          future: _tags,
+          builder: (context, snapshot) => _ProjectTagBar(
+            tags: snapshot.connectionState == ConnectionState.done
+                ? snapshot.data ?? const []
+                : null,
+            selected: _tag,
+            onSelected: (tag) {
+              if (tag != _tag) setState(() => _tag = tag);
+            },
           ),
+        ),
         Expanded(
           child: _Paged<CdkProject>(
             key: ValueKey(_tag),
@@ -148,6 +130,92 @@ class _ExploreState extends State<_Explore> with AutomaticKeepAliveClientMixin {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ProjectTagBar extends StatelessWidget {
+  const _ProjectTagBar({
+    required this.tags,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String>? tags;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+  static const _duration = Duration(milliseconds: 220);
+  static final _fade = M3eMotion.defaultEffects.curveFor(_duration);
+
+  @override
+  Widget build(BuildContext context) {
+    final options = tags;
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.reduceMotionOf(context);
+    final empty = options != null && options.isEmpty;
+    if (empty && reduceMotion) return const SizedBox.shrink();
+
+    // 「全部」从首帧起决定真实行高，跟随字体和主题密度。慢标签不能把已读到的项目顶开。
+    final trailing = options == null || options.isEmpty
+        ? const ExcludeSemantics(
+            child: Row(
+              spacing: 8,
+              children: [
+                SkeletonBox(width: 56, height: 26, borderRadius: 8),
+                SkeletonBox(width: 72, height: 26, borderRadius: 8),
+              ],
+            ),
+          )
+        : Row(
+            spacing: 8,
+            children: [
+              for (final tag in options)
+                ChoiceChip(
+                  label: Text(tag),
+                  selected: selected == tag,
+                  onSelected: (_) => onSelected(tag),
+                ),
+            ],
+          );
+    final bar = SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          spacing: 8,
+          children: [
+            ChoiceChip(
+              label: Text(context.l10n.common_all),
+              selected: selected == null,
+              onSelected: (_) => onSelected(null),
+            ),
+            if (reduceMotion)
+              trailing
+            else
+              AnimatedSwitcher(
+                duration: _duration,
+                switchInCurve: _fade,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: AlignmentDirectional.centerStart,
+                  children: [...previous, ?current],
+                ),
+                child: trailing,
+              ),
+          ],
+        ),
+      ),
+    );
+    if (reduceMotion) return bar;
+    return AnimatedCrossFade(
+      duration: _duration,
+      sizeCurve: Curves.easeInOutCubic,
+      firstChild: bar,
+      secondChild: const SizedBox(width: double.infinity),
+      crossFadeState: empty
+          ? CrossFadeState.showSecond
+          : CrossFadeState.showFirst,
     );
   }
 }
