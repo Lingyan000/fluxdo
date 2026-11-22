@@ -124,35 +124,14 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
   }
 
   Widget _buildEmpty(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.dns_rounded,
-              size: 64,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
-          const SizedBox(height: 16),
-          Text(
-            AiL10n.current.noProviderConfigured,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            AiL10n.current.addProviderHint,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: () => _navigateToEdit(context),
-            icon: const Icon(Symbols.add_rounded),
-            label: Text(AiL10n.current.addProvider),
-          ),
-        ],
+    return AppEmptyState(
+      icon: const Icon(Symbols.dns_rounded),
+      title: AiL10n.current.noProviderConfigured,
+      message: AiL10n.current.addProviderHint,
+      action: FilledButton.icon(
+        onPressed: () => _navigateToEdit(context),
+        icon: const Icon(Symbols.add_rounded),
+        label: Text(AiL10n.current.addProvider),
       ),
     );
   }
@@ -160,7 +139,7 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
   void _navigateToEdit(BuildContext context, [AiProvider? provider]) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => AiProviderEditPage(provider: provider),
       ),
     );
@@ -228,7 +207,7 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
       await ref
           .read(aiProviderListProvider.notifier)
           .removeProvider(provider.id);
@@ -258,7 +237,7 @@ class _AiProviderListPageState extends ConsumerState<AiProviderListPage> {
         ],
       ),
     );
-    if (confirmed == true) {
+    if (confirmed == true && mounted) {
       await ref
           .read(aiProviderListProvider.notifier)
           .removeProviders(_selectedIds);

@@ -1,4 +1,5 @@
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -122,56 +123,40 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
     }
   }
 
-  void _showTestModelPicker() {
+  Future<void> _showTestModelPicker() async {
     if (_models.isEmpty) {
       AiToastDelegate.showInfo(AiL10n.current.selectModelToTest);
       return;
     }
-    showAppBottomSheet<void>(
+    final modelId = await showAppBottomSheet<String>(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                AiL10n.current.selectModelToTest,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+      builder: (ctx) => AppSheetScaffold(
+        title: AiL10n.current.selectModelToTest,
+        contentPadding: const EdgeInsets.only(bottom: 8),
+        child: ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: _models.length,
+          itemBuilder: (ctx, index) {
+            final model = _models[index];
+            return ListTile(
+              leading: ModelIcon(
+                providerName: widget.provider?.name ?? '',
+                modelName: model.name ?? model.id,
+                size: 24,
               ),
-            ),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _models.length,
-                itemBuilder: (ctx, i) {
-                  final m = _models[i];
-                  return ListTile(
-                    leading: ModelIcon(
-                      providerName: widget.provider?.name ?? '',
-                      modelName: m.name ?? m.id,
-                      size: 24,
-                    ),
-                    title: Text(m.name ?? m.id),
-                    subtitle: m.name != null
-                        ? Text(m.id, style: const TextStyle(fontSize: 12))
-                        : null,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _testModel(m.id);
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+              title: Text(model.name ?? model.id),
+              subtitle: model.name != null
+                  ? Text(model.id, style: const TextStyle(fontSize: 12))
+                  : null,
+              onTap: () => Navigator.pop(ctx, model.id),
+            );
+          },
         ),
       ),
     );
+    if (modelId != null && mounted) await _testModel(modelId);
   }
 
   Future<void> _fetchAndSelectModels() async {
@@ -187,12 +172,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
 
     await showAppBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
-      ),
       builder: (ctx) => _FetchedModelsSelector(
         fetchFuture: fetchFuture,
         currentModels: _models,
@@ -325,12 +305,9 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
             tooltip: AiL10n.current.testModel,
             onPressed: _testingModelId != null ? null : _showTestModelPicker,
             icon: _testingModelId != null
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary),
+                ? AiToastDelegate.buildLoading(
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
                   )
                 : const Icon(Symbols.bolt_rounded),
           ),
@@ -339,12 +316,9 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
             child: FilledButton(
               onPressed: _isSaving ? null : _save,
               child: _isSaving
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Theme.of(context).colorScheme.onPrimary),
+                  ? AiToastDelegate.buildLoading(
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onPrimary,
                     )
                   : Text(AiL10n.current.save),
             ),
@@ -428,7 +402,7 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
   // ────────────────── BottomNav (手机) ──────────────────
 
   Widget _buildBottomNav() {
-    return NavigationBar(
+    return M3eNavigationBar(
       selectedIndex: _tabIndex,
       onDestinationSelected: _switchTab,
       destinations: [
@@ -560,20 +534,9 @@ class _AiProviderEditPageState extends ConsumerState<AiProviderEditPage> {
       children: [
         // 模型列表
         _models.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Symbols.layers_rounded,
-                        size: 48,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
-                    const SizedBox(height: 12),
-                    Text(
-                      AiL10n.current.addModelManually,
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
-                  ],
-                ),
+            ? AppEmptyState(
+                icon: const Icon(Symbols.layers_rounded),
+                title: AiL10n.current.addModelManually,
               )
             : ReorderableListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
@@ -907,75 +870,64 @@ class _FetchedModelsSelectorState extends State<_FetchedModelsSelector> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLoading = _fetched == null && _error == null;
     final filtered = _filtered;
     final active = _activeIds;
     final allActive =
         filtered.isNotEmpty && filtered.every((m) => active.contains(m.id));
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.8,
-      maxChildSize: 0.95,
-      minChildSize: 0.4,
-      builder: (c, scrollController) {
-        return Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: ShapeDecoration(
-                color: cs.onSurface.withValues(alpha: 0.2),
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(999),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (!isLoading && _error == null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                child: TextField(
-                  onChanged: (v) => setState(() => _search = v),
-                  decoration: InputDecoration(
-                    hintText: AiL10n.current.searchModelsHint,
-                    prefixIcon: const Icon(Symbols.search_rounded, size: 20),
-                    isDense: true,
-                    filled: true,
-                    fillColor: cs.surfaceContainerHigh,
-                    border: OutlineInputBorder(
-                      borderRadius: context.shapes.borderRadius(12),
-                      borderSide: BorderSide.none,
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.8,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        builder: (context, scrollController) => AppSheetScaffold(
+          expandToFill: true,
+          contentPadding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              if (!isLoading && _error == null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: InputFieldShell(
+                    color: cs.surfaceContainerHigh,
+                    child: TextField(
+                      onChanged: (value) => setState(() => _search = value),
+                      decoration: InputDecoration(
+                        hintText: AiL10n.current.searchModelsHint,
+                        prefixIcon:
+                            const Icon(Symbols.search_rounded, size: 20),
+                        isDense: true,
+                        suffixIcon: filtered.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: Icon(
+                                  allActive
+                                      ? Symbols.deselect_rounded
+                                      : Symbols.select_all_rounded,
+                                  size: 22,
+                                  color: cs.onSurface.withValues(alpha: 0.7),
+                                ),
+                                tooltip: allActive
+                                    ? AiL10n.current.fetchModelsDeselectAll
+                                    : AiL10n.current.fetchModelsSelectAll,
+                                onPressed: _toggleAll,
+                              ),
+                      ),
                     ),
-                    suffixIcon: filtered.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(
-                              allActive
-                                  ? Symbols.deselect_rounded
-                                  : Symbols.select_all_rounded,
-                              size: 22,
-                              color: cs.onSurface.withValues(alpha: 0.7),
-                            ),
-                            tooltip: allActive
-                                ? AiL10n.current.fetchModelsDeselectAll
-                                : AiL10n.current.fetchModelsSelectAll,
-                            onPressed: _toggleAll,
-                          )
-                        : null,
                   ),
                 ),
-              ),
-            Expanded(child: _buildBody(cs, isDark, scrollController)),
-          ],
-        );
-      },
+              Expanded(child: _buildBody(cs, scrollController)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildBody(
-      ColorScheme cs, bool isDark, ScrollController scrollController) {
+  Widget _buildBody(ColorScheme cs, ScrollController scrollController) {
     if (_error != null) {
       return Center(
         child: Padding(

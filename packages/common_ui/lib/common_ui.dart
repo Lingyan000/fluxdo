@@ -23,6 +23,7 @@ export 'src/glass_settings.dart';
 export 'src/glass_surface.dart';
 export 'src/glass_surface_frame.dart';
 export 'src/input_field_shell.dart';
+export 'src/interaction_bottom_sheet.dart';
 export 'src/interaction_gate.dart';
 export 'src/route_interaction.dart';
 export 'src/page_background.dart';

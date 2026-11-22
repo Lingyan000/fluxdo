@@ -13,9 +13,14 @@ void main() {
     );
     final comments = RegExp(r'//[^\n]*|/\*[\s\S]*?\*/');
     final violations = <String>[];
-    for (final file in Directory(
-      'lib',
-    ).listSync(recursive: true).whereType<File>()) {
+    final sources = [
+      Directory('lib'),
+      Directory('packages/ai_model_manager/lib'),
+    ];
+    for (final file
+        in sources
+            .expand((dir) => dir.listSync(recursive: true))
+            .whereType<File>()) {
       if (!file.path.endsWith('.dart') || file.path.endsWith('.g.dart')) {
         continue;
       }

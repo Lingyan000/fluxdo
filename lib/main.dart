@@ -46,8 +46,6 @@ import 'services/discourse_cache_manager.dart';
 import 'services/render_backend_service.dart';
 import 'services/toast_service.dart';
 
-import 'package:m3e_ui/m3e_ui.dart';
-
 import 'l10n/s.dart';
 
 import 'services/network/doh/network_settings_service.dart';
@@ -520,11 +518,6 @@ Future<void> main() async {
     }
   });
 
-  // 注入自定义加载指示器
-  AiToastDelegate.configureLoading(({color, size = 48}) {
-    return LoadingSpinner(color: color, size: size);
-  });
-
   // 根据当前语言配置 AI 模型管理包的语言
   final savedLocale = prefs.getString('pref_locale');
   if (savedLocale != null && savedLocale != 'system') {
@@ -593,6 +586,8 @@ Future<void> main() async {
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         aiSharedPreferencesProvider.overrideWithValue(prefs),
+        aiDialogPresenterProvider.overrideWithValue(showAppDialog),
+        aiBottomSheetPresenterProvider.overrideWithValue(showAppBottomSheet),
         aiDioAdapterFactoryProvider.overrideWithValue(
           createExternalHttpAdapter,
         ),

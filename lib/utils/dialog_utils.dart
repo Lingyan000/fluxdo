@@ -768,8 +768,8 @@ mixin _ModalBlurSync<T> on ModalRoute<T> {
 }
 
 /// 支持动画模糊的 ModalBottomSheetRoute 子类
-class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
-    with _ModalBlurSync<T>, InterruptibleRoute<T> {
+class _BlurModalBottomSheetRoute<T> extends InteractionModalBottomSheetRoute<T>
+    with _ModalBlurSync<T> {
   @override
   final bool enableBlur;
   @override
@@ -841,31 +841,6 @@ class _BlurModalBottomSheetRoute<T> extends ModalBottomSheetRoute<T>
     );
   }
 
-  /// Android 预测返回手势:慢划边缘时 sheet 跟手下滑,与手指下拉关闭是同
-  /// 一套动画 —— sheet 位移本就绑 route.animation(`_ModalBottomSheetState`
-  /// 里 `_sheetAnimation.parent = widget.route.animation`),而官方的下拉
-  /// 关闭改的是同一个 controller 的 value,手势进度喂进去即跟手,零新增
-  /// 动画代码。ModalBottomSheetRoute 不重写 buildTransitions(继承
-  /// ModalRoute 的默认实现 `return child`),故这里是干净的插入点;
-  /// 只认领手势、不包任何视觉 widget。详见
-  /// [wrapPredictiveBackForModalRoute] 与预测返回文件头的差异点 8。
-  @override
-  Widget buildTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    return wrapPredictiveBackForModalRoute(
-      route: this,
-      child: super.buildTransitions(
-        context,
-        animation,
-        secondaryAnimation,
-        child,
-      ),
-    );
-  }
 }
 
 /// 支持动画模糊的 RawDialogRoute 替代
