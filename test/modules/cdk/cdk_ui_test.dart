@@ -81,6 +81,7 @@ void main() {
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reduceMotion = false,
+    VisualDensity? density,
   }) {
     const seed = Colors.indigo;
     var theme = buildAppTheme(
@@ -91,6 +92,7 @@ void main() {
       fullscreenSwipeBack: false,
       pageBackground: false,
     );
+    if (density != null) theme = theme.copyWith(visualDensity: density);
     if (snapshots) {
       theme = theme.copyWith(
         textTheme: theme.textTheme.apply(fontFamily: 'ReviewFont'),
@@ -157,6 +159,93 @@ void main() {
     expect(ready(), isTrue);
   }
 
+  // 取实际着色的轮廓；Chip 的可点击范围有额外留白，不能用它来判断骨架是否等高。
+  Future<List<Rect>> paintedTags(WidgetTester tester, Finder bar) async {
+    final page = find.byKey(capture);
+    final area = tester.getRect(bar).shift(-tester.getTopLeft(page));
+    final layer = tester.renderObject<RenderRepaintBoundary>(page);
+    return (await tester.runAsync(() async {
+      final image = await layer.toImage();
+      try {
+        final data = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        final pixels = data.buffer.asUint32List(
+          data.offsetInBytes,
+          data.lengthInBytes ~/ 4,
+        );
+        final shapes = <Rect>[];
+        final left = area.left.ceil();
+        for (var x = left + 1; x < area.right.floor(); x++) {
+          int? top;
+          var bottom = 0;
+          for (var y = area.top.ceil(); y < area.bottom.floor(); y++) {
+            final row = y * image.width;
+            if (pixels[row + x] == pixels[row + left]) continue;
+            top ??= y;
+            bottom = y + 1;
+          }
+          if (top == null) continue;
+          final column = Rect.fromLTRB(
+            x.toDouble(),
+            top.toDouble(),
+            x + 1.0,
+            bottom.toDouble(),
+          );
+          if (shapes.isNotEmpty && shapes.last.right == x) {
+            shapes.last = shapes.last.expandToInclude(column);
+          } else {
+            shapes.add(column);
+          }
+        }
+        return shapes;
+      } finally {
+        image.dispose();
+      }
+    }))!;
+  }
+
+  for (final (scale, compact) in const [
+    (1.0, false),
+    (1.4, false),
+    (2.0, true),
+  ]) {
+    testWidgets('筛选骨架和标签的可见上下边缘对齐：字号 $scale / 紧凑 $compact', (tester) async {
+      size(tester, compact ? 800 : 390);
+      final pending = api.pendingTags = Completer<List<String>>();
+      await tester.pumpWidget(
+        app(
+          CdkHomeContent(client: api.client),
+          scale: scale,
+          brightness: compact ? Brightness.dark : Brightness.light,
+          density: compact ? VisualDensity.compact : VisualDensity.standard,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final all = find
+          .widgetWithText(ChoiceChip, S.current.common_all)
+          .hitTestable();
+      final bar = find
+          .ancestor(of: all, matching: find.byType(SingleChildScrollView))
+          .first;
+      final before = await paintedTags(tester, bar);
+      pending.complete(['工具', '体验']);
+      await pumpUntil(tester, () => find.text('工具').evaluate().isNotEmpty);
+      await tester.pumpAndSettle();
+      final after = await paintedTags(tester, bar);
+      expect(before, hasLength(3));
+      expect(after, hasLength(3));
+      for (final shape in [...before, ...after]) {
+        expect(shape.top, after.first.top, reason: '加载前 $before，加载后 $after');
+        expect(
+          shape.bottom,
+          after.first.bottom,
+          reason: '加载前 $before，加载后 $after',
+        );
+      }
+    });
+  }
+
   testWidgets('筛选标签晚到时在原位淡入，滚动中的项目不移动也不重载', (tester) async {
     size(tester, 320);
     final pending = api.pendingTags = Completer<List<String>>();
@@ -164,9 +253,11 @@ void main() {
       app(CdkHomeContent(client: api.client), scale: 1.4),
     );
     await tester.pumpAndSettle();
-    final all = find.widgetWithText(ChoiceChip, S.current.common_all);
+    final all = find
+        .widgetWithText(ChoiceChip, S.current.common_all)
+        .hitTestable();
     final tag = find.widgetWithText(ChoiceChip, '工具');
-    expect(all.hitTestable(), findsOneWidget);
+    expect(all, findsOneWidget);
     expect(tag, findsNothing);
     final list = find.byType(ListView).first;
     final position = tester

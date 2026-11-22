@@ -13,7 +13,6 @@ import '../../../utils/link_launcher.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
 import '../../../widgets/common/paged_list_footer.dart';
-import '../../../widgets/common/skeleton.dart';
 import '../models/cdk_models.dart';
 import '../services/cdk_client.dart';
 import 'cdk_project_page.dart';
@@ -156,15 +155,13 @@ class _ProjectTagBar extends StatelessWidget {
     final empty = options != null && options.isEmpty;
     if (empty && reduceMotion) return const SizedBox.shrink();
 
-    // 「全部」从首帧起决定真实行高，跟随字体和主题密度。慢标签不能把已读到的项目顶开。
     final trailing = options == null || options.isEmpty
         ? const ExcludeSemantics(
-            child: Row(
-              spacing: 8,
-              children: [
-                SkeletonBox(width: 56, height: 26, borderRadius: 8),
-                SkeletonBox(width: 72, height: 26, borderRadius: 8),
-              ],
+            child: IgnorePointer(
+              child: Row(
+                spacing: 8,
+                children: [_TagPlaceholder(), _TagPlaceholder()],
+              ),
             ),
           )
         : Row(
@@ -216,6 +213,23 @@ class _ProjectTagBar extends StatelessWidget {
       crossFadeState: empty
           ? CrossFadeState.showSecond
           : CrossFadeState.showFirst,
+    );
+  }
+}
+
+class _TagPlaceholder extends StatelessWidget {
+  const _TagPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    // 保留本地化标签排版，只隐藏文字，由 ChoiceChip 绘制与真实标签等高的轮廓。
+    return ChoiceChip(
+      label: Opacity(opacity: 0, child: Text(context.l10n.common_all)),
+      selected: false,
+      disabledColor: Theme.of(context).colorScheme.surfaceContainerHighest
+          .withAlpha(100),
+      // 保留描边占用的空间，否则上下会各缩进一个像素。
+      side: const BorderSide(color: Colors.transparent),
     );
   }
 }
