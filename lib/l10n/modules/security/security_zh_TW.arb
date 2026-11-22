@@ -28,7 +28,7 @@
       }
     }
   },
-  "cf_helpContent": "這是 Cloudflare 安全驗證頁面。\n\n請完成頁面上的驗證挑戰（如勾選框或滑塊）。\n\n驗證成功後會自動關閉此頁面。\n\n如果長時間無法完成，可以嘗試：\n• 點選重新整理按鈕重新載入\n• 檢查網路連線\n• 關閉後稍後再試",
+  "cf_helpContent": "Cloudflare 會先自動檢查連線。如果頁面要求操作，請在驗證頁內完成，接著會自動返回。\n\n頁面長時間沒有回應時，可以重新載入。離開會中斷這次驗證。",
   "cf_helpTitle": "驗證幫助",
   "cf_loadFailed": "載入失敗: {description}",
   "@cf_loadFailed": {
@@ -44,7 +44,16 @@
   "cf_manualVerifyBannerMessage": "如果看到勾選框或提示，請依頁面要求操作；通過後會自動繼續。",
   "cf_manualVerifyBannerTitle": "請完成頁面中的安全驗證",
   "cf_noChallengeMessage": "如果剛才的請求仍失敗，請重新載入驗證頁或稍後再試。",
-  "cf_noChallengeTitle": "目前沒有需要完成的安全驗證",
+  "cf_noChallengeTitle": "驗證頁未出現挑戰",
+  "cf_verifyUnconfirmedTitle": "暫時無法判斷驗證狀態",
+  "cf_challengeDetectedTitle": "已偵測到安全驗證",
+  "cf_panelCheckingResult": "正在檢查驗證結果",
+  "cf_panelCheckingHint": "正在自動檢查網路連線。\n如需操作，驗證頁面會在這裡顯示。",
+  "cf_panelRetryHint": "點選「重新載入」即可再試一次。",
+  "cf_startupNeedsAction": "請在下方完成安全驗證",
+  "cf_interactionExpiredTitle": "驗證操作已逾時",
+  "cf_widgetError": "Cloudflare 驗證發生錯誤",
+  "cf_widgetErrorWithCode": "Cloudflare 驗證錯誤（{code}）",
   "cf_operationBlockedByChallenge": "操作被安全驗證攔截，請先完成驗證",
   "cf_retryVerify": "重新載入",
   "cf_retryVerificationAction": "重新嘗試驗證",

@@ -21,6 +21,7 @@ class ErrorView extends StatelessWidget {
     required this.error,
     this.stackTrace,
     this.onRetry,
+    this.onManualCfVerify,
     this.icon,
     this.iconSize = 48,
     this.title,
@@ -36,6 +37,9 @@ class ErrorView extends StatelessWidget {
 
   /// 重试回调
   final VoidCallback? onRetry;
+
+  /// 宿主可在自己的界面承接用户发起的验证和后续重试。
+  final VoidCallback? onManualCfVerify;
 
   /// 自定义图标
   final IconData? icon;
@@ -112,7 +116,7 @@ class ErrorView extends StatelessWidget {
       widgets.add(
         _PrimaryButton(
           label: context.l10n.cf_manualVerifyAction,
-          onPressed: () => _runManualCfVerify(context),
+          onPressed: onManualCfVerify ?? () => _runManualCfVerify(context),
         ),
       );
     } else if (onRetry != null) {
@@ -172,20 +176,26 @@ class ErrorView extends StatelessWidget {
   }
 
   Future<void> _runManualCfVerify(BuildContext context) async {
-    final result = await CfChallengeService().showManualVerifyNow(
-      context,
-      true,
+    final service = CfChallengeService();
+    final result = await service.verifyPage(
+      context: context,
+      userInitiated: true,
     );
     if (!context.mounted) return;
 
-    if (result == true) {
-      ToastService.showSuccess(S.current.cfVerify_success);
-      onRetry?.call();
+    if (result != null && result.reachedOrigin) {
+      if (result.challengeObserved) {
+        ToastService.showSuccess(S.current.cfVerify_success);
+      } else {
+        ToastService.showInfo(S.current.cf_noChallengeTitle);
+      }
+      await service.waitForCompletionCookieSync();
+      if (context.mounted) onRetry?.call();
       return;
     }
 
-    if (result == false) {
-      ToastService.showError(S.current.cf_verifyIncomplete);
+    if (result != null) {
+      ToastService.showError(result.label(context.l10n));
       return;
     }
 
