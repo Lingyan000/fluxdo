@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'log/log_writer.dart';
+import 'cf_verification_state.dart';
 import 'network/doh/network_settings_service.dart';
 import 'network/proxy/proxy_settings_service.dart';
 import 'network/vpn_auto_toggle_service.dart';
@@ -139,21 +140,6 @@ class CfChallengeLogger {
     log('[VERIFY] Check #$checkCount: isChallenge=$isChallenge, hasClearance=${cfClearance != null}, clearanceChanged=$clearanceChanged');
   }
 
-  /// 记录验证结果
-  static void logVerifyResult({
-    required bool success,
-    String? reason,
-  }) {
-    if (success) {
-      log('[VERIFY] Result: SUCCESS${reason != null ? ' ($reason)' : ''}');
-    } else {
-      log(
-        '[VERIFY] Result: FAILED${reason != null ? ' ($reason)' : ''}',
-        level: 'warning',
-      );
-    }
-  }
-
   /// 记录拦截器检测到 CF 验证
   static void logInterceptorDetected({
     required String url,
@@ -166,14 +152,22 @@ class CfChallengeLogger {
   static void logInterceptorRetry({
     required String url,
     required bool success,
+    required CfVerificationState page,
+    bool compatibility = false,
     int? statusCode,
-    String? error,
   }) {
-    if (success) {
-      log('[INTERCEPTOR] Retry success: $statusCode $url');
-    } else {
-      log('[INTERCEPTOR] Retry failed: $url, error=$error', level: 'warning');
-    }
+    log(
+      '[INTERCEPTOR] Retry ${success ? 'success' : 'failed'}: $statusCode ${Uri.tryParse(url)?.path}',
+      level: success ? 'info' : 'warning',
+      fields: {
+        'event': 'cf_request_retry',
+        'verificationRound': page.round,
+        'attempt': page.attempt,
+        'pageStage': page.stage.name,
+        'compatibility': compatibility,
+        'retryStatusCode': statusCode,
+      },
+    );
   }
 
   /// 记录冷却期状态

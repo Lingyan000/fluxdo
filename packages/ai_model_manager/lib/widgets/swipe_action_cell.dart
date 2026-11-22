@@ -246,16 +246,16 @@ class _SwipeActionCellState extends State<SwipeActionCell>
     final actions = widget.trailingActions;
     if (actions.isEmpty) return;
 
-    showAppBottomSheet(
+    showAppBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (ctx) {
         final cs = Theme.of(ctx).colorScheme;
         return AppSheetScaffold(
           showCloseButton: false,
           contentPadding: EdgeInsets.zero,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: ListView(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
             children: [
               ...actions.map((action) {
                 return ListTile(

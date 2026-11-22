@@ -291,15 +291,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
     }
 
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       itemCount: filtered.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 3),
       itemBuilder: (context, index) {
         final result = filtered[index];
         return SegmentedCardItem(
           index: index,
           count: filtered.length,
+          gap: 3,
           child: ListTile(
             leading: Container(
               padding: const EdgeInsets.all(6),

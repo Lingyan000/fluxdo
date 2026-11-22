@@ -13,52 +13,29 @@ import '../utils/model_capabilities.dart';
 Future<AiModel?> showModelDetailSheet(
   BuildContext context, {
   required AiModel model,
-}) {
-  return showAppBottomSheet<AiModel>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    shape: RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
-    ),
-    builder: (ctx) => SafeArea(
-      top: false,
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: _ModelDetailSheet(model: model, isNew: false),
-      ),
-    ),
-  );
-}
+}) =>
+    _showModelSheet(context, model: model);
 
 /// 新建模型，返回创建的 [AiModel]，取消返回 null。
-Future<AiModel?> showCreateModelSheet(BuildContext context) {
+Future<AiModel?> showCreateModelSheet(BuildContext context) =>
+    _showModelSheet(context);
+
+Future<AiModel?> _showModelSheet(BuildContext context, {AiModel? model}) {
   return showAppBottomSheet<AiModel>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Theme.of(context).colorScheme.surface,
-    shape: RoundedSuperellipseBorder(
-      borderRadius: BorderRadius.vertical(top: context.shapes.radius(20)),
-    ),
-    builder: (ctx) => SafeArea(
-      top: false,
-      child: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: const _ModelDetailSheet(model: null, isNew: true),
-      ),
+    builder: (ctx) => AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+      child: _ModelDetailSheet(model: model),
     ),
   );
 }
 
 class _ModelDetailSheet extends StatefulWidget {
-  const _ModelDetailSheet({required this.model, required this.isNew});
+  const _ModelDetailSheet({required this.model});
 
   final AiModel? model;
-  final bool isNew;
 
   @override
   State<_ModelDetailSheet> createState() => _ModelDetailSheetState();
@@ -193,235 +170,185 @@ class _ModelDetailSheetState extends State<_ModelDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isNew = widget.isNew;
+    final isNew = widget.model == null;
 
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: isNew && !_showAdvanced ? 0.45 : 0.7,
       maxChildSize: 0.95,
       minChildSize: 0.3,
-      builder: (c, scrollController) {
-        return Column(
+      builder: (context, scrollController) => AppSheetScaffold(
+        expandToFill: true,
+        contentPadding: EdgeInsets.zero,
+        title: isNew
+            ? AiL10n.current.modelDetailAddTitle
+            : AiL10n.current.modelDetailTitle,
+        footer: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: FilledButton.icon(
+            onPressed: _save,
+            icon: Icon(isNew ? Symbols.add_rounded : Symbols.check_rounded,
+                size: 20),
+            label: Text(isNew
+                ? AiL10n.current.modelDetailAddTitle
+                : AiL10n.current.modelDetailConfirm),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(14)),
+            ),
+          ),
+        ),
+        child: ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
           children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: ShapeDecoration(
-                color: cs.onSurface.withValues(alpha: 0.2),
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: context.shapes.borderRadius(999),
-                ),
+            // 模型 ID
+            _label(context, AiL10n.current.modelDetailIdLabel),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _idCtrl,
+              readOnly: !isNew,
+              autofocus: isNew,
+              style: TextStyle(
+                color: isNew ? null : cs.onSurface.withValues(alpha: 0.6),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Symbols.close_rounded,
-                        color: cs.onSurface, size: 22),
-                    onPressed: () => Navigator.of(context).pop(),
-                    tooltip: AiL10n.current.cancel,
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        isNew
-                            ? AiL10n.current.modelDetailAddTitle
-                            : AiL10n.current.modelDetailTitle,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w500,
-                        ),
+              onChanged: isNew
+                  ? (v) {
+                      if (!_nameEdited) _nameCtrl.text = v;
+                      _inferFromId();
+                    }
+                  : null,
+              decoration: _inputDeco(
+                context,
+                AiL10n.current.modelDetailIdHint,
+                suffix: isNew
+                    ? null
+                    : _CopyButton(
+                        onTap: () {
+                          final text = _idCtrl.text.trim();
+                          if (text.isEmpty) return;
+                          Clipboard.setData(ClipboardData(text: text));
+                          AiToastDelegate.showSuccess(
+                              AiL10n.current.modelDetailIdCopied);
+                        },
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 48),
-                ],
               ),
             ),
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                children: [
-                  // 模型 ID
-                  _label(context, AiL10n.current.modelDetailIdLabel),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _idCtrl,
-                    readOnly: !isNew,
-                    autofocus: isNew,
-                    style: TextStyle(
-                      color: isNew ? null : cs.onSurface.withValues(alpha: 0.6),
-                    ),
-                    onChanged: isNew
-                        ? (v) {
-                            if (!_nameEdited) _nameCtrl.text = v;
-                            _inferFromId();
-                          }
-                        : null,
-                    decoration: _inputDeco(
-                      context,
-                      AiL10n.current.modelDetailIdHint,
-                      suffix: isNew
-                          ? null
-                          : _CopyButton(
-                              onTap: () {
-                                final text = _idCtrl.text.trim();
-                                if (text.isEmpty) return;
-                                Clipboard.setData(ClipboardData(text: text));
-                                AiToastDelegate.showSuccess(
-                                    AiL10n.current.modelDetailIdCopied);
-                              },
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // 显示名称
-                  _label(context, AiL10n.current.modelDetailNameLabel),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _nameCtrl,
-                    onChanged: (_) {
-                      if (!_nameEdited) setState(() => _nameEdited = true);
-                    },
-                    decoration: _inputDeco(context, null),
-                  ),
-                  // 能力标签预览（新建模式折叠时）
-                  if (isNew && !_showAdvanced) ...[
-                    const SizedBox(height: 16),
-                    _CapabilityPreview(
-                      input: _input,
-                      output: _output,
-                      abilities: _abilities,
-                      onExpand: () => setState(() => _showAdvanced = true),
-                    ),
-                  ],
-                  // 能力编辑区
-                  if (_showAdvanced) ...[
-                    const SizedBox(height: 20),
-                    _label(context, AiL10n.current.modelDetailInputLabel),
-                    const SizedBox(height: 6),
-                    _SegmentedMulti(
-                      options: [
-                        AiL10n.current.modelDetailTextMode,
-                        AiL10n.current.modelDetailImageMode,
-                      ],
-                      isSelected: [
-                        _input.contains(Modality.text),
-                        _input.contains(Modality.image),
-                      ],
-                      onChanged: (idx) {
-                        setState(() {
-                          final mod = idx == 0 ? Modality.text : Modality.image;
-                          if (_input.contains(mod)) {
-                            _input.remove(mod);
-                            if (_input.isEmpty) _input.add(Modality.text);
-                          } else {
-                            _input.add(mod);
-                          }
-                        });
-                        _markEdited();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _label(context, AiL10n.current.modelDetailOutputLabel),
-                    const SizedBox(height: 6),
-                    _SegmentedMulti(
-                      options: [
-                        AiL10n.current.modelDetailTextMode,
-                        AiL10n.current.modelDetailImageMode,
-                      ],
-                      isSelected: [
-                        _output.contains(Modality.text),
-                        _output.contains(Modality.image),
-                      ],
-                      onChanged: (idx) {
-                        setState(() {
-                          final mod = idx == 0 ? Modality.text : Modality.image;
-                          if (_output.contains(mod)) {
-                            _output.remove(mod);
-                            if (_output.isEmpty) _output.add(Modality.text);
-                          } else {
-                            _output.add(mod);
-                          }
-                        });
-                        _markEdited();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _label(context, AiL10n.current.modelDetailAbilitiesLabel),
-                    const SizedBox(height: 6),
-                    _SegmentedMulti(
-                      options: [
-                        AiL10n.current.modelDetailToolAbility,
-                        AiL10n.current.modelDetailReasoningAbility,
-                      ],
-                      isSelected: [
-                        _abilities.contains(ModelAbility.tool),
-                        _abilities.contains(ModelAbility.reasoning),
-                      ],
-                      allowEmpty: true,
-                      onChanged: (idx) {
-                        setState(() {
-                          final ab = idx == 0
-                              ? ModelAbility.tool
-                              : ModelAbility.reasoning;
-                          if (_abilities.contains(ab)) {
-                            _abilities.remove(ab);
-                          } else {
-                            _abilities.add(ab);
-                          }
-                        });
-                        _markEdited();
-                      },
-                    ),
-                    if (_userEdited) ...[
-                      const SizedBox(height: 16),
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: _resetToAuto,
-                          icon:
-                              const Icon(Symbols.restart_alt_rounded, size: 18),
-                          label: Text(AiL10n.current.modelDetailResetAuto),
-                        ),
-                      ),
-                    ],
-                  ],
-                  const SizedBox(height: 12),
-                ],
-              ),
+            const SizedBox(height: 14),
+            // 显示名称
+            _label(context, AiL10n.current.modelDetailNameLabel),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _nameCtrl,
+              onChanged: (_) {
+                if (!_nameEdited) setState(() => _nameEdited = true);
+              },
+              decoration: _inputDeco(context, null),
             ),
-            // 底部确认按钮
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                  16, 8, 16, 10 + MediaQuery.of(context).padding.bottom),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _save,
-                  icon: Icon(
-                      isNew ? Symbols.add_rounded : Symbols.check_rounded,
-                      size: 20),
-                  label: Text(
-                    isNew
-                        ? AiL10n.current.modelDetailAddTitle
-                        : AiL10n.current.modelDetailConfirm,
-                  ),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: context.shapes.borderRadius(14),
-                    ),
+            // 能力标签预览（新建模式折叠时）
+            if (isNew && !_showAdvanced) ...[
+              const SizedBox(height: 16),
+              _CapabilityPreview(
+                input: _input,
+                output: _output,
+                abilities: _abilities,
+                onExpand: () => setState(() => _showAdvanced = true),
+              ),
+            ],
+            // 能力编辑区
+            if (_showAdvanced) ...[
+              const SizedBox(height: 20),
+              _label(context, AiL10n.current.modelDetailInputLabel),
+              const SizedBox(height: 6),
+              _SegmentedMulti(
+                options: [
+                  AiL10n.current.modelDetailTextMode,
+                  AiL10n.current.modelDetailImageMode,
+                ],
+                isSelected: [
+                  _input.contains(Modality.text),
+                  _input.contains(Modality.image),
+                ],
+                onChanged: (idx) {
+                  setState(() {
+                    final mod = idx == 0 ? Modality.text : Modality.image;
+                    if (_input.contains(mod)) {
+                      _input.remove(mod);
+                      if (_input.isEmpty) _input.add(Modality.text);
+                    } else {
+                      _input.add(mod);
+                    }
+                  });
+                  _markEdited();
+                },
+              ),
+              const SizedBox(height: 12),
+              _label(context, AiL10n.current.modelDetailOutputLabel),
+              const SizedBox(height: 6),
+              _SegmentedMulti(
+                options: [
+                  AiL10n.current.modelDetailTextMode,
+                  AiL10n.current.modelDetailImageMode,
+                ],
+                isSelected: [
+                  _output.contains(Modality.text),
+                  _output.contains(Modality.image),
+                ],
+                onChanged: (idx) {
+                  setState(() {
+                    final mod = idx == 0 ? Modality.text : Modality.image;
+                    if (_output.contains(mod)) {
+                      _output.remove(mod);
+                      if (_output.isEmpty) _output.add(Modality.text);
+                    } else {
+                      _output.add(mod);
+                    }
+                  });
+                  _markEdited();
+                },
+              ),
+              const SizedBox(height: 12),
+              _label(context, AiL10n.current.modelDetailAbilitiesLabel),
+              const SizedBox(height: 6),
+              _SegmentedMulti(
+                options: [
+                  AiL10n.current.modelDetailToolAbility,
+                  AiL10n.current.modelDetailReasoningAbility,
+                ],
+                isSelected: [
+                  _abilities.contains(ModelAbility.tool),
+                  _abilities.contains(ModelAbility.reasoning),
+                ],
+                allowEmpty: true,
+                onChanged: (idx) {
+                  setState(() {
+                    final ab =
+                        idx == 0 ? ModelAbility.tool : ModelAbility.reasoning;
+                    if (_abilities.contains(ab)) {
+                      _abilities.remove(ab);
+                    } else {
+                      _abilities.add(ab);
+                    }
+                  });
+                  _markEdited();
+                },
+              ),
+              if (_userEdited) ...[
+                const SizedBox(height: 16),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _resetToAuto,
+                    icon: const Icon(Symbols.restart_alt_rounded, size: 18),
+                    label: Text(AiL10n.current.modelDetailResetAuto),
                   ),
                 ),
-              ),
-            ),
+              ],
+            ],
+            const SizedBox(height: 12),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 

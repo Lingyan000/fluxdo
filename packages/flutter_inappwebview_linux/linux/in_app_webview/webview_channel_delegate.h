@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -314,6 +315,7 @@ class WebViewChannelDelegate : public ChannelDelegate {
                             const std::optional<std::string>& mimeType,
                             int64_t contentLength,
                             int statusCode,
+                            const std::optional<std::map<std::string, std::string>>& headers,
                             bool isForMainFrame,
                             bool canShowMimeType,
                             std::unique_ptr<NavigationResponseCallback> callback) const;

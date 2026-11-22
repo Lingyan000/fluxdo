@@ -11,6 +11,7 @@ import 'network_log_interceptor.dart';
 import '../adapters/platform_adapter.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
+import '../deadline_dio.dart';
 import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
@@ -96,6 +97,41 @@ class CfChallengeInterceptor extends Interceptor {
     return _shouldShowActionPrompt(options) ? 'action' : 'data';
   }
 
+  Future<CfVerificationState?> _verifyAndSync(RequestOptions options) async {
+    final result = await CfChallengeService().verifyPage(
+      presentation: options.spec.isSilent
+          ? CfVerifyPresentation.pill
+          : CfVerifyPresentation.blocking,
+    );
+    if (result?.reachedOrigin == true &&
+        options.cancelToken?.isCancelled != true) {
+      await _syncCookiesOnce();
+    }
+    return result;
+  }
+
+  static bool _isChallengeError(DioException error) {
+    final status = error.response?.statusCode;
+    return (status == 403 || status == 429) &&
+        CfChallengeService.isCfChallengeResponse(error.response);
+  }
+
+  static DioException _retryFailure(
+    Object error,
+    RequestOptions options,
+    CfVerificationState page,
+  ) {
+    if (error is! DioException) {
+      return DioException(requestOptions: options, error: error);
+    }
+    // 保留最后一次重试的 HTTP 响应、状态码和栈，错误页按内嵌异常呈现。
+    return _isChallengeError(error)
+        ? error.copyWith(
+            error: CfVerificationIneffectiveException(verification: page),
+          )
+        : error;
+  }
+
   Future<void> _refreshCookieHeader(RequestOptions options) async {
     options.headers.remove('cookie');
     options.headers.remove('Cookie');
@@ -123,9 +159,7 @@ class CfChallengeInterceptor extends Interceptor {
     // CF 速率限制规则的 action 配为 managed_challenge / js_challenge / challenge 时,
     // 触发后返回 429 + cf-mitigated: challenge + 挑战页,而不是 403。
     // 因此 403 / 429 都要走 CF 验证流程,由 isCfChallengeResponse 精确判定。
-    if ((statusCode == 403 || statusCode == 429) &&
-        !skipCfChallenge &&
-        CfChallengeService.isCfChallengeResponse(err.response)) {
+    if (!skipCfChallenge && _isChallengeError(err)) {
       // 备选提取 sitekey（从 403 响应体中）
       CfClearanceRefreshService().extractAndUpdateSitekey(
         err.response?.data?.toString() ?? '',
@@ -215,21 +249,16 @@ class CfChallengeInterceptor extends Interceptor {
       // 请求是用户正在等的，立即显示状态，需要人工操作时再弹出验证面板。
       // (Windows 曾因插件析构竞态崩溃 0xc0000005 禁用过静默后台验证;
       // vendored 插件的 aliveGuard/TextureBridge 修复落地后恢复。)
-      final result = await cfService.verify(
-        presentation: isSilent
-            ? CfVerifyPresentation.pill
-            : CfVerifyPresentation.blocking,
+      final result = await DeadlineDio.waitForCfVerification(
+        err.requestOptions,
+        _verifyAndSync(err.requestOptions),
       );
       // 验证由多请求共享；本请求超时不关闭验证页面，但结束后不能
       // 再重放已经取消的请求或切换它的传输方式。
       final cancelled = err.requestOptions.cancelToken?.cancelError;
       if (cancelled != null) return handler.next(cancelled);
 
-      if (result == true) {
-        await _syncCookiesOnce();
-        final cancelled = err.requestOptions.cancelToken?.cancelError;
-        if (cancelled != null) return handler.next(cancelled);
-
+      if (result != null && result.reachedOrigin) {
         // 各自重试自己的原始请求（每个请求 URL/参数不同，无法共享）
         final retryOptions = err.requestOptions;
         try {
@@ -240,6 +269,8 @@ class CfChallengeInterceptor extends Interceptor {
           // 清除原始请求中残留的 cookie header，并补上最新 Cookie。
           // 这样即使 dio.fetch 不重新经过 CookieManager，也不会继续发送旧值。
           await _refreshCookieHeader(retryOptions);
+          final cancelled = retryOptions.cancelToken?.cancelError;
+          if (cancelled != null) return handler.next(cancelled);
           // 诊断：记录 CookieJar 中的 cookie 名称和 cf_clearance 状态
           final cookieHeader =
               retryOptions.headers['Cookie']?.toString() ??
@@ -257,6 +288,7 @@ class CfChallengeInterceptor extends Interceptor {
           final response = await dio.fetch(retryOptions);
           CfChallengeLogger.logInterceptorRetry(
             url: requestUrl,
+            page: result,
             success: true,
             statusCode: response.statusCode,
           );
@@ -267,11 +299,9 @@ class CfChallengeInterceptor extends Interceptor {
         } catch (e) {
           final cancelled = retryOptions.cancelToken?.cancelError;
           if (cancelled != null) return handler.next(cancelled);
+          final retryError = _retryFailure(e, retryOptions, result);
           final retryStillBlockedByCf =
-              e is DioException &&
-              (e.response?.statusCode == 403 ||
-                  e.response?.statusCode == 429) &&
-              CfChallengeService.isCfChallengeResponse(e.response);
+              retryError.error is CfVerificationIneffectiveException;
 
           // 验证入口已无盾，原生链路仍被 CF 拒绝。浏览器与原生通道的
           // 放行结果可能不同，仅对用户可见请求询问一次，
@@ -296,9 +326,12 @@ class CfChallengeInterceptor extends Interceptor {
                   S.current.cf_sessionCompatEnabled,
                   isError: false,
                 );
-                CfChallengeLogger.log(
-                  '[INTERCEPTOR] Native retry still blocked; '
-                  'session WebView fallback succeeded',
+                CfChallengeLogger.logInterceptorRetry(
+                  url: requestUrl,
+                  success: true,
+                  statusCode: fallbackResponse.statusCode,
+                  page: result,
+                  compatibility: true,
                 );
                 return handler.resolve(fallbackResponse);
               } catch (fallbackError) {
@@ -307,20 +340,17 @@ class CfChallengeInterceptor extends Interceptor {
                 if (!webViewSettings.persistentEnabled) {
                   webViewSettings.disableSessionFallback();
                 }
-                CfChallengeLogger.log(
-                  '[INTERCEPTOR] Session WebView fallback failed: '
-                  '$fallbackError',
-                  level: 'warning',
+                CfChallengeLogger.logInterceptorRetry(
+                  url: requestUrl,
+                  success: false,
+                  statusCode: fallbackError is DioException
+                      ? fallbackError.response?.statusCode
+                      : null,
+                  page: result,
+                  compatibility: true,
                 );
-                if (fallbackError is DioException) {
-                  return handler.reject(fallbackError);
-                }
                 return handler.reject(
-                  DioException(
-                    requestOptions: retryOptions,
-                    error: fallbackError,
-                    type: DioExceptionType.unknown,
-                  ),
+                  _retryFailure(fallbackError, retryOptions, result),
                 );
               }
             }
@@ -339,7 +369,7 @@ class CfChallengeInterceptor extends Interceptor {
               );
               // 以真实重试仍命中 CF 为冷却依据。入口无盾不保证 API 放行，
               // 也不保证本轮有新 Cookie；避免立刻反复打开同一个验证入口。
-              if (CfChallengeService.isCfChallengeResponse(e.response)) {
+              if (retryStillBlockedByCf) {
                 cfService.startIneffectiveClearanceCooldown();
                 // 仅记录这次重试实际携带的值；可能没有 clearance，不能把
                 // 「Cookie 未签发」本身当成失败或拉黑依据。
@@ -368,19 +398,10 @@ class CfChallengeInterceptor extends Interceptor {
           CfChallengeLogger.logInterceptorRetry(
             url: requestUrl,
             success: false,
-            error: e.toString(),
+            page: result,
+            statusCode: retryError.response?.statusCode,
           );
-          // 验证页面已经结束；保留真实重试错误和状态码，供调用方判断恢复。
-          if (e is DioException) {
-            return handler.reject(e);
-          }
-          return handler.reject(
-            DioException(
-              requestOptions: err.requestOptions,
-              error: e,
-              type: DioExceptionType.unknown,
-            ),
-          );
+          return handler.reject(retryError);
         }
       }
 
@@ -417,14 +438,19 @@ class CfChallengeInterceptor extends Interceptor {
 
       // 用户取消或验证失败。页面数据请求交给 ErrorView 展示按钮；操作请求给即时提示；静默请求不打扰。
       CfChallengeLogger.log(
-        '[INTERCEPTOR] User cancelled or verify failed: '
+        '[INTERCEPTOR] Verification ended: ${result.stage.name}, '
         '$requestMethod $requestUrl mode=$requestMode',
       );
       if (shouldShowActionPrompt) {
-        CfChallengeService.showGlobalMessage(S.current.cf_verifyIncomplete);
+        CfChallengeService.showGlobalMessage(result.label(S.current));
       }
       return handler.reject(
-        cfException(CfChallengeException(userCancelled: true)),
+        cfException(
+          CfChallengeException(
+            userCancelled: result.stage == CfVerificationStage.cancelled,
+            verification: result,
+          ),
+        ),
       );
     }
 

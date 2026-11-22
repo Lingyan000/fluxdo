@@ -93,12 +93,10 @@ class _DohSettingsCardInner extends StatelessWidget {
                 : context.l10n.dohSettings_disabledDesc,
           ),
           secondary: Icon(
-            (vpnLocked ? isSuppressedByVpn : settings.dohEnabled)
-                ? Symbols.shield_rounded
-                : Symbols.shield_rounded,
+            Symbols.shield_rounded,
             color: (vpnLocked ? isSuppressedByVpn : settings.dohEnabled)
-                ? theme.colorScheme.primary
-                : null,
+                ? context.emphasis.selected
+                : theme.colorScheme.onSurfaceVariant,
           ),
           // VPN 接管期间：开关照常可拨，但操作的是"VPN 断开后是否启用"的意图标记，
           // 不立即生效（功能仍由自动切换接管，subtitle 说明当前状态）。
@@ -371,7 +369,9 @@ class _CertGuideState extends State<_CertGuide> {
         _perDeviceEnabled
             ? Symbols.verified_user_rounded
             : Symbols.security_rounded,
-        color: _perDeviceEnabled ? context.appColors.green : null,
+        color: _perDeviceEnabled
+            ? context.emphasis.selected
+            : theme.colorScheme.onSurfaceVariant,
       ),
       title: Text(l10n.dohSettings_perDeviceCert),
       subtitle: Text(

@@ -80,6 +80,7 @@ Future<void> _pump(
   NestedReadingSession? session,
   NestedReadingPosition? restore,
   AutoScrollController? controller,
+  NestedPostListController? navigationController,
   _Nested? notifier,
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -127,6 +128,7 @@ Future<void> _pump(
             child: Scaffold(
               body: Consumer(
                 builder: (context, ref, _) => NestedPostList(
+                  controller: navigationController,
                   nestedState:
                       ref
                           .watch(
@@ -451,10 +453,13 @@ void main() {
 
   testWidgets('屏外的已加载回复不提前上报，长分支可跳到下一条主回复', (tester) async {
     final scroll = AutoScrollController();
+    final navigation = NestedPostListController();
+    addTearDown(navigation.dispose);
     Set<int> visible = {};
     await _pump(
       tester,
       controller: scroll,
+      navigationController: navigation,
       onVisible: (posts) => visible = posts,
       state: NestedTopicState(
         roots: [
@@ -462,14 +467,16 @@ void main() {
             post: _post(2, long: true),
             children: [NestedNode(post: _post(20))],
           ),
-          NestedNode(post: _post(3)),
+          NestedNode(post: _post(3, long: true)),
         ],
       ),
     );
     expect(visible, {2});
-    await tester.tap(find.byTooltip('下一条主回复'));
+    expect(navigation.value, isNotNull);
+    navigation.value!();
     await tester.pumpAndSettle();
     expect(visible.contains(3), isTrue);
+    expect(navigation.value, isNull);
     expect(tester.takeException(), isNull);
   });
 

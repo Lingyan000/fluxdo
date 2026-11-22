@@ -35,7 +35,6 @@ class AiModelConfigPage extends ConsumerWidget {
             current: textDefault,
             onPick: () => _showPicker(
               context,
-              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.text))
                   .toList(),
@@ -55,7 +54,6 @@ class AiModelConfigPage extends ConsumerWidget {
             current: imageDefault,
             onPick: () => _showPicker(
               context,
-              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.image))
                   .toList(),
@@ -76,7 +74,6 @@ class AiModelConfigPage extends ConsumerWidget {
             current: titleModel,
             onPick: () => _showPicker(
               context,
-              ref,
               allModels,
               current: titleModel,
               clearLabel: AiL10n.current.noAutoGenerateTitle,
@@ -95,7 +92,6 @@ class AiModelConfigPage extends ConsumerWidget {
             current: optimizer,
             onPick: () => _showPicker(
               context,
-              ref,
               allModels
                   .where((m) => m.model.output.contains(Modality.text))
                   .toList(),
@@ -130,7 +126,6 @@ class AiModelConfigPage extends ConsumerWidget {
 
   void _showPicker(
     BuildContext context,
-    WidgetRef ref,
     List<({AiProvider provider, AiModel model})> models, {
     String? currentKey,
     ({AiProvider provider, AiModel model})? current,
@@ -138,10 +133,10 @@ class AiModelConfigPage extends ConsumerWidget {
     required void Function(String providerId, String modelId) onSelect,
     required VoidCallback onClear,
   }) {
-    showAppBottomSheet(
+    showAppBottomSheet<void>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => AppSheetScaffold(
+        contentPadding: EdgeInsets.zero,
         child: ListView(
           shrinkWrap: true,
           padding: EdgeInsets.zero,

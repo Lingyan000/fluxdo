@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:common_ui/common_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
@@ -106,21 +107,21 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: SegmentedButton<PromptType>(
-              segments: [
-                ButtonSegment(
+            child: M3eButtonGroup<PromptType>(
+              items: [
+                M3eButtonGroupItem(
                   value: PromptType.image,
                   label: Text(AiL10n.current.quickPromptsImageTab),
                   icon: const Icon(Symbols.image_rounded),
                 ),
-                ButtonSegment(
+                M3eButtonGroupItem(
                   value: PromptType.text,
                   label: Text(AiL10n.current.quickPromptsTextTab),
                   icon: const Icon(Symbols.chat_rounded),
                 ),
               ],
-              selected: {_type},
-              onSelectionChanged: (s) => setState(() => _type = s.first),
+              selected: _type,
+              onSelected: (type) => setState(() => _type = type),
             ),
           ),
           const SizedBox(height: 12),
@@ -169,7 +170,7 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
 
   void _addNew() {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => PromptPresetEditPage(initialType: _type),
       ),
     );
@@ -177,14 +178,14 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
 
   void _openEdit(PromptPreset preset) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      InteractionPageRoute(
         builder: (_) => PromptPresetEditPage(preset: preset),
       ),
     );
   }
 
   Future<void> _confirmReset() async {
-    final ok = await showDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         content: Text(AiL10n.current.quickPromptsResetBuiltInsConfirm),
@@ -200,7 +201,7 @@ class _PromptPresetsPageState extends ConsumerState<PromptPresetsPage> {
         ],
       ),
     );
-    if (ok == true) {
+    if (ok == true && mounted) {
       await ref
           .read(promptPresetListProvider.notifier)
           .resetBuiltInsToDefault();
@@ -437,7 +438,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
                   label: AiL10n.current.delete,
                   onPressed: () async {
                     final ok = await _confirmDelete(context, preset.name);
-                    if (ok) {
+                    if (ok && mounted) {
                       await ref
                           .read(promptPresetListProvider.notifier)
                           .deletePreset(preset.id);
@@ -582,7 +583,7 @@ class _ReorderableGroupState extends ConsumerState<_ReorderableGroup> {
   }
 
   Future<bool> _confirmDelete(BuildContext context, String name) async {
-    final result = await showDialog<bool>(
+    final result = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         content: Text(AiL10n.current.quickPromptsDeleteConfirm(name)),

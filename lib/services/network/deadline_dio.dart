@@ -8,6 +8,7 @@ import 'flux_request_spec.dart';
 
 /// 与 OkHttp callTimeout 一样，以逻辑调用而非单次传输为边界。
 /// 放在 fetch 外层，才能涵盖拦截器排队、重定向和恢复层的递归 fetch。
+/// 默认前台读取单独计算 CF 验证等待时间，显式指定的时限覆盖整次调用。
 class DeadlineDio extends DioForNative {
   DeadlineDio([super.options, this.defaultCallTimeout]);
 
@@ -21,7 +22,17 @@ class DeadlineDio extends DioForNative {
 
   static Duration? exceededDeadline(RequestOptions options) {
     final context = options.extra[_contextKey];
-    return context is _CallDeadline && context.expired ? context.limit : null;
+    return context is _CallDeadline ? context.expiredLimit : null;
+  }
+
+  /// 只有实际等待 CF 验证或 Cookie 同步的默认前台读取使用独立时限。
+  static Future<T> waitForCfVerification<T>(
+    RequestOptions options,
+    Future<T> pending,
+  ) {
+    final context = options.extra[_contextKey];
+    if (context is! _CallDeadline || !context.allowCfWait) return pending;
+    return context.waitForCfVerification(pending);
   }
 
   @override
@@ -56,6 +67,7 @@ class DeadlineDio extends DioForNative {
         requestOptions,
         limit,
         (options) => super.fetch<T>(options),
+        allowCfWait: override == null,
       );
     } finally {
       if (ownsTiming) {
@@ -69,15 +81,20 @@ class DeadlineDio extends DioForNative {
   static Future<T> withDeadline<T>(
     RequestOptions requestOptions,
     Duration limit,
-    Future<T> Function(RequestOptions options) run,
-  ) async {
+    Future<T> Function(RequestOptions options) run, {
+    bool allowCfWait = false,
+  }) async {
     final inherited = requestOptions.extra[_contextKey];
     if (inherited is _CallDeadline && !inherited.finished) {
       inherited.throwIfCancelled(requestOptions);
       return run(requestOptions);
     }
     if (limit <= Duration.zero) return run(requestOptions);
-    final context = _CallDeadline(limit, requestOptions.cancelToken);
+    final context = _CallDeadline(
+      limit,
+      requestOptions.cancelToken,
+      allowCfWait,
+    );
     final options = requestOptions.copyWith(
       cancelToken: context.token,
       extra: {...requestOptions.extra, _contextKey: context},
@@ -99,7 +116,7 @@ class DeadlineDio extends DioForNative {
       }
       return result;
     } catch (_) {
-      if (context.expired) throw context.timeoutError(options);
+      if (context.expiredLimit != null) throw context.timeoutError(options);
       rethrow;
     } finally {
       if (!streamOwnsDeadline) context.finish();
@@ -118,7 +135,7 @@ class DeadlineDio extends DioForNative {
       context.throwIfCancelled(options);
       complete = true;
     } on DioException {
-      if (context.expired) throw context.timeoutError(options);
+      if (context.expiredLimit != null) throw context.timeoutError(options);
       rethrow;
     } finally {
       // Dio 的包装流取消不一定传递到适配器；提前放弃响应体时显式
@@ -156,7 +173,7 @@ class CallDeadlineExceeded implements Exception {
 }
 
 class _CallDeadline {
-  _CallDeadline(this.limit, CancelToken? parent) {
+  _CallDeadline(this.limit, CancelToken? parent, this.allowCfWait) {
     if (parent?.isCancelled == true) {
       token.cancel(parent!.cancelError?.error);
     } else if (parent != null) {
@@ -171,32 +188,64 @@ class _CallDeadline {
         }
       });
     }
-    _timer = Timer(limit, () {
-      expired = true;
-      if (!token.isCancelled) token.cancel(CallDeadlineExceeded(limit));
-    });
+    _startNetworkTimer();
   }
 
+  static const _cfWaitLimit = Duration(minutes: 2);
   final Duration limit;
+  final bool allowCfWait;
   final CancelToken token = CancelToken();
-  late final Timer _timer;
-  bool expired = false;
+  late Timer _networkTimer;
+  Timer? _cfWindow;
+  int _cfWaiters = 0;
+  Duration? expiredLimit;
   bool finished = false;
 
+  void _startNetworkTimer() {
+    _networkTimer = Timer(limit, () => _expire(limit));
+  }
+
+  void _expire(Duration duration) {
+    if (finished || token.isCancelled) return;
+    expiredLimit = duration;
+    token.cancel(CallDeadlineExceeded(duration));
+  }
+
+  Future<T> waitForCfVerification<T>(Future<T> pending) async {
+    if (finished || token.isCancelled) return pending;
+    _networkTimer.cancel();
+    _cfWaiters++;
+    // 同一逻辑请求从首次等待起共用一个窗口，页面关闭、Cookie 落库和
+    // 再次进入调度器都不能续期。窗口结束时已恢复的传输仍按网络时限执行。
+    final window = _cfWindow ??= Timer(_cfWaitLimit, () {
+      if (_cfWaiters > 0) _expire(_cfWaitLimit);
+    });
+    if (!window.isActive) _expire(_cfWaitLimit);
+    try {
+      return await pending;
+    } finally {
+      _cfWaiters--;
+      if (_cfWaiters == 0 && !finished && !token.isCancelled) {
+        _startNetworkTimer();
+      }
+    }
+  }
+
   void throwIfCancelled(RequestOptions options) {
-    if (expired) throw timeoutError(options);
+    if (expiredLimit != null) throw timeoutError(options);
     if (token.isCancelled) throw token.cancelError!;
   }
 
   DioException timeoutError(RequestOptions options) => DioException(
     requestOptions: options,
-    error: CallDeadlineExceeded(limit),
+    error: CallDeadlineExceeded(expiredLimit!),
     message: '逻辑请求总时限已耗尽',
   );
 
   void finish() {
     finished = true;
-    _timer.cancel();
+    _networkTimer.cancel();
+    _cfWindow?.cancel();
   }
 }
 

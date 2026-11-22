@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../browser_trust_coordinator.dart';
 import '../../cf_challenge_service.dart';
+import '../deadline_dio.dart';
 import '../exceptions/api_exception.dart';
 import '../cookie/cookie_jar_service.dart';
 import '../flux_request_spec.dart';
@@ -199,7 +200,7 @@ class RequestSchedulerInterceptor extends Interceptor {
       // 暂存到本轮验证结束，再走下方正常排队，届时 CookieManager 取到新值。
       // 同时把本轮展示抬到 blocking，让用户知道在等什么。
       cfService.raisePresentation(CfVerifyPresentation.blocking);
-      await _waitForCfIdle(options);
+      await DeadlineDio.waitForCfVerification(options, _waitForCfIdle(options));
       if (options.cancelToken?.isCancelled ?? false) {
         handler.reject(options.cancelToken!.cancelError!, true);
         return;
@@ -381,7 +382,12 @@ class RequestSchedulerInterceptor extends Interceptor {
         .waitForActiveBrowserTrust(
           reason: '${options.method.toUpperCase()} ${options.uri}',
         )
-        .then<void>((_) => CfChallengeService().waitForCompletionCookieSync());
+        .then<void>((_) {
+          final sync = CfChallengeService().pendingCompletionCookieSync;
+          if (sync != null) {
+            return DeadlineDio.waitForCfVerification(options, sync);
+          }
+        });
     final token = options.cancelToken;
     if (token == null) return ready;
     await Future.any<void>([ready, token.whenCancel.then((_) {})]);

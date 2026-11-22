@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/doh/network_settings_service.dart';
@@ -88,12 +89,10 @@ class _HttpProxyCardInner extends StatelessWidget {
                         : context.l10n.httpProxy_disabledDesc,
               ),
               secondary: Icon(
-                (vpnLocked ? isSuppressedByVpn : proxySettings.enabled)
-                    ? Symbols.vpn_key_rounded
-                    : Symbols.vpn_key_rounded,
+                Symbols.vpn_key_rounded,
                 color: (vpnLocked ? isSuppressedByVpn : proxySettings.enabled)
-                    ? theme.colorScheme.tertiary
-                    : null,
+                    ? context.emphasis.selected
+                    : theme.colorScheme.onSurfaceVariant,
               ),
               // VPN 接管期间：开关照常可拨，但操作的是"VPN 断开后是否启用"的意图标记，
               // 不立即生效（功能仍由自动切换接管）。

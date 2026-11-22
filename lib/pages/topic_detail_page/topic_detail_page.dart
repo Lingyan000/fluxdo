@@ -309,6 +309,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   );
   bool _isSwitchingMode = false; // 切换热门回复模式
   bool _isNestedView = false; // 嵌套视图模式
+  final _nestedPostListController = NestedPostListController();
   bool _defaultNestedViewApplied = false; // 默认嵌套视图配置是否已应用（依赖 detail 加载后判定）
   int? _nestedTargetPostNumber; // 树形 context 定位的目标楼层（通知等带楼层进入）
   int _nestedRelocateToken = 0; // 同目标重跳令牌:递增触发 NestedPostList 重新滚动定位+高亮重播
@@ -993,6 +994,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     _tocController.removeListener(_syncTocVisible);
     _controller.viewportPostNumberNotifier.removeListener(_syncTocVisible);
     _controller.dispose();
+    _nestedPostListController.dispose();
     _tocController.dispose();
     _tocVisible.dispose();
     _positionInfo.dispose();
@@ -2549,6 +2551,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       replyDraftListenable: _replyDraftPreview,
       onReplyEntryTap: _handleReplyEntryTap,
       onScrollToTop: _scrollToTop,
+      nextRootListenable: _isNestedView ? _nestedPostListController : null,
       tocButton: _isNestedView ? null : _tocFab,
       replySession:
           replyEntryState == TopicReplyEntryState.reply ||
@@ -2637,6 +2640,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         filter: _filterControls(detail, notifier),
         quickActions: quickActions,
         onAction: _handleProgressGestureForCurrent,
+        nextRootListenable: _isNestedView ? _nestedPostListController : null,
       ),
     );
   }
@@ -3699,6 +3703,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               ),
         data: (nestedState) => NestedPostList(
           key: ValueKey('nested-$_instanceId-${_nestedReadingStore.sortKey}'),
+          controller: _nestedPostListController,
           nestedState: nestedState,
           onWithdrawPendingPost: isLoggedIn ? _handleWithdrawPending : null,
           onWithdrawAndEditPendingPost:

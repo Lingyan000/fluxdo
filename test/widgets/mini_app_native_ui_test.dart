@@ -207,6 +207,7 @@ void main() {
     Widget child, {
     double scale = 1,
     Brightness brightness = Brightness.light,
+    SegmentedCardMode cardMode = SegmentedCardMode.segmented,
   }) => ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
@@ -223,7 +224,10 @@ void main() {
               ? themes.light
               : themes.dark,
           fontFamily: previewFont.isEmpty ? null : 'MiniAppPreview',
-          extensions: const [M3eFlags()],
+          extensions: [
+            const M3eFlags(),
+            SegmentedCardStyle(mode: cardMode),
+          ],
           searchBarTheme: const SearchBarThemeData(
             shape: WidgetStatePropertyAll(
               RoundedSuperellipseBorder(
@@ -865,6 +869,27 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('应用广场单列行距随卡片分组样式切换', (tester) async {
+    api.apps = const [_narrowCardApp, _app];
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final mode in SegmentedCardMode.values) {
+      await tester.pumpWidget(wrap(const MiniAppGalleryPage(), cardMode: mode));
+      await tester.pumpAndSettle();
+
+      final rows = find.byType(MiniAppDiscoveryRow);
+      expect(rows, findsNWidgets(2));
+      expect(
+        tester.getTopLeft(rows.last).dy - tester.getBottomLeft(rows.first).dy,
+        mode == SegmentedCardMode.segmented ? 3 : 0,
+        reason: '分组样式 $mode',
+      );
+    }
+  });
 
   testWidgets('窄卡片切换单列，长名称与使用统计不会挤成长条', (tester) async {
     api.apps = const [

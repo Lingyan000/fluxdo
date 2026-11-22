@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringDescription, SpringSimulation;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,12 +11,16 @@ import '../../models/category.dart';
 import '../../models/tag_search_result.dart';
 import '../../providers/discourse_providers.dart';
 import '../../providers/pinned_categories_provider.dart';
+import '../../theme/theme_style.dart';
 import '../../utils/font_awesome_helper.dart';
 import '../../utils/motion_springs.dart';
 import '../../utils/number_utils.dart';
 import '../../utils/tag_icon_list.dart';
 import '../../utils/url_helper.dart';
+import '../common/fading_edge_scroll_view.dart';
+import '../common/height_reporter.dart';
 import '../common/predictive_back_overlay_handler.dart';
+import '../common/top_fade_scrim.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../pages/category_topics_page.dart';
 import '../../pages/tag_topics_page.dart';
@@ -299,6 +304,13 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   /// 当前视口所在组（组导航高亮跟随）
   final ValueNotifier<int> _activeTagGroup = ValueNotifier(0);
 
+  /// 内容是否已滚入悬浮头部下方（驱动 TopFadeScrim 与胶囊浮起阴影/描边）
+  final ValueNotifier<bool> _scrolledUnder = ValueNotifier(false);
+
+  /// 悬浮头部按形态缓存的实测高度（含顶部安全区），首帧按预估值对齐，大字号由 HeightReporter 校准
+  final Map<String, double> _headerHeightCache = {};
+  final ValueNotifier<int> _headerHeightTick = ValueNotifier(0);
+
   /// 组导航 chip 的 key（高亮变化时 ensureVisible 滚到可见）
   final Map<int, GlobalKey> _tagChipKeys = {};
 
@@ -313,6 +325,13 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   static const double _kTagRowExtent = 50.0; // 48 行 + 2 底距
   static const double _kTagGroupGapExtent = 10.0;
   static const double _kTagListTopPadding = 2.0;
+
+  // 悬浮头部常规高度预估（首帧即对齐，大字号由 HeightReporter 自动修正）
+  static const double _kTopBarHeight = 58.0; // top 10 + 40 + bottom 8
+  static const double _kTagSearchHeight = 48.0; // top 2 + 40 + bottom 6
+  static const double _kTagGroupNavHeight = 40.0; // 32 chip + 上下 4 阴影位
+  static const double _kScrolledUnderThreshold = 4.0;
+  static const double _kTailFadeAnchorOffset = 40.0;
 
   @override
   void initState() {
@@ -377,7 +396,41 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
     _tagQueryController.dispose();
     _tagListController.dispose();
     _activeTagGroup.dispose();
+    _scrolledUnder.dispose();
+    _headerHeightTick.dispose();
     super.dispose();
+  }
+
+  void _switchTab(bool showTags) {
+    if (_showTags == showTags) return;
+    if (!showTags) {
+      FocusScope.of(context).unfocus();
+    }
+    setState(() => _showTags = showTags);
+    // 切换页签时同步重置遮罩状态（目标列表若有既有滚动由 ScrollMetricsNotification 立即接管）
+    _scrolledUnder.value = false;
+  }
+
+  void _updateScrolledUnder(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return;
+    final under = metrics.extentBefore > _kScrolledUnderThreshold;
+    if (_scrolledUnder.value != under) {
+      _scrolledUnder.value = under;
+    }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    _updateScrolledUnder(notification.metrics);
+    return false;
+  }
+
+  bool _handleScrollMetricsNotification(
+    ScrollMetricsNotification notification,
+  ) {
+    if (notification.depth != 0) return false;
+    _updateScrolledUnder(notification.metrics);
+    return false;
   }
 
   /// 关抽屉并 push 页面。抽屉不在路由里（DrawerController 常驻
@@ -501,6 +554,9 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final mediaPadding = MediaQuery.paddingOf(context);
+    final topPadding = mediaPadding.top;
+    final bottomPadding = mediaPadding.bottom;
     final pinnedIds = ref.watch(pinnedCategoriesProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final isLoggedIn = ref.watch(currentUserProvider).value != null;
@@ -513,44 +569,138 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
       );
     }
 
+    final topBarRow = Padding(
+      padding: EdgeInsets.fromLTRB(16, topPadding + 10, 12, 8),
+      child: Row(
+        children: [
+          _DrawerTabSwitcher(
+            showTags: _showTags,
+            scrolledUnder: _scrolledUnder,
+            onChanged: _switchTab,
+          ),
+          const Spacer(),
+          if (!_showTags && pinnedIds.isNotEmpty)
+            _DrawerFloatingSurface(
+              scrolledUnder: _scrolledUnder,
+              borderRadius: 9999,
+              child: IconButton(
+                icon: const Icon(Symbols.edit_rounded, size: 19),
+                tooltip: S.current.common_edit,
+                constraints: const BoxConstraints.tightFor(
+                  width: 40,
+                  height: 40,
+                ),
+                padding: EdgeInsets.zero,
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => _closeAndPush(const PinnedCategoryEditPage()),
+              ),
+            ),
+        ],
+      ),
+    );
+
     return Drawer(
       backgroundColor: colorScheme.surface,
       shape: RoundedSuperellipseBorder(
         borderRadius: BorderRadius.horizontal(right: context.shapes.radius(24)),
       ),
       child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // —— 头部：分类 ⇄ 标签 页签切换（编辑铅笔只属于分类页）——
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 6),
-              child: Row(
-                children: [
-                  _DrawerTabSwitcher(
-                    showTags: _showTags,
-                    onChanged: (v) => setState(() => _showTags = v),
-                  ),
-                  const Spacer(),
-                  if (!_showTags && pinnedIds.isNotEmpty)
-                    IconButton(
-                      icon: const Icon(Symbols.edit_rounded, size: 20),
-                      tooltip: S.current.common_edit,
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () =>
-                          _closeAndPush(const PinnedCategoryEditPage()),
-                    ),
-                ],
+        top: false,
+        bottom: false,
+        right: false,
+        child: _showTags
+            ? _buildTagsTab(
+                topBarRow: topBarRow,
+                topPadding: topPadding,
+                bottomPadding: bottomPadding,
+              )
+            : _buildFloatingFrame(
+                topPadding: topPadding,
+                cacheKey: 'cat|${topPadding.toStringAsFixed(1)}',
+                estimatedHeaderHeight: topPadding + _kTopBarHeight,
+                multiRowHeader: false,
+                header: topBarRow,
+                bodyBuilder: (headerHeight) => _buildCategoriesList(
+                  categoriesAsync,
+                  pinnedIds,
+                  levelFor,
+                  topInset: headerHeight,
+                  bottomPadding: bottomPadding,
+                ),
+              ),
+      ),
+    );
+  }
+
+  /// 三层悬浮框架：底层全高滚动内容 → 中层 TopFadeScrim → 顶层实色胶囊头部
+  Widget _buildFloatingFrame({
+    required double topPadding,
+    required String cacheKey,
+    required double estimatedHeaderHeight,
+    required bool multiRowHeader,
+    required Widget header,
+    required Widget Function(double headerHeight) bodyBuilder,
+  }) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: NotificationListener<ScrollMetricsNotification>(
+            onNotification: _handleScrollMetricsNotification,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: ValueListenableBuilder<int>(
+                valueListenable: _headerHeightTick,
+                builder: (context, _, _) {
+                  final headerHeight =
+                      _headerHeightCache[cacheKey] ?? estimatedHeaderHeight;
+                  return bodyBuilder(headerHeight);
+                },
               ),
             ),
-            Expanded(
-              child: _showTags
-                  ? _buildTagsList()
-                  : _buildCategoriesList(categoriesAsync, pinnedIds, levelFor),
-            ),
-          ],
+          ),
         ),
-      ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: ValueListenableBuilder<int>(
+            valueListenable: _headerHeightTick,
+            builder: (context, _, _) {
+              final headerHeight =
+                  _headerHeightCache[cacheKey] ?? estimatedHeaderHeight;
+              final solidHeight = multiRowHeader
+                  ? (headerHeight - _kTailFadeAnchorOffset).clamp(
+                      topPadding,
+                      headerHeight,
+                    )
+                  : topPadding;
+              return _DrawerTopFadeScrim(
+                height: headerHeight + TopFadeScrim.tail,
+                solidHeight: solidHeight,
+                scrolledUnder: _scrolledUnder,
+              );
+            },
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: HeightReporter(
+            onHeight: (height) {
+              if (!mounted || height <= 0) return;
+              final current =
+                  _headerHeightCache[cacheKey] ?? estimatedHeaderHeight;
+              if ((height - current).abs() <= 0.5) return;
+              _headerHeightCache[cacheKey] = height;
+              _headerHeightTick.value++;
+            },
+            child: header,
+          ),
+        ),
+      ],
     );
   }
 
@@ -558,12 +708,20 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
   Widget _buildCategoriesList(
     AsyncValue<List<Category>> categoriesAsync,
     List<int> pinnedIds,
-    CategoryNotificationLevel? Function(Category) levelFor,
-  ) {
+    CategoryNotificationLevel? Function(Category) levelFor, {
+    required double topInset,
+    required double bottomPadding,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     return categoriesAsync.when(
-      loading: () => const Center(child: LoadingSpinner()),
-      error: (_, _) => Center(child: Text(S.current.common_loadFailed)),
+      loading: () => Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: const Center(child: LoadingSpinner()),
+      ),
+      error: (_, _) => Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: Center(child: Text(S.current.common_loadFailed)),
+      ),
       data: (categories) {
         final categoryMap = {for (final c in categories) c.id: c};
         final pinned = pinnedIds
@@ -631,7 +789,12 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
         }
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            topInset + 4,
+            12,
+            24 + bottomPadding,
+          ),
           children: [
             // —— 收藏区（点行切首页对应分类 tab，无展开语义）——
             if (pinned.isNotEmpty) ...[
@@ -677,16 +840,50 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
 
   /// 标签页签：/tags.json 全量数据，**保留服务端标签组结构**分区展
   /// 示（有分组的站点各组一节，未分组归「其他标签」；未开分组则单
-  /// 列表）。顶部搜索框本地过滤；行式排布 + 热度条（组内相对榜首）。
-  Widget _buildTagsList() {
+  /// 列表）。顶部切换器 + 搜索框 + 组导航整体悬浮于 TopFadeScrim 之上。
+  Widget _buildTagsTab({
+    required Widget topBarRow,
+    required double topPadding,
+    required double bottomPadding,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     final groupsAsync = ref.watch(siteTagGroupsProvider);
     return groupsAsync.when(
-      loading: () => const Center(child: LoadingSpinner()),
-      error: (_, _) => Center(child: Text(S.current.common_loadFailed)),
+      loading: () => _buildFloatingFrame(
+        topPadding: topPadding,
+        cacheKey: 'tag_empty|${topPadding.toStringAsFixed(1)}',
+        estimatedHeaderHeight: topPadding + _kTopBarHeight,
+        multiRowHeader: false,
+        header: topBarRow,
+        bodyBuilder: (headerHeight) => Padding(
+          padding: EdgeInsets.only(top: headerHeight),
+          child: const Center(child: LoadingSpinner()),
+        ),
+      ),
+      error: (_, _) => _buildFloatingFrame(
+        topPadding: topPadding,
+        cacheKey: 'tag_empty|${topPadding.toStringAsFixed(1)}',
+        estimatedHeaderHeight: topPadding + _kTopBarHeight,
+        multiRowHeader: false,
+        header: topBarRow,
+        bodyBuilder: (headerHeight) => Padding(
+          padding: EdgeInsets.only(top: headerHeight),
+          child: Center(child: Text(S.current.common_loadFailed)),
+        ),
+      ),
       data: (groups) {
         if (groups.isEmpty) {
-          return Center(child: Text(S.current.tag_noTags));
+          return _buildFloatingFrame(
+            topPadding: topPadding,
+            cacheKey: 'tag_empty|${topPadding.toStringAsFixed(1)}',
+            estimatedHeaderHeight: topPadding + _kTopBarHeight,
+            multiRowHeader: false,
+            header: topBarRow,
+            bodyBuilder: (headerHeight) => Padding(
+              padding: EdgeInsets.only(top: headerHeight),
+              child: Center(child: Text(S.current.tag_noTags)),
+            ),
+          );
         }
 
         // 本地过滤（name/text 都匹配；标签量级几百，逐帧过滤无压力）
@@ -711,6 +908,7 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
         final showGroupLabels =
             filtered.length > 1 ||
             (filtered.isNotEmpty && filtered.first.name != null);
+        final hasGroupNav = showGroupLabels && filtered.length > 1;
 
         // 拍平成 (组标题 | 标签行) 序列供懒构建（全站几百个标签，
         // eager 构建整棵列表不划算）;成员高度全部钉死，同步产出
@@ -764,95 +962,124 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
           _activeTagGroup.value = 0;
         }
 
-        return Column(
+        final estimatedHeight =
+            topPadding +
+            _kTopBarHeight +
+            _kTagSearchHeight +
+            (hasGroupNav ? _kTagGroupNavHeight : 0);
+
+        final header = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // —— 搜索框：本地过滤，胶囊形与首页搜索同族 ——
+            topBarRow,
+            // —— 搜索框：本地过滤，实色胶囊与顶栏同族 ——
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-              child: SizedBox(
-                height: 40,
-                child: TextField(
-                  controller: _tagQueryController,
-                  onChanged: (v) => setState(() => _tagQuery = v),
-                  style: const TextStyle(fontSize: 14),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: S.current.tag_searchHint,
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.7,
+              child: _DrawerFloatingSurface(
+                scrolledUnder: _scrolledUnder,
+                borderRadius: 20,
+                child: SizedBox(
+                  height: 40,
+                  child: TextField(
+                    controller: _tagQueryController,
+                    onChanged: (v) => setState(() => _tagQuery = v),
+                    style: const TextStyle(fontSize: 14),
+                    textAlignVertical: TextAlignVertical.center,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: S.current.tag_searchHint,
+                      hintStyle: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
-                    ),
-                    prefixIcon: Icon(
-                      Symbols.search_rounded,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    suffixIcon: _tagQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Symbols.close_rounded, size: 18),
-                            color: colorScheme.onSurfaceVariant,
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () {
-                              _tagQueryController.clear();
-                              setState(() => _tagQuery = '');
-                            },
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.5,
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                    border: OutlineInputBorder(
-                      borderRadius: context.shapes.borderRadius(20),
-                      borderSide: BorderSide.none,
+                      prefixIcon: Icon(
+                        Symbols.search_rounded,
+                        size: 20,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      suffixIcon: _tagQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Symbols.close_rounded,
+                                size: 18,
+                              ),
+                              color: colorScheme.onSurfaceVariant,
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                _tagQueryController.clear();
+                                setState(() => _tagQuery = '');
+                              },
+                            )
+                          : null,
+                      filled: false,
+                      contentPadding: const EdgeInsets.only(right: 12),
+                      border: InputBorder.none,
                     ),
                   ),
                 ),
               ),
             ),
-            // —— 组导航：横滑 chip 条，点击直达该组；滚动反向跟随
+            // —— 组导航：横滑实色 chip 条，点击直达该组；滚动反向跟随
             // 高亮（联系人索引条的横版）——
-            if (showGroupLabels && filtered.length > 1)
+            if (hasGroupNav)
               SizedBox(
-                height: 34,
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _activeTagGroup,
-                  builder: (context, active, _) => ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 6),
-                    itemBuilder: (context, i) {
-                      final selected = i == active;
-                      return _TagGroupChip(
-                        key: _tagChipKeys[i] ??= GlobalKey(),
-                        label: filtered[i].name ?? S.current.tag_otherTags,
-                        selected: selected,
-                        onTap: () => _jumpToTagGroup(i),
-                      );
-                    },
+                height: _kTagGroupNavHeight,
+                child: FadingEdgeScrollView(
+                  fadeLeft: true,
+                  fadeRight: true,
+                  fadeExtent: 0.08,
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _activeTagGroup,
+                    builder: (context, active, _) => ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 6),
+                      itemBuilder: (context, i) {
+                        final selected = i == active;
+                        return _TagGroupChip(
+                          key: _tagChipKeys[i] ??= GlobalKey(),
+                          label: filtered[i].name ?? S.current.tag_otherTags,
+                          selected: selected,
+                          scrolledUnder: _scrolledUnder,
+                          onTap: () => _jumpToTagGroup(i),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
-            Expanded(
-              child: items.isEmpty
-                  ? Center(child: Text(S.current.tag_noTagsFound))
-                  : ListView.builder(
-                      controller: _tagListController,
-                      padding: const EdgeInsets.fromLTRB(
-                        12,
-                        _kTagListTopPadding,
-                        12,
-                        24,
-                      ),
-                      itemCount: items.length,
-                      itemBuilder: (context, index) => items[index],
-                    ),
-            ),
           ],
+        );
+
+        return _buildFloatingFrame(
+          topPadding: topPadding,
+          cacheKey: 'tag|$hasGroupNav|${topPadding.toStringAsFixed(1)}',
+          estimatedHeaderHeight: estimatedHeight,
+          multiRowHeader: true,
+          header: header,
+          bodyBuilder: (headerHeight) => items.isEmpty
+              ? Padding(
+                  padding: EdgeInsets.only(top: headerHeight),
+                  child: Center(child: Text(S.current.tag_noTagsFound)),
+                )
+              : ListView.builder(
+                  controller: _tagListController,
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    headerHeight + _kTagListTopPadding,
+                    12,
+                    24 + bottomPadding,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) => items[index],
+                ),
         );
       },
     );
@@ -1055,32 +1282,33 @@ class _AllTopicsRow extends StatelessWidget {
   }
 }
 
-/// 标签组导航 chip：小号胶囊，选中着色 secondaryContainer（与页签
-/// 切换器同语汇）
+/// 标签组导航 chip：小号实色胶囊，选中着色 secondaryContainer（与页签
+/// 切换器同语汇）；滚入头部下时同步浮起阴影/描边
 class _TagGroupChip extends StatelessWidget {
   const _TagGroupChip({
     super.key,
     required this.label,
     required this.selected,
+    required this.scrolledUnder,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
+  final ValueListenable<bool> scrolledUnder;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
-      child: Material(
+      child: _DrawerFloatingSurface(
+        scrolledUnder: scrolledUnder,
+        borderRadius: 14,
+        elevation: 1.5,
         color: selected
             ? colorScheme.secondaryContainer
-            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(14),
-        ),
-        clipBehavior: Clip.antiAlias,
+            : colorScheme.surfaceContainerHigh,
         child: InkWell(
           onTap: onTap,
           child: Padding(
@@ -1217,11 +1445,16 @@ class _TagRow extends StatelessWidget {
 }
 
 /// 抽屉头部的「分类 ⇄ 标签」分段切换（M3 connected button group 简
-/// 化版：胶囊底 + 滑动选中块）
+/// 化版：实色胶囊底 + 滑动选中块；内容滚到下方时浮起）
 class _DrawerTabSwitcher extends StatelessWidget {
-  const _DrawerTabSwitcher({required this.showTags, required this.onChanged});
+  const _DrawerTabSwitcher({
+    required this.showTags,
+    required this.scrolledUnder,
+    required this.onChanged,
+  });
 
   final bool showTags;
+  final ValueListenable<bool> scrolledUnder;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -1258,25 +1491,125 @@ class _DrawerTabSwitcher extends StatelessWidget {
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: ShapeDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        shape: RoundedSuperellipseBorder(
-          borderRadius: context.shapes.borderRadius(23),
+    return _DrawerFloatingSurface(
+      scrolledUnder: scrolledUnder,
+      borderRadius: 23,
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            segment(
+              S.current.category_categories,
+              !showTags,
+              () => onChanged(false),
+            ),
+            segment(S.current.tag_tabTags, showTags, () => onChanged(true)),
+          ],
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          segment(
-            S.current.category_categories,
-            !showTags,
-            () => onChanged(false),
-          ),
-          segment(S.current.tag_tabTags, showTags, () => onChanged(true)),
-        ],
+    );
+  }
+}
+
+/// 抽屉悬浮胶囊容器：与编辑页 ComposerBarCapsule 同语言——
+/// 不透明实底保证内容滚过不透字；滚入头部下方时按主题阴影开关追加轻阴影
+/// 或发丝描边。
+class _DrawerFloatingSurface extends StatelessWidget {
+  const _DrawerFloatingSurface({
+    required this.scrolledUnder,
+    required this.borderRadius,
+    required this.child,
+    this.color,
+    this.elevation = 2.0,
+  });
+
+  final ValueListenable<bool> scrolledUnder;
+  final double borderRadius;
+  final Color? color;
+  final double elevation;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final animate =
+        !(MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context));
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      builder: (context, under, _) => TweenAnimationBuilder<double>(
+        tween: Tween(end: under ? 1.0 : 0.0),
+        duration: animate ? const Duration(milliseconds: 180) : Duration.zero,
+        curve: Curves.easeOutCubic,
+        builder: (context, t, child) {
+          final colors = Theme.of(context).colorScheme;
+          final shadows = context.themeStyle.shadows;
+          return Material(
+            color: color ?? colors.surfaceContainerHigh,
+            shape: RoundedSuperellipseBorder(
+              borderRadius: context.shapes.borderRadius(borderRadius),
+              side: shadows
+                  ? BorderSide.none
+                  : BorderSide(
+                      color: colors.outlineVariant.withValues(alpha: t),
+                    ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            elevation: shadows ? elevation * t : 0,
+            shadowColor: Colors.black26,
+            animationDuration: Duration.zero,
+            child: child,
+          );
+        },
+        child: child,
       ),
+    );
+  }
+}
+
+/// 抽屉顶栏渐隐遮罩：复用 TopFadeScrim，静止在顶时淡出保持首屏干净，
+/// 内容滚入头部下方时淡入；页签或组导航切换引起高度变化时平滑过渡。
+class _DrawerTopFadeScrim extends StatelessWidget {
+  const _DrawerTopFadeScrim({
+    required this.height,
+    required this.solidHeight,
+    required this.scrolledUnder,
+  });
+
+  final double height;
+  final double solidHeight;
+  final ValueListenable<bool> scrolledUnder;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration =
+        (MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.reduceMotionOf(context))
+        ? Duration.zero
+        : const Duration(milliseconds: 180);
+
+    final scrim = TweenAnimationBuilder<double>(
+      tween: Tween(end: height),
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      builder: (context, animatedHeight, _) {
+        final ratio = height > 0 ? (solidHeight / height).clamp(0.0, 1.0) : 0.0;
+        return TopFadeScrim(
+          height: animatedHeight,
+          solidHeight: animatedHeight * ratio,
+        );
+      },
+    );
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      builder: (context, under, child) => AnimatedOpacity(
+        opacity: under ? 1 : 0,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        child: child,
+      ),
+      child: scrim,
     );
   }
 }

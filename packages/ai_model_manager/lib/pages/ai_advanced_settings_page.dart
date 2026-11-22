@@ -21,7 +21,7 @@ class AiAdvancedSettingsPage extends ConsumerWidget {
         children: [
           SegmentedCardGroup(
             children: [
-              SwitchListTile(
+              M3eSwitchListTile(
                 title: Text(AiL10n.current.useAppNetwork),
                 subtitle: Text(AiL10n.current.useAppNetworkSubtitle),
                 value: useAppNetwork && hasAdapterFactory,
@@ -36,7 +36,7 @@ class AiAdvancedSettingsPage extends ConsumerWidget {
                       }
                     : null,
               ),
-              SwitchListTile(
+              M3eSwitchListTile(
                 title: Text(AiL10n.current.partialImagesTitle),
                 subtitle: Text(AiL10n.current.partialImagesSubtitle),
                 value: partialEnabled,

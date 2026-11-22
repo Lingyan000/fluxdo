@@ -398,7 +398,9 @@ class _WebViewSwitch extends StatelessWidget {
       secondary: Icon(
         Symbols.language_rounded,
         fill: enabled ? 1 : 0,
-        color: enabled ? context.emphasis.selected : null,
+        color: enabled
+            ? context.emphasis.selected
+            : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       title: Text(l10n.webviewAdapter_title),
       subtitle: Text(

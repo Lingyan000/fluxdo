@@ -571,13 +571,14 @@ class _MiniAppGalleryPageState extends ConsumerState<MiniAppGalleryPage> {
                   .floor()
                   .clamp(1, 3);
           if (columns == 1) {
-            return SliverList.builder(
-              itemCount: apps.length,
-              itemBuilder: (context, index) => Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: SegmentedCardItem(
+            return SliverPadding(
+              padding: const EdgeInsets.only(bottom: 3),
+              sliver: SliverList.builder(
+                itemCount: apps.length,
+                itemBuilder: (context, index) => SegmentedCardItem(
                   index: index,
                   count: apps.length,
+                  gap: 3,
                   child: _card(apps[index], row: true),
                 ),
               ),

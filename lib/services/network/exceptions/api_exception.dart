@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/pending_post.dart';
+import '../../cf_verification_state.dart';
 
 /// 429 Rate Limit 异常（重试耗尽后抛出）
 ///
@@ -56,12 +57,14 @@ class CfChallengeException implements Exception {
   final bool silentBlockedDuringChallenge;
   /// 原始错误（用于调试，保留验证/重试失败的实际原因）
   final Object? cause;
+  final CfVerificationState? verification;
   CfChallengeException({
     this.userCancelled = false,
     this.inCooldown = false,
     this.autoVerifyDisabled = false,
     this.silentBlockedDuringChallenge = false,
     this.cause,
+    this.verification,
   });
 
   @override
@@ -70,7 +73,17 @@ class CfChallengeException implements Exception {
     if (inCooldown) return S.current.cf_cooldown;
     if (userCancelled) return S.current.cf_userCancelled;
     if (autoVerifyDisabled) return S.current.cf_autoVerifyDisabled;
+    final page = verification;
+    if (page != null) return page.label(S.current);
     if (cause != null) return S.current.cf_failedWithCause('$cause');
     return S.current.cf_failedRetry;
   }
+}
+
+/// 验证页已结束，但同一请求重试后仍收到 Cloudflare 挑战。
+class CfVerificationIneffectiveException extends CfChallengeException {
+  CfVerificationIneffectiveException({super.verification});
+
+  @override
+  String toString() => S.current.cf_challengeNotEffective;
 }

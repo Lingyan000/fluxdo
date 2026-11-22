@@ -6,16 +6,28 @@ import 'package:flutter/widgets.dart';
 /// 路径取自 Simple Icons（CC0），原为单色单路径，这里拆成前后两朵云
 /// 分别上色。用于提示"正在进行 Cloudflare 安全验证"。
 class CloudflareMark extends StatelessWidget {
-  final double width;
+  const CloudflareMark({super.key, this.width = 24}) : _asIcon = false;
 
-  const CloudflareMark({super.key, this.width = 24});
+  /// 设置项使用同一轮廓，尺寸和前景色取自所在位置的图标主题。
+  const CloudflareMark.icon({super.key}) : width = 24, _asIcon = true;
+
+  final double width;
+  final bool _asIcon;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: width * 10.86 / 24,
-      child: const AppSvgAsset('assets/icons/cloudflare.svg'),
+    final icons = _asIcon ? IconTheme.of(context) : null;
+    final size = icons?.size ?? width;
+    final mark = SizedBox(
+      width: size,
+      height: size * 10.86 / 24,
+      child: AppSvgAsset('assets/icons/cloudflare.svg', tint: icons?.color),
     );
+    return _asIcon
+        ? SizedBox.square(
+            dimension: size,
+            child: Center(child: mark),
+          )
+        : mark;
   }
 }

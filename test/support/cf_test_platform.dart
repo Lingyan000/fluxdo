@@ -34,6 +34,8 @@ class CfTestPlatform extends InAppWebViewPlatform {
     controller.documentComplete = true;
     controller.documentUrl = 'https://linux.do/challenge';
     controller.documentRead = null;
+    controller.pagePaletteScripts.clear();
+    controller.pointers.clear();
     webView = null;
     CfClearanceAuthority.instance
       ..debugCookieReader = null
@@ -49,7 +51,7 @@ class CfTestPlatform extends InAppWebViewPlatform {
   @override
   PlatformInAppWebViewWidget createPlatformInAppWebViewWidget(
     PlatformInAppWebViewWidgetCreationParams params,
-  ) => webView = CfTestWebView(params);
+  ) => webView = CfTestWebView(params, controller.pointers.add);
 }
 
 Cookie cfTestCookie(String value) => Cookie(
@@ -130,9 +132,28 @@ class CfTestController extends PlatformInAppWebViewController {
   bool documentComplete = true;
   String documentUrl = 'https://linux.do/challenge';
   Future<String>? documentRead;
+  final pagePaletteScripts = <String>[];
+  final pointers = <Offset>[];
 
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
+
+  Future<void> widgetEvent(
+    String event, {
+    Object? code,
+    String? frameUrl,
+    bool isMainFrame = true,
+  }) async {
+    final url = WebUri(frameUrl ?? documentUrl);
+    await handlers['onChallengeWidgetEvent']!(
+      JavaScriptHandlerFunctionData(
+        isMainFrame: isMainFrame,
+        origin: WebUri(url.origin),
+        requestUrl: url,
+        args: [event, code],
+      ),
+    );
+  }
 
   @override
   void addJavaScriptHandler({
@@ -147,11 +168,20 @@ class CfTestController extends PlatformInAppWebViewController {
     required String source,
     ContentWorld? contentWorld,
   }) async {
+    if (source.contains('window.__fluxdoSetCfPagePalette(')) {
+      pagePaletteScripts.add(source);
+      return true;
+    }
     if (source.contains('JSON.stringify({url: location.href')) {
       return documentRead ??
           jsonEncode({
             'url': documentUrl,
-            'html': documentComplete ? documentHtml : '',
+            'ready': documentComplete,
+            'html':
+                source.contains('ready: document.readyState') ||
+                    documentComplete
+                ? documentHtml
+                : '',
           });
     }
     if (source.contains('document.readyState')) {
@@ -165,7 +195,10 @@ class CfTestController extends PlatformInAppWebViewController {
   }
 
   @override
-  Future<WebUri?> getUrl() async => WebUri('https://linux.do/challenge');
+  Future<WebUri?> getUrl() async => WebUri(documentUrl);
+
+  @override
+  Future<void> reload() async {}
 
   @override
   Future<dynamic> callDevToolsProtocolMethod({
@@ -195,10 +228,16 @@ class CfTestController extends PlatformInAppWebViewController {
 }
 
 class CfTestWebView extends PlatformInAppWebViewWidget {
-  CfTestWebView(super.params) : super.implementation();
+  CfTestWebView(super.params, this.onPointer) : super.implementation();
+
+  final ValueChanged<Offset> onPointer;
 
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) => Listener(
+    behavior: HitTestBehavior.opaque,
+    onPointerDown: (event) => onPointer(event.localPosition),
+    child: const SizedBox.expand(),
+  );
 
   @override
   T controllerFromPlatform<T>(PlatformInAppWebViewController controller) =>

@@ -1,11 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/s.dart';
 import '../../../providers/preferences_provider.dart';
 import '../../../services/cf_challenge_service.dart';
 import '../../../services/toast_service.dart';
+import '../../../widgets/common/cloudflare_mark.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// Cloudflare 验证独立卡片：自动验证开关 + 立即验证入口
@@ -21,7 +24,12 @@ class CfVerifyCard extends ConsumerWidget {
     return SegmentedCardGroup(
       children: [
         SwitchListTile(
-          secondary: const Icon(Symbols.shield_rounded),
+          secondary: Icon(
+            Symbols.shield_rounded,
+            color: autoEnabled
+                ? context.emphasis.selected
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           title: Text(context.l10n.cfVerify_autoTitle),
           subtitle: Text(context.l10n.cfVerify_autoDesc),
           value: autoEnabled,
@@ -30,8 +38,8 @@ class CfVerifyCard extends ConsumerWidget {
               .setAutoCfChallenge(value),
         ),
         ListTile(
-          leading: const Icon(Symbols.security_rounded),
-          title: Text(context.l10n.cf_securityVerifyTitle),
+          leading: const ExcludeSemantics(child: CloudflareMark.icon()),
+          title: Text(context.l10n.cfVerify_title),
           subtitle: Text(context.l10n.error_securityChallenge),
           trailing: const Icon(Symbols.chevron_right_rounded, size: 20),
           onTap: () => _showManualVerify(context),
@@ -41,17 +49,19 @@ class CfVerifyCard extends ConsumerWidget {
   }
 
   Future<void> _showManualVerify(BuildContext context) async {
-    final result = await CfChallengeService().showManualVerifyNow(
-      context,
-      true,
+    final result = await CfChallengeService().verifyPage(
+      context: context,
+      userInitiated: true,
     );
 
     if (!context.mounted) return;
 
-    if (result == true) {
-      ToastService.showSuccess(S.current.common_success);
-    } else if (result == false) {
-      ToastService.showError(S.current.cf_failedRetry);
+    if (result?.stage == CfVerificationStage.noChallengeObserved) {
+      ToastService.showInfo(S.current.cf_noChallengeTitle);
+    } else if (result?.reachedOrigin == true) {
+      ToastService.showSuccess(S.current.cfVerify_success);
+    } else if (result != null) {
+      ToastService.showError(result.label(context.l10n));
     } else {
       ToastService.showError(S.current.cf_cannotOpenVerifyPage);
     }

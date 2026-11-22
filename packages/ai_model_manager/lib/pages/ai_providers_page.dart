@@ -1,3 +1,4 @@
+import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -40,7 +41,7 @@ class AiProvidersPage extends ConsumerWidget {
                     : AiL10n.current.noProviderConfigured,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AiProviderListPage()),
+                  InteractionPageRoute(builder: (_) => const AiProviderListPage()),
                 ),
               ),
               // 模型配置
@@ -50,7 +51,7 @@ class AiProvidersPage extends ConsumerWidget {
                   title: AiL10n.current.modelConfig,
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    InteractionPageRoute(
                         builder: (_) => const AiModelConfigPage()),
                   ),
                 ),
@@ -60,7 +61,7 @@ class AiProvidersPage extends ConsumerWidget {
                 title: AiL10n.current.chatHistory,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                     builder: (_) =>
                         AiChatHistoryPage(onOpenSession: onOpenSession),
                   ),
@@ -73,7 +74,7 @@ class AiProvidersPage extends ConsumerWidget {
                 subtitle: AiL10n.current.quickPromptsManageHint,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                       builder: (_) => const PromptPresetsPage()),
                 ),
               ),
@@ -83,7 +84,7 @@ class AiProvidersPage extends ConsumerWidget {
                 title: AiL10n.current.advancedSettings,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  InteractionPageRoute(
                       builder: (_) => const AiAdvancedSettingsPage()),
                 ),
               ),

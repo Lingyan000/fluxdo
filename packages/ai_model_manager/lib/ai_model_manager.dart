@@ -6,6 +6,7 @@ export 'models/ai_chat_message.dart';
 export 'models/ai_chat_attachment.dart';
 export 'models/prompt_preset.dart';
 export 'models/prompt_dimension.dart';
+export 'utils/dialog_utils.dart' show aiDialogPresenterProvider, aiBottomSheetPresenterProvider;
 export 'utils/model_capabilities.dart';
 export 'services/ai_provider_service.dart';
 export 'services/ai_chat_service.dart';

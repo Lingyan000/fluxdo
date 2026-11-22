@@ -45,8 +45,8 @@ List<SettingsGroup> buildNetworkGroups(BuildContext context) {
         ),
         CustomModel(
           id: 'cfVerify',
-          title: l10n.cf_securityVerifyTitle,
-          subtitle: l10n.networkSettings_auxiliary,
+          title: l10n.cfVerify_title,
+          subtitle: l10n.cf_securityVerifyTitle,
           builder: (context, ref) => const CfVerifyCard(),
         ),
       ],

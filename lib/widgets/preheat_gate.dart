@@ -23,9 +23,11 @@ import '../services/emoji_handler.dart';
 import '../services/launch_splash_handoff.dart';
 import '../services/log/log_writer.dart';
 import '../services/migration_service.dart';
+import '../services/network/exceptions/api_exception.dart';
 import '../utils/dialog_utils.dart';
 import '../utils/responsive.dart' show Breakpoints;
 import '../widgets/common/ambient_background.dart';
+import '../widgets/common/cf_startup_verification.dart';
 import '../widgets/common/cloudflare_mark.dart';
 import '../widgets/common/error_view.dart';
 
@@ -51,7 +53,7 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     vsync: this,
   );
 
-  /// 退场：logo 收缩蓄力后冲出 → 启动页淡出 → 首页缓缓落位
+  /// 退场：logo 短促收缩后冲出，启动页淡出与首页落位交叠进行
   late final AnimationController _exit = AnimationController(
     duration: _ExitTimeline.duration,
     vsync: this,
@@ -154,11 +156,13 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     }
   }
 
-  Future<void> _run() async {
+  Future<void> _run({bool verifyFirst = false}) async {
     final attempt = ++_attempt;
-    final ok = await _preload();
+    final ok = await _preload(attempt, verifyFirst: verifyFirst);
     if (!mounted || attempt != _attempt) return;
     if (!ok) {
+      await CfChallengeService().waitForStartupVerification();
+      if (!mounted || attempt != _attempt) return;
       setState(() => _phase = _GatePhase.failed);
       return;
     }
@@ -169,6 +173,8 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     if (!mounted || attempt != _attempt) return;
     await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || attempt != _attempt) return;
+    await CfChallengeService().waitForStartupVerification();
     if (!mounted || attempt != _attempt) return;
     try {
       setState(() => _phase = _GatePhase.exiting);
@@ -185,8 +191,32 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     }
   }
 
-  Future<bool> _preload() async {
+  Future<bool> _preload(int attempt, {required bool verifyFirst}) async {
     try {
+      if (verifyFirst) {
+        // 先放回启动页，让用户主动验证也能使用同一个控件位置。
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || attempt != _attempt) return false;
+        final cf = CfChallengeService();
+        final page = await cf.verifyPage(
+          context: context,
+          userInitiated: true,
+          presentation: CfVerifyPresentation.blocking,
+        );
+        if (!mounted || attempt != _attempt) return false;
+        if (page?.reachedOrigin != true) {
+          final previous = _error;
+          throw CfChallengeException(
+            verification:
+                page ??
+                CfVerificationState.opening(cf.verifyRound)
+                    .withStage(CfVerificationStage.loadFailed),
+            cause: previous is CfChallengeException ? previous.cause : previous,
+          );
+        }
+        await cf.waitForCompletionCookieSync();
+        if (!mounted || attempt != _attempt) return false;
+      }
       // 迁移已在 main() 中执行完毕，这里展示提示
       if (MigrationService.requiresRelogin && mounted) {
         await _showReloginDialog();
@@ -195,6 +225,7 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
       await BrowserTrustCoordinator.instance.ensurePreloaded(
         reason: 'preheat_gate',
       );
+      if (!mounted || attempt != _attempt) return false;
 
       DiscourseService().getEnabledReactions();
       EmojiHandler().init();
@@ -202,6 +233,7 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
       _error = null;
       return true;
     } catch (e) {
+      if (!mounted || attempt != _attempt) return false;
       debugPrint('[PreheatGate] Preload failed: $e');
       _error = e;
       return false;
@@ -228,13 +260,14 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
     );
   }
 
-  void _retry() {
+  void _retry({bool verifyFirst = false}) {
+    if (_phase != _GatePhase.failed) return;
     _exit.value = 0;
     setState(() {
       _phase = _GatePhase.loading;
       _homeMounted = false;
     });
-    _run();
+    _run(verifyFirst: verifyFirst);
   }
 
   void _skip() {
@@ -256,6 +289,7 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
             key: const ValueKey('error'),
             error: _error,
             onRetry: _retry,
+            onManualCfVerify: () => _retry(verifyFirst: true),
           )
         : _buildLaunch();
 
@@ -285,77 +319,80 @@ class _PreheatGateState extends ConsumerState<PreheatGate>
             // 垫在启动页下等待期间不接收输入
             child: IgnorePointer(
               ignoring: _phase == _GatePhase.loading,
-              child: _ExitHome(exit: _exit, child: widget.child),
+              child: PageMotionScope(
+                moving: _phase == _GatePhase.exiting,
+                child: _ExitHome(exit: _exit, child: widget.child),
+              ),
             ),
           ),
         if (_phase != _GatePhase.done)
-          _PreheatLoading(
+          RepaintBoundary(
             key: const ValueKey('loading'),
-            entry: _entry,
-            logoShown: _logoShown,
-            exit: _exit,
-            exiting: _phase == _GatePhase.exiting,
-            onSkip: _skip,
-            iconStyle: _iconStyle,
+            child: _PreheatLoading(
+              entry: _entry,
+              logoShown: _logoShown,
+              exit: _exit,
+              exiting: _phase == _GatePhase.exiting,
+              onSkip: _skip,
+              iconStyle: _iconStyle,
+            ),
           ),
       ],
     );
   }
 }
 
-/// 退场时间线：三条曲线同时开始。
-/// - logo 先收缩蓄力，随后加速冲向镜头，冲出途中淡出；
-/// - 启动页（底色、文字）在中段短促淡出；
-/// - 首页始终不透明地垫在底层，从略大的尺寸缓缓落位到原尺寸。
+/// 退场时间线：各段直接按真实时间分配，避免整体加速曲线拉长蓄力。
+/// - 前 20% 短促收缩，随后冲出并淡出 logo；
+/// - 启动页（底色、文字）在 20%～65% 淡出；
+/// - 首页从 20% 开始落位，与启动页淡出交叠。
 /// 桌面亚克力窗口底色透明，没有可淡出的底色：改为首页同步淡入。
 abstract final class _ExitTimeline {
   static bool get opaqueBackdrop =>
       defaultTargetPlatform != TargetPlatform.macOS &&
       defaultTargetPlatform != TargetPlatform.windows;
 
-  static const duration = Duration(milliseconds: 1200);
+  static const duration = Duration(milliseconds: 480);
 
-  /// 以下区间均以加速曲线后的进度计
-  static const _anticipateEnd = 0.08;
-  static const _anticipateScale = 0.8;
-  static const _veilStart = 0.1;
-  static const _veilEnd = 0.2;
+  static final logoScale = TweenSequence<double>([
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 0.9,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 20,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 0.9,
+        end: 4.0,
+      ).chain(CurveTween(curve: Curves.easeInCubic)),
+      weight: 45,
+    ),
+    TweenSequenceItem(tween: ConstantTween(4.0), weight: 35),
+  ]);
 
-  /// 冲出段：彩色 logo 不能放大到铺满屏幕，只冲到数倍大小，
-  /// 并在底色淡完之前先行消失
-  static const _burstScale = 4.0;
-  static const _logoFadeEnd = 0.14;
+  static final logoOpacity = Tween(
+    begin: 1.0,
+    end: 0.0,
+  ).chain(CurveTween(curve: const Interval(0.2, 0.55, curve: Curves.easeOut)));
 
-  /// 首页落位前的起始缩放
-  static const _homeStartScale = 1.1;
-
-  static double _accel(double t) => Curves.easeInCubic.transform(t);
-
-  static double _segment(double u, double start, double end) =>
-      ((u - start) / (end - start)).clamp(0.0, 1.0);
-
-  static double logoScale(double t) {
-    final u = _accel(t);
-    if (u <= _anticipateEnd) {
-      return 1 - (1 - _anticipateScale) * u / _anticipateEnd;
-    }
-    return _anticipateScale +
-        (_burstScale - _anticipateScale) *
-            _segment(u, _anticipateEnd, _veilEnd);
-  }
-
-  static double logoOpacity(double t) =>
-      1 - _segment(_accel(t), _anticipateEnd, _logoFadeEnd);
+  static const _veilCurve = Interval(0.2, 0.65, curve: Curves.easeOutCubic);
 
   /// 启动页（底色与文字）的不透明度
-  static double veil(double t) => 1 - _segment(_accel(t), _veilStart, _veilEnd);
+  static final veil = Tween(
+    begin: 1.0,
+    end: 0.0,
+  ).chain(CurveTween(curve: _veilCurve));
 
-  static double homeScale(double t) =>
-      _homeStartScale -
-      (_homeStartScale - 1) * Curves.easeInOutCubic.transform(t);
+  static final homeOpacity = CurveTween(curve: _veilCurve);
+
+  static final homeScale = Tween(begin: 1.04, end: 1.0).chain(
+    CurveTween(curve: const Interval(0.2, 1, curve: Curves.easeOutCubic)),
+  );
 }
 
-/// 退场时垫在启动页下的首页：从略大缓缓落位；桌面同时随启动页淡出而淡入。
+/// 退场时垫在启动页下的首页：从略大落位；桌面同时随启动页淡出而淡入。
 /// 宽屏不缩放，大窗口里整页缩放的位移过于明显。
 class _ExitHome extends StatelessWidget {
   final Animation<double> exit;
@@ -367,15 +404,16 @@ class _ExitHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final scaled = MediaQuery.sizeOf(context).width < Breakpoints.mobile;
     final opaqueBackdrop = _ExitTimeline.opaqueBackdrop;
-    return AnimatedBuilder(
-      animation: exit,
-      child: child,
-      builder: (context, child) => Transform.scale(
-        scale: scaled ? _ExitTimeline.homeScale(exit.value) : 1,
-        child: Opacity(
-          opacity: opaqueBackdrop ? 1 : 1 - _ExitTimeline.veil(exit.value),
-          child: child,
-        ),
+    return ScaleTransition(
+      scale: scaled
+          ? exit.drive(_ExitTimeline.homeScale)
+          : const AlwaysStoppedAnimation(1.0),
+      child: FadeTransition(
+        opacity: opaqueBackdrop
+            ? const AlwaysStoppedAnimation(1.0)
+            : exit.drive(_ExitTimeline.homeOpacity),
+        // 动画只更新外层变换和透明度，首页的绘制结果可复用。
+        child: RepaintBoundary(child: child),
       ),
     );
   }
@@ -423,14 +461,24 @@ enum _PreheatStatus {
   /// 需要用户介入的状态，角标用错误色；其余一律常规色
   final bool alert;
 
-  String label(BuildContext context) => switch (this) {
-    connecting => context.l10n.preheat_statusConnecting,
-    slow => context.l10n.preheat_statusSlow,
-    browser => context.l10n.preheat_statusBrowser,
-    fallback => context.l10n.preheat_statusFallback,
-    verifying => context.l10n.preheat_cfVerifying,
-    offline => context.l10n.preheat_statusOffline,
-  };
+  String label(BuildContext context, CfVerificationState? cfPage) =>
+      switch (this) {
+        connecting => context.l10n.preheat_statusConnecting,
+        slow => context.l10n.preheat_statusSlow,
+        browser => context.l10n.preheat_statusBrowser,
+        fallback => context.l10n.preheat_statusFallback,
+        verifying => switch (cfPage?.stage) {
+          CfVerificationStage.interactionRequired =>
+            context.l10n.cf_startupNeedsAction,
+          CfVerificationStage.checking when cfPage!.interactionRequested =>
+            context.l10n.cf_panelCheckingResult,
+          CfVerificationStage.challengeCleared =>
+            context.l10n.cf_verifyCompletingTitle,
+          _ =>
+            cfPage?.label(context.l10n) ?? context.l10n.cf_verifyOpeningTitle,
+        },
+        offline => context.l10n.preheat_statusOffline,
+      };
 }
 
 class _PreheatLoading extends StatefulWidget {
@@ -442,7 +490,6 @@ class _PreheatLoading extends StatefulWidget {
   final AppIconStyle iconStyle;
 
   const _PreheatLoading({
-    super.key,
     required this.entry,
     required this.logoShown,
     required this.exit,
@@ -470,11 +517,13 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
 
   final _coordinator = BrowserTrustCoordinator.instance;
   final _cf = CfChallengeService();
+  final _verificationHost = CfStartupVerificationHost();
 
   _PreheatStatus? _paintedStatus;
   _PreheatStatus? _exitStatus;
 
   bool _showSkip = false;
+  bool _verificationLayout = false;
   bool _statusRevealed = false;
   bool _slow = false;
   bool _offline = false;
@@ -488,8 +537,10 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   void initState() {
     super.initState();
     // 启动页可见期间由它承接 CF 验证状态，验证页不再显示胶囊
-    _cf.registerStatusHost();
+    _cf.registerStatusHost(_verificationHost);
+    _verificationHost.addListener(_onStatusInputChanged);
     _cf.presentationNotifier.addListener(_onStatusInputChanged);
+    _cf.pageState.addListener(_onStatusInputChanged);
     _coordinator.preloadStage.addListener(_onStageChanged);
 
     // 连通性服务正式初始化在 MainPage，启动页先拉起（幂等）以便感知断网
@@ -517,6 +568,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   void didUpdateWidget(covariant _PreheatLoading oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.exiting && !oldWidget.exiting) {
+      _cf.unregisterStatusHost(_verificationHost);
       // 保留上一帧的状态：预加载完成会清空阶段，不能在退场时闪回“连接中”。
       _exitStatus = _paintedStatus ?? _status;
     }
@@ -524,8 +576,11 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
 
   @override
   void dispose() {
-    _cf.unregisterStatusHost();
+    _cf.unregisterStatusHost(_verificationHost);
+    _verificationHost.removeListener(_onStatusInputChanged);
+    _verificationHost.dispose();
     _cf.presentationNotifier.removeListener(_onStatusInputChanged);
+    _cf.pageState.removeListener(_onStatusInputChanged);
     _coordinator.preloadStage.removeListener(_onStageChanged);
     _connectivitySub?.cancel();
     _skipTimer?.cancel();
@@ -539,7 +594,16 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
     setState(fn);
   }
 
-  void _onStatusInputChanged() => _update(() {});
+  void _onStatusInputChanged() {
+    _update(() {
+      if (_verificationHost.pageVisible && !_verificationLayout) {
+        // 重新加载或切换文档时只遮住网页，标题和页脚留在原位直到离开启动页。
+        _verificationLayout = true;
+        _skipTimer?.cancel();
+        _showSkip = widget.onSkip != null;
+      }
+    });
+  }
 
   void _onStageChanged() {
     _restartSlowTimer();
@@ -577,6 +641,93 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
         status == _PreheatStatus.verifying;
   }
 
+  Widget _header(BuildContext context, _PreheatStatus status) {
+    final theme = Theme.of(context);
+    final title = Text(
+      'FluxDO',
+      style: theme.textTheme.headlineMedium?.copyWith(
+        color: theme.colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 1.5,
+      ),
+    );
+    final message = Text(
+      status.label(context, _cf.pageState.value),
+      key: ValueKey(status),
+      textAlign: TextAlign.center,
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_verificationLayout)
+            title
+          else
+            ValueListenableBuilder<bool>(
+              valueListenable: widget.logoShown,
+              child: title,
+              builder: (context, shown, child) => TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: shown && !widget.exiting ? 1 : 0),
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+                builder: (context, value, child) =>
+                    Opacity(opacity: value, child: child),
+                child: child,
+              ),
+            ),
+          const SizedBox(height: 12),
+          if (_verificationLayout)
+            message
+          else
+            AnimatedOpacity(
+              opacity: _statusVisible && !widget.exiting ? 1 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: message,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _skipButton(BuildContext context) {
+    final onSkip = widget.onSkip;
+    final button = TextButton(
+      onPressed: _showSkip && !widget.exiting && onSkip != null
+          ? () {
+              _verificationHost.cancelVerification?.call();
+              onSkip();
+            }
+          : null,
+      child: Text(
+        context.l10n.common_skip,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+    );
+    if (_verificationLayout) return button;
+    const duration = Duration(milliseconds: 400);
+    return IgnorePointer(
+      ignoring: !_showSkip || widget.exiting,
+      child: AnimatedOpacity(
+        opacity: _showSkip ? 1 : 0,
+        duration: duration,
+        curve: Curves.easeOut,
+        child: AnimatedSlide(
+          offset: _showSkip ? Offset.zero : const Offset(0, 0.4),
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          child: button,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -591,6 +742,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
     final background = brightness == Brightness.dark
         ? logoMotionBackgroundDark
         : logoMotionBackgroundLight;
+    _verificationHost.loadingBackground = opaqueBackdrop ? background : null;
     final badgeFadeDuration =
         (MediaQuery.disableAnimationsOf(context) ||
             MediaQuery.reduceMotionOf(context))
@@ -619,151 +771,97 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
         fit: StackFit.expand,
         children: [
           if (opaqueBackdrop)
-            CustomPaint(
-              painter: _LaunchBackdropPainter(
-                exit: widget.exit,
-                background: background,
+            RepaintBoundary(
+              child: CustomPaint(
+                painter: _LaunchBackdropPainter(
+                  exit: widget.exit,
+                  background: background,
+                ),
               ),
             ),
           // 文字随启动页底色一起淡出
-          AnimatedBuilder(
-            animation: widget.exit,
-            builder: (context, child) => Opacity(
-              opacity: _ExitTimeline.veil(widget.exit.value),
-              child: child,
-            ),
-            child: Stack(
-              fit: StackFit.expand,
+          FadeTransition(
+            opacity: widget.exit.drive(_ExitTimeline.veil),
+            child: CustomMultiChildLayout(
+              delegate: _PreheatLayout(
+                _verificationHost,
+                MediaQuery.paddingOf(context),
+              ),
               children: [
-                // 上下等分留白，logo 严格居中，与原生启动屏同位；
-                // 标题与状态挂在下半区，出现/变化都不推动 logo
-                Column(
-                  children: [
-                    const Spacer(),
-                    // 角标随 logo 一起蓄力、冲出
-                    AnimatedBuilder(
-                      animation: widget.exit,
-                      builder: (context, child) => Transform.scale(
-                        scale: _ExitTimeline.logoScale(widget.exit.value),
-                        child: Opacity(
-                          opacity: _ExitTimeline.logoOpacity(widget.exit.value),
-                          child: child,
-                        ),
-                      ),
-                      child: SizedBox.square(
-                        dimension: _logoSize,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            PreheatLogo(
-                              style: widget.iconStyle,
-                              entry: widget.entry,
-                              shown: widget.logoShown,
-                              size: _logoSize,
-                            ),
-                            Positioned(
-                              left: badgeCenter.dx - _badgeSize / 2,
-                              top: badgeCenter.dy - _badgeSize / 2,
-                              width: _badgeSize,
-                              height: _badgeSize,
-                              child: ValueListenableBuilder<bool>(
-                                valueListenable: widget.logoShown,
-                                builder: (context, shown, child) =>
-                                    AnimatedOpacity(
-                                      opacity:
-                                          shown &&
-                                              statusVisible &&
-                                              !widget.exiting
-                                          ? 1
-                                          : 0,
-                                      duration: badgeFadeDuration,
-                                      curve: Curves.easeInOut,
-                                      child: child,
-                                    ),
-                                child: AnimatedContainer(
-                                  duration: badgeFadeDuration,
-                                  decoration: BoxDecoration(
-                                    color: badgeColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: AnimatedSwitcher(
-                                      duration: badgeFadeDuration,
-                                      transitionBuilder: (child, animation) =>
-                                          FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          ),
-                                      child: status.icon == null
-                                          ? CloudflareMark(
-                                              key: ValueKey(status),
-                                              width: 19,
-                                            )
-                                          : Icon(
-                                              status.icon,
-                                              key: ValueKey(status),
-                                              size: 16,
-                                              color: iconColor,
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                LayoutId(
+                  id: _LaunchPart.webView,
+                  child: CompositedTransformTarget(
+                    link: _verificationHost.viewportLink,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                if (!_verificationLayout)
+                  LayoutId(
+                    id: _LaunchPart.logo,
+                    child: ScaleTransition(
+                      scale: widget.exit.drive(_ExitTimeline.logoScale),
+                      child: FadeTransition(
+                        opacity: widget.exit.drive(_ExitTimeline.logoOpacity),
+                        child: SizedBox.square(
+                          dimension: _logoSize,
+                          child: Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              // 原生启动屏只有 logo，标题在接管后淡入
-                              ValueListenableBuilder<bool>(
-                                valueListenable: widget.logoShown,
-                                builder: (context, shown, child) =>
-                                    TweenAnimationBuilder<double>(
-                                      tween: Tween(
-                                        begin: 0,
-                                        // 快速加载完成时直接退场，避免标题刚出现就消失。
-                                        end: shown && !widget.exiting ? 1 : 0,
-                                      ),
-                                      duration: const Duration(
-                                        milliseconds: 500,
-                                      ),
-                                      curve: Curves.easeOut,
-                                      builder: (context, value, child) =>
-                                          Opacity(opacity: value, child: child),
-                                      child: child,
-                                    ),
-                                child: Text(
-                                  'FluxDO',
-                                  style: theme.textTheme.headlineMedium
-                                      ?.copyWith(
-                                        color: colorScheme.onSurface,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: 1.5,
-                                      ),
+                              // 退场期间保持当前光晕，避免放大时每帧重算模糊。
+                              TickerMode(
+                                enabled: !widget.exiting,
+                                child: PreheatLogo(
+                                  style: widget.iconStyle,
+                                  entry: widget.entry,
+                                  shown: widget.logoShown,
+                                  size: _logoSize,
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              AnimatedOpacity(
-                                opacity: statusVisible && !widget.exiting
-                                    ? 1.0
-                                    : 0.0,
-                                duration: const Duration(milliseconds: 300),
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 250),
-                                  child: Text(
-                                    status.label(context),
-                                    key: ValueKey(status),
-                                    textAlign: TextAlign.center,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
+                              Positioned(
+                                left: badgeCenter.dx - _badgeSize / 2,
+                                top: badgeCenter.dy - _badgeSize / 2,
+                                width: _badgeSize,
+                                height: _badgeSize,
+                                child: ValueListenableBuilder<bool>(
+                                  valueListenable: widget.logoShown,
+                                  builder: (context, shown, child) =>
+                                      AnimatedOpacity(
+                                        opacity:
+                                            shown &&
+                                                statusVisible &&
+                                                !widget.exiting
+                                            ? 1
+                                            : 0,
+                                        duration: badgeFadeDuration,
+                                        curve: Curves.easeInOut,
+                                        child: child,
+                                      ),
+                                  child: AnimatedContainer(
+                                    duration: badgeFadeDuration,
+                                    decoration: BoxDecoration(
+                                      color: badgeColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: AnimatedSwitcher(
+                                        duration: badgeFadeDuration,
+                                        transitionBuilder: (child, animation) =>
+                                            FadeTransition(
+                                              opacity: animation,
+                                              child: child,
+                                            ),
+                                        child: status.icon == null
+                                            ? CloudflareMark(
+                                                key: ValueKey(status),
+                                                width: 19,
+                                              )
+                                            : Icon(
+                                                status.icon,
+                                                key: ValueKey(status),
+                                                size: 16,
+                                                color: iconColor,
+                                              ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -773,40 +871,30 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
                         ),
                       ),
                     ),
-                  ],
+                  ),
+                LayoutId(
+                  id: _LaunchPart.header,
+                  child: _header(context, status),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                LayoutId(
+                  id: _LaunchPart.footer,
                   child: SafeArea(
+                    top: false,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // 跳过按钮常驻树中,超时后淡入上移出现
-                        IgnorePointer(
-                          ignoring: !_showSkip || widget.exiting,
-                          child: AnimatedOpacity(
-                            opacity: _showSkip ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 400),
-                            curve: Curves.easeOut,
-                            child: AnimatedSlide(
-                              offset: _showSkip
-                                  ? Offset.zero
-                                  : const Offset(0, 0.4),
-                              duration: const Duration(milliseconds: 400),
-                              curve: Curves.easeOutCubic,
-                              child: TextButton(
-                                onPressed: widget.onSkip,
-                                child: Text(
-                                  context.l10n.common_skip,
-                                  style: TextStyle(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          children: [
+                            if (_verificationLayout ||
+                                _verificationHost.reloadPage != null)
+                              TextButton(
+                                onPressed: _verificationHost.reloadPage,
+                                child: Text(context.l10n.cf_retryVerify),
                               ),
-                            ),
-                          ),
+                            // 普通慢启动时淡入；需要人工验证时与网页在同一帧就位。
+                            _skipButton(context),
+                          ],
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -834,7 +922,57 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   }
 }
 
-/// 启动页底色，与原生启动屏一致；退场时匀速淡出露出下层首页。
+enum _LaunchPart { webView, logo, header, footer }
+
+/// 从首次布局就按人工验证时的标题和页脚给网页留位。启动标志与提示绘制在其上。
+class _PreheatLayout extends MultiChildLayoutDelegate {
+  _PreheatLayout(this.host, this.safePadding);
+
+  final CfStartupVerificationHost host;
+  final EdgeInsets safePadding;
+
+  @override
+  void performLayout(Size size) {
+    final fullWidth = BoxConstraints(
+      minWidth: size.width,
+      maxWidth: size.width,
+      maxHeight: size.height,
+    );
+    final footer = layoutChild(_LaunchPart.footer, fullWidth);
+    final footerTop = size.height - footer.height;
+    positionChild(_LaunchPart.footer, Offset(0, footerTop));
+
+    final header = layoutChild(_LaunchPart.header, fullWidth);
+    final headerTop = safePadding.top + 8;
+    final pageTop = headerTop + header.height + 12;
+    final viewport = layoutChild(
+      _LaunchPart.webView,
+      BoxConstraints.tight(
+        Size(
+          math.max(0, size.width - safePadding.horizontal - 24),
+          math.max(0, footerTop - 8 - pageTop),
+        ),
+      ),
+    );
+    positionChild(_LaunchPart.webView, Offset(safePadding.left + 12, pageTop));
+
+    var titleTop = headerTop;
+    if (hasChild(_LaunchPart.logo)) {
+      final logo = layoutChild(_LaunchPart.logo, BoxConstraints.loose(size));
+      final origin = size.center(Offset.zero) - logo.center(Offset.zero);
+      positionChild(_LaunchPart.logo, origin);
+      titleTop = origin.dy + logo.height + 24;
+    }
+    positionChild(_LaunchPart.header, Offset(0, titleTop));
+    host.layoutViewport(viewport, coveredTop: titleTop - headerTop);
+  }
+
+  @override
+  bool shouldRelayout(_PreheatLayout oldDelegate) =>
+      host != oldDelegate.host || safePadding != oldDelegate.safePadding;
+}
+
+/// 启动页底色，与原生启动屏一致；退场时随时间线淡出露出下层首页。
 class _LaunchBackdropPainter extends CustomPainter {
   _LaunchBackdropPainter({required this.exit, required this.background})
     : super(repaint: exit);
@@ -844,7 +982,7 @@ class _LaunchBackdropPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final alpha = _ExitTimeline.veil(exit.value);
+    final alpha = _ExitTimeline.veil.transform(exit.value);
     if (alpha <= 0) return;
     canvas.drawRect(
       Offset.zero & size,
@@ -859,9 +997,15 @@ class _LaunchBackdropPainter extends CustomPainter {
 
 class _PreheatFailed extends StatelessWidget {
   final VoidCallback onRetry;
+  final VoidCallback onManualCfVerify;
   final Object? error;
 
-  const _PreheatFailed({super.key, required this.onRetry, this.error});
+  const _PreheatFailed({
+    super.key,
+    required this.onRetry,
+    required this.onManualCfVerify,
+    this.error,
+  });
 
   void _openAbout(BuildContext context) {
     Navigator.of(context)
@@ -941,6 +1085,7 @@ class _PreheatFailed extends StatelessWidget {
             ErrorView(
               error: error ?? TimeoutException(S.current.preheat_userSkipped),
               onRetry: onRetry,
+              onManualCfVerify: onManualCfVerify,
               retryLabel: context.l10n.preheat_retryConnection,
             ),
             // 退出登录是破坏性的兜底出口，降级为底部低强调文字按钮

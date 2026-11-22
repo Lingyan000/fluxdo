@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:positioned_sliver_list/positioned_sliver_list.dart';
 
@@ -26,8 +27,44 @@ import 'topic_more_topics.dart';
 import 'topic_status_notices.dart';
 import 'pending_posts_section.dart';
 
+/// 将下一条主回复操作交给页面浮层，列表负责判断可用性与执行定位。
+class NestedPostListController extends ChangeNotifier
+    implements ValueListenable<VoidCallback?> {
+  VoidCallback? _nextRoot;
+  bool _scheduled = false;
+  bool _disposed = false;
+
+  @override
+  VoidCallback? get value => _nextRoot;
+
+  void _update(VoidCallback? nextRoot) {
+    if (_disposed || _nextRoot == nextRoot) return;
+    _nextRoot = nextRoot;
+    if (_scheduled) return;
+    _scheduled = true;
+    // 列表重建、卸载也会改变操作可用性，帧结束后再通知同层浮动按钮。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _detach(VoidCallback nextRoot) {
+    if (_nextRoot == nextRoot) _update(null);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _nextRoot = null;
+    super.dispose();
+  }
+}
+
 /// 嵌套视图帖子列表 — 在现有 TopicDetailPage 内替换平铺帖子流
 class NestedPostList extends ConsumerStatefulWidget {
+  final NestedPostListController? controller;
   final NestedTopicState nestedState;
   final NestedTopicParams params;
   final TopicDetail detail;
@@ -74,6 +111,7 @@ class NestedPostList extends ConsumerStatefulWidget {
   final ValueChanged<int>? onViewportPostChanged;
   const NestedPostList({
     super.key,
+    this.controller,
     required this.nestedState,
     required this.params,
     required this.detail,
@@ -131,7 +169,6 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   int _operation = 0;
   int? _handledFullTarget;
   NestedReadingPosition? _lastPosition;
-  final ValueNotifier<int?> _currentRoot = ValueNotifier(null);
 
   @override
   void initState() {
@@ -178,6 +215,9 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   @override
   void didUpdateWidget(covariant NestedPostList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller?._detach(_nextRoot);
+    }
     if (widget.fullTargetPostNumber == null) _handledFullTarget = null;
     if (widget.nestedState.sort != oldWidget.nestedState.sort) {
       _session.branches.clear();
@@ -388,6 +428,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
   void _onSample(Set<int> visible, NestedReadingPosition? position) {
     if (!widget.active) {
+      widget.controller?._update(null);
       widget.onVisiblePostsChanged?.call({});
       return;
     }
@@ -401,9 +442,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       sort: widget.nestedState.sort,
       expanded: Map.of(_expansionState),
     );
+    final previousRoot = _lastPosition?.rootPostNumber;
     _lastPosition = saved;
     _anchorReadingPost(saved.postNumber);
-    _currentRoot.value = saved.rootPostNumber;
+    if (previousRoot != saved.rootPostNumber) _updateNextRoot();
     widget.onViewportPostChanged?.call(saved.postNumber);
     _session
       ..position = saved
@@ -444,7 +486,26 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     await ref.read(nestedTopicProvider(widget.params).notifier).loadNewRoots();
   }
 
+  void _updateNextRoot() {
+    final ns = widget.nestedState;
+    final current = _lastPosition?.rootPostNumber;
+    final roots = BlockedUserFilter.visibleNestedNodes(
+      ns.roots,
+      widget.blockedUsernames,
+    );
+    final index = roots.indexWhere((node) => node.post.postNumber == current);
+    final hasNext =
+        widget.active &&
+        !ns.contextMode &&
+        roots.isNotEmpty &&
+        current != null &&
+        (current == 1 || index >= 0) &&
+        (index + 1 < roots.length || ns.hasMoreRoots);
+    widget.controller?._update(hasNext ? _nextRoot : null);
+  }
+
   Future<void> _nextRoot() async {
+    if (!mounted) return;
     final current = _lastPosition?.rootPostNumber;
     final roots = BlockedUserFilter.visibleNestedNodes(
       widget.nestedState.roots,
@@ -470,12 +531,12 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   @override
   void dispose() {
     ++_operation;
+    widget.controller?._detach(_nextRoot);
     _cancelReadingAnchor();
     _listController.itemPositions.removeListener(_viewport.scheduleSample);
     _listController.dispose();
     widget.scrollController.removeListener(_onScroll);
     _viewport.dispose();
-    _currentRoot.dispose();
     super.dispose();
   }
 
@@ -490,6 +551,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
 
   @override
   Widget build(BuildContext context) {
+    _updateNextRoot();
     final maxDepth = _getMaxDepth(context);
 
     // 各帖正文通过独立几何锚点上报可见性。
@@ -779,31 +841,6 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
                 right: 0,
                 child: LinearProgressIndicator(),
               ),
-            PositionedDirectional(
-              end: 16,
-              bottom: 100 + MediaQuery.paddingOf(context).bottom,
-              child: !contextMode && roots.isNotEmpty
-                  ? ValueListenableBuilder<int?>(
-                      valueListenable: _currentRoot,
-                      builder: (context, current, _) {
-                        final index = roots.indexWhere(
-                          (node) => node.post.postNumber == current,
-                        );
-                        final hasNext =
-                            current != null &&
-                            (current == 1 || index >= 0) &&
-                            (index + 1 < roots.length || ns.hasMoreRoots);
-                        if (!hasNext) return const SizedBox.shrink();
-                        return FloatingActionButton(
-                          heroTag: null,
-                          tooltip: context.l10n.nested_nextRoot,
-                          onPressed: _nextRoot,
-                          child: const Icon(Icons.skip_next_rounded),
-                        );
-                      },
-                    )
-                  : const SizedBox.shrink(),
-            ),
           ],
         ),
       ),

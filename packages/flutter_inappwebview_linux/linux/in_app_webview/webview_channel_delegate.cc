@@ -2004,6 +2004,7 @@ void WebViewChannelDelegate::onNavigationResponse(
     const std::optional<std::string>& mimeType,
     int64_t contentLength,
     int statusCode,
+    const std::optional<std::map<std::string, std::string>>& headers,
     bool isForMainFrame,
     bool canShowMimeType,
     std::unique_ptr<NavigationResponseCallback> callback) const {
@@ -2020,7 +2021,7 @@ void WebViewChannelDelegate::onNavigationResponse(
       {"mimeType", mimeType ? make_fl_value(*mimeType) : make_fl_value()},
       {"expectedContentLength", make_fl_value(contentLength)},
       {"statusCode", make_fl_value(static_cast<int64_t>(statusCode))},
-      {"headers", make_fl_value()}  // Headers not easily available from WebKit response
+      {"headers", make_fl_value(headers)}
   });
 
   // Build the main arguments map (matching platform interface format)

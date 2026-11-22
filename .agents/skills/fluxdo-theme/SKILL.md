@@ -62,7 +62,7 @@ AppBar、底部导航与侧栏的背景由 `buildAppTheme` 统一处理。AppBar
    - `surfaces`：`filled` / `outlined` / `flat` / `raised`。`raised` 是容器比页面底更亮、
      带一圈细线，靠明度差分层：浅色页面底不能用纯白，容器色可用
      `light.roles.surfaceContainerLowest` 指定（参考 `cloud.json`）。
-   - `controls`：`accent` / `ink`（墨色控件，强调色只留给链接、选中与焦点）
+   - `controls`：`accent` / `ink`。开启的开关轨道和表示已开启的图标在 `accent` 模式下使用 `primary`，在 `ink` 模式下使用 `onSurface`（浅色下近黑，深色下近白）。链接使用 `primary`。
    - `navIndicator`：`pill` / `bar` / `tint`
    - `inputs`：`filled` / `outlined` / `underline`
    - `shadows`：是否要阴影

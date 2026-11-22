@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/ai_l10n.dart';
 import '../models/ai_chat_message.dart';
 import '../providers/ai_provider_providers.dart';
-import '../services/ai_chat_storage_service.dart';
 import '../utils/dialog_utils.dart';
 
 /// 打开会话回调类型
@@ -44,8 +43,6 @@ class _AiChatHistoryPageState extends ConsumerState<AiChatHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: Text(AiL10n.current.sessionHistory),
@@ -59,13 +56,19 @@ class _AiChatHistoryPageState extends ConsumerState<AiChatHistoryPage> {
         ],
       ),
       body: _groups.isEmpty
-          ? _buildEmpty(theme)
+          ? AppEmptyState(
+              icon: const Icon(Symbols.chat_bubble_rounded),
+              title: AiL10n.current.noSessionHistory,
+            )
           : ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: _groups.length + 1,
               itemBuilder: (context, index) {
                 if (index == 0) {
-                  return _MaxSessionsRow(ref: ref);
+                  return _MaxSessionsRow(
+                    currentValue: ref.read(aiChatStorageServiceProvider).getMaxSessions(),
+                    onSelected: _setMaxSessions,
+                  );
                 }
                 final group = _groups[index - 1];
                 return _TopicGroupTile(
@@ -80,26 +83,9 @@ class _AiChatHistoryPageState extends ConsumerState<AiChatHistoryPage> {
     );
   }
 
-  Widget _buildEmpty(ThemeData theme) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Symbols.chat_bubble_rounded,
-            size: 48,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            AiL10n.current.noSessionHistory,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _setMaxSessions(int value) async {
+    await ref.read(aiChatStorageServiceProvider).setMaxSessions(value);
+    if (mounted) setState(_reload);
   }
 
   Future<void> _deleteSession(int topicId, String sessionId) async {
@@ -277,21 +263,20 @@ class _TopicGroupTile extends StatelessWidget {
 }
 
 class _MaxSessionsRow extends StatelessWidget {
-  final WidgetRef ref;
-  const _MaxSessionsRow({required this.ref});
+  final int currentValue;
+  final ValueChanged<int> onSelected;
+  const _MaxSessionsRow({required this.currentValue, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final storageService = ref.watch(aiChatStorageServiceProvider);
-    final maxSessions = storageService.getMaxSessions();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: InkWell(
         customBorder: RoundedSuperellipseBorder(
             borderRadius: context.shapes.borderRadius(12)),
-        onTap: () => _showPicker(context, storageService, maxSessions),
+        onTap: () => _showPicker(context),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: ShapeDecoration(
@@ -331,7 +316,7 @@ class _MaxSessionsRow extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  '$maxSessions',
+                  '$currentValue',
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(fontWeight: FontWeight.w500),
                 ),
@@ -343,33 +328,27 @@ class _MaxSessionsRow extends StatelessWidget {
     );
   }
 
-  void _showPicker(
-    BuildContext context,
-    AiChatStorageService storageService,
-    int currentValue,
-  ) {
-    final options = [10, 20, 30, 50, 100, 200];
-    showAppBottomSheet(
+  Future<void> _showPicker(BuildContext context) async {
+    const options = [10, 20, 30, 50, 100, 200];
+    final selected = await showAppBottomSheet<int>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => AppSheetScaffold(
+        contentPadding: EdgeInsets.zero,
+        child: ListView(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
           children: options
               .map((v) => ListTile(
                     title: Text('$v'),
                     trailing: v == currentValue
                         ? const Icon(Symbols.check_rounded)
                         : null,
-                    onTap: () {
-                      storageService.setMaxSessions(v);
-                      Navigator.pop(ctx);
-                      (context as Element).markNeedsBuild();
-                    },
+                    onTap: () => Navigator.pop(ctx, v),
                   ))
               .toList(),
         ),
       ),
     );
+    if (selected != null && context.mounted) onSelected(selected);
   }
 }
