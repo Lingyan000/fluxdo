@@ -1,4 +1,5 @@
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxdo_render/fluxdo_render.dart';
 import 'package:m3e_ui/m3e_ui.dart';
@@ -148,7 +149,7 @@ class _InteractiveQuoteCardState extends State<InteractiveQuoteCard> {
                         button: true,
                         child: InkWell(
                           onTap: retry,
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: context.shapes.borderRadius(4),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 4,
@@ -208,7 +209,7 @@ class _InteractiveQuoteCardState extends State<InteractiveQuoteCard> {
                     message: toggleLabel,
                     child: InkWell(
                       onTap: toggle,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: context.shapes.borderRadius(6),
                       child: SizedBox(
                         width: 26,
                         height: 22,
