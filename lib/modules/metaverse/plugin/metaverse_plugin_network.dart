@@ -8,6 +8,7 @@ import 'package:dio/io.dart';
 import 'package:mime/mime.dart';
 
 import '../../../constants.dart';
+import '../../../services/plugin_image_cache.dart';
 import '../../../services/network/core/net_core_http_adapter.dart';
 import '../../../services/network/android_route_snapshot.dart';
 import '../../../services/network_logger.dart';
@@ -64,7 +65,7 @@ class MetaversePluginNetwork {
 
   static const maxRequestBody = 256 * 1024;
   static const maxResponseBody = 1024 * 1024;
-  static const maxImageBytes = 16 * 1024 * 1024;
+  static const maxImageBytes = PluginImageCache.maxImageBytes;
 
   static BaseOptions _options() => BaseOptions(
     connectTimeout: const Duration(seconds: 15),
@@ -105,29 +106,36 @@ class MetaversePluginNetwork {
   /// 图片匿名下载，每一跳重新检查权限、宿主保留域名与公网地址。
   Future<Uint8List> loadImage(MetaversePluginManifest manifest, Uri uri, {
     bool forumAvatar = false, bool allowPublicImages = true, void Function()? checkActive,
+    PluginImageCache? cache, String? cacheSource, int? account, Object? runtime, bool reload = false,
   }) async {
-    final response = await downloadResource(
-      uri,
-      maxBytes: maxImageBytes,
-      imageManifest: manifest,
-      forumAvatar: forumAvatar,
-      allowPublicImages: allowPublicImages,
-      checkActive: checkActive,
-    );
-    final contentType = (response.headers['content-type'] ?? '')
-        .split(';')
-        .first
-        .trim()
-        .toLowerCase();
-    // 图床可能把真实 JPEG 标成 jpg 或通用二进制，优先识别实际文件头。
-    final imageType = SvgUtils.isSvgBytes(response.bytes)
-        ? 'image/svg+xml'
-        : lookupMimeType('', headerBytes: response.bytes) ?? contentType;
-    if (response.status != 200 || !imageType.startsWith('image/')) {
-      throw const MetaversePluginCallException('图片不可用');
+    final source = _imageUri(uri).removeFragment();
+    final allowExternal = manifest.publicImages && allowPublicImages;
+    checkActive?.call();
+    _validateTarget(source, allowExternal || forumAvatar ? null : manifest.networkHosts,
+      image: true, reservedHosts: forumAvatar ? const [] : manifest.reservedHosts);
+
+    Future<PluginImageResponse> download() async {
+      final response = await downloadResource(source, maxBytes: maxImageBytes, imageManifest: manifest,
+        forumAvatar: forumAvatar, allowPublicImages: allowPublicImages, checkActive: checkActive);
+      final contentType = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
+      // 部分图床标错 MIME，先认文件头；只能靠声明识别的内容仍可尝试显示，但不缓存。
+      final detected = SvgUtils.isSvgBytes(response.bytes) ? 'image/svg+xml' : lookupMimeType('', headerBytes: response.bytes);
+      if (response.status != 200 || response.bytes.isEmpty || !(detected ?? contentType).startsWith('image/')) {
+        throw const MetaversePluginCallException('图片不可用');
+      }
+      return (bytes: response.bytes, cacheHeaders: !response.redirected && detected != null
+        ? response.headers : null);
     }
-    return response.bytes;
+
+    if (cache == null || cacheSource == null) return (await download()).bytes;
+    final bytes = await cache.load(pluginId: manifest.id,
+      variant: jsonEncode([cacheSource, account, source.toString(), manifest.homepage, allowExternal, forumAvatar]),
+      runtime: runtime ?? this, reusable: !source.hasQuery, reload: reload, download: download, checkActive: checkActive);
+    checkActive?.call();
+    return bytes;
   }
+
+  static Uri _imageUri(Uri uri) => uri.scheme == 'http' ? uri.replace(scheme: 'https') : uri;
 
   /// 执行插件脚本发起的请求，返回交给脚本的响应对象。
   ///
@@ -317,7 +325,7 @@ class MetaversePluginNetwork {
   }
 
   /// 图片、市场索引与发布附件匿名下载，每一次重定向重新检查网络目标。
-  Future<({int status, Map<String, String> headers, Uint8List bytes})> downloadResource(
+  Future<({int status, Map<String, String> headers, Uint8List bytes, bool redirected})> downloadResource(
     Uri uri, {
     required int maxBytes,
     String? etag,
@@ -331,15 +339,13 @@ class MetaversePluginNetwork {
     for (var hop = 0; hop < 6; hop++) {
       checkActive?.call();
       // 与 HTTPS 网页的图片升级行为一致，每次连接仍要求 TLS 校验。
-      if (imageManifest != null && current.scheme == 'http') {
-        current = current.replace(scheme: 'https');
-      }
+      if (imageManifest != null) current = _imageUri(current);
       final target = await _checkTarget(
         current,
         imageManifest != null && !(forumAvatar && hop == 0) && !(imageManifest.publicImages && allowPublicImages)
             ? imageManifest.networkHosts : null,
         image: imageManifest != null,
-        reservedHosts: forumAvatar && current == uri ? const [] : imageManifest?.reservedHosts ?? const [],
+        reservedHosts: forumAvatar && hop == 0 ? const [] : imageManifest?.reservedHosts ?? const [],
       );
       final agent = await AppConstants.getUserAgent();
       checkActive?.call();
@@ -368,7 +374,7 @@ class MetaversePluginNetwork {
         current = current.resolve(location);
         continue;
       }
-      return response;
+      return (status: response.status, headers: response.headers, bytes: response.bytes, redirected: hop != 0);
     }
     throw const MetaversePluginCallException('下载重定向次数过多');
   }
@@ -380,6 +386,14 @@ class MetaversePluginNetwork {
     bool image = false,
     List<String> reservedHosts = const [],
   }) async {
+    _validateTarget(uri, allowedHosts, image: image, reservedHosts: reservedHosts);
+    // 本次直连使用同一份解析快照；代理可以按自己的 DNS 与路由处理域名。
+    return _publicAddresses(uri.host, _lookup);
+  }
+
+  static void _validateTarget(Uri uri, List<String>? allowedHosts, {
+    required bool image, required List<String> reservedHosts,
+  }) {
     if (uri.scheme != 'https' ||
         MetaverseHostPattern.normalize(
               uri.host,
@@ -402,8 +416,6 @@ class MetaversePluginNetwork {
         '${uri.host} 不在清单 permissions.network 内',
       );
     }
-    // 本次直连使用同一份解析快照；代理可以按自己的 DNS 与路由处理域名。
-    return _publicAddresses(uri.host, _lookup);
   }
 
   static Future<_PluginTarget> _publicAddresses(

@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../services/storage/secret_store.dart';
+import '../../../services/plugin_image_cache.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_permission.dart';
 import 'metaverse_credential.dart';
@@ -122,6 +123,7 @@ class MetaversePluginStore {
     required this._rootDirectory,
     this.reservedHosts = const [],
     this.isolated = false,
+    this.imageCache,
   });
 
   static const indexKey = 'metaverse_plugins_v1';
@@ -130,6 +132,7 @@ class MetaversePluginStore {
 
   /// 开发会话不读取或写入正式安装索引，凭证由独立 SecretStore 提供。
   final bool isolated;
+  final PluginImageCache? imageCache;
   final SharedPreferences _preferences;
   final SecretStore _secretStore;
   final Future<Directory> Function() _rootDirectory;
@@ -340,6 +343,7 @@ class MetaversePluginStore {
   });
 
   Future<void> resetData(String id) => _operations.reset(id, () async {
+    await imageCache?.clear(id);
     final file = File(p.join((await _directory(id)).path, 'storage.json'));
     if (await file.exists()) await file.delete();
     await _writeStorage(id, {});
@@ -349,8 +353,8 @@ class MetaversePluginStore {
 
   Future<int> localBytes(String id) async {
     final directory = await _directory(id);
-    if (!await directory.exists()) return 0;
-    var bytes = 0;
+    var bytes = await imageCache?.size(id) ?? 0;
+    if (!await directory.exists()) return bytes;
     await for (final entity in directory.list(recursive: true, followLinks: false)) {
       if (entity is File) bytes += await entity.length();
     }
@@ -359,6 +363,7 @@ class MetaversePluginStore {
 
   /// 删除插件的全部本地文件。
   Future<void> deleteFiles(String id) => _operations.reset(id, () async {
+    await imageCache?.clear(id);
     final dir = await _directory(id);
     if (await dir.exists()) await dir.delete(recursive: true);
     _stagedCode.remove(id);

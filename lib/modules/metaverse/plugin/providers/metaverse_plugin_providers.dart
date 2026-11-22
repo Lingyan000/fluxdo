@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 import 'package:common_ui/common_ui.dart';
 import '../../host/metaverse_forum_adapter.dart';
 import '../../market/metaverse_update_store.dart';
@@ -8,6 +9,7 @@ import '../../host/metaverse_task_store.dart';
 import '../../host/metaverse_task_dispatcher.dart';
 import '../../../../services/background/background_notification_service.dart';
 import '../../../../services/local_notification_service.dart';
+import '../../../../services/plugin_image_cache.dart';
 import '../metaverse_forum_request.dart';
 import '../../../../pages/topic_detail_page/topic_detail_page.dart';
 import '../../../../pages/user_profile_page.dart';
@@ -65,6 +67,7 @@ final metaversePendingRestoreProvider = FutureProvider((ref) async =>
 
 final metaversePluginStoreProvider = Provider<MetaversePluginStore>((ref) {
   return MetaversePluginStore(
+    imageCache: PluginImageCache.shared,
     preferences: ref.watch(sharedPreferencesProvider),
     secretStore: ref.watch(secretStoreProvider),
     rootDirectory: () => ref.read(metaversePluginDirectoryProvider.future),
@@ -594,6 +597,7 @@ class MetaversePluginHosts with WidgetsBindingObserver {
 
   MetaversePluginHost newHost(InstalledMetaversePlugin plugin, {bool worker = false}) => MetaversePluginHost(
       manifest: plugin.manifest,
+      imageCacheSource: jsonEncode([plugin.source, plugin.publisherKey]),
       blockedPermissions: plugin.blockedPermissions,
       store: _ref.read(metaversePluginStoreProvider),
       codeLoader: plugin.codeRevision == null ? null : () => _ref.read(metaversePluginStoreProvider).readCodeRevision(plugin.id, plugin.codeRevision!),

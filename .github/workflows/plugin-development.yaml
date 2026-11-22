@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/services/plugin_image_cache.dart'
+      - 'lib/services/data_management/cache_size_service.dart'
       - 'lib/pages/image_viewer*.dart'
       - 'test/widgets/image_viewer*_test.dart'
       - 'lib/modules/cdk/**'
@@ -41,6 +43,8 @@ on:
     paths:
       - '.github/workflows/plugin-development.yaml'
       - 'lib/modules/metaverse/**'
+      - 'lib/services/plugin_image_cache.dart'
+      - 'lib/services/data_management/cache_size_service.dart'
       - 'lib/pages/image_viewer*.dart'
       - 'test/widgets/image_viewer*_test.dart'
       - 'lib/modules/cdk/**'
@@ -160,6 +164,7 @@ jobs:
           test/modules/metaverse/metaverse_capabilities_test.dart
           test/modules/metaverse/metaverse_event_stream_test.dart
           test/modules/metaverse/metaverse_plugin_contract_test.dart
+          test/modules/metaverse/metaverse_image_cache_test.dart
           test/modules/metaverse/metaverse_content_components_test.dart
           test/modules/metaverse/metaverse_page_components_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart

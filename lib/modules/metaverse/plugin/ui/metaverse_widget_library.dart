@@ -84,11 +84,12 @@ const _allowedCoreWidgets = {
 /// 图片由宿主按清单权限获取，脚本不能读取图片响应。
 LocalWidgetLibrary createMetaverseWidgetLibrary({
   required Future<Uint8List> Function(Uri) loadImage,
+  Future<Uint8List> Function(Uri)? reloadImage,
 }) {
   final core = createCoreWidgets().widgets;
   return LocalWidgetLibrary({
     for (final name in _allowedCoreWidgets) name: core[name]!,
-    ..._hostWidgets(loadImage),
+    ..._hostWidgets(loadImage, reloadImage),
   });
 }
 
@@ -244,8 +245,9 @@ Widget? _icon(BuildContext context, DataSource source, List<Object> key) {
 }
 
 Map<String, LocalWidgetBuilder> _hostWidgets(
-  Future<Uint8List> Function(Uri) loadImage,
-) => {
+  Future<Uint8List> Function(Uri) loadImage, [
+  Future<Uint8List> Function(Uri)? reloadImage,
+]) => {
   ..._pageWidgets(),
   'GridPage': _buildGridPage,
   'Statistics': _buildStatistics,
@@ -265,6 +267,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
   'Markdown': (context, source) => _PluginMarkdown(
     text: _text(source, ['text']),
     loadImage: loadImage,
+    reloadImage: reloadImage,
     onLink: source.handler(['onLink'], (trigger) => (String url) => trigger({'url': url})),
   ),
   'AdaptivePane': (context, source) {
@@ -315,7 +318,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     final count = source.v<int>(['count']) ?? 0;
     final avatar = Semantics(label: name, image: true, child: ClipOval(child: _PluginImage(
       url: source.v<String>(['url']) ?? '', width: size, height: size, fit: BoxFit.cover,
-      radius: BorderRadius.zero, load: loadImage, fallback: fallback)));
+      radius: BorderRadius.zero, load: loadImage, reload: reloadImage, fallback: fallback)));
     return count > 0 ? Badge.count(count: count, maxCount: 99, child: avatar) : avatar;
   },
   'RelativeTime': (context, source) => RelativeTimeText(
@@ -500,6 +503,7 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
         BoxFit.cover,
     radius: context.shapes.borderRadius(_number(source, ['radius']) ?? 0),
     load: loadImage,
+    reload: reloadImage,
   ),
 
   'ListItem': (context, source) {
@@ -829,6 +833,7 @@ class _PluginImage extends StatefulWidget {
     required this.fit,
     required this.radius,
     required this.load,
+    this.reload,
     this.fallback,
     this.preview = false,
   });
@@ -839,6 +844,7 @@ class _PluginImage extends StatefulWidget {
   final BoxFit fit;
   final BorderRadius radius;
   final Future<Uint8List> Function(Uri) load;
+  final Future<Uint8List> Function(Uri)? reload;
   @override
   State<_PluginImage> createState() => _PluginImageState();
 }
@@ -853,7 +859,7 @@ class _PluginImageState extends State<_PluginImage> {
     var request = _request;
     if (request == null) return;
     final uri = Uri.parse(widget.url);
-    final load = widget.load;
+    final reload = widget.reload ?? widget.load;
     _previewOpen = true;
     try {
       await ImageViewerPage.openWithLoader(
@@ -862,7 +868,7 @@ class _PluginImageState extends State<_PluginImage> {
           // 首次查看共享已经发出的请求，重试仍须经过原来的权限和网络出口。
           final initial = request;
           request = null;
-          return initial ?? load(uri);
+          return initial ?? reload(uri);
         },
       );
     } finally {
@@ -870,11 +876,11 @@ class _PluginImageState extends State<_PluginImage> {
     }
   }
 
-  void _update() {
+  void _update({bool retry = false}) {
     _svg = null;
     final uri = Uri.tryParse(widget.url);
     _request = uri != null && (uri.scheme == 'https' || uri.scheme == 'http')
-        ? widget.load(uri)
+        ? (retry ? widget.reload ?? widget.load : widget.load)(uri)
         : null;
   }
 
@@ -893,7 +899,7 @@ class _PluginImageState extends State<_PluginImage> {
   @override
   Widget build(BuildContext context) {
     final placeholder = widget.fallback ?? ImagePlaceholder(loading: _request != null);
-    final retry = widget.fallback ?? ImagePlaceholder(onRetry: () => setState(_update));
+    final retry = widget.fallback ?? ImagePlaceholder(onRetry: () => setState(() => _update(retry: true)));
     final image = ClipRRect(
       borderRadius: widget.radius,
       child: SizedBox(

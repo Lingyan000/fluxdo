@@ -5,6 +5,7 @@ import 'metaverse_component_contract.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
@@ -119,6 +120,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     this.idleTimeout = const Duration(seconds: 30),
     this._clock = DateTime.now,
     this.codeLoader,
+    this.imageCacheSource,
     this._blockedPermissions = const {},
   });
 
@@ -134,6 +136,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
   static const activationWindow = Duration(seconds: 10);
 
   final MetaversePluginManifest manifest;
+  /// 只有正式安装的来源可使用持久图片缓存；开发预览不能读写正式数据。
+  final String? imageCacheSource;
   Set<MetaversePluginPermission> _blockedPermissions;
   Set<MetaversePluginPermission> get blockedPermissions => _blockedPermissions;
 
@@ -451,20 +455,27 @@ class MetaversePluginHost implements MetaversePluginBridge {
       }
       _runtime = runtime;
       if (library == null) return;
+      final account = _accountAtStart;
+      Future<Uint8List> image(Uri uri, {bool reload = false}) {
+        final forumAvatar = _forumAvatars.contains(uri);
+        return PluginExecutionContext(pluginId: id, pluginVersion: manifest.version,
+          runtimeId: _runtimeId, emitter: 'framework').run(() => _network.loadImage(manifest, uri,
+            forumAvatar: forumAvatar,
+            allowPublicImages: !blockedPermissions.contains(MetaversePluginPermission.publicImages),
+            cache: _store.imageCache, cacheSource: imageCacheSource, account: account, runtime: runtime,
+            reload: reload, checkActive: () {
+              if (generation != _generation || account != _delegate.currentAccountId() ||
+                  (forumAvatar && !_forumAvatars.contains(uri))) {
+                throw const PluginOperationCancelled();
+              }
+            },
+          ));
+      }
       _widgets = Runtime()
         ..update(
           metaverseWidgetLibraryName,
           createMetaverseWidgetLibrary(
-            loadImage: (uri) => PluginExecutionContext(
-              pluginId: id, pluginVersion: manifest.version, runtimeId: _runtimeId,
-              emitter: 'framework',
-            ).run(() => _network.loadImage(manifest, uri,
-              forumAvatar: _forumAvatars.contains(uri),
-              allowPublicImages: !blockedPermissions.contains(MetaversePluginPermission.publicImages),
-              checkActive: () {
-                if (generation != _generation) throw const PluginOperationCancelled();
-              },
-            )),
+            loadImage: image, reloadImage: (uri) => image(uri, reload: true),
           ),
         )
         ..update(metaversePluginLibraryName, library);

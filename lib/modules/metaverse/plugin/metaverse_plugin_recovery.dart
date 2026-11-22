@@ -100,6 +100,7 @@ extension MetaversePluginRecovery on MetaversePluginStore {
         if (pending is! Map) return;
         // 凭证清理失败时保留准备记录，下一次启动仍必须先完成清理。
         if (_matchesPrepared(pending, installed) && pending['reset'] == true) {
+          await imageCache?.clear(installed.id);
           await _deleteToken(installed.id);
           await clearLegacyPluginRecords(_secretStore, installed.id);
         }

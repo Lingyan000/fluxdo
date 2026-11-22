@@ -148,6 +148,21 @@ void main() {
     expect(tester.widget<IconButton>(button).onPressed, isNull);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('点裂图重试走强制下载通道，普通展示仍可使用缓存', (tester) async {
+    var reads = 0, retries = 0;
+    runtime.update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(
+      loadImage: (_) async { reads++; throw StateError('unavailable'); },
+      reloadImage: (_) async { retries++; return imageBytes; },
+    ));
+    await show(tester, 'Image(url:"https://images.example.org/cover.png",width:180,height:140)');
+    await tester.runAsync(() => precacheImage(ResizeImage(MemoryImage(imageBytes),
+      width: 1024, height: 1024, policy: ResizeImagePolicy.fit), tester.element(find.byType(RemoteWidget))));
+    await tester.tap(find.byIcon(Symbols.broken_image_rounded));
+    await tester.pumpAndSettle();
+    expect([reads, retries], [1, 1]);
+    expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+  });
+
   testWidgets('统计响应数据更新，在小屏大字下自动换行', (tester) async {
     tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;

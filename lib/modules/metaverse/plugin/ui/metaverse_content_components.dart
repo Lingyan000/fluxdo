@@ -143,10 +143,12 @@ class _PluginMarkdown extends StatefulWidget {
   const _PluginMarkdown({
     required this.text,
     required this.loadImage,
+    this.reloadImage,
     this.onLink,
   });
   final String text;
   final Future<Uint8List> Function(Uri) loadImage;
+  final Future<Uint8List> Function(Uri)? reloadImage;
   final ValueChanged<String>? onLink;
   @override
   State<_PluginMarkdown> createState() => _PluginMarkdownState();
@@ -227,6 +229,7 @@ class _PluginMarkdownState extends State<_PluginMarkdown> {
         fit: BoxFit.contain,
         radius: context.shapes.borderRadius(12),
         load: widget.loadImage,
+        reload: widget.reloadImage,
         preview: true,
       ),
     ),

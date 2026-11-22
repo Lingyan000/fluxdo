@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../discourse_cache_manager.dart';
+import '../plugin_image_cache.dart';
 
 /// 图片缓存分类(Telegram Storage Usage 式明细的口径)。
 ///
@@ -34,7 +35,7 @@ class CacheSizeService {
   /// 仍占磁盘,不算进来会出现"明明占几百 MB 却显示无缓存"。
   static Future<int> getImageCacheSize() async {
     final tempDir = await getTemporaryDirectory();
-    int totalSize = 0;
+    int totalSize = await PluginImageCache.shared.size();
     for (final key in _cacheKeys) {
       totalSize += await _getDirectorySize(Directory('${tempDir.path}/$key'));
     }
@@ -80,7 +81,8 @@ class CacheSizeService {
         '$t/$blob/${BlobImageCache.stickerOriginalBucket}',
         '$t/$blob/${BlobImageCache.stickerThumbBucket}',
       ]),
-      dirsSize(['$t/$blob/${BlobImageCache.externalBucket}']),
+      Future.wait([dirsSize(['$t/$blob/${BlobImageCache.externalBucket}']), PluginImageCache.shared.size()])
+          .then((sizes) => sizes[0] + sizes[1]),
       otherSize(),
     ]);
     return {
@@ -117,6 +119,7 @@ class CacheSizeService {
         await BlobImageCache.clearBucket(BlobImageCache.stickerThumbBucket);
       case ImageCacheCategory.external:
         await BlobImageCache.clearBucket(BlobImageCache.externalBucket);
+        await PluginImageCache.shared.clear();
       case ImageCacheCategory.other:
         for (final key in kLegacyImageCacheKeys) {
           await deleteDir(key);
@@ -172,6 +175,7 @@ class CacheSizeService {
   /// 迁移遗留的 `*.trash` 待删目录一并删(用户主动清缓存 = 立即释放,
   /// 不等后台清扫)。
   static Future<void> deleteImageCacheDirs() async {
+    await PluginImageCache.shared.clear();
     final tempDir = await getTemporaryDirectory();
     for (final key in _cacheKeys) {
       final dir = Directory('${tempDir.path}/$key');
