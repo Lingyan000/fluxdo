@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const script=readFileSync(new URL('../../fixtures/metaverse/ld-store/main.js',import.meta.url),'utf8');
+const storefront=JSON.parse(readFileSync(new URL('../../fixtures/metaverse/ld-store-public.json',import.meta.url),'utf8'));
 const campaign={id:'c1',name:'测试券',discountType:'fixed_amount',fixedAmount:2,minSpend:5,scopeType:'product',productId:'p1',sellerUsername:'seller',claimable:true};
 function setup({authorized=true,claims=null,consent=true,respond=()=>({}),timers=false,streams=false}={}) {
   const handlers=new Map(),calls=[],nav=[],confirmations=[];
@@ -203,14 +204,14 @@ test('筛选弹层取消保留原条件，确认后才刷新源页面',async()=>
  const next=await t.page('filters',{source:p.ctx.surface});await t.fire(next,'input',{field:'min',value:'5'});await t.fire(next,'input',{field:'max',value:'3'});
  await t.fire(next,'applyFilters');assert.equal(t.nav.length,0);assert.match(next.data.filterError,/有效/);
  await t.fire(next,'input',{field:'max',value:'8'});await t.fire(next,'applyFilters');assert.equal(t.nav.at(-1).dismiss,true);
- await t.fire(p,'page.resume');assert.equal(t.calls.at(-1).url.searchParams.get('priceMin'),'5');assert.equal(t.calls.at(-1).url.searchParams.get('priceMax'),'8');
+ await t.fire(p,'page.resume');const query=t.calls.filter(request=>request.url.pathname.endsWith('/products')).at(-1).url.searchParams;assert.equal(query.get('priceMin'),'5');assert.equal(query.get('priceMax'),'8');
 });
 test('搜索防抖合并请求，显式提交和隐藏不遗留重复定时器',async()=>{
  const t=setup({timers:true,respond:r=>r.url.pathname.endsWith('/categories')?{categories:[]}:{products:[],pagination:{}}});
  const p=await t.page('market');await t.fire(p,'input',{field:'search',value:'a'});await t.fire(p,'input',{field:'search',value:'ab'});
  assert.equal(t.pendingTimers.size,1);await t.fire(p,'apply');assert.equal(t.pendingTimers.size,0);assert.equal(t.calls.at(-1).url.searchParams.get('search'),'ab');
  await t.fire(p,'input',{field:'search',value:'abc'});await t.fire(p,'page.hide');assert.equal(t.pendingTimers.size,0);
- await t.fire(p,'page.resume');assert.equal(t.calls.at(-1).url.searchParams.get('search'),'abc');
+ await t.fire(p,'page.resume');assert.equal(t.calls.filter(request=>request.url.pathname.endsWith('/products')).at(-1).url.searchParams.get('search'),'abc');
 });
 test('订单明细包括优惠和时间线，交付内容默认隐藏且离开后收起',async()=>{
  const t=setup({respond:()=>({order:{order_no:'O1',status:'delivered',quantity:2,amount:8,product_subtotal:10,original_price:12,
@@ -414,7 +415,8 @@ test('恢复已有会话从凭证声明取得头像，商城与我的士多共�
  assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/auth/verify')).length,1);
  await t.fire(a,'signOut');assert.equal(p.data.authorized,false);assert.equal(p.data.accountAvatar,'');
  const count=t.calls.filter(r=>r.url.pathname.endsWith('/products')).length;
- await t.fire(p,'page.resume');assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/products')).length,count);
+ await t.fire(p,'page.resume');await t.fire(p,'page.resume');
+ const requests=t.calls.filter(r=>r.url.pathname.endsWith('/products'));assert.equal(requests.length,count+1);assert.equal(requests.at(-1).credential,undefined);
 });
 test('游客商城不请求头像，仍可点击进入我的士多',async()=>{
  const t=setup({authorized:false,respond:()=>({products:[],pagination:{},categories:[]})});
@@ -468,4 +470,104 @@ test('商品没有图片或已下架时订单仍可用，重复订单不反复�
  const t=setup({respond:r=>r.url.pathname.includes('/products/')?{failure:404}:{orders:[{orderNo:'O1',productId:'p1',status:'expired'}],pagination:{}}});
  const p=await t.page('orders');await flush();assert.equal(p.data.rows[0].image,'');assert.equal(p.data.rows[0].imageLoading,false);assert.equal(p.data.error,'');
  await t.fire(p,'ordersRefresh');await flush();assert.equal(t.calls.filter(r=>r.url.pathname.includes('/products/')).length,1);
+});
+test('按官网登录状态查询分类与商品，默认推荐与显式价格排序互斥',async()=>{
+  const slate='6770186e-0eb7-48cb-8296-af6ef9db812b';const shop=setup({respond:request=>request.url.pathname.endsWith('/categories') ? {categories:[{id:2,name:'公益站'}]} : {products:[{...storefront.product,pin_type:'category',pin_is_paid:1,is_pinned:1,duoPromotion:{kind:'paid'}}],pagination:{hasMore:false},rankingContext:{slateId:slate}}});
+  shop.api.crypto.uuid=async()=>'656e7fb5-a452-4825-a014-244374d55e8c';
+  const market=await shop.page('market');
+  for(const request of shop.calls.filter(request=>/\/(categories|products)$/.test(request.url.pathname)))assert.equal(request.credential,'account');
+  const query=()=>shop.calls.filter(request=>request.url.pathname.endsWith('/products')).at(-1).url.searchParams;
+  assert.equal(query().get('ranking'),'auto');assert.equal(query().has('sortBy'),false);
+  const row=market.data.rows[0];assert.equal(row.image,storefront.product.image_url);assert.equal(row.sellerAvatar,'https://cdn.example/seller.png');assert.equal(row.value,'1.00');
+  assert.equal(row.listingNote,'广告 · 士多优选');assert.ok(query().get('rotationId'));assert.equal(query().has('previousSlateId'),false);
+  await shop.fire(market,'refresh');assert.equal(query().get('previousSlateId'),slate);
+  await shop.fire(market,'select',{sort:'final_price',direction:'ASC',label:'低价'});assert.equal(query().get('sortBy'),'final_price');assert.equal(query().has('ranking'),false);
+  assert.equal(query().has('previousSlateId'),false);assert.equal(query().has('rotationId'),false);
+});
+test('公开列表 401 仅匿名重试一次，私人收藏不做匿名回退',async()=>{
+  const shop=setup({respond:request=>request.credential ? {failure:401} : {categories:[],products:[storefront.product],pagination:{}}});
+  const market=await shop.page('market');assert.equal(market.data.rows.length,1);
+  assert.deepEqual(shop.calls.filter(request=>request.url.pathname.endsWith('/products')).map(request=>request.credential),['account',undefined]);
+  const favorites=await shop.page('favorites');assert.equal(favorites.data.needsSession,true);
+  assert.deepEqual(shop.calls.filter(request=>request.url.pathname.endsWith('/favorites')).map(request=>request.credential),['account']);
+});
+test('商家资料来自独立响应，即使没有公开商品仍显示头像、信任等级和真实的零',async()=>{
+  const shop=setup({authorized:false,respond:()=>({...storefront.merchant,products:[],stats:{...storefront.merchant.stats,onlineCount:0}})});
+  const merchant=await shop.page('merchant',{username:'seller'});
+  assert.equal(merchant.data.merchantTitle,'店主');assert.equal(merchant.data.merchantAvatar,'https://cdn.example/seller.png');assert.equal(merchant.data.merchantMeta,'@seller · TL3');
+  assert.deepEqual(Array.from(merchant.data.merchantStats,stat=>stat.value),['0','1','269']);assert.equal(merchant.data.more,false);
+});
+test('评论使用嵌套作者资料、购买标识、评分摘要及毫秒时间，回复按需分页',async()=>{
+  const sample=storefront.comments,comment={...sample.comments[0],nickname:'旧名称',avatar_url:null,reply_count:2};
+  const shop=setup({authorized:false,respond:request=>request.url.pathname.endsWith('/replies') ? {replies:[{id:request.url.searchParams.get('page'),user:{username:'seller',avatar_template:'/user_avatar/linux.do/seller/{size}/1.png'},is_seller:true,content:'回复',created_at:'1794155801'}],pagination:{hasMore:request.url.searchParams.get('page')==='1'}} : request.url.pathname.endsWith('/comments') ? {...sample,comments:[comment]} : {product:storefront.product}});
+  const product=await shop.page('product',{id:storefront.product.id});await flush();const row=product.data.comments[0];
+  assert.equal(row.author,'买家');assert.equal(row.handle,'@buyer');assert.equal(row.avatar,'https://cdn.example/buyer.png');assert.equal(row.badge,'已购');assert.equal(row.rating,'4 / 5');assert.equal(row.time,new Date(1794155801631).toISOString());
+  assert.equal(product.data.commentStats[0].value,'4.0 / 5');assert.equal(product.data.commentStats[2].value,'4');assert.equal(shop.calls.some(request=>request.url.pathname.endsWith('/replies')),false);
+  await shop.fire(product,'commentReplies',{id:row.id});assert.equal(row.repliesMore,true);
+  assert.match(decodeURIComponent(row.replies[0].avatar),/\/128\/1.png/);assert.equal(row.replies[0].time,new Date(1794155801000).toISOString());
+  await shop.fire(product,'commentReplies',{id:row.id,more:true});assert.equal(row.replies[1].badge,'卖家');assert.equal(row.replies.length,2);assert.equal(row.repliesMore,false);
+});
+test('优惠券数量保留零，过期与已用但无订单的券不能跳到商品',async()=>{
+  const shop=setup({respond:request=>request.url.pathname.includes('/my-coupons') ? {items:[{claim_id:1,claim_status:'used',actual_discount_amount:0,campaign}],pagination:{totalPages:1}} : {...campaign,remaining_quantity:0,total_quantity:30,state:'expired',claimed:true,claim:{status:'available'}}});
+  const coupon=await shop.page('coupon',{token:'valid'});assert.equal(coupon.data.coupon.quantity,'0 / 30');assert.equal(coupon.data.coupon.action,'');await shop.fire(coupon,'couponUse');
+  const wallet=await shop.page('coupons');await shop.fire(wallet,'couponTab',{value:'used'});assert.equal(wallet.data.rows[0].actualDiscount,'0.00 LDC');await shop.fire(wallet,'couponUse',{id:'1'});assert.equal(shop.nav.length,0);
+});
+test('确认订单读取下划线报价并解释不可用券，不让不可用券参与核价',async()=>{
+  const shop=setup({respond:request=>request.url.pathname.endsWith('/quote') ? {product_id:'p1',quantity:1,payable_amount:5,product_subtotal:5,coupons:[{claim_id:'X',eligible:false,reason:'尚未达到最低消费',campaign:{name:'满减券'}}]} : {product:{id:'p1',price:5,stock:2}}});
+  const review=await shop.page('review',{id:'p1'});assert.equal(review.data.quoteReady,true);assert.equal(review.data.unavailableCoupons[0].reason,'尚未达到最低消费');await shop.fire(review,'quoteCoupon',{id:'X'});assert.equal(review.data.noCoupon,true);assert.equal(review.data.payable,'5.00 LDC');
+});
+test('售后保留卖家回复并按实际时间排序；失效会话不能再看到旧的处理记录',async()=>{
+  const shop=setup({respond:()=>({...eligible,eligibility:{canApply:false,message:'已处理'},refund:{order_no:'O1',status:'rejected',seller_response:'请核对交付记录',reason_code:'not_as_described',refund_amount:'7',events:[{action:'rejected',actor_type:'seller',actor_name:'seller',created_at:'1794155801'},{action:'requested',actor_type:'buyer',created_at:1794145801000}]}})});
+  const refund=await shop.page('refund',{no:'O1'});assert.equal(refund.data.refundDetails.find(row=>row.label==='卖家说明').value,'请核对交付记录');assert.match(refund.data.events[0].time,/卖家 · @seller/);assert.equal(refund.data.events[0].title,'卖家拒绝申请');
+  shop.setAuthorized(false);await shop.fire(refund,'buyerRefresh');assert.equal(refund.data.events.length,0);assert.equal(refund.data.refundDetails.length,0);assert.equal(refund.data.hasGuide,false);
+});
+test('账户直接使用待办中的订单，消费明细只在用户展开时读，退出后清空',async()=>{
+  const shop=setup({respond:request=>request.url.pathname.endsWith('/attention') ? {recent_orders:[{order_no:'O1',status:'paid',product_name:'测试商品',amount:0}]} : request.url.pathname.endsWith('/dashboard') ? {overview:{total_purchase_orders:2,total_spent:'10'},spending_distribution:{categories:[{category_name:'工具',amount:10}],totals:{amount:10}}} : request.url.pathname.endsWith('/auth/verify') ? {authenticated:true,user:{id:42,trust_level:0}} : {}});
+  const account=await shop.page('account');assert.equal(account.data.accountMeta,'@tester · TL0');assert.equal(account.data.recentOrders[0].no,'O1');assert.match(account.data.recentOrders[0].subtitle,/0.00 LDC/);
+  assert.equal(shop.calls.some(request=>request.url.pathname.endsWith('/dashboard')),false);await shop.fire(account,'spending');assert.equal(account.data.spendingRows[0].value,'10.00 LDC · 100%');await shop.fire(account,'signOut');assert.equal(account.data.spendingRows.length,0);assert.equal(account.data.hasRecentOrders,false);
+});
+test('收藏和已隐藏商品分页搜索隔离，切换后忽略旧页，恢复仅限用户选中的隐藏记录',async()=>{
+  let restored=false;const shop=setup({respond:request=>{if(request.method==='DELETE'){restored=true;return null;}return {products:request.url.pathname.endsWith('/blocked-products') && !restored ? [{...storefront.product,status:'offline_manual'}] : [],pagination:{hasMore:false}};}});
+  const favorites=await shop.page('favorites');await shop.fire(favorites,'favoriteSearch',{value:'收藏关键词'});await shop.fire(favorites,'collectionTab',{id:'blocked'});
+  const row=favorites.data.rows[0];assert.equal(row.hiddenItem,true);assert.equal(row.availability,'已下架');assert.equal(favorites.data.search,'');assert.equal(favorites.data.rows[0].image,storefront.product.image_url);
+  await shop.fire(favorites,'restoreProduct',{id:'unknown'});assert.equal(restored,false);await shop.fire(favorites,'restoreProduct',{id:row.id});assert.equal(restored,true);assert.equal(favorites.data.rows.length,0);
+  await shop.fire(favorites,'collectionTab',{id:'favorites'});assert.equal(favorites.data.search,'收藏关键词');
+});
+test('消息的秒时间戳转为原生可读时间，页面类型和重试页码独立于已有行数',async()=>{
+  let fail=false;const shop=setup({respond:()=>fail ? {failure:503} : {messages:[{id:'m1',message_type:'buyer_order_delivered',created_at:1794155801}],summary:{totalUnread:0},pagination:{hasMore:false}}});
+  const messages=await shop.page('messages');assert.equal(messages.data.rows[0].type,'商品发货提醒');assert.equal(messages.data.rows[0].time,new Date(1794155801000).toISOString());fail=true;await shop.fire(messages,'messagesRefresh');fail=false;await shop.fire(messages,'messagesRetry');assert.equal(shop.calls.at(-1).url.searchParams.get('page'),'1');assert.equal(messages.data.error,'');
+});
+test('商品摘要没有封面不阻止订单补图；缺图摘要也不抹去已取得的封面',async()=>{
+  const product={id:'p1',name:'商品'},cover='/covers/商品.png';
+  const shop=setup({respond:r=>r.url.pathname.endsWith('/products/p1') ? {product:{...product,image_url:cover}} : r.url.pathname.endsWith('/orders') ? {orders:[{order_no:'O1',product_id:'p1',status:'expired'}],pagination:{}} : {products:[product],categories:[],pagination:{}}});
+  const market=await shop.page('market');assert.equal(market.data.rows[0].image,'');
+  const orders=await shop.page('orders');await flush();assert.equal(orders.data.rows[0].image,'https://ldcstore.com'+cover);
+  await shop.fire(market,'refresh');assert.equal(market.data.rows[0].image,orders.data.rows[0].image);
+  assert.equal(shop.calls.filter(r=>r.url.pathname.endsWith('/products/p1')).length,1);
+});
+test('领券凭证过期后可匿名查看，重新授权前不允许领取',async()=>{
+  const shop=setup({respond:r=>r.credential ? {failure:401} : campaign});const page=await shop.page('coupon',{token:'fixture'});
+  assert.equal(page.data.ready,true);assert.equal(page.data.authorized,false);assert.equal(page.data.canClaim,false);
+  await shop.fire(page,'claimCoupon');assert.equal(shop.calls.length,2);assert.equal(shop.calls.every(r=>r.method==='GET'),true);
+});
+test('评论和订单翻页失败只重试失败的页码，原有行保留',async()=>{
+  for(const [name,resource,more,retry] of [['orders','orders','ordersMore','ordersRetry'],['product','comments','commentsMore','commentsRetry']]){
+    let fail=true;const shop=setup({respond:r=>{
+      if(!r.url.pathname.endsWith('/'+resource))return {product:{id:'p1',price:2,stock:1}};
+      const n=r.url.searchParams.get('page');if(n==='2' && fail)return {failure:503};
+      return {[resource]:[name==='orders' ? {order_no:'O'+n,status:'paid'} : {id:'C'+n,content:'评论'}],pagination:{hasMore:n==='1'}};
+    }});
+    const page=await shop.page(name,{id:'p1'});await flush();await shop.fire(page,more);
+    const rows=()=>name==='orders' ? page.data.rows : page.data.comments;
+    assert.equal(rows().length,1);fail=false;await shop.fire(page,retry);assert.equal(rows().length,2);
+    assert.deepEqual(shop.calls.filter(r=>r.url.pathname.endsWith('/'+resource)).map(r=>r.url.searchParams.get('page')),['1','2','2']);
+  }
+});
+test('按订单快照区分原单价、折后单价与券后应付，退出立刻收起私有内容',async()=>{
+  const shop=setup({respond:r=>r.url.pathname.endsWith('/orders/O1') ? {order:{order_no:'O1',product_quantity:2,product:{price:10,discount:0.5},original_price:20,product_subtotal:10,coupon_discount_amount:2,amount:8,buyer_nickname:'买家',buyer_username:'tester',seller_name:'Seller',seller_username:'seller',status:'delivered',delivery_content:'模拟交付'}} : {}});
+  const order=await shop.page('order',{no:'O1'});const values=Object.fromEntries(order.data.fields.map(row=>[row.label,row.value]));
+  assert.deepEqual([values['商品单价'],values['折后单价'],values['商品小计'],values['应付积分']],['10.00 LDC','5.00 LDC','10.00 LDC','8.00 LDC']);
+  assert.equal(values['买家'],'买家 · @tester');assert.equal(values['卖家'],'@seller');
+  await shop.fire(order,'delivery');assert.equal(order.data.deliveryText,'模拟交付');
+  const account=await shop.page('account');await shop.fire(account,'signOut');assert.equal(order.data.deliveryText,'');assert.equal(order.data.fields.length,0);assert.equal(order.data.orderNo,'');
 });

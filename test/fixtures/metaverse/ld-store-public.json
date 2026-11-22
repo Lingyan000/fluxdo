@@ -1,0 +1,22 @@
+{
+  "product": {
+    "id": "f82cdff3-11cc-4196-adec-49949edc445b", "name": "测试商品", "product_type": "cdk",
+    "image_url": "https://shop.example/封面.jpg", "seller_username": "seller", "seller_name": "店主",
+    "seller_avatar": "//cdn.example/seller.png", "seller_site": "linux.do", "seller_user_id": 27,
+    "category_id": 2, "category_name": "公益站", "price": 100, "discount": 0.01,
+    "stock": 331, "sold_count": 269, "availableStock": 331, "cdkStats": {"available": 331, "total": 600},
+    "canPurchase": true, "purchase_limit": {"mode": "per_user", "quantity": 1, "periodDays": 7}, "created_at": "2026-11-04T14:25:00.903Z"
+  },
+  "comments": {
+    "commentEnabled": true, "viewerHasPurchased": false, "viewerRating": {"hasRated": false, "value": null},
+    "summary": {"favoriteCount": 4, "publicCommentCount": 2, "publicReplyCount": 0, "ratedCount": 1, "averageRating": 4, "visibleCommentCount": 2, "visibleReplyCount": 0},
+    "comments": [{"id": "a7dc2766-b41d-4094-9445-f676ec25015d", "username": "buyer", "nickname": "买家", "avatar_url": "https://cdn.example/buyer.png", "is_purchased": true, "is_seller": false, "rating_value": 4, "rating": 4, "reply_count": 0, "content": "测试评论", "status": "ai_approved", "created_at": 1794155801631, "user": {"id": "15", "site": "linux.do", "username": "buyer", "nickname": "买家", "avatar_url": "https://cdn.example/buyer.png", "avatar": "https://cdn.example/buyer.png"}}],
+    "pagination": {"total": 2, "page": 1, "pageSize": 10, "totalPages": 1}
+  },
+  "merchant": {
+    "merchant": {"site": "linux.do", "userId": "27", "username": "seller", "name": "店主", "avatar": "https://cdn.example/seller.png", "trustLevel": 3},
+    "profile": {"userId": 27, "site": "linux.do", "username": "seller", "avatarUrl": "https://cdn.example/seller.png", "trustLevel": 3},
+    "stats": {"onlineCount": 1, "totalListedCount": 1, "totalSoldCount": 269},
+    "pagination": {"page": 1, "pageSize": 24, "hasMore": false}
+  }
+}

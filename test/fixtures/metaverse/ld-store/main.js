@@ -361,7 +361,7 @@ function scheduleNotificationFallback() {
 }
 function setNotificationSummary(value) {
   if(!value || typeof value!=='object')return;
-  notificationSummary=value;notificationRevision++;
+  value=normalizeOrderData(value);notificationSummary=value;notificationRevision++;
   for(const s of views.values()) {
     if(!s.ctx)continue;
     if(s.overviewStats) {
@@ -460,7 +460,7 @@ fluxdo.on('stream.state',(ctx,args)=>{
   }
 });
 
-const money = n => Number.isFinite(Number(n)) ? Number(n).toFixed(2) + ' LDC' : '—';
+const money = n => n!=null && n!=='' && Number.isFinite(Number(n)) ? Number(n).toFixed(2) + ' LDC' : '—';
 const display = v => v == null ? '' : String(v);
 const flag = v => v === true || v === 1 || v === '1' || v === 'true';
 function stockValue(p) {
@@ -510,6 +510,15 @@ async function read(path, withSession) {
   if (!result.success || !result.data) throw Error('暂时无法读取士多数据');
   return result.data;
 }
+async function readPublic(path,session) {
+  const auth=session || await ldStore.status();
+  try {return await read(path,auth.authorized);}
+  catch(error) {
+    if(!auth.authorized || error.status!==401)throw error;
+    auth.authorized=false;
+    return read(path,false);
+  }
+}
 function write(ctx, values) {
   for (const key of Object.keys(values)) ctx.setData(key, values[key]);
 }
@@ -545,22 +554,26 @@ function refreshView(ctx) {
   if (ctx.page === 'review' || ctx.page === 'product') return detail(ctx);
   if (ctx.page === 'account' || ctx.page == null) return loadOverview(ctx);
   if (ctx.page === 'messages') return loadMessages(ctx,false);
+  if(s.categoriesDirty){s.categoriesDirty=false;return Promise.all([categories(ctx),load(ctx,false)]);}
   return load(ctx,false);
 }
 function productView(raw) {
-  const p=normalizeOrderData(raw), base=Number(p.price), rawDiscount=Number(p.discount);
-  const image=mediaUrl(p.imageUrl);if(p.id!=null)rememberProductImage(String(p.id),image);
+  const p=normalizeOrderData(raw), base=p.price==null || p.price==='' ? NaN : Number(p.price), rawDiscount=Number(p.discount);
+  // 列表投影省略封面时，不能把它当成商品详情已经确认无图。
+  const image=mediaUrl(p.imageUrl) || cachedProductImage(p.id);if(p.id!=null && image)rememberProductImage(String(p.id),image);
   const discount=rawDiscount>0 && rawDiscount<=1 ? rawDiscount : 1;
-  const value=p.finalPrice == null ? base*discount : Number(p.finalPrice);
+  const value=p.finalPrice == null || p.finalPrice==='' ? base*discount : Number(p.finalPrice);
   const original=Number.isFinite(base) && base>value ? base.toFixed(2) : '';
   const type=p.productType || p.type || 'normal';
-  return {id:display(p.id),title:display(p.name),image,
+  return {id:display(p.id),title:display(p.name),image,hiddenItem:false,preferenceTime:'',
     price:money(value),value:Number.isFinite(value) ? value.toFixed(2) : '—',original,
     discount:original ? Math.round((1-value/base)*100)+'% 优惠' : '',originalLabel:original ? '原价 '+original : '',
     type, typeLabel:({cdk:'自动发卡',normal:flag(p.autoDelivery) ? '自动发货' : '手动发货',link:'外链商品',store:'小店'})[type] || '商品',
+    listingNote:[p.duoPromotion?.kind==='paid' ? '广告' : '',flag(p.isPinned) && flag(p.pinIsPaid) ? (p.pinType==='category' ? '士多优选' : '士多甄选') : '',flag(p.isTestMode) ? '测试商品' : ''].filter(Boolean).join(' · '),
     typeIcon:({cdk:'key',normal:'gift',link:'link',store:'storefront'})[type] || 'gift',
     category:display(p.categoryName), stock:'库存 '+stockLabel(p),sold:'已售 '+display(p.soldCount ?? 0),
-    sellerName:display(p.sellerName || p.sellerUsername),sellerUsername:display(p.sellerUsername),sellerAvatar:display(p.sellerAvatarUrl || p.sellerAvatar),
+    sellerName:display(p.sellerName || p.sellerUsername),sellerUsername:display(p.sellerUsername),sellerAvatar:accountAvatar({avatar:p.sellerAvatar,avatarUrl:p.sellerAvatarUrl}),
+    availability:({offline:'已下架',inactive:'已下架',offline_manual:'已下架',pending:'审核中',pending_ai:'审核中',pending_manual:'待人工审核',rejected:'已拒绝',ai_rejected:'已拒绝',manual_rejected:'已拒绝'})[p.status] || '',
     test:flag(p.isTestMode),info:money(value)+' · 库存 '+stockLabel(p)};
 }
 const sortOptions = [
@@ -568,6 +581,7 @@ const sortOptions = [
   {label:'低价',sort:'final_price',direction:'ASC'},{label:'高价',sort:'final_price',direction:'DESC'},
   {label:'热销',sort:'sold_count',direction:'DESC'}
 ];
+const slateIdPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 function showFilters(ctx,s) {
   const mark = selected => selected ? 'tonal' : 'text';
   write(ctx,{
@@ -581,26 +595,38 @@ async function load(ctx, more) {
   if (!s || (more && (s.loading || !s.more))) return;
   if (s.searchTimer) {clearTimeout(s.searchTimer);s.searchTimer=null;}
   const seq = ++s.seq;
-  const page = more ? s.page + 1 : 1;
+  const page = more ? s.page + 1 : 1;s.marketRetryMore=more;
   const queryKey=JSON.stringify([s.search,s.cat,s.sort,s.direction,s.stock,s.min,s.max]);
   if (!more && s.queryKey!==queryKey) {s.rows=[];s.more=false;s.cursor='';s.page=0;}
   s.queryKey=queryKey;
   s.loading = true;
   write(ctx, {loading:!more, loadingMore:more, more:false, message:'', webFallback:false, rows:s.rows});
   try {
+    const defaultSort=!s.sort || s.sort==='updated_at';
     const q = {pageSize:12, search:s.search, categoryId:s.cat, inStock:s.stock?'true':'',
-      sortBy:s.sort, sortOrder:s.direction, priceMin:s.min, priceMax:s.max};
+      sortBy:defaultSort ? '' : s.sort, sortOrder:defaultSort ? '' : s.direction, priceMin:s.min, priceMax:s.max};
     if (more && s.cursor) q.cursor = s.cursor; else q.page = page;
-    if (!s.sort || s.search) q.ranking = 'auto';
-    const result = await read('/products?' + params(q));
+    if (defaultSort || s.search) q.ranking = 'auto';
+    const rotating=defaultSort && !s.search && !more;
+    if(rotating){
+      const rotation=await ctx.api.crypto.uuid();
+      if(seq!==s.seq || market(ctx)!==s)return;
+      if(slateIdPattern.test(rotation))q.rotationId=rotation;
+      const last=s.slates?.get(queryKey);if(last?.expires>Date.now())q.previousSlateId=last.id;
+    }
+    const result = await readPublic('/products?' + params(q));
     if (market(ctx) !== s || seq !== s.seq) return;
     const products = result.products;
     if (!Array.isArray(products)) throw Error('商品列表格式有误');
     const seen = new Set(more ? s.rows.map(r => r.id) : []);
-    const rows = products.filter(p => p && p.id != null && !seen.has(String(p.id))).map(productView);
+    const rows = products.filter(product=>{if(product?.id==null || seen.has(String(product.id)))return false;seen.add(String(product.id));return true;}).map(productView);
     s.rows = more ? s.rows.concat(rows) : rows; s.page = page;
     const paging = result.pagination || {};
     s.cursor = paging.nextCursor || '';
+    if(rotating && slateIdPattern.test(result.rankingContext?.slateId)){
+      s.slates=s.slates || new Map();s.slates.delete(queryKey);s.slates.set(queryKey,{id:result.rankingContext.slateId,expires:Date.now()+1800000});
+      if(s.slates.size>20)s.slates.delete(s.slates.keys().next().value);
+    }
     s.more = typeof paging.hasMore === 'boolean' ? paging.hasMore :
       !!s.cursor || page < Number(paging.totalPages) || page * 12 < Number(paging.total);
     write(ctx,{rows:s.rows, more:s.more, message:'',total:display(paging.total ?? s.rows.length)+' 件商品'});
@@ -617,10 +643,10 @@ async function categories(ctx) {
   const base = [{id:'',name:'全部'}];
   if (!s.categories) {s.categories = base; showFilters(ctx,s);}
   try {
-    const data = await read('/categories');
+    const data = await readPublic('/categories');
     if (!current()) return;
     s.categories = base.concat(data.categories.map(c => ({id:String(c.id),name:c.name})));
-    showFilters(ctx,s);
+    showFilters(ctx,s);ctx.setData('categoryMessage','');
   } catch (_) {if (current()) ctx.setData('categoryMessage','分类加载失败，可刷新重试');}
 }
 async function detail(ctx) {
@@ -648,7 +674,7 @@ async function detail(ctx) {
       if (!auth.authorized || e.status !== 401 || seq !== s.seq || market(ctx) !== s) throw e;
       auth.authorized = false;
       if (s.checkoutEnabled) {s.checkoutEnabled=false;s.record=null;write(ctx,{nativeOrder:false,orderState:'idle',orderNote:''});}
-      productData = await read(path,false);
+      productData = await read(path,false);ctx.setData('authorized',false);
     }
     const p = normalizeOrderData(productData.product);
     if (seq !== s.seq || market(ctx) !== s) return;
@@ -710,33 +736,62 @@ async function loadComments(ctx,more) {
   if (!s || ctx.page !== 'product' || (more && s.commentsLoading)) return;
   const revision = s.commentsRevision = (s.commentsRevision || 0) + 1;
   const current = () => market(ctx) === s && s.commentsRevision === revision;
-  const page = more ? (s.commentsPage || 1) + 1 : 1;
+  const page = more ? (s.commentsPage || 1) + 1 : 1;s.commentsRetryMore=more;
   s.commentsLoading = true;
   write(ctx,{commentsLoading:true,commentsError:''});
   try {
-    const auth = await ldStore.status();
-    const data = normalizeOrderData(await read('/products/' + encodeURIComponent(ctx.params.id) +
-      '/comments?page=' + page + '&pageSize=10',auth.authorized));
+    const data = normalizeOrderData(await readPublic('/products/' + encodeURIComponent(ctx.params.id) +
+      '/comments?page=' + page + '&pageSize=10'));
     if (!current()) return;
     if (!Array.isArray(data.comments)) throw Error('评论数据格式有误');
-    const rows = data.comments.map(c => ({id:String(c.id),
-      author:display(c.nickname || c.username) || '用户',avatar:display(c.avatarUrl || c.avatar_url),time:display(c.createdAt || c.created_at),content:display(c.content),
-      rating:c.ratingValue == null ? '' : String(c.ratingValue) + ' / 5'}));
-    const previous = more ? s.comments || [] : [];
-    const ids = new Set(previous.map(c => c.id));
-    s.comments = previous.concat(rows.filter(c => !ids.has(c.id)));
+    const visible=data.commentEnabled===false ? [] : data.comments;
+    const rows = visible.map(c => ({...commentRow(c),replyCount:Number(c.replyCount || 0),
+      replyLabel:Number(c.replyCount)>0 ? '查看 '+c.replyCount+' 条回复' : '',replies:[],repliesOpen:false,repliesLoading:false,repliesMore:false,repliesError:'',repliesEmpty:false}));
+    const previous = more && data.commentEnabled!==false ? s.comments || [] : [];
+    s.comments = mergeRows(previous,rows);
     s.commentsPage = page;
     const paging = data.pagination || {};
-    write(ctx,{comments:s.comments,commentsMore:paging.hasMore === true || page < Number(paging.totalPages),
+    const summary=data.summary || {};
+    write(ctx,{comments:s.comments,commentsMore:hasNextPage(paging,page,rows.length,10),commentStatsReady:!!data.summary,
+      commentStats:[{label:'评分',value:Number(summary.ratedCount)>0 ? Number(summary.averageRating).toFixed(1)+' / 5' : '暂无'},
+        {label:'已评分',value:display(summary.ratedCount ?? 0)},{label:'收藏',value:display(summary.favoriteCount ?? 0)},
+        {label:'评论 / 回复',value:display(summary.visibleCommentCount ?? paging.total ?? 0)+' / '+display(summary.visibleReplyCount ?? 0)}],
       canComment:data.commentEnabled === true,
-      commentsMessage:data.commentEnabled === false ? '该商品已关闭评论' : s.comments.length ? '' : '暂无评论'});
+      commentsMessage:data.commentEnabled === false ? display(data.disabledReason) || '该商品已关闭评论' : s.comments.length ? '' : '暂无评论'});
   } catch (e) {
     if (current()) ctx.setData('commentsError',String(e.message));
   } finally {
     if (current()) {s.commentsLoading = false;ctx.setData('commentsLoading',false);}
   }
 }
-fluxdo.on('commentsRetry',ctx => loadComments(ctx,false));
+function commentRow(c) {
+  const user=c.user || c;
+  const rating=c.ratingValue ?? c.rating;
+  return {id:String(c.id),author:display(user.nickname || user.username || c.nickname || c.username) || '用户',
+    handle:user.nickname && user.username && user.nickname!==user.username ? '@'+user.username : '',
+    avatar:accountAvatar(user) || accountAvatar(c),time:storeTime(c.createdAt),content:display(c.content),
+    badge:[flag(c.isSeller) ? '卖家' : '',flag(c.isPurchased) ? '已购' : ''].filter(Boolean).join(' · '),
+    rating:flag(c.isPurchased) && Number(rating)>=1 && Number(rating)<=5 ? String(rating)+' / 5' : '',
+    moderation:({pending:'审核中',pending_ai:'审核中',pending_manual:'人工审核中',ai_rejected:'未通过审核',manual_rejected:'未通过审核',rejected:'未通过审核'})[c.status] || ''};
+}
+async function loadReplies(ctx,id,more=false) {
+  const s=market(ctx),row=s?.comments?.find(c=>c.id===id);
+  if(!row || row.repliesLoading || more && !row.repliesMore || s.hidden)return;
+  const current=()=>market(ctx)===s && s.comments.includes(row);
+  const page=more ? row.repliesPage+1 : 1;
+  row.repliesOpen=true;row.repliesLoading=true;row.repliesError='';ctx.setData('comments',s.comments);
+  try {
+    const data=normalizeOrderData(await readPublic('/comments/'+encodeURIComponent(id)+'/replies?page='+page+'&pageSize=10'));
+    if(!current())return;
+    if(!Array.isArray(data.replies))throw Error('回复数据格式有误');
+    row.replies=mergeRows(more ? row.replies : [],data.replies.map(commentRow));
+    row.repliesPage=page;row.repliesMore=hasNextPage(data.pagination,page,data.replies.length,10);
+    row.repliesEmpty=row.replies.length===0;
+  } catch(error) {if(current())row.repliesError=error.message;}
+  finally {if(current()){row.repliesLoading=false;ctx.setData('comments',s.comments);}}
+}
+fluxdo.on('commentReplies',(ctx,a)=>loadReplies(ctx,a.id,a.more===true));
+fluxdo.on('commentsRetry',ctx => loadComments(ctx,market(ctx)?.commentsRetryMore===true));
 fluxdo.on('commentsMore',ctx => loadComments(ctx,true));
 // 分页失败可以继续读同一页，授权失效则清空上一账号的数据。
 const statusLabels = {pending:'待付款',pending_payment:'待付款',paying:'支付中',creating:'正在创建支付',confirming:'支付确认中',paid:'待发货',
@@ -765,7 +820,7 @@ function mediaUrl(value) {
   return /^https?:\/\/[^/\s]+\//i.test(url) ? url : '';
 }
 // 订单只保证商品标识。复用已浏览商品的图片，缺失时按商品合并公开查询。
-const productImages=new Map();
+const productImages=new Map();let imageSession=0;
 function rememberProductImage(id,url,ttl=600000) {
   productImages.delete(id);productImages.set(id,{url,expires:Date.now()+ttl});
   while(productImages.size>128)productImages.delete(productImages.keys().next().value);
@@ -781,19 +836,19 @@ function lookupProductImage(id,current) {
   if(pending){pending.watchers.push(current);return pending.promise;}
   const cached=productImages.get(id);
   if(cached?.expires>Date.now())return Promise.resolve(cached.url);
-  const task={id,watchers:[current]};task.promise=new Promise(resolve=>{task.resolve=resolve;});
+  const task={id,session:imageSession,watchers:[current]};task.promise=new Promise(resolve=>{task.resolve=resolve;});
   imageRequests.set(id,task);imageQueue.push(task);drainProductImages();return task.promise;
 }
 function drainProductImages() {
   while(imageWorkers<3 && imageQueue.length) {
     const item=imageQueue.shift();
-    if(!item.watchers.some(current=>current())){imageRequests.delete(item.id);item.resolve('');continue;}
+    if(item.session!==imageSession || !item.watchers.some(current=>current())){if(imageRequests.get(item.id)===item)imageRequests.delete(item.id);item.resolve('');continue;}
     imageWorkers++;
-    read('/products/'+encodeURIComponent(item.id)).then(data=>{
+    readPublic('/products/'+encodeURIComponent(item.id)).then(data=>{
       const p=normalizeOrderData(data.product);
-      return rememberProductImage(item.id,String(p?.id)===item.id ? mediaUrl(p.imageUrl) : '');
-    }).catch(()=>rememberProductImage(item.id,'',60000)).then(url=>{
-      imageRequests.delete(item.id);imageWorkers--;item.resolve(url);drainProductImages();
+      return item.session===imageSession ? rememberProductImage(item.id,String(p?.id)===item.id ? mediaUrl(p.imageUrl) : '') : '';
+    }).catch(()=>item.session===imageSession ? rememberProductImage(item.id,'',60000) : '').then(url=>{
+      if(imageRequests.get(item.id)===item)imageRequests.delete(item.id);imageWorkers--;item.resolve(url);drainProductImages();
     });
   }
 }
@@ -822,8 +877,12 @@ function orderSummary(o) {
     state:Object.prototype.hasOwnProperty.call(statusLabels,status) ? statusLabels[status] : '未知状态',
     amount:amount == null || amount === '' ? '—' : money(amount),
     image,imageLoading:!image && /^[A-Za-z0-9_-]{1,128}$/.test(productId) && !(productImages.get(productId)?.expires>Date.now()),
-    productId,seller:display(o.sellerUsername || o.seller?.username),
-    quantity:'× '+display(o.quantity || 1),created:storeDate(o.createdAt),time:display(o.createdAt)};
+    productId,seller:display(o.sellerNickname || o.sellerName || o.sellerUsername || o.seller?.username),
+    quantity:'× '+display(o.quantity ?? o.productQuantity ?? 1),created:storeDate(o.createdAt),time:storeTime(o.createdAt)};
+}
+function orderParty(order,role) {
+  const handle=display(order[role+'Username'] || order[role]?.username).trim().replace(/^@+/,''),name=display(order[role+'Nickname'] || order[role+'Name']).trim();
+  return [name && name.replace(/^@+/,'').toLowerCase()!==handle.toLowerCase() ? name : '',handle ? '@'+handle : ''].filter(Boolean).join(' · ');
 }
 async function loadOrders(ctx, append, silent=false) {
   const s = market(ctx), detailPage = ctx.page === 'order';
@@ -831,15 +890,13 @@ async function loadOrders(ctx, append, silent=false) {
   const seq = ++s.seq, current = () => market(ctx) === s && seq === s.seq;
   if (!silent) s.revealed = false;
   const page=append ? (s.page || 0)+1 : 1;
+  s.ordersRetryMore=append;
   if(!detailPage && s.ordersQuery!==s.orderStatus){s.rows=[];s.more=false;s.ordersQuery=s.orderStatus;}
   s.loading = true;
   if (!silent) write(ctx,{loading:!append,loadingMore:append,initialLoading:detailPage && !s.order,ready:!!s.order,needsSession:false,error:'',empty:false,rows:s.rows,more:false,
     hasDelivery:!!s.deliveryText,deliveryText:'',deliveryAction:'查看交付内容'});
   const sessionMissing = message => {
-    s.rows = []; s.more = false; s.order=null;s.deliveryText='';s.revealed=false;
-    if(s.poll) {clearTimeout(s.poll);s.poll=null;}
-    write(ctx,{rows:[],ready:false,more:false,empty:false,needsSession:true,authorized:false,error:message,
-      orderTitle:'',orderNo:'',state:'',amount:'',delivery:'',deliveryText:'',hasDelivery:false});
+    clearOrderData(ctx,s);write(ctx,{needsSession:true,authorized:false,error:message});
   };
   try {
     const auth = await ldStore.status();
@@ -865,20 +922,24 @@ async function loadOrders(ctx, append, silent=false) {
       const confirming=['pending','creating','unknown'].includes(data.order.paymentInitStatus);
       let snapshot=data.order.couponSnapshot || {};
       if(typeof snapshot==='string') {try {snapshot=normalizeOrderData(JSON.parse(snapshot));} catch (_) {snapshot={};}}
-      const quantity=Number(data.order.quantity || 1), total=Number(data.order.productSubtotal ?? data.order.amount ?? data.order.totalPrice);
-      const original=Number(data.order.originalPrice || Number(data.order.product?.price)*quantity);
+      const count=Number(data.order.quantity ?? data.order.productQuantity),quantity=Number.isSafeInteger(count) && count>0 ? count : 1;
+      const total=Number(data.order.productSubtotal ?? data.order.amount ?? data.order.totalPrice);
+      const listed=Number(data.order.product?.price),original=Number(data.order.originalPrice) || listed*quantity;
       const couponDiscount=Number(data.order.couponDiscountAmount ?? snapshot.couponDiscountAmount ?? 0);
-      const fields=[['数量',String(quantity)],['商品小计',money(total)],
+      const unitPrice=listed>0 ? listed : original/quantity,rate=Number(data.order.product?.discount);
+      const reducedUnit=rate>0 && rate<1 ? unitPrice*rate : data.order.productSubtotal!=null && original>total ? total/quantity : unitPrice;
+      const fields=[['数量',String(quantity)],...(unitPrice>0 ? [['商品单价',money(unitPrice)]] : []),
+        ...(reducedUnit>=0 && reducedUnit<unitPrice ? [['折后单价',money(reducedUnit)]] : []),['商品小计',money(total)],
         ...(original>total ? [['商品优惠','− '+money(original-total)]] : []),
-        ...(couponDiscount>0 ? [['优惠券',display(snapshot.name) || '已使用优惠券'],['优惠金额','− '+money(couponDiscount)]] : []),
-        ['应付积分',row.amount],...(row.seller ? [['卖家',row.seller]] : [])].map(([label,value])=>({label,value}));
-      const times=[['创建时间',data.order.createdAt],['支付时间',data.order.paidAt || data.order.paidTime],['发货时间',data.order.deliveredAt],['完成时间',data.order.completedAt],['取消时间',data.order.cancelledAt],['退款时间',data.order.refundedAt]]
+        ...(couponDiscount>0 ? [['优惠券',display(snapshot.name) || '已使用优惠券'],...(snapshot.discountType ? [['用券规则',couponRule(snapshot)]] : []),['优惠金额','− '+money(couponDiscount)]] : []),
+        ['应付积分',row.amount],...['seller','buyer'].map(role=>[role==='seller' ? '卖家' : '买家',orderParty(data.order,role)]).filter(([,value])=>value)].map(([label,value])=>({label,value}));
+      const times=[['创建时间',data.order.createdAt],['支付时间',data.order.paidAt || data.order.paidTime],['发货截止',data.order.fulfillment?.deadlineAt || data.order.fulfillmentDeadlineAt],['发货时间',data.order.deliveredAt],['完成时间',data.order.completedAt],['取消时间',data.order.cancelledAt],['退款时间',data.order.refundedAt]]
         .filter(([,time])=>!!time).map(([label,time])=>({label,value:storeDate(time)}));
       const logs={create:'创建订单',pay:'支付成功',deliver:'发货完成',complete:'确认收货',cancel:'取消订单',expire:'订单过期',refund:'订单退款',refund_request:'申请退款',refund_reject:'拒绝退款',repay:'重新发起支付',lock_cdk:'锁定卡密',unlock_cdk:'释放卡密',admin_complete:'管理员完结'};
       const deadline=data.order.payExpiredAt || data.order.expireAt || data.order.expiredAt;
       write(ctx,{orderImage:row.image,orderImageLoading:row.imageLoading,productId:row.productId,quantity:row.quantity,sellerName:row.seller,fields,times,
         tradeNo:display(data.order.ldcTradeNo),usage:display(data.order.product?.description || data.order.productDescription),
-        orderEvents:(data.logs || []).slice().reverse().map(e=>({title:logs[e.action] || display(e.action) || '订单更新',message:display(e.remark || e.note || e.message),time:storeDate(e.createdAt || e.time)})),
+        orderEvents:latestEvents(data.logs).map(e=>({title:logs[e.action] || display(e.action) || '订单更新',message:display(e.remark || e.note || e.message),time:storeDate(e.createdAt || e.time)})),
         statusNote:awaiting ? confirming ? '支付结果确认中，请勿重复兑换。' : deadline ? '请在 '+storeDate(deadline)+' 前完成付款' : '订单待付款，付款后将按商品约定交付。' : data.order.status==='paid' ? '付款已确认，等待交付。' : '',
         canCheck:awaiting,canRepurchase:!!row.productId,canCancel:awaiting && !confirming});
       s.deliveryText = ['delivered','completed'].includes(data.order.status) && typeof content==='string' ? content : '';
@@ -905,7 +966,7 @@ async function loadOrders(ctx, append, silent=false) {
         seen.add(row.no); s.rows.push(row);
       }
       s.page = page;
-      s.more = rows.length > 0 && (page < Number(data.pagination.totalPages) || page * 20 < Number(data.pagination.total));
+      s.more = hasNextPage(data.pagination,page,rows.length);
       write(ctx,{rows:s.rows,more:s.more,empty:!s.rows.length,ready:true});
     }
   } catch (e) {
@@ -916,6 +977,12 @@ async function loadOrders(ctx, append, silent=false) {
   } finally {
     if (current()) {s.loading = false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});fillOrderImages(ctx,s);}
   }
+}
+function clearOrderData(ctx,s) {
+  s.rows=[];s.page=0;s.more=false;s.order=null;s.deliveryText='';s.revealed=false;
+  if(s.poll){clearTimeout(s.poll);s.poll=null;}
+  write(ctx,{rows:[],ready:false,more:false,empty:false,orderTitle:'',orderNo:'',state:'',amount:'',delivery:'',deliveryText:'',hasDelivery:false,
+    orderImage:'',orderImageLoading:false,fields:[],times:[],orderEvents:[],usage:'',tradeNo:'',paymentNote:'',statusNote:'',canPay:false,canCheck:false,canCancel:false,canRepurchase:false});
 }
 function scheduleOrderPoll(ctx,s) {
   if (s.poll) clearTimeout(s.poll);
@@ -948,7 +1015,7 @@ function accountAvatar(user) {
 let identityRevision=0,identityTask=null,identityValue=null,identitySigningOut=false;
 function clearAccountIdentity() {
   identityRevision++;identityTask=null;identityValue=null;
-  publishAccountIdentity({authorized:false,accountName:'',accountAvatar:''});
+  publishAccountIdentity({authorized:false,accountName:'',accountAvatar:'',accountMeta:''});
 }
 function publishAccountIdentity(value) {
   for(const s of views.values())if(['market','account'].includes(s.ctx?.page))write(s.ctx,value);
@@ -973,7 +1040,9 @@ async function loadAccountIdentity(ctx,refresh=false) {
       }
       // 旧会话可直接读取声明，头像不依赖校验接口是否附带完整用户资料。
       const sameClaims=String(claims.sub ?? claims.id)===String(account.id) && (claims.site || 'linux.do')==='linux.do';
+      const level=profile.user.trustLevel ?? (sameClaims ? claims.trustLevel : null);
       const value={authorized:true,accountName:display(profile.user.name || (sameClaims && claims.name) || profile.user.username || account.username),
+        accountMeta:['@'+(profile.user.username || account.username),level!=null ? 'TL'+level : ''].filter(Boolean).join(' · '),
         accountAvatar:accountAvatar(profile.user) || (sameClaims ? accountAvatar(claims) : '')};
       identityValue={key,value};publishAccountIdentity(value);return value;
     } catch(error) {
@@ -999,25 +1068,54 @@ async function loadOverview(ctx) {
       }
       if(!current())return;
       const [raw,unread]=await Promise.all([read('/user/attention',true),read('/messages/unread-summary',true)]);
-      const data=normalizeOrderData(raw);
+      const data=normalizeOrderData(raw),unreadData=normalizeOrderData(unread);
       if(!current())return;
       s.overviewStats=[{label:'待付款',value:display(data.pendingPaymentCount ?? 0)},{label:'待发货',value:display(data.awaitingDeliveryCount ?? 0)},
-        {label:'优惠券',value:display(data.unusedCouponCount ?? 0)},{label:'未读消息',value:display(notificationSummary?.totalUnread ?? unread.totalUnread ?? 0)}];
+        {label:'优惠券',value:display(data.unusedCouponCount ?? 0)},{label:'未读消息',value:display(notificationSummary?.totalUnread ?? unreadData.totalUnread ?? 0)}];
       ctx.setData('stats',s.overviewStats);
+      if(ctx.page==='account') {
+        const recent=(data.recentOrders || []).filter(order=>order.orderNo || order.id).map(order=>({no:display(order.orderNo || order.id),title:display(order.productName) || '商品订单',subtitle:[statusLabels[order.status] || '未知状态',order.amount!=null ? money(order.amount) : ''].filter(Boolean).join(' · ')}));
+        write(ctx,{recentOrders:recent,hasRecentOrders:!!recent.length});
+        if(s.spendingOpen)await loadSpending(ctx,s);
+        if(!current())return;
+      }
       write(ctx,{refundHint:Number(data.refundAttentionCount)>0 ? display(data.refundAttentionCount)+' 笔售后待处理' : '',couponHint:Number(data.expiringCouponCount)>0 ? display(data.expiringCouponCount)+' 张即将到期' : ''});
     } else {
-      write(ctx,{accountName:'',accountAvatar:'',refundHint:'',couponHint:''});
+      clearPrivateOverview(ctx,s);write(ctx,{accountName:'',accountAvatar:'',accountMeta:'',refundHint:'',couponHint:''});
       const data=await read('/stats');
       if(!current())return;
       ctx.setData('stats',[{label:'在售商品',value:display(data.products?.online ?? '—')},{label:'今日订单',value:display(data.orders?.today ?? '—')},{label:'店铺',value:display(data.stores ?? '—')}]);
     }
     s.overviewLoaded=true;ctx.setData('overviewError','');
   } catch (error) {if(current()){
-    if(error.status===401){clearAccountIdentity();s.overviewLoaded=false;s.overviewStats=null;write(ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[],refundHint:'',couponHint:''});}
+    if(error.status===401){clearAccountIdentity();clearPrivateOverview(ctx,s);s.overviewLoaded=false;s.overviewStats=null;write(ctx,{authorized:false,stats:[],refundHint:'',couponHint:''});}
     write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});
   }}
   finally {if(current())write(ctx,{overviewLoading:false,overviewInitialLoading:false});}
 }
+function clearPrivateOverview(ctx,state) {
+  state.spendingRevision=(state.spendingRevision || 0)+1;state.spendingOpen=false;state.spendingLoaded=false;state.spendingLoading=false;
+  write(ctx,{recentOrders:[],hasRecentOrders:false,spendingOpen:false,spendingLoading:false,spendingEmpty:false,spendingSummary:'',spendingRows:[],spendingError:''});
+}
+async function loadSpending(ctx,state) {
+  if(state.spendingLoading)return;
+  const revision=state.spendingRevision=(state.spendingRevision || 0)+1;
+  const current=()=>market(ctx)===state && state.spendingRevision===revision;
+  state.spendingLoading=true;write(ctx,{spendingLoading:true,spendingError:''});
+  try {
+    if(!(await ldStore.status()).authorized){if(current())clearPrivateOverview(ctx,state);return;}
+    const dashboard=normalizeOrderData(await read('/user/dashboard',true));
+    if(!current())return;
+    if(!dashboard.overview || !Array.isArray(dashboard.spendingDistribution?.categories))throw Error('消费记录格式有误');
+    const rows=dashboard.spendingDistribution.categories.slice().sort((left,right)=>Number(right.amount)-Number(left.amount));
+    const total=Math.max(Number(dashboard.spendingDistribution.totals?.amount) || 0, rows.reduce((sum,row)=>sum+Math.max(0,Number(row.amount) || 0),0));
+    write(ctx,{spendingEmpty:!rows.length,spendingSummary:'累计 '+display(dashboard.overview.totalPurchaseOrders ?? 0)+' 单 · '+money(dashboard.overview.totalSpent ?? 0),
+      spendingRows:rows.map(row=>({label:display(row.categoryName) || '其他',value:money(row.amount)+' · '+(total ? Math.round(Number(row.amount)*100/total) : 0)+'%'}))});state.spendingLoaded=true;
+  } catch(error){if(current()){if(error.status===401){clearPrivateOverview(ctx,state);ctx.setData('authorized',false);}else ctx.setData('spendingError',error.message);}}
+  finally {if(current()){state.spendingLoading=false;ctx.setData('spendingLoading',false);}}
+}
+fluxdo.on('spending',ctx=>{const state=market(ctx);if(ctx.page!=='account' || !state)return;state.spendingOpen=!state.spendingOpen;ctx.setData('spendingOpen',state.spendingOpen);if(state.spendingOpen && !state.spendingLoaded)return loadSpending(ctx,state);});
+fluxdo.on('spendingRetry',ctx=>{const state=market(ctx);if(ctx.page==='account' && state?.spendingOpen)return loadSpending(ctx,state);});
 fluxdo.on('card.load',ctx=>{views.set(ctx.surface,{ctx,seq:0,visibility:0});syncNotifications();return loadOverview(ctx);});
 fluxdo.on('card.hide',ctx=>{const s=market(ctx);if(s)s.hidden=true;return syncNotifications();});
 fluxdo.on('card.resume',ctx=>{const s=market(ctx);if(s)s.hidden=false;return syncNotifications();});
@@ -1032,10 +1130,10 @@ fluxdo.on('page.open',ctx => {
     s.source=source; s.cat=source.cat;s.sort=source.sort;s.direction=source.direction;s.min=source.min;s.max=source.max;s.stock=source.stock;s.categories=source.categories;
     s.catName=source.catName;s.sortName=source.sortName;showFilters(ctx,s);write(ctx,{min:s.min,max:s.max,stock:s.stock});return;
   }
-  if(ctx.page==='account')return loadOverview(ctx);
+  if(ctx.page==='account'){clearPrivateOverview(ctx,s);return loadOverview(ctx);}
   if(ctx.page==='messages')return loadMessages(ctx,false);
   if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) return loadBuyerPage(ctx,false);
-  if (ctx.page === 'product') write(ctx,{comments:[],commentsError:'',commentsMessage:'',commentsMore:false,commentsLoading:false});
+  if (ctx.page === 'product') write(ctx,{comments:[],commentStatsReady:false,commentsError:'',commentsMessage:'',commentsMore:false,commentsLoading:false});
   if (ctx.page === 'orders' || ctx.page === 'order') {
     s.orderStatus=ctx.params.status || '';ctx.setData('filterName','全部订单');
     showOrderFilters(ctx);
@@ -1088,13 +1186,14 @@ fluxdo.on('login',async ctx => {
     if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
     if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
     notificationOwner=null;syncNotifications();
-    invalidateViews(s,v=>v.ctx?.page!=='market');
+    relogCatalog();invalidateViews(s);
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
     else if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) await loadBuyerPage(ctx,false);
     else if (ctx.page === 'product' || ctx.page === 'review') await detail(ctx);
     else if(ctx.page==='account')await loadOverview(ctx);
     else if(ctx.page==='messages')await loadMessages(ctx,false);
+    else if(ctx.page==='market')await refreshView(ctx);
     else ctx.setData('authorized',true);
   } catch (error) {ctx.setData('loginError',error.message || '登录未完成，请稍后重试。');}
   finally {ctx.setData('loggingIn',false);}
@@ -1135,6 +1234,7 @@ fluxdo.on('webProduct',ctx => fluxdo.session.open('/product/' + encodeURICompone
 fluxdo.on('orders',(_ctx,args) => fluxdo.navigate('orders',args || {}));
 fluxdo.on('order',(_ctx,args) => fluxdo.navigate('order',{no:args.no}));
 fluxdo.on('ordersRefresh',ctx => loadOrders(ctx,false));
+fluxdo.on('ordersRetry',ctx => loadOrders(ctx,market(ctx)?.ordersRetryMore===true));
 fluxdo.on('ordersMore',ctx => loadOrders(ctx,true));
 fluxdo.on('delivery',ctx => {
   const s = market(ctx);
@@ -1161,7 +1261,7 @@ function clearQuote(ctx,s,preserve=false) {
   s.orderIntent = null;
   if(!preserve)s.quoteDisplayed=false;
   write(ctx,{canQuote:s.quoteEnabled,canSubmit:false,quoting:false,quoteNote:'',
-    ...(!preserve ? {quoteReady:false,couponRows:[],payable:''} : {})});
+    ...(!preserve ? {quoteReady:false,couponRows:[],unavailableCoupons:[],payable:''} : {})});
 }
 function showQuote(ctx,s) {
   const q = s.quote;
@@ -1176,8 +1276,8 @@ function showQuote(ctx,s) {
   ctx.setData('canSubmit',s.checkoutEnabled && s.record?.state === 'idle' && !s.orderBusy);
   s.quoteDisplayed=true;
   write(ctx,{quoteReady:true,couponRows:q.coupons.map(c => ({
-      id:c.id,label:c.name + ' · ' + money(c.amount),selected:c === coupon,variant:c === coupon ? 'tonal' : 'text'
-    })),choice:coupon ? coupon.name : '不使用优惠券',noCoupon:!coupon,noneVariant:coupon ? 'text' : 'tonal',
+      id:c.id,label:c.name + ' · ' + money(c.amount),subtitle:c.detail,selected:c === coupon,variant:c === coupon ? 'tonal' : 'text'
+    })),unavailableCoupons:q.unavailable,choice:coupon ? coupon.name : '不使用优惠券',noCoupon:!coupon,noneVariant:coupon ? 'text' : 'tonal',
     quoteNote:expired ? '之前选择的优惠券已不可用，请核对新报价。' : '',
     payable:money(coupon ? coupon.amount : q.base)});
 }
@@ -1200,7 +1300,7 @@ async function quote(ctx) {
       throw Error('士多会话已失效，请重新登录。');
     }
     if (!response.ok) throw Error('士多报价失败（HTTP '+response.status+'）');
-    const result = response.json(), q = result.data;
+    const result = response.json(), q = normalizeOrderData(result.data);
     if (!result.success || !q || String(q.productId) !== s.id || q.quantity !== quantity ||
         !Array.isArray(q.coupons) || !validAmount(q.payableAmount)) throw Error('士多返回的报价与当前商品或数量不符');
     const eligible = q.coupons.filter(c => c && c.eligible === true);
@@ -1208,9 +1308,10 @@ async function quote(ctx) {
     if (!validAmount(base)) throw Error('士多未返回可核对的商品小计');
     const coupons = eligible.map(c => {
       if (c.claimId == null || !validAmount(c.payableAmount)) throw Error('优惠券报价无法核对');
-      return {id:String(c.claimId), name:display(c.campaign && c.campaign.name) || '优惠券',amount:c.payableAmount};
+      return {id:String(c.claimId),name:display(c.campaign?.name) || '优惠券',amount:c.payableAmount,
+        detail:[c.couponDiscountAmount!=null ? '减 '+money(c.couponDiscountAmount) : '',c.campaign?.expiresAt ? '有效至 '+storeDate(c.campaign.expiresAt) : ''].filter(Boolean).join(' · ')};
     });
-    s.quote = {base,coupons};
+    s.quote = {base,coupons,unavailable:q.coupons.filter(item=>item?.eligible===false).map(item=>({label:display(item.campaign?.name) || '优惠券',reason:display(item.reason) || '当前不可使用'}))};
     showQuote(ctx,s);
   } catch (e) {
     if (current()) ctx.setData('quoteNote',e.message === 'query_not_granted' ? '当前会话没有报价权限' : String(e.message));
@@ -1381,37 +1482,61 @@ async function buyerRequest(ctx, path, method = 'GET', body, authenticated = tru
   }
   return normalizeOrderData(result.data);
 }
-function hasNextPage(paging, page, count) {
-  return count > 0 && (paging?.hasMore === true || page < Number(paging?.totalPages) || page * 20 < Number(paging?.total));
+function hasNextPage(paging, page, count, size=20) {
+  if(!count || !paging)return false;
+  if(typeof paging.hasMore==='boolean')return paging.hasMore;
+  if(paging.totalPages!=null)return page<Number(paging.totalPages);
+  return page*(Number(paging.pageSize) || size)<Number(paging.total);
 }
-function buyerRow(p) {return productView(p);}
+function mergeRows(previous,rows) {
+  const seen=new Set(previous.map(row=>row.id));
+  return previous.concat(rows.filter(row=>{if(seen.has(row.id))return false;seen.add(row.id);return true;}));
+}
 function couponRule(c) {
   if (c.discountType === 'fixed_amount') return '减 '+money(c.fixedAmount);
   if (c.discountType === 'percentage') return (Number(c.percentageBps) / 1000).toFixed(1)+' 折 · 仅优惠 1 件';
   return '优惠规则暂不可用';
 }
-function storeDate(value) {
-  if (!value) return '—';
-  let raw = value;
-  if (typeof raw === 'string' && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)) raw = raw.replace(' ','T')+'Z';
-  const date = new Date(raw), time = date.getTime();
-  return Number.isFinite(time) ? new Date(time+8*3600000).toISOString().slice(0,16).replace('T',' ')+'（北京时间）' : '—';
+function storeMillis(value) {
+  const text=display(value).trim();
+  if(typeof value==='number' || /^\d{10}(?:\d{3})?$/.test(text)) {
+    const number=Number(value);return number>0 ? new Date(number<1e10 ? number*1000 : number).getTime() : NaN;
+  }
+  if(!/^\d{4}-\d{2}-\d{2}(?:$|[ T]\d\d:\d\d)/.test(text))return NaN;
+  let date=text.replace(' ','T');
+  if(date.length===10)date+='T00:00:00';
+  if(/[+-]\d{2}$/.test(date))date+=':00';
+  if(!/(Z|[+-]\d{2}:?\d{2})$/i.test(date))date+='Z';
+  return Date.parse(date);
 }
-function couponRow(c, claim = {}) {
+function storeTime(value) {
+  const time=storeMillis(value);return Number.isFinite(time) ? new Date(time).toISOString() : '';
+}
+function storeDate(value) {
+  const time=storeMillis(value);return Number.isFinite(time) ? new Date(time+8*3600000).toISOString().slice(0,16).replace('T',' ')+'（北京时间）' : '—';
+}
+function latestEvents(events) {
+  const time=event=>storeMillis(event.createdAt || event.time) || 0;
+  return (Array.isArray(events) ? events : []).slice().reverse().sort((left,right)=>time(right)-time(left));
+}
+function couponRow(c, claim = {}, tab='') {
   claim = claim || {};
   const reserved = claim.claimStatus === 'reserved' || claim.status === 'reserved';
-  const used = claim.claimStatus === 'used' || claim.status === 'used';
+  const used = tab==='used' || claim.claimStatus === 'used' || claim.status === 'used';
+  const expired=tab==='expired' || ['expired','disabled'].includes(c.state) || !!claim.invalidReason;
+  const scheduled=c.state==='scheduled' || storeMillis(c.startsAt)>Date.now();
+  const orderNo=display(reserved ? claim.reservedOrderNo : used ? claim.usedOrderNo : '');
+  const action=orderNo ? reserved ? '查看占用订单' : '查看使用订单' : used || reserved || expired || scheduled || (claim.status && claim.status!=='available') ? '' : '查看适用商品';
   return {id:String(claim.claimId ?? claim.id ?? c.id),title:display(c.name),rule:couponRule(c),
     seller:'卖家：'+display(c.sellerUsername),
     scope:c.scopeType === 'product' ? display(c.productName) || '指定商品' : '该卖家店铺内商品',
     minimum:Number(c.minSpend)>0 ? '满 '+money(c.minSpend) : '无门槛',
     starts:storeDate(c.startsAt),expires:storeDate(c.expiresAt),
     usedAt:used && claim.usedAt ? storeDate(claim.usedAt) : '',actualDiscount:used && claim.actualDiscountAmount!=null ? money(claim.actualDiscountAmount) : '',
-    state:reserved ? '待支付订单占用' : used ? '已使用' : display(claim.invalidReason) || '',
+    state:reserved ? '待支付订单占用' : used ? '已使用' : display(claim.invalidReason) || (expired ? '已失效' : scheduled ? '待生效' : ''),
     productId:c.scopeType === 'product' && c.productId != null ? String(c.productId) : '',
     sellerId:display(c.sellerUserId), sellerUsername:display(c.sellerUsername), sellerSite:display(c.sellerSite),
-    orderNo:display(reserved ? claim.reservedOrderNo : used ? claim.usedOrderNo : ''),
-    action:reserved || used ? '查看订单' : '查看适用商品'};
+    quantity:c.remainingQuantity!=null && c.totalQuantity!=null ? display(c.remainingQuantity)+' / '+display(c.totalQuantity) : '',orderNo,action};
 }
 const couponTabs = [{value:'unused',label:'未使用'},{value:'used',label:'已使用'},{value:'expired',label:'已过期'}];
 const refundReasons = [
@@ -1433,8 +1558,8 @@ async function loadBuyerPage(ctx, more) {
   const s = market(ctx);
   if (!s || s.buyerBusy || (more && (s.loading || !s.more))) return;
   const revision = ++s.seq, current = () => market(ctx) === s && s.seq === revision;
-  const page = more ? (s.page || 1) + 1 : 1;
-  const queryKey=JSON.stringify([s.search,s.couponTab]);
+  const page = more ? (s.page || 1) + 1 : 1;s.buyerRetryMore=more;
+  const queryKey=JSON.stringify([s.search,s.couponTab,s.collection]);
   if(!more && s.buyerQuery!==queryKey){s.rows=[];s.more=false;s.buyerReady=false;}
   s.buyerQuery=queryKey;
   s.loading = true;
@@ -1444,35 +1569,44 @@ async function loadBuyerPage(ctx, more) {
     if (!current()) return;
     write(ctx,{authorized:auth.authorized});
     if (!auth.authorized && !['coupon','merchant'].includes(ctx.page)) {
-      write(ctx,{needsSession:true,error:'登录士多后继续',canApply:false}); return;
+      clearBuyerData(ctx,s);write(ctx,{needsSession:true,error:'登录士多后继续'}); return;
     }
     if (ctx.page === 'favorites' || ctx.page === 'coupons' || ctx.page === 'merchant') {
       const coupons = ctx.page === 'coupons';
       if (coupons) ctx.setData('tabs',couponTabs.map(t=>({...t,selected:t.value === (s.couponTab || 'unused')})));
-      const data = await buyerRequest(ctx, ctx.page === 'merchant'
-        ? '/merchants/'+encodeURIComponent(ctx.params.username)+'?'+params({page,site:ctx.params.site || '',userId:ctx.params.userId || ''})
-        : coupons
+      if(ctx.page==='favorites')write(ctx,{collections:[{id:'favorites',label:'已收藏',selected:s.collection!=='blocked'},{id:'blocked',label:'不感兴趣',selected:s.collection==='blocked'}],
+        search:s.search,collectionHint:s.collection==='blocked' ? '搜索已隐藏的商品' : '搜索收藏的商品',collectionEmpty:s.collection==='blocked' ? '没有已隐藏的商品' : '还没有收藏商品'});
+      const data = ctx.page==='merchant' ? normalizeOrderData(await readPublic('/merchants/'+encodeURIComponent(ctx.params.username)+'?'+params({page,site:ctx.params.site || '',userId:ctx.params.userId || ''}),auth)) : await buyerRequest(ctx, coupons
         ? '/my-coupons?'+params({status:s.couponTab || 'unused',page,pageSize:20})
-        : '/favorites?'+params({search:s.search,page,pageSize:20}), 'GET', undefined, auth.authorized);
-      if(ctx.page==='merchant')ctx.setData('merchantTitle',display(data.merchant?.username)+' 的商品');
+        : (s.collection==='blocked' ? '/blocked-products?' : '/favorites?')+params({search:s.search,page,pageSize:20}), 'GET', undefined, auth.authorized);
       if (!current()) return;
-      const entries = coupons ? data.items : data.products;
+      if(ctx.page==='merchant' && !more) {
+        if(!data.merchant?.username)throw Error('缺少店铺资料');
+        const merchant=data.merchant,username=merchant.username,profile=data.profile || {};
+        const sameId=profile.userId!=null && merchant.userId!=null && String(profile.userId)===String(merchant.userId);
+        const sameName=typeof profile.username==='string' && profile.username.toLowerCase()===username.toLowerCase();
+        const sameProfile=(sameId || sameName) && (!profile.userId || !merchant.userId || sameId) && (!profile.username || sameName) && (!profile.site || !merchant.site || profile.site===merchant.site);
+        write(ctx,{merchantReady:true,merchantTitle:merchant.name || username,merchantMeta:['@'+username,merchant.trustLevel!=null ? 'TL'+merchant.trustLevel : ''].filter(Boolean).join(' · '),
+          merchantAvatar:accountAvatar(merchant) || (sameProfile ? accountAvatar(profile) : ''),
+          merchantStats:[['在售',data.stats?.onlineCount],['上架',data.stats?.totalListedCount],['销量',data.stats?.totalSoldCount]].filter(([,value])=>value!=null).map(([label,value])=>({label,value:display(value)}))});
+      }
+      const entries = coupons ? data.items : ctx.page==='merchant' ? data.products ?? [] : data.products;
       if (!Array.isArray(entries)) throw Error('列表数据格式有误');
-      const rows = entries.map(row=>coupons ? couponRow(row.campaign || {},row) : buyerRow(row));
-      const ids = new Set(more ? s.rows.map(row=>row.id) : []);
-      s.rows=(more ? s.rows : []).concat(rows.filter(row=>!ids.has(row.id)));s.page=page;
+      const rows = entries.map(row=>coupons ? couponRow(row.campaign || {},row,s.couponTab || 'unused') : {...productView(row),hiddenItem:ctx.page==='favorites' && s.collection==='blocked',
+        preferenceTime:ctx.page==='favorites' ? storeTime((s.collection==='blocked' ? row.blockedAt : row.favoritedAt) || row.updatedAt || row.createdAt) : ''});
+      s.rows=mergeRows(more ? s.rows : [],rows);s.page=page;
       s.more=hasNextPage(data.pagination,page,rows.length);
       write(ctx,{ready:true,rows:s.rows,more:s.more});
     } else if (ctx.page === 'coupon') {
       const token = String(ctx.params.token || '');
       if (!/^[A-Za-z0-9_-]{1,256}$/.test(token)) throw Error('优惠券链接无效');
-      const data = await buyerRequest(ctx, '/coupons/'+encodeURIComponent(token),'GET',undefined,auth.authorized);
+      const data = normalizeOrderData(await readPublic('/coupons/'+encodeURIComponent(token),auth));
       if (!current()) return;
       if (!data || data.id == null) throw Error('优惠券数据格式有误');
-      s.coupon=data;
+      s.coupon=data;s.claimAuthorized=auth.authorized;
       const states = {scheduled:'尚未开始领取',expired:'优惠券已过期',paused:'卖家暂停领取',closed:'已停止领取',sold_out:'优惠券已领完',disabled:'优惠券已停用'};
-      write(ctx,{ready:true,coupon:couponRow(data,data.claim),description:display(data.description),
-        canClaim:data.claimable === true && !data.claimed,claimed:data.claimed === true,
+      write(ctx,{ready:true,authorized:auth.authorized,coupon:couponRow(data,data.claim),description:display(data.description),
+        canClaim:auth.authorized && data.claimable === true && !data.claimed,claimed:data.claimed === true,
         claimLabel:data.claimed ? '已领取' : states[data.state] || '领取优惠券'});
     } else if (ctx.page === 'comment') {
       const data = await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments?page=1&pageSize=1');
@@ -1482,7 +1616,7 @@ async function loadBuyerPage(ctx, more) {
       const fields=[{name:'content',label:'评论内容',hint:'分享使用体验或提出问题（5–500 字）',type:'multiline',required:true,maxLength:500}];
       if (s.canRate) fields.push({name:'rating',label:'商品评分（选填）',type:'choice',options:[{value:'',label:'不评分'},...Array.from({length:5},(_,i)=>({value:String(i+1),label:String(i+1)+' 星'}))]});
       write(ctx,{ready:true,canComment:s.canComment,fields,commentSubmitted:false,
-        error:s.canComment ? '' : '该商品已关闭评论'});
+        error:s.canComment ? '' : display(data.disabledReason) || '该商品已关闭评论'});
     } else if (ctx.page === 'refund') {
       const data = await buyerRequest(ctx, '/orders/'+encodeURIComponent(ctx.params.no)+'/refund');
       if (!current()) return;
@@ -1490,12 +1624,14 @@ async function loadBuyerPage(ctx, more) {
       const refund=data.refund;
       if (refund && String(refund.orderNo) !== String(ctx.params.no)) throw Error('退款订单号与请求不一致');
       s.refund=data;
-      write(ctx,{ready:true,canApply:data.eligibility.canApply === true,
+      write(ctx,{ready:true,canApply:!refund && data.eligibility.canApply === true,
         refundState:refund ? refundLabels[refund.status] || '状态待核对' : '申请售后',
         refundAmount:refund ? money(refund.refundAmount) : '',refundMessage:display(data.eligibility.message),
         reason:display(refund?.reasonDetail),deadline:refund?.decisionDeadlineAt ? '处理时限：'+storeDate(refund.decisionDeadlineAt) : '',
-        events:(refund?.events || []).slice().reverse().map(e=>({
-          title:refundEvents[e.action] || '售后状态更新',message:display(e.message),time:storeDate(e.createdAt)})),
+        refundDetails:refund ? [['退款原因',refundReasons.find(reason=>reason.value===refund.reasonCode)?.label || (refund.reasonCode==='shipment_timeout' ? '卖家超时未发货' : '')],
+          ['申请时间',refund.requestedAt ? storeDate(refund.requestedAt) : ''],['卖家说明',refund.sellerResponse]].filter(([,value])=>!!value).map(([label,value])=>({label,value})) : [],
+        events:latestEvents(refund?.events).map(event=>({title:refundEvents[event.action] || '售后状态更新',message:display(event.message),
+          time:[({seller:'卖家',buyer:'买家',admin:'平台',system:'系统'})[event.actorType],event.actorName ? '@'+String(event.actorName).replace(/^@/,'') : '',storeDate(event.createdAt)].filter(Boolean).join(' · ')})),
         refundFields:[{name:'reasonCode',label:'退款原因',type:'choice',required:true,options:refundReasons},
           {name:'reasonDetail',label:'问题描述',hint:'请说明具体问题（10–500 字）',type:'multiline',required:true,maxLength:500},
           {name:'buyerContactedSeller',label:'已联系卖家协商',type:'toggle',value:false}],
@@ -1503,9 +1639,21 @@ async function loadBuyerPage(ctx, more) {
     }
     if(current())s.buyerReady=true;
   } catch (error) {
-    if (current()) write(ctx,{error:error.message,needsSession:error.status===401,more:s.more,canApply:false,
-      ...(error.status===401 ? {authorized:false,rows:[]} : {})});
+    if (current()) {if(error.status===401)clearBuyerData(ctx,s);write(ctx,{error:error.message,needsSession:error.status===401,more:s.more,canApply:false});}
   } finally {if (current()) {s.loading=false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});}}
+}
+function clearBuyerData(ctx,state) {
+  state.rows=[];state.page=0;state.more=false;state.buyerReady=false;state.refund=null;state.coupon=null;state.canComment=false;state.canRate=false;
+  write(ctx,{authorized:false,ready:false,rows:[],more:false,canApply:false,canComment:false,canClaim:false,claimed:false,commentSubmitted:false,refundAmount:'',refundState:'',refundMessage:'',reason:'',deadline:'',refundDetails:[],events:[],hasGuide:false});
+}
+function relogCatalog() {
+  imageSession++;productImages.clear();imageRequests.clear();
+  for(const state of views.values())if(state.ctx?.page==='market') {
+    state.slates?.clear();
+    state.seq++;state.categoryRevision=(state.categoryRevision || 0)+1;state.rows=[];state.page=0;state.more=false;state.cursor='';state.dirty=true;state.categoriesDirty=true;
+    state.categories=[{id:'',name:'全部'}];state.cat='';state.catName='全部';showFilters(state.ctx,state);
+    write(state.ctx,{rows:[],more:false,total:'',categoryMessage:''});
+  }
 }
 async function buyerAction(ctx, action) {
   const s=market(ctx);
@@ -1520,6 +1668,8 @@ fluxdo.on('coupons',()=>fluxdo.navigate('coupons'));
 fluxdo.on('buyerRefresh',ctx=>loadBuyerPage(ctx,false));
 fluxdo.on('buyerMore',ctx=>loadBuyerPage(ctx,true));
 fluxdo.on('favoriteSearch',(ctx,a)=>{const s=market(ctx);if(s)s.search=String(a.value || '').slice(0,200);});
+fluxdo.on('collectionTab',(ctx,args)=>{const state=market(ctx);if(ctx.page!=='favorites' || !state || !['favorites','blocked'].includes(args.id) || args.id===(state.collection || 'favorites'))return;
+  state.collectionSearch=state.collectionSearch || {};state.collectionSearch[state.collection || 'favorites']=state.search;state.collection=args.id;state.search=state.collectionSearch[args.id] || '';return loadBuyerPage(ctx,false);});
 fluxdo.on('couponTab',(ctx,a)=>{const s=market(ctx);if(s && couponTabs.some(t=>t.value===a.value) && !s.loading) {s.couponTab=a.value;return loadBuyerPage(ctx,false);}});
 fluxdo.on('favorite',ctx=>buyerAction(ctx,async s=>{
   if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error('请先登录士多');}
@@ -1539,24 +1689,32 @@ fluxdo.on('postComment',(ctx,a)=>buyerAction(ctx,async s=>{
   write(ctx,{commentSubmitted:true,canComment:false,commentResult:result?.message || '评论已提交，以士多审核结果为准'});
 }));
 fluxdo.on('claimCoupon',ctx=>buyerAction(ctx,async s=>{
-  if (!s.coupon?.claimable || s.coupon.claimed) return;
+  if (!s.claimAuthorized || !s.coupon?.claimable || s.coupon.claimed) return;
   const result=await buyerRequest(ctx, '/coupons/'+encodeURIComponent(ctx.params.token)+'/claim','POST');
   if (!result?.claim || !result.campaign) throw Error('领取结果待确认，请刷新优惠券');
   s.coupon={...result.campaign,claimed:true,claim:result.claim};invalidateViews(s,v=>['coupons','review','account'].includes(v.ctx?.page) || v.ctx?.page==null);
   write(ctx,{coupon:couponRow(result.campaign,result.claim),claimed:true,canClaim:false,claimLabel:'已领取'});
 }));
 fluxdo.on('couponUse',(ctx,a)=>{
-  const s=market(ctx),row=ctx.page==='coupon' ? couponRow(s.coupon,s.coupon.claim) : s.rows.find(r=>r.id===a.id);
-  if (!row) return;
+  const s=market(ctx),row=ctx.page==='coupon' ? s?.coupon && couponRow(s.coupon,s.coupon.claim) : s?.rows?.find(r=>r.id===a.id);
+  if (!row?.action) return;
   if (row.orderNo) return fluxdo.navigate('order',{no:row.orderNo});
   if (row.productId) return fluxdo.navigate('product',{id:row.productId});
   if (!row.sellerUsername) return fluxdo.navigate('market');
   return fluxdo.navigate('merchant',{username:row.sellerUsername,site:row.sellerSite,userId:row.sellerId});
 });
+fluxdo.on('restoreProduct',(ctx,args)=>buyerAction(ctx,async state=>{
+  if(ctx.page!=='favorites' || state.collection!=='blocked' || !state.rows.some(row=>row.id===args.id && row.hiddenItem))return;
+  const latest=state.seq;
+  await buyerRequest(ctx,'/products/'+encodeURIComponent(args.id)+'/block','DELETE');
+  invalidateViews(state,view=>view.ctx?.page==='market');
+  if(market(ctx)!==state || latest!==state.seq)return;
+  state.buyerBusy=false;await loadBuyerPage(ctx,false);
+}));
 fluxdo.on('refund',ctx=>fluxdo.navigate('refund',{no:ctx.params.no}));
 fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
   const values=a.values || {},reason=String(values.reasonDetail || '').trim();
-  if (!s.refund?.eligibility?.canApply) throw Error('当前订单不可提交新的退款申请');
+  if (s.refund?.refund || !s.refund?.eligibility?.canApply) throw Error('当前订单不可提交新的退款申请');
   if (!refundReasons.some(r=>r.value===values.reasonCode) || reason.length<10 || reason.length>500) throw Error('请选择退款原因，并填写 10–500 字的问题描述');
   if (!await ctx.api.dialogs.confirm({title:'提交退款申请',message:'订单 '+ctx.params.no+'\n'+refundReasons.find(r=>r.value===values.reasonCode).label+'\n提交后由士多和卖家处理，可在这里查看进度。',confirmLabel:'确认提交'})) return;
   if (market(ctx)!==s) return;
@@ -1575,8 +1733,8 @@ fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
 }));
 fluxdo.on('refundGuide',ctx=>{const url=market(ctx)?.refund?.disputeGuideUrl;if(url)return fluxdo.browser.open(url,{mode:'inApp'});});
 
-fluxdo.on('marketRetry',ctx=>load(ctx,(market(ctx)?.rows.length || 0)>0));
-fluxdo.on('buyerRetry',ctx=>loadBuyerPage(ctx,(market(ctx)?.rows.length || 0)>0));
+fluxdo.on('marketRetry',ctx=>load(ctx,market(ctx)?.marketRetryMore===true));
+fluxdo.on('buyerRetry',ctx=>loadBuyerPage(ctx,market(ctx)?.buyerRetryMore===true));
 
 fluxdo.on('account',()=>fluxdo.navigate('account'));
 fluxdo.on('messages',()=>fluxdo.navigate('messages'));
@@ -1588,7 +1746,14 @@ fluxdo.on('signOut',async ctx=>{
   if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
   if(notificationOwner) {try {await notificationOwner.ctx.api.streams.close('notifications');}catch(_) {}}
   notificationOwner=null;
-  for(const v of views.values())if(v.ctx){v.seq++;v.overviewLoaded=false;v.overviewStats=null;v.overviewRevision=(v.overviewRevision || 0)+1;write(v.ctx,{accountName:'',accountAvatar:'',authorized:false,stats:[]});}
+  relogCatalog();
+  for(const v of views.values())if(v.ctx){v.seq++;v.overviewLoaded=false;v.overviewStats=null;v.overviewRevision=(v.overviewRevision || 0)+1;
+    if(v.ctx.page==='account')clearPrivateOverview(v.ctx,v);
+    if(['favorites','coupons','coupon','comment','refund'].includes(v.ctx.page))clearBuyerData(v.ctx,v);
+    if(['orders','order'].includes(v.ctx.page))clearOrderData(v.ctx,v);
+    if(v.ctx.page==='messages'){v.rows=[];v.page=0;v.more=false;v.messagesLoaded=false;v.messagesCheckPending=false;v.messagesChanged=false;write(v.ctx,{rows:[],more:false,unread:false,messagesChanged:false});}
+    if(v.ctx.page==='product'){v.comments=[];v.commentsRevision=(v.commentsRevision || 0)+1;v.commentsPage=0;v.commentsLoading=false;write(v.ctx,{comments:[],commentsMore:false,commentsLoading:false,commentStatsReady:false,canComment:false});}
+    write(v.ctx,{accountName:'',accountAvatar:'',accountMeta:'',authorized:false,stats:[]});}
   try {await ctx.api.credentials.remove('account');}
   finally {clearAccountIdentity();identitySigningOut=false;}
   invalidateViews(null,v=>v.ctx?.page!=='market');await loadOverview(ctx);
@@ -1607,10 +1772,15 @@ fluxdo.on('checkPayment',async ctx=>{
 fluxdo.on('sellerProfile',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername && (!p.sellerSite || p.sellerSite==='linux.do'))return ctx.api.forum.open({type:'user',username:p.sellerUsername});});
 
 const messageTabs=[{value:'',label:'全部'},{value:'unread',label:'未读'},{value:'read',label:'已读'}];
+const messageTypes={notification:'系统通知',seller_pending_delivery:'待发货提醒',seller_fulfillment_deadline:'卖家发货时限提醒',buyer_fulfillment_deadline:'发货保障通知',seller_fulfillment_policy:'卖家履约记录通知',product_offline:'商品下架通知',zero_stock_auto_offline:'库存下架提醒',product_comment:'商品评论通知',comment_reply:'评论回复通知',product_restock:'商品补货通知',buyer_order_delivered:'商品发货提醒',refund_reconciled:'退款核对结果',seller_restock_alert:'卖家补货提醒',restock_alert:'卖家补货提醒',top_service_active:'甄选服务生效通知',top_service_expired:'甄选服务到期通知'};
+function messageType(type) {
+  const refund=/^(?:buyer|seller)_refund_(processing|succeeded|failed|unknown|exception|external_dispute)$/.exec(type);
+  return refund ? ({processing:'退款处理中',succeeded:'退款成功通知',failed:'退款异常通知',exception:'退款异常通知',unknown:'退款待核对通知',external_dispute:'Credit 处理通知'})[refund[1]] : messageTypes[type] || '系统通知';
+}
 async function loadMessages(ctx,more,silent=false) {
   const s=market(ctx);if(!s || s.buyerBusy || (more && (s.loading || !s.more)))return;
   if(silent && s.loading){s.messagesCheckPending=true;return;}
-  const revision=++s.seq,current=()=>market(ctx)===s && revision===s.seq;
+  const revision=++s.seq,current=()=>market(ctx)===s && revision===s.seq;s.messagesRetryMore=more;
   const page=more ? (s.page || 1)+1 : 1;
   const queryKey=JSON.stringify([s.readStatus || '',s.search || '']);
   const probe=silent && s.page>1 && s.messagesQuery===queryKey;
@@ -1631,10 +1801,9 @@ async function loadMessages(ctx,more,silent=false) {
     if(probe) {
       s.messagesChanged=s.messagesChanged || s.messagesFirstSignature!==signature;
     } else {
-      const ids=new Set(more ? s.rows.map(r=>r.id) : []);
-      const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),
-        time:display(m.createdAt),read:flag(m.isRead ?? m.is_read ?? m.read),link:display(m.link)})).filter(r=>!ids.has(r.id));
-      s.rows=more ? s.rows.concat(rows) : rows;s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
+      const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),type:messageType(m.messageType),
+        time:storeTime(m.createdAt),read:flag(m.isRead ?? m.is_read ?? m.read),link:display(m.link)}));
+      s.rows=mergeRows(more ? s.rows : [],rows);s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
       s.messagesLoaded=true;
       if(!more) {s.messagesFirstSignature=signature;s.messagesChanged=messagesRevision!==(s.messagesRevision || 0);}
       write(ctx,{rows:s.rows,more:s.more,unread:Number(data.summary?.totalUnread || 0)>0});
@@ -1653,7 +1822,7 @@ async function loadMessages(ctx,more,silent=false) {
 }
 fluxdo.on('messagesRefresh',ctx=>loadMessages(ctx,false));
 fluxdo.on('messagesMore',ctx=>loadMessages(ctx,true));
-fluxdo.on('messagesRetry',ctx=>loadMessages(ctx,(market(ctx)?.rows.length || 0)>0));
+fluxdo.on('messagesRetry',ctx=>loadMessages(ctx,market(ctx)?.messagesRetryMore===true));
 fluxdo.on('messageTab',(ctx,a)=>{const s=market(ctx);if(s && messageTabs.some(t=>t.value===a.value)){s.readStatus=a.value;return loadMessages(ctx,false);}});
 fluxdo.on('messageRead',(ctx,a)=>buyerAction(ctx,async s=>{
   const row=s.rows.find(r=>r.id===a.id);if(!row || row.read)return;

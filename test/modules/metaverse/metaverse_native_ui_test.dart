@@ -1628,6 +1628,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     'externalError': '',
     'externalBusy': false,
     'comments': <Object?>[],
+    'recentOrders': <Object?>[], 'unavailableCoupons': <Object?>[], 'refundDetails': <Object?>[],
     'commentsError': '',
     'commentsMessage': '暂无评论',
     'commentsMore': false,
@@ -1675,7 +1676,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     'rows': [
       {
         'id': '1',
-        'value':'12.50','original':'20.00','sellerName':'tester','sellerAvatar':'','typeIcon':'key','typeLabel':'自动发卡',
+        'value':'12.50','original':'20.00','sellerName':'tester','sellerAvatar':'','typeIcon':'key','typeLabel':'自动发卡','availability':'','preferenceTime':'','listingNote':'',
         'title': '开发者工具包',
         'price': '12.50 LDC',
         'stock': '库存 18',
@@ -1687,7 +1688,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
       },
       {
         'id': '2',
-        'value':'3.00','original':'','sellerName':'seller','sellerAvatar':'','typeIcon':'gift','typeLabel':'手动发货',
+        'value':'3.00','original':'','sellerName':'seller','sellerAvatar':'','typeIcon':'gift','typeLabel':'手动发货','availability':'','preferenceTime':'','listingNote':'',
         'title': '社区数字纪念卡与开发者工具兑换套装',
         'price': '3.00 LDC',
         'stock': '库存 不限',
@@ -1700,7 +1701,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     ],
   };
   for (final brightness in Brightness.values) {
-    testWidgets('商城头像与订单补图 ${brightness.name}', (tester) async {
+    testWidgets('商城头像与订单补图、商户封面和评论头像 ${brightness.name}', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -1716,7 +1717,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
       final runtime = Runtime()
         ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (uri) async {
           requests.add(uri.path);
-          return uri.path == '/avatar.png' ? avatarBytes : productBytes;
+          return uri.path.endsWith('avatar.png') ? avatarBytes : productBytes;
         }))
         ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
       addTearDown(runtime.dispose);
@@ -1747,7 +1748,41 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
       await tester.pumpWidget(app(render('BuyerOrders'),title:'我的订单',brightness:brightness));
       await tester.pumpAndSettle();
       expect(find.byType(Image),findsOneWidget);
+      expect(tester.widget<RawImage>(find.byType(RawImage)).image,isNotNull);
       await snapshot(tester,'orders-images-${brightness.name}');
+
+      final product = Map<String, dynamic>.from((data['rows'] as List).first as Map);
+      values.updateAll({
+        'merchantReady':true, 'merchantTitle':'社区小店', 'merchantMeta':'@seller · TL3',
+        'merchantAvatar':'https://images.example/merchant-avatar.png',
+        'merchantStats':[{'label':'在售','value':'2'},{'label':'上架','value':'3'},{'label':'销量','value':'269'}],
+        'rows':[{...product,'image':'https://images.example/product.webp','sellerAvatar':'https://images.example/seller-avatar.png'},(data['rows'] as List).last],
+      });
+      requests.clear();
+      await tester.pumpWidget(app(render('Merchant'),title:'卖家商品',brightness:brightness));
+      await tester.pumpAndSettle();
+      expect(find.text('@seller · TL3'),findsOneWidget);
+      expect(find.text('269'),findsOneWidget);
+      expect(requests.toSet(),{'/merchant-avatar.png','/product.webp','/seller-avatar.png'});
+      final pixels = tester.widgetList<RawImage>(find.byType(RawImage)).toList();
+      expect(pixels,hasLength(3));
+      expect(pixels.every((image)=>image.image!=null),isTrue);
+      await snapshot(tester,'merchant-audit-${brightness.name}');
+
+      values.updateAll({
+        'image':'', 'authorized':true, 'commentsMessage':'', 'commentStatsReady':true,
+        'commentStats':[{'label':'评分','value':'4.0 / 5'},{'label':'已评分','value':'1'},{'label':'收藏','value':'4'},{'label':'评论 / 回复','value':'1 / 1'}],
+        'comments':[{'id':'comment','author':'买家昵称','handle':'@buyer','avatar':'https://images.example/buyer-avatar.png','time':'2026-11-08T17:03:21Z','content':'兑换顺利，说明很清楚。','badge':'已购','rating':'4 / 5','moderation':'','repliesOpen':true,'repliesError':'','replies':[{'author':'店主','handle':'@seller','avatar':'','time':'2026-11-08T17:18:13Z','content':'谢谢反馈。','badge':'卖家','rating':'','moderation':''}]}],
+      });
+      await tester.pumpWidget(app(render('Product'),title:'商品详情',brightness:brightness));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('商品评论'));
+      await tester.pumpAndSettle();
+      final authorRow=find.ancestor(of:find.text('买家昵称'),matching:find.byType(Row)).first;
+      expect(tester.widget<RawImage>(find.descendant(of:authorRow,matching:find.byType(RawImage))).image,isNotNull);
+      expect(find.text('4 / 5'),findsOneWidget);
+      expect(find.text('谢谢反馈。'),findsOneWidget);
+      await snapshot(tester,'comments-audit-${brightness.name}');
       expect(tester.takeException(),isNull);
     });
   }
@@ -1813,7 +1848,9 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
                     'tabs': name == 'Messages'
                         ? [{'value':'all','label':'全部','selected':true},{'value':'unread','label':'未读','selected':false},{'value':'read','label':'已读','selected':false}]
                         : [{'value':'unused','label':'未使用','selected':true},{'value':'used','label':'已使用','selected':false},{'value':'expired','label':'已过期','selected':false}],
-                    'merchantTitle':'tester 的商品',
+                    'collections':[{'id':'favorites','label':'已收藏','selected':true},{'id':'blocked','label':'不感兴趣','selected':false}],
+                    'collectionHint':'搜索收藏的商品','collectionEmpty':'还没有收藏商品',
+                    'merchantReady':true,'merchantTitle':'tester 的商品','merchantMeta':'@tester · TL3','merchantAvatar':'','merchantStats':[{'label':'在售','value':'2'},{'label':'销量','value':'40'}],
                   }),
                 ),
               ),
