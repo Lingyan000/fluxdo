@@ -262,28 +262,33 @@ class _ForumPreferencesPageState extends ConsumerState<ForumPreferencesPage> {
     children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: context.l10n.forumPrefs_search,
-            prefixIcon: const Icon(Symbols.search_rounded, size: 20),
-            filled: true,
-            border: OutlineInputBorder(
-              borderRadius: context.shapes.borderRadius(24),
-              borderSide: BorderSide.none,
+        child: InputFieldShell(
+          radius: 24,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.4),
+          child: TextField(
+            controller: _searchController,
+            textAlignVertical: TextAlignVertical.center,
+            decoration: InputDecoration(
+              hintText: context.l10n.forumPrefs_search,
+              prefixIcon: const Icon(Symbols.search_rounded, size: 20),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 16,
+              ),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: context.l10n.common_clear,
+                      icon: const Icon(Symbols.close_rounded, size: 20),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                    ),
             ),
-            suffixIcon: _query.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: context.l10n.common_clear,
-                    icon: const Icon(Symbols.close_rounded, size: 20),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _query = '');
-                    },
-                  ),
+            onChanged: (value) => setState(() => _query = value),
           ),
-          onChanged: (value) => setState(() => _query = value),
         ),
       ),
       Padding(

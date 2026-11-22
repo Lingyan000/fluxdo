@@ -10,6 +10,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
+import '../helpers/input_field_shell.dart';
+
 ThemeData _build(ThemeStyle style, {Brightness brightness = Brightness.light}) {
   final scheme = ColorScheme.fromSeed(
     seedColor: const Color(0xFF3366CC),
@@ -191,63 +193,82 @@ void main() {
   });
 
   group('输入框外壳', () {
-    Future<void> pump(WidgetTester tester, {required bool focus}) async {
+    Future<void> pump(WidgetTester tester, ThemeData theme) async {
       await tester.pumpWidget(
         MaterialApp(
-          theme: _build(ThemeRegistry.minimal.style),
-          home: Scaffold(
+          theme: theme,
+          home: const Scaffold(
             body: Center(
               child: SizedBox(
                 width: 240,
                 child: InputFieldShell(
                   height: 40,
-                  padding: const EdgeInsets.only(left: 8),
+                  padding: EdgeInsets.only(left: 8),
                   radius: 20,
-                  child: TextField(
-                    autofocus: focus,
-                    decoration: const InputDecoration(border: InputBorder.none),
-                  ),
+                  child: TextField(decoration: InputDecoration(hintText: '搜索')),
                 ),
               ),
             ),
           ),
         ),
       );
-      // 自动聚焦在下一帧生效，外壳收到焦点变化后再重建一次
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
     }
 
-    BorderSide shellSide(WidgetTester tester) {
-      final container = tester.widget<Container>(
-        find.descendant(
-          of: find.byType(InputFieldShell),
-          matching: find.byType(Container),
+    Container shellContainer(WidgetTester tester) => tester.widget<Container>(
+      find.descendant(
+        of: find.byType(InputFieldShell),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Container && widget.decoration is ShapeDecoration,
         ),
+      ),
+    );
+
+    void expectStroke(WidgetTester tester, InputBorder? themeBorder) {
+      final container = shellContainer(tester);
+      expectInputShellStroke(
+        stroke: (container.foregroundDecoration! as ShapeDecoration).shape,
+        outline:
+            (container.decoration! as ShapeDecoration).shape
+                as RoundedSuperellipseBorder,
+        size: const Size(240, 40),
+        themeBorder: themeBorder,
       );
-      final decoration = container.foregroundDecoration as ShapeDecoration?;
-      final shape = decoration?.shape as RoundedSuperellipseBorder?;
-      return shape?.side ?? BorderSide.none;
     }
 
-    testWidgets('主题边框画在外壳轮廓上，聚焦时换高亮色', (tester) async {
-      final theme = _build(ThemeRegistry.minimal.style);
-      await pump(tester, focus: false);
-      expect(shellSide(tester).color, theme.colorScheme.outlineVariant);
-      await tester.tap(find.byType(TextField));
-      await tester.pump();
-      expect(shellSide(tester).width, 1.5);
-      expect(shellSide(tester).color, theme.colorScheme.onSurface);
-    });
+    for (final inputs in [InputStyle.outlined, InputStyle.underline]) {
+      testWidgets('$inputs 外壳随主题绘制常态和聚焦边线', (tester) async {
+        final theme = _build(
+          ThemeRegistry.minimal.style.copyWith(inputs: inputs),
+        );
+        await pump(tester, theme);
+        final inputTheme = theme.inputDecorationTheme;
+        expectStroke(tester, inputTheme.enabledBorder);
 
-    testWidgets('里面的输入框不再画自己的边框，不会与外壳错位', (tester) async {
-      await pump(tester, focus: true);
-      final decorator = tester.widget<InputDecorator>(
-        find.byType(InputDecorator),
-      );
-      expect(decorator.decoration.focusedBorder, InputBorder.none);
-      expect(decorator.decoration.enabledBorder, InputBorder.none);
-    });
+        await tester.tap(find.byType(TextField));
+        await tester.pumpAndSettle();
+        expectStroke(tester, inputTheme.focusedBorder);
+        final decorator = tester.widget<InputDecorator>(
+          find.byType(InputDecorator),
+        );
+        expect(decorator.isFocused, isTrue);
+        expect(decorator.decoration.focusedBorder, InputBorder.none);
+        expect(decorator.decoration.enabledBorder, InputBorder.none);
+
+        final input = find.byType(EditableText);
+        final editable = tester.state<EditableTextState>(input);
+        await tester.enterText(input, '关键词');
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(input), same(editable));
+        expect(editable.widget.controller.text, '关键词');
+        expect(editable.widget.focusNode.hasFocus, isTrue);
+
+        editable.widget.focusNode.unfocus();
+        await tester.pumpAndSettle();
+        expectStroke(tester, inputTheme.enabledBorder);
+      });
+    }
 
     testWidgets('无边框输入框在描边、下划线主题下聚焦也不画框', (tester) async {
       for (final inputs in [InputStyle.outlined, InputStyle.underline]) {
@@ -257,9 +278,8 @@ void main() {
             home: Scaffold(
               body: TextField(
                 autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: '标题',
-                ).withoutBorder(),
+                decoration: const InputDecoration(hintText: '标题')
+                    .withoutBorder(),
               ),
             ),
           ),
@@ -284,7 +304,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(shellSide(tester), BorderSide.none);
+      expectStroke(tester, null);
     });
   });
 
