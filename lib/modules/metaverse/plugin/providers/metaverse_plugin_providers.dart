@@ -229,8 +229,10 @@ class MetaversePluginsController
         PluginVersion.parse(package.manifest.version).compareTo(PluginVersion.parse(old.version)) < 0) {
       throw const MetaversePluginCallException('restore_source_mismatch');
     }
-    final data = await migrateMetaverseData(package: package, fromVersion: old.dataVersion,
+    var data = await migrateMetaverseData(package: package, fromVersion: old.dataVersion,
       data: (backup['data'] as Map).cast<String, Object?>(), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    data = await migrateMetaverseAccountPartitions(package: package, data: data,
+      engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
     await _install(package, choices, restoreData: data,
       restorePreferences: (backup['preferences'] as Map? ?? const {}).cast<String, Object?>());
     MetaverseUpdateStore(await ref.read(metaversePluginDirectoryProvider.future)).setAllowed(byId(old.id)!, backup['autoUpdate'] != false);
@@ -401,6 +403,8 @@ class MetaversePluginsController
     await _store.settleRelease(previous);
     var data = await migrateMetaverseData(package: package, fromVersion: previous.manifest.dataVersion,
       data: await _store.readStorage(previous.id), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    data = await migrateMetaverseAccountPartitions(package: package, data: data,
+      engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
     if (!previous.manifest.accountScoped && next.manifest.accountScoped &&
         !next.manifest.requiredFeatures.contains('accountDataMigration')) {
       // 只有安全存储中已绑定的唯一账号可继承旧公共分区；无法归属的数据保留在快照中。

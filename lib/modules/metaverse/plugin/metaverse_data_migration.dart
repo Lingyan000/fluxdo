@@ -24,6 +24,7 @@ Future<Map<String, Object?>> migrateMetaverseAccountData({
   required int account,
   required String script,
   required MetaverseScriptEngineFactory engineFactory,
+  Duration timeout = const Duration(seconds: 20),
 }) async {
   final legacy = <String, Object?>{
     for (final entry in data.entries)
@@ -51,7 +52,7 @@ Future<Map<String, Object?>> migrateMetaverseAccountData({
   );
   try {
     final output = await runtime.runTask(
-      'account-migration', background: false, event: 'storage.partition',
+      'account-migration', background: false, event: 'storage.partition', timeout: timeout,
       arguments: {'accountId': account, 'legacy': legacy, 'account': current},
     );
     bool validData(Object? value) => value is Map<String, dynamic> &&
@@ -76,6 +77,34 @@ Future<Map<String, Object?>> migrateMetaverseAccountData({
   } finally {
     runtime.dispose();
   }
+}
+
+/// 升级时逐个整理已有分区，不依赖下次登录账号的顺序。
+Future<Map<String, Object?>> migrateMetaverseAccountPartitions({
+  required MetaversePluginPackage package,
+  required Map<String, Object?> data,
+  required MetaverseScriptEngineFactory engineFactory,
+}) async {
+  if (!package.manifest.accountScoped ||
+      !package.manifest.requiredFeatures.contains('accountDataMigration')) {
+    return data;
+  }
+  final accounts = <int>{};
+  for (final key in data.keys) {
+    final match = RegExp(r'^@forum-account:(\d+):').firstMatch(key);
+    if (match != null) accounts.add(int.parse(match[1]!));
+  }
+  var result = data;
+  final watch = Stopwatch()..start();
+  for (final account in accounts) {
+    if (watch.elapsed >= const Duration(seconds: 20)) {
+      throw const MetaversePluginCallException('migration_timeout');
+    }
+    result = await migrateMetaverseAccountData(data: result, account: account,
+      script: package.code.script, engineFactory: engineFactory,
+      timeout: const Duration(seconds: 20) - watch.elapsed);
+  }
+  return result;
 }
 
 /// 迁移运行器只处理数据副本，不提供网络、凭证、页面或系统任务能力。

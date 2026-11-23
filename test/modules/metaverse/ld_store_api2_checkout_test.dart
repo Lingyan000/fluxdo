@@ -12,6 +12,8 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_data_migration.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
@@ -335,6 +337,20 @@ void main() {
       expect((await invoke('submit', intent))['failure'], 'checkout_record_conflict');
       expect(await store.readStorage(manifest.id), before);
       expect(orders.requests, isEmpty);
+    });
+
+    test('升级先整理旧分区，先登录另一账号也能恢复原订单', () async {
+      final pending = {...intent, 'state': 'pending', 'token': 'ord_${'b' * 32}'};
+      final data = <String, Object?>{'@forum-account:42:submission:43': pending};
+      final migrated = await migrateMetaverseAccountPartitions(
+        package: MetaversePluginPackage(manifest: manifest, source: 'file:${manifest.id}',
+          code: await store.readCode(manifest.id)), data: data,
+        engineFactory: createMetaverseScriptEngine);
+      await store.writeStorage(manifest.id, migrated);
+      await signIn(43);
+      expect((await invoke('status'))['result'], pending);
+      expect(orders.requests, isEmpty);
+      expect(data, {'@forum-account:42:submission:43': pending});
     });
 
     test('身份权限关闭时不迁移，授权后同一实例可以恢复记录', () async {
