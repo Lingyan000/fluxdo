@@ -41,6 +41,15 @@ function setup({authorized=true,claims=null,consent=true,respond=()=>({}),timers
   const fire=(p,name,args={})=>handlers.get(name)(p.ctx,args);
   return {api,handlers,calls,nav,confirmations,page,fire,pendingTimers,streamCalls,setLocale(value){locale=value;},setAuthorized(value){authorized=value;},async tick(){const [id,timer]=pendingTimers.entries().next().value;pendingTimers.delete(id);await timer.fn();}};
 }
+test('繁体账号标题和入口保留士多名称',async()=>{
+  for(const locale of ['zh-TW','zh-HK']){
+    const t=setup({authorized:false,locale});
+    const p=await t.page('account');
+    assert.equal(p.data.pageTitle,'我的士多');
+    assert.ok(Object.values(p.data.i18n).includes('我的士多'));
+    assert.ok(!Object.values(p.data.i18n).includes('我計程車多'));
+  }
+});
 test('不同意士多协议时不初始化授权也不调用 Connect',async()=>{
   const t=setup({consent:false});const ctx={api:t.api,setData:()=>{}};
   await t.handlers.get('login')(ctx);
