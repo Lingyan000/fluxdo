@@ -25,6 +25,15 @@ void main() {
     }
   });
 
+  test('市场译名用于地区回退且不覆盖身份、来源与权限', () {
+    final raw = {...entry(), 'locales':{'zh':{'name':'笔记','summary':'本地笔记'}}};
+    final translated = MetaverseMarketEntry.parse(raw, source);
+    expect(translated.localized('name','zh-CN'), '笔记');
+    expect(translated.localized('name','fr'), 'Notes');
+    expect(translated.id, entry()['id']);
+    expect(() => MetaverseMarketEntry.parse({...raw,'locales':{'zh':{'packageUrl':'https://evil.example'}}},source), throwsFormatException);
+  });
+
   test('仓库地址、分支目录和索引文件规范化到稳定来源', () {
     expect(
       MetaverseMarketSource.fromInput(

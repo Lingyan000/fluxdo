@@ -94,6 +94,7 @@ void main() {
     double scale = 1,
     Size size = const Size(360, 800),
     bool animated = false,
+    Future<void>? closeWhen,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
@@ -120,6 +121,8 @@ void main() {
                   child: const Text('查看图片'),
                   onPressed: () => ImageViewerPage.openWithLoader(
                     context,
+                    closeWhen: closeWhen,
+                    evictOnClose: closeWhen != null,
                     loadImage: () {
                       loads++;
                       return load();
@@ -185,6 +188,18 @@ void main() {
       }
     });
   }
+
+  testWidgets('私密来源撤销关闭所属查看器并清除解码缓存', (tester) async {
+    final revoked = Completer<void>();
+    final bytes = img.encodeJpg(img.Image(width: 24, height: 32));
+    await show(tester, () async => bytes, closeWhen: revoked.future);
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+    revoked.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(find.text('查看图片'), findsOneWidget);
+    expect((await MemoryImage(bytes).obtainCacheStatus(configuration:ImageConfiguration.empty))?.keepAlive, isNot(true));
+  });
 
   for (final format in ['jpeg', 'gif']) {
     testWidgets('$format 保存和分享保留原始字节与实际类型，且不重新加载', (tester) async {

@@ -1,4 +1,8 @@
 {
+  "metaverse_captchaTitle": "安全验证",
+  "metaverse_captchaHint": "请完成验证后继续",
+  "metaverse_apiFiles": "选择临时附件、上传并查看私密图片。文件字节由宿主管理，脚本不读取本地路径。",
+  "metaverse_apiCaptcha": "打开原生验证面板，由用户完成服务提供方的验证。",
   "metaverse_pageChromeTitle": "页面标题栏",
   "metaverse_pageChromeGuide": "声明 pageChrome，并在 pages[].appBar 用 title、actions 引用组件。插槽与正文共享数据和事件；返回、关闭由宿主保留。点击下方书签可体验标题栏操作与内容联动。",
   "metaverse_autoUpdates": "插件自动更新",

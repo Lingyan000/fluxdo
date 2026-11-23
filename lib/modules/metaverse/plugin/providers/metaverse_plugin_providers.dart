@@ -1,6 +1,12 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import '../metaverse_plugin_files.dart';
+import '../metaverse_captcha_request.dart';
+import '../ui/metaverse_captcha_sheet.dart';
+import '../../../../pages/image_viewer_page.dart';
 import 'package:common_ui/common_ui.dart';
 import '../../host/metaverse_forum_adapter.dart';
 import '../../market/metaverse_update_store.dart';
@@ -393,8 +399,17 @@ class MetaversePluginsController
   Future<void> _prepareRelease(InstalledMetaversePlugin previous, InstalledMetaversePlugin next,
       MetaversePluginPackage package) async {
     await _store.settleRelease(previous);
-    final data = await migrateMetaverseData(package: package, fromVersion: previous.manifest.dataVersion,
+    var data = await migrateMetaverseData(package: package, fromVersion: previous.manifest.dataVersion,
       data: await _store.readStorage(previous.id), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    if (!previous.manifest.accountScoped && next.manifest.accountScoped) {
+      // 只有安全存储中已绑定的唯一账号可继承旧公共分区；无法归属的数据保留在快照中。
+      final accounts = <int>{};
+      for (final name in previous.manifest.capabilities.credentials.keys) {
+        final credential = await _store.readCredential(previous.id, name);
+        if (credential?.accountId case final account?) accounts.add(account);
+      }
+      data = partitionMetaverseData(data, accounts.length == 1 ? accounts.single : null);
+    }
     await _store.prepareRelease(previous, next, data);
   }
 
@@ -634,6 +649,27 @@ class MetaversePluginHosts with WidgetsBindingObserver {
 
 class _HostDelegate extends MetaversePluginHostDelegate {
   @override
+  Future<String?> requestCaptcha(BuildContext context, MetaverseCaptchaRequest request, void Function() checkActive) =>
+      showMetaverseCaptcha(context, _manifest.localizedName(context.l10n.localeName), request, checkActive);
+  @override
+  Future<MetaversePickedFile?> pickFile(BuildContext context, MetaverseFileSelection selection) async {
+    final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: selection.extensions);
+    if (file?.path == null) return null;
+    final source = File(file!.path!);
+    if (await source.length() > selection.maxBytes) throw const MetaversePluginCallException('file_size_exceeded');
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in source.openRead()) {
+      bytes.add(chunk);
+      if (bytes.length > selection.maxBytes) throw const MetaversePluginCallException('file_size_exceeded');
+    }
+    return MetaversePickedFile(file.name, bytes.takeBytes());
+  }
+
+  @override
+  Future<void> previewFile(BuildContext context, Future<Uint8List> Function() load, Future<void> revoked) =>
+      ImageViewerPage.openWithLoader(context, loadImage: load, closeWhen: revoked, evictOnClose: true);
+
+  @override
   Map<String, Object?> environment() => {
     'locale': (_ref.read(localeProvider) ?? WidgetsBinding.instance.platformDispatcher.locale).toLanguageTag(),
     'platform': Platform.operatingSystem,
@@ -699,14 +735,14 @@ class _HostDelegate extends MetaversePluginHostDelegate {
       MetaversePluginPage.dismissModal(context, _manifest.id, page);
 
   @override
-  Future<bool> confirmBackground(BuildContext context, String id) => showMetaverseConfirmation(context, _manifest.name, {
+  Future<bool> confirmBackground(BuildContext context, String id) => showMetaverseConfirmation(context, _manifest.localizedName(context.l10n.localeName), {
     'title': context.l10n.metaverse_backgroundTasks,
-    'message': '${_manifest.tasks.firstWhere((task) => task.id == id).title}\n${context.l10n.metaverse_backgroundTaskNote}',
+    'message': '${_manifest.text('tasks.$id.title', _manifest.tasks.firstWhere((task) => task.id == id).title, context.l10n.localeName)}\n${context.l10n.metaverse_backgroundTaskNote}',
     'confirmLabel': context.l10n.common_enable,
   });
 
   @override
-  Future<bool> confirmNotifications(BuildContext context) => showMetaverseConfirmation(context, _manifest.name, {
+  Future<bool> confirmNotifications(BuildContext context) => showMetaverseConfirmation(context, _manifest.localizedName(context.l10n.localeName), {
     'title': context.l10n.metaverse_pluginNotifications, 'message': context.l10n.metaverse_pluginNotificationsNote,
     'confirmLabel': context.l10n.common_enable,
   });
@@ -718,7 +754,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');
     final control = await _ref.read(metaverseTaskStoreProvider.future);
     checkActive();
-    return MetaverseTaskActions(control, _manifest, account, checkActive: () {
+    return MetaverseTaskActions(control, _manifest, account, locale: environment()['locale'] as String, checkActive: () {
       checkActive();
       if (!_accountActive(account)) throw const MetaversePluginCallException('task_cancelled');
     }, changed: () async {
@@ -756,7 +792,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   Future<bool> confirm(BuildContext context, Map<String, Object?> options) =>
-      showMetaverseConfirmation(context, _manifest.name, options);
+      showMetaverseConfirmation(context, _manifest.localizedName(context.l10n.localeName), options);
 
   @override
   Future<String?> authorizeConnect(BuildContext context, Uri authorization) async {
@@ -921,7 +957,7 @@ class _HostDelegate extends MetaversePluginHostDelegate {
 
   @override
   void toast(String message, String type) =>
-      showMetaversePluginToast(_manifest.name, message, type);
+      showMetaversePluginToast(_manifest.localizedName(environment()['locale'] as String), message, type);
 
   @override
   void onSuspended(String pluginId, String reason) {

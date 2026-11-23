@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:collection/collection.dart';
 import 'dart:math';
 
@@ -15,6 +17,10 @@ import 'package:rfw/rfw.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../l10n/s.dart';
+import '../../../pages/image_viewer_page.dart';
+import '../../../widgets/common/captcha_panel.dart';
+import '../plugin/metaverse_captcha_request.dart';
+import '../plugin/ui/metaverse_captcha_sheet.dart';
 import '../../../services/toast_service.dart';
 import '../../../services/ldc_payment_service.dart';
 import '../../../utils/dialog_utils.dart';

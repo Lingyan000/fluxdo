@@ -206,7 +206,7 @@ class _UpdatePageState extends ConsumerState<MetaverseUpdatePage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           M3eSwitchListTile(
-                            title: Text(plugin.manifest.name),
+                            title: Text(plugin.manifest.localizedName(context.l10n.localeName)),
                             subtitle: Text(
                               !supported
                                   ? l.metaverse_updateNoSource

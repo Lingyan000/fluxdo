@@ -169,8 +169,8 @@ class _DevelopmentPageState extends ConsumerState<MetaverseDevelopmentPage>
                                 title: Text(switch (session.state) {
                                   'connecting' => l.metaverse_devConnecting,
                                   'connected' =>
-                                    session.project?.manifest.name ??
-                                        session.pendingProject?.manifest.name ??
+                                    session.project?.manifest.localizedName(context.l10n.localeName) ??
+                                        session.pendingProject?.manifest.localizedName(context.l10n.localeName) ??
                                         l.metaverse_devConnected,
                                   _ => l.metaverse_devDisconnected,
                                 }),
@@ -309,7 +309,7 @@ class _DevelopmentPreview extends StatelessWidget {
               children: [
                 for (final page in manifest.pages)
                   ListTile(
-                    title: Text(page.title),
+                    title: Text(manifest.pageTitle(page, context.l10n.localeName)),
                     trailing: const Icon(Symbols.chevron_right_rounded),
                     onTap: () =>
                         session.navigate?.call(context, page.id, const {}),

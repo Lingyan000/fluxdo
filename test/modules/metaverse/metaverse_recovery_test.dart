@@ -107,6 +107,21 @@ void main() {
     expect(await store.releaseStatus(old.id), isEmpty);
   });
 
+  test('新增后台任务按唯一凭证账号迁移旧数据，回退恢复原分区', () async {
+    final raw=updateManifest('1.1.0');
+    raw['permissions']={'network':['api.example.org'],'credentials':{'account':{'requests':[{'origin':'https://api.example.org','pathPrefix':'/api','methods':['GET']}]}}};
+    final source=controller.byId('example.updates')!.source;
+    final code=updatePackage('1.1.0').code;
+    await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse(raw),source:source,code:code));
+    await store.writeCredential('example.updates','account',const MetaverseCredential('fixture',accountId:42),
+      revision:store.credentialRevision('example.updates','account'),isActive:()=>true);
+    await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse({...raw,'version':'1.2.0',
+      'requiredFeatures':['scheduledTasks'],'tasks':[{'id':'refresh','title':'刷新'}]}),source:source,code:code));
+    expect(await store.readStorage('example.updates'),{'@forum-account:42:list':['alice']});
+    await controller.rollback('example.updates',reviewed:true);
+    expect(await store.readStorage('example.updates'),{'list':['alice']});
+  });
+
   test('仅保留当前和上一版本代码，运行成功后仍可显式回退', () async {
     await controller.install(updatePackage('1.1.0'));
     await controller.install(updatePackage('1.2.0'));

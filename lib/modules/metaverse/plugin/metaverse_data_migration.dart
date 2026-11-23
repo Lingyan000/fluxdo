@@ -6,6 +6,16 @@ import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'metaverse_plugin_installer.dart';
 import 'metaverse_plugin_store.dart';
 
+Map<String, Object?> partitionMetaverseData(Map<String, Object?> data, int? account) {
+  final result = Map<String, Object?>.of(data);
+  if (account == null) return result;
+  for (final entry in data.entries.where((entry) => !entry.key.startsWith('@'))) {
+    result.putIfAbsent('@forum-account:$account:${entry.key}', () => entry.value);
+    result.remove(entry.key);
+  }
+  return result;
+}
+
 /// 迁移运行器只处理数据副本，不提供网络、凭证、页面或系统任务能力。
 Future<Map<String, Object?>> migrateMetaverseData({
   required MetaversePluginPackage package,

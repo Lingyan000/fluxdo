@@ -36,13 +36,13 @@ List<NavEntry> pluginNavigationEntries(
               ? (_, ref) => _badgeIcon(ref, plugin, page.id, navigation.icon) : null,
           customSelectedIconBuilder: plugin.manifest.requiredFeatures.contains('navigationBadge')
               ? (_, ref) => _badgeIcon(ref, plugin, page.id, navigation.icon) : null,
-          label: (_) => navigation.label,
+          label: (context) => plugin.manifest.text('pages.${page.id}.navigation.label', navigation.label, context.l10n.localeName),
           description: (context) =>
               plugin.enabled &&
                   plugin.suspendedReason == null &&
                   plugin.manifest.runtimeSupported
-              ? plugin.manifest.name
-              : '${plugin.manifest.name} · ${context.l10n.metaverse_navigationUnavailable}',
+              ? plugin.manifest.localizedName(context.l10n.localeName)
+              : '${plugin.manifest.localizedName(context.l10n.localeName)} · ${context.l10n.metaverse_navigationUnavailable}',
           available:
               plugin.enabled &&
               plugin.suspendedReason == null &&

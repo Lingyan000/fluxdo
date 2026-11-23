@@ -1,4 +1,5 @@
 import 'metaverse_task.dart';
+import 'metaverse_manifest_localization.dart';
 import 'metaverse_plugin_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:collection/collection.dart';
@@ -185,6 +186,11 @@ class MetaversePluginManifest {
 
   /// 原始 JSON，用于持久化后原样重新校验。
   final Map<String, dynamic> raw;
+
+  String text(String key, String fallback, String locale) => MetaverseManifestLocalization.text(raw, key, fallback, locale);
+  String localizedName(String locale) => text('name', name, locale);
+  String localizedDescription(String locale) => text('description', description, locale);
+  String pageTitle(MetaversePluginPageSpec page, String locale) => text('pages.${page.id}.title', page.title, locale);
 
   /// 用户同意的运行权限；版本号、文案及 JS 资源不是授权。链接按匹配顺序比较。
   List<Object?> get _approval => [
@@ -481,6 +487,8 @@ class MetaversePluginManifest {
                 null)) {
       throw const MetaverseManifestException('webLogin', '须为服务的公开 HTTPS 登录页面');
     }
+    try { MetaverseManifestLocalization.validate(json); }
+    on FormatException catch (error) { throw MetaverseManifestException('locales', error.message); }
     return MetaversePluginManifest._(
       id: id,
       name: _string(json, 'name', max: 40),

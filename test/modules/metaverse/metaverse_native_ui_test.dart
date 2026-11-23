@@ -1927,9 +1927,43 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
   }
   final communityFixtures = jsonDecode(File('test/fixtures/metaverse/ld-store-community.json').readAsStringSync()) as List;
   final communityLocales = jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map;
+  for (final brightness in Brightness.values) {
+    testWidgets('提醒设置与私密证据小屏 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n','\n')));
+      addTearDown(runtime.dispose);
+      final locale = brightness == Brightness.dark ? 'en' : 'zh';
+      for (final name in ['Reminders', 'ReportDetail']) {
+        final report = communityFixtures.firstWhere((f) => f['widget'] == 'ReportDetail' && f['locale'] == locale);
+        final model = <String,Object?>{...data, ...Map<String,Object?>.from(report['data']),
+          'i18n':communityLocales[locale], 'reminderEnabled':true, 'reminderNotify':false,
+          'reminderBlocked':true,'reminderSettings':true,'reminderError':'',
+          'reminderNote':locale=='en' ? 'Checks approximately every 15 minutes. The system controls execution.' : '约每 15 分钟检查一次，实际执行由系统安排。',
+          'evidence':[{'id':'1','label':locale=='en'?'Private evidence':'私密证据'}], 'canAddEvidence':true,
+          'attachmentReady':true,'attachmentName':'evidence.png','evidenceBusy':false,'evidenceError':'','evidenceProgress':0.5};
+        final content = RemoteWidget(runtime:runtime, widget:FullyQualifiedWidgetName(metaversePluginLibraryName,name), data:DynamicContent(model),onEvent:(_,_){});
+        await tester.pumpWidget(app(name=='Reminders' ? SingleChildScrollView(child:content) : content,
+          title:locale=='en'?'My store':'我的士多', brightness:brightness, scale:1.4));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(),isNull);
+        if(name=='ReportDetail') {
+          await tester.scrollUntilVisible(find.text('evidence.png'),180,scrollable:find.byType(Scrollable).last);
+          await tester.pumpAndSettle();
+          expect(find.text('evidence.png').hitTestable(),findsOneWidget);
+        }
+        await snapshot(tester,'capabilities-${name.toLowerCase()}-${brightness.name}');
+        await tester.pumpWidget(app(const SizedBox()));
+      }
+    });
+  }
   test('已发布插件的静态图标均有原生映射', () {
     final sources = [File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
-      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.3.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
+      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.3.1.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
     for (final source in sources) {
       for (final match in RegExp(r'(?:icon:|Symbol\(name:)\s*"([a-z_]+)"').allMatches(source)) {
         expect(metaverseIcons, contains(match[1]), reason: match[0]);

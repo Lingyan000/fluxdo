@@ -15,6 +15,7 @@ class MetaverseTaskActions {
     required this.changed,
     required this.checkActive,
     LocalNotificationService? notifications,
+    this.locale = 'zh',
   }) : notifications = notifications ?? LocalNotificationService();
 
   final MetaverseTaskStore store;
@@ -23,6 +24,7 @@ class MetaverseTaskActions {
   final void Function() checkActive;
   final Future<void> Function() changed;
   final LocalNotificationService notifications;
+  final String locale;
 
   Future<Object?> call(String method, Map<String, Object?> params) async {
     checkActive();
@@ -142,7 +144,7 @@ class MetaverseTaskActions {
         try {
           await notifications.showPlugin(
             id: id,
-            pluginName: manifest.name,
+            pluginName: manifest.localizedName(locale),
             title: title,
             body: body,
           );

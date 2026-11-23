@@ -291,6 +291,8 @@ widget Account = ListPage(loading: data.overviewLoading, onRefresh: event "overv
     ListItem(title: data.i18n.s9385bfefca5882f1, leading: Symbol(name: "favorite"), trailing: Symbol(name: "chevron_right"), onTap: event "favorites" {}),
     ListItem(title: data.i18n.s731c8bf2f14a1505, subtitle: data.couponHint, leading: Symbol(name: "gift"), trailing: Symbol(name: "chevron_right"), onTap: event "coupons" {}),
     ListItem(title: data.i18n.s29d8e8ee6822135d, leading: Symbol(name: "flag"), trailing: Symbol(name: "chevron_right"), onTap: event "reports" {}),
+    switch data.authorized {true: ListItem(title: data.i18n.s03671d6ddf237f70, leading: Symbol(name: "notifications"), trailing: Symbol(name: "chevron_right"), onTap: event "reminders" {}), default: SizedBoxShrink()},
+    switch data.remindersOpen {true: Padding(padding: [16.0], child: Reminders()), default: SizedBoxShrink()},
     ListItem(title: data.i18n.sb3761fb805dae671, leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "messages" {}),
     switch data.authorized {true: ListItem(title: data.i18n.s06662ffb634d236a, subtitle: data.spendingSummary, leading: Symbol(name: "payments"), trailing: Label(text: switch data.spendingOpen {true: data.i18n.safd4b783536b8297, default: data.i18n.s00bd3960fea8ea98}, style: "labelMedium", color: "primary"), onTap: event "spending" {}), default: SizedBoxShrink()},
     switch data.spendingOpen {true: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
@@ -402,9 +404,22 @@ widget ReportDetail = switch data.ready {
     switch data.hasReportOutcome {true: Column(crossAxisAlignment: "stretch", children: [Gap(size: 20), SectionTitle(title: data.i18n.sf62360f6e574f0b5), Label(text: data.report.decision), SelectableLabel(text: data.report.note), Label(text: data.report.next)]), default: SizedBoxShrink()},
     switch data.snapshot {"": SizedBoxShrink(), default: Column(crossAxisAlignment: "stretch", children: [Gap(size: 16), SectionTitle(title: data.i18n.s3e307948d45152c8), SelectableLabel(text: data.snapshot)])},
     Gap(size: 16), Label(text: data.reportHint, color: "onSurfaceVariant"),
-    Button(label: data.i18n.secf1507b4b6f918d, variant: "text", icon: "open_in_new", onPressed: event "reportWeb" {}),
+    ...for file in data.evidence: ListItem(title: file.label, leading: Symbol(name: "image"), onTap: event "evidenceOpen" {id: file.id}),
+    switch data.canAddEvidence {true: Button(label: data.i18n.s698c04db83fdd5d9, variant: "tonal", enabled: switch data.evidenceBusy {true: false, default: true}, onPressed: event "evidencePick" {}), default: SizedBoxShrink()},
+    switch data.attachmentReady {true: Column(crossAxisAlignment: "stretch", children: [Label(text: data.attachmentName), ActionBar(actions: [Button(label: data.i18n.s13d61fea9f174905, variant: "text", onPressed: event "evidencePreview" {}), Button(label: data.i18n.s664110c1c5f011a7, loading: data.evidenceBusy, onPressed: event "evidenceUpload" {})])]), default: SizedBoxShrink()},
+    switch data.evidenceBusy {true: Column(children: [ProgressBar(value: data.evidenceProgress),Button(label: data.i18n.sa2483633300e4949, variant: "text", onPressed: event "evidenceCancel" {})]), default: SizedBoxShrink()},
+    Label(text: data.evidenceError, color: "error"),
     Gap(size: 20), SectionTitle(title: data.i18n.sa00b23e3dbc3f545), ...for entry in data.events: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [Label(text: entry.title, style: "titleSmall"), Label(text: entry.message), Label(text: entry.time, style: "labelSmall", color: "onSurfaceVariant")])), Gap(size: 16), BuyerFeedback(),
   ])), default: CommunityPending()
 };
+
+widget Reminders = Column(crossAxisAlignment: "stretch", children: [
+  Label(text: data.reminderNote, color: "onSurfaceVariant"), Gap(size: 16),
+  ListItem(title: data.i18n.sd2086c154211d5bf, subtitle: data.i18n.s53aacd5473b56fb9, trailing: Toggle(value: data.reminderEnabled, onChanged: event "reminderToggle" {}), onTap: event "reminderToggle" {}),
+  ListItem(title: data.i18n.sc26692150916e776, trailing: Toggle(value: data.reminderNotify, onChanged: event "reminderNotify" {}), onTap: event "reminderNotify" {}),
+  switch data.reminderBlocked {true: Label(text: data.i18n.s6c640cd379fd4033, color: "error"), default: SizedBoxShrink()},
+  switch data.reminderSettings {true: Button(label: data.i18n.s6e8a57892e5bdb78, variant: "text", onPressed: event "reminderSettings" {}), default: SizedBoxShrink()},
+  Label(text: data.reminderError, color: "error"),
+]);
 
 widget LocalizedTitle = Label(text: data.pageTitle, style: "titleLarge", maxLines: 1);

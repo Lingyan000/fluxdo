@@ -78,7 +78,7 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
           (entry) =>
               (_category == null || entry.categories.contains(_category)) &&
               (!_updatesOnly || hasUpdate(entry)) &&
-              '${entry.name} ${entry.summary} ${entry.author} ${entry.id}'
+              '${entry.localized('name', context.l10n.localeName)} ${entry.localized('summary', context.l10n.localeName)} ${entry.author} ${entry.id}'
                   .toLowerCase()
                   .contains(query),
         )
@@ -207,9 +207,9 @@ class _MarketPageState extends ConsumerState<MetaverseMarketPage>
                           Theme.of(context).colorScheme.surfaceContainerLow,
                         ),
                         child: MetaversePluginTile(
-                          name: entry.name,
+                          name: entry.localized('name', context.l10n.localeName),
                           icon: entry.icon,
-                          description: entry.summary,
+                          description: entry.localized('summary', context.l10n.localeName),
                           metadata: '${entry.author} · ${entry.version}',
                           trailing: hasUpdate(entry)
                               ? Tooltip(
@@ -308,7 +308,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
       await controller.install(package, choices: choices);
       if (mounted) {
         ToastService.showSuccess(
-          context.l10n.metaverse_pluginInstalled(package.manifest.name),
+          context.l10n.metaverse_pluginInstalled(package.manifest.localizedName(context.l10n.localeName)),
         );
       }
     } catch (error) {
@@ -332,7 +332,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
     final l = context.l10n;
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(entry.name)),
+      appBar: AppBar(title: Text(entry.localized('name', context.l10n.localeName))),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -348,7 +348,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(entry.name, style: theme.textTheme.headlineSmall),
+                    Text(entry.localized('name', context.l10n.localeName), style: theme.textTheme.headlineSmall),
                     Text(
                       '${entry.author} · ${entry.version}',
                       style: theme.textTheme.bodyMedium,
@@ -359,7 +359,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
             ],
           ),
           const SizedBox(height: 20),
-          Text(entry.summary, style: theme.textTheme.titleMedium),
+          Text(entry.localized('summary', context.l10n.localeName), style: theme.textTheme.titleMedium),
           if (entry.screenshots.isNotEmpty) ...[
             const SizedBox(height: 20),
             SizedBox(
@@ -373,9 +373,9 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
               ),
             ),
           ],
-          if (entry.description.isNotEmpty) ...[
+          if (entry.localized('description', context.l10n.localeName).isNotEmpty) ...[
             const SizedBox(height: 20),
-            SelectableText(entry.description),
+            SelectableText(entry.localized('description', context.l10n.localeName)),
           ],
           const SizedBox(height: 20),
           SegmentedCardGroup(
@@ -400,14 +400,14 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
               ),
             ],
           ),
-          if (entry.changelog.isNotEmpty) ...[
+          if (entry.localized('changelog', context.l10n.localeName).isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(
               l.metaverse_marketChangelog,
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            SelectableText(entry.changelog),
+            SelectableText(entry.localized('changelog', context.l10n.localeName)),
           ],
         ],
       ),

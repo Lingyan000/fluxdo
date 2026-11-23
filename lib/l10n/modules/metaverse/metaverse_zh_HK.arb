@@ -1,4 +1,8 @@
 {
+  "metaverse_captchaTitle": "安全驗證",
+  "metaverse_captchaHint": "請完成驗證後繼續",
+  "metaverse_apiFiles": "選擇暫存附件、上載並查看私密圖片。檔案內容由宿主管理，腳本不讀取本機路徑。",
+  "metaverse_apiCaptcha": "開啟原生驗證面板，由使用者完成服務提供方的驗證。",
   "metaverse_pageChromeTitle": "頁面標題列",
   "metaverse_pageChromeGuide": "宣告 pageChrome，並在 pages[].appBar 用 title、actions 引用元件。插槽與內文共用資料和事件；返回、關閉由宿主保留。點擊下方書籤可體驗標題列操作與內容聯動。",
   "metaverse_autoUpdates": "外掛程式自動更新",

@@ -27,6 +27,9 @@ enum PluginFeature {
   credentialClaims,
   iconButtonContent,
   notificationStatus,
+  fileAttachments,
+  captchaChallenge,
+  manifestLocalization,
 }
 
 class PluginFeatures {

@@ -13,13 +13,13 @@ Future<bool> showMetaverseConnectConfirmation(
 }) async => await showAppDialog<bool>(
   context: context,
   builder: (_) => LinuxDoConnectAuthDialog(
-    title: context.l10n.metaverse_nativeLoginTitle(manifest.name),
+    title: context.l10n.metaverse_nativeLoginTitle(manifest.localizedName(context.l10n.localeName)),
     message: context.l10n.metaverse_nativeLoginAccess,
     details: SegmentedCardGroup(children: [
       ListTile(leading: const Icon(Symbols.person_rounded),
         title: Text(context.l10n.metaverse_nativeLoginAccount(username))),
       ListTile(leading: const Icon(Symbols.public_rounded),
-        title: Text(manifest.name), subtitle: Text(callback.host)),
+        title: Text(manifest.localizedName(context.l10n.localeName)), subtitle: Text(callback.host)),
     ]),
     onApprove: () async => true,
   ),

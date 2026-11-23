@@ -137,7 +137,7 @@ class MetaversePermissionList extends StatelessWidget {
     MetaversePluginPermission.foregroundTasks => (
       Symbols.schedule_rounded,
       l.metaverse_foregroundTasks,
-      manifest.tasks.map((task) => task.title).join(' · '),
+      manifest.tasks.map((task) => manifest.text('tasks.${task.id}.title', task.title, l.localeName)).join(' · '),
     ),
     MetaversePluginPermission.identity => (
       Symbols.person_rounded,
@@ -199,7 +199,7 @@ Future<bool> showMetaversePermissionRequest(
 ) async =>
     await AppBottomSheet.show<bool>(
       context: context,
-      title: context.l10n.metaverse_requestAccess(manifest.name),
+      title: context.l10n.metaverse_requestAccess(manifest.localizedName(context.l10n.localeName)),
       showDragHandle: true,
       builder: (sheet) => SingleChildScrollView(
         child: Column(

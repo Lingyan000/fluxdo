@@ -240,15 +240,24 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   static Future<void> openWithLoader(
     BuildContext context, {
     required Future<Uint8List> Function() loadImage,
-  }) => _openMemory(
-    context,
-    ImageViewerPage(imageLoader: loadImage, enableShare: true),
-  );
+    Future<void>? closeWhen,
+    bool evictOnClose = false,
+  }) async {
+    final loaded = <Uint8List>[];
+    try {
+      await _openMemory(context, ImageViewerPage(imageLoader: () async {
+        final bytes = await loadImage();
+        if (evictOnClose) loaded.add(bytes);
+        return bytes;
+      }, enableShare: true), closeWhen: closeWhen);
+    } finally {
+      for (final bytes in loaded) { await MemoryImage(bytes).evict(); }
+    }
+  }
 
-  static Future<void> _openMemory(BuildContext context, ImageViewerPage page) {
-    return Navigator.push(
-      context,
-      InteractionPageRouteBuilder(
+  static Future<void> _openMemory(BuildContext context, ImageViewerPage page, {Future<void>? closeWhen}) {
+    final navigator = Navigator.of(context);
+    final route = InteractionPageRouteBuilder<void>(
         opaque: false,
         barrierColor: Colors.transparent,
         pageBuilder: (context, animation, secondaryAnimation) {
@@ -263,8 +272,13 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               transitionBuilder: (_, animation, _, child) =>
                   _RouteFade(animation: animation, child: child),
             ),
-      ),
-    );
+      );
+    if (closeWhen != null) {
+      unawaited(closeWhen.then((_) {
+        if (route.isActive && navigator.mounted) navigator.removeRoute(route);
+      }));
+    }
+    return navigator.push(route);
   }
 
   @override

@@ -1,4 +1,6 @@
 import 'metaverse_event_stream.dart';
+import 'metaverse_plugin_files.dart';
+import 'metaverse_captcha_request.dart';
 import 'metaverse_task.dart';
 import 'metaverse_ui_validator.dart';
 import 'metaverse_component_contract.dart';
@@ -29,6 +31,12 @@ import 'ui/metaverse_widget_library.dart';
 
 /// 宿主里需要界面或应用状态才能完成的操作，由上层（provider 层）实现。
 abstract class MetaversePluginHostDelegate {
+  Future<String?> requestCaptcha(BuildContext context, MetaverseCaptchaRequest request, void Function() checkActive) =>
+      Future.error(const MetaversePluginCallException('captcha_unavailable'));
+  Future<MetaversePickedFile?> pickFile(BuildContext context, MetaverseFileSelection selection) =>
+      Future.error(const MetaversePluginCallException('file_picker_unavailable'));
+  Future<void> previewFile(BuildContext context, Future<Uint8List> Function() load, Future<void> revoked) =>
+      Future.error(const MetaversePluginCallException('file_preview_unavailable'));
   Map<String, Object?> environment() => const {'locale':'zh', 'platform':'unknown'};
   Future<void> prepareStart() async {}
   void onHealthy() {}
@@ -243,6 +251,34 @@ class MetaversePluginHost implements MetaversePluginBridge {
   bool Function()? _taskActive;
   final _forumAvatars = <Uri>{};
   final _streamBudget = MetaverseStreamBudget();
+  final _diagnosticCalls = <String, ({int count, int errors, int totalMs, int maxMs})>{};
+
+  /// 开发检查只返回结构与计数，不导出界面值、参数、存储或凭证。
+  Map<String, Object?> developmentDiagnostics() => {
+    'pluginId': id, 'apiVersion': manifest.apiVersion, 'requiredFeatures': manifest.requiredFeatures,
+    'missingFeatures': manifest.missingFeatures, 'permissions': {for (final p in manifest.declaredPermissions) p.name: !blockedPermissions.contains(p)},
+    'busy': hasActiveUi, 'running': isRunning,
+    'surfaces': [for (final s in (_runtime?.surfaces ?? <MetaversePluginSurface>[]).take(16)) {
+      'id':s.id, 'kind':s.kind, 'page':s.page, 'visible':s.foreground && s.appForeground,
+      'layout': _diagnosticLayout(s),
+      'data':{for (final entry in s.data.entries.take(128)) entry.key: entry.value is List ? {'type':'list','length':(entry.value as List).length} :
+        {'type': entry.value == null ? 'null' : entry.value is Map ? 'object' : entry.value is String ? 'string' : entry.value is bool ? 'boolean' : 'number'}},
+    }],
+    'calls':{for(final entry in _diagnosticCalls.entries) entry.key:{'count':entry.value.count,'errors':entry.value.errors,'totalMs':entry.value.totalMs,'maxMs':entry.value.maxMs}},
+  };
+  Map<String, double>? _diagnosticLayout(MetaversePluginSurface surface) {
+    final context = _surfaceContexts[surface];
+    if (context?.mounted != true) return null;
+    final box = context!.findRenderObject();
+    return box is RenderBox && box.hasSize ? {'width':box.size.width, 'height':box.size.height} : null;
+  }
+  final _files = MetaverseFileVault();
+  MetaversePluginSurface? _fileUiSurface;
+  void _invalidateFiles() {
+    for (final surface in _runtime?.surfaces ?? <MetaversePluginSurface>[]) {
+      if (_files.close(surface.id)) _runtime?.dispatch(surface, 'files.invalidated', const {});
+    }
+  }
   final _streams = <String, ({MetaversePluginSurface surface, MetaverseEventStream connection})>{};
 
   void _closeStreams([bool Function(MetaverseEventStream)? where]) {
@@ -324,6 +360,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   void close(MetaversePluginSurface surface) {
     final runtime = _runtime;
     if (runtime == null) return;
+    _files.close(surface.id);
     if (identical(surface, _activatedSurface)) _clearActivation();
     if (identical(surface, _preparedNavigation?.surface)) {
       _preparedNavigation = null;
@@ -353,6 +390,9 @@ class MetaversePluginHost implements MetaversePluginBridge {
       _clearActivation();
     }
     _runtime?.setForeground(surface, foreground, appForeground: appForeground);
+    if (!appForeground || (!foreground && _fileUiSurface != surface)) {
+      if (_files.close(surface.id)) _runtime?.dispatch(surface, 'files.invalidated', const {});
+    }
     for (final entry in _streams.values.where((entry) => entry.surface == surface)) {
       entry.connection.setActive(foreground && appForeground);
     }
@@ -400,6 +440,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
+    _files.close();
+    _fileUiSurface = null;
     _closeStreams();
     _forumAvatars.clear();
     _delegate.onShutdown();
@@ -529,9 +571,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
         traceId: LogPolicy.newTraceId(),
       ).run(() async {
         final watch = Stopwatch()..start();
+        var failed = false;
         try {
           return await _call(method, params);
         } catch (error) {
+          failed = true;
           LogWriter.instance.write({
             'type': 'plugin',
             'level': 'warning',
@@ -541,6 +585,13 @@ class MetaversePluginHost implements MetaversePluginBridge {
             'message': error.toString(),
           });
           rethrow;
+        } finally {
+          if (_store.isolated && method.length <= 80 && (_diagnosticCalls.length < 128 || _diagnosticCalls.containsKey(method))) {
+            final previous = _diagnosticCalls[method] ?? (count:0, errors:0, totalMs:0, maxMs:0);
+            final elapsed = watch.elapsedMilliseconds;
+            _diagnosticCalls[method] = (count:previous.count+1, errors:previous.errors+(failed?1:0),
+              totalMs:previous.totalMs+elapsed, maxMs:max(previous.maxMs,elapsed));
+          }
         }
       });
 
@@ -647,6 +698,84 @@ class MetaversePluginHost implements MetaversePluginBridge {
     return streamId;
   }
 
+  Future<Object?> _fileCall(String method, Map<String, Object?> params) async {
+    if (!manifest.requiredFeatures.contains('fileAttachments')) throw const MetaversePluginCallException('file_feature_not_declared');
+    final runtime = _runtime;
+    final sourceId = PluginExecutionContext.current?.surfaceId;
+    final source = runtime?.surfaces.where((s) => s.id == sourceId).firstOrNull;
+    if (runtime == null || source == null || source.kind == 'task' || !source.foreground || !source.appForeground) {
+      throw const MetaversePluginCallException('file_requires_surface');
+    }
+    final generation = _generation, account = _delegate.currentAccountId();
+    final name = params['credential'];
+    if (name != null) { _requirePermission(MetaversePluginPermission.serviceAccount); _credentials.spec(name); }
+    final revision = name is String ? _store.credentialRevision(id, name) : null;
+    void check() {
+      if (_retired || generation != _generation || account != _delegate.currentAccountId() ||
+          !runtime.owns(source) || !source.appForeground || (!source.foreground && _fileUiSurface != source) ||
+          (name is String && revision != _store.credentialRevision(id, name))) {
+        throw const PluginOperationCancelled();
+      }
+      if (name != null) _requirePermission(MetaversePluginPermission.serviceAccount);
+    }
+    if (method == 'files.pick') {
+      final selection = MetaverseFileSelection.parse(params);
+      return _userInitiatedUi((context) async {
+        _fileUiSurface = source;
+        try {
+          final selected = await _delegate.pickFile(context, selection);
+          check();
+          return selected == null ? null : _files.keep(source.id, selected, selection);
+        } finally { if (_fileUiSurface == source) _fileUiSurface = null; }
+      });
+    }
+    if (method == 'files.release') { _files.release(source.id, params['handle']); return null; }
+    if (method == 'files.cancel') { _files.cancel(source.id, params['id']); return null; }
+    if (method == 'files.preview') {
+      return _userInitiatedUi((context) async {
+        final cancel = _files.start(source.id, 'preview');
+        _fileUiSurface = source;
+        try {
+          await _delegate.previewFile(context, () async {
+            check();
+            if (params['handle'] != null) {
+              final file = _files.read(source.id, params['handle']);
+              MetaversePluginNetwork.validatePrivateImage(file.bytes);
+              return file.bytes;
+            }
+            final credential = name == null ? null : await _credentials.read(name, account);
+            check();
+            return _network.privateImage(manifest, request: params, authToken: credential?.secret, cancel: cancel, checkActive: () {
+              check();
+              if (credential != null && !credential.validFor(account)) throw const PluginOperationCancelled();
+            });
+          }, cancel.whenCancel.then((_) {}));
+        } finally { _files.finish('preview', cancel); if (_fileUiSurface == source) _fileUiSurface = null; }
+        return null;
+      });
+    }
+    final file = _files.read(source.id, params['handle']);
+    // 上传只使用已经选择的文件，不允许另一个动作遮盖此来源后继续发送。
+    final cancel = _files.start(source.id, params['id']);
+    final operationId = params['id'] as String;
+    final clock = Stopwatch()..start();
+    var lastProgress = -200;
+    try {
+      final credential = name == null ? null : await _credentials.read(name, account);
+      check();
+      void checkCredential() {
+        check();
+        if(credential != null && !credential.validFor(account)) throw const PluginOperationCancelled();
+      }
+      return await _network.uploadFile(manifest, request: params, file: file, authToken: credential?.secret,
+        cancel: cancel, checkActive: checkCredential, onProgress: (sent, total) {
+          if (clock.elapsedMilliseconds - lastProgress < 100 && sent != total) return;
+          lastProgress = clock.elapsedMilliseconds;
+          runtime.dispatch(source, 'files.progress', {'id': operationId, 'sent': sent, 'total': total});
+        });
+    } finally { _files.finish(operationId, cancel); }
+  }
+
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     if (_retired) throw const PluginOperationCancelled();
     if (manifest.accountScoped && _accountAtStart != _delegate.currentAccountId()) {
@@ -655,7 +784,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     if (_taskActive != null && !_taskActive!()) throw const MetaversePluginCallException('task_cancelled');
     if (_taskActive != null && !const {
       'forum.read', 'storage.get', 'storage.set', 'storage.setMany', 'storage.remove', 'storage.compareAndSet',
-      'host.features', 'host.environment', 'preferences.get', 'user.get', 'tasks.list', 'navigation.setBadge',
+      'host.features', 'host.environment', 'preferences.get', 'permissions.status', 'credentials.status', 'user.get', 'tasks.list', 'navigation.setBadge',
       'notifications.show', 'notifications.cancel', 'notifications.isAllowed', 'notifications.status', 'crypto.uuid', 'crypto.sha256', 'fetch',
     }.contains(method)) {
       throw const MetaversePluginCallException('task_has_no_ui');
@@ -669,6 +798,25 @@ class MetaversePluginHost implements MetaversePluginBridge {
       }
     }
     switch (method) {
+      case 'captcha.request':
+        final request = MetaverseCaptchaRequest.parse(manifest, params);
+        final sourceId = PluginExecutionContext.current?.surfaceId;
+        final source = _runtime?.surfaces.where((s) => s.id == sourceId).firstOrNull;
+        void checkCaptcha() {
+          checkActive();
+          if (source == null || _runtime?.owns(source) != true || !source.appForeground) throw const PluginOperationCancelled();
+        }
+        return _userInitiatedUi((context) async {
+          final result = await _delegate.requestCaptcha(context, request, checkCaptcha);
+          checkCaptcha();
+          return result;
+        });
+      case 'files.pick':
+      case 'files.upload':
+      case 'files.preview':
+      case 'files.cancel':
+      case 'files.release':
+        return _fileCall(method, params);
       case 'streams.open':
       case 'streams.close':
         return _streamCall(method, params);
@@ -892,6 +1040,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         );
       case 'credentials.remove':
         final name = _credentials.spec(params['name']).name;
+        _invalidateFiles();
         _closeStreams((stream) => stream.credential == name);
         await _store.removeCredential(id, name);
         return null;
@@ -996,6 +1145,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           (context) => _delegate.requestAuth(context, manifest),
         );
       case 'auth.signOut':
+        _invalidateFiles();
         await _store.deleteToken(id);
         return null;
 

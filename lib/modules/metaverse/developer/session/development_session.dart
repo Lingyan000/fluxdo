@@ -13,6 +13,7 @@ import '../../../../constants.dart';
 import '../../../../providers/core_providers.dart';
 import '../../../../providers/theme_provider.dart';
 import '../../../../services/log/log_writer.dart';
+import '../../../../services/log/log_policy.dart';
 import '../../../../services/storage/secret_store.dart';
 import '../../plugin/metaverse_plugin_host.dart';
 import '../../plugin/metaverse_plugin_installer.dart';
@@ -22,6 +23,7 @@ import '../../plugin/metaverse_plugin_store.dart';
 import '../../plugin/providers/metaverse_plugin_providers.dart';
 import 'development_connection.dart';
 import 'development_engine.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 final metaverseDevelopmentSessionProvider =
     Provider.autoDispose<DevelopmentSession>((ref) {
@@ -231,6 +233,12 @@ class DevelopmentSession extends ChangeNotifier {
     }
     try {
       switch (packet['type']) {
+        case 'inspect':
+          connection.send({'type':'inspection','protocolVersion':1,
+            'features':PluginFeatures.supported.toList(),'state':state,'revision':revision,
+            'waiting':waiting,'restartRequired':restartRequired,
+            'diagnostics':diagnostics.take(5).map(LogPolicy.cleanText).toList(),
+            if(host != null) 'host':host!.developmentDiagnostics()});
         case 'project':
           final next = DevelopmentProject.parse(packet);
           _projectEpoch++;

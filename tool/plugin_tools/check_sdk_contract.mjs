@@ -17,6 +17,12 @@ const featureBody=/enum PluginFeature\s*{([^}]+)}/.exec(featureSource)[1];
 assert.deepEqual([...featureBody.matchAll(/\b(\w+)\s*,/g)].map(m=>m[1]).sort(),[...contract.features].sort());
 // tsc 负责语法和类型检查；此处只提取 Api 的成员层级，与实际 JS 导出核对。
 const declarations=dts.replace(/\/\*[\s\S]*?\*\//g,'');
+const declaredFeatures=[.../type Feature\s*=([^;]+);/.exec(declarations)[1].matchAll(/'([^']+)'/g)].map(m=>m[1]).sort();
+assert.deepEqual(declaredFeatures,[...contract.features].sort(),'Feature 类型须覆盖全部宿主能力');
+if(process.env.FLUXDO_PLUGIN_TOOLS){
+ const schema=JSON.parse(readFileSync(resolve(process.env.FLUXDO_PLUGIN_TOOLS,'packages/sdk/schema/plugin.schema.json'),'utf8'));
+ assert.deepEqual([...schema.properties.requiredFeatures.items.enum].sort(),declaredFeatures,'清单 schema 与 Feature 类型须一致');
+}
 function block(text,open){let depth=1,end=open+1;for(;depth&&end<text.length;end++){if(text[end]==='{')depth++;if(text[end]==='}')depth--;}return {text:text.slice(open+1,end-1),end};}
 const signatures=[];
 function members(text,prefix=''){

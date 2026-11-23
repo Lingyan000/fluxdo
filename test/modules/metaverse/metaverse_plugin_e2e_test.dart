@@ -665,6 +665,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       MetaverseAddressLookup lookup, {
       _ShopApi? primary,
       MetaversePluginNetwork? alternate,
+      bool idleScript = false,
     }) async {
       delegate.accountId = 42;
       final shop = MetaversePluginManifest.parse(
@@ -687,6 +688,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         canSuggestDoh: () => true,
         engineFactory: engine,
         delegate: delegate,
+        codeLoader: idleScript ? () async => (ui:File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),script:'') : null,
       );
     }
 
@@ -702,7 +704,9 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         (_) async => [InternetAddress('2606:4700:4700::1111')],
         primary: first,
         alternate: alternate,
+        idleScript: true,
       );
+      await host.open(kind:'card');
       const domain = 'api2.ldspro.qzz.io';
       const read = {'url': 'https://$domain/api/shop/products'};
       await expectLater(
@@ -722,6 +726,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       expect(first.requests, hasLength(2));
       expect(retry.requests.single.method, 'GET');
       host.shutdown();
+      await host.open(kind:'card');
       await expectLater(
         host.call('fetch', read),
         throwsA(isA<MetaverseIpv6ReadTimeout>()),
@@ -768,13 +773,14 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       await openShop(
         (_) async => [InternetAddress('8.8.8.8')],
         primary: service,
+        idleScript: true,
       );
+      await host.open(kind:'card');
       await authorizeShop();
       delegate.accountId = 43;
-      expect(
-        (await host.call('credentials.status', {'name': 'account'})
-            as Map)['authorized'],
-        false,
+      await expectLater(
+        host.call('credentials.status', {'name': 'account'}),
+        throwsA(isA<MetaversePluginCallException>()),
       );
       await expectLater(
         host.call('fetch', {
@@ -784,6 +790,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         throwsA(isA<MetaversePluginCallException>()),
       );
       expect(service.requests, isEmpty);
+      host.shutdown();await host.open(kind:'card');
+      expect((await host.call('credentials.status', {'name':'account'}) as Map)['authorized'],false);
     });
 
     pluginTest('待支付订单仅在点击后调用宿主付款或取消，并回查原单', (tester) async {

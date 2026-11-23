@@ -111,11 +111,14 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
     'example': {'value': 1},
   };
   final _events = <String>[];
+  Uint8List? _pickedFile;
+  final _uploads = <String, Object>{};
   MetaversePluginRuntime? _runtime;
   final _streamTimers = <String, List<Timer>>{};
   void _clearStreamPreviews() {
     for (final timers in _streamTimers.values) { for (final timer in timers) { timer.cancel(); } }
     _streamTimers.clear();
+    _uploads.clear();
   }
   ToastType _toastType = ToastType.info;
   bool _failure = false, _running = false;
@@ -205,6 +208,42 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     switch (method) {
+      case 'files.pick':
+        final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['png','jpg','jpeg','webp']);
+        if(file?.path == null) return null;
+        final bytes = await File(file!.path!).readAsBytes();
+        if(bytes.length > 5 * 1024 * 1024) throw const MetaversePluginCallException('file_size_exceeded');
+        _pickedFile = bytes;
+        return {'handle':'example-file','name':file.name,'size':bytes.length,'mimeType':'image/png'};
+      case 'files.preview':
+        await ImageViewerPage.openWithLoader(context, loadImage: () async => _pickedFile ?? base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1WQAAAAASUVORK5CYII='));
+        return null;
+      case 'files.release': _pickedFile = null; return null;
+      case 'files.cancel': _uploads.remove(params['id']); return null;
+      case 'files.upload':
+        final id='${params['id']}';
+        final generation=_generation;
+        final operation = Object();
+        _uploads[id] = operation;
+        for(final step in [0,25,50,75,100]) {
+          await Future<void>.delayed(const Duration(milliseconds:120));
+          if(!mounted || generation != _generation || !identical(_uploads[id],operation)) throw const PluginOperationCancelled();
+          final runtime=_runtime,surface=_runtime?.surfaces.firstOrNull;
+          if(runtime != null && surface != null) runtime.dispatch(surface,'files.progress',{'id':id,'sent':step,'total':100});
+          setState(()=>_events.add('files.progress $step%'));
+        }
+        _uploads.remove(id);
+        return {'status':200,'headers':<String,String>{},'body':'{"example":true}'};
+      case 'captcha.request':
+        return showCaptchaSheet<String>(context:context,title:context.l10n.metaverse_developerPreview,
+          builder:(_)=>MetaverseCaptchaContent(pluginName:context.l10n.metaverse_developerExample,
+            request:MetaverseCaptchaRequest(MetaverseCaptchaProvider.hcaptcha,Uri.parse('https://example.org'),'example'),
+            checkActive:(){if(!mounted)throw const PluginOperationCancelled();},
+            challengeBuilder:(context,event){
+              WidgetsBinding.instance.addPostFrameCallback((_){event('challenge','');});
+              return Center(child:FilledButton(onPressed:()=>event('token','example-token'),child:Text(context.l10n.common_confirm)));
+            }));
       case 'streams.close':
         for (final timer in _streamTimers.remove(params['id']) ?? <Timer>[]) { timer.cancel(); }
         return null;

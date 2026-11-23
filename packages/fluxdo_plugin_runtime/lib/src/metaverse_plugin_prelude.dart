@@ -116,6 +116,18 @@ const metaversePluginPrelude = r'''
       open: function (options) { return call('streams.open', options); },
       close: function (id) { return call('streams.close', {id: String(id)}); }
     }),
+    files: Object.freeze({
+      pick: function (options) { return call('files.pick', options); },
+      upload: function (options) { return call('files.upload', options).then(function(response) {
+        response.ok = response.status >= 200 && response.status < 300;
+        response.json = function () { return JSON.parse(response.body); };
+        return response;
+      }); },
+      preview: function (options) { return call('files.preview', options); },
+      release: function (handle) { return call('files.release', {handle: String(handle)}); },
+      cancel: function (id) { return call('files.cancel', {id: String(id)}); }
+    }),
+    captcha: Object.freeze({request: function (options) { return call('captcha.request', options); }}),
     storage: Object.freeze({
       get: function (key) { return call('storage.get', { key: String(key) }); },
       set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },

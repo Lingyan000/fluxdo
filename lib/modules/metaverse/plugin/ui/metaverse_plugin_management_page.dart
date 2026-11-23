@@ -75,7 +75,7 @@ class MetaversePluginManagementPage extends ConsumerWidget {
                     Theme.of(context).colorScheme.surfaceContainerLow,
                   ),
                   child: MetaversePluginTile(
-                    name: plugin.manifest.name,
+                    name: plugin.manifest.localizedName(context.l10n.localeName),
                     icon: plugin.manifest.icon,
                     metadata: '${plugin.manifest.author} · ${plugin.manifest.version}${switch (reports[plugin.id]?['status']) {
                       'ready' => ' · ${context.l10n.metaverse_updateReady}',
@@ -183,7 +183,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
     final l = context.l10n;
     return Scaffold(
       appBar: AppBar(
-        title: Text(plugin?.manifest.name ?? l.metaverse_pluginManage),
+        title: Text(plugin?.manifest.localizedName(context.l10n.localeName) ?? l.metaverse_pluginManage),
       ),
       body: plugin == null
           ? AppEmptyState(
@@ -194,7 +194,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  plugin.manifest.description,
+                  plugin.manifest.localizedDescription(context.l10n.localeName),
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 if (plugin.manifest.preferences.isNotEmpty) FutureBuilder<Map<String, Object?>>(
@@ -204,18 +204,18 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                     if (values == null) return const SizedBox.shrink();
                     return Padding(padding: const EdgeInsets.only(top: 16), child: SegmentedCardGroup(children: [
                       for (final field in plugin.manifest.preferences)
-                        if (field.type == 'toggle') M3eSwitchListTile(title: Text(field.title), value: values[field.key] as bool,
+                        if (field.type == 'toggle') M3eSwitchListTile(title: Text(plugin.manifest.text('preferences.${field.key}.title', field.title, context.l10n.localeName)), value: values[field.key] as bool,
                           onChanged: _busy ? null : (value) => _preference(plugin, field.key, value))
-                        else ListTile(title: Text(field.title), subtitle: Text(field.options[values[field.key]] ?? '${values[field.key]}'),
+                        else ListTile(title: Text(plugin.manifest.text('preferences.${field.key}.title', field.title, context.l10n.localeName)), subtitle: Text(plugin.manifest.text('preferences.${field.key}.options.${values[field.key]}', field.options[values[field.key]] ?? '${values[field.key]}', context.l10n.localeName)),
                           trailing: const Icon(Symbols.chevron_right_rounded), onTap: _busy ? null : () async {
                             final Object? value;
                             if (field.type == 'choice') {
-                              value = await AppBottomSheet.show<String>(context: context, title: field.title, builder: (ctx) => SingleChildScrollView(
+                              value = await AppBottomSheet.show<String>(context: context, title: plugin.manifest.text('preferences.${field.key}.title', field.title, context.l10n.localeName), builder: (ctx) => SingleChildScrollView(
                                 child: SegmentedCardGroup(children: [for (final option in field.options.entries)
-                                  ListTile(title: Text(option.value), selected: values[field.key] == option.key,
+                                  ListTile(title: Text(plugin.manifest.text('preferences.${field.key}.options.${option.key}', option.value, context.l10n.localeName)), selected: values[field.key] == option.key,
                                     onTap: () => Navigator.pop(ctx, option.key))])));
                             } else {
-                              value = await showAppDialog<String>(context: context, builder: (_) => _PreferenceInput(title: field.title, value: values[field.key] as String));
+                              value = await showAppDialog<String>(context: context, builder: (_) => _PreferenceInput(title: plugin.manifest.text('preferences.${field.key}.title', field.title, context.l10n.localeName), value: values[field.key] as String));
                             }
                             if (value != null && mounted) await _preference(plugin, field.key, value);
                           }),
@@ -314,7 +314,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                         InteractionPageRoute(
                           builder: (_) => AppLogsPage(
                             pluginId: plugin.id,
-                            pluginName: plugin.manifest.name,
+                            pluginName: plugin.manifest.localizedName(context.l10n.localeName),
                           ),
                         ),
                       ),
@@ -370,7 +370,7 @@ class _PluginSettingsState extends ConsumerState<MetaversePluginSettingsPage> {
                     ListTile(
                       leading: const Icon(Symbols.restart_alt_rounded),
                       title: Text(l.metaverse_resetPluginData),
-                      onTap: _busy ? null : () => _reset(plugin.manifest.name),
+                      onTap: _busy ? null : () => _reset(plugin.manifest.localizedName(context.l10n.localeName)),
                     ),
                   ],
                 ),
@@ -454,7 +454,7 @@ class _PluginPermissionsState extends ConsumerState<MetaversePluginPermissionsPa
       body: plugin == null
           ? AppEmptyState(icon: const Icon(Symbols.extension_rounded), title: context.l10n.metaverse_marketEmpty)
           : ListView(padding: const EdgeInsets.all(16), children: [
-              Text(plugin.manifest.name, style: Theme.of(context).textTheme.titleMedium),
+              Text(plugin.manifest.localizedName(context.l10n.localeName), style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 16),
               MetaversePermissionList(manifest: plugin.manifest, blocked: plugin.blockedPermissions,
                 busy: _saving, onChanged: _change),

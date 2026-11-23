@@ -138,7 +138,7 @@ Future<Map<MetaversePluginPermission, bool>?> showMetaversePluginInstallSheet(
   final choices = <MetaversePluginPermission, bool>{};
   return AppBottomSheet.showDraggable<Map<MetaversePluginPermission, bool>>(
     context: context,
-    title: manifest.name,
+    title: manifest.localizedName(context.l10n.localeName),
     showCloseButton: true,
     initialSize: .82,
     minSize: .45,
@@ -246,9 +246,9 @@ class _InstallReview extends StatelessWidget {
               ),
           ],
         ),
-        if (manifest.description.isNotEmpty) ...[
+        if (manifest.localizedDescription(context.l10n.localeName).isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text(manifest.description, style: theme.textTheme.bodyMedium),
+          Text(manifest.localizedDescription(context.l10n.localeName), style: theme.textTheme.bodyMedium),
         ],
         const SizedBox(height: 24),
         if (reviewNote != null) ...[Text(reviewNote!), const SizedBox(height: 16)],
@@ -277,7 +277,7 @@ Future<String?> showMetaversePluginTokenDialog(
   return showAppDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text(ctx.l10n.metaverse_pluginTokenTitle(manifest.name)),
+      title: Text(ctx.l10n.metaverse_pluginTokenTitle(manifest.localizedName(context.l10n.localeName))),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,7 +337,7 @@ Future<bool> showMetaversePluginRemoveDialog(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(ctx.l10n.common_remove),
-      content: Text(ctx.l10n.metaverse_pluginRemoveConfirm(manifest.name)),
+      content: Text(ctx.l10n.metaverse_pluginRemoveConfirm(manifest.localizedName(context.l10n.localeName))),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,10 +13,13 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_task.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import 'metaverse_navigation_forum_test.dart' show Secrets;
@@ -40,6 +44,21 @@ class _Notifications extends Fake implements LocalNotificationService {
   }) async => delivered.add(id);
   @override
   Future<void> cancelNotification(int id) async => delivered.remove(id);
+}
+
+class _StoreNetwork extends MetaversePluginNetwork {
+  var edition=1;
+  @override
+  Future<Map<String,Object?>> fetch(MetaversePluginManifest manifest, {required Map<String,Object?> request,
+      String? authToken, void Function()? checkActive}) async {
+    checkActive?.call();
+    final path=Uri.parse(request['url'] as String).path;
+    final data=path.endsWith('/unread-summary') ? {'totalUnread':edition} :
+      path.endsWith('/messages/system') ? {'messages':[for(var n=1;n<=edition;n++){'id':n,'createdAt':DateTime.utc(2025,1,n).toIso8601String()}]} :
+      path.endsWith('/auth/verify') ? {'user':{'id':7,'username':'owner','site':'linuxdo'}} :
+      {'orders':[],'items':[],'pagination':{}};
+    return {'status':200,'headers':<String,String>{},'body':jsonEncode({'success':true,'data':data})};
+  }
 }
 
 class _Delegate extends MetaversePluginHostDelegate {
@@ -182,7 +201,7 @@ void main() {
       lookup: (_) async => throw StateError('测试禁止网络'),
     );
     package = await MetaversePluginInstaller(network: network).importBundle(
-      File('test/fixtures/metaverse/activity-feed-1.3.0.fluxplugin').openRead(),
+      File('test/fixtures/metaverse/activity-feed-1.3.1.fluxplugin').openRead(),
     );
     installed = InstalledMetaversePlugin(
       manifest: package.manifest,
@@ -198,6 +217,36 @@ void main() {
   tearDown(() async {
     network.dispose();
     await root.delete(recursive: true);
+  });
+
+  testWidgets('士多实际脚本申请后台、建立基线，独立任务投递并去重', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(MaterialApp(home:Builder(builder:(ctx){context=ctx;return const SizedBox();})));
+    await tester.runAsync(() async {
+      network.dispose();final storeNetwork=_StoreNetwork();network=storeNetwork;
+      data=MetaversePluginStore(preferences:await SharedPreferences.getInstance(),secretStore:InMemorySecretStore(),rootDirectory:()async=>root);
+      final manifest=MetaversePluginManifest.parse(jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()));
+      package=MetaversePluginPackage(manifest:manifest,source:'https://example.org/index.json',code:(
+        ui:File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),script:File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync()));
+      installed=InstalledMetaversePlugin(manifest:manifest,source:package.source,enabled:true,codeRevision:MetaversePluginStore.revisionOf(package.code));
+      await data.writeCode(installed.id,package.code);await data.saveIndex([installed]);
+      await data.writeCredential(installed.id,'account',const MetaverseCredential('fixture',accountId:7),revision:data.credentialRevision(installed.id,'account'),isActive:()=>true);
+      delegate=_Delegate(control,installed,_Notifications());sync();
+      final pageHost=host();addTearDown(pageHost.shutdown);
+      final surface=await pageHost.open(kind:'page',page:'account');pageHost.attachSurface(surface,context);
+      await _until(()=>surface.data['overviewLoading']==false && pageHost.canApplyDevelopmentUpdate,'士多账户加载');
+      pageHost.dispatchUserEvent(surface,'reminderToggle',{});
+      await _until(()=>delegate.confirmations==1 && pageHost.canApplyDevelopmentUpdate,'拒绝提醒');
+      expect(control.tasks(7,installed.id),isEmpty);
+      delegate.accept=true;pageHost.dispatchUserEvent(surface,'reminderToggle',{});
+      await _until(()=>surface.data['reminderEnabled']==true,'启用检查');
+      pageHost.dispatchUserEvent(surface,'reminderNotify',{});
+      await _until(()=>surface.data['reminderNotify']==true,'批准通知');
+      expect(delegate.notifications.delivered,isEmpty);pageHost.close(surface);pageHost.shutdown();
+      storeNetwork.edition=2;ms+=900000;await tick(background:true);
+      expect(delegate.notifications.delivered,hasLength(1));expect(control.badges(7).values.single,2);
+      ms+=900000;await tick(background:true);expect(delegate.notifications.delivered,hasLength(1));
+    });
   });
 
   testWidgets('安装发行包：名单、拒绝与批准、关闭页面、系统刷新、未读通知、打开与撤销', (tester) async {

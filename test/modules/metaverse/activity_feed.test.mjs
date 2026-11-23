@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-const script=JSON.parse(readFileSync(new URL('../../fixtures/metaverse/activity-feed-1.3.0.fluxplugin',import.meta.url),'utf8')).files['main.js'];
+const script=JSON.parse(readFileSync(new URL('../../fixtures/metaverse/activity-feed-1.3.1.fluxplugin',import.meta.url),'utf8')).files['main.js'];
 const clone=value=>value==null?value:JSON.parse(JSON.stringify(value));
 const item=(id,day=Number(id))=>({id:String(id),action:'topics',topicId:Number(id)||1,createdAt:new Date(Date.UTC(2026,0,day)).toISOString(),title:'话题 '+id});
 function setup({data=null,read=()=>({items:[]}),permissions={},locale='zh',system='allowed',scheduled=[]}={}){

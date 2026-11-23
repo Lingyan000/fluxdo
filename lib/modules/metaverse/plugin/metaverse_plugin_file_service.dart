@@ -144,7 +144,7 @@ class MetaversePluginFileService {
     if (choices == null) return true;
     await controller.install(package, choices: choices);
     ToastService.showSuccess(
-      S.current.metaverse_pluginInstalled(package.manifest.name),
+      S.current.metaverse_pluginInstalled(package.manifest.localizedName(S.current.localeName)),
     );
     return true;
   }

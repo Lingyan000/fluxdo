@@ -407,10 +407,48 @@ fluxdo.on('stream.state', (ctx, state) => {
 
 应用内开发中心提供动态 `streams.open` 演示，用模拟消息展示连接、消息到达与重连，无真实账号请求。Android、iOS 和三种桌面平台共用此实现；后台长连接与远程推送不在此 API 的保证范围。
 
+## 临时附件与私密图片
+
+声明 `fileAttachments`。文件选择和预览必须由当前可见界面的点击触发，系统任务不能使用。文件字节留在宿主内存，脚本只能取得 `{handle,name,size,mimeType}`；句柄不能跨页面使用。上传目标继续受 `permissions.network`、凭证路径与用户「服务账号」许可约束。
+
+```js
+fluxdo.on('choose', async ctx => {
+  const file = await ctx.api.files.pick({extensions: ['png', 'jpg', 'webp'], maxBytes: 5242880});
+  if (file) { /* 记录句柄，在界面中显示文件名，等待用户提交。 */ }
+});
+fluxdo.on('upload', async ctx => {
+  const response = await ctx.api.files.upload({
+    id: 'evidence', handle: selected.handle, url: 'https://api.example.org/evidence',
+    credential: 'account', encoding: 'multipart', field: 'file', fields: {operationId}
+  });
+  if (response.ok) await ctx.api.files.release(selected.handle);
+});
+fluxdo.on('files.progress', (ctx, {id, sent, total}) => {
+  if (id === 'evidence') ctx.setData('progress', total > 0 ? sent / total : 0);
+});
+fluxdo.on('files.invalidated', ctx => { /* 清空已选文件和上传状态。 */ });
+```
+
+`encoding: 'base64'` 将文件编码到 JSON 的 `field` 字段，不添加 data URL 前缀；`multipart` 将附加字段作为字符串发送。支持 POST/PUT/PATCH，不跟随跳转，不自动重试。进度代表发送字节数，不能替代服务端成功响应。取消或网络断开后，服务端仍可能已接收；插件应复用服务端支持的幂等操作号并先核对记录。
+
+`files.cancel(id)` 取消当前页面的传输，`files.release(handle)` 释放单个文件。每文件至多 16 MiB，默认 5 MiB，每实例至多 8 个文件、总计 32 MiB、同时 2 个操作。页面关闭、普通导航遮挡、应用切后台、停用或账号变化会撤销句柄；由 `files.preview` 打开的查看器暂时遮挡来源时保留句柄。撤销产生 `files.invalidated`。
+
+`files.preview({handle})` 预览已选图片，或用 `{url,credential?,headers?}` 读取受保护的图片。复用应用图片查看器，仅接收 PNG/JPEG/WebP/GIF；不跟随重定向，不写入共享图片缓存，不把图片字节交给脚本。来源失效时关闭查看器并移除其解码缓存。保存或分享是用户在查看器中的单独操作。
+
+## 人机验证
+
+声明 `captchaChallenge` 后，用户点击可调用 `captcha.request({provider:'hcaptcha',origin,siteKey})`，成功返回短期令牌，取消返回 `null`。`origin` 必须是已声明网络域名的 HTTPS 标准端口来源，不能带路径或查询；服务端如何验证令牌、绑定动作及防重放由插件对应服务负责。
+
+宿主复用原生验证码面板，只载入宿主生成的文档和官方验证控件；不载入业务页面，不注入业务凭证。准备超时、过期和切后台使当前挑战失效，重试后旧回调不能继续。验证成功后仍需由业务服务校验，不能把得到令牌等同于业务成功。
+
+验证内容由平台 WebView 承载。Android 不启用会清理应用共享 Cookie 的 incognito；不主动读取、写入或注入论坛 Cookie，CSP 限制资源到验证服务域名，不能承诺独立的 Android Cookie 容器。其他平台使用可用的无痕配置。应用内演示使用模拟挑战，真实 siteKey 的跨平台运行仍需接入方验证。
+
 ## 宿主环境、偏好与迁移
 
 声明 hostEnvironment 后，ctx.api.host.environment() 返回当前应用语言标签、平台和时区偏移分钟数。语言来自应用选择，未选择时跟随系统；host.environmentChanged 事件通知可见界面重新读取。隐藏期间不重放变化，恢复可见时应重新读取。后台任务可以读取当时环境，但不会收到页面事件。
 
 声明 pluginPreferences 并在清单 preferences 配置普通偏好，支持 toggle、text 和 choice。宿主管理页负责校验与保存，ctx.api.preferences.get() 返回当前清单的有效值或默认值；插件不能直接修改这些宿主设置。preferences.changed 通知可见页面。每插件最多 24 项、选项至多 32 项、文本值最多 512 字符；密码和令牌仍使用凭证接口，不放在普通偏好里。
+
+声明 `manifestLocalization` 后可用 `locales` 覆盖显示文字，例如 `{"en":{"name":"Store","pages.market.title":"Market"}}`。可翻译名称、简介、页面标题、导航标签、任务标题、偏好标题和选项；标识、资源路径、权限和来源不能翻译。按地区、语言、原始字段依次回退，译文不会改变已有权限审阅。市场条目可独立提供 `name/summary/description/changelog` 的 `locales`。
 
 声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐账号进行，失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。

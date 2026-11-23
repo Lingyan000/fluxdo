@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement' | 'credentialClaims' | 'iconButtonContent';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement' | 'credentialClaims' | 'iconButtonContent' | 'notificationStatus' | 'fileAttachments' | 'captchaChallenge' | 'manifestLocalization';
   type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
   type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
@@ -17,6 +17,9 @@ declare namespace FluxDO {
     status: number; ok: boolean; headers: { [key: string]: string }; body: string;
     json<T = Json>(): T;
   }
+  interface PickedFile {handle:string;name:string;size:number;mimeType:string}
+  /** files.progress 提供上传进度；files.invalidated 表示页面文件句柄已被收回。 */
+  interface FileUpload {id:string;handle:string;url:string;method?:'POST'|'PUT'|'PATCH';encoding:'base64'|'multipart';field?:string;fields?:Record;headers?:{[key:string]:string};credential?:string}
   interface CredentialStatus { authorized: boolean; expiresAt: number | null; claims?: Record }
   interface Confirmation {
     title: string; message: string; confirmLabel: string;
@@ -48,12 +51,21 @@ declare namespace FluxDO {
     R extends 'actions' ? {items: ForumActivity[]; nextOffset: number | null} :
     {items: ForumActivity[]; nextBefore: number | null};
   type ForumDestination = {type: 'topic'; topicId: number; postNumber?: number} | {type: 'user'; username: string};
+  interface FileProgress {id:string;sent:number;total:number}
   interface StreamEvent {id: string; event: string; data: string; lastEventId: string}
   interface StreamState {id: string; state: 'connecting' | 'open' | 'retrying' | 'closed'; reason?: string; status?: number; retryInMs?: number}
   interface MigrationEvent {fromVersion:number;toVersion:number}
   interface Api {
-    on<E extends string>(name: E, handler: (ctx: Context, args: E extends 'stream.event' ? StreamEvent : E extends 'stream.state' ? StreamState : E extends 'storage.migrate' ? MigrationEvent : Record) => void | Promise<void>): () => void;
+    on<E extends string>(name: E, handler: (ctx: Context, args: E extends 'stream.event' ? StreamEvent : E extends 'stream.state' ? StreamState : E extends 'storage.migrate' ? MigrationEvent : E extends 'files.progress' ? FileProgress : Record) => void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
+    files: {
+      pick(options:{extensions:string[];maxBytes?:number}):Promise<PickedFile|null>;
+      upload(options:FileUpload):Promise<Response>;
+      preview(options:{handle:string}|{url:string;credential?:string;headers?:{[key:string]:string}}):Promise<null>;
+      release(handle:string):Promise<null>;
+      cancel(id:string):Promise<null>;
+    };
+    captcha: {request(options:{provider:'hcaptcha';origin:string;siteKey:string}):Promise<string|null>};
     streams: {
       /** 连接结果和数据经 stream.state / stream.event 交付；隐藏暂停。 */
       open(options: {id: string; url: string; credential?: string; headers?: {[key: string]: string}; lastEventId?: string}): Promise<string>;

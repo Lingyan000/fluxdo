@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -55,7 +55,9 @@
     },
     "payments": [
       "linuxDoCredit"
-    ]
+    ],
+    "background": true,
+    "notifications": true
   },
   "card": {
     "widget": "Card",
@@ -90,6 +92,10 @@
       "appBar": {
         "actions": "MarketActions",
         "title": "LocalizedTitle"
+      },
+      "navigation": {
+        "label": "士多",
+        "icon": "storefront"
       }
     },
     {
@@ -244,6 +250,87 @@
     "navigationReplacement",
     "credentialClaims",
     "iconButtonContent",
-    "hostEnvironment"
-  ]
+    "hostEnvironment",
+    "fileAttachments",
+    "scheduledTasks",
+    "localNotifications",
+    "navigationBadge",
+    "navigationEntries",
+    "notificationStatus",
+    "manifestLocalization"
+  ],
+  "tasks": [
+    {
+      "id": "messages",
+      "title": "检查士多新消息"
+    }
+  ],
+  "locales": {
+    "en": {
+      "name": "LD Store",
+      "description": "Browse products, sign in, confirm orders, pay with LDC and view delivery details.",
+      "pages.orders.title": "My orders",
+      "pages.order.title": "Order details",
+      "pages.market.title": "LD Store",
+      "pages.market.navigation.label": "Store",
+      "pages.review.title": "Confirm order",
+      "pages.product.title": "Product details",
+      "pages.favorites.title": "Saved products",
+      "pages.coupons.title": "My coupons",
+      "pages.coupon.title": "Claim coupon",
+      "pages.refund.title": "Refunds and support",
+      "pages.comment.title": "Write a comment",
+      "pages.merchant.title": "Store products",
+      "pages.filters.title": "Filter products",
+      "pages.account.title": "My LD Store",
+      "pages.messages.title": "LD Store messages",
+      "pages.reports.title": "My reports",
+      "pages.report.title": "Report progress",
+      "tasks.messages.title": "Check store messages"
+    },
+    "zh_TW": {
+      "name": "LD士多",
+      "description": "瀏覽與搜尋商品，原生登入、確認訂單、使用 LDC 支付並檢視交付內容。",
+      "pages.orders.title": "我的訂單",
+      "pages.order.title": "訂單詳情",
+      "pages.market.title": "LD士多",
+      "pages.market.navigation.label": "士多",
+      "pages.review.title": "確認訂單",
+      "pages.product.title": "商品詳情",
+      "pages.favorites.title": "我的收藏",
+      "pages.coupons.title": "我的優惠券",
+      "pages.coupon.title": "領取優惠券",
+      "pages.refund.title": "退款與售後",
+      "pages.comment.title": "發表評論",
+      "pages.merchant.title": "店鋪商品",
+      "pages.filters.title": "篩選商品",
+      "pages.account.title": "我計程車多",
+      "pages.messages.title": "士多訊息",
+      "pages.reports.title": "我的舉報",
+      "pages.report.title": "舉報進度",
+      "tasks.messages.title": "檢查士多新訊息"
+    },
+    "zh_HK": {
+      "name": "LD士多",
+      "description": "瀏覽與搜索商品，原生登錄、確認訂單、使用 LDC 支付並查看交付內容。",
+      "pages.orders.title": "我的訂單",
+      "pages.order.title": "訂單詳情",
+      "pages.market.title": "LD士多",
+      "pages.market.navigation.label": "士多",
+      "pages.review.title": "確認訂單",
+      "pages.product.title": "商品詳情",
+      "pages.favorites.title": "我的收藏",
+      "pages.coupons.title": "我的優惠券",
+      "pages.coupon.title": "領取優惠券",
+      "pages.refund.title": "退款與售後",
+      "pages.comment.title": "發表評論",
+      "pages.merchant.title": "店鋪商品",
+      "pages.filters.title": "篩選商品",
+      "pages.account.title": "我的士多",
+      "pages.messages.title": "士多消息",
+      "pages.reports.title": "我的舉報",
+      "pages.report.title": "舉報進度",
+      "tasks.messages.title": "檢查士多新消息"
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import '../plugin/metaverse_plugin_manifest.dart';
+import '../plugin/metaverse_manifest_localization.dart';
 
 class MetaverseMarketSource {
   const MetaverseMarketSource(this.url, {this.enabled = true});
@@ -88,6 +89,7 @@ class MetaverseMarketEntry {
     this.withdrawn = false,
     this.withdrawnVersions = const [],
     this.reason = '',
+    this.locales = const {},
   });
   final String id,
       name,
@@ -107,6 +109,12 @@ class MetaverseMarketEntry {
   final bool withdrawn;
   final List<String> withdrawnVersions;
   final MetaverseMarketSource source;
+  final Map<String, dynamic> locales;
+  String localized(String key, String locale) => MetaverseManifestLocalization.text(
+    {'locales':locales}, key, switch(key) {
+      'name' => name, 'summary' => summary, 'description' => description, 'changelog' => changelog,
+      _ => throw ArgumentError.value(key),
+    }, locale);
   bool get compatible => !withdrawn && MetaversePluginManifest.supportedApiVersions.contains(apiVersion) && PluginFeatures.missing(requiredFeatures).isEmpty;
   bool newerThan(String installed) =>
       PluginVersion.parse(version).compareTo(PluginVersion.parse(installed)) >
@@ -117,6 +125,7 @@ class MetaverseMarketEntry {
     MetaverseMarketSource source,
   ) {
     if (value is! Map<String, dynamic>) throw const FormatException('插件条目无效');
+    MetaverseManifestLocalization.validateFields(value['locales'], const {'name':100,'summary':512,'description':65536,'changelog':32768});
     String text(String key, {int max = 4096, bool optional = false}) {
       final result = value[key];
       if (optional && result == null) return '';
@@ -179,6 +188,7 @@ class MetaverseMarketEntry {
       changelog: text('changelog', max: 32768, optional: true),
       icon: value['icon'] is String ? text('icon', max: 64) : null,
       source: source,
+      locales: Map<String,dynamic>.unmodifiable(value['locales'] as Map? ?? const {}),
     );
   }
 }

@@ -179,6 +179,8 @@ jobs:
           test/modules/metaverse/metaverse_market_ui_test.dart
           test/modules/metaverse/metaverse_registry_test.dart
           test/modules/metaverse/metaverse_capabilities_test.dart
+          test/modules/metaverse/metaverse_files_captcha_test.dart
+          test/modules/metaverse/metaverse_market_catalog_test.dart
           test/modules/metaverse/metaverse_event_stream_test.dart
           test/modules/metaverse/metaverse_plugin_contract_test.dart
           test/modules/metaverse/metaverse_image_cache_test.dart

@@ -31,6 +31,8 @@ class MetaverseApiExample {
 });''';
 
   String description(AppLocalizations l) => switch (name) {
+    'files.pick' || 'files.upload' || 'files.preview' || 'files.release' || 'files.cancel' => l.metaverse_apiFiles,
+    'captcha.request' => l.metaverse_apiCaptcha,
     'tasks.schedule' => l.metaverse_apiSchedule,
     'tasks.cancel' => l.metaverse_stopTask,
     'tasks.list' => l.metaverse_apiListTasks,
@@ -76,6 +78,12 @@ class MetaverseApiExample {
 
 /// 返回值用于文档演示。生产调用仍由宿主的权限检查与服务适配处理。
 const metaverseApiExamples = [
+  MetaverseApiExample('files.pick', "{extensions: ['png', 'jpg', 'webp'], maxBytes: 5242880}", {'handle':'example-file','name':'evidence.png','size':2048,'mimeType':'image/png'}, apiVersion: 2, userAction: true),
+  MetaverseApiExample('files.upload', "{id: 'upload', handle: 'example-file', url: 'https://api.example.org/attachments', encoding: 'multipart', field: 'file'}", {'status':200,'headers':{},'body':'{}'}, apiVersion: 2, userAction: true),
+  MetaverseApiExample('files.preview', "{handle: 'example-file'}", null, apiVersion: 2, userAction: true),
+  MetaverseApiExample('files.release', "'example-file'", null, apiVersion: 2),
+  MetaverseApiExample('files.cancel', "'upload'", null, apiVersion: 2),
+  MetaverseApiExample('captcha.request', "{provider: 'hcaptcha', origin: 'https://example.org', siteKey: '10000000-ffff-ffff-ffff-000000000001'}", null, apiVersion: 2, userAction: true),
   MetaverseApiExample('host.environment', '', {'locale':'zh', 'platform':'android', 'timeZoneOffsetMinutes':480}, apiVersion: 2),
   MetaverseApiExample('preferences.get', '', {'compact':true, 'sort':'latest'}, apiVersion: 2),
   MetaverseApiExample('streams.open', "{id: 'updates', url: 'https://api.example.org/events'}", 'updates',

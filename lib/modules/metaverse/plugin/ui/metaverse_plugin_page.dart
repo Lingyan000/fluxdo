@@ -139,7 +139,7 @@ class _MetaversePluginPageState extends ConsumerState<MetaversePluginPage> {
               padding: EdgeInsets.fromLTRB(16, 16, 16,
                   16 + MediaQuery.paddingOf(context).bottom), child: body));
       return MetaversePluginPageFrame(
-          title: spec?.title ?? plugin?.manifest.name ?? pluginId,
+          title: (spec == null ? null : plugin?.manifest.pageTitle(spec, context.l10n.localeName)) ?? plugin?.manifest.localizedName(context.l10n.localeName) ?? pluginId,
           customTitle: render != null && spec?.appBarTitle != null ? render(spec!.appBarTitle!) : null,
           actions: render != null && spec?.appBarActions != null ? render(spec!.appBarActions!) : null,
           sourceUrl: sourceUrl is String ? sourceUrl : null,

@@ -36,7 +36,7 @@ class MetaversePluginService extends MetaverseService {
   bool get isThirdParty => true;
 
   @override
-  String title(BuildContext context) => manifest.name;
+  String title(BuildContext context) => manifest.localizedName(context.l10n.localeName);
 
   @override
   String description(BuildContext context) {
@@ -106,11 +106,11 @@ class MetaversePluginService extends MetaverseService {
       MetaversePluginCard(service: this, host: host);
 
   @override
-  String enabledMessage() => S.current.metaverse_pluginEnabled(manifest.name);
+  String enabledMessage() => S.current.metaverse_pluginEnabled(manifest.localizedName(S.current.localeName));
 
   @override
   String reauthorizedMessage() =>
-      S.current.metaverse_pluginReauthorized(manifest.name);
+      S.current.metaverse_pluginReauthorized(manifest.localizedName(S.current.localeName));
 
   Future<bool> _ensureAuth(
     BuildContext context,
@@ -241,7 +241,7 @@ class MetaversePluginCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  manifest.name,
+                  manifest.localizedName(context.l10n.localeName),
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
@@ -384,7 +384,7 @@ class MetaversePluginCard extends ConsumerWidget {
             for (final page in manifest.pages)
               ListTile(
                 dense: true,
-                title: Text(page.title),
+                title: Text(manifest.pageTitle(page, context.l10n.localeName)),
                 trailing: const Icon(Symbols.chevron_right_rounded),
                 onTap: () => MetaversePluginPage.open(
                   context,

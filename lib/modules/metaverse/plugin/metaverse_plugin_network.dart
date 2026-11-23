@@ -16,6 +16,7 @@ import '../../../utils/svg_utils.dart';
 import '../core/metaverse_link_rule.dart';
 import 'metaverse_plugin_manifest.dart';
 import 'metaverse_plugin_capabilities.dart';
+import 'metaverse_plugin_files.dart';
 import 'metaverse_socket_connection.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
@@ -177,6 +178,71 @@ class MetaversePluginNetwork {
       'headers': response.headers,
       'body': utf8.decode(response.bytes, allowMalformed: true),
     };
+  }
+
+  /// 附件仍使用插件的匿名出口，凭证只能附加到清单批准的目标。
+  Future<Map<String, Object?>> uploadFile(MetaversePluginManifest manifest, {
+    required Map<String, Object?> request, required MetaversePickedFile file,
+    required String? authToken, required CancelToken cancel,
+    required void Function() checkActive, required ProgressCallback onProgress,
+  }) async {
+    final uri = Uri.tryParse('${request['url']}');
+    if (uri == null) throw const MetaversePluginCallException('file_upload_url_invalid');
+    final method = '${request['method'] ?? 'POST'}'.toUpperCase();
+    if (!{'POST','PUT','PATCH'}.contains(method)) throw const MetaversePluginCallException('file_upload_method_invalid');
+    final target = await _checkTarget(uri, manifest.networkHosts);
+    final headers = _requestHeaders(manifest, uri, method, request, authToken);
+    headers.removeWhere((key, _) => key.toLowerCase() == 'content-type');
+    final field = request['field'] ?? 'file';
+    final fields = request['fields'] ?? <String, Object?>{};
+    if (field is! String || !RegExp(r'^[A-Za-z][A-Za-z0-9_-]{0,63}$').hasMatch(field) ||
+        fields is! Map<String, Object?> || fields.length > 32 || fields.containsKey(field) ||
+        utf8.encode(jsonEncode(fields)).length > 16384 ||
+        fields.keys.any((key) => !RegExp(r'^[A-Za-z][A-Za-z0-9_-]{0,63}$').hasMatch(key))) {
+      throw const MetaversePluginCallException('file_upload_fields_invalid');
+    }
+    final Object body;
+    switch (request['encoding']) {
+      case 'base64':
+        headers['Content-Type'] = 'application/json';
+        body = jsonEncode({...fields, field: base64Encode(file.bytes)});
+      case 'multipart':
+        if (fields.values.any((value) => value is! String)) throw const MetaversePluginCallException('file_upload_fields_invalid');
+        body = FormData.fromMap({...fields, field: MultipartFile.fromBytes(file.bytes, filename: file.name,
+          contentType: DioMediaType.parse(lookupMimeType(file.name, headerBytes: file.bytes) ?? 'application/octet-stream'))});
+      default: throw const MetaversePluginCallException('file_upload_encoding_invalid');
+    }
+    checkActive();
+    final response = await _send(uri, target: target, method: method, headers: headers, body: body,
+      maxBytes: maxResponseBody, cancelToken: cancel, transferTimeout: const Duration(seconds:60), onSendProgress: (sent, total) {
+        try { checkActive(); onProgress(sent, total); } catch (_) { cancel.cancel(); }
+      });
+    checkActive();
+    return {'status': response.status, 'headers': response.headers, 'body': utf8.decode(response.bytes, allowMalformed: true)};
+  }
+
+  /// 私密预览不进入共享图片缓存，不跟随重定向，也不把字节返回脚本。
+  Future<Uint8List> privateImage(MetaversePluginManifest manifest, {
+    required Map<String, Object?> request, required String? authToken,
+    required CancelToken cancel, required void Function() checkActive,
+  }) async {
+    final uri = Uri.tryParse('${request['url']}');
+    if (uri == null) throw const MetaversePluginCallException('file_preview_url_invalid');
+    final target = await _checkTarget(uri, manifest.networkHosts);
+    final headers = _requestHeaders(manifest, uri, 'GET', request, authToken);
+    checkActive();
+    final response = await _send(uri, target: target, method: 'GET', headers: headers, body: null,
+      maxBytes: maxImageBytes, cancelToken: cancel);
+    checkActive();
+    validatePrivateImage(response.bytes, status: response.status);
+    return response.bytes;
+  }
+
+  static void validatePrivateImage(Uint8List bytes, {int status = 200}) {
+    final type = lookupMimeType('', headerBytes: bytes);
+    if (status != 200 || bytes.length > maxImageBytes || !{'image/png','image/jpeg','image/webp','image/gif'}.contains(type)) {
+      throw const MetaversePluginCallException('file_preview_not_image');
+    }
   }
 
   Map<String, String> _requestHeaders(MetaversePluginManifest manifest, Uri uri,
@@ -513,9 +579,11 @@ class MetaversePluginNetwork {
     required _PluginTarget target,
     required String method,
     required Map<String, String> headers,
-    required String? body,
+    required Object? body,
     required int maxBytes,
     CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
+    Duration? transferTimeout,
     Future<void> Function(Response<ResponseBody>)? consume,
   }) async {
     final pins = target.pins;
@@ -535,6 +603,7 @@ class MetaversePluginNetwork {
           uri,
           data: body,
           cancelToken: cancel,
+          onSendProgress: onSendProgress,
           options: Options(
             method: method,
             followRedirects: false,
@@ -546,7 +615,8 @@ class MetaversePluginNetwork {
               ...headers,
             },
             responseType: ResponseType.stream,
-            receiveTimeout: consume == null ? null : const Duration(seconds: 75),
+            sendTimeout: transferTimeout,
+            receiveTimeout: consume == null ? transferTimeout : const Duration(seconds: 75),
           ),
         );
       } on DioException catch (error) {

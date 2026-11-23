@@ -87,3 +87,17 @@ SDK 0.8.0 的 createScenario 提供可显式控制的权限、账号、离线、
 SDK 0.12.0 提供 `notifications.status()` 和用户点击限定的 `notifications.openSettings()`。插件授权与操作系统设置分别查询；系统关闭通知时仍可正常同步数据。Windows、Linux 无法查询完整投递许可时返回 `unknown`，不把未知当成已授权。
 
 CLI、SDK 与脚手架具有 npm 发布配置；维护者需配置 npm 的包发布权限和可信发布者后运行独立仓库的发布工作流。尚未发布到 npm 时使用 GitHub Release 的 tgz。脚手架 `--distribution npm` 可生成 npm 版本依赖，默认继续使用可取得的 GitHub Release。
+
+## 多语言项目
+
+SDK 0.13.0 的 `@fluxdo/plugin-sdk/i18n` 提供 `createTranslator(catalogs, baseLocale)`。`setLocale` 选择地区或语言回退，`text` 只替换产品文案的参数，不翻译服务器正文。脚手架 `--template localized` 提供可直接开发、热替换和打包的 TypeScript 示例；在 `host.environmentChanged` 和页面恢复时读取应用语言，再更新显示数据。
+
+已有独立 JS/TS 脚本可使用 `fluxdo localize [目录]`，在 `fluxdo.config.json` 配置 `localization: {baseLocale, script, ui}`，将词典放在 `locales/<语言>.json`。命令生成脚本、RFW 和清单译文；`--check` 可用于 CI 检查产物。缺少显式词典翻译会失败；中文基准可自动生成台湾及香港繁体。带模块导入的 TS 项目使用 SDK 翻译函数并由 Vite 构建，不走独立脚本转换。
+
+## 配对诊断
+
+开发设备已经连接 `fluxdo dev` 后，运行 `fluxdo doctor [目录] --pair '<配对地址>'`。命令完成项目检查，并通过现有配对查询宿主状态，不挤掉设备连接、不创建浏览器调试页。
+
+诊断包含连接状态、宿主能力、缺失能力、权限开关、界面可见性与尺寸、数据字段类型和列表长度、API 次数/错误数/累计与最大耗时。不读取页面正文、文件字节、本地存储值或凭证。数据是最近一次采样，网络耗时不是逐帧性能分析。仅开发会话累计 API 指标，正式安装不额外记录该信息。回环可使用明文；局域网连接先验证配对证书指纹，再发送认证头。配对地址本身是临时凭证，不应写入仓库或公开日志。
+
+市场发布校验同时核对 GitHub Release 是否为草稿或预发布、附件 URL、包摘要、身份及能力。`preview` 必须对应 GitHub 预发布；语义版本没有后缀也不能据此把预发布自动当作稳定版。
