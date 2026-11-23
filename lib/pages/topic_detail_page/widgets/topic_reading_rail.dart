@@ -11,6 +11,7 @@ import '../../../l10n/s.dart';
 import '../../../utils/time_utils.dart';
 import '../../../widgets/common/emoji_text.dart';
 import '../controllers/topic_position_info.dart';
+import '../controllers/topic_jump_history.dart';
 import 'progress_gesture_action_meta.dart';
 import 'topic_bottom_bar.dart';
 import 'topic_filter_controls.dart';
@@ -40,6 +41,8 @@ class TopicReadingRail extends StatefulWidget {
     this.lastReadIndex,
     this.replyDraftListenable,
     this.nextRootListenable,
+    this.returnButton,
+    this.jumpHistory,
   });
 
   /// 栏宽（不含与帖子列的间距）
@@ -69,6 +72,8 @@ class TopicReadingRail extends StatefulWidget {
   final int? lastReadIndex;
   final ValueListenable<String?>? replyDraftListenable;
   final ValueListenable<VoidCallback?>? nextRootListenable;
+  final Widget? returnButton;
+  final TopicJumpHistory? jumpHistory;
 
   @override
   State<TopicReadingRail> createState() => _TopicReadingRailState();
@@ -106,6 +111,20 @@ class _TopicReadingRailState extends State<TopicReadingRail> {
     final tools = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.returnButton != null && widget.jumpHistory != null)
+          ListenableBuilder(
+            listenable: widget.jumpHistory!,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: widget.returnButton,
+            ),
+            builder: (context, child) => Padding(
+              padding: EdgeInsets.only(
+                bottom: widget.jumpHistory!.target == null ? 0 : 16,
+              ),
+              child: child,
+            ),
+          ),
         TopicReplyEntry(
           state: widget.replyEntryState,
           draftListenable: widget.replyDraftListenable,

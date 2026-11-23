@@ -144,6 +144,7 @@ class TopicTocController extends ChangeNotifier {
     // 初次激活:不滚动不触发 spy,等帧后标题挂载先算一次
     WidgetsBinding.instance.addPostFrameCallback((_) => updateActiveHeading());
   }
+
   /// 测试入口:直接注入提取产物(绕过帖子解析)。
   @visibleForTesting
   void debugSetTocData(TocData data) => _apply(data);
@@ -161,9 +162,14 @@ class TopicTocController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 点击目录项跳转:先段级粗定位(短帖 null chunk → 整帖段),
-  /// 等两帧让标题挂载,再按 reveal 几何精确对齐到视口顶。
-  Future<void> scrollToHeading(TocEntry entry, List<Post> posts) async {
+  /// 新跳转取代目录定位时，停止迟到的标题精确对齐。
+  void cancelJump() {
+    _jumpGeneration++;
+    _jumpTargetId = null;
+  }
+
+  /// 点击目录项后先定位正文分段，等标题挂载再精确对齐。
+  Future<bool> scrollToHeading(TocEntry entry, List<Post> posts) async {
     final generation = ++_jumpGeneration;
     _headingJumpOffset = null;
     _spyThrottle?.cancel();
@@ -175,39 +181,38 @@ class TopicTocController extends ChangeNotifier {
         entry.chunkIndex,
         posts,
       );
-      if (!positioned || generation != _jumpGeneration) return;
+      if (!positioned || generation != _jumpGeneration) return false;
       // 等两帧:目标段构建、HeadingAnchorRegistrar 完成注册
       // (同 _scrollToHeroTagSource 的节奏)
       await WidgetsBinding.instance.endOfFrame;
       await WidgetsBinding.instance.endOfFrame;
-      if (generation == _jumpGeneration) _preciseAlign(entry.anchorKey);
+      return generation == _jumpGeneration && _preciseAlign(entry.anchorKey);
     } finally {
       if (generation == _jumpGeneration) _jumpTargetId = null;
     }
   }
 
   /// 把已挂载标题精确对齐到视口顶(留 [_topBuffer] 视觉缓冲)。
-  void _preciseAlign(String anchorKey) {
+  bool _preciseAlign(String anchorKey) {
     final ctx = registry.contextOf(anchorKey);
-    if (ctx == null) return;
+    if (ctx == null) return false;
     final RenderObject? box;
     try {
       box = ctx.findRenderObject();
     } catch (_) {
-      return; // element 失活(inactive)时 findRenderObject 会抛
+      return false; // element 失活(inactive)时 findRenderObject 会抛
     }
-    if (box == null || !box.attached) return;
+    if (box == null || !box.attached) return false;
     final viewport = RenderAbstractViewport.maybeOf(box);
-    if (viewport == null) return;
+    if (viewport == null) return false;
     final sc = detailController.scrollController;
-    if (!sc.hasClients) return;
-    final target =
-        viewport.getOffsetToReveal(box, 0.0).offset - _topBuffer;
-    sc.jumpTo(target.clamp(
-      sc.position.minScrollExtent,
-      sc.position.maxScrollExtent,
-    ));
+    if (!sc.hasClients) return false;
+    final target = viewport.getOffsetToReveal(box, 0.0).offset - _topBuffer;
+    sc.jumpTo(
+      target.clamp(sc.position.minScrollExtent, sc.position.maxScrollExtent),
+    );
     _headingJumpOffset = sc.position.pixels;
+    return true;
   }
 
   /// 页面滚动回调里调用(内部 80ms 节流)。

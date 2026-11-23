@@ -15,7 +15,9 @@ import 'package:fluxdo/pages/topic_detail_page/widgets/topic_post_list.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/nested_post_list.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_bottom_bar.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_detail_overlay.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_filter_controls.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_reading_rail.dart';
+import 'package:fluxdo/pages/topic_detail_page/widgets/topic_return_button.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_scrub_indicator.dart';
 import 'package:fluxdo/pages/topic_detail_page/widgets/topic_toc_panel.dart';
 import 'package:fluxdo/providers/category_provider.dart';
@@ -27,6 +29,7 @@ import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/providers/topic_detail_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
 import 'package:fluxdo/services/discourse/discourse_service.dart';
+import 'package:fluxdo/widgets/nested/nested_reading_scope.dart';
 import 'package:fluxdo/widgets/post/post_item_skeleton.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
@@ -84,7 +87,19 @@ class _PagingService extends Fake implements DiscourseService {
   int previousCalls = 0;
   final windows = <({List<int> ids, Completer<PostStream> result})>[];
   late Completer<TopicDetail> refresh;
+  late Completer<NestedContextResponse> nestedContext;
   int detailCalls = 0;
+
+  @override
+  Future<NestedContextResponse> getNestedContext(
+    int topicId,
+    int postNumber, {
+    String sort = 'old',
+    bool trackVisit = false,
+  }) {
+    nestedContext = Completer<NestedContextResponse>();
+    return nestedContext.future;
+  }
 
   @override
   Future<TopicDetail> getTopicDetail(
@@ -147,11 +162,15 @@ class _MessageBusInit extends MessageBusInitNotifier {
 }
 
 class _NestedNotifier extends NestedTopicNotifier {
-  _NestedNotifier(super.params, this.initial);
+  _NestedNotifier(super.params, this.initial, {this.fail = false});
   final NestedTopicState initial;
+  final bool fail;
 
   @override
-  Future<NestedTopicState> build() async => initial;
+  Future<NestedTopicState> build() async {
+    if (fail) throw StateError('暂时离线');
+    return initial;
+  }
 }
 
 void main() {
@@ -162,6 +181,7 @@ void main() {
   late TopicDetail initialDetail;
   late NestedTopicState nestedState;
   var enablePrevious = false;
+  var failNestedContext = false;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -171,6 +191,7 @@ void main() {
     initialDetail = _detail(40, 99);
     nestedState = const NestedTopicState();
     enablePrevious = false;
+    failNestedContext = false;
     container = ProviderContainer(
       overrides: [
         aiSharedPreferencesProvider.overrideWithValue(prefs),
@@ -183,12 +204,21 @@ void main() {
         topicChannelProvider(42).overrideWith(() => _TopicChannel(42)),
         topicTrackingStateProvider.overrideWith(_Tracking.new),
         messageBusInitProvider.overrideWith(_MessageBusInit.new),
-        nestedTopicProvider(
-          const NestedTopicParams(topicId: 42, instanceId: 'navigation-test'),
-        ).overrideWith(
-          () => _NestedNotifier(
-            const NestedTopicParams(topicId: 42, instanceId: 'navigation-test'),
-            nestedState,
+        nestedTopicProvider.overrideWith2(
+          (params) => _NestedNotifier(
+            params,
+            params.targetPostNumber == null
+                ? nestedState
+                : nestedState.copyWith(
+                    contextMode: true,
+                    targetPostNumber: params.targetPostNumber,
+                    contextChain: NestedNode(
+                      post: initialDetail.postStream.posts.firstWhere(
+                        (post) => post.postNumber == params.targetPostNumber,
+                      ),
+                    ),
+                  ),
+            fail: failNestedContext && params.targetPostNumber != null,
           ),
         ),
         topicDetailProvider(
@@ -242,6 +272,363 @@ void main() {
     // 详情页销毁后，内联帖子缓存还有 30 秒的保活期。
     await tester.pump(const Duration(seconds: 31));
   }
+
+  testWidgets('手机连续跳转后逐级回到原楼内偏移，收起底栏仍可返回', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 812);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    var list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.scrollController.jumpTo(list.scrollController.offset + 35);
+    await tester.pumpAndSettle();
+    final origin = tester.getTopLeft(floor(60)).dy;
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #60'), findsOneWidget);
+    list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.scrollController.jumpTo(list.scrollController.offset + 25);
+    await tester.pumpAndSettle();
+    final second = tester.getTopLeft(floor(80)).dy;
+    list.onJumpToPost(50);
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #80'), findsOneWidget);
+    final overlay = tester.widget<TopicDetailOverlay>(
+      find.byType(TopicDetailOverlay),
+    );
+    (overlay.showBottomBarListenable as ValueNotifier<bool>).value = true;
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TopicFilterButton));
+    await tester.pumpAndSettle();
+    expect(overlay.menuSession!.active, isTrue);
+    final returnOpacity = find.descendant(
+      of: find.byKey(const ValueKey('reading_return_button')),
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(returnOpacity).opacity, 0);
+    expect(find.text('回到 #80').hitTestable(), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('bottom_menu_footer_close')));
+    await tester.pumpAndSettle();
+    expect(overlay.menuSession!.active, isFalse);
+    expect(tester.widget<AnimatedOpacity>(returnOpacity).opacity, 1);
+    expect(find.text('回到 #80').hitTestable(), findsOneWidget);
+    (overlay.showBottomBarListenable as ValueNotifier<bool>).value = false;
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('回到 #80'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(floor(80)).dy, closeTo(second, .5));
+    expect(find.text('回到 #60'), findsOneWidget);
+    await tester.tap(find.text('回到 #60'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(floor(60)).dy, closeTo(origin, .5));
+    expect(find.text('回到 #60'), findsNothing);
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onAction(ProgressGestureAction.nextPost);
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 61);
+    await disposePage(tester);
+  });
+
+  testWidgets('树形连续跳转返回上下文，再恢复完整话题的展开状态', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 812);
+    addTearDown(tester.view.reset);
+    initialDetail = _detail(1, 99);
+    nestedState = NestedTopicState(
+      opPost: initialDetail.postStream.posts.first,
+      roots: [
+        for (final post in initialDetail.postStream.posts.skip(1))
+          NestedNode(post: post),
+      ],
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setDefaultNestedView(true);
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    var list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    list.session!.expanded[12] = true;
+    // 触发阅读取样，将展开状态纳入本次阅读锚点。
+    list.scrollController.jumpTo(list.scrollController.offset + 1);
+    await tester.pumpAndSettle();
+    final original = list.session!.position!;
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #${original.postNumber}'), findsOneWidget);
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, 80);
+    list.onJumpToPost(40);
+    await tester.pumpAndSettle();
+    final returnButton = tester.widget<TopicReturnButton>(
+      find.byType(TopicReturnButton),
+    );
+    final saved = returnButton.history.target!;
+    await tester.tap(find.text('回到 #${saved.postNumber}'));
+    await tester.pumpAndSettle();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, 80);
+    expect(list.session!.position!.offset, closeTo(saved.offset, 1));
+    await tester.tap(find.text('回到 #${original.postNumber}'));
+    await tester.pumpAndSettle();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, isNull);
+    expect(list.session!.expanded[12], isTrue);
+    expect(returnButton.history.target, isNull);
+    await disposePage(tester);
+  });
+
+  testWidgets('树形返回完整话题先加载目标分支，失败可原地重试', (tester) async {
+    initialDetail = _detail(1, 99);
+    final posts = initialDetail.postStream.posts;
+    nestedState = NestedTopicState(
+      opPost: posts.first,
+      roots: [for (final post in posts.skip(1)) NestedNode(post: post)],
+    );
+    await container.read(preferencesProvider.notifier).setDefaultNestedView(true);
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    final source = find.byWidgetPredicate(
+      (widget) => widget is NestedPostAnchor && widget.postNumber == 3,
+    );
+    await tester.ensureVisible(source);
+    await tester.pumpAndSettle();
+    var list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    final origin = list.session!.position!;
+    expect(origin.postNumber, greaterThan(1));
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    final label = '回到 #${origin.postNumber}';
+    await tester.tap(find.text(label));
+    await tester.pump();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, 80);
+    service.nestedContext.completeError(StateError('暂时离线'));
+    await tester.pumpAndSettle();
+    expect(find.text(label), findsOneWidget);
+    expect(list.params.targetPostNumber, 80);
+    await tester.tap(find.text(label));
+    await tester.pump();
+    service.nestedContext.complete(
+      NestedContextResponse(
+        targetPost: NestedNode(
+          post: posts.firstWhere((post) => post.postNumber == origin.postNumber),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, isNull);
+    expect(list.session!.position!.postNumber, origin.postNumber);
+    expect(list.session!.position!.offset, closeTo(origin.offset, 1));
+    expect(find.text(label), findsNothing);
+    await disposePage(tester);
+  });
+
+  testWidgets('树形目标请求失败后可以重新加载同一目标', (tester) async {
+    initialDetail = _detail(1, 99);
+    nestedState = NestedTopicState(
+      opPost: initialDetail.postStream.posts.first,
+      roots: [
+        for (final post in initialDetail.postStream.posts.skip(1))
+          NestedNode(post: post),
+      ],
+    );
+    await container.read(preferencesProvider.notifier).setDefaultNestedView(true);
+    await tester.pumpWidget(app(initialFloor: 1));
+    await tester.pumpAndSettle();
+    var list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    final origin = list.session!.position!;
+    failNestedContext = true;
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, isNull);
+    expect(find.text('回到 #${origin.postNumber}'), findsNothing);
+    failNestedContext = false;
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    list = tester.widget<NestedPostList>(find.byType(NestedPostList));
+    expect(list.params.targetPostNumber, 80);
+    expect(find.text('回到 #${origin.postNumber}'), findsOneWidget);
+    await disposePage(tester);
+  });
+
+  testWidgets('宽屏返回入口在阅读侧栏，关闭后下一次跳转建立新记录', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final rail = tester.widget<TopicReadingRail>(find.byType(TopicReadingRail));
+    rail.onJumpToIndex(80);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(TopicReadingRail),
+        matching: find.text('回到 #60'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip('清除返回记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #60'), findsNothing);
+    rail.onJumpToIndex(50);
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #80'), findsOneWidget);
+    await disposePage(tester);
+  });
+
+  testWidgets('远端返回加载失败保留记录和阅读位置，重试后恢复偏移', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.scrollController.jumpTo(list.scrollController.offset + 32);
+    await tester.pumpAndSettle();
+    final origin = tester.getTopLeft(floor(60)).dy;
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onScrubCommit(110);
+    final window = service.windows.single;
+    window.result.complete(
+      _detail(window.ids.first, window.ids.last).postStream,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #60'), findsOneWidget);
+    await tester.tap(find.text('回到 #60'));
+    await tester.pump();
+    service.windows.last.result.completeError(StateError('暂时离线'));
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #60'), findsOneWidget);
+    expectFloorAtTop(tester, 110);
+    await tester.tap(find.text('回到 #60'));
+    await tester.pump();
+    final retry = service.windows.last;
+    retry.result.complete(_detail(retry.ids.first, retry.ids.last).postStream);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(floor(60)).dy, closeTo(origin, .5));
+    expect(find.text('回到 #60'), findsNothing);
+    await disposePage(tester);
+  });
+
+  testWidgets('引用跳转请求迟到或失败时不覆盖新位置和返回记录', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    var list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.onJumpToPost(20);
+    final pending = service.refresh;
+    await tester.pump();
+    expectFloorAtTop(tester, 60);
+    list.onJumpToPost(80);
+    await tester.pumpAndSettle();
+    pending.complete(_detail(10, 29));
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 80);
+    expect(find.text('回到 #60'), findsOneWidget);
+    list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.onJumpToPost(20);
+    service.refresh.completeError(StateError('暂时离线'));
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 80);
+    expect(find.text('回到 #60'), findsOneWidget);
+    expect(
+      tester
+          .widget<TopicReturnButton>(find.byType(TopicReturnButton))
+          .history
+          .returning,
+      isFalse,
+    );
+    list.onJumpToPost(20);
+    await tester.tap(find.byTooltip('清除返回记录'));
+    service.refresh.complete(_detail(10, 29));
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 80);
+    expect(find.text('回到 #60'), findsNothing);
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onAction(ProgressGestureAction.nextPost);
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 81);
+    await disposePage(tester);
+  });
+
+  testWidgets('原楼层已删除时返回附近楼层并移除这次返回记录', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onScrubCommit(110);
+    final window = service.windows.single;
+    window.result.complete(_detail(window.ids.first, window.ids.last).postStream);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('回到 #60'));
+    await tester.pump();
+    final request = service.windows.last;
+    final nearby = _detail(request.ids.first, request.ids.last).postStream;
+    final remaining = PostStream(
+      posts: nearby.posts.where((post) => post.postNumber != 60).toList(),
+      stream: nearby.stream.where((id) => id != 60).toList(),
+    );
+    request.result.complete(remaining);
+    await tester.pump();
+    service.refresh.complete(_detail(40, 99).copyWith(postStream: remaining));
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 61);
+    expect(find.text('回到 #60'), findsNothing);
+    await disposePage(tester);
+  });
+
+  testWidgets('本地定位尚未完成时改选远端楼层，迟到定位不覆盖新请求', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.onJumpToPost(80);
+    list.onJumpToPost(20);
+    await tester.pump();
+    expectFloorAtTop(tester, 60);
+    service.refresh.complete(_detail(10, 29));
+    await tester.pumpAndSettle();
+    expectFloorAtTop(tester, 20);
+    expect(find.text('回到 #60'), findsOneWidget);
+    await disposePage(tester);
+  });
+
+  testWidgets('切到树形后返回平铺记录，加载失败保留树形且成功恢复偏移', (tester) async {
+    initialDetail = _detail(1, 99);
+    nestedState = NestedTopicState(
+      opPost: initialDetail.postStream.posts.first,
+      roots: [
+        for (final post in initialDetail.postStream.posts.skip(1))
+          NestedNode(post: post),
+      ],
+    );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final list = tester.widget<TopicPostList>(find.byType(TopicPostList));
+    list.scrollController.jumpTo(list.scrollController.offset + 32);
+    await tester.pumpAndSettle();
+    final origin = tester.getTopLeft(floor(60)).dy;
+    final bar = tester.widget<TopicBarGestures>(find.byType(TopicBarGestures));
+    bar.onScrubCommit(110);
+    final window = service.windows.single;
+    window.result.complete(_detail(window.ids.first, window.ids.last).postStream);
+    await tester.pumpAndSettle();
+    final overlay = tester.widget<TopicDetailOverlay>(
+      find.byType(TopicDetailOverlay),
+    );
+    overlay.filter.onShowNestedView!();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('回到 #60'));
+    await tester.pump();
+    service.refresh.completeError(StateError('暂时离线'));
+    await tester.pumpAndSettle();
+    expect(find.byType(NestedPostList), findsOneWidget);
+    expect(find.text('回到 #60'), findsOneWidget);
+    await tester.tap(find.text('回到 #60'));
+    await tester.pump();
+    service.refresh.complete(_detail(40, 99));
+    await tester.pumpAndSettle();
+    expect(find.byType(TopicPostList), findsOneWidget);
+    expect(tester.getTopLeft(floor(60)).dy, closeTo(origin, .5));
+    expect(find.text('回到 #60'), findsNothing);
+    await disposePage(tester);
+  });
 
   testWidgets('树形视图悬浮按钮同尺寸同列排列，随底栏移动且保留跳转功能', (tester) async {
     tester.view.devicePixelRatio = 1;
@@ -656,6 +1043,7 @@ void main() {
     expect(expanded.right, 400 + (1500 - 800) / 2 - 16);
 
     final toc = tester.widget<TopicTocSidePanel>(outline).controller;
+    final origin = toc.detailController.captureReadingPosition()!;
     final entry = toc.tocData!.flat[2];
     await tester.tap(
       find.descendant(of: outline, matching: find.text(entry.text)),
@@ -667,6 +1055,12 @@ void main() {
     scroll.jumpTo(scroll.offset + 180);
     await tester.pumpAndSettle();
     expect(toc.activeHeadingId, isNot(entry.id));
+    await tester.tap(find.text('回到 #${origin.postNumber}'));
+    await tester.pumpAndSettle();
+    final returned = toc.detailController.captureReadingPosition()!;
+    expect(returned.postNumber, origin.postNumber);
+    expect(returned.segmentIndex, origin.segmentIndex);
+    expect(returned.offset, closeTo(origin.offset, .5));
 
     await tester.tap(find.byTooltip('收起目录'));
     await tester.pumpAndSettle();

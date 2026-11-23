@@ -4,6 +4,22 @@ part of '../topic_detail_provider.dart';
 
 /// 加载相关方法
 extension LoadingMethods on TopicDetailNotifier {
+  /// 跳转请求确认成功后才替换窗口，保留请求期间可阅读的原内容。
+  void replaceTopicForJump(TopicDetail detail, {bool clearFilters = false}) {
+    _postWindowRevision++;
+    if (clearFilters) {
+      _filter = null;
+      _usernameFilter = null;
+      _filterTopLevelReplies = false;
+    }
+    _isLoadingPrevious = false;
+    _isLoadingMore = false;
+    _isLoadPreviousFailed = false;
+    _isLoadMoreFailed = false;
+    _updateBoundaryState(detail.postStream.posts, detail.postStream.stream);
+    state = AsyncData(_withSuggestedCache(detail));
+  }
+
   /// 安装跳楼取回的一页。完整帖子流和话题元数据仍以当前详情为准。
   void replacePostWindow(List<int> postIds, PostStream window) {
     final current = state.requireValue;

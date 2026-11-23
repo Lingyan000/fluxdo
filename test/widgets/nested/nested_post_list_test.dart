@@ -507,6 +507,36 @@ void main() {
     expect(session.position?.offset, closeTo(-240, 1));
     expect(tester.takeException(), isNull);
   });
+  testWidgets('返回上下文时恢复实际阅读的子回复与楼内偏移', (tester) async {
+    final session = NestedReadingSession();
+    await _pump(
+      tester,
+      session: session,
+      restore: const NestedReadingPosition(
+        postNumber: 21,
+        rootPostNumber: 2,
+        offset: -180,
+        expanded: {2: true, 20: true},
+      ),
+      state: NestedTopicState(
+        contextMode: true,
+        targetPostNumber: 20,
+        contextChain: NestedNode(
+          post: _post(2),
+          children: [
+            NestedNode(
+              post: _post(20),
+              children: [NestedNode(post: _post(21, long: true))],
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(session.position?.postNumber, 21);
+    expect(session.position?.offset, closeTo(-180, 1));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('长分支先展示少量回复，主动展开后显示其余回复', (tester) async {
     final state = NestedTopicState(
       roots: [

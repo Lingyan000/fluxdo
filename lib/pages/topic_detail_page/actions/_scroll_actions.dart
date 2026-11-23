@@ -160,24 +160,22 @@ extension _ScrollActions on _TopicDetailPageState {
   }
 
   Future<void> _scrollToTop() async {
-    final params = _params;
-    final rawDetail = ref.read(topicDetailProvider(params)).value;
-    // postIndex 数学必须基于与列表渲染一致的过滤后数据
-    final detail = rawDetail == null ? null : _filteredDetail(rawDetail);
+    await _runReadingJump((attempt) async {
+      final params = _params;
+      final rawDetail = ref.read(topicDetailProvider(params)).value;
+      // postIndex 数学必须基于与列表渲染一致的过滤后数据
+      final detail = rawDetail == null ? null : _filteredDetail(rawDetail);
 
-    if (detail != null &&
-        detail.postStream.posts.isNotEmpty &&
-        detail.postStream.posts.first.postNumber == 1) {
-      await _controller.scrollToTop();
-      return;
-    }
+      if (_isNestedView ||
+          (detail != null &&
+              detail.postStream.posts.isNotEmpty &&
+              detail.postStream.posts.first.postNumber == 1)) {
+        await _controller.scrollToTop();
+        return _jumpHistory.isCurrent(attempt);
+      }
 
-    debugPrint('[TopicDetail] First post not loaded, reloading from post 1');
-    _controller.prepareJumpToPost(1);
-    _controller.skipNextJumpHighlight = false;
-
-    final notifier = ref.read(topicDetailProvider(params).notifier);
-    await notifier.reloadWithPostNumber(1);
+      return _positionAtPost(1, attempt);
+    });
   }
 
   /// J 键：跳到下一帖
@@ -408,9 +406,17 @@ extension _ScrollActions on _TopicDetailPageState {
   }
 
   Future<void> _scrollToPost(int postNumber) async {
+    await _runReadingJump((attempt) => _positionAtPost(postNumber, attempt));
+  }
+
+  Future<bool> _positionAtPost(
+    int postNumber,
+    TopicJumpAttempt attempt, {
+    bool switchToFlat = false,
+  }) async {
     final params = _params;
     final rawDetail = ref.read(topicDetailProvider(params)).value;
-    if (rawDetail == null) return;
+    if (rawDetail == null) return false;
     _controller.selectKeyboardPostNumber(postNumber);
 
     // 用过滤后列表确认目标存在；滚动索引按已显示快照的楼层号查找。
@@ -420,40 +426,112 @@ extension _ScrollActions on _TopicDetailPageState {
     final notifier = ref.read(topicDetailProvider(params).notifier);
 
     if (postIndex == -1) {
-      debugPrint(
-        '[TopicDetail] Post $postNumber not in list, reloading with new postNumber',
+      final filter = notifier.isSummaryMode
+          ? 'summary'
+          : notifier.isActivityMode
+          ? 'activity'
+          : null;
+      final username = notifier.usernameFilter;
+      final topLevel = notifier.isTopLevelMode;
+      final service = ref.read(discourseServiceProvider);
+      var loaded = await service.getTopicDetail(
+        widget.topicId,
+        postNumber: postNumber,
+        filter: filter,
+        usernameFilters: username,
+        filterTopLevelReplies: topLevel,
       );
-      _controller.prepareJumpToPost(postNumber);
-      _controller.skipNextJumpHighlight = false;
-
-      if (notifier.isSummaryMode ||
-          notifier.isAuthorOnlyMode ||
-          notifier.isTopLevelMode) {
-        await _reloadWithFilterFallback(postNumber: postNumber);
-      } else {
-        await notifier.reloadWithPostNumber(postNumber);
+      if (!mounted || !_jumpHistory.isCurrent(attempt)) return false;
+      var clearFilters = false;
+      if ((filter == 'summary' || username != null || topLevel) &&
+          (!loaded.postStream.posts.any((p) => p.postNumber == postNumber) ||
+              _shouldFallbackFilter(
+                loaded,
+                filter == 'summary',
+                username,
+                topLevel,
+              ))) {
+        loaded = await service.getTopicDetail(
+          widget.topicId,
+          postNumber: postNumber,
+        );
+        clearFilters = true;
       }
-      return;
+      if (!mounted || !_jumpHistory.isCurrent(attempt)) return false;
+      // 筛选在请求途中发生变化时，结果不再属于当前视图。
+      if ((_isNestedView && !switchToFlat) ||
+          notifier.usernameFilter != username ||
+          notifier.isTopLevelMode != topLevel ||
+          notifier.isSummaryMode != (filter == 'summary') ||
+          notifier.isActivityMode != (filter == 'activity')) {
+        return false;
+      }
+      final visible = _filteredDetail(loaded).postStream.posts;
+      final targetIndex = TopicDetailController.postIndexAtOrAfter(
+        visible,
+        postNumber,
+      );
+      final target = targetIndex == null
+          ? visible.lastOrNull
+          : visible[targetIndex];
+      if (target == null) {
+        ToastService.showInfo(context.l10n.error_notFoundOrDeleted);
+        return false;
+      }
+      if (target.postNumber != postNumber) {
+        ToastService.showInfo(context.l10n.topicDetail_returnPostUnavailable);
+      }
+      if (switchToFlat) {
+        setState(() {
+          _isNestedView = false;
+          _nestedReadingSession.enabled = false;
+        });
+      }
+      _controller.prepareJumpToPost(target.postNumber);
+      _controller.skipNextJumpHighlight = false;
+      notifier.replaceTopicForJump(loaded, clearFilters: clearFilters);
+      return _controller.positioningComplete;
     }
 
+    if (switchToFlat) {
+      setState(() {
+        _isNestedView = false;
+        _nestedReadingSession.enabled = false;
+      });
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || !_jumpHistory.isCurrent(attempt)) return false;
+    }
     final positionRevision = _controller.positionRevision;
     final positioned = await _controller.scrollToPost(postNumber, posts);
     if (!mounted ||
+        !_jumpHistory.isCurrent(attempt) ||
         _controller.keyboardSelectedPostNumber != postNumber ||
         _controller.positionRevision != positionRevision) {
-      return;
+      return false;
     }
     if (!positioned) {
+      final currentPosts = _positionInfo.detail?.postStream.posts;
+      if (currentPosts == null ||
+          !currentPosts.any((p) => p.postNumber == postNumber)) {
+        return false;
+      }
       _controller.jumpToPostLocally(postNumber);
       setState(() {});
+      if (!await _controller.positioningComplete) return false;
     }
+    if (!mounted || !_jumpHistory.isCurrent(attempt)) return false;
     _controller.triggerHighlight(postNumber);
+    return true;
   }
 
-  Future<void> _scrollToPostById(int postId, {required int streamIndex}) async {
+  Future<bool> _scrollToPostById(
+    int postId, {
+    required int streamIndex,
+    required TopicJumpAttempt attempt,
+  }) async {
     final params = _params;
     final rawDetail = ref.read(topicDetailProvider(params)).value;
-    if (rawDetail == null) return;
+    if (rawDetail == null) return false;
     // 同 _scrollToPost：postIndex 与滚动映射表基于同一份过滤后列表
     final detail = _filteredDetail(rawDetail);
 
@@ -471,31 +549,38 @@ extension _ScrollActions on _TopicDetailPageState {
         confirmedStreamIndex: streamIndex,
       );
       if (!mounted ||
+          !_jumpHistory.isCurrent(attempt) ||
           _controller.keyboardSelectedPostNumber != post.postNumber ||
           _controller.positionRevision != positionRevision) {
-        return;
+        return false;
       }
       if (!positioned) {
         final currentPosts = _positionInfo.detail?.postStream.posts;
         if (currentPosts == null || !currentPosts.any((p) => p.id == postId)) {
           _controller.selectKeyboardPostNumber(null);
-          return;
+          return false;
         }
         _controller.jumpToPostLocally(post.postNumber);
         setState(() {});
+        if (!await _controller.positioningComplete) return false;
       }
+      if (!mounted || !_jumpHistory.isCurrent(attempt)) return false;
       _controller.triggerHighlight(post.postNumber);
-      return;
+      return true;
     }
 
-    await _loadProgressWindow(detail, streamIndex);
+    return _loadProgressWindow(detail, streamIndex, attempt);
   }
 
-  Future<void> _loadProgressWindow(TopicDetail detail, int streamIndex) async {
+  Future<bool> _loadProgressWindow(
+    TopicDetail detail,
+    int streamIndex,
+    TopicJumpAttempt attempt,
+  ) async {
     final stream = detail.postStream.stream;
     final targetIndex = streamIndex - 1;
     final postId = stream[targetIndex];
-    if (_controller.progressLoad.value?.postId == postId) return;
+    if (_controller.progressLoad.value?.postId == postId) return false;
     final load = _controller.beginProgressLoad(postId, streamIndex);
     final nested = _isNestedView;
     // 与服务端按楼号取窗口的做法一致，留四分之一页在目标前面。
@@ -507,29 +592,39 @@ extension _ScrollActions on _TopicDetailPageState {
     final missing = ids.where((id) => !loadedIds.contains(id)).toList();
     final PostStream window;
     try {
-      window = await ref.read(discourseServiceProvider).getPosts(
-        widget.topicId,
-        missing,
-        includeSuggested:
-            !nested && end == stream.length && detail.needsFooterTopics,
-      );
+      window = await ref
+          .read(discourseServiceProvider)
+          .getPosts(
+            widget.topicId,
+            missing,
+            includeSuggested:
+                !nested && end == stream.length && detail.needsFooterTopics,
+          );
     } catch (error) {
       if (mounted && _controller.progressLoad.value == load) {
         _controller.cancelProgressLoad();
         ToastService.showError(context.l10n.common_loadFailedRetry);
         debugPrint('[TopicDetail] 加载目标帖子 $postId 失败: $error');
       }
-      return;
+      return false;
     }
-    if (!mounted || _controller.progressLoad.value != load) return;
+    if (!mounted ||
+        _isNestedView != nested ||
+        _controller.progressLoad.value != load ||
+        !_jumpHistory.isCurrent(attempt)) {
+      return false;
+    }
     final target = window.posts.where((post) => post.id == postId).firstOrNull;
     final latest = _positionInfo.detail;
     if (target == null ||
         latest == null ||
         !latest.postStream.stream.contains(postId)) {
       _controller.cancelProgressLoad();
+      if (attempt.returnTarget != null) {
+        return _positionAtPost(attempt.returnTarget!.postNumber, attempt);
+      }
       ToastService.showInfo(context.l10n.error_notFoundOrDeleted);
-      return;
+      return false;
     }
     if (BlockedUserFilter.isBlockedUsername(
       target.username,
@@ -537,15 +632,18 @@ extension _ScrollActions on _TopicDetailPageState {
     )) {
       _controller.cancelProgressLoad();
       ToastService.showInfo(context.l10n.common_loadFailed);
-      return;
+      return false;
     }
     if (nested) {
-      await _jumpToPostInTopic(target.postNumber);
-      return;
+      _controller.cancelProgressLoad();
+      return _positionInNestedTopic(target.postNumber, attempt);
     }
     _controller.prepareJumpToPost(target.postNumber, load: load);
     _controller.skipNextJumpHighlight = false;
-    ref.read(topicDetailProvider(_params).notifier).replacePostWindow(ids, window);
+    ref
+        .read(topicDetailProvider(_params).notifier)
+        .replacePostWindow(ids, window);
+    return _controller.positioningComplete;
   }
 
   /// 列表在布局期完成初始定位，帧后揭开内容并恢复阅读上报。

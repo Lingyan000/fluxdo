@@ -104,11 +104,14 @@ class NestedPostList extends ConsumerStatefulWidget {
   final NestedReadingPosition? resumePosition;
   final NestedReadingPosition? restorePosition;
   final int? fullTargetPostNumber;
+  /// 页面在切换视图前加载的完整定位路径，避免换视图后再次请求失败。
+  final List<int>? fullTargetPath;
   final bool active;
   final ValueChanged<NestedReadingPosition>? onPositionChanged;
   final VoidCallback? onResume;
   final VoidCallback? onFullTargetConsumed;
   final ValueChanged<int>? onViewportPostChanged;
+  final ValueChanged<bool>? onPositioned;
   const NestedPostList({
     super.key,
     this.controller,
@@ -142,11 +145,13 @@ class NestedPostList extends ConsumerStatefulWidget {
     this.resumePosition,
     this.restorePosition,
     this.fullTargetPostNumber,
+    this.fullTargetPath,
     this.active = true,
     this.onPositionChanged,
     this.onResume,
     this.onFullTargetConsumed,
     this.onViewportPostChanged,
+    this.onPositioned,
   });
 
   @override
@@ -225,8 +230,16 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
       _session.sort = widget.nestedState.sort;
       _scrolledToTarget = null;
     }
+    if (widget.restorePosition != null &&
+        widget.restorePosition != oldWidget.restorePosition) {
+      _expansionState
+        ..clear()
+        ..addAll(widget.restorePosition!.expanded);
+    }
     if (widget.fullTargetPostNumber != null &&
-        widget.fullTargetPostNumber != _handledFullTarget) {
+        (widget.fullTargetPostNumber != _handledFullTarget ||
+            widget.relocateToken != oldWidget.relocateToken)) {
+      _handledFullTarget = null;
       unawaited(_revealFullTarget(widget.fullTargetPostNumber!));
     } else if (widget.nestedState.targetPostNumber !=
             oldWidget.nestedState.targetPostNumber ||
@@ -336,13 +349,15 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
   }
 
   Future<void> _positionContext() async {
-    final target = widget.nestedState.targetPostNumber;
+    final target =
+        widget.restorePosition?.postNumber ?? widget.nestedState.targetPostNumber;
     if (!widget.nestedState.contextMode ||
         target == null ||
         _scrolledToTarget == target) {
       return;
     }
     final operation = ++_operation;
+    final onPositioned = widget.onPositioned;
     _restoring = true;
     _highlightTarget = target;
     final restore = widget.restorePosition;
@@ -353,6 +368,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     _scrolledToTarget = target;
     setState(() => _restoring = false);
     _viewport.scheduleSample();
+    await _nextFrame();
+    if (mounted && operation == _operation) {
+      onPositioned?.call(_viewport.find(target) != null);
+    }
   }
 
   Future<void> _revealFullTarget(
@@ -362,7 +381,9 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
     if (_handledFullTarget == target) return;
     _handledFullTarget = target;
     final operation = ++_operation;
+    final onPositioned = widget.onPositioned;
     _restoring = true;
+    var succeeded = false;
     try {
       if (target <= 1) {
         await _nextFrame();
@@ -372,6 +393,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
           await _alignPost(target, widget.restorePosition!.offset);
         }
         if (mounted) widget.onFullTargetConsumed?.call();
+        succeeded = true;
         return;
       }
       final notifier = ref.read(nestedTopicProvider(widget.params).notifier);
@@ -380,7 +402,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         await notifier.changeSort(desiredSort);
         if (!mounted) return;
       }
-      final path = await notifier.revealPost(target);
+      final path = widget.fullTargetPath ?? await notifier.revealPost(target);
       if (!mounted || operation != _operation) return;
       for (final post in path) {
         _expansionState[post] = true;
@@ -410,6 +432,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         throw StateError('Target body unavailable');
       }
       if (mounted) widget.onFullTargetConsumed?.call();
+      succeeded = true;
     } catch (_) {
       if (mounted) widget.onFullTargetConsumed?.call();
       if (mounted) {
@@ -422,6 +445,10 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
         _restoring = false;
         setState(() {});
         _viewport.scheduleSample();
+        await _nextFrame();
+        if (mounted && operation == _operation) {
+          onPositioned?.call(succeeded);
+        }
       }
     }
   }
@@ -817,6 +844,7 @@ class _NestedPostListState extends ConsumerState<NestedPostList> {
               ++_operation;
               _listController.cancelPositioning();
               setState(() => _restoring = false);
+              widget.onPositioned?.call(false);
             }
           }
           if (notification is ScrollEndNotification) _viewport.scheduleSample();

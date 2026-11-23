@@ -4,45 +4,6 @@ part of '../topic_detail_page.dart';
 
 /// 过滤模式相关方法
 extension _FilterActions on _TopicDetailPageState {
-  Future<void> _reloadWithFilterFallback({required int postNumber}) async {
-    final params = _params;
-    final notifier = ref.read(topicDetailProvider(params).notifier);
-    final wasSummaryMode = notifier.isSummaryMode;
-    final wasUsernameFilter = notifier.usernameFilter;
-    final wasTopLevelMode = notifier.isTopLevelMode;
-
-    setState(() => _isSwitchingMode = true);
-    _controller.resetVisibility();
-
-    try {
-      await notifier.reloadWithPostNumber(postNumber);
-      if (!mounted) return;
-
-      final detail = ref.read(topicDetailProvider(params)).value;
-      final hasTarget =
-          detail != null &&
-          detail.postStream.posts.any((post) => post.postNumber == postNumber);
-      final shouldFallback =
-          detail != null &&
-          _shouldFallbackFilter(
-            detail,
-            wasSummaryMode,
-            wasUsernameFilter,
-            wasTopLevelMode,
-          );
-      if (!hasTarget || shouldFallback) {
-        _controller.resetVisibility();
-        _controller.prepareJumpToPost(postNumber);
-        await notifier.cancelFilterAndReloadWithPostNumber(postNumber);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSwitchingMode = false);
-        _scheduleCheckTitleVisibility();
-      }
-    }
-  }
-
   bool _shouldFallbackFilter(
     TopicDetail detail,
     bool wasSummaryMode,
@@ -73,6 +34,7 @@ extension _FilterActions on _TopicDetailPageState {
   }
 
   Future<void> _handleShowTopReplies() async {
+    _cancelReadingJump();
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
 
@@ -96,6 +58,7 @@ extension _FilterActions on _TopicDetailPageState {
 
   /// 问答话题:切到按活动排序(默认视图为按票,activity 走时间流)
   Future<void> _handleShowByActivity() async {
+    _cancelReadingJump();
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
 
@@ -117,6 +80,7 @@ extension _FilterActions on _TopicDetailPageState {
   }
 
   Future<void> _handleCancelFilter() async {
+    _cancelReadingJump();
     // 嵌套模式：直接退出，不需要重新加载
     if (_isNestedView) {
       setState(() => _isNestedView = false);
@@ -142,6 +106,7 @@ extension _FilterActions on _TopicDetailPageState {
   }
 
   Future<void> _handleShowTopLevelReplies() async {
+    _cancelReadingJump();
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
 
@@ -182,6 +147,7 @@ extension _FilterActions on _TopicDetailPageState {
     final params = _params;
     final notifier = ref.read(topicDetailProvider(params).notifier);
     if (notifier.usernameFilter == username) return;
+    _cancelReadingJump();
 
     // 四项互斥单选：激活内容筛选时退出树形视图
     setState(() {

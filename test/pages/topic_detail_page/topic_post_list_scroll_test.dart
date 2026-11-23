@@ -1019,6 +1019,47 @@ void main() {
     await disposeList(tester);
   });
 
+  testWidgets('返回锚点跨分页恢复长帖分段及段内偏移', (tester) async {
+    final longPost = post(
+      60,
+      cooked: List.generate(
+        100,
+        (i) =>
+            '<p>Paragraph $i with enough text for segmentation and reading.</p>',
+      ).join(),
+    );
+    details.value = topic([
+      for (var i = 40; i < 100; i++) i == 60 ? longPost : post(i),
+    ]);
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final jump = controller.scrollToPostChunk(
+      60,
+      1,
+      details.value.postStream.posts,
+    );
+    await tester.pumpAndSettle();
+    expect(await jump, isTrue);
+    controller.scrollController.jumpTo(controller.scrollController.offset + 47);
+    await tester.pumpAndSettle();
+    final saved = controller.captureReadingPosition()!;
+    expect(saved.postNumber, 60);
+    expect(saved.segmentIndex, greaterThan(0));
+    await jumpToFloor(tester, 85);
+    details.value = topic([
+      for (var i = 20; i < 100; i++) i == 60 ? longPost : post(i),
+    ]);
+    await tester.pumpAndSettle();
+    final restore = controller.restoreReadingPosition(saved);
+    await tester.pumpAndSettle();
+    expect(await restore, isTrue);
+    final restored = controller.captureReadingPosition()!;
+    expect(restored.postNumber, saved.postNumber);
+    expect(restored.segmentIndex, saved.segmentIndex);
+    expect(restored.offset, closeTo(saved.offset, .5));
+    await disposeList(tester);
+  });
+
   testWidgets('帖子加载到末尾后显示话题提示，元数据改变时更新', (tester) async {
     initialFloor = 1;
     hasMoreBefore = false;
