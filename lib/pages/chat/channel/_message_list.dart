@@ -34,6 +34,8 @@ class _ChatMessageList extends StatelessWidget {
           positionKey: key!,
           initialIndex: null,
           reverse: true,
+          // 后续消息插在输入条占位和原来的末条消息之间，保位时要跳过占位。
+          firstAnchorIndex: 1,
           cacheExtent: 300,
           physics: const AlwaysScrollableScrollPhysics(),
           itemKeys: [

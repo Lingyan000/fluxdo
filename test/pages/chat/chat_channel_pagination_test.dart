@@ -23,6 +23,7 @@ import 'package:fluxdo/providers/chat/chat_messages_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/theme_provider.dart'
     show sharedPreferencesProvider;
+import 'package:fluxdo/services/discourse/discourse_service.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
@@ -37,9 +38,18 @@ class _ImagePicker extends ImagePickerPlatform {
   }) async => paths.map(XFile.new).toList();
 }
 
-const _streamKey = (channelId: 1, threadId: 1, targetMessageId: null);
 const _pastLoading = ValueKey('chat_loading_past');
 const _futureLoading = ValueKey('chat_loading_future');
+
+class _ChannelService extends Fake implements DiscourseService {
+  @override
+  Future<List<ChatMessage>> getChannelPins(int channelId) async => [
+    ChatMessage(id: 1, channelId: channelId, message: '频道公告', cooked: ''),
+  ];
+
+  @override
+  Future<void> markChannelPinsRead(int channelId) async {}
+}
 
 class _CurrentUser extends CurrentUserNotifier {
   @override
@@ -72,6 +82,7 @@ List<ChatMessage> _messages(
 class _Messages extends ChatMessagesNotifier {
   _Messages({
     int count = 40,
+    int? threadId = 1,
     this.variedHeights = false,
     bool canLoadMoreFuture = true,
   }) : initial = ChatMessagesState(
@@ -79,7 +90,7 @@ class _Messages extends ChatMessagesNotifier {
          canLoadMorePast: true,
          canLoadMoreFuture: canLoadMoreFuture,
        ),
-       super(_streamKey);
+       super((channelId: 1, threadId: threadId, targetMessageId: null));
 
   final ChatMessagesState initial;
   final bool variedHeights;
@@ -240,9 +251,11 @@ Future<ScrollController> _pumpPage(
         sharedPreferencesProvider.overrideWithValue(prefs),
         currentUserProvider.overrideWith(_CurrentUser.new),
         chatChannelsProvider.overrideWith(_Channels.new),
+        if (!messages.isThread)
+          discourseServiceProvider.overrideWithValue(_ChannelService()),
         chatMessagesProvider((
           channelId: 1,
-          threadId: 1,
+          threadId: messages.threadId,
           targetMessageId: initialMessageId,
         )).overrideWith(() => messages),
       ],
@@ -259,7 +272,7 @@ Future<ScrollController> _pumpPage(
           supportedLocales: AppLocaleUtils.supportedLocales,
           home: ChatChannelPage(
             channelId: 1,
-            threadId: 1,
+            threadId: messages.threadId,
             initialMessageId: initialMessageId,
           ),
         ),
@@ -656,6 +669,93 @@ void main() {
     expect(controller.offset, offset);
     expect(messages.pastCalls, 1);
     await gesture.up();
+    await _disposePage(tester);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    for (final past in [true, false]) {
+      testWidgets('拖到分页边界后加载${past ? '历史' : '后续'}消息保留原位 $platform', (
+        tester,
+      ) async {
+        final messages = _Messages(variedHeights: true);
+        final controller = await _pumpPage(
+          tester,
+          messages,
+          platform: platform,
+        );
+        if (past) await _nearHistory(tester, controller);
+        final list = find.byType(CustomScrollView);
+        final gesture = await tester.startGesture(tester.getCenter(list));
+        await gesture.moveBy(Offset(0, past ? 20 : -20));
+        await gesture.moveBy(Offset(0, past ? 500 : -120));
+        await tester.pump();
+        expect(past ? messages.pastCalls : messages.futureCalls, 1);
+        expect(
+          past
+              ? controller.position.extentAfter
+              : controller.position.extentBefore,
+          0,
+        );
+        final message = _visibleMessage(tester);
+        final before = tester.getTopLeft(message);
+        if (past) {
+          messages.finishPast(count: 50);
+        } else {
+          messages.finishFuture(count: 50);
+        }
+        await tester.pump();
+        await tester.pump();
+        expect(message, findsOneWidget);
+        expect(tester.getTopLeft(message).dy, closeTo(before.dy, 1));
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(past ? messages.pastCalls : messages.futureCalls, 1);
+        await _disposePage(tester);
+      });
+    }
+  }
+
+  testWidgets('频道轻滑到底后追加一页，松手时的消息留在原位，再轻滑不连翻', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 870));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final messages = _Messages(threadId: null, count: 50, variedHeights: true);
+    final controller = await _pumpPage(tester, messages);
+    expect(find.text(S.current.chat_pinnedBanner), findsOneWidget);
+    final list = find.byType(CustomScrollView);
+    Future<void> swipe() => tester.timedDrag(
+      list,
+      const Offset(0, -36),
+      const Duration(milliseconds: 900),
+    );
+
+    await swipe();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(controller.position.isScrollingNotifier.value, isFalse);
+    expect(find.byKey(_futureLoading), findsOneWidget);
+    expect(messages.futureCalls, 1);
+    final message = _visibleMessage(tester);
+    final before = tester.getTopLeft(message).dy;
+
+    messages.finishFuture(count: 50);
+    await tester.pump();
+    final firstFrameY = message.evaluate().isEmpty
+        ? null
+        : tester.getTopLeft(message).dy;
+    await tester.pumpAndSettle();
+    await swipe();
+    await tester.pump();
+
+    expect(
+      messages.futureCalls,
+      1,
+      reason: '追加后原消息的纵坐标从 $before 变为 $firstFrameY',
+    );
+    expect(firstFrameY, closeTo(before, 1));
+    expect(
+      tester.getTopLeft(message).dy,
+      inInclusiveRange(before - 37, before),
+    );
+    expect(messages.pastCalls, 0);
     await _disposePage(tester);
   });
 
