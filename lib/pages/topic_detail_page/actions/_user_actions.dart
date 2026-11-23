@@ -8,7 +8,7 @@ extension _UserActions on _TopicDetailPageState {
     final params = _params;
     final detailAsync = ref.read(topicDetailProvider(params));
     if (detailAsync.isLoading) return;
-    _controller.cancelProgressLoad();
+    _cancelReadingJump();
 
     final detail = ref.read(topicDetailProvider(params)).value;
     final notifier = ref.read(topicDetailProvider(params).notifier);
@@ -1674,7 +1674,7 @@ extension _UserActions on _TopicDetailPageState {
 
   /// 切换嵌套视图
   void _toggleNestedView() {
-    _controller.cancelProgressLoad();
+    _cancelReadingJump();
     if (_isNestedView) {
       setState(() {
         _isNestedView = false;

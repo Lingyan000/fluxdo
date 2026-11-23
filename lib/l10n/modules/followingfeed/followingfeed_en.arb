@@ -7,7 +7,6 @@
   "followingFeed_emptyHint": "Follow people to see their new topics and replies here.",
   "followingFeed_posted": "created a topic",
   "followingFeed_replied": "replied",
-  "followingFeed_loadMore": "Load more",
   "followingFeed_migrationTitle": "From Seeking to following activity",
   "followingFeed_migrationSummary": "See topics and replies from people you follow on the website. Pull to refresh or scroll through earlier posts.",
   "followingFeed_migrationChanges": "Seeking's monitoring of likes, reactions and boosts, and background alerts have ended.",

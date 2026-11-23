@@ -7,7 +7,6 @@
   "followingFeed_emptyHint": "关注用户后，可以在这里查看他们发布的话题和回复。",
   "followingFeed_posted": "发布了话题",
   "followingFeed_replied": "回复了",
-  "followingFeed_loadMore": "加载更多",
   "followingFeed_migrationTitle": "从追觅到关注动态",
   "followingFeed_migrationSummary": "在这里查看你在网站上关注的人发布的话题和回复，支持下拉刷新和翻阅历史。",
   "followingFeed_migrationChanges": "原追觅的点赞、回应、Boost 监控和后台提醒已停止。",

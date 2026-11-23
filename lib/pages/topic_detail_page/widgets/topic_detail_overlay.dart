@@ -15,6 +15,7 @@ import 'topic_bottom_bar.dart';
 import 'topic_bottom_menu_layer.dart';
 import 'topic_filter_controls.dart';
 import '../controllers/topic_reply_session.dart';
+import '../controllers/topic_jump_history.dart';
 
 /// 话题详情页浮层
 /// 包含底部操作栏、收起后的贴底进度线、回顶按钮与底栏手势的首次引导
@@ -40,6 +41,8 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   final ValueListenable<String?>? replyDraftListenable;
   final VoidCallback onReplyEntryTap;
   final VoidCallback onScrollToTop;
+  final Widget? returnButton;
+  final TopicJumpHistory? jumpHistory;
 
   /// 树形视图中的下一条主回复操作，null 表示当前没有下一条。
   final ValueListenable<VoidCallback?>? nextRootListenable;
@@ -80,6 +83,8 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     this.replyDraftListenable,
     required this.onReplyEntryTap,
     required this.onScrollToTop,
+    this.returnButton,
+    this.jumpHistory,
     this.nextRootListenable,
     this.tocButton,
     this.tocVisibleListenable,
@@ -341,6 +346,47 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             ),
           ),
         ),
+        if (widget.returnButton != null)
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              widget.showBottomBarListenable,
+              ?widget.replySession?.activeNotifier,
+              ?widget.menuSession?.activeNotifier,
+            ]),
+            child: TopicDetailOverlay.alignWithBar(
+              context,
+              Align(
+                alignment: Alignment.bottomLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    right:
+                        TopicDetailOverlay.smallFabSize +
+                        TopicBottomBarMetrics.gap,
+                  ),
+                  child: widget.returnButton,
+                ),
+              ),
+            ),
+            builder: (context, child) => AnimatedPositioned(
+              key: const ValueKey('reading_return_button'),
+              duration: _motion,
+              curve: TopicBottomBarMetrics.motionCurve,
+              left: 0,
+              right: 0,
+              bottom: TopicDetailOverlay.floatingButtonBase(
+                context,
+                widget.showBottomBarListenable.value,
+              ),
+              child: IgnorePointer(
+                ignoring: _panelActive,
+                child: AnimatedOpacity(
+                  opacity: _panelActive ? 0 : 1,
+                  duration: _motion,
+                  child: child,
+                ),
+              ),
+            ),
+          ),
         // 底栏真正可见时才计入一次引导。
         if (!widget.filter.isNestedMode &&
             widget.totalCount > 1 &&
@@ -351,6 +397,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             listenable: Listenable.merge([
               widget.showBottomBarListenable,
               _hintVisible,
+              ?widget.jumpHistory,
               ?widget.replySession?.activeNotifier,
               ?widget.menuSession?.activeNotifier,
             ]),
@@ -369,6 +416,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
               final visible =
                   _hintVisible.value &&
                   widget.showBottomBarListenable.value &&
+                  widget.jumpHistory?.target == null &&
                   !_panelActive;
               return Positioned(
                 key: const ValueKey('bar_gesture_hint'),

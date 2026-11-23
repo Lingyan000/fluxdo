@@ -46,6 +46,7 @@ class ActivityPostCard extends StatelessWidget {
     this.categoryId,
     this.categories = const {},
     this.footer,
+    this.highlighted = false,
   });
 
   final ({int index, int count}) position;
@@ -56,6 +57,7 @@ class ActivityPostCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onPreviewIntent;
   final Widget? footer;
+  final bool highlighted;
   final TopicUser? author;
 
   /// 发起动作的用户（点赞人、回复人等）。设置后首行改为「动作者 + [actorVerb]」，
@@ -112,6 +114,7 @@ class ActivityPostCard extends StatelessWidget {
     );
     return ActivityCardFrame(
       position: position,
+      highlighted: highlighted,
       onTap: onTap,
       onLongPress: onLongPress,
       onPreviewIntent: onPreviewIntent,

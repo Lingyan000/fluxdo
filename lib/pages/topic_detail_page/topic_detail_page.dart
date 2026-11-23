@@ -81,6 +81,7 @@ import 'controllers/topic_detail_controller.dart';
 import 'controllers/topic_toc_controller.dart';
 import 'controllers/topic_position_info.dart';
 import 'controllers/topic_reply_session.dart';
+import 'controllers/topic_jump_history.dart';
 import 'widgets/nested_post_list.dart';
 import 'widgets/private_message_participants.dart';
 import 'widgets/topic_detail_overlay.dart';
@@ -88,6 +89,7 @@ import 'widgets/topic_bottom_bar.dart';
 import 'widgets/topic_bottom_menu_layer.dart';
 import 'widgets/topic_filter_controls.dart';
 import 'widgets/topic_reading_rail.dart';
+import 'widgets/topic_return_button.dart';
 import 'widgets/topic_quick_reply.dart';
 import 'widgets/topic_docked_composer.dart';
 import 'widgets/topic_timeline.dart';
@@ -119,6 +121,7 @@ import '../../widgets/topic/assign_sheet.dart';
 import '../../theme/app_colors.dart';
 
 part 'actions/_scroll_actions.dart';
+part 'actions/_jump_history_actions.dart';
 part 'actions/_user_actions.dart';
 part 'actions/_filter_actions.dart';
 
@@ -230,6 +233,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   // Controller
   late final TopicDetailController _controller;
   late final TopicTocController _tocController;
+  final TopicJumpHistory _jumpHistory = TopicJumpHistory();
+  Completer<bool>? _nestedJumpCompletion;
+
+  late final Widget _returnButton = TopicReturnButton(
+    history: _jumpHistory,
+    onReturn: () => unawaited(_returnToReadingPosition()),
+    onClear: _clearJumpHistory,
+  );
 
   /// 任意楼层的日期与摘要(底栏拖动气泡、时间线共用)
   late final TopicPositionInfoSource _positionInfo;
@@ -324,6 +335,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   late NestedReadingSession _nestedReadingSession;
   NestedReadingPosition? _nestedResumePosition;
   NestedReadingPosition? _nestedRestorePosition;
+  List<int>? _nestedFullTargetPath;
   NestedReadingPosition? get _nestedBrowsePosition =>
       _nestedReadingSession.browsePosition;
   set _nestedBrowsePosition(NestedReadingPosition? value) =>
@@ -1004,6 +1016,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     unawaited(_nestedReadingStore.flush());
     _tocController.removeListener(_syncTocVisible);
     _controller.viewportPostNumberNotifier.removeListener(_syncTocVisible);
+    _nestedJumpCompletion?.complete(false);
+    _nestedJumpCompletion = null;
+    _jumpHistory.dispose();
     _controller.dispose();
     _nestedPostListController.dispose();
     _tocController.dispose();
@@ -1283,10 +1298,12 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
   }
 
   void _returnToFullNestedTopic() {
+    _cancelReadingJump();
     final position = _nestedBrowsePosition ?? _nestedReadingSession.position;
     final target = position?.postNumber ?? _nestedTargetPostNumber;
     setState(() {
       _nestedRestorePosition = position;
+      _nestedFullTargetPath = null;
       _nestedFullTarget = target;
       _nestedTargetPostNumber = null;
       _nestedReadingSession.contextTarget = null;
@@ -1303,24 +1320,14 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     int postNumber, {
     NestedReadingPosition? restorePosition,
   }) async {
-    _controller.cancelProgressLoad();
     if (_isNestedView) {
-      if (postNumber <= 1) {
-        // OP 恒在树形视图顶部区域，直接回顶
-        await _controller.scrollToTop();
-        return;
-      }
-      if (_nestedTargetPostNumber == null) {
-        _nestedBrowsePosition = _nestedReadingSession.position;
-      }
-      setState(() {
-        _nestedReadingSession.contextTarget = postNumber;
-        _nestedRestorePosition = restorePosition;
-        // 同目标重跳也要生效（滚走后想跳回来）：递增令牌触发
-        // NestedPostList 重置定位守卫、换 key 重播高亮。
-        _nestedRelocateToken++;
-        _nestedTargetPostNumber = postNumber;
-      });
+      await _runReadingJump(
+        (attempt) => _positionInNestedTopic(
+          postNumber,
+          attempt,
+          restorePosition: restorePosition,
+        ),
+      );
       return;
     }
     await _scrollToPost(postNumber);
@@ -1336,7 +1343,13 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     }
     final postId = detail.postStream.stream[streamIndex - 1];
     if (!_isNestedView) {
-      await _scrollToPostById(postId, streamIndex: streamIndex);
+      await _runReadingJump(
+        (attempt) => _scrollToPostById(
+          postId,
+          streamIndex: streamIndex,
+          attempt: attempt,
+        ),
+      );
       return;
     }
     // 树形视图按真实楼层号定位，平铺窗口中可能没有这篇帖子。
@@ -1346,7 +1359,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       await _jumpToPostInTopic(local.postNumber);
       return;
     }
-    await _loadProgressWindow(detail, streamIndex);
+    await _runReadingJump(
+      (attempt) => _loadProgressWindow(detail, streamIndex, attempt),
+    );
   }
 
   Future<void> _handleExternalScrollTargetUpdate(int postNumber) async {
@@ -2648,6 +2663,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       replyDraftListenable: _replyDraftPreview,
       onReplyEntryTap: _handleReplyEntryTap,
       onScrollToTop: _scrollToTop,
+      returnButton: _returnButton,
+      jumpHistory: _jumpHistory,
       nextRootListenable: _isNestedView ? _nestedPostListController : null,
       tocButton: _isNestedView ? null : _tocFab,
       replySession:
@@ -2739,6 +2756,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         filter: _filterControls(detail, notifier),
         quickActions: quickActions,
         onAction: _handleProgressGestureForCurrent,
+        returnButton: _returnButton,
+        jumpHistory: _jumpHistory,
         nextRootListenable: _isNestedView ? _nestedPostListController : null,
       ),
     );
@@ -2802,7 +2821,9 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     if (detail == null) return;
     // 段映射基于过滤后列表,跳转目标必须同口径
     final posts = _filteredDetail(detail).postStream.posts;
-    unawaited(_tocController.scrollToHeading(entry, posts));
+    unawaited(_runReadingJump(
+      (_) => _tocController.scrollToHeading(entry, posts),
+    ));
   }
 
   /// 路由进度悬浮条手势触发的 [ProgressGestureAction] 到对应业务方法
@@ -3805,6 +3826,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         });
       }
 
+      final relocateToken = _nestedRelocateToken;
       Widget nestedView = nestedAsync.when(
         loading: () => PostListSkeleton(withHeader: true),
         error: (e, s) => _nestedAutoEnabled
@@ -3829,6 +3851,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               : null,
           restorePosition: _nestedRestorePosition,
           fullTargetPostNumber: _nestedFullTarget,
+          fullTargetPath: _nestedFullTargetPath,
           active:
               _isRouteVisible &&
               _isParentActive &&
@@ -3850,8 +3873,15 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               _nestedReadingStore.save(widget.topicId, position),
           onResume: _resumeNestedReading,
           onFullTargetConsumed: () {
+            if (relocateToken != _nestedRelocateToken) return;
             _nestedFullTarget = null;
+            _nestedFullTargetPath = null;
             _nestedRestorePosition = null;
+          },
+          onPositioned: (succeeded) {
+            if (relocateToken == _nestedRelocateToken) {
+              _completeNestedJump(succeeded);
+            }
           },
           detail: detail,
           blockedUsernames: blockedUsernames,

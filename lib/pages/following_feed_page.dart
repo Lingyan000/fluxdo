@@ -7,20 +7,37 @@ import 'package:m3e_ui/m3e_ui.dart';
 import '../l10n/s.dart';
 import '../models/following_feed.dart';
 import '../navigation/nav_action_bus.dart';
-import '../widgets/desktop_refresh_indicator.dart';
+import '../providers/category_provider.dart';
 import '../providers/core_providers.dart';
-import '../providers/following_feed_provider.dart';
 import '../providers/following_feed_migration_provider.dart';
+import '../providers/following_feed_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
+import '../utils/blocked_user_filter.dart';
+import '../utils/load_more_coordinator.dart';
 import '../widgets/common/error_view.dart';
 import '../widgets/common/paged_list_footer.dart';
+import '../widgets/desktop_refresh_indicator.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../widgets/layout/master_detail_pane_host.dart';
 import '../widgets/user/activity_card_layout.dart';
 import '../widgets/user/activity_post_card.dart';
 import '../widgets/user/following_feed_migration_sheet.dart';
+import '../widgets/user/user_profile_skeleton.dart';
 import 'follow_list_page.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+
+@visibleForTesting
+bool isFollowingPostSelected({
+  required bool wide,
+  required PaneEntry? selectedTop,
+  required FollowingPost post,
+}) =>
+    wide &&
+    selectedTop?.kind == PaneKind.topic &&
+    selectedTop?.topicId == post.topicId &&
+    (selectedTop?.scrollToPostNumber == null ||
+        selectedTop?.scrollToPostNumber == post.postNumber);
 
 class FollowingFeedPage extends ConsumerStatefulWidget {
   const FollowingFeedPage({super.key, this.isActive = true});
@@ -32,24 +49,79 @@ class FollowingFeedPage extends ConsumerStatefulWidget {
 class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
   final _scroll = ScrollController();
   final _refreshIndicatorKey = GlobalKey<M3eRefreshIndicatorState>();
-  FollowingFeedNotifier? _refreshingNotifier;
+  final _loadMoreCoordinator = LoadMoreCoordinator(
+    triggerDistance: 400,
+    releaseDistance: 400,
+  );
+  String? _currentUsername;
   bool _activated = false;
   bool _wide = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
   @override
   void dispose() {
     _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _refresh(FollowingFeedNotifier notifier) async {
-    setState(() => _refreshingNotifier = notifier);
-    try {
-      await notifier.refresh();
-    } finally {
-      if (mounted && _refreshingNotifier == notifier) {
-        setState(() => _refreshingNotifier = null);
-      }
+  void _onScroll() {
+    _publishScrollProgress();
+    if (!widget.isActive || !_scroll.hasClients) return;
+    final username = _currentUsername;
+    if (username == null) return;
+    final distance =
+        _scroll.position.maxScrollExtent - _scroll.position.pixels;
+    if (_loadMoreCoordinator.shouldTriggerForDistance(distance) &&
+        ref.read(followingFeedProvider(username)).moreError == null) {
+      _loadMore();
     }
+  }
+
+  void _publishScrollProgress() {
+    if (!_scroll.hasClients) return;
+    final raw = _scroll.offset;
+    final progress = raw < 0 ? 0.0 : raw;
+    final current = ref.read(
+      navScrollProgressProvider(NavEntryIds.followingFeed),
+    );
+    final atZero = progress == 0 && current != 0;
+    final crossed =
+        (progress >= navScrollIconThreshold) !=
+        (current >= navScrollIconThreshold);
+    if (!atZero && !crossed && (progress - current).abs() < 4.0) return;
+    ref
+            .read(navScrollProgressProvider(NavEntryIds.followingFeed).notifier)
+            .state =
+        progress;
+  }
+
+  Future<void> _loadMore() async {
+    final username = _currentUsername;
+    if (username == null) return;
+    final provider = followingFeedProvider(username);
+    final notifier = ref.read(provider.notifier);
+    await _loadMoreCoordinator.loadMore(
+      loadMore: notifier.loadMore,
+      hasMore: () => ref.read(provider).hasMore,
+      isActive: () =>
+          mounted && widget.isActive && _currentUsername == username,
+      progressCount: () => ref.read(provider).posts.length,
+    );
+  }
+
+  Future<void> _retryLoadMore() async {
+    _loadMoreCoordinator.resetCooldown();
+    await _loadMore();
+  }
+
+  Future<void> _refresh(FollowingFeedNotifier notifier) async {
+    _loadMoreCoordinator.resetCooldown();
+    await notifier.refresh();
   }
 
   Future<void> _showMigrationGuide(String username) async {
@@ -98,16 +170,43 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
     }
   }
 
+  Widget _buildScrollableState({
+    required double bottomInset,
+    required Widget child,
+  }) => CustomScrollView(
+    physics: const AlwaysScrollableScrollPhysics(),
+    slivers: [
+      SliverFillRemaining(
+        hasScrollBody: false,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: child,
+        ),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     // 导航预建的隐藏页面不发请求；访问过后保留列表及滚动位置。
     _activated = _activated || widget.isActive;
     if (!_activated) return const SizedBox.shrink();
     final username = ref.watch(currentUserProvider).value?.username;
+    if (_currentUsername != username) {
+      _currentUsername = username;
+      _loadMoreCoordinator.resetCooldown();
+    }
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
     if (username == null) {
       return Scaffold(
         appBar: AppBar(title: Text(context.l10n.followingFeed_title)),
-        body: Center(child: Text(context.l10n.followingFeed_login)),
+        body: Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: AppEmptyState(
+            icon: const Icon(Symbols.rss_feed_rounded),
+            title: context.l10n.followingFeed_login,
+          ),
+        ),
       );
     }
     ref.listen(navActionBusProvider, (_, event) {
@@ -116,19 +215,32 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
           event.targetId != NavEntryIds.followingFeed) {
         return;
       }
-      if (event.action == NavAction.refresh) {
-        _refreshIndicatorKey.currentState?.show();
-      } else if (_scroll.hasClients) {
-        _scroll.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      switch (event.action) {
+        case NavAction.scrollToTop:
+          if (_scroll.hasClients) {
+            _scroll.animateTo(
+              0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+          break;
+        case NavAction.refresh:
+          if (ref.read(followingFeedProvider(username)).loading) return;
+          if (_scroll.hasClients) {
+            _scroll.animateTo(
+              0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+          _refreshIndicatorKey.currentState?.show();
+          ref.resetNavScrollProgress(NavEntryIds.followingFeed);
+          break;
       }
     });
     final state = ref.watch(followingFeedProvider(username));
     final notifier = ref.read(followingFeedProvider(username).notifier);
-    final refreshing = _refreshingNotifier == notifier;
     final migration = ref.watch(followingFeedMigrationProvider);
     if (widget.isActive &&
         migration.showGuide &&
@@ -137,7 +249,106 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
         (_) => _showMigrationGuide(username),
       );
     }
+    final categories = ref.watch(categoryMapProvider).value ?? const {};
+    final blockedUsernames = ref.watch(
+      preferencesProvider.select((p) => p.normalizedBlockedUsernames),
+    );
+    final selectedTop = ref.watch(
+      selectedFollowingFeedProvider.select((s) => s.topEntry),
+    );
+    final visiblePosts = blockedUsernames.isEmpty
+        ? state.posts
+        : state.posts
+              .where(
+                (post) => !BlockedUserFilter.isBlockedUsername(
+                  post.author.username,
+                  blockedUsernames,
+                ),
+              )
+              .toList(growable: false);
+    if (visiblePosts.isEmpty &&
+        state.posts.isNotEmpty &&
+        state.hasMore &&
+        !state.loading &&
+        !state.loadingMore &&
+        state.moreError == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadMore();
+      });
+    }
     _wide = MasterDetailLayout.canShowBothPanesFor(context);
+
+    final Widget body;
+    if (!state.initialized && state.loading) {
+      body = const UserActionListSkeleton(type: UserActivitySkeletonType.post);
+    } else if (state.error != null) {
+      body = _buildScrollableState(
+        bottomInset: bottomInset,
+        child: ErrorView(
+          error: state.error!,
+          stackTrace: state.errorStack,
+          onRetry: () => _refreshIndicatorKey.currentState?.show(),
+        ),
+      );
+    } else if (visiblePosts.isEmpty &&
+        (state.posts.isEmpty || !state.hasMore)) {
+      body = _buildScrollableState(
+        bottomInset: bottomInset,
+        child: AppEmptyState(
+          icon: const Icon(Symbols.group_rounded),
+          title: context.l10n.followingFeed_empty,
+          message: context.l10n.followingFeed_emptyHint,
+        ),
+      );
+    } else {
+      body = ActivityCardList(
+        builder: (context, padding) => ListView.builder(
+          key: PageStorageKey('following_feed_$username'),
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: padding.copyWith(bottom: padding.bottom + bottomInset),
+          itemCount: visiblePosts.length + 1,
+          itemBuilder: (context, index) {
+            if (index == visiblePosts.length) {
+              return PagedListFooter(
+                hasMore: state.hasMore,
+                isLoadingMore: state.loadingMore,
+                isLoadMoreFailed: state.moreError != null,
+                onRetry: _retryLoadMore,
+              );
+            }
+            final post = visiblePosts[index];
+            final isNewTopic = post.postNumber == 1;
+            final isSelected = isFollowingPostSelected(
+              wide: _wide,
+              selectedTop: selectedTop,
+              post: post,
+            );
+            return ActivityPostCard(
+              key: ValueKey(post.id),
+              position: (index: index, count: visiblePosts.length),
+              highlighted: isSelected,
+              title: post.title,
+              actionLabel: isNewTopic
+                  ? context.l10n.followingFeed_posted
+                  : context.l10n.followingFeed_replied,
+              actionIcon: isNewTopic
+                  ? Symbols.article_rounded
+                  : Symbols.reply_rounded,
+              bodyFirst: !isNewTopic,
+              author: post.author,
+              occurredAt: post.createdAt,
+              postNumber: post.postNumber,
+              excerpt: post.excerpt,
+              categoryId: post.categoryId,
+              categories: categories,
+              onTap: () => _openPost(post),
+            );
+          },
+        ),
+      );
+    }
+
     final page = Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.followingFeed_title),
@@ -152,105 +363,13 @@ class _FollowingFeedPageState extends ConsumerState<FollowingFeedPage> {
               ),
             ),
           ),
-          IconButton(
-            tooltip: context.l10n.common_refresh,
-            icon: const Icon(Symbols.refresh_rounded),
-            onPressed: state.loading
-                ? null
-                : () => _refreshIndicatorKey.currentState?.show(),
-          ),
         ],
       ),
-      body: ActivityCardList(
-        builder: (context, padding) => NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            if (widget.isActive &&
-                notification.depth == 0 &&
-                notification.metrics.extentAfter < 400 &&
-                state.moreError == null) {
-              notifier.loadMore();
-            }
-            return false;
-          },
-          child: DesktopRefreshIndicator(
-            refreshIndicatorKey: _refreshIndicatorKey,
-            shouldRefresh: () => widget.isActive,
-            onRefresh: () => _refresh(notifier),
-            child: ListView.builder(
-              key: PageStorageKey('following_feed_$username'),
-              controller: _scroll,
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: padding,
-              itemCount: state.posts.length + 2,
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  // 首次加载占位；刷新保留原状态，由下拉指示器反馈。
-                  return AppLoadingSwitcher(
-                    identity: username,
-                    loading: state.loading,
-                    delay: Duration.zero,
-                    loadingBuilder: (_) => refreshing
-                        ? const SizedBox.shrink()
-                        : const Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Center(child: LoadingSpinner()),
-                          ),
-                    child: state.error != null
-                        ? ErrorView(
-                            error: state.error!,
-                            onRetry: () =>
-                                _refreshIndicatorKey.currentState?.show(),
-                          )
-                        : state.posts.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: AppEmptyState(
-                              icon: const Icon(Symbols.group_rounded),
-                              title: context.l10n.followingFeed_empty,
-                              message: context.l10n.followingFeed_emptyHint,
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  );
-                }
-                if (index == state.posts.length + 1) {
-                  if (state.posts.isEmpty) return const SizedBox.shrink();
-                  return Column(
-                    children: [
-                      PagedListFooter(
-                        hasMore: state.hasMore,
-                        isLoadingMore: state.loadingMore,
-                        isLoadMoreFailed: state.moreError != null,
-                        onRetry: notifier.loadMore,
-                      ),
-                      if (state.hasMore &&
-                          !state.loadingMore &&
-                          state.moreError == null)
-                        TextButton(
-                          onPressed: notifier.loadMore,
-                          child: Text(context.l10n.followingFeed_loadMore),
-                        ),
-                    ],
-                  );
-                }
-                final post = state.posts[index - 1];
-                return ActivityPostCard(
-                  key: ValueKey(post.id),
-                  position: (index: index - 1, count: state.posts.length),
-                  title: post.title,
-                  actionLabel: post.postNumber == 1
-                      ? context.l10n.followingFeed_posted
-                      : context.l10n.followingFeed_replied,
-                  author: post.author,
-                  occurredAt: post.createdAt,
-                  postNumber: post.postNumber,
-                  excerpt: post.excerpt,
-                  onTap: () => _openPost(post),
-                );
-              },
-            ),
-          ),
-        ),
+      body: DesktopRefreshIndicator(
+        refreshIndicatorKey: _refreshIndicatorKey,
+        shouldRefresh: () => widget.isActive,
+        onRefresh: () => _refresh(notifier),
+        child: body,
       ),
     );
     return MasterDetailPaneHost(
