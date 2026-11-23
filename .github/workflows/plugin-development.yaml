@@ -27,6 +27,13 @@ on:
       - 'lib/services/discourse/_users.dart'
       - 'lib/services/background/**'
       - 'lib/services/local_notification_service.dart'
+      - 'lib/widgets/user/following_feed_migration_sheet.dart'
+      - 'test/pages/following_feed_page_test.dart'
+      - 'lib/l10n/modules/followingfeed/**'
+      - 'android/app/src/main/kotlin/com/github/lingyan000/fluxdo/MainActivity.kt'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Info.plist'
+      - 'packages/qjs/**'
       - 'lib/services/log/**'
       - 'lib/l10n/modules/metaverse/**'
       - 'packages/fluxdo_plugin_runtime/**'
@@ -64,6 +71,13 @@ on:
       - 'lib/services/discourse/_users.dart'
       - 'lib/services/background/**'
       - 'lib/services/local_notification_service.dart'
+      - 'lib/widgets/user/following_feed_migration_sheet.dart'
+      - 'test/pages/following_feed_page_test.dart'
+      - 'lib/l10n/modules/followingfeed/**'
+      - 'android/app/src/main/kotlin/com/github/lingyan000/fluxdo/MainActivity.kt'
+      - 'ios/Runner/AppDelegate.swift'
+      - 'ios/Runner/Info.plist'
+      - 'packages/qjs/**'
       - 'lib/services/log/**'
       - 'lib/l10n/modules/metaverse/**'
       - 'packages/fluxdo_plugin_runtime/**'
@@ -98,7 +112,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: 259d0b7417ed90e5019c4748e124d4e198a41283
+          ref: 40342b4b283789d2af0aa106b9facc039f7d23d3
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -130,12 +144,15 @@ jobs:
       - name: Analyze development integration
         working-directory: app
         run: flutter analyze lib/modules/metaverse/market lib/modules/metaverse/plugin/metaverse_plugin_backup.dart lib/modules/metaverse/plugin/metaverse_plugin_recovery.dart lib/modules/metaverse/plugin/metaverse_data_migration.dart lib/modules/metaverse/plugin/metaverse_approval_change.dart lib/modules/metaverse/plugin/metaverse_package_signature.dart lib/modules/metaverse/plugin/metaverse_plugin_preferences.dart lib/modules/metaverse/plugin/ui/metaverse_restore_page.dart test/modules/metaverse/metaverse_recovery_test.dart test/modules/metaverse/metaverse_signature_test.dart test/modules/metaverse/metaverse_reliability_ui_test.dart test/services/data_backup_service_test.dart lib/modules/metaverse/host/metaverse_system_wake.dart lib/services/background/background_notification_service.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_management_page.dart test/modules/metaverse/metaverse_auto_update_test.dart test/modules/metaverse/metaverse_update_ui_test.dart lib/navigation lib/modules/metaverse/host lib/modules/metaverse/plugin/metaverse_forum_request.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_page.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_surface_view.dart lib/pages/metaverse_page.dart lib/pages/bottom_nav_settings_page.dart lib/main.dart lib/services/discourse/_users.dart test/modules/metaverse/metaverse_navigation_forum_test.dart lib/modules/metaverse/developer lib/modules/metaverse/plugin/metaverse_component_contract.dart lib/modules/metaverse/plugin/metaverse_ui_validator.dart lib/modules/metaverse/plugin/metaverse_plugin_host.dart lib/modules/metaverse/plugin/metaverse_event_stream.dart lib/modules/metaverse/plugin/metaverse_plugin_network.dart test/modules/metaverse/metaverse_event_stream_test.dart lib/modules/metaverse/plugin/metaverse_plugin_store.dart lib/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart lib/modules/metaverse/plugin/ui/metaverse_plugin_dialogs.dart lib/services/log/log_writer.dart packages/fluxdo_plugin_runtime tool/plugin_tools test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart
+      - name: Build and verify native script engine
+        working-directory: app
+        run: dart run tool/plugin_tools/quickjs_peer.dart --check
       - name: Run real QuickJS HMR regression
         working-directory: app
         run: node --test tool/plugin_tools/native.test.mjs
       - name: Verify buyer workflows with simulated services
         working-directory: app
-        run: node --test test/modules/metaverse/ld_store_buyer.test.mjs
+        run: node --test test/modules/metaverse/ld_store_buyer.test.mjs test/modules/metaverse/activity_feed.test.mjs
       - name: Prepare SVG transformer before parallel asset compilation
         working-directory: app
         timeout-minutes: 2
@@ -185,7 +202,7 @@ jobs:
           exit $LASTEXITCODE
       - name: Run pairing, isolation, plugin and architecture regression
         working-directory: app
-        run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
+        run: flutter test --reporter expanded --file-reporter json:plugin-tests.json test/modules/metaverse/metaverse_navigation_forum_test.dart test/modules/metaverse/metaverse_navigation_ui_test.dart test/modules/metaverse/metaverse_development_test.dart test/modules/metaverse/metaverse_development_connection_test.dart test/modules/metaverse/metaverse_development_integration_test.dart test/modules/metaverse/metaverse_plugin_e2e_test.dart test/modules/metaverse/metaverse_script_engine_test.dart test/pages/following_feed_page_test.dart test/modules/metaverse/metaverse_developer_test.dart test/services/log/plugin_log_isolation_test.dart test/architecture
       - name: Upload native test events
         if: always()
         uses: actions/upload-artifact@v4
