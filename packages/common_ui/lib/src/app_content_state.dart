@@ -195,7 +195,7 @@ class _AppEmptyStateState extends State<AppEmptyState>
                 0,
                 _withCornerBadge(
                   context,
-                  IconTheme(
+                  IconTheme.merge(
                     data: IconThemeData(
                       size: 48,
                       color: theme.colorScheme.onSurfaceVariant,

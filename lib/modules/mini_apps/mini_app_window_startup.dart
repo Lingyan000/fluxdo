@@ -7,6 +7,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
 import '../../theme/accent_colors.dart';
+import '../../theme/app_theme.dart' show AppThemeBridge;
 
 /// 子引擎先绘制首帧，再读取偏好及连接宿主。初始化异常也有关闭和重试入口。
 class MiniAppWindowStartup extends StatefulWidget {
@@ -58,10 +59,7 @@ class _MiniAppWindowStartupState extends State<MiniAppWindowStartup> {
     return TranslationProvider(
       child: Builder(
         builder: (context) => MaterialApp(
-          // 第三方组件迁移期间同步旧 Material 的主题和本地化。
-          // ignore: deprecated_member_use
-          builder: (context, child) =>
-              MaterialUiCompatibilityBridge(child: child!),
+          builder: (context, child) => AppThemeBridge(child: child!),
           // 启动页使用自己的 Navigator，不能把加载路由迁入完整 MainApp。
           locale: TranslationProvider.of(context).flutterLocale,
           supportedLocales: AppLocaleUtils.supportedLocales,

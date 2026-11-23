@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +48,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final content = tester.element(find.text('运行内容'));
+    expect(
+      IconTheme.of(content).opticalSize,
+      Theme.of(content).iconTheme.opticalSize,
+    );
     expect(titles, isNotEmpty);
     expect(titles.toSet(), {'软块合成'});
     container.read(themeProvider.notifier).setThemeMode(ThemeMode.dark);
@@ -99,6 +105,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(AppEmptyState), findsOneWidget);
+    final errorIcon = tester.element(find.byIcon(Symbols.error_rounded));
+    expect(IconTheme.of(errorIcon).size, 48);
+    expect(IconTheme.of(errorIcon).opticalSize, 24);
     await tester.tap(find.byType(FilledButton));
     await tester.pump();
     expect(attempts, 2);

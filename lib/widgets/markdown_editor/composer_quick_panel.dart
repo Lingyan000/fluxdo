@@ -284,7 +284,7 @@ class _ComposerQuickPanelState extends State<_ComposerQuickPanel> {
                                   selected: index == _selected,
                                   selectedTileColor: colors.primaryContainer
                                       .withValues(alpha: .4),
-                                  leading: IconTheme(
+                                  leading: IconTheme.merge(
                                     data: IconThemeData(
                                       size: 20,
                                       color: action.enabled

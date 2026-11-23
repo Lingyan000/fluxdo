@@ -951,9 +951,7 @@ class MainApp extends ConsumerWidget {
                   }
                 }
 
-                // 第三方组件迁移期间同步旧 Material 的主题和本地化。
-                // ignore: deprecated_member_use
-                return MaterialUiCompatibilityBridge(
+                return AppThemeBridge(
                   child: AppGlassSettings(
                     // 玻璃的背景统一在这里每帧截取一次，包住导航与弹层
                     child: Builder(
