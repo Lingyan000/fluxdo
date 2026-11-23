@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -42,6 +42,13 @@
             "methods": [
               "DELETE"
             ]
+          },
+          {
+            "origin": "https://api2.ldspro.qzz.io",
+            "pathPrefix": "/api/shop/comments",
+            "methods": [
+              "DELETE"
+            ]
           }
         ]
       }
@@ -59,7 +66,10 @@
       "id": "orders",
       "widget": "BuyerOrders",
       "scroll": false,
-      "title": "我的订单"
+      "title": "我的订单",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "order",
@@ -68,7 +78,8 @@
       "title": "订单详情",
       "presentation": "modal",
       "appBar": {
-        "actions": "OrderActions"
+        "actions": "OrderActions",
+        "title": "LocalizedTitle"
       }
     },
     {
@@ -77,14 +88,18 @@
       "scroll": false,
       "title": "LD士多",
       "appBar": {
-        "actions": "MarketActions"
+        "actions": "MarketActions",
+        "title": "LocalizedTitle"
       }
     },
     {
       "id": "review",
       "widget": "Review",
       "scroll": false,
-      "title": "确认订单"
+      "title": "确认订单",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "product",
@@ -93,60 +108,85 @@
       "title": "商品详情",
       "presentation": "modal",
       "appBar": {
-        "actions": "ProductActions"
+        "actions": "ProductActions",
+        "title": "LocalizedTitle"
       }
     },
     {
       "id": "favorites",
       "widget": "Favorites",
       "scroll": false,
-      "title": "我的收藏"
+      "title": "我的收藏",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "coupons",
       "widget": "Coupons",
       "scroll": false,
-      "title": "我的优惠券"
+      "title": "我的优惠券",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "coupon",
       "widget": "Coupon",
       "scroll": false,
       "title": "领取优惠券",
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "refund",
       "widget": "Refund",
       "scroll": false,
       "title": "退款与售后",
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "comment",
       "widget": "CommentForm",
       "scroll": false,
       "title": "发表评论",
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "merchant",
       "widget": "Merchant",
       "scroll": false,
-      "title": "店铺商品"
+      "title": "店铺商品",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "filters",
       "widget": "Filters",
       "title": "筛选商品",
       "scroll": false,
-      "presentation": "modal"
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "account",
       "widget": "Account",
       "title": "我的士多",
-      "scroll": false
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
     },
     {
       "id": "messages",
@@ -154,7 +194,27 @@
       "title": "士多消息",
       "scroll": false,
       "appBar": {
-        "actions": "MessageActions"
+        "actions": "MessageActions",
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "reports",
+      "widget": "Reports",
+      "title": "我的举报",
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "report",
+      "widget": "ReportDetail",
+      "title": "举报进度",
+      "scroll": false,
+      "presentation": "modal",
+      "appBar": {
+        "title": "LocalizedTitle"
       }
     }
   ],
@@ -183,6 +243,7 @@
     "loadingPlaceholders",
     "navigationReplacement",
     "credentialClaims",
-    "iconButtonContent"
+    "iconButtonContent",
+    "hostEnvironment"
   ]
 }

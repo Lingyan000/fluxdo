@@ -22,8 +22,15 @@ import 'metaverse_navigation_forum_test.dart' show Secrets;
 
 class _Notifications extends Fake implements LocalNotificationService {
   final delivered = <int>[];
+  String system = 'allowed';
   @override
-  Future<bool> requestPluginPermission() async => true;
+  Future<String> pluginPermissionStatus() async => system;
+  @override
+  bool get canOpenPluginNotificationSettings => true;
+  @override
+  Future<bool> openPluginNotificationSettings() async => true;
+  @override
+  Future<bool> requestPluginPermission() async => system == 'allowed';
   @override
   Future<void> showPlugin({
     required int id,
@@ -175,7 +182,7 @@ void main() {
       lookup: (_) async => throw StateError('测试禁止网络'),
     );
     package = await MetaversePluginInstaller(network: network).importBundle(
-      File('test/fixtures/metaverse/activity-feed-1.2.0.fluxplugin').openRead(),
+      File('test/fixtures/metaverse/activity-feed-1.3.0.fluxplugin').openRead(),
     );
     installed = InstalledMetaversePlugin(
       manifest: package.manifest,
@@ -325,6 +332,35 @@ void main() {
     expect(other.tasks(7, installed.id).single['background'], isFalse);
   });
 
+  test('用户允许插件但系统拒绝首次申请时仍保留独立偏好', () async {
+    delegate.notifications.system = 'denied';
+    final actions = MetaverseTaskActions(control, installed.manifest, 7,
+      changed: () async {}, checkActive: () {}, notifications: delegate.notifications);
+    expect(await actions.call('notifications.requestPermission', {}), isFalse);
+    expect((await actions.call('notifications.status', {}) as Map)['authorized'], isTrue);
+    expect(control.notificationIds(installed.id, account: 7), isEmpty);
+    await actions.call('notifications.revoke', {});
+    expect((await actions.call('notifications.status', {}) as Map)['authorized'], isFalse);
+  });
+
+  test('插件已授权但系统关闭通知时报告不同状态且不记录已发送', () async {
+    final notifications = delegate.notifications..system = 'denied';
+    control.allowNotifications(7, installed.id, true);
+    final actions = MetaverseTaskActions(control, installed.manifest, 7,
+      changed: () async {}, checkActive: () {}, notifications: notifications);
+    expect(await actions.call('notifications.status', {}), {
+      'authorized': true, 'system': 'denied', 'canOpenSettings': true,
+    });
+    await expectLater(actions.call('notifications.show', {
+      'key': 'updates', 'title': '动态', 'body': '测试提醒', 'page': 'feed',
+    }), throwsA(isA<MetaversePluginCallException>().having((e) => e.message, 'reason', 'notification_system_denied')));
+    expect(notifications.delivered, isEmpty);
+    expect(control.notificationIds(installed.id, account: 7), isEmpty);
+    notifications.system = 'allowed';
+    expect((await actions.call('notifications.status', {}) as Map)['system'], 'allowed');
+    expect(await actions.call('notifications.openSettings', {}), isTrue);
+  });
+
   test('独立连接抢占、后台长短间隔、冷启动账号与来源失效', () {
     final other = MetaverseTaskStore(
       root,
@@ -421,7 +457,7 @@ void main() {
     ms += 10000;
     expect(
       await tick(
-        script: '''fluxdo.on('task.run',async ctx=>{for(const action of [()=>ctx.api.permissions.request(['forumActivity']),()=>ctx.api.navigation.dismiss(),()=>ctx.api.payments.request({}),()=>ctx.api.connect.authorize(''),()=>ctx.api.notifications.requestPermission()]){let blocked=false;try{await action();}catch(e){blocked=e.message==='task_has_no_ui';}if(!blocked)throw Error('unexpected');}});''',
+        script: '''fluxdo.on('task.run',async ctx=>{for(const action of [()=>ctx.api.permissions.request(['forumActivity']),()=>ctx.api.navigation.dismiss(),()=>ctx.api.payments.request({}),()=>ctx.api.connect.authorize(''),()=>ctx.api.notifications.requestPermission(),()=>ctx.api.notifications.openSettings()]){let blocked=false;try{await action();}catch(e){blocked=e.message==='task_has_no_ui';}if(!blocked)throw Error('unexpected');}});''',
       ),
       plugin,
     );

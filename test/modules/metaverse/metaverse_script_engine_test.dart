@@ -104,10 +104,12 @@ Future<void> main() async {
         "__fluxdoMetaverse.dispatch('tap', "
         "'{\"surface\":\"s1\",\"kind\":\"card\"}', '{\"n\":1}')",
       );
-      await received(2);
-      expect(messages[0], {'t': 'data', 's': 's1', 'k': 'count', 'v': 2});
-      expect((messages[1] as Map)['t'], 'error');
-      expect((messages[1] as Map)['message'], 'later');
+      await received(4);
+      expect(messages[0], {'t': 'event', 'phase': 'start', 'id': 1});
+      expect(messages[1], {'t': 'data', 's': 's1', 'k': 'count', 'v': 2});
+      expect((messages[2] as Map)['t'], 'error');
+      expect((messages[2] as Map)['message'], 'later');
+      expect(messages[3], {'t': 'event', 'phase': 'end', 'id': 1});
     });
 
     test('死循环不阻塞宿主：看门狗判定失效并回调 onFatal', () async {

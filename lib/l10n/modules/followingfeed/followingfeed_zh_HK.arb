@@ -15,5 +15,6 @@
   "followingFeed_migrationContinue": "開始瀏覽",
   "followingFeed_viewLegacyUsers": "查看舊名單",
   "followingFeed_legacyUsers": "舊追覓名單",
+  "followingFeed_copyLegacyUsers": "複製名單以匯入外掛",
   "followingFeed_legacyHint": "這是本機儲存的舊名單，可能包含其他帳號加入的用戶。開啟用戶個人頁面後，可逐一選擇關注。"
 }

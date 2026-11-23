@@ -1,0 +1,1570 @@
+[
+  {
+    "locale": "zh",
+    "widget": "CommunityForm",
+    "data": {
+      "pageTitle": "举报问题",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "report",
+      "reportSubmitted": false,
+      "reportReceipt": {},
+      "communityTitle": "测试商品",
+      "communityFields": [
+        {
+          "name": "category",
+          "label": "问题分类",
+          "type": "choice",
+          "required": true,
+          "options": [
+            {
+              "value": "delivery_issue",
+              "label": "无法使用或交付异常"
+            },
+            {
+              "value": "content_mismatch",
+              "label": "描述或价格不符"
+            },
+            {
+              "value": "promotion",
+              "label": "推广引流"
+            },
+            {
+              "value": "fraud_risk",
+              "label": "疑似欺诈或违规转售"
+            },
+            {
+              "value": "purchase_flow_issue",
+              "label": "购买异常"
+            },
+            {
+              "value": "other",
+              "label": "其他"
+            }
+          ]
+        },
+        {
+          "name": "reason",
+          "label": "详细说明",
+          "hint": "请说明具体问题，不要填写卡密或密码（5–500 字）",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 500
+        },
+        {
+          "name": "orderNo",
+          "label": "关联订单号（可选）",
+          "type": "text",
+          "maxLength": 80
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh",
+    "widget": "ReplyForm",
+    "data": {
+      "pageTitle": "回复评论",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "reply",
+      "replySubmitted": false,
+      "communityFields": [
+        {
+          "name": "content",
+          "label": "回复内容",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 300
+        }
+      ],
+      "communityTitle": "回复 reader"
+    }
+  },
+  {
+    "locale": "zh",
+    "widget": "Reports",
+    "data": {
+      "pageTitle": "我的举报",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [
+        {
+          "id": "product:1",
+          "reportId": "1",
+          "type": "product",
+          "productId": "",
+          "orderNo": "",
+          "title": "测试商品",
+          "state": "待补充",
+          "category": "描述或价格不符",
+          "reason": "商品使用说明与实际情况不同，请核查。",
+          "decision": "",
+          "note": "",
+          "next": "",
+          "time": "2026-11-20T00:00:00.000Z"
+        }
+      ],
+      "authorized": true,
+      "reportTabs": [
+        {
+          "value": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "value": "pending",
+          "label": "待受理",
+          "selected": false
+        },
+        {
+          "value": "processing",
+          "label": "核查中",
+          "selected": false
+        },
+        {
+          "value": "awaiting_info",
+          "label": "待补充",
+          "selected": false
+        },
+        {
+          "value": "resolved",
+          "label": "已结案",
+          "selected": false
+        },
+        {
+          "value": "rejected",
+          "label": "未采纳",
+          "selected": false
+        }
+      ],
+      "reportStats": [
+        {
+          "label": "待跟进",
+          "value": "1"
+        },
+        {
+          "label": "待补充",
+          "value": "1"
+        },
+        {
+          "label": "已结案",
+          "value": "0"
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh",
+    "widget": "ReportDetail",
+    "data": {
+      "pageTitle": "举报进度",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "report": {
+        "id": "product:1",
+        "reportId": "1",
+        "type": "product",
+        "productId": "",
+        "orderNo": "",
+        "title": "测试商品",
+        "state": "待补充",
+        "category": "描述或价格不符",
+        "reason": "商品使用说明与实际情况不同，请核查。",
+        "decision": "",
+        "note": "",
+        "next": "",
+        "time": "2026-11-20T00:00:00.000Z"
+      },
+      "followupLabel": "补充说明",
+      "communityFields": [
+        {
+          "name": "note",
+          "label": "问题说明或新证据",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 1000
+        }
+      ],
+      "events": [
+        {
+          "title": "处理记录",
+          "message": "请补充使用时出现的问题。",
+          "time": "2026-11-21 08:00（北京时间）"
+        }
+      ],
+      "snapshot": "",
+      "hasReportOutcome": false,
+      "evidence": [],
+      "reportHint": "举报处理与订单退款分别进行。私密截图可在网站查看与补充。"
+    }
+  },
+  {
+    "locale": "zh",
+    "widget": "Product",
+    "data": {
+      "pageTitle": "商品详情",
+      "externalBusy": false,
+      "externalError": "",
+      "comments": [
+        {
+          "id": "c1",
+          "canDelete": true,
+          "interactive": true,
+          "upvoteCount": 3,
+          "downvoteCount": 0,
+          "upLabel": "3",
+          "downLabel": "0",
+          "votedUp": false,
+          "votedDown": false,
+          "viewerVote": "",
+          "author": "buyer",
+          "handle": "",
+          "avatar": "",
+          "time": "",
+          "content": "使用中有一点疑问。",
+          "badge": "",
+          "rating": "",
+          "moderation": "",
+          "replyCount": 0,
+          "replyLabel": "",
+          "replies": [],
+          "repliesOpen": false,
+          "repliesLoading": false,
+          "repliesMore": false,
+          "repliesError": "",
+          "repliesEmpty": false
+        }
+      ],
+      "commentStatsReady": false,
+      "commentsError": "",
+      "commentsMessage": "",
+      "commentsMore": false,
+      "commentsLoading": false,
+      "ready": true,
+      "initialLoading": false,
+      "loading": false,
+      "error": "",
+      "buy": false,
+      "authorized": true,
+      "linkProduct": false,
+      "favorited": false,
+      "favoriteLabel": "收藏商品",
+      "buyerError": "",
+      "id": "p1",
+      "title": "测试商品",
+      "image": "",
+      "hiddenItem": false,
+      "preferenceTime": "",
+      "price": "5.00 LDC",
+      "value": "5.00",
+      "original": "",
+      "discount": "",
+      "originalLabel": "",
+      "type": "cdk",
+      "typeLabel": "自动发卡",
+      "listingNote": "",
+      "typeIcon": "key",
+      "category": "",
+      "stock": "库存 0",
+      "sold": "已售 0",
+      "sellerName": "",
+      "sellerUsername": "",
+      "sellerAvatar": "",
+      "availability": "",
+      "test": false,
+      "info": "5.00 LDC · 库存 0",
+      "product": {
+        "id": "p1",
+        "title": "测试商品",
+        "image": "",
+        "hiddenItem": false,
+        "preferenceTime": "",
+        "price": "5.00 LDC",
+        "value": "5.00",
+        "original": "",
+        "discount": "",
+        "originalLabel": "",
+        "type": "cdk",
+        "typeLabel": "自动发卡",
+        "listingNote": "",
+        "typeIcon": "key",
+        "category": "",
+        "stock": "库存 0",
+        "sold": "已售 0",
+        "sellerName": "",
+        "sellerUsername": "",
+        "sellerAvatar": "",
+        "availability": "",
+        "test": false,
+        "info": "5.00 LDC · 库存 0"
+      },
+      "buyLabel": "已售罄",
+      "quantityValue": 1,
+      "quantityMax": 0,
+      "rules": [],
+      "sellerProfileAvailable": false,
+      "metrics": [
+        {
+          "label": "库存",
+          "value": "0"
+        },
+        {
+          "label": "已售",
+          "value": "0"
+        },
+        {
+          "label": "浏览",
+          "value": "0"
+        }
+      ],
+      "listedAt": "",
+      "description": "",
+      "seller": "卖家：未提供",
+      "canAdd": false,
+      "canRemove": false,
+      "quantity": "1",
+      "estimate": "5.00 LDC",
+      "details": " · 库存 0 · 已售 ",
+      "conditions": "等级要求 TL0",
+      "restockAvailable": true,
+      "restockLoading": false,
+      "restockSubscribed": false,
+      "restockLabel": "补货提醒",
+      "restockError": "",
+      "commentStats": [
+        {
+          "label": "评分",
+          "value": "暂无"
+        },
+        {
+          "label": "已评分",
+          "value": "0"
+        },
+        {
+          "label": "收藏",
+          "value": "0"
+        },
+        {
+          "label": "评论 / 回复",
+          "value": "0 / 0"
+        }
+      ],
+      "canComment": true
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "CommunityForm",
+    "data": {
+      "pageTitle": "舉報問題",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "report",
+      "reportSubmitted": false,
+      "reportReceipt": {},
+      "communityTitle": "测试商品",
+      "communityFields": [
+        {
+          "name": "category",
+          "label": "問題分類",
+          "type": "choice",
+          "required": true,
+          "options": [
+            {
+              "value": "delivery_issue",
+              "label": "無法使用或交付異常"
+            },
+            {
+              "value": "content_mismatch",
+              "label": "描述或價格不符"
+            },
+            {
+              "value": "promotion",
+              "label": "推廣引流"
+            },
+            {
+              "value": "fraud_risk",
+              "label": "疑似欺詐或違規轉售"
+            },
+            {
+              "value": "purchase_flow_issue",
+              "label": "購買異常"
+            },
+            {
+              "value": "other",
+              "label": "其他"
+            }
+          ]
+        },
+        {
+          "name": "reason",
+          "label": "詳細說明",
+          "hint": "請說明具體問題，不要填寫卡密或密碼（5–500 字）",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 500
+        },
+        {
+          "name": "orderNo",
+          "label": "關聯訂單號（可選）",
+          "type": "text",
+          "maxLength": 80
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "ReplyForm",
+    "data": {
+      "pageTitle": "回覆評論",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "reply",
+      "replySubmitted": false,
+      "communityFields": [
+        {
+          "name": "content",
+          "label": "回覆內容",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 300
+        }
+      ],
+      "communityTitle": "回覆 reader"
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "Reports",
+    "data": {
+      "pageTitle": "我的舉報",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [
+        {
+          "id": "product:1",
+          "reportId": "1",
+          "type": "product",
+          "productId": "",
+          "orderNo": "",
+          "title": "测试商品",
+          "state": "待補充",
+          "category": "描述或價格不符",
+          "reason": "商品使用说明与实际情况不同，请核查。",
+          "decision": "",
+          "note": "",
+          "next": "",
+          "time": "2026-11-20T00:00:00.000Z"
+        }
+      ],
+      "authorized": true,
+      "reportTabs": [
+        {
+          "value": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "value": "pending",
+          "label": "待受理",
+          "selected": false
+        },
+        {
+          "value": "processing",
+          "label": "核查中",
+          "selected": false
+        },
+        {
+          "value": "awaiting_info",
+          "label": "待補充",
+          "selected": false
+        },
+        {
+          "value": "resolved",
+          "label": "已結案",
+          "selected": false
+        },
+        {
+          "value": "rejected",
+          "label": "未採納",
+          "selected": false
+        }
+      ],
+      "reportStats": [
+        {
+          "label": "待跟進",
+          "value": "1"
+        },
+        {
+          "label": "待補充",
+          "value": "1"
+        },
+        {
+          "label": "已結案",
+          "value": "0"
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "ReportDetail",
+    "data": {
+      "pageTitle": "舉報進度",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "report": {
+        "id": "product:1",
+        "reportId": "1",
+        "type": "product",
+        "productId": "",
+        "orderNo": "",
+        "title": "测试商品",
+        "state": "待補充",
+        "category": "描述或價格不符",
+        "reason": "商品使用说明与实际情况不同，请核查。",
+        "decision": "",
+        "note": "",
+        "next": "",
+        "time": "2026-11-20T00:00:00.000Z"
+      },
+      "followupLabel": "補充說明",
+      "communityFields": [
+        {
+          "name": "note",
+          "label": "問題說明或新證據",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 1000
+        }
+      ],
+      "events": [
+        {
+          "title": "處理記錄",
+          "message": "请补充使用时出现的问题。",
+          "time": "2026-11-21 08:00（北京時間）"
+        }
+      ],
+      "snapshot": "",
+      "hasReportOutcome": false,
+      "evidence": [],
+      "reportHint": "舉報處理與訂單退款分別進行。私密截圖可在網站檢視與補充。"
+    }
+  },
+  {
+    "locale": "zh-TW",
+    "widget": "Product",
+    "data": {
+      "pageTitle": "商品詳情",
+      "externalBusy": false,
+      "externalError": "",
+      "comments": [
+        {
+          "id": "c1",
+          "canDelete": true,
+          "interactive": true,
+          "upvoteCount": 3,
+          "downvoteCount": 0,
+          "upLabel": "3",
+          "downLabel": "0",
+          "votedUp": false,
+          "votedDown": false,
+          "viewerVote": "",
+          "author": "buyer",
+          "handle": "",
+          "avatar": "",
+          "time": "",
+          "content": "使用中有一点疑问。",
+          "badge": "",
+          "rating": "",
+          "moderation": "",
+          "replyCount": 0,
+          "replyLabel": "",
+          "replies": [],
+          "repliesOpen": false,
+          "repliesLoading": false,
+          "repliesMore": false,
+          "repliesError": "",
+          "repliesEmpty": false
+        }
+      ],
+      "commentStatsReady": false,
+      "commentsError": "",
+      "commentsMessage": "",
+      "commentsMore": false,
+      "commentsLoading": false,
+      "ready": true,
+      "initialLoading": false,
+      "loading": false,
+      "error": "",
+      "buy": false,
+      "authorized": true,
+      "linkProduct": false,
+      "favorited": false,
+      "favoriteLabel": "收藏商品",
+      "buyerError": "",
+      "id": "p1",
+      "title": "测试商品",
+      "image": "",
+      "hiddenItem": false,
+      "preferenceTime": "",
+      "price": "5.00 LDC",
+      "value": "5.00",
+      "original": "",
+      "discount": "",
+      "originalLabel": "",
+      "type": "cdk",
+      "typeLabel": "自動髮卡",
+      "listingNote": "",
+      "typeIcon": "key",
+      "category": "",
+      "stock": "庫存 0",
+      "sold": "已售 0",
+      "sellerName": "",
+      "sellerUsername": "",
+      "sellerAvatar": "",
+      "availability": "",
+      "test": false,
+      "info": "5.00 LDC · 庫存 0",
+      "product": {
+        "id": "p1",
+        "title": "测试商品",
+        "image": "",
+        "hiddenItem": false,
+        "preferenceTime": "",
+        "price": "5.00 LDC",
+        "value": "5.00",
+        "original": "",
+        "discount": "",
+        "originalLabel": "",
+        "type": "cdk",
+        "typeLabel": "自動髮卡",
+        "listingNote": "",
+        "typeIcon": "key",
+        "category": "",
+        "stock": "庫存 0",
+        "sold": "已售 0",
+        "sellerName": "",
+        "sellerUsername": "",
+        "sellerAvatar": "",
+        "availability": "",
+        "test": false,
+        "info": "5.00 LDC · 庫存 0"
+      },
+      "buyLabel": "已售罄",
+      "quantityValue": 1,
+      "quantityMax": 0,
+      "rules": [],
+      "sellerProfileAvailable": false,
+      "metrics": [
+        {
+          "label": "庫存",
+          "value": "0"
+        },
+        {
+          "label": "已售",
+          "value": "0"
+        },
+        {
+          "label": "瀏覽",
+          "value": "0"
+        }
+      ],
+      "listedAt": "",
+      "description": "",
+      "seller": "賣家：未提供",
+      "canAdd": false,
+      "canRemove": false,
+      "quantity": "1",
+      "estimate": "5.00 LDC",
+      "details": " · 庫存 0 · 已售 ",
+      "conditions": "等級要求 TL0",
+      "restockAvailable": true,
+      "restockLoading": false,
+      "restockSubscribed": false,
+      "restockLabel": "補貨提醒",
+      "restockError": "",
+      "commentStats": [
+        {
+          "label": "評分",
+          "value": "暫無"
+        },
+        {
+          "label": "已評分",
+          "value": "0"
+        },
+        {
+          "label": "收藏",
+          "value": "0"
+        },
+        {
+          "label": "評論 / 回覆",
+          "value": "0 / 0"
+        }
+      ],
+      "canComment": true
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "CommunityForm",
+    "data": {
+      "pageTitle": "舉報問題",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "report",
+      "reportSubmitted": false,
+      "reportReceipt": {},
+      "communityTitle": "测试商品",
+      "communityFields": [
+        {
+          "name": "category",
+          "label": "問題分類",
+          "type": "choice",
+          "required": true,
+          "options": [
+            {
+              "value": "delivery_issue",
+              "label": "無法使用或交付異常"
+            },
+            {
+              "value": "content_mismatch",
+              "label": "描述或價格不符"
+            },
+            {
+              "value": "promotion",
+              "label": "推廣引流"
+            },
+            {
+              "value": "fraud_risk",
+              "label": "疑似欺詐或違規轉售"
+            },
+            {
+              "value": "purchase_flow_issue",
+              "label": "購買異常"
+            },
+            {
+              "value": "other",
+              "label": "其他"
+            }
+          ]
+        },
+        {
+          "name": "reason",
+          "label": "詳細説明",
+          "hint": "請説明具體問題，不要填寫卡密或密碼（5–500 字）",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 500
+        },
+        {
+          "name": "orderNo",
+          "label": "關聯訂單號（可選）",
+          "type": "text",
+          "maxLength": 80
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "ReplyForm",
+    "data": {
+      "pageTitle": "回覆評論",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "reply",
+      "replySubmitted": false,
+      "communityFields": [
+        {
+          "name": "content",
+          "label": "回覆內容",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 300
+        }
+      ],
+      "communityTitle": "回覆 reader"
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "Reports",
+    "data": {
+      "pageTitle": "我的舉報",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [
+        {
+          "id": "product:1",
+          "reportId": "1",
+          "type": "product",
+          "productId": "",
+          "orderNo": "",
+          "title": "测试商品",
+          "state": "待補充",
+          "category": "描述或價格不符",
+          "reason": "商品使用说明与实际情况不同，请核查。",
+          "decision": "",
+          "note": "",
+          "next": "",
+          "time": "2026-11-20T00:00:00.000Z"
+        }
+      ],
+      "authorized": true,
+      "reportTabs": [
+        {
+          "value": "",
+          "label": "全部",
+          "selected": true
+        },
+        {
+          "value": "pending",
+          "label": "待受理",
+          "selected": false
+        },
+        {
+          "value": "processing",
+          "label": "核查中",
+          "selected": false
+        },
+        {
+          "value": "awaiting_info",
+          "label": "待補充",
+          "selected": false
+        },
+        {
+          "value": "resolved",
+          "label": "已結案",
+          "selected": false
+        },
+        {
+          "value": "rejected",
+          "label": "未採納",
+          "selected": false
+        }
+      ],
+      "reportStats": [
+        {
+          "label": "待跟進",
+          "value": "1"
+        },
+        {
+          "label": "待補充",
+          "value": "1"
+        },
+        {
+          "label": "已結案",
+          "value": "0"
+        }
+      ]
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "ReportDetail",
+    "data": {
+      "pageTitle": "舉報進度",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "report": {
+        "id": "product:1",
+        "reportId": "1",
+        "type": "product",
+        "productId": "",
+        "orderNo": "",
+        "title": "测试商品",
+        "state": "待補充",
+        "category": "描述或價格不符",
+        "reason": "商品使用说明与实际情况不同，请核查。",
+        "decision": "",
+        "note": "",
+        "next": "",
+        "time": "2026-11-20T00:00:00.000Z"
+      },
+      "followupLabel": "補充説明",
+      "communityFields": [
+        {
+          "name": "note",
+          "label": "問題説明或新證據",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 1000
+        }
+      ],
+      "events": [
+        {
+          "title": "處理記錄",
+          "message": "请补充使用时出现的问题。",
+          "time": "2026-11-21 08:00（北京時間）"
+        }
+      ],
+      "snapshot": "",
+      "hasReportOutcome": false,
+      "evidence": [],
+      "reportHint": "舉報處理與訂單退款分別進行。私密截圖可在網站查看與補充。"
+    }
+  },
+  {
+    "locale": "zh-HK",
+    "widget": "Product",
+    "data": {
+      "pageTitle": "商品詳情",
+      "externalBusy": false,
+      "externalError": "",
+      "comments": [
+        {
+          "id": "c1",
+          "canDelete": true,
+          "interactive": true,
+          "upvoteCount": 3,
+          "downvoteCount": 0,
+          "upLabel": "3",
+          "downLabel": "0",
+          "votedUp": false,
+          "votedDown": false,
+          "viewerVote": "",
+          "author": "buyer",
+          "handle": "",
+          "avatar": "",
+          "time": "",
+          "content": "使用中有一点疑问。",
+          "badge": "",
+          "rating": "",
+          "moderation": "",
+          "replyCount": 0,
+          "replyLabel": "",
+          "replies": [],
+          "repliesOpen": false,
+          "repliesLoading": false,
+          "repliesMore": false,
+          "repliesError": "",
+          "repliesEmpty": false
+        }
+      ],
+      "commentStatsReady": false,
+      "commentsError": "",
+      "commentsMessage": "",
+      "commentsMore": false,
+      "commentsLoading": false,
+      "ready": true,
+      "initialLoading": false,
+      "loading": false,
+      "error": "",
+      "buy": false,
+      "authorized": true,
+      "linkProduct": false,
+      "favorited": false,
+      "favoriteLabel": "收藏商品",
+      "buyerError": "",
+      "id": "p1",
+      "title": "测试商品",
+      "image": "",
+      "hiddenItem": false,
+      "preferenceTime": "",
+      "price": "5.00 LDC",
+      "value": "5.00",
+      "original": "",
+      "discount": "",
+      "originalLabel": "",
+      "type": "cdk",
+      "typeLabel": "自動髮卡",
+      "listingNote": "",
+      "typeIcon": "key",
+      "category": "",
+      "stock": "庫存 0",
+      "sold": "已售 0",
+      "sellerName": "",
+      "sellerUsername": "",
+      "sellerAvatar": "",
+      "availability": "",
+      "test": false,
+      "info": "5.00 LDC · 庫存 0",
+      "product": {
+        "id": "p1",
+        "title": "测试商品",
+        "image": "",
+        "hiddenItem": false,
+        "preferenceTime": "",
+        "price": "5.00 LDC",
+        "value": "5.00",
+        "original": "",
+        "discount": "",
+        "originalLabel": "",
+        "type": "cdk",
+        "typeLabel": "自動髮卡",
+        "listingNote": "",
+        "typeIcon": "key",
+        "category": "",
+        "stock": "庫存 0",
+        "sold": "已售 0",
+        "sellerName": "",
+        "sellerUsername": "",
+        "sellerAvatar": "",
+        "availability": "",
+        "test": false,
+        "info": "5.00 LDC · 庫存 0"
+      },
+      "buyLabel": "已售罄",
+      "quantityValue": 1,
+      "quantityMax": 0,
+      "rules": [],
+      "sellerProfileAvailable": false,
+      "metrics": [
+        {
+          "label": "庫存",
+          "value": "0"
+        },
+        {
+          "label": "已售",
+          "value": "0"
+        },
+        {
+          "label": "瀏覽",
+          "value": "0"
+        }
+      ],
+      "listedAt": "",
+      "description": "",
+      "seller": "賣家：未提供",
+      "canAdd": false,
+      "canRemove": false,
+      "quantity": "1",
+      "estimate": "5.00 LDC",
+      "details": " · 庫存 0 · 已售 ",
+      "conditions": "等級要求 TL0",
+      "restockAvailable": true,
+      "restockLoading": false,
+      "restockSubscribed": false,
+      "restockLabel": "補貨提醒",
+      "restockError": "",
+      "commentStats": [
+        {
+          "label": "評分",
+          "value": "暫無"
+        },
+        {
+          "label": "已評分",
+          "value": "0"
+        },
+        {
+          "label": "收藏",
+          "value": "0"
+        },
+        {
+          "label": "評論 / 回覆",
+          "value": "0 / 0"
+        }
+      ],
+      "canComment": true
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "CommunityForm",
+    "data": {
+      "pageTitle": "Report an issue",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "report",
+      "reportSubmitted": false,
+      "reportReceipt": {},
+      "communityTitle": "测试商品",
+      "communityFields": [
+        {
+          "name": "category",
+          "label": "Category",
+          "type": "choice",
+          "required": true,
+          "options": [
+            {
+              "value": "delivery_issue",
+              "label": "Unusable or delivery issue"
+            },
+            {
+              "value": "content_mismatch",
+              "label": "Description or price mismatch"
+            },
+            {
+              "value": "promotion",
+              "label": "Promotion or solicitation"
+            },
+            {
+              "value": "fraud_risk",
+              "label": "Suspected fraud or prohibited resale"
+            },
+            {
+              "value": "purchase_flow_issue",
+              "label": "Purchase issue"
+            },
+            {
+              "value": "other",
+              "label": "Other"
+            }
+          ]
+        },
+        {
+          "name": "reason",
+          "label": "Details",
+          "hint": "Describe the issue without codes or passwords (5–500 characters)",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 500
+        },
+        {
+          "name": "orderNo",
+          "label": "Order number (optional)",
+          "type": "text",
+          "maxLength": 80
+        }
+      ]
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "ReplyForm",
+    "data": {
+      "pageTitle": "Reply to comment",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "composeMode": "reply",
+      "replySubmitted": false,
+      "communityFields": [
+        {
+          "name": "content",
+          "label": "Reply",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 300
+        }
+      ],
+      "communityTitle": "Reply to reader"
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "Reports",
+    "data": {
+      "pageTitle": "My reports",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [
+        {
+          "id": "product:1",
+          "reportId": "1",
+          "type": "product",
+          "productId": "",
+          "orderNo": "",
+          "title": "测试商品",
+          "state": "More information needed",
+          "category": "Description or price mismatch",
+          "reason": "商品使用说明与实际情况不同，请核查。",
+          "decision": "",
+          "note": "",
+          "next": "",
+          "time": "2026-11-20T00:00:00.000Z"
+        }
+      ],
+      "authorized": true,
+      "reportTabs": [
+        {
+          "value": "",
+          "label": "All",
+          "selected": true
+        },
+        {
+          "value": "pending",
+          "label": "Pending",
+          "selected": false
+        },
+        {
+          "value": "processing",
+          "label": "Investigating",
+          "selected": false
+        },
+        {
+          "value": "awaiting_info",
+          "label": "More information needed",
+          "selected": false
+        },
+        {
+          "value": "resolved",
+          "label": "Closed",
+          "selected": false
+        },
+        {
+          "value": "rejected",
+          "label": "Not upheld",
+          "selected": false
+        }
+      ],
+      "reportStats": [
+        {
+          "label": "Open",
+          "value": "1"
+        },
+        {
+          "label": "More information needed",
+          "value": "1"
+        },
+        {
+          "label": "Closed",
+          "value": "0"
+        }
+      ]
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "ReportDetail",
+    "data": {
+      "pageTitle": "Report progress",
+      "externalBusy": false,
+      "externalError": "",
+      "loading": false,
+      "loadingMore": false,
+      "error": "",
+      "buyerError": "",
+      "needsSession": false,
+      "ready": true,
+      "initialLoading": false,
+      "more": false,
+      "rows": [],
+      "authorized": true,
+      "report": {
+        "id": "product:1",
+        "reportId": "1",
+        "type": "product",
+        "productId": "",
+        "orderNo": "",
+        "title": "测试商品",
+        "state": "More information needed",
+        "category": "Description or price mismatch",
+        "reason": "商品使用说明与实际情况不同，请核查。",
+        "decision": "",
+        "note": "",
+        "next": "",
+        "time": "2026-11-20T00:00:00.000Z"
+      },
+      "followupLabel": "Add information",
+      "communityFields": [
+        {
+          "name": "note",
+          "label": "Explanation or new evidence",
+          "type": "multiline",
+          "required": true,
+          "maxLength": 1000
+        }
+      ],
+      "events": [
+        {
+          "title": "Update",
+          "message": "请补充使用时出现的问题。",
+          "time": "2026-11-21 08:00 (UTC+8)"
+        }
+      ],
+      "snapshot": "",
+      "hasReportOutcome": false,
+      "evidence": [],
+      "reportHint": "Reports and refunds are handled separately. View or attach private screenshots on the website."
+    }
+  },
+  {
+    "locale": "en",
+    "widget": "Product",
+    "data": {
+      "pageTitle": "Product details",
+      "externalBusy": false,
+      "externalError": "",
+      "comments": [
+        {
+          "id": "c1",
+          "canDelete": true,
+          "interactive": true,
+          "upvoteCount": 3,
+          "downvoteCount": 0,
+          "upLabel": "3",
+          "downLabel": "0",
+          "votedUp": false,
+          "votedDown": false,
+          "viewerVote": "",
+          "author": "buyer",
+          "handle": "",
+          "avatar": "",
+          "time": "",
+          "content": "使用中有一点疑问。",
+          "badge": "",
+          "rating": "",
+          "moderation": "",
+          "replyCount": 0,
+          "replyLabel": "",
+          "replies": [],
+          "repliesOpen": false,
+          "repliesLoading": false,
+          "repliesMore": false,
+          "repliesError": "",
+          "repliesEmpty": false
+        }
+      ],
+      "commentStatsReady": false,
+      "commentsError": "",
+      "commentsMessage": "",
+      "commentsMore": false,
+      "commentsLoading": false,
+      "ready": true,
+      "initialLoading": false,
+      "loading": false,
+      "error": "",
+      "buy": false,
+      "authorized": true,
+      "linkProduct": false,
+      "favorited": false,
+      "favoriteLabel": "Save product",
+      "buyerError": "",
+      "id": "p1",
+      "title": "测试商品",
+      "image": "",
+      "hiddenItem": false,
+      "preferenceTime": "",
+      "price": "5.00 LDC",
+      "value": "5.00",
+      "original": "",
+      "discount": "",
+      "originalLabel": "",
+      "type": "cdk",
+      "typeLabel": "Automatic code delivery",
+      "listingNote": "",
+      "typeIcon": "key",
+      "category": "",
+      "stock": "Stock 0",
+      "sold": "Sold 0",
+      "sellerName": "",
+      "sellerUsername": "",
+      "sellerAvatar": "",
+      "availability": "",
+      "test": false,
+      "info": "5.00 LDC · Stock 0",
+      "product": {
+        "id": "p1",
+        "title": "测试商品",
+        "image": "",
+        "hiddenItem": false,
+        "preferenceTime": "",
+        "price": "5.00 LDC",
+        "value": "5.00",
+        "original": "",
+        "discount": "",
+        "originalLabel": "",
+        "type": "cdk",
+        "typeLabel": "Automatic code delivery",
+        "listingNote": "",
+        "typeIcon": "key",
+        "category": "",
+        "stock": "Stock 0",
+        "sold": "Sold 0",
+        "sellerName": "",
+        "sellerUsername": "",
+        "sellerAvatar": "",
+        "availability": "",
+        "test": false,
+        "info": "5.00 LDC · Stock 0"
+      },
+      "buyLabel": "Sold out",
+      "quantityValue": 1,
+      "quantityMax": 0,
+      "rules": [],
+      "sellerProfileAvailable": false,
+      "metrics": [
+        {
+          "label": "Stock",
+          "value": "0"
+        },
+        {
+          "label": "Sold",
+          "value": "0"
+        },
+        {
+          "label": "Views",
+          "value": "0"
+        }
+      ],
+      "listedAt": "",
+      "description": "",
+      "seller": "Seller: Not available",
+      "canAdd": false,
+      "canRemove": false,
+      "quantity": "1",
+      "estimate": "5.00 LDC",
+      "details": " · Stock 0 · Sold ",
+      "conditions": "Required trust level TL0",
+      "restockAvailable": true,
+      "restockLoading": false,
+      "restockSubscribed": false,
+      "restockLabel": "Notify when restocked",
+      "restockError": "",
+      "commentStats": [
+        {
+          "label": "Rating",
+          "value": "None"
+        },
+        {
+          "label": "Ratings",
+          "value": "0"
+        },
+        {
+          "label": "Saved",
+          "value": "0"
+        },
+        {
+          "label": "Comments / Replies",
+          "value": "0 / 0"
+        }
+      ],
+      "canComment": true
+    }
+  }
+]

@@ -1607,6 +1607,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
   });
 
   final data = <String, Object?>{
+    'i18n': (jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map)['zh'],
     'overviewLoading':false,'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
     'accountName':'','usage':'','tradeNo':'','refundHint':'','couponHint':'','sellerProfileAvailable':true,'overviewError':'','value':'12.50','original':'20.00','discount':'38% 优惠','buyLabel':'立即兑换',
     'typeLabel':'自动发卡','category':'开发工具','sellerName':'tester','sellerAvatar':'',
@@ -1923,6 +1924,59 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
         }
       });
     }
+  }
+  final communityFixtures = jsonDecode(File('test/fixtures/metaverse/ld-store-community.json').readAsStringSync()) as List;
+  final communityLocales = jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map;
+  test('已发布插件的静态图标均有原生映射', () {
+    final sources = [File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.3.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
+    for (final source in sources) {
+      for (final match in RegExp(r'(?:icon:|Symbol\(name:)\s*"([a-z_]+)"').allMatches(source)) {
+        expect(metaverseIcons, contains(match[1]), reason: match[0]);
+      }
+    }
+  });
+  for (final fixture in communityFixtures) {
+    final locale = fixture['locale'] as String, name = fixture['widget'] as String;
+    testWidgets('社区页面四语小屏 $locale/$name', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 24);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final model = Map<String, Object?>.from(fixture['data'] as Map);
+      model['i18n'] = communityLocales[locale.replaceAll('-', '_')];
+      await tester.pumpWidget(app(RemoteWidget(
+        runtime: runtime,
+        widget: FullyQualifiedWidgetName(metaversePluginLibraryName, name),
+        data: DynamicContent(model), onEvent: (_, _) {},
+      ), title: model['pageTitle'] as String,
+        brightness: locale == 'en' || locale == 'zh-HK' ? Brightness.dark : Brightness.light,
+        scale: 1.4));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      if (['CommunityForm', 'ReplyForm', 'ReportDetail'].contains(name)) {
+        expect(find.byType(FilledButton).hitTestable(), findsOneWidget);
+        expect(tester.getBottomLeft(find.byType(FilledButton)).dy, lessThanOrEqualTo(696));
+      }
+      await snapshot(tester, 'community-$locale-$name');
+      if (name == 'Product') {
+        final label = (communityLocales[locale.replaceAll('-', '_')] as Map).entries
+            .firstWhere((entry) => (communityLocales['zh'] as Map)[entry.key] == '回复').value as String;
+        await tester.scrollUntilVisible(find.text(label), 220, scrollable: find.byType(Scrollable).last);
+        await tester.pumpAndSettle();
+        expect(find.text(label).hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await snapshot(tester, 'community-$locale-comments');
+      }
+      await tester.pumpWidget(app(const SizedBox()));
+      await tester.pumpAndSettle();
+    });
   }
   for(final brightness in Brightness.values) {
     testWidgets('士多加载与刷新保留布局 ${brightness.name}', (tester) async {

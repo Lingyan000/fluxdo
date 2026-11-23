@@ -16,6 +16,8 @@ import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_provi
 import 'package:fluxdo/modules/metaverse/metaverse_link_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
+import 'package:fluxdo/providers/core_providers.dart';
+import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_capabilities.dart';
@@ -33,9 +35,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 用真实 JS 引擎跑 docs/examples/metaverse-plugin 里的示例插件。
 ///
 /// 网络是假的（固定响应），其余——清单、界面描述、脚本、宿主桥、界面渲染
-/// ——都是真实实现。宿主测试环境默认加载不到 QuickJS 动态库，那时整组跳过：
-/// `PATH="build/windows/x64/runner/Debug:$PATH" flutter test <本文件>`
+/// ——都是真实实现。原生库通过 native assets 构建，缺失时应使测试失败。
 const _dir = 'docs/examples/metaverse-plugin';
+
+class _TestUser extends CurrentUserNotifier {
+  @override
+  Future<User?> build() async => null;
+}
 
 class _MemorySecrets implements SecretStore {
   @override
@@ -433,25 +439,34 @@ class _Delegate extends MetaversePluginHostDelegate {
 }
 
 Future<void> main() async {
-  String? skip;
-  try {
-    (await IsolateScriptEngine.spawn()).dispose();
-  } on MetaverseScriptException catch (error) {
-    skip = '脚本引擎原生库不可用: $error';
-  }
-
   final manifest = MetaversePluginManifest.parse(
     jsonDecode(File('$_dir/plugin.json').readAsStringSync()),
     reservedHosts: const ['linux.do'],
   );
   final ui = File('$_dir/ui.rfwtxt').readAsStringSync();
 
-  group('示例插件端到端', skip: skip, () {
+  group('示例插件端到端', () {
     late Directory root;
     late MetaversePluginStore store;
     late _Api api;
     late _Delegate delegate;
     late MetaversePluginHost host;
+    final engines = <IsolateScriptEngine>[];
+
+    Future<IsolateScriptEngine> engine({Duration timeout = const Duration(seconds: 5)}) async {
+      final value = await IsolateScriptEngine.spawn(timeout: timeout);
+      engines.add(value);
+      return value;
+    }
+
+    Future<void> stopEngines() async {
+      for (final engine in engines) {
+        engine.dispose();
+      }
+      await Future.wait(engines.map((engine) => engine.terminated))
+          .timeout(const Duration(seconds: 5));
+      engines.clear();
+    }
 
     Future<void> install({String? script}) async {
       await store.writeCode(manifest.id, (
@@ -472,12 +487,13 @@ Future<void> main() async {
           ..httpClientAdapter = api,
         lookup: (_) async => [InternetAddress('93.184.216.34')],
       ),
-      engineFactory: () => IsolateScriptEngine.spawn(timeout: timeout),
+      engineFactory: () => engine(timeout: timeout),
       delegate: delegate,
       clock: clock ?? DateTime.now,
     );
 
     setUp(() async {
+      TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.localeTestValue = const Locale('zh');
       SharedPreferences.setMockInitialValues({});
       root = Directory.systemTemp.createTempSync('metaverse_plugin_test');
       store = MetaversePluginStore(
@@ -495,8 +511,10 @@ Future<void> main() async {
       host = createHost();
     });
 
-    tearDown(() {
+    tearDown(() async {
       host.shutdown();
+      await stopEngines();
+      TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.clearLocaleTestValue();
       try {
         root.deleteSync(recursive: true);
       } catch (_) {
@@ -547,6 +565,15 @@ Future<void> main() async {
         finally {
           await tester.pumpWidget(const SizedBox.shrink());
           host.shutdown();
+          // 原生退出消息到达真实事件循环，Future 的续接仍在测试假时钟中。
+          var stopped = false;
+          final stopping = stopEngines().then((_) => stopped = true);
+          for (var i = 0; i < 150 && !stopped; i++) {
+            await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+            await tester.pump(const Duration(milliseconds: 1));
+          }
+          expect(stopped, isTrue, reason: '等待原生引擎正常释放');
+          await stopping;
           await tester.pump(const Duration(seconds: 3));
         }
       });
@@ -658,7 +685,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         ),
         dohNetwork: alternate,
         canSuggestDoh: () => true,
-        engineFactory: () => IsolateScriptEngine.spawn(),
+        engineFactory: engine,
         delegate: delegate,
       );
     }
@@ -838,6 +865,7 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
         ),
       );
       await settle(tester, () => find.text('登录士多').evaluate().isNotEmpty);
+      await settle(tester, () => host.canApplyDevelopmentUpdate);
       await expectLater(
         host.call('credentials.request', {'name': 'account'}),
         throwsA(isA<MetaversePluginCallException>()),
@@ -1563,6 +1591,8 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       final prefs = await SharedPreferences.getInstance();
       final container = ProviderContainer(
         overrides: [
+          currentUserProvider.overrideWith(_TestUser.new),
+          metaverseScriptEngineFactoryProvider.overrideWithValue(engine),
           sharedPreferencesProvider.overrideWithValue(prefs),
           metaversePluginStoreProvider.overrideWithValue(store),
           metaversePluginNetworkProvider.overrideWithValue(network),
@@ -1671,7 +1701,6 @@ fluxdo.on('increase',async ctx=>{ctx.setData('count','2');ctx.setData('title','�
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.runAsync(() async => container.dispose());
-        await tester.pump(const Duration(seconds: 2));
       }
     });
 

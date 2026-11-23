@@ -1,4 +1,17 @@
-// 每个页面独立保存筛选和分页，晚到的请求不能覆盖新筛选的结果。
+// 此文件由 tools/localize.mjs 生成，业务源码与翻译见 src/、locales/。
+((host)=>{
+ const catalogs={"zh":{"s71ef3f727b039321":"标记已读","sd5615e4d51457956":"将士多的全部系统消息标记为已读。","s4d3eebf1cf765ace":"全部标记已读","s4ce218874bc990ad":"系统消息","s79a07d520e433d2e":"消息数据格式有误","s06c3614b35663015":"登录士多后查看消息","s94b7513eaddb2f53":"系统通知","sdd7c11a05ef9f1b1":"Credit 处理通知","scf8d44ab3daffce5":"退款待核对通知","saefd0a5dced6b22c":"退款异常通知","s116db2538e69ac79":"退款成功通知","s5642ebf2112063f7":"退款处理中","s3462f4a8311ffae4":"甄选服务到期通知","s9370278cffb19f9a":"甄选服务生效通知","se5788379b068e4bb":"卖家补货提醒","s05a63ab155c111a5":"退款核对结果","s2da6bf03ef3b59fc":"商品发货提醒","s1fe7861208bd1c1a":"商品补货通知","s71f6b905342c52bf":"评论回复通知","s0acf8dcc2c723a29":"商品评论通知","sf8075580c9d9f470":"库存下架提醒","sfbce1b50b6e93616":"商品下架通知","s8a5b4a8f3d8603d4":"卖家履约记录通知","s8bb51a4e532febe0":"发货保障通知","sed90548f75d8ac52":"卖家发货时限提醒","s5f68685ab537d735":"待发货提醒","sefdd1a47e4beb2f9":"已读","s4d0680f9efaef147":"未读","s5c55a67935af8f45":"全部","s3ab8cc15939f3b5c":"退出登录","s7458ac806336744d":"退出后仍可浏览商品。再次兑换时需要重新授权。","s385b320ec821e694":"退出士多登录","s787cce5d0f45e4b3":"。请核对最新售后状态后再操作。","s9ebe36f8cf23673a":"确认提交","s243145b86bc8cca5":"\n提交后由士多和卖家处理，可在这里查看进度。","s358c8cffed6d643f":"订单 ","s11a588ca6973412b":"提交退款申请","s67d4213837fb139c":"请选择退款原因，并填写 10–500 字的问题描述","s8d60e9fef9b93e67":"当前订单不可提交新的退款申请","s426e458a41246bd5":"已领取","s204fdaf68d08d9c6":"领取结果待确认，请刷新优惠券","s9056a72ae79cc23b":"评论已提交，以士多审核结果为准","se7b74796e3c2a48a":"请填写 5–500 字的评论","sdc3b32db862a0f9d":"收藏商品","s471dd4d7f86954d0":"已收藏","sa8781c16e303179d":"请先登录士多","sd7159d5ff330e286":"补充说明已提交","s37cf48ee1551d050":"复核申请已提交","s4c7cea065f28c871":"请填写 5–1000 字的说明","sa986a3f4e6101aa4":"举报结果待确认，请在举报记录中核对","sf3e0799eeaa896af":"请选择分类，并填写 5–500 字的问题说明","s1064520a8ea0d8b4":"举报处理与订单退款分别进行。私密截图可在网站查看与补充。","s9046c12a6c6edbb8":"私密证据","sd9271468c38979b0":"处理记录","sfb1201488f728ed7":"问题说明或新证据","s6f3ebd2d3e876212":"补充说明","s4f0c56a792e4a383":"提交复核申请","s9bd5801df1a90cd7":"举报记录与请求不符","s4f912dc1d089ee8a":"举报对象无效","sdfb34a4f32ae5e15":"已结案","sa35ef95361b84d05":"待补充","s75da31470d2f9d7e":"待跟进","s7eae90ab25b8de47":"未采纳","s36a2442a4df541ba":"举报记录格式有误","s454a437615153df5":"关联订单号（可选）","s177af5bd4d7ccca1":"请说明具体问题，不要填写卡密或密码（5–500 字）","sb110d4b5ef2f54e5":"详细说明","s6b6cde10fd0fb7d2":"问题分类","s592bec925cebd79d":"举报问题","s3376176cc70d2779":"回复 ","s8d87cbe9b975b61c":"回复内容","s3056d666ea7764b8":"回复评论","s30685985e63dcbc7":" · 复核中","s9640aa814a6a5b65":"状态待核对","sf720037410abd938":"商品 #","sd2909f1647e7c891":"其他","s97d25b0cffd19183":"事实争议","sf4d93c0b59ca2698":"辱骂骚扰","s919470833d4c2776":"隐私泄露","s584a7ab2c5cdb847":"购买异常","sedc91cd8c41638ea":"疑似欺诈或违规转售","sae996b192f4a2c24":"推广引流","s722bd268f67ae593":"描述或价格不符","s3e88557d5c9145ab":"无法使用或交付异常","s01967a97b5821e88":"已转交售后","s2372bb37d195fac0":"未确认违规","s9889ca492688ee3e":"已确认问题","s1e45077397dd8af8":"核查中","s9079f70305629280":"待受理","s722b05bb01971697":"已联系卖家协商","s6bf7765f66d223f3":"请说明具体问题（10–500 字）","s6a11331de9003411":"问题描述","s0ae01e9c7ed540de":"退款原因","s5b50d7c4b5950dc5":"系统","s910887705c7a66d2":"平台","s6d6a63f93c43899e":"买家","sd6074d12387baea1":"卖家","s96fb25b3bf5d61df":"售后状态更新","s07393bc40b879b70":"卖家说明","se9b5d944cc4b72c2":"申请时间","sa997850650073dfd":"卖家超时未发货","s4857afee920b0ed9":"处理时限：","secd8a0c1a36693fc":"申请售后","s4a9c18b7b45305bd":"退款订单号与请求不一致","s207d77f2a5294357":"退款状态格式有误","s9d72e58af4a23952":"该商品已关闭评论","sd1005c4482ca2e97":" 星","s9385944716c2ed5e":"不评分","s73a5e8108381d813":"商品评分（选填）","sdf24c3bc5c3dc874":"分享使用体验或提出问题（5–500 字）","s16950541902212bc":"评论内容","s4588f2bf30efdcde":"领取优惠券","sa26be489f87fb4d8":"优惠券已停用","sa8ca24030fc46331":"优惠券已领完","s318e9ef0e71a5e97":"已停止领取","s22ebde21493e1177":"卖家暂停领取","s8c0dd0e8ecb46c40":"优惠券已过期","sbfe8b73275c84810":"尚未开始领取","saa5fa17d9249ec87":"优惠券数据格式有误","sccabce4ef8be0814":"优惠券链接无效","s15712a17084e1dd3":"列表数据格式有误","s7c348c349ca33032":"销量","s40c5340bc430b081":"上架","s5cfd07c0021fd2bf":"在售","s270346cf890d1540":"缺少店铺资料","s219045b1df2953a4":"还没有收藏商品","sfa9a68e9983d000e":"没有已隐藏的商品","s2fa4f18941487a11":"搜索收藏的商品","s2cc5b6e7db7790be":"搜索已隐藏的商品","s2abc3ad8d471e2ea":"不感兴趣","s5a1220c895cfc20c":"登录士多后继续","s95676f3863aa6819":"确认转 Credit 处理","sc4870943d389f6d0":"确认未完成退款","sc775716a00e9ab4f":"确认已退款","s96e71ec6687b5db6":"登记核对结果","sa9653b95bcdf2258":"管理员核查后重试","s6e3aa6e41f728c9b":"提醒处理时限","s898759d3b5df8bb4":"通知处理时限","sa25fa068d68bfcea":"卖家主动退款","sc54a6d9e57fd58ff":"超时保障退款","sb028bcfeba09af56":"管理员改判退款","s89e537190996045d":"管理员拒绝申请","se2eb8a9585c9ee50":"管理员同意退款","s78c65447fd46474b":"超时自动同意退款","sa2a80799ad768a5f":"转 Credit 处理","s64a5b415a7cee086":"退款结果待核对","saf5d792906390b7e":"退款执行失败","s1e58b0b7106132ba":"退款成功","s7b615b1e5c5898b0":"卖家拒绝申请","s3c0d34d587326860":"卖家同意退款","sec009989916d5f60":"更新协商记录","s378ff6b9c4c3d3c5":"卖家联系协商","sce03c133cfb0a2f6":"已转 Credit 处理","sc34a286d3ffdd17a":"申请已拒绝","s9696e9a6176b5875":"已退款","s49555c71afb8439e":"退款执行中","s398c4c6e272a7034":"协商中","s3d93dd93e3fc3534":"等待卖家处理","s8e78f846ac547449":"其他问题","s4f4651beaef1b6dc":"卖家已同意退款","se4529a14e7fcfbd7":"重复购买或误购","s1f287888abbc4243":"与物品描述不符","s1f67ea1e80902ae2":"未收到或无法使用","s2fe0e3339ac4d1bb":"已过期","s9845c165151daee3":"已使用","sfa73ed85e86a3ca9":"未使用","s211daec74a20bd9b":"待生效","s2fe5a8d0eee9f14c":"已失效","s223afe5f1059ab14":"待支付订单占用","s5dc260a4e61f85ed":"无门槛","s7722051a54950075":"满 ","s1ebe460b042cf85e":"该卖家店铺内商品","s56b16e0de1023604":"指定商品","sd108e8381efc06d9":"卖家：","s9d430a10fe2202b3":"查看适用商品","sb4b259d532691577":"查看使用订单","sd463599969d011fd":"查看占用订单","s5eb76ad8840e54ef":"（北京时间）","sa3e1c18d999a17e0":"优惠规则暂不可用","s5247d8c07d6671a0":" 折 · 仅优惠 1 件","sddb1f6e991316a96":"减 ","s99841da5202b3b44":"请求失败（HTTP ","sdd4791f810d73e26":"登录已过期，请重新登录士多","s8d7c8cab5abd807b":"士多返回了无法识别的数据，请稍后重试","sc6f910e75ee682d8":"士多会话已失效，请重新登录。","sbd1689042db64ba9":"默认排序","s777b7515784978d6":"请填写有效的价格范围","s7aac13a8613a299e":"未能打开兑换地址，请重试。","s54d4eb146c87c808":"士多返回的兑换地址无效","s7367398deb4a47e2":"读取兑换地址失败（HTTP ","sd6f4a5373aad6e48":"订单已创建，请打开订单查看详情。","s7f2b31cdd4958f30":"未能确认操作结果，请先查看当前订单记录。","s9719af3666a6d709":"士多没有接受当前账号的授权。恢复授权后，请查这笔订单的原提交结果。","s64f4f48685b1f8c7":"士多未接受本次订单，请重新查价并核对数量。","s866d7cfe31e9c0a9":" 件 · ","s2cf72adae922915c":"商品 ","sf6a71e815e9e5a03":"当前会话没有报价权限","s004a1f63d696a0f6":"当前不可使用","s3e2581c8de380ac7":"优惠券","s8a8835014f8fc799":"有效至 ","s0d60443cb0d51d0f":"优惠券报价无法核对","sc177b1f572e7cbe5":"士多未返回可核对的商品小计","sc33a19956ca7ba6f":"士多返回的报价与当前商品或数量不符","s2076be02c3c77b6c":"士多报价失败（HTTP ","s6afa877989f0095c":"之前选择的优惠券已不可用，请核对新报价。","s62f82dbf90e2261c":"不使用优惠券","s3dcbc7f167493e08":"查看交付内容","sf476a7f4a7324e05":"收起交付内容","s58d16f5f371201fd":"操作未完成，请刷新订单核对当前状态。","s0428aab4b4448b73":"取消订单","s92a895adf8d4cabe":"取消后将无法继续支付此订单。","s921e907911fdcb41":"未允许支付权限，再次点击支付可重新申请。","sc1300de3847742ed":"登录未完成，请稍后重试。","s96a5252eb6800731":"筛选与排序","se577f60423015be7":"全部 · 默认排序","sc21af8cff389dc62":"全部订单","s507a693d494112fc":" 单 · ","sb9391b95f32694e9":"累计 ","sba423a4cd4e6daaf":"消费记录格式有误","s52b7a60787231b6a":"暂时无法更新统计，仍可进入浏览","s7c517652a3a76f14":"店铺","se4f6f3dbeaa71668":"今日订单","s8fac7fdbf5293370":"在售商品","s3835ddcf61550a0d":" 张即将到期","sbdabaea1874b52d5":" 笔售后待处理","sec0d9bdb00a4a8f6":"未知状态","s1536e2eda90d32f6":"商品订单","s519491f4009ae588":"未读消息","s7abacdb0087f2080":"待发货","s10cbe2deb3b7c481":"待付款","sc489ccfcd6be89aa":"士多会话已失效。","scb446b487481167a":"退款订单","sf1c91e1d205cdacd":"退款","s69978dcde5ea6571":"已取消订单","sa37778f17c5f3ee5":"已取消","s7dc06fbbb37f8fad":"已完成订单","sf28461bb49c85647":"已完成","s2895c2b20b1a2625":"已发货订单","s71731805279393ed":"已发货","sde58f3de67e262b7":"待发货订单","s2d1935e332f1f907":"待付款订单","sabf841909ef2ea18":"当前账号无权查看这些订单。","sb0919c5736a2929c":"订单列表格式有误","s68e1bf5ad3f8d4da":"手动发货","sa975900b2131e6ba":"自动发货","s64a127e7a4362e4a":"付款已确认，等待交付。","s6c90ab0a5b512d51":"订单待付款，付款后将按商品约定交付。","scabf4cc16c665b7e":" 前完成付款","sd16179775fe8cd5c":"请在 ","s3822326c2dd5e6a0":"支付结果确认中，请勿重复兑换。","s85e6b8b7b02b9e68":"订单更新","s0cfd7d0c15fffb49":"管理员完结","s4e55096a8f927d06":"释放卡密","sfc30896b91951e10":"锁定卡密","s3e507758e908c27a":"重新发起支付","s62b98eeed00726c1":"拒绝退款","s3a72664b94dd8b6b":"申请退款","s5753d9360845fe80":"订单退款","s55476a226ba2358c":"订单过期","s81046af9be9cf885":"确认收货","sa0ad9ae398bc3a01":"发货完成","sdc15e33d41055643":"支付成功","sccab0c8070d0d328":"创建订单","s278e9b28fd230348":"退款时间","s5557418747fee254":"取消时间","s9a62e0a4ea3a9a55":"完成时间","s5109aa0a33677d24":"发货时间","s2398a62e42a0aa64":"发货截止","s91bc11e3f6846f89":"支付时间","s07ec86e0f1d44f91":"创建时间","sb734dcee3fe05d10":"应付积分","s43d1a14f6bc6ea09":"优惠金额","sa9c208350d0984d9":"用券规则","sf69fe4df662045fe":"已使用优惠券","sb09a2d3049cddd04":"商品优惠","se6c79dcfa0e277d9":"商品小计","se9e90da1c3d0fbff":"折后单价","s13d0be2d1d7353e7":"商品单价","s5e29d121dda011c5":"数量","s49cf03051f5abf1a":"订单号与请求不一致","sa9aa135f6f262a6d":"缺少订单号","s5d7437a5507dced4":"登录士多后查看订单和交付内容","s5552b7c46bdc3d3b":"订单数据格式有误","s28384d7afd2e4fa6":"失败","sf2f02049468d5858":"已上传","sd866ec9a7d32b6ab":"争议处理中","sce80db80707257c0":"退款失败","s682c865a6596206e":"退款中","s624ecd8431832fac":"已交付","s723538ac9811968c":"支付确认中","s486841a916dc8195":"正在创建支付","s223933c75e19fbd0":"支付中","s3ef12cc6cf5def3e":"回复已发布","sd4784562e9d32d92":"回复结果待确认，请查看评论后再操作","sfa428d0151dbe525":"请填写 2–300 字的回复","s2f9daa828907b93f":"删除","s0e31f4514bebc00f":"删除后无法恢复。","sdd75eaf740e691db":"删除评论","s5aa0c59cc7fd1ecf":"投票结果待确认，请刷新评论","s9beb8b855bde1b55":"补货后将收到士多消息","s0fe7f3eba65b8356":"已订阅补货提醒","sea24d9dcf4e204e3":"订阅结果待确认，请刷新状态","sb1a1d6de9d23b030":"补货提醒","scf12d8965d963dbb":"补货订阅信息与商品不符","s884c21cec01313b8":"回复数据格式有误","s96ad893e23d431a4":"未通过审核","s3b1ca312efe2c48e":"人工审核中","sa9f71b911f2a8c3d":"审核中","sd268eeff212acfb0":"已购","s0d0e1a86b3aa7877":"用户","sfd4c868608ac0a90":"暂无评论","sd530c5e0e1bd9fbf":"评论 / 回复","s60a53514eb9228a2":"收藏","sf5b387262ff5cfb0":"已评分","sb336a174cd1fad05":"暂无","s96fff2e26c8d1027":"评分","s37b37671fe05f8bf":" 条回复","s9ae8f7e3040d7243":"查看 ","s6c1c0e938154410d":"评论数据格式有误","s35a3f02c30142959":" · 自动交付","s23de95a46b56c688":"等级要求 TL","sab759003b69321ce":" · 已售 ","s125a9cb8d9febcfb":" · 库存 ","s756762e293f2aaff":"未提供","s5d951bd7b39d6c18":"上架于 ","sa8c81f93f2e0e3b6":"浏览","sca5925bbe51da62e":"已售","s780c5fd5b10533dc":"库存","s6d6a04a208f4e713":"测试商品","sef54ef474f212e68":"需要信任等级 TL","s1f52a1fef3c5d484":"立即兑换","s5b3fc0b4aab278b0":"查看兑换方式","s98f29129e4c2872d":"暂时无法核对购买资格，请刷新重试","sa3b33b3ab38fa434":"不能兑换自己的商品","s65564586c6c43042":"测试中，仅卖家可兑换","sb62def848b501231":"当前不可兑换","s293b79c6bdbbe907":"已售罄","sf35ab98b06c5258a":"找不到这件商品","sda2ab914f56556c1":"分类加载失败，可刷新重试","sfcce7beb612d612b":" 件商品","s4f6e41e46c462f96":"商品列表格式有误","se38a10936ac904b9":"热销","s5242eb617ce81955":"高价","sff7d8ec24621b8d9":"低价","s569af1a47dbdf053":"最新","sf098218a3032a625":"已拒绝","s8fb733f152961629":"待人工审核","s88e7b1ccfff8009a":"已下架","s3b899ac238bb1f09":"已售 ","s55df57d3e94a2368":"库存 ","s2a48697cc1b4ea6c":"士多甄选","sb1920c528cf40491":"士多优选","s5f9f1409615a5128":"广告","s58fdb0941f368f2b":"商品","seabdd88a46bf9a21":"小店","s22bc037be323ad0f":"外链商品","s2e93b02a6f2d933d":"自动发卡","se3e9fb6561bfe947":"原价 ","s1e25aae959390c1e":"% 优惠","s9bc9f11e9775d439":"暂时无法读取士多数据","s421f465daee806a8":" 件","s59dc719b13fdb599":" · 当前可购 ","s56633c891d3ab356":"限购 ","s3de42d7c68d442e5":"单次","s23585a20337f6184":"累计","s4ce3054e7c4d0257":" 天","s5b65ef657f02a679":"近 ","sf203d577d14268cd":"不限","sa9de3856851f3c5c":"」阶段未完成，请重试。","s20984aefd9487eb6":"登录在「","sde4fcca95f6a6543":"账号校验","s32d233f6464ee2c8":"会话交换","s361f7cbad397d2e4":"服务回调","s3aa35136afde01c7":"Connect 授权","s51c45ddf0c4840e6":"服务初始化","s498d796710b55608":"请先登录 FluxDO 的 Linux DO 账号。","sbf7e8a9c9bbe7153":"未允许登录所需权限，再次点击登录可重新申请。","s2542ab87c696a53f":"《LD士多服务条款》","s38976f51257967ea":"使用 Linux DO 账号登录","s032ae3edc42ee704":"使用 Linux DO 账号登录后，可收藏商品、领取优惠券并查看订单。请先阅读士多服务条款。","s0b3ef1aaa9b25b45":"登录 LD士多","s1209094cb006abd9":"筛选商品","se4422147cb5f43ab":"我的士多","sa2f105eb28a119ee":"反馈商品问题","s7f281f3b43f16289":"在网页中查看商品","sfe50ca8078f7c44b":"退款与售后","s2629d5778dd57bbb":"刷新订单","s231cbc4337c5a60c":"全部已读","s7881bea001a5cf2a":"网站消息中心","s87ad624a17ddd445":"没有符合条件的商品","s98c2fe486054cba8":"搜索商品","s5842a1b334e25391":"在网页中浏览士多","s142d98f2cd299938":"恢复展示","s404b8693416b46b7":"隐藏于","s012a274f36559018":"收藏于","scb5d682bac3d1a2d":"重置","sd06bc6efdd8cd7e2":"查看结果","sa96c9a854190874d":"排序","s30dd299ea738185b":"价格范围 · LDC","s6126a4897fa07b4f":"最低价","s632a5d8a277e99ea":"最高价","sbd83436d082ee571":"仅显示有库存的商品","sb8784c8dd5636ff2":"重试","s3d43be34e14fae36":"查看店铺商品","sf5e765cb4d828b14":"卖家主页","s64717955bcfdb7ca":"商品说明","s68fe685324cbdee2":"商品评论","s1d345684bc1e9c7f":"写评论","se27882c866cfb391":"赞同","s25be83fba61bb37d":"不赞同","scf945e21ddefbb46":"回复","s4899a3328d1fa181":"举报评论","s1eb1a110e96f31ca":"暂无可见回复","s6d1cc8074d748015":"更多回复","se856ce979d5683fa":"重新加载评论","s6394005b5e43f108":"更多评论","saf05b87cf68d5a3a":"单价","s548698f65a7ee317":"选择优惠券","s4d7c423e3f207066":"刷新报价","s2c29ca57e91b35b8":"用原提交号重试","sc3b71cac9531042d":"订单已创建","s752d28f376e7e568":"查看订单并支付","s312df1d94869a0b7":"结束本次兑换","s302a580b360cf4f3":"暂时无法读取本机订单记录，请稍后重新进入。","s8aad9cb2c74870c1":"确认兑换","sc05f158a78b4dd8b":"核对上次提交","s5a81eab27ec5cfa4":"尚未确认是否建单。先查询结果，避免重复兑换。","s1463dfab073b8d92":"查询提交结果","s7ecfc6324003a374":"没有符合条件的订单","s23fca5e0cf735421":"立即支付","sd9b9458b1f9aeb95":"重新兑换","s2013cc3e7da92777":"发货内容","s883c8ac33813aa48":"内容已隐藏，点击查看","sc05a5ec1dcd01f0e":"复制全部发货内容","scb4ba40bf823511d":"使用说明","sea747b67dc72a371":"订单信息","s93191de5ef4c9d51":"交付方式","s977f0f7e3be0f674":"订单号","sf64372f7124dd37a":"Credit 交易号","s58ab796c884b3be6":"订单动态","scf47f68aa081cd42":"检查支付状态","sc7506e73058704ad":"重新读取订单","sb55f062234929621":"登录士多","s7c7dea47f57597f4":"我的订单","s7c2fda7ef4a1229c":"付款、交付与售后","s9385bfefca5882f1":"我的收藏","s731c8bf2f14a1505":"我的优惠券","s29d8e8ee6822135d":"我的举报","sb3761fb805dae671":"士多消息","s06662ffb634d236a":"消费记录","safd4b783536b8297":"收起","s00bd3960fea8ea98":"展开","sc851b18ea7468bf2":"还没有已成交的购买记录","s12eef4bda73517ed":"最近订单","s505300b3e94d139b":"暂无此类优惠券","s40781b5ae18a7791":"适用范围","s70ef22633d147df5":"使用门槛","s9ca4b75d03266b03":"到期时间","s4f36b7386724d9ed":"使用时间","s62a1ed5fddc26e97":"实际优惠","s7f74393abb0c15c0":"查看我的优惠券","sd2b84e4a68d0bd59":"生效时间","s36740655c7a6d33e":"剩余 / 总量","se267d0400c5a542d":"提交评论","s3100cd7e8ee297e3":"评论将公开展示，请勿填写订单密码或其他敏感信息。","se65a563bd197b5af":"争议处理说明","sd4f1dfe69b992741":"刷新进度","sf89453d5f5ae6e3a":"暂无在售商品","sb7979a6ddc595bd0":"暂无系统消息","s675cdf65d059a70b":"搜索消息","s8a081cf0f6700a98":"有消息更新，点击刷新","sa748cc074f78de00":"查看详情","s93e263e95fd87cc5":"举报已提交","s188aa3bd1defffc6":"可在原记录补充说明并查看处理进度。","s1e9603e7ce911612":"查看进度","s16b0eccf6ef89f98":"提交举报","sc387350be02b0559":"举报信息仅用于平台核查，请勿填写完整卡密、账号密码或密钥。","s83f08c796de74e01":"发布回复","s11172f6108a171b2":"暂无举报记录","sf62360f6e574f0b5":"处理结果","s3e307948d45152c8":"举报时的内容","secf1507b4b6f918d":"在网站查看私密证据","sa00b23e3dbc3f545":"处理历史","s83f2f700be77a9a3":"订单详情","sba6e878e45e6b560":"LD士多","sf6c1322ffbdc91da":"确认订单","s8c091c69ffb991f0":"商品详情","s0bfca7bdd2207da4":"发表评论","s2956ef2102f957cd":"店铺商品","s24b4092bc5b123ac":"举报进度"},"en":{"s71ef3f727b039321":"Mark as read","sd5615e4d51457956":"Mark all LD Store system messages as read.","s4d3eebf1cf765ace":"Mark all as read","s4ce218874bc990ad":"System messages","s79a07d520e433d2e":"Invalid message response.","s06c3614b35663015":"Sign in to LD Store to view messages","s94b7513eaddb2f53":"System notices","sdd7c11a05ef9f1b1":"Credit update","scf8d44ab3daffce5":"Refund verification needed","saefd0a5dced6b22c":"Refund issue","s116db2538e69ac79":"Refund successful","s5642ebf2112063f7":"Refund processing","s3462f4a8311ffae4":"Selection service expired","s9370278cffb19f9a":"Selection service activated","se5788379b068e4bb":"Seller restock reminder","s05a63ab155c111a5":"Refund verification result","s2da6bf03ef3b59fc":"Product delivery reminder","s1fe7861208bd1c1a":"Product restocked","s71f6b905342c52bf":"Comment reply","s0acf8dcc2c723a29":"Product comment","sf8075580c9d9f470":"Stock removal reminder","sfbce1b50b6e93616":"Product removed","s8a5b4a8f3d8603d4":"Seller fulfillment notice","s8bb51a4e532febe0":"Delivery protection notice","sed90548f75d8ac52":"Seller delivery deadline reminder","s5f68685ab537d735":"Pending delivery reminder","sefdd1a47e4beb2f9":"Read","s4d0680f9efaef147":"Unread","s5c55a67935af8f45":"All","s3ab8cc15939f3b5c":"Sign out","s7458ac806336744d":"You can still browse after signing out. Authorization is required to buy again.","s385b320ec821e694":"Sign out of LD Store","s787cce5d0f45e4b3":". Check the latest after-sales status before continuing.","s9ebe36f8cf23673a":"Confirm submission","s243145b86bc8cca5":"\nLD Store and the seller will handle your request. Track its progress here.","s358c8cffed6d643f":"Order ","s11a588ca6973412b":"Submit refund request","s67d4213837fb139c":"Select a reason and describe the issue in 10–500 characters.","s8d60e9fef9b93e67":"This order cannot accept a new refund request.","s426e458a41246bd5":"Claimed","s204fdaf68d08d9c6":"Claim result is uncertain. Refresh the coupon.","s9056a72ae79cc23b":"Comment submitted, subject to LD Store review.","se7b74796e3c2a48a":"Enter a comment of 5–500 characters.","sdc3b32db862a0f9d":"Save product","s471dd4d7f86954d0":"Saved","sa8781c16e303179d":"Sign in to LD Store first.","sd7159d5ff330e286":"Information submitted","s37cf48ee1551d050":"Review requested","s4c7cea065f28c871":"Enter 5–1000 characters.","sa986a3f4e6101aa4":"Report result is uncertain. Check your report history.","sf3e0799eeaa896af":"Choose a category and describe the issue in 5–500 characters.","s1064520a8ea0d8b4":"Reports and refunds are handled separately. View or attach private screenshots on the website.","s9046c12a6c6edbb8":"Private evidence","sd9271468c38979b0":"Update","sfb1201488f728ed7":"Explanation or new evidence","s6f3ebd2d3e876212":"Add information","s4f0c56a792e4a383":"Request review","s9bd5801df1a90cd7":"Report does not match the request.","s4f912dc1d089ee8a":"Invalid report target.","sdfb34a4f32ae5e15":"Closed","sa35ef95361b84d05":"More information needed","s75da31470d2f9d7e":"Open","s7eae90ab25b8de47":"Not upheld","s36a2442a4df541ba":"Invalid report list response.","s454a437615153df5":"Order number (optional)","s177af5bd4d7ccca1":"Describe the issue without codes or passwords (5–500 characters)","sb110d4b5ef2f54e5":"Details","s6b6cde10fd0fb7d2":"Category","s592bec925cebd79d":"Report an issue","s3376176cc70d2779":"Reply to ","s8d87cbe9b975b61c":"Reply","s3056d666ea7764b8":"Reply to comment","s30685985e63dcbc7":" · Under review","s9640aa814a6a5b65":"Status unconfirmed","sf720037410abd938":"Product #","sd2909f1647e7c891":"Other","s97d25b0cffd19183":"Factual dispute","sf4d93c0b59ca2698":"Abuse or harassment","s919470833d4c2776":"Privacy disclosure","s584a7ab2c5cdb847":"Purchase issue","sedc91cd8c41638ea":"Suspected fraud or prohibited resale","sae996b192f4a2c24":"Promotion or solicitation","s722bd268f67ae593":"Description or price mismatch","s3e88557d5c9145ab":"Unusable or delivery issue","s01967a97b5821e88":"Referred to after-sales","s2372bb37d195fac0":"No violation confirmed","s9889ca492688ee3e":"Issue confirmed","s1e45077397dd8af8":"Investigating","s9079f70305629280":"Pending","s722b05bb01971697":"I contacted the seller","s6bf7765f66d223f3":"Describe the issue (10–500 characters)","s6a11331de9003411":"Problem description","s0ae01e9c7ed540de":"Refund reason","s5b50d7c4b5950dc5":"System","s910887705c7a66d2":"Platform","s6d6a63f93c43899e":"Buyer","sd6074d12387baea1":"Seller","s96fb25b3bf5d61df":"After-sales status updated","s07393bc40b879b70":"Seller response","se9b5d944cc4b72c2":"Requested","sa997850650073dfd":"Seller missed delivery deadline","s4857afee920b0ed9":"Response deadline: ","secd8a0c1a36693fc":"Request after-sales support","s4a9c18b7b45305bd":"Refund order number does not match the request.","s207d77f2a5294357":"Invalid refund status response.","s9d72e58af4a23952":"Comments are disabled for this product.","sd1005c4482ca2e97":" stars","s9385944716c2ed5e":"No rating","s73a5e8108381d813":"Product rating (optional)","sdf24c3bc5c3dc874":"Share your experience or ask a question (5–500 characters)","s16950541902212bc":"Comment","s4588f2bf30efdcde":"Claim coupon","sa26be489f87fb4d8":"Coupon disabled","sa8ca24030fc46331":"No coupons left","s318e9ef0e71a5e97":"Claiming closed","s22ebde21493e1177":"Claiming paused by seller","s8c0dd0e8ecb46c40":"Coupon expired","sbfe8b73275c84810":"Claiming has not started","saa5fa17d9249ec87":"Invalid coupon response.","sccabce4ef8be0814":"Invalid coupon link.","s15712a17084e1dd3":"Invalid list response.","s7c348c349ca33032":"Sales","s40c5340bc430b081":"Listed","s5cfd07c0021fd2bf":"Available","s270346cf890d1540":"Store profile is missing.","s219045b1df2953a4":"No saved products yet","sfa9a68e9983d000e":"No hidden products","s2fa4f18941487a11":"Search saved products","s2cc5b6e7db7790be":"Search hidden products","s2abc3ad8d471e2ea":"Hidden","s5a1220c895cfc20c":"Sign in to LD Store to continue","s95676f3863aa6819":"Credit referral confirmed","sc4870943d389f6d0":"Refund confirmed incomplete","sc775716a00e9ab4f":"Refund confirmed","s96e71ec6687b5db6":"Verification result recorded","sa9653b95bcdf2258":"Administrator verified and retried","s6e3aa6e41f728c9b":"Deadline reminder","s898759d3b5df8bb4":"Response deadline notified","sa25fa068d68bfcea":"Seller initiated refund","sc54a6d9e57fd58ff":"Refund for missed deadline","sb028bcfeba09af56":"Administrator revised refund decision","s89e537190996045d":"Administrator declined request","se2eb8a9585c9ee50":"Administrator approved refund","s78c65447fd46474b":"Refund approved after timeout","sa2a80799ad768a5f":"Referred to Credit","s64a5b415a7cee086":"Refund result unconfirmed","saf5d792906390b7e":"Refund processing failed","s1e58b0b7106132ba":"Refund successful","s7b615b1e5c5898b0":"Seller declined request","s3c0d34d587326860":"Seller approved refund","sec009989916d5f60":"Discussion updated","s378ff6b9c4c3d3c5":"Seller contacted buyer","sce03c133cfb0a2f6":"Referred to Credit","sc34a286d3ffdd17a":"Request declined","s9696e9a6176b5875":"Refunded","s49555c71afb8439e":"Processing refund","s398c4c6e272a7034":"In discussion","s3d93dd93e3fc3534":"Awaiting seller response","s8e78f846ac547449":"Other issue","s4f4651beaef1b6dc":"Seller agreed to refund","se4529a14e7fcfbd7":"Duplicate or accidental purchase","s1f287888abbc4243":"Not as described","s1f67ea1e80902ae2":"Not received or unusable","s2fe0e3339ac4d1bb":"Expired","s9845c165151daee3":"Used","sfa73ed85e86a3ca9":"Unused","s211daec74a20bd9b":"Not active yet","s2fe5a8d0eee9f14c":"Invalid","s223afe5f1059ab14":"Reserved by an unpaid order","s5dc260a4e61f85ed":"No minimum spend","s7722051a54950075":"Minimum spend ","s1ebe460b042cf85e":"Products from this seller","s56b16e0de1023604":"Selected product","sd108e8381efc06d9":"Seller: ","s9d430a10fe2202b3":"View eligible products","sb4b259d532691577":"View redeemed order","sd463599969d011fd":"View reserved order","s5eb76ad8840e54ef":" (UTC+8)","sa3e1c18d999a17e0":"Coupon terms unavailable","s5247d8c07d6671a0":"/10 of price · One item only","sddb1f6e991316a96":"Save ","s99841da5202b3b44":"Request failed (HTTP ","sdd4791f810d73e26":"Session expired. Sign in to LD Store again.","s8d7c8cab5abd807b":"Unrecognized LD Store response. Try again later.","sc6f910e75ee682d8":"Your LD Store session expired. Sign in again.","sbd1689042db64ba9":"Default","s777b7515784978d6":"Enter a valid price range.","s7aac13a8613a299e":"Could not open purchase link. Try again.","s54d4eb146c87c808":"Invalid purchase link returned by LD Store.","s7367398deb4a47e2":"Could not load purchase link (HTTP ","sd6f4a5373aad6e48":"Order created. Open it to view details.","s7f2b31cdd4958f30":"Result is uncertain. Check your orders before continuing.","s9719af3666a6d709":"Authorization was not accepted. Sign in again, then check the original order submission.","s64f4f48685b1f8c7":"The order was not accepted. Check the price and quantity again.","s866d7cfe31e9c0a9":" items · ","s2cf72adae922915c":"Product ","sf6a71e815e9e5a03":"This session cannot request a quote.","s004a1f63d696a0f6":"Currently unavailable","s3e2581c8de380ac7":"Coupons","s8a8835014f8fc799":"Valid until ","s0d60443cb0d51d0f":"Unable to verify the coupon quote.","sc177b1f572e7cbe5":"The response does not contain a verifiable subtotal.","sc33a19956ca7ba6f":"The quote does not match the product or quantity.","s2076be02c3c77b6c":"Quote failed (HTTP ","s6afa877989f0095c":"Your selected coupon is unavailable. Check the new quote.","s62f82dbf90e2261c":"No coupon","s3dcbc7f167493e08":"View delivery","sf476a7f4a7324e05":"Hide delivery","s58d16f5f371201fd":"Action incomplete. Refresh the order to check its status.","s0428aab4b4448b73":"Cancel order","s92a895adf8d4cabe":"You will not be able to pay for this order after cancelling it.","s921e907911fdcb41":"Payment permission was not granted. Tap Pay to request it again.","sc1300de3847742ed":"Sign-in incomplete. Try again later.","s96a5252eb6800731":"Filter and sort","se577f60423015be7":"All · Default","sc21af8cff389dc62":"All orders","s507a693d494112fc":" orders · ","sb9391b95f32694e9":"Total ","sba423a4cd4e6daaf":"Invalid spending response.","s52b7a60787231b6a":"Statistics unavailable. You can still browse.","s7c517652a3a76f14":"Stores","se4f6f3dbeaa71668":"Orders today","s8fac7fdbf5293370":"Available products","s3835ddcf61550a0d":" coupons expire soon","sbdabaea1874b52d5":" after-sales requests need attention","sec0d9bdb00a4a8f6":"Unknown status","s1536e2eda90d32f6":"Product order","s519491f4009ae588":"Unread messages","s7abacdb0087f2080":"Awaiting delivery","s10cbe2deb3b7c481":"Awaiting payment","sc489ccfcd6be89aa":"Your LD Store session expired.","scb446b487481167a":"Refund orders","sf1c91e1d205cdacd":"Refunds","s69978dcde5ea6571":"Cancelled orders","sa37778f17c5f3ee5":"Cancelled","s7dc06fbbb37f8fad":"Completed orders","sf28461bb49c85647":"Completed","s2895c2b20b1a2625":"Delivered orders","s71731805279393ed":"Delivered","sde58f3de67e262b7":"Orders awaiting delivery","s2d1935e332f1f907":"Orders awaiting payment","sabf841909ef2ea18":"This account cannot access these orders.","sb0919c5736a2929c":"Invalid order list response.","s68e1bf5ad3f8d4da":"Manual delivery","sa975900b2131e6ba":"Automatic delivery","s64a127e7a4362e4a":"Payment confirmed. Awaiting delivery.","s6c90ab0a5b512d51":"Awaiting payment. Delivery follows the product terms.","scabf4cc16c665b7e":".","sd16179775fe8cd5c":"Pay before ","s3822326c2dd5e6a0":"Confirming payment. Do not place another order.","s85e6b8b7b02b9e68":"Order updated","s0cfd7d0c15fffb49":"Closed by administrator","s4e55096a8f927d06":"Codes released","sfc30896b91951e10":"Codes reserved","s3e507758e908c27a":"Payment restarted","s62b98eeed00726c1":"Refund declined","s3a72664b94dd8b6b":"Request refund","s5753d9360845fe80":"Order refunded","s55476a226ba2358c":"Order expired","s81046af9be9cf885":"Receipt confirmed","sa0ad9ae398bc3a01":"Delivery completed","sdc15e33d41055643":"Payment successful","sccab0c8070d0d328":"Order created","s278e9b28fd230348":"Refunded","s5557418747fee254":"Cancelled","s9a62e0a4ea3a9a55":"Completed","s5109aa0a33677d24":"Delivered","s2398a62e42a0aa64":"Delivery deadline","s91bc11e3f6846f89":"Paid","s07ec86e0f1d44f91":"Created","sb734dcee3fe05d10":"Amount due","s43d1a14f6bc6ea09":"Discount","sa9c208350d0984d9":"Coupon terms","sf69fe4df662045fe":"Coupon applied","sb09a2d3049cddd04":"Product discount","se6c79dcfa0e277d9":"Subtotal","se9e90da1c3d0fbff":"Discounted unit price","s13d0be2d1d7353e7":"Unit price","s5e29d121dda011c5":"Quantity","s49cf03051f5abf1a":"Order number does not match the request.","sa9aa135f6f262a6d":"Order number missing.","s5d7437a5507dced4":"Sign in to LD Store to view orders and deliveries.","s5552b7c46bdc3d3b":"Invalid order response.","s28384d7afd2e4fa6":"Failed","sf2f02049468d5858":"Uploaded","sd866ec9a7d32b6ab":"Dispute in progress","sce80db80707257c0":"Refund failed","s682c865a6596206e":"Refund in progress","s624ecd8431832fac":"Delivered","s723538ac9811968c":"Confirming payment","s486841a916dc8195":"Preparing payment","s223933c75e19fbd0":"Payment in progress","s3ef12cc6cf5def3e":"Reply posted","sd4784562e9d32d92":"Reply result is uncertain. Check the comments before retrying.","sfa428d0151dbe525":"Enter a reply of 2–300 characters.","s2f9daa828907b93f":"Delete","s0e31f4514bebc00f":"This cannot be undone.","sdd75eaf740e691db":"Delete comment","s5aa0c59cc7fd1ecf":"Vote result is uncertain. Refresh the comments.","s9beb8b855bde1b55":"You will receive an LD Store message when restocked.","s0fe7f3eba65b8356":"Restock alert enabled","sea24d9dcf4e204e3":"Subscription result is uncertain. Refresh its status.","sb1a1d6de9d23b030":"Notify when restocked","scf12d8965d963dbb":"Restock information does not match this product.","s884c21cec01313b8":"Invalid replies response.","s96ad893e23d431a4":"Not approved","s3b1ca312efe2c48e":"Under manual review","sa9f71b911f2a8c3d":"Under review","sd268eeff212acfb0":"Purchased","s0d0e1a86b3aa7877":"User","sfd4c868608ac0a90":"No comments yet","sd530c5e0e1bd9fbf":"Comments / Replies","s60a53514eb9228a2":"Saved","sf5b387262ff5cfb0":"Ratings","sb336a174cd1fad05":"None","s96fff2e26c8d1027":"Rating","s37b37671fe05f8bf":" replies","s9ae8f7e3040d7243":"View ","s6c1c0e938154410d":"Invalid comments response.","s35a3f02c30142959":" · Automatic delivery","s23de95a46b56c688":"Required trust level TL","sab759003b69321ce":" · Sold ","s125a9cb8d9febcfb":" · Stock ","s756762e293f2aaff":"Not available","s5d951bd7b39d6c18":"Listed ","sa8c81f93f2e0e3b6":"Views","sca5925bbe51da62e":"Sold","s780c5fd5b10533dc":"Stock","s6d6a04a208f4e713":"Test product","sef54ef474f212e68":"Requires trust level TL","s1f52a1fef3c5d484":"Buy now","s5b3fc0b4aab278b0":"View purchase options","s98f29129e4c2872d":"Unable to check eligibility. Refresh to try again.","sa3b33b3ab38fa434":"You cannot buy your own product","s65564586c6c43042":"Test mode: seller only","sb62def848b501231":"Currently unavailable","s293b79c6bdbbe907":"Sold out","sf35ab98b06c5258a":"Product not found.","sda2ab914f56556c1":"Categories failed to load. Pull to refresh.","sfcce7beb612d612b":" products","s4f6e41e46c462f96":"Invalid product list response.","se38a10936ac904b9":"Best selling","s5242eb617ce81955":"Highest price","sff7d8ec24621b8d9":"Lowest price","s569af1a47dbdf053":"Newest","sf098218a3032a625":"Rejected","s8fb733f152961629":"Pending manual review","s88e7b1ccfff8009a":"Unavailable","s3b899ac238bb1f09":"Sold ","s55df57d3e94a2368":"Stock ","s2a48697cc1b4ea6c":"Selected","sb1920c528cf40491":"Featured","s5f9f1409615a5128":"Ad","s58fdb0941f368f2b":"Product","seabdd88a46bf9a21":"Store","s22bc037be323ad0f":"External product","s2e93b02a6f2d933d":"Automatic code delivery","se3e9fb6561bfe947":"Was ","s1e25aae959390c1e":"% off","s9bc9f11e9775d439":"Unable to load LD Store data.","s421f465daee806a8":" items","s59dc719b13fdb599":" · Available to buy: ","s56633c891d3ab356":"Limit: ","s3de42d7c68d442e5":"Per order","s23585a20337f6184":"Total","s4ce3054e7c4d0257":" days","s5b65ef657f02a679":"Last ","sf203d577d14268cd":"Unlimited","sa9de3856851f3c5c":". Please try again.","s20984aefd9487eb6":"Sign-in did not complete at ","sde4fcca95f6a6543":"Account verification","s32d233f6464ee2c8":"Session exchange","s361f7cbad397d2e4":"Service callback","s3aa35136afde01c7":"Connect authorization","s51c45ddf0c4840e6":"Initialization","s498d796710b55608":"Sign in to Linux DO in FluxDO first.","sbf7e8a9c9bbe7153":"Sign-in permission was not granted. Tap Sign in to request it again.","s2542ab87c696a53f":"LD Store Terms of Service","s38976f51257967ea":"Sign in with Linux DO","s032ae3edc42ee704":"Sign in with Linux DO to save products, claim coupons and view orders. Read the LD Store terms before continuing.","s0b3ef1aaa9b25b45":"Sign in to LD Store","s1209094cb006abd9":"Filter products","se4422147cb5f43ab":"My LD Store","sa2f105eb28a119ee":"Report a product issue","s7f281f3b43f16289":"View product on website","sfe50ca8078f7c44b":"Refunds and support","s2629d5778dd57bbb":"Refresh order","s231cbc4337c5a60c":"Mark all read","s7881bea001a5cf2a":"Website message center","s87ad624a17ddd445":"No matching products","s98c2fe486054cba8":"Search products","s5842a1b334e25391":"Browse LD Store on website","s142d98f2cd299938":"Unhide","s404b8693416b46b7":"Hidden","s012a274f36559018":"Saved","scb5d682bac3d1a2d":"Reset","sd06bc6efdd8cd7e2":"Show results","sa96c9a854190874d":"Sort","s30dd299ea738185b":"Price range · LDC","s6126a4897fa07b4f":"Minimum price","s632a5d8a277e99ea":"Maximum price","sbd83436d082ee571":"In-stock products only","sb8784c8dd5636ff2":"Retry","s3d43be34e14fae36":"View store products","sf5e765cb4d828b14":"Seller profile","s64717955bcfdb7ca":"Description","s68fe685324cbdee2":"Comments","s1d345684bc1e9c7f":"Write a comment","se27882c866cfb391":"Upvote","s25be83fba61bb37d":"Downvote","scf945e21ddefbb46":"Reply","s4899a3328d1fa181":"Report comment","s1eb1a110e96f31ca":"No visible replies","s6d1cc8074d748015":"More replies","se856ce979d5683fa":"Reload comments","s6394005b5e43f108":"More comments","saf05b87cf68d5a3a":"Unit price","s548698f65a7ee317":"Choose coupon","s4d7c423e3f207066":"Refresh quote","s2c29ca57e91b35b8":"Retry original submission","sc3b71cac9531042d":"Order created","s752d28f376e7e568":"View order and pay","s312df1d94869a0b7":"Finish this purchase","s302a580b360cf4f3":"Unable to read the local order record. Reopen this page later.","s8aad9cb2c74870c1":"Confirm purchase","sc05f158a78b4dd8b":"Check last submission","s5a81eab27ec5cfa4":"Order creation is unconfirmed. Check the result to avoid a duplicate purchase.","s1463dfab073b8d92":"Check submission","s7ecfc6324003a374":"No matching orders","s23fca5e0cf735421":"Pay now","sd9b9458b1f9aeb95":"Buy again","s2013cc3e7da92777":"Delivery","s883c8ac33813aa48":"Content hidden. Tap to view.","sc05a5ec1dcd01f0e":"Copy delivery content","scb4ba40bf823511d":"Instructions","sea747b67dc72a371":"Order information","s93191de5ef4c9d51":"Delivery method","s977f0f7e3be0f674":"Order number","sf64372f7124dd37a":"Credit transaction ID","s58ab796c884b3be6":"Order history","scf47f68aa081cd42":"Check payment status","sc7506e73058704ad":"Reload order","sb55f062234929621":"Sign in to LD Store","s7c7dea47f57597f4":"My orders","s7c2fda7ef4a1229c":"Payments, delivery and support","s9385bfefca5882f1":"Saved products","s731c8bf2f14a1505":"My coupons","s29d8e8ee6822135d":"My reports","sb3761fb805dae671":"LD Store messages","s06662ffb634d236a":"Spending history","safd4b783536b8297":"Collapse","s00bd3960fea8ea98":"Expand","sc851b18ea7468bf2":"No completed purchases yet","s12eef4bda73517ed":"Recent orders","s505300b3e94d139b":"No coupons in this category","s40781b5ae18a7791":"Applies to","s70ef22633d147df5":"Minimum spend","s9ca4b75d03266b03":"Expires","s4f36b7386724d9ed":"Used","s62a1ed5fddc26e97":"Actual discount","s7f74393abb0c15c0":"View my coupons","sd2b84e4a68d0bd59":"Starts","s36740655c7a6d33e":"Remaining / Total","se267d0400c5a542d":"Submit comment","s3100cd7e8ee297e3":"Comments are public. Do not include passwords or other sensitive information.","se65a563bd197b5af":"Dispute information","sd4f1dfe69b992741":"Refresh status","sf89453d5f5ae6e3a":"No products available","sb7979a6ddc595bd0":"No system messages","s675cdf65d059a70b":"Search messages","s8a081cf0f6700a98":"New messages available. Tap to refresh.","sa748cc074f78de00":"View details","s93e263e95fd87cc5":"Report submitted","s188aa3bd1defffc6":"Add information and track progress in the original report.","s1e9603e7ce911612":"View progress","s16b0eccf6ef89f98":"Submit report","sc387350be02b0559":"Reports are used for platform review. Do not include full codes, passwords or keys.","s83f08c796de74e01":"Post reply","s11172f6108a171b2":"No reports yet","sf62360f6e574f0b5":"Outcome","s3e307948d45152c8":"Reported content","secf1507b4b6f918d":"View private evidence on website","sa00b23e3dbc3f545":"History","s83f2f700be77a9a3":"Order details","sba6e878e45e6b560":"LD Store","sf6c1322ffbdc91da":"Confirm order","s8c091c69ffb991f0":"Product details","s0bfca7bdd2207da4":"Write a comment","s2956ef2102f957cd":"Store products","s24b4092bc5b123ac":"Report progress"},"zh_TW":{"s71ef3f727b039321":"標記已讀","sd5615e4d51457956":"將士多的全部系統訊息標記為已讀。","s4d3eebf1cf765ace":"全部標記已讀","s4ce218874bc990ad":"系統訊息","s79a07d520e433d2e":"訊息資料格式有誤","s06c3614b35663015":"登入士多後檢視訊息","s94b7513eaddb2f53":"系統通知","sdd7c11a05ef9f1b1":"Credit 處理通知","scf8d44ab3daffce5":"退款待核對通知","saefd0a5dced6b22c":"退款異常通知","s116db2538e69ac79":"退款成功通知","s5642ebf2112063f7":"退款處理中","s3462f4a8311ffae4":"甄選服務到期通知","s9370278cffb19f9a":"甄選服務生效通知","se5788379b068e4bb":"賣家補貨提醒","s05a63ab155c111a5":"退款核對結果","s2da6bf03ef3b59fc":"商品發貨提醒","s1fe7861208bd1c1a":"商品補貨通知","s71f6b905342c52bf":"評論回覆通知","s0acf8dcc2c723a29":"商品評論通知","sf8075580c9d9f470":"庫存下架提醒","sfbce1b50b6e93616":"商品下架通知","s8a5b4a8f3d8603d4":"賣家履約記錄通知","s8bb51a4e532febe0":"發貨保障通知","sed90548f75d8ac52":"賣家發貨時限提醒","s5f68685ab537d735":"待發貨提醒","sefdd1a47e4beb2f9":"已讀","s4d0680f9efaef147":"未讀","s5c55a67935af8f45":"全部","s3ab8cc15939f3b5c":"退出登入","s7458ac806336744d":"退出後仍可瀏覽商品。再次兌換時需要重新授權。","s385b320ec821e694":"退出士多登入","s787cce5d0f45e4b3":"。請核對最新售後狀態後再操作。","s9ebe36f8cf23673a":"確認提交","s243145b86bc8cca5":"\n提交後由士多和賣家處理，可在這裡檢視進度。","s358c8cffed6d643f":"訂單 ","s11a588ca6973412b":"提交退款申請","s67d4213837fb139c":"請選擇退款原因，並填寫 10–500 字的問題描述","s8d60e9fef9b93e67":"當前訂單不可提交新的退款申請","s426e458a41246bd5":"已領取","s204fdaf68d08d9c6":"領取結果待確認，請重新整理優惠券","s9056a72ae79cc23b":"評論已提交，以士多稽核結果為準","se7b74796e3c2a48a":"請填寫 5–500 字的評論","sdc3b32db862a0f9d":"收藏商品","s471dd4d7f86954d0":"已收藏","sa8781c16e303179d":"請先登入士多","sd7159d5ff330e286":"補充說明已提交","s37cf48ee1551d050":"複核申請已提交","s4c7cea065f28c871":"請填寫 5–1000 字的說明","sa986a3f4e6101aa4":"舉報結果待確認，請在舉報記錄中核對","sf3e0799eeaa896af":"請選擇分類，並填寫 5–500 字的問題說明","s1064520a8ea0d8b4":"舉報處理與訂單退款分別進行。私密截圖可在網站檢視與補充。","s9046c12a6c6edbb8":"私密證據","sd9271468c38979b0":"處理記錄","sfb1201488f728ed7":"問題說明或新證據","s6f3ebd2d3e876212":"補充說明","s4f0c56a792e4a383":"提交複核申請","s9bd5801df1a90cd7":"舉報記錄與請求不符","s4f912dc1d089ee8a":"舉報物件無效","sdfb34a4f32ae5e15":"已結案","sa35ef95361b84d05":"待補充","s75da31470d2f9d7e":"待跟進","s7eae90ab25b8de47":"未採納","s36a2442a4df541ba":"舉報記錄格式有誤","s454a437615153df5":"關聯訂單號（可選）","s177af5bd4d7ccca1":"請說明具體問題，不要填寫卡密或密碼（5–500 字）","sb110d4b5ef2f54e5":"詳細說明","s6b6cde10fd0fb7d2":"問題分類","s592bec925cebd79d":"舉報問題","s3376176cc70d2779":"回覆 ","s8d87cbe9b975b61c":"回覆內容","s3056d666ea7764b8":"回覆評論","s30685985e63dcbc7":" · 複核中","s9640aa814a6a5b65":"狀態待核對","sf720037410abd938":"商品 #","sd2909f1647e7c891":"其他","s97d25b0cffd19183":"事實爭議","sf4d93c0b59ca2698":"辱罵騷擾","s919470833d4c2776":"隱私洩露","s584a7ab2c5cdb847":"購買異常","sedc91cd8c41638ea":"疑似欺詐或違規轉售","sae996b192f4a2c24":"推廣引流","s722bd268f67ae593":"描述或價格不符","s3e88557d5c9145ab":"無法使用或交付異常","s01967a97b5821e88":"已轉交售後","s2372bb37d195fac0":"未確認違規","s9889ca492688ee3e":"已確認問題","s1e45077397dd8af8":"核查中","s9079f70305629280":"待受理","s722b05bb01971697":"已聯絡賣家協商","s6bf7765f66d223f3":"請說明具體問題（10–500 字）","s6a11331de9003411":"問題描述","s0ae01e9c7ed540de":"退款原因","s5b50d7c4b5950dc5":"系統","s910887705c7a66d2":"平臺","s6d6a63f93c43899e":"買家","sd6074d12387baea1":"賣家","s96fb25b3bf5d61df":"售後狀態更新","s07393bc40b879b70":"賣家說明","se9b5d944cc4b72c2":"申請時間","sa997850650073dfd":"賣家超時未發貨","s4857afee920b0ed9":"處理時限：","secd8a0c1a36693fc":"申請售後","s4a9c18b7b45305bd":"退款訂單號與請求不一致","s207d77f2a5294357":"退款狀態格式有誤","s9d72e58af4a23952":"該商品已關閉評論","sd1005c4482ca2e97":" 星","s9385944716c2ed5e":"不評分","s73a5e8108381d813":"商品評分（選填）","sdf24c3bc5c3dc874":"分享使用體驗或提出問題（5–500 字）","s16950541902212bc":"評論內容","s4588f2bf30efdcde":"領取優惠券","sa26be489f87fb4d8":"優惠券已停用","sa8ca24030fc46331":"優惠券已領完","s318e9ef0e71a5e97":"已停止領取","s22ebde21493e1177":"賣家暫停領取","s8c0dd0e8ecb46c40":"優惠券已過期","sbfe8b73275c84810":"尚未開始領取","saa5fa17d9249ec87":"優惠券資料格式有誤","sccabce4ef8be0814":"優惠券連結無效","s15712a17084e1dd3":"列表資料格式有誤","s7c348c349ca33032":"銷量","s40c5340bc430b081":"上架","s5cfd07c0021fd2bf":"在售","s270346cf890d1540":"缺少店鋪資料","s219045b1df2953a4":"還沒有收藏商品","sfa9a68e9983d000e":"沒有已隱藏的商品","s2fa4f18941487a11":"搜尋收藏的商品","s2cc5b6e7db7790be":"搜尋已隱藏的商品","s2abc3ad8d471e2ea":"不感興趣","s5a1220c895cfc20c":"登入士多後繼續","s95676f3863aa6819":"確認轉 Credit 處理","sc4870943d389f6d0":"確認未完成退款","sc775716a00e9ab4f":"確認已退款","s96e71ec6687b5db6":"登記核對結果","sa9653b95bcdf2258":"管理員核查後重試","s6e3aa6e41f728c9b":"提醒處理時限","s898759d3b5df8bb4":"通知處理時限","sa25fa068d68bfcea":"賣家主動退款","sc54a6d9e57fd58ff":"超時保障退款","sb028bcfeba09af56":"管理員改判退款","s89e537190996045d":"管理員拒絕申請","se2eb8a9585c9ee50":"管理員同意退款","s78c65447fd46474b":"超時自動同意退款","sa2a80799ad768a5f":"轉 Credit 處理","s64a5b415a7cee086":"退款結果待核對","saf5d792906390b7e":"退款執行失敗","s1e58b0b7106132ba":"退款成功","s7b615b1e5c5898b0":"賣家拒絕申請","s3c0d34d587326860":"賣家同意退款","sec009989916d5f60":"更新協商記錄","s378ff6b9c4c3d3c5":"賣家聯絡協商","sce03c133cfb0a2f6":"已轉 Credit 處理","sc34a286d3ffdd17a":"申請已拒絕","s9696e9a6176b5875":"已退款","s49555c71afb8439e":"退款執行中","s398c4c6e272a7034":"協商中","s3d93dd93e3fc3534":"等待賣家處理","s8e78f846ac547449":"其他問題","s4f4651beaef1b6dc":"賣家已同意退款","se4529a14e7fcfbd7":"重複購買或誤購","s1f287888abbc4243":"與物品描述不符","s1f67ea1e80902ae2":"未收到或無法使用","s2fe0e3339ac4d1bb":"已過期","s9845c165151daee3":"已使用","sfa73ed85e86a3ca9":"未使用","s211daec74a20bd9b":"待生效","s2fe5a8d0eee9f14c":"已失效","s223afe5f1059ab14":"待支付訂單佔用","s5dc260a4e61f85ed":"無門檻","s7722051a54950075":"滿 ","s1ebe460b042cf85e":"該賣家店鋪內商品","s56b16e0de1023604":"指定商品","sd108e8381efc06d9":"賣家：","s9d430a10fe2202b3":"檢視適用商品","sb4b259d532691577":"檢視使用訂單","sd463599969d011fd":"檢視佔用訂單","s5eb76ad8840e54ef":"（北京時間）","sa3e1c18d999a17e0":"優惠規則暫不可用","s5247d8c07d6671a0":" 折 · 僅優惠 1 件","sddb1f6e991316a96":"減 ","s99841da5202b3b44":"請求失敗（HTTP ","sdd4791f810d73e26":"登入已過期，請重新登入士多","s8d7c8cab5abd807b":"士多返回了無法識別的資料，請稍後重試","sc6f910e75ee682d8":"士多會話已失效，請重新登入。","sbd1689042db64ba9":"預設排序","s777b7515784978d6":"請填寫有效的價格範圍","s7aac13a8613a299e":"未能開啟兌換地址，請重試。","s54d4eb146c87c808":"士多返回的兌換地址無效","s7367398deb4a47e2":"讀取兌換地址失敗（HTTP ","sd6f4a5373aad6e48":"訂單已建立，請開啟訂單檢視詳情。","s7f2b31cdd4958f30":"未能確認操作結果，請先檢視當前訂單記錄。","s9719af3666a6d709":"士多沒有接受當前賬號的授權。恢復授權後，請查這筆訂單的原提交結果。","s64f4f48685b1f8c7":"士多未接受本次訂單，請重新查價並核對數量。","s866d7cfe31e9c0a9":" 件 · ","s2cf72adae922915c":"商品 ","sf6a71e815e9e5a03":"當前會話沒有報價許可權","s004a1f63d696a0f6":"當前不可使用","s3e2581c8de380ac7":"優惠券","s8a8835014f8fc799":"有效至 ","s0d60443cb0d51d0f":"優惠券報價無法核對","sc177b1f572e7cbe5":"士多未返回可核對的商品小計","sc33a19956ca7ba6f":"士多返回的報價與當前商品或數量不符","s2076be02c3c77b6c":"士多報價失敗（HTTP ","s6afa877989f0095c":"之前選擇的優惠券已不可用，請核對新報價。","s62f82dbf90e2261c":"不使用優惠券","s3dcbc7f167493e08":"檢視交付內容","sf476a7f4a7324e05":"收起交付內容","s58d16f5f371201fd":"操作未完成，請重新整理訂單核對當前狀態。","s0428aab4b4448b73":"取消訂單","s92a895adf8d4cabe":"取消後將無法繼續支付此訂單。","s921e907911fdcb41":"未允許支付許可權，再次點選支付可重新申請。","sc1300de3847742ed":"登入未完成，請稍後重試。","s96a5252eb6800731":"篩選與排序","se577f60423015be7":"全部 · 預設排序","sc21af8cff389dc62":"全部訂單","s507a693d494112fc":" 單 · ","sb9391b95f32694e9":"累計 ","sba423a4cd4e6daaf":"消費記錄格式有誤","s52b7a60787231b6a":"暫時無法更新統計，仍可進入瀏覽","s7c517652a3a76f14":"店鋪","se4f6f3dbeaa71668":"今日訂單","s8fac7fdbf5293370":"在售商品","s3835ddcf61550a0d":" 張即將到期","sbdabaea1874b52d5":" 筆售後待處理","sec0d9bdb00a4a8f6":"未知狀態","s1536e2eda90d32f6":"商品訂單","s519491f4009ae588":"未讀訊息","s7abacdb0087f2080":"待發貨","s10cbe2deb3b7c481":"待付款","sc489ccfcd6be89aa":"士多會話已失效。","scb446b487481167a":"退款訂單","sf1c91e1d205cdacd":"退款","s69978dcde5ea6571":"已取消訂單","sa37778f17c5f3ee5":"已取消","s7dc06fbbb37f8fad":"已完成訂單","sf28461bb49c85647":"已完成","s2895c2b20b1a2625":"已發貨訂單","s71731805279393ed":"已發貨","sde58f3de67e262b7":"待發貨訂單","s2d1935e332f1f907":"待付款訂單","sabf841909ef2ea18":"當前賬號無權檢視這些訂單。","sb0919c5736a2929c":"訂單列表格式有誤","s68e1bf5ad3f8d4da":"手動發貨","sa975900b2131e6ba":"自動發貨","s64a127e7a4362e4a":"付款已確認，等待交付。","s6c90ab0a5b512d51":"訂單待付款，付款後將按商品約定交付。","scabf4cc16c665b7e":" 前完成付款","sd16179775fe8cd5c":"請在 ","s3822326c2dd5e6a0":"支付結果確認中，請勿重複兌換。","s85e6b8b7b02b9e68":"訂單更新","s0cfd7d0c15fffb49":"管理員完結","s4e55096a8f927d06":"釋放卡密","sfc30896b91951e10":"鎖定卡密","s3e507758e908c27a":"重新發起支付","s62b98eeed00726c1":"拒絕退款","s3a72664b94dd8b6b":"申請退款","s5753d9360845fe80":"訂單退款","s55476a226ba2358c":"訂單過期","s81046af9be9cf885":"確認收貨","sa0ad9ae398bc3a01":"發貨完成","sdc15e33d41055643":"支付成功","sccab0c8070d0d328":"建立訂單","s278e9b28fd230348":"退款時間","s5557418747fee254":"取消時間","s9a62e0a4ea3a9a55":"完成時間","s5109aa0a33677d24":"發貨時間","s2398a62e42a0aa64":"發貨截止","s91bc11e3f6846f89":"支付時間","s07ec86e0f1d44f91":"建立時間","sb734dcee3fe05d10":"應付積分","s43d1a14f6bc6ea09":"優惠金額","sa9c208350d0984d9":"用券規則","sf69fe4df662045fe":"已使用優惠券","sb09a2d3049cddd04":"商品優惠","se6c79dcfa0e277d9":"商品小計","se9e90da1c3d0fbff":"折後單價","s13d0be2d1d7353e7":"商品單價","s5e29d121dda011c5":"數量","s49cf03051f5abf1a":"訂單號與請求不一致","sa9aa135f6f262a6d":"缺少訂單號","s5d7437a5507dced4":"登入士多後檢視訂單和交付內容","s5552b7c46bdc3d3b":"訂單資料格式有誤","s28384d7afd2e4fa6":"失敗","sf2f02049468d5858":"已上傳","sd866ec9a7d32b6ab":"爭議處理中","sce80db80707257c0":"退款失敗","s682c865a6596206e":"退款中","s624ecd8431832fac":"已交付","s723538ac9811968c":"支付確認中","s486841a916dc8195":"正在建立支付","s223933c75e19fbd0":"支付中","s3ef12cc6cf5def3e":"回覆已釋出","sd4784562e9d32d92":"回覆結果待確認，請檢視評論後再操作","sfa428d0151dbe525":"請填寫 2–300 字的回覆","s2f9daa828907b93f":"刪除","s0e31f4514bebc00f":"刪除後無法恢復。","sdd75eaf740e691db":"刪除評論","s5aa0c59cc7fd1ecf":"投票結果待確認，請重新整理評論","s9beb8b855bde1b55":"補貨後將收到士多訊息","s0fe7f3eba65b8356":"已訂閱補貨提醒","sea24d9dcf4e204e3":"訂閱結果待確認，請重新整理狀態","sb1a1d6de9d23b030":"補貨提醒","scf12d8965d963dbb":"補貨訂閱資訊與商品不符","s884c21cec01313b8":"回覆資料格式有誤","s96ad893e23d431a4":"未通過稽核","s3b1ca312efe2c48e":"人工稽核中","sa9f71b911f2a8c3d":"稽核中","sd268eeff212acfb0":"已購","s0d0e1a86b3aa7877":"使用者","sfd4c868608ac0a90":"暫無評論","sd530c5e0e1bd9fbf":"評論 / 回覆","s60a53514eb9228a2":"收藏","sf5b387262ff5cfb0":"已評分","sb336a174cd1fad05":"暫無","s96fff2e26c8d1027":"評分","s37b37671fe05f8bf":" 條回覆","s9ae8f7e3040d7243":"檢視 ","s6c1c0e938154410d":"評論資料格式有誤","s35a3f02c30142959":" · 自動交付","s23de95a46b56c688":"等級要求 TL","sab759003b69321ce":" · 已售 ","s125a9cb8d9febcfb":" · 庫存 ","s756762e293f2aaff":"未提供","s5d951bd7b39d6c18":"上架於 ","sa8c81f93f2e0e3b6":"瀏覽","sca5925bbe51da62e":"已售","s780c5fd5b10533dc":"庫存","s6d6a04a208f4e713":"測試商品","sef54ef474f212e68":"需要信任等級 TL","s1f52a1fef3c5d484":"立即兌換","s5b3fc0b4aab278b0":"檢視兌換方式","s98f29129e4c2872d":"暫時無法核對購買資格，請重新整理重試","sa3b33b3ab38fa434":"不能兌換自己的商品","s65564586c6c43042":"測試中，僅賣家可兌換","sb62def848b501231":"當前不可兌換","s293b79c6bdbbe907":"已售罄","sf35ab98b06c5258a":"找不到這件商品","sda2ab914f56556c1":"分類載入失敗，可重新整理重試","sfcce7beb612d612b":" 件商品","s4f6e41e46c462f96":"商品列表格式有誤","se38a10936ac904b9":"熱銷","s5242eb617ce81955":"高價","sff7d8ec24621b8d9":"低價","s569af1a47dbdf053":"最新","sf098218a3032a625":"已拒絕","s8fb733f152961629":"待人工稽核","s88e7b1ccfff8009a":"已下架","s3b899ac238bb1f09":"已售 ","s55df57d3e94a2368":"庫存 ","s2a48697cc1b4ea6c":"士多甄選","sb1920c528cf40491":"士多優選","s5f9f1409615a5128":"廣告","s58fdb0941f368f2b":"商品","seabdd88a46bf9a21":"小店","s22bc037be323ad0f":"外鏈商品","s2e93b02a6f2d933d":"自動髮卡","se3e9fb6561bfe947":"原價 ","s1e25aae959390c1e":"% 優惠","s9bc9f11e9775d439":"暫時無法讀取士多資料","s421f465daee806a8":" 件","s59dc719b13fdb599":" · 當前可購 ","s56633c891d3ab356":"限購 ","s3de42d7c68d442e5":"單次","s23585a20337f6184":"累計","s4ce3054e7c4d0257":" 天","s5b65ef657f02a679":"近 ","sf203d577d14268cd":"不限","sa9de3856851f3c5c":"」階段未完成，請重試。","s20984aefd9487eb6":"登入在「","sde4fcca95f6a6543":"賬號校驗","s32d233f6464ee2c8":"會話交換","s361f7cbad397d2e4":"服務回撥","s3aa35136afde01c7":"Connect 授權","s51c45ddf0c4840e6":"服務初始化","s498d796710b55608":"請先登入 FluxDO 的 Linux DO 賬號。","sbf7e8a9c9bbe7153":"未允許登入所需許可權，再次點選登入可重新申請。","s2542ab87c696a53f":"《LD士多服務條款》","s38976f51257967ea":"使用 Linux DO 賬號登入","s032ae3edc42ee704":"使用 Linux DO 賬號登入後，可收藏商品、領取優惠券並檢視訂單。請先閱讀士多服務條款。","s0b3ef1aaa9b25b45":"登入 LD士多","s1209094cb006abd9":"篩選商品","se4422147cb5f43ab":"我計程車多","sa2f105eb28a119ee":"反饋商品問題","s7f281f3b43f16289":"在網頁中檢視商品","sfe50ca8078f7c44b":"退款與售後","s2629d5778dd57bbb":"重新整理訂單","s231cbc4337c5a60c":"全部已讀","s7881bea001a5cf2a":"網站訊息中心","s87ad624a17ddd445":"沒有符合條件的商品","s98c2fe486054cba8":"搜尋商品","s5842a1b334e25391":"在網頁中瀏覽士多","s142d98f2cd299938":"恢復展示","s404b8693416b46b7":"隱藏於","s012a274f36559018":"收藏於","scb5d682bac3d1a2d":"重置","sd06bc6efdd8cd7e2":"檢視結果","sa96c9a854190874d":"排序","s30dd299ea738185b":"價格範圍 · LDC","s6126a4897fa07b4f":"最低價","s632a5d8a277e99ea":"最高價","sbd83436d082ee571":"僅顯示有庫存的商品","sb8784c8dd5636ff2":"重試","s3d43be34e14fae36":"檢視店鋪商品","sf5e765cb4d828b14":"賣家主頁","s64717955bcfdb7ca":"商品說明","s68fe685324cbdee2":"商品評論","s1d345684bc1e9c7f":"寫評論","se27882c866cfb391":"贊同","s25be83fba61bb37d":"不贊同","scf945e21ddefbb46":"回覆","s4899a3328d1fa181":"舉報評論","s1eb1a110e96f31ca":"暫無可見回覆","s6d1cc8074d748015":"更多回復","se856ce979d5683fa":"重新載入評論","s6394005b5e43f108":"更多評論","saf05b87cf68d5a3a":"單價","s548698f65a7ee317":"選擇優惠券","s4d7c423e3f207066":"重新整理報價","s2c29ca57e91b35b8":"用原提交號重試","sc3b71cac9531042d":"訂單已建立","s752d28f376e7e568":"檢視訂單並支付","s312df1d94869a0b7":"結束本次兌換","s302a580b360cf4f3":"暫時無法讀取本機訂單記錄，請稍後重新進入。","s8aad9cb2c74870c1":"確認兌換","sc05f158a78b4dd8b":"核對上次提交","s5a81eab27ec5cfa4":"尚未確認是否建單。先查詢結果，避免重複兌換。","s1463dfab073b8d92":"查詢提交結果","s7ecfc6324003a374":"沒有符合條件的訂單","s23fca5e0cf735421":"立即支付","sd9b9458b1f9aeb95":"重新兌換","s2013cc3e7da92777":"發貨內容","s883c8ac33813aa48":"內容已隱藏，點選檢視","sc05a5ec1dcd01f0e":"複製全部發貨內容","scb4ba40bf823511d":"使用說明","sea747b67dc72a371":"訂單資訊","s93191de5ef4c9d51":"交付方式","s977f0f7e3be0f674":"訂單號","sf64372f7124dd37a":"Credit 交易號","s58ab796c884b3be6":"訂單動態","scf47f68aa081cd42":"檢查支付狀態","sc7506e73058704ad":"重新讀取訂單","sb55f062234929621":"登入士多","s7c7dea47f57597f4":"我的訂單","s7c2fda7ef4a1229c":"付款、交付與售後","s9385bfefca5882f1":"我的收藏","s731c8bf2f14a1505":"我的優惠券","s29d8e8ee6822135d":"我的舉報","sb3761fb805dae671":"士多訊息","s06662ffb634d236a":"消費記錄","safd4b783536b8297":"收起","s00bd3960fea8ea98":"展開","sc851b18ea7468bf2":"還沒有已成交的購買記錄","s12eef4bda73517ed":"最近訂單","s505300b3e94d139b":"暫無此類優惠券","s40781b5ae18a7791":"適用範圍","s70ef22633d147df5":"使用門檻","s9ca4b75d03266b03":"到期時間","s4f36b7386724d9ed":"使用時間","s62a1ed5fddc26e97":"實際優惠","s7f74393abb0c15c0":"檢視我的優惠券","sd2b84e4a68d0bd59":"生效時間","s36740655c7a6d33e":"剩餘 / 總量","se267d0400c5a542d":"提交評論","s3100cd7e8ee297e3":"評論將公開展示，請勿填寫訂單密碼或其他敏感資訊。","se65a563bd197b5af":"爭議處理說明","sd4f1dfe69b992741":"重新整理進度","sf89453d5f5ae6e3a":"暫無在售商品","sb7979a6ddc595bd0":"暫無系統訊息","s675cdf65d059a70b":"搜尋訊息","s8a081cf0f6700a98":"有訊息更新，點選重新整理","sa748cc074f78de00":"檢視詳情","s93e263e95fd87cc5":"舉報已提交","s188aa3bd1defffc6":"可在原記錄補充說明並檢視處理進度。","s1e9603e7ce911612":"檢視進度","s16b0eccf6ef89f98":"提交舉報","sc387350be02b0559":"舉報資訊僅用於平臺核查，請勿填寫完整卡密、賬號密碼或金鑰。","s83f08c796de74e01":"釋出回覆","s11172f6108a171b2":"暫無舉報記錄","sf62360f6e574f0b5":"處理結果","s3e307948d45152c8":"舉報時的內容","secf1507b4b6f918d":"在網站檢視私密證據","sa00b23e3dbc3f545":"處理歷史","s83f2f700be77a9a3":"訂單詳情","sba6e878e45e6b560":"LD士多","sf6c1322ffbdc91da":"確認訂單","s8c091c69ffb991f0":"商品詳情","s0bfca7bdd2207da4":"發表評論","s2956ef2102f957cd":"店鋪商品","s24b4092bc5b123ac":"舉報進度"},"zh_HK":{"s71ef3f727b039321":"標記已讀","sd5615e4d51457956":"將士多的全部系統消息標記為已讀。","s4d3eebf1cf765ace":"全部標記已讀","s4ce218874bc990ad":"系統消息","s79a07d520e433d2e":"消息數據格式有誤","s06c3614b35663015":"登錄士多後查看消息","s94b7513eaddb2f53":"系統通知","sdd7c11a05ef9f1b1":"Credit 處理通知","scf8d44ab3daffce5":"退款待核對通知","saefd0a5dced6b22c":"退款異常通知","s116db2538e69ac79":"退款成功通知","s5642ebf2112063f7":"退款處理中","s3462f4a8311ffae4":"甄選服務到期通知","s9370278cffb19f9a":"甄選服務生效通知","se5788379b068e4bb":"賣家補貨提醒","s05a63ab155c111a5":"退款核對結果","s2da6bf03ef3b59fc":"商品發貨提醒","s1fe7861208bd1c1a":"商品補貨通知","s71f6b905342c52bf":"評論回覆通知","s0acf8dcc2c723a29":"商品評論通知","sf8075580c9d9f470":"庫存下架提醒","sfbce1b50b6e93616":"商品下架通知","s8a5b4a8f3d8603d4":"賣家履約記錄通知","s8bb51a4e532febe0":"發貨保障通知","sed90548f75d8ac52":"賣家發貨時限提醒","s5f68685ab537d735":"待發貨提醒","sefdd1a47e4beb2f9":"已讀","s4d0680f9efaef147":"未讀","s5c55a67935af8f45":"全部","s3ab8cc15939f3b5c":"退出登錄","s7458ac806336744d":"退出後仍可瀏覽商品。再次兑換時需要重新授權。","s385b320ec821e694":"退出士多登錄","s787cce5d0f45e4b3":"。請核對最新售後狀態後再操作。","s9ebe36f8cf23673a":"確認提交","s243145b86bc8cca5":"\n提交後由士多和賣家處理，可在這裏查看進度。","s358c8cffed6d643f":"訂單 ","s11a588ca6973412b":"提交退款申請","s67d4213837fb139c":"請選擇退款原因，並填寫 10–500 字的問題描述","s8d60e9fef9b93e67":"當前訂單不可提交新的退款申請","s426e458a41246bd5":"已領取","s204fdaf68d08d9c6":"領取結果待確認，請刷新優惠券","s9056a72ae79cc23b":"評論已提交，以士多審核結果為準","se7b74796e3c2a48a":"請填寫 5–500 字的評論","sdc3b32db862a0f9d":"收藏商品","s471dd4d7f86954d0":"已收藏","sa8781c16e303179d":"請先登錄士多","sd7159d5ff330e286":"補充説明已提交","s37cf48ee1551d050":"複核申請已提交","s4c7cea065f28c871":"請填寫 5–1000 字的説明","sa986a3f4e6101aa4":"舉報結果待確認，請在舉報記錄中核對","sf3e0799eeaa896af":"請選擇分類，並填寫 5–500 字的問題説明","s1064520a8ea0d8b4":"舉報處理與訂單退款分別進行。私密截圖可在網站查看與補充。","s9046c12a6c6edbb8":"私密證據","sd9271468c38979b0":"處理記錄","sfb1201488f728ed7":"問題説明或新證據","s6f3ebd2d3e876212":"補充説明","s4f0c56a792e4a383":"提交複核申請","s9bd5801df1a90cd7":"舉報記錄與請求不符","s4f912dc1d089ee8a":"舉報對象無效","sdfb34a4f32ae5e15":"已結案","sa35ef95361b84d05":"待補充","s75da31470d2f9d7e":"待跟進","s7eae90ab25b8de47":"未採納","s36a2442a4df541ba":"舉報記錄格式有誤","s454a437615153df5":"關聯訂單號（可選）","s177af5bd4d7ccca1":"請説明具體問題，不要填寫卡密或密碼（5–500 字）","sb110d4b5ef2f54e5":"詳細説明","s6b6cde10fd0fb7d2":"問題分類","s592bec925cebd79d":"舉報問題","s3376176cc70d2779":"回覆 ","s8d87cbe9b975b61c":"回覆內容","s3056d666ea7764b8":"回覆評論","s30685985e63dcbc7":" · 複核中","s9640aa814a6a5b65":"狀態待核對","sf720037410abd938":"商品 #","sd2909f1647e7c891":"其他","s97d25b0cffd19183":"事實爭議","sf4d93c0b59ca2698":"辱罵騷擾","s919470833d4c2776":"隱私泄露","s584a7ab2c5cdb847":"購買異常","sedc91cd8c41638ea":"疑似欺詐或違規轉售","sae996b192f4a2c24":"推廣引流","s722bd268f67ae593":"描述或價格不符","s3e88557d5c9145ab":"無法使用或交付異常","s01967a97b5821e88":"已轉交售後","s2372bb37d195fac0":"未確認違規","s9889ca492688ee3e":"已確認問題","s1e45077397dd8af8":"核查中","s9079f70305629280":"待受理","s722b05bb01971697":"已聯繫賣家協商","s6bf7765f66d223f3":"請説明具體問題（10–500 字）","s6a11331de9003411":"問題描述","s0ae01e9c7ed540de":"退款原因","s5b50d7c4b5950dc5":"系統","s910887705c7a66d2":"平台","s6d6a63f93c43899e":"買家","sd6074d12387baea1":"賣家","s96fb25b3bf5d61df":"售後狀態更新","s07393bc40b879b70":"賣家説明","se9b5d944cc4b72c2":"申請時間","sa997850650073dfd":"賣家超時未發貨","s4857afee920b0ed9":"處理時限：","secd8a0c1a36693fc":"申請售後","s4a9c18b7b45305bd":"退款訂單號與請求不一致","s207d77f2a5294357":"退款狀態格式有誤","s9d72e58af4a23952":"該商品已關閉評論","sd1005c4482ca2e97":" 星","s9385944716c2ed5e":"不評分","s73a5e8108381d813":"商品評分（選填）","sdf24c3bc5c3dc874":"分享使用體驗或提出問題（5–500 字）","s16950541902212bc":"評論內容","s4588f2bf30efdcde":"領取優惠券","sa26be489f87fb4d8":"優惠券已停用","sa8ca24030fc46331":"優惠券已領完","s318e9ef0e71a5e97":"已停止領取","s22ebde21493e1177":"賣家暫停領取","s8c0dd0e8ecb46c40":"優惠券已過期","sbfe8b73275c84810":"尚未開始領取","saa5fa17d9249ec87":"優惠券數據格式有誤","sccabce4ef8be0814":"優惠券鏈接無效","s15712a17084e1dd3":"列表數據格式有誤","s7c348c349ca33032":"銷量","s40c5340bc430b081":"上架","s5cfd07c0021fd2bf":"在售","s270346cf890d1540":"缺少店鋪資料","s219045b1df2953a4":"還沒有收藏商品","sfa9a68e9983d000e":"沒有已隱藏的商品","s2fa4f18941487a11":"搜索收藏的商品","s2cc5b6e7db7790be":"搜索已隱藏的商品","s2abc3ad8d471e2ea":"不感興趣","s5a1220c895cfc20c":"登錄士多後繼續","s95676f3863aa6819":"確認轉 Credit 處理","sc4870943d389f6d0":"確認未完成退款","sc775716a00e9ab4f":"確認已退款","s96e71ec6687b5db6":"登記核對結果","sa9653b95bcdf2258":"管理員核查後重試","s6e3aa6e41f728c9b":"提醒處理時限","s898759d3b5df8bb4":"通知處理時限","sa25fa068d68bfcea":"賣家主動退款","sc54a6d9e57fd58ff":"超時保障退款","sb028bcfeba09af56":"管理員改判退款","s89e537190996045d":"管理員拒絕申請","se2eb8a9585c9ee50":"管理員同意退款","s78c65447fd46474b":"超時自動同意退款","sa2a80799ad768a5f":"轉 Credit 處理","s64a5b415a7cee086":"退款結果待核對","saf5d792906390b7e":"退款執行失敗","s1e58b0b7106132ba":"退款成功","s7b615b1e5c5898b0":"賣家拒絕申請","s3c0d34d587326860":"賣家同意退款","sec009989916d5f60":"更新協商記錄","s378ff6b9c4c3d3c5":"賣家聯繫協商","sce03c133cfb0a2f6":"已轉 Credit 處理","sc34a286d3ffdd17a":"申請已拒絕","s9696e9a6176b5875":"已退款","s49555c71afb8439e":"退款執行中","s398c4c6e272a7034":"協商中","s3d93dd93e3fc3534":"等待賣家處理","s8e78f846ac547449":"其他問題","s4f4651beaef1b6dc":"賣家已同意退款","se4529a14e7fcfbd7":"重複購買或誤購","s1f287888abbc4243":"與物品描述不符","s1f67ea1e80902ae2":"未收到或無法使用","s2fe0e3339ac4d1bb":"已過期","s9845c165151daee3":"已使用","sfa73ed85e86a3ca9":"未使用","s211daec74a20bd9b":"待生效","s2fe5a8d0eee9f14c":"已失效","s223afe5f1059ab14":"待支付訂單佔用","s5dc260a4e61f85ed":"無門檻","s7722051a54950075":"滿 ","s1ebe460b042cf85e":"該賣家店鋪內商品","s56b16e0de1023604":"指定商品","sd108e8381efc06d9":"賣家：","s9d430a10fe2202b3":"查看適用商品","sb4b259d532691577":"查看使用訂單","sd463599969d011fd":"查看佔用訂單","s5eb76ad8840e54ef":"（北京時間）","sa3e1c18d999a17e0":"優惠規則暫不可用","s5247d8c07d6671a0":" 折 · 僅優惠 1 件","sddb1f6e991316a96":"減 ","s99841da5202b3b44":"請求失敗（HTTP ","sdd4791f810d73e26":"登錄已過期，請重新登錄士多","s8d7c8cab5abd807b":"士多返回了無法識別的數據，請稍後重試","sc6f910e75ee682d8":"士多會話已失效，請重新登錄。","sbd1689042db64ba9":"默認排序","s777b7515784978d6":"請填寫有效的價格範圍","s7aac13a8613a299e":"未能打開兑換地址，請重試。","s54d4eb146c87c808":"士多返回的兑換地址無效","s7367398deb4a47e2":"讀取兑換地址失敗（HTTP ","sd6f4a5373aad6e48":"訂單已創建，請打開訂單查看詳情。","s7f2b31cdd4958f30":"未能確認操作結果，請先查看當前訂單記錄。","s9719af3666a6d709":"士多沒有接受當前賬號的授權。恢復授權後，請查這筆訂單的原提交結果。","s64f4f48685b1f8c7":"士多未接受本次訂單，請重新查價並核對數量。","s866d7cfe31e9c0a9":" 件 · ","s2cf72adae922915c":"商品 ","sf6a71e815e9e5a03":"當前會話沒有報價權限","s004a1f63d696a0f6":"當前不可使用","s3e2581c8de380ac7":"優惠券","s8a8835014f8fc799":"有效至 ","s0d60443cb0d51d0f":"優惠券報價無法核對","sc177b1f572e7cbe5":"士多未返回可核對的商品小計","sc33a19956ca7ba6f":"士多返回的報價與當前商品或數量不符","s2076be02c3c77b6c":"士多報價失敗（HTTP ","s6afa877989f0095c":"之前選擇的優惠券已不可用，請核對新報價。","s62f82dbf90e2261c":"不使用優惠券","s3dcbc7f167493e08":"查看交付內容","sf476a7f4a7324e05":"收起交付內容","s58d16f5f371201fd":"操作未完成，請刷新訂單核對當前狀態。","s0428aab4b4448b73":"取消訂單","s92a895adf8d4cabe":"取消後將無法繼續支付此訂單。","s921e907911fdcb41":"未允許支付權限，再次點擊支付可重新申請。","sc1300de3847742ed":"登錄未完成，請稍後重試。","s96a5252eb6800731":"篩選與排序","se577f60423015be7":"全部 · 默認排序","sc21af8cff389dc62":"全部訂單","s507a693d494112fc":" 單 · ","sb9391b95f32694e9":"累計 ","sba423a4cd4e6daaf":"消費記錄格式有誤","s52b7a60787231b6a":"暫時無法更新統計，仍可進入瀏覽","s7c517652a3a76f14":"店鋪","se4f6f3dbeaa71668":"今日訂單","s8fac7fdbf5293370":"在售商品","s3835ddcf61550a0d":" 張即將到期","sbdabaea1874b52d5":" 筆售後待處理","sec0d9bdb00a4a8f6":"未知狀態","s1536e2eda90d32f6":"商品訂單","s519491f4009ae588":"未讀消息","s7abacdb0087f2080":"待發貨","s10cbe2deb3b7c481":"待付款","sc489ccfcd6be89aa":"士多會話已失效。","scb446b487481167a":"退款訂單","sf1c91e1d205cdacd":"退款","s69978dcde5ea6571":"已取消訂單","sa37778f17c5f3ee5":"已取消","s7dc06fbbb37f8fad":"已完成訂單","sf28461bb49c85647":"已完成","s2895c2b20b1a2625":"已發貨訂單","s71731805279393ed":"已發貨","sde58f3de67e262b7":"待發貨訂單","s2d1935e332f1f907":"待付款訂單","sabf841909ef2ea18":"當前賬號無權查看這些訂單。","sb0919c5736a2929c":"訂單列表格式有誤","s68e1bf5ad3f8d4da":"手動發貨","sa975900b2131e6ba":"自動發貨","s64a127e7a4362e4a":"付款已確認，等待交付。","s6c90ab0a5b512d51":"訂單待付款，付款後將按商品約定交付。","scabf4cc16c665b7e":" 前完成付款","sd16179775fe8cd5c":"請在 ","s3822326c2dd5e6a0":"支付結果確認中，請勿重複兑換。","s85e6b8b7b02b9e68":"訂單更新","s0cfd7d0c15fffb49":"管理員完結","s4e55096a8f927d06":"釋放卡密","sfc30896b91951e10":"鎖定卡密","s3e507758e908c27a":"重新發起支付","s62b98eeed00726c1":"拒絕退款","s3a72664b94dd8b6b":"申請退款","s5753d9360845fe80":"訂單退款","s55476a226ba2358c":"訂單過期","s81046af9be9cf885":"確認收貨","sa0ad9ae398bc3a01":"發貨完成","sdc15e33d41055643":"支付成功","sccab0c8070d0d328":"創建訂單","s278e9b28fd230348":"退款時間","s5557418747fee254":"取消時間","s9a62e0a4ea3a9a55":"完成時間","s5109aa0a33677d24":"發貨時間","s2398a62e42a0aa64":"發貨截止","s91bc11e3f6846f89":"支付時間","s07ec86e0f1d44f91":"創建時間","sb734dcee3fe05d10":"應付積分","s43d1a14f6bc6ea09":"優惠金額","sa9c208350d0984d9":"用券規則","sf69fe4df662045fe":"已使用優惠券","sb09a2d3049cddd04":"商品優惠","se6c79dcfa0e277d9":"商品小計","se9e90da1c3d0fbff":"折後單價","s13d0be2d1d7353e7":"商品單價","s5e29d121dda011c5":"數量","s49cf03051f5abf1a":"訂單號與請求不一致","sa9aa135f6f262a6d":"缺少訂單號","s5d7437a5507dced4":"登錄士多後查看訂單和交付內容","s5552b7c46bdc3d3b":"訂單數據格式有誤","s28384d7afd2e4fa6":"失敗","sf2f02049468d5858":"已上傳","sd866ec9a7d32b6ab":"爭議處理中","sce80db80707257c0":"退款失敗","s682c865a6596206e":"退款中","s624ecd8431832fac":"已交付","s723538ac9811968c":"支付確認中","s486841a916dc8195":"正在創建支付","s223933c75e19fbd0":"支付中","s3ef12cc6cf5def3e":"回覆已發佈","sd4784562e9d32d92":"回覆結果待確認，請查看評論後再操作","sfa428d0151dbe525":"請填寫 2–300 字的回覆","s2f9daa828907b93f":"刪除","s0e31f4514bebc00f":"刪除後無法恢復。","sdd75eaf740e691db":"刪除評論","s5aa0c59cc7fd1ecf":"投票結果待確認，請刷新評論","s9beb8b855bde1b55":"補貨後將收到士多消息","s0fe7f3eba65b8356":"已訂閲補貨提醒","sea24d9dcf4e204e3":"訂閲結果待確認，請刷新狀態","sb1a1d6de9d23b030":"補貨提醒","scf12d8965d963dbb":"補貨訂閲信息與商品不符","s884c21cec01313b8":"回覆數據格式有誤","s96ad893e23d431a4":"未通過審核","s3b1ca312efe2c48e":"人工審核中","sa9f71b911f2a8c3d":"審核中","sd268eeff212acfb0":"已購","s0d0e1a86b3aa7877":"用户","sfd4c868608ac0a90":"暫無評論","sd530c5e0e1bd9fbf":"評論 / 回覆","s60a53514eb9228a2":"收藏","sf5b387262ff5cfb0":"已評分","sb336a174cd1fad05":"暫無","s96fff2e26c8d1027":"評分","s37b37671fe05f8bf":" 條回覆","s9ae8f7e3040d7243":"查看 ","s6c1c0e938154410d":"評論數據格式有誤","s35a3f02c30142959":" · 自動交付","s23de95a46b56c688":"等級要求 TL","sab759003b69321ce":" · 已售 ","s125a9cb8d9febcfb":" · 庫存 ","s756762e293f2aaff":"未提供","s5d951bd7b39d6c18":"上架於 ","sa8c81f93f2e0e3b6":"瀏覽","sca5925bbe51da62e":"已售","s780c5fd5b10533dc":"庫存","s6d6a04a208f4e713":"測試商品","sef54ef474f212e68":"需要信任等級 TL","s1f52a1fef3c5d484":"立即兑換","s5b3fc0b4aab278b0":"查看兑換方式","s98f29129e4c2872d":"暫時無法核對購買資格，請刷新重試","sa3b33b3ab38fa434":"不能兑換自己的商品","s65564586c6c43042":"測試中，僅賣家可兑換","sb62def848b501231":"當前不可兑換","s293b79c6bdbbe907":"已售罄","sf35ab98b06c5258a":"找不到這件商品","sda2ab914f56556c1":"分類加載失敗，可刷新重試","sfcce7beb612d612b":" 件商品","s4f6e41e46c462f96":"商品列表格式有誤","se38a10936ac904b9":"熱銷","s5242eb617ce81955":"高價","sff7d8ec24621b8d9":"低價","s569af1a47dbdf053":"最新","sf098218a3032a625":"已拒絕","s8fb733f152961629":"待人工審核","s88e7b1ccfff8009a":"已下架","s3b899ac238bb1f09":"已售 ","s55df57d3e94a2368":"庫存 ","s2a48697cc1b4ea6c":"士多甄選","sb1920c528cf40491":"士多優選","s5f9f1409615a5128":"廣告","s58fdb0941f368f2b":"商品","seabdd88a46bf9a21":"小店","s22bc037be323ad0f":"外鏈商品","s2e93b02a6f2d933d":"自動髮卡","se3e9fb6561bfe947":"原價 ","s1e25aae959390c1e":"% 優惠","s9bc9f11e9775d439":"暫時無法讀取士多數據","s421f465daee806a8":" 件","s59dc719b13fdb599":" · 當前可購 ","s56633c891d3ab356":"限購 ","s3de42d7c68d442e5":"單次","s23585a20337f6184":"累計","s4ce3054e7c4d0257":" 天","s5b65ef657f02a679":"近 ","sf203d577d14268cd":"不限","sa9de3856851f3c5c":"」階段未完成，請重試。","s20984aefd9487eb6":"登錄在「","sde4fcca95f6a6543":"賬號校驗","s32d233f6464ee2c8":"會話交換","s361f7cbad397d2e4":"服務回調","s3aa35136afde01c7":"Connect 授權","s51c45ddf0c4840e6":"服務初始化","s498d796710b55608":"請先登錄 FluxDO 的 Linux DO 賬號。","sbf7e8a9c9bbe7153":"未允許登錄所需權限，再次點擊登錄可重新申請。","s2542ab87c696a53f":"《LD士多服務條款》","s38976f51257967ea":"使用 Linux DO 賬號登錄","s032ae3edc42ee704":"使用 Linux DO 賬號登錄後，可收藏商品、領取優惠券並查看訂單。請先閲讀士多服務條款。","s0b3ef1aaa9b25b45":"登錄 LD士多","s1209094cb006abd9":"篩選商品","se4422147cb5f43ab":"我的士多","sa2f105eb28a119ee":"反饋商品問題","s7f281f3b43f16289":"在網頁中查看商品","sfe50ca8078f7c44b":"退款與售後","s2629d5778dd57bbb":"刷新訂單","s231cbc4337c5a60c":"全部已讀","s7881bea001a5cf2a":"網站消息中心","s87ad624a17ddd445":"沒有符合條件的商品","s98c2fe486054cba8":"搜索商品","s5842a1b334e25391":"在網頁中瀏覽士多","s142d98f2cd299938":"恢復展示","s404b8693416b46b7":"隱藏於","s012a274f36559018":"收藏於","scb5d682bac3d1a2d":"重置","sd06bc6efdd8cd7e2":"查看結果","sa96c9a854190874d":"排序","s30dd299ea738185b":"價格範圍 · LDC","s6126a4897fa07b4f":"最低價","s632a5d8a277e99ea":"最高價","sbd83436d082ee571":"僅顯示有庫存的商品","sb8784c8dd5636ff2":"重試","s3d43be34e14fae36":"查看店鋪商品","sf5e765cb4d828b14":"賣家主頁","s64717955bcfdb7ca":"商品説明","s68fe685324cbdee2":"商品評論","s1d345684bc1e9c7f":"寫評論","se27882c866cfb391":"贊同","s25be83fba61bb37d":"不贊同","scf945e21ddefbb46":"回覆","s4899a3328d1fa181":"舉報評論","s1eb1a110e96f31ca":"暫無可見回覆","s6d1cc8074d748015":"更多回復","se856ce979d5683fa":"重新加載評論","s6394005b5e43f108":"更多評論","saf05b87cf68d5a3a":"單價","s548698f65a7ee317":"選擇優惠券","s4d7c423e3f207066":"刷新報價","s2c29ca57e91b35b8":"用原提交號重試","sc3b71cac9531042d":"訂單已創建","s752d28f376e7e568":"查看訂單並支付","s312df1d94869a0b7":"結束本次兑換","s302a580b360cf4f3":"暫時無法讀取本機訂單記錄，請稍後重新進入。","s8aad9cb2c74870c1":"確認兑換","sc05f158a78b4dd8b":"核對上次提交","s5a81eab27ec5cfa4":"尚未確認是否建單。先查詢結果，避免重複兑換。","s1463dfab073b8d92":"查詢提交結果","s7ecfc6324003a374":"沒有符合條件的訂單","s23fca5e0cf735421":"立即支付","sd9b9458b1f9aeb95":"重新兑換","s2013cc3e7da92777":"發貨內容","s883c8ac33813aa48":"內容已隱藏，點擊查看","sc05a5ec1dcd01f0e":"複製全部發貨內容","scb4ba40bf823511d":"使用説明","sea747b67dc72a371":"訂單信息","s93191de5ef4c9d51":"交付方式","s977f0f7e3be0f674":"訂單號","sf64372f7124dd37a":"Credit 交易號","s58ab796c884b3be6":"訂單動態","scf47f68aa081cd42":"檢查支付狀態","sc7506e73058704ad":"重新讀取訂單","sb55f062234929621":"登錄士多","s7c7dea47f57597f4":"我的訂單","s7c2fda7ef4a1229c":"付款、交付與售後","s9385bfefca5882f1":"我的收藏","s731c8bf2f14a1505":"我的優惠券","s29d8e8ee6822135d":"我的舉報","sb3761fb805dae671":"士多消息","s06662ffb634d236a":"消費記錄","safd4b783536b8297":"收起","s00bd3960fea8ea98":"展開","sc851b18ea7468bf2":"還沒有已成交的購買記錄","s12eef4bda73517ed":"最近訂單","s505300b3e94d139b":"暫無此類優惠券","s40781b5ae18a7791":"適用範圍","s70ef22633d147df5":"使用門檻","s9ca4b75d03266b03":"到期時間","s4f36b7386724d9ed":"使用時間","s62a1ed5fddc26e97":"實際優惠","s7f74393abb0c15c0":"查看我的優惠券","sd2b84e4a68d0bd59":"生效時間","s36740655c7a6d33e":"剩餘 / 總量","se267d0400c5a542d":"提交評論","s3100cd7e8ee297e3":"評論將公開展示，請勿填寫訂單密碼或其他敏感信息。","se65a563bd197b5af":"爭議處理説明","sd4f1dfe69b992741":"刷新進度","sf89453d5f5ae6e3a":"暫無在售商品","sb7979a6ddc595bd0":"暫無系統消息","s675cdf65d059a70b":"搜索消息","s8a081cf0f6700a98":"有消息更新，點擊刷新","sa748cc074f78de00":"查看詳情","s93e263e95fd87cc5":"舉報已提交","s188aa3bd1defffc6":"可在原記錄補充説明並查看處理進度。","s1e9603e7ce911612":"查看進度","s16b0eccf6ef89f98":"提交舉報","sc387350be02b0559":"舉報信息僅用於平台核查，請勿填寫完整卡密、賬號密碼或密鑰。","s83f08c796de74e01":"發佈回覆","s11172f6108a171b2":"暫無舉報記錄","sf62360f6e574f0b5":"處理結果","s3e307948d45152c8":"舉報時的內容","secf1507b4b6f918d":"在網站查看私密證據","sa00b23e3dbc3f545":"處理歷史","s83f2f700be77a9a3":"訂單詳情","sba6e878e45e6b560":"LD士多","sf6c1322ffbdc91da":"確認訂單","s8c091c69ffb991f0":"商品詳情","s0bfca7bdd2207da4":"發表評論","s2956ef2102f957cd":"店鋪商品","s24b4092bc5b123ac":"舉報進度"}},titles={"orders":"s7c7dea47f57597f4","order":"s83f2f700be77a9a3","market":"sba6e878e45e6b560","review":"sf6c1322ffbdc91da","product":"s8c091c69ffb991f0","favorites":"s9385bfefca5882f1","coupons":"s731c8bf2f14a1505","coupon":"s4588f2bf30efdcde","refund":"sfe50ca8078f7c44b","comment":"s0bfca7bdd2207da4","merchant":"s2956ef2102f957cd","filters":"s1209094cb006abd9","account":"se4422147cb5f43ab","messages":"sb3761fb805dae671","reports":"s29d8e8ee6822135d","report":"s24b4092bc5b123ac"};
+ let locale='zh',localeTask=null;const contexts=new Map(),records=new Map();
+ // 文案标记只用于显示，稳定键可随缓存跨版本保留。
+ const prefix='\uE000fluxdo-text:',suffix='\uE001';
+ function __text(key,args=[]){return prefix+key+(args.length?':'+encodeURIComponent(JSON.stringify(args)):'')+suffix;}
+ function resolve(text,depth=0){if(typeof text!=='string'||depth>4)return text;return text.replace(/\uE000fluxdo-text:([a-z0-9]+)(?::([^\uE001]*))?\uE001/g,(_,key,raw)=>{let value=catalogs[locale][key]||catalogs.zh[key]||'';if(raw){let args;try{args=JSON.parse(decodeURIComponent(raw));}catch(_){return '';}value=value.replace(/\{(\d+)\}/g,(_,index)=>resolve(String(args[Number(index)]??''),depth+1));}return value;});}
+ function translate(value){if(typeof value==='string')return resolve(value);if(Array.isArray(value))return value.map(translate);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,translate(v)]));return value;}
+ async function environment(api){if(!api.host?.environment)return;const env=await api.host.environment();const name=String(env.locale||'zh').replaceAll('-','_');locale=/^en/i.test(name)?'en':/^(zh_(HK|MO)|zh_Hant_HK)/i.test(name)?'zh_HK':/^zh_(TW|Hant)/i.test(name)?'zh_TW':'zh';}
+ function client(api){return {...api,toast:(...args)=>api.toast(...args.map(translate)),dialogs:api.dialogs&&{...api.dialogs,confirm:options=>api.dialogs.confirm(translate(options))},notifications:api.notifications&&{...api.notifications,show:options=>api.notifications.show(translate(options))}};}
+ function wrap(ctx){if(typeof ctx.setData!=='function')return {...ctx,api:client(ctx.api)};contexts.set(ctx.surface,ctx);const data=records.get(ctx.surface)||new Map();records.set(ctx.surface,data);ctx.setData('i18n',catalogs[locale]);ctx.setData('pageTitle',data.has('pageTitle')?translate(data.get('pageTitle')):catalogs[locale][titles[ctx.page]]||'');return {...ctx,api:client(ctx.api),setData:(key,value)=>{data.set(key,value);ctx.setData(key,translate(value));}};}
+ const fluxdo={...client(host),on:(name,fn)=>host.on(name,async(ctx,args)=>{try{if(ctx.api.host?.environment)await (localeTask??=environment(ctx.api).catch(()=>{}));if(name==='page.resume'||name==='card.resume'){await environment(ctx.api);const source=contexts.get(ctx.surface);if(source)for(const [key,value]of records.get(ctx.surface)||[])source.setData(key,translate(value));}return await fn(wrap(ctx),args);}finally{if(name==='surface.close'){contexts.delete(ctx.surface);records.delete(ctx.surface);}}})};
+ // 每个页面独立保存筛选和分页，晚到的请求不能覆盖新筛选的结果。
 const api = 'https://api2.ldspro.qzz.io/api/shop';
 // 士多协议由插件实现，宿主提供网络、凭证、Connect 与收银台。
 const ldStore = (() => {
@@ -110,10 +123,10 @@ const ldStore = (() => {
       const account = await client.user.get();
       if (!account?.id) throw Error('oauth_account_required');
       if (!await client.dialogs.confirm({
-        title:'登录 LD士多',
-        message:'使用 Linux DO 账号登录后，可收藏商品、领取优惠券并查看订单。请先阅读士多服务条款。',
-        confirmLabel:'使用 Linux DO 账号登录',
-        agreement:{label:'《LD士多服务条款》',url:'https://ldcstore.com/docs/terms'},
+        title:__text("s0b3ef1aaa9b25b45"),
+        message:__text("s032ae3edc42ee704"),
+        confirmLabel:__text("s38976f51257967ea"),
+        agreement:{label:__text("s2542ab87c696a53f"),url:'https://ldcstore.com/docs/terms'},
       })) return false;
       const pkce = await client.crypto.pkce();
       const initial = await jsonRequest(client,
@@ -172,12 +185,12 @@ const ldStore = (() => {
       return true;
     } catch (error) {
       if (captured) await client.credentials.remove('account');
-      if (error.message === 'oauth_permission_denied') throw Error('未允许登录所需权限，再次点击登录可重新申请。');
-      if (error.message === 'oauth_account_required') throw Error('请先登录 FluxDO 的 Linux DO 账号。');
+      if (error.message === 'oauth_permission_denied') throw Error(__text("sbf7e8a9c9bbe7153"));
+      if (error.message === 'oauth_account_required') throw Error(__text("s498d796710b55608"));
       const reason = /^[a-z_0-9]+$/.test(error.message || '') ? error.message : 'request_failed';
       console.warn('login stage=' + stage + ' reason=' + reason);
-      const label = {initialize:'服务初始化',authorization:'Connect 授权',callback:'服务回调',exchange:'会话交换',verification:'账号校验'};
-      throw Error('登录在「' + label[stage] + '」阶段未完成，请重试。');
+      const label = {initialize:__text("s51c45ddf0c4840e6"),authorization:__text("s3aa35136afde01c7"),callback:__text("s361f7cbad397d2e4"),exchange:__text("s32d233f6464ee2c8"),verification:__text("sde4fcca95f6a6543")};
+      throw Error(__text("s20984aefd9487eb6") + label[stage] + __text("sa9de3856851f3c5c"));
     }
   }
 
@@ -365,7 +378,7 @@ function setNotificationSummary(value) {
   for(const s of views.values()) {
     if(!s.ctx)continue;
     if(s.overviewStats) {
-      s.overviewStats=s.overviewStats.map(stat=>stat.label==='未读消息' ? {...stat,value:display(Math.max(0,Number(value.totalUnread)||0))} : stat);
+      s.overviewStats=s.overviewStats.map(stat=>stat.label===__text("s519491f4009ae588") ? {...stat,value:display(Math.max(0,Number(value.totalUnread)||0))} : stat);
       s.ctx.setData('stats',s.overviewStats);
     }
     if(s.ctx.page==='messages')s.ctx.setData('unread',(Number(value.systemUnread)||0)>0);
@@ -454,7 +467,7 @@ fluxdo.on('stream.state',(ctx,args)=>{
       notificationBlocked=true;stopNotificationFallback();
       for(const s of views.values())if(s.ctx?.page==='messages'){
         s.seq++;s.rows=[];s.more=false;s.loading=false;s.messagesChanged=false;s.messagesLoaded=false;s.messagesCheckPending=false;
-        write(s.ctx,{rows:[],more:false,loading:false,loadingMore:false,messagesChanged:false,needsSession:true,authorized:false,error:'士多会话已失效，请重新登录。'});
+        write(s.ctx,{rows:[],more:false,loading:false,loadingMore:false,messagesChanged:false,needsSession:true,authorized:false,error:__text("sc6f910e75ee682d8")});
       }
     } else scheduleNotificationFallback();
   }
@@ -473,7 +486,7 @@ function stockValue(p) {
 }
 function stockLabel(p) {
   const n = stockValue(p);
-  return n === -1 ? '不限' : n === null ? '未提供' : String(n);
+  return n === -1 ? __text("sf203d577d14268cd") : n === null ? __text("s756762e293f2aaff") : String(n);
 }
 function purchaseBounds(p, link) {
   const stock = stockValue(p), rule = p.purchaseLimit || p.purchase_limit || {};
@@ -487,8 +500,8 @@ function purchaseBounds(p, link) {
   const limit = Math.min(5000, link || stock === -1 ? 5000 : stock || 0, limited ? cap : 5000,
     mode === 'per_user' && !rule.bypassed && remaining != null ? remaining : 5000);
   const period = Number(rule.periodDays ?? rule.period_days ?? p.purchaseLimitPeriodDays ?? p.purchase_limit_period_days);
-  let label = limited ? (mode === 'per_user' ? (period > 0 ? '近 '+period+' 天' : '累计') : '单次')+'限购 '+cap+' 件' : '';
-  if (mode === 'per_user' && remaining != null && !rule.bypassed) label += ' · 当前可购 '+remaining+' 件';
+  let label = limited ? (mode === 'per_user' ? (period > 0 ? __text("s5b65ef657f02a679")+period+__text("s4ce3054e7c4d0257") : __text("s23585a20337f6184")) : __text("s3de42d7c68d442e5"))+__text("s56633c891d3ab356")+cap+__text("s421f465daee806a8") : '';
+  if (mode === 'per_user' && remaining != null && !rule.bypassed) label += __text("s59dc719b13fdb599")+remaining+__text("s421f465daee806a8");
   return {limit, label, buy:p.canPurchase !== false && !exhausted && limit > 0};
 }
 function params(obj) {
@@ -498,7 +511,7 @@ function params(obj) {
 async function read(path, withSession) {
   const res = await fluxdo.fetch(api + path, withSession ? {credential:'account'} : {});
   if (!res.ok) {
-    const error = Error('请求失败（HTTP ' + res.status + '）');
+    const error = Error(__text("s99841da5202b3b44") + res.status + '）');
     error.status = res.status;
     if (res.status === 409) {
       try {const body = res.json(); error.code = (body.error && body.error.code) || body.code;}
@@ -507,7 +520,7 @@ async function read(path, withSession) {
     throw error;
   }
   const result = res.json();
-  if (!result.success || !result.data) throw Error('暂时无法读取士多数据');
+  if (!result.success || !result.data) throw Error(__text("s9bc9f11e9775d439"));
   return result.data;
 }
 async function readPublic(path,session) {
@@ -549,7 +562,7 @@ function refreshView(ctx) {
   const s = market(ctx);
   if (!s || s.hidden || s.paymentBusy || s.orderBusy) return;
   s.dirty = false;
-  if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) return loadBuyerPage(ctx,false);
+  if (['favorites','coupons','coupon','refund','comment','merchant','reports','report'].includes(ctx.page)) return loadBuyerPage(ctx,false);
   if (ctx.page === 'order' || ctx.page === 'orders') return loadOrders(ctx,false);
   if (ctx.page === 'review' || ctx.page === 'product') return detail(ctx);
   if (ctx.page === 'account' || ctx.page == null) return loadOverview(ctx);
@@ -567,19 +580,19 @@ function productView(raw) {
   const type=p.productType || p.type || 'normal';
   return {id:display(p.id),title:display(p.name),image,hiddenItem:false,preferenceTime:'',
     price:money(value),value:Number.isFinite(value) ? value.toFixed(2) : '—',original,
-    discount:original ? Math.round((1-value/base)*100)+'% 优惠' : '',originalLabel:original ? '原价 '+original : '',
-    type, typeLabel:({cdk:'自动发卡',normal:flag(p.autoDelivery) ? '自动发货' : '手动发货',link:'外链商品',store:'小店'})[type] || '商品',
-    listingNote:[p.duoPromotion?.kind==='paid' ? '广告' : '',flag(p.isPinned) && flag(p.pinIsPaid) ? (p.pinType==='category' ? '士多优选' : '士多甄选') : '',flag(p.isTestMode) ? '测试商品' : ''].filter(Boolean).join(' · '),
+    discount:original ? Math.round((1-value/base)*100)+__text("s1e25aae959390c1e") : '',originalLabel:original ? __text("se3e9fb6561bfe947")+original : '',
+    type, typeLabel:({cdk:__text("s2e93b02a6f2d933d"),normal:flag(p.autoDelivery) ? __text("sa975900b2131e6ba") : __text("s68e1bf5ad3f8d4da"),link:__text("s22bc037be323ad0f"),store:__text("seabdd88a46bf9a21")})[type] || __text("s58fdb0941f368f2b"),
+    listingNote:[p.duoPromotion?.kind==='paid' ? __text("s5f9f1409615a5128") : '',flag(p.isPinned) && flag(p.pinIsPaid) ? (p.pinType==='category' ? __text("sb1920c528cf40491") : __text("s2a48697cc1b4ea6c")) : '',flag(p.isTestMode) ? __text("s6d6a04a208f4e713") : ''].filter(Boolean).join(' · '),
     typeIcon:({cdk:'key',normal:'gift',link:'link',store:'storefront'})[type] || 'gift',
-    category:display(p.categoryName), stock:'库存 '+stockLabel(p),sold:'已售 '+display(p.soldCount ?? 0),
+    category:display(p.categoryName), stock:__text("s55df57d3e94a2368")+stockLabel(p),sold:__text("s3b899ac238bb1f09")+display(p.soldCount ?? 0),
     sellerName:display(p.sellerName || p.sellerUsername),sellerUsername:display(p.sellerUsername),sellerAvatar:accountAvatar({avatar:p.sellerAvatar,avatarUrl:p.sellerAvatarUrl}),
-    availability:({offline:'已下架',inactive:'已下架',offline_manual:'已下架',pending:'审核中',pending_ai:'审核中',pending_manual:'待人工审核',rejected:'已拒绝',ai_rejected:'已拒绝',manual_rejected:'已拒绝'})[p.status] || '',
-    test:flag(p.isTestMode),info:money(value)+' · 库存 '+stockLabel(p)};
+    availability:({offline:__text("s88e7b1ccfff8009a"),inactive:__text("s88e7b1ccfff8009a"),offline_manual:__text("s88e7b1ccfff8009a"),pending:__text("sa9f71b911f2a8c3d"),pending_ai:__text("sa9f71b911f2a8c3d"),pending_manual:__text("s8fb733f152961629"),rejected:__text("sf098218a3032a625"),ai_rejected:__text("sf098218a3032a625"),manual_rejected:__text("sf098218a3032a625")})[p.status] || '',
+    test:flag(p.isTestMode),info:money(value)+__text("s125a9cb8d9febcfb")+stockLabel(p)};
 }
 const sortOptions = [
-  {label:'默认排序',sort:'updated_at',direction:'DESC'},{label:'最新',sort:'created_at',direction:'DESC'},
-  {label:'低价',sort:'final_price',direction:'ASC'},{label:'高价',sort:'final_price',direction:'DESC'},
-  {label:'热销',sort:'sold_count',direction:'DESC'}
+  {label:__text("sbd1689042db64ba9"),sort:'updated_at',direction:'DESC'},{label:__text("s569af1a47dbdf053"),sort:'created_at',direction:'DESC'},
+  {label:__text("sff7d8ec24621b8d9"),sort:'final_price',direction:'ASC'},{label:__text("s5242eb617ce81955"),sort:'final_price',direction:'DESC'},
+  {label:__text("se38a10936ac904b9"),sort:'sold_count',direction:'DESC'}
 ];
 const slateIdPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 function showFilters(ctx,s) {
@@ -587,7 +600,7 @@ function showFilters(ctx,s) {
   write(ctx,{
     categories:(s.categories || []).map(c => ({...c,selected:c.id === s.cat,variant:mark(c.id === s.cat)})),
     sorts:sortOptions.map(o => ({...o,selected:o.sort === s.sort && o.direction === s.direction,variant:mark(o.sort === s.sort && o.direction === s.direction)})),
-    selection:(s.catName || '全部') + ' · ' + (s.sortName || '默认排序')
+    selection:(s.catName || __text("s5c55a67935af8f45")) + ' · ' + (s.sortName || __text("sbd1689042db64ba9"))
   });
 }
 async function load(ctx, more) {
@@ -617,7 +630,7 @@ async function load(ctx, more) {
     const result = await readPublic('/products?' + params(q));
     if (market(ctx) !== s || seq !== s.seq) return;
     const products = result.products;
-    if (!Array.isArray(products)) throw Error('商品列表格式有误');
+    if (!Array.isArray(products)) throw Error(__text("s4f6e41e46c462f96"));
     const seen = new Set(more ? s.rows.map(r => r.id) : []);
     const rows = products.filter(product=>{if(product?.id==null || seen.has(String(product.id)))return false;seen.add(String(product.id));return true;}).map(productView);
     s.rows = more ? s.rows.concat(rows) : rows; s.page = page;
@@ -629,7 +642,7 @@ async function load(ctx, more) {
     }
     s.more = typeof paging.hasMore === 'boolean' ? paging.hasMore :
       !!s.cursor || page < Number(paging.totalPages) || page * 12 < Number(paging.total);
-    write(ctx,{rows:s.rows, more:s.more, message:'',total:display(paging.total ?? s.rows.length)+' 件商品'});
+    write(ctx,{rows:s.rows, more:s.more, message:'',total:display(paging.total ?? s.rows.length)+__text("sfcce7beb612d612b")});
   } catch (e) {
     if (more && s.cursor && e.code === 'RANKING_CURSOR_STALE' && seq === s.seq) return load(ctx,false);
     if (seq === s.seq) write(ctx,{message:String(e.message),more:s.more,webFallback:true});
@@ -640,14 +653,14 @@ async function load(ctx, more) {
 async function categories(ctx) {
   const s = market(ctx), revision = s.categoryRevision = (s.categoryRevision || 0) + 1;
   const current = () => market(ctx) === s && revision === s.categoryRevision;
-  const base = [{id:'',name:'全部'}];
+  const base = [{id:'',name:__text("s5c55a67935af8f45")}];
   if (!s.categories) {s.categories = base; showFilters(ctx,s);}
   try {
     const data = await readPublic('/categories');
     if (!current()) return;
     s.categories = base.concat(data.categories.map(c => ({id:String(c.id),name:c.name})));
     showFilters(ctx,s);ctx.setData('categoryMessage','');
-  } catch (_) {if (current()) ctx.setData('categoryMessage','分类加载失败，可刷新重试');}
+  } catch (_) {if (current()) ctx.setData('categoryMessage',__text("sda2ab914f56556c1"));}
 }
 async function detail(ctx) {
   const s = market(ctx);
@@ -678,10 +691,10 @@ async function detail(ctx) {
     }
     const p = normalizeOrderData(productData.product);
     if (seq !== s.seq || market(ctx) !== s) return;
-    if (!p || p.id == null || String(p.id) !== String(ctx.params.id)) throw Error('找不到这件商品');
+    if (!p || p.id == null || String(p.id) !== String(ctx.params.id)) throw Error(__text("sf35ab98b06c5258a"));
     s.id = String(p.id);
     s.favorited = p.isFavorited === true;
-    write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? '已收藏' : '收藏商品',buyerError:''});
+    write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? __text("s471dd4d7f86954d0") : __text("sdc3b32db862a0f9d"),buyerError:''});
     s.product=p;
     s.linkProduct = ['link','store'].includes(p.productType || p.type);
     ctx.setData('linkProduct',s.linkProduct);
@@ -690,26 +703,26 @@ async function detail(ctx) {
     const currentAccount = auth.authorized ? await ctx.api.user.get() : null;
     if (seq !== s.seq || market(ctx) !== s) return;
     const own = !!currentAccount && (!p.sellerSite || p.sellerSite==='linux.do') && String(p.sellerUserId)===String(currentAccount.id);
-    let blocked = !s.linkProduct && stockValue(s.product)===0 ? '已售罄' : !bounds.buy ? '当前不可兑换' : '';
-    if (!s.linkProduct && flag(p.isTestMode) && !own) blocked='测试中，仅卖家可兑换';
-    if (!s.linkProduct && !flag(p.isTestMode) && own) blocked='不能兑换自己的商品';
+    let blocked = !s.linkProduct && stockValue(s.product)===0 ? __text("s293b79c6bdbbe907") : !bounds.buy ? __text("sb62def848b501231") : '';
+    if (!s.linkProduct && flag(p.isTestMode) && !own) blocked=__text("s65564586c6c43042");
+    if (!s.linkProduct && !flag(p.isTestMode) && own) blocked=__text("sa3b33b3ab38fa434");
     // 有登录态时核对士多认可的等级，最终库存和购买限制仍以核价接口为准。
     const required=Number(s.product.purchaseTrustLevel || 0);
     if (required>0 && auth.authorized) {
       try {
         const viewer=normalizeOrderData(await read('/auth/verify',true));
-        if (Number(viewer.user?.trustLevel ?? viewer.trustLevel ?? 0)<required) blocked='需要信任等级 TL'+required;
-      } catch (_) { blocked='暂时无法核对购买资格，请刷新重试'; }
+        if (Number(viewer.user?.trustLevel ?? viewer.trustLevel ?? 0)<required) blocked=__text("sef54ef474f212e68")+required;
+      } catch (_) { blocked=__text("s98f29129e4c2872d"); }
       if (seq !== s.seq || market(ctx) !== s) return;
     }
     bounds.buy = !blocked && (s.linkProduct || bounds.buy);
     const view=productView(p);
-    write(ctx,{...view,product:view,buyLabel:blocked || (s.linkProduct ? '查看兑换方式' : '立即兑换'),
+    write(ctx,{...view,product:view,buyLabel:blocked || (s.linkProduct ? __text("s5b3fc0b4aab278b0") : __text("s1f52a1fef3c5d484")),
       quantityValue:s.quantity || 1,quantityMax:bounds.limit,
-      rules:[bounds.label, required>0 ? '需要信任等级 TL'+required : '', flag(p.isTestMode) ? '测试商品' : ''].filter(Boolean),
+      rules:[bounds.label, required>0 ? __text("sef54ef474f212e68")+required : '', flag(p.isTestMode) ? __text("s6d6a04a208f4e713") : ''].filter(Boolean),
       sellerProfileAvailable:!!p.sellerUsername && (!p.sellerSite || p.sellerSite==='linux.do'),
-      metrics:[{label:'库存',value:stockLabel(p)},{label:'已售',value:display(s.product.soldCount ?? 0)},{label:'浏览',value:display(s.product.viewCount ?? 0)}],
-      listedAt:s.product.createdAt ? '上架于 '+storeDate(s.product.createdAt) : ''});
+      metrics:[{label:__text("s780c5fd5b10533dc"),value:stockLabel(p)},{label:__text("sca5925bbe51da62e"),value:display(s.product.soldCount ?? 0)},{label:__text("sa8c81f93f2e0e3b6"),value:display(s.product.viewCount ?? 0)}],
+      listedAt:s.product.createdAt ? __text("s5d951bd7b39d6c18")+storeDate(s.product.createdAt) : ''});
     s.buy = bounds.buy;
     const unit = Number(view.value);
     s.unit = Number.isFinite(unit) && unit >= 0 ? unit : NaN;
@@ -718,24 +731,25 @@ async function detail(ctx) {
     s.quoteEnabled = ctx.page === 'review' && s.buy && !s.linkProduct && auth.authorized && (auth.queries || []).includes('orderQuote');
     clearQuote(ctx,s,!!s.quoteDisplayed && s.quoteEnabled);
     write(ctx,{ready:true,initialLoading:false,title:display(p.name),description:display(p.description),image:view.image,
-      seller:'卖家：' + (display(p.sellerName || p.sellerUsername) || '未提供'),
+      seller:__text("sd108e8381efc06d9") + (display(p.sellerName || p.sellerUsername) || __text("s756762e293f2aaff")),
       price:money(s.unit),canAdd:s.buy && s.quantity < s.limit,canRemove:s.buy && s.quantity > 1,
       quantity:String(s.quantity),quantityValue:s.quantity,quantityMax:s.limit,estimate:money(s.unit*s.quantity),
-      details:display(p.categoryName) + ' · 库存 ' + stockLabel(p) +
-        ' · 已售 ' + display(p.soldCount),
-      conditions:'等级要求 TL' + display(p.purchaseTrustLevel || 0) +
+      details:display(p.categoryName) + __text("s125a9cb8d9febcfb") + stockLabel(p) +
+        __text("sab759003b69321ce") + display(p.soldCount),
+      conditions:__text("s23de95a46b56c688") + display(p.purchaseTrustLevel || 0) +
         (bounds.label ? ' · ' + bounds.label : '') +
-        (flag(p.autoDelivery) ? ' · 自动交付' : ''), buy:s.buy});
+        (flag(p.autoDelivery) ? __text("s35a3f02c30142959") : ''), buy:s.buy});
     if (s.quoteEnabled && (!s.record || s.record.state === 'idle')) await quote(ctx);
-    if (ctx.page === 'product') loadComments(ctx,false);
+    if (ctx.page === 'product') {loadComments(ctx,false);loadRestock(ctx);}
   } catch (e) {if (seq === s.seq) ctx.setData('error',String(e.message));}
   finally {if (seq === s.seq) write(ctx,{loading:false,initialLoading:false});}
 }
 async function loadComments(ctx,more) {
   const s = market(ctx);
   if (!s || ctx.page !== 'product' || (more && s.commentsLoading)) return;
+  const accountRevision=identityRevision;
   const revision = s.commentsRevision = (s.commentsRevision || 0) + 1;
-  const current = () => market(ctx) === s && s.commentsRevision === revision;
+  const current = () => market(ctx) === s && s.commentsRevision === revision && identityRevision===accountRevision;
   const page = more ? (s.commentsPage || 1) + 1 : 1;s.commentsRetryMore=more;
   s.commentsLoading = true;
   write(ctx,{commentsLoading:true,commentsError:''});
@@ -743,21 +757,21 @@ async function loadComments(ctx,more) {
     const data = normalizeOrderData(await readPublic('/products/' + encodeURIComponent(ctx.params.id) +
       '/comments?page=' + page + '&pageSize=10'));
     if (!current()) return;
-    if (!Array.isArray(data.comments)) throw Error('评论数据格式有误');
+    if (!Array.isArray(data.comments)) throw Error(__text("s6c1c0e938154410d"));
     const visible=data.commentEnabled===false ? [] : data.comments;
     const rows = visible.map(c => ({...commentRow(c),replyCount:Number(c.replyCount || 0),
-      replyLabel:Number(c.replyCount)>0 ? '查看 '+c.replyCount+' 条回复' : '',replies:[],repliesOpen:false,repliesLoading:false,repliesMore:false,repliesError:'',repliesEmpty:false}));
+      replyLabel:Number(c.replyCount)>0 ? __text("s9ae8f7e3040d7243")+c.replyCount+__text("s37b37671fe05f8bf") : '',replies:[],repliesOpen:false,repliesLoading:false,repliesMore:false,repliesError:'',repliesEmpty:false}));
     const previous = more && data.commentEnabled!==false ? s.comments || [] : [];
     s.comments = mergeRows(previous,rows);
     s.commentsPage = page;
     const paging = data.pagination || {};
     const summary=data.summary || {};
     write(ctx,{comments:s.comments,commentsMore:hasNextPage(paging,page,rows.length,10),commentStatsReady:!!data.summary,
-      commentStats:[{label:'评分',value:Number(summary.ratedCount)>0 ? Number(summary.averageRating).toFixed(1)+' / 5' : '暂无'},
-        {label:'已评分',value:display(summary.ratedCount ?? 0)},{label:'收藏',value:display(summary.favoriteCount ?? 0)},
-        {label:'评论 / 回复',value:display(summary.visibleCommentCount ?? paging.total ?? 0)+' / '+display(summary.visibleReplyCount ?? 0)}],
+      commentStats:[{label:__text("s96fff2e26c8d1027"),value:Number(summary.ratedCount)>0 ? Number(summary.averageRating).toFixed(1)+' / 5' : __text("sb336a174cd1fad05")},
+        {label:__text("sf5b387262ff5cfb0"),value:display(summary.ratedCount ?? 0)},{label:__text("s60a53514eb9228a2"),value:display(summary.favoriteCount ?? 0)},
+        {label:__text("sd530c5e0e1bd9fbf"),value:display(summary.visibleCommentCount ?? paging.total ?? 0)+' / '+display(summary.visibleReplyCount ?? 0)}],
       canComment:data.commentEnabled === true,
-      commentsMessage:data.commentEnabled === false ? display(data.disabledReason) || '该商品已关闭评论' : s.comments.length ? '' : '暂无评论'});
+      commentsMessage:data.commentEnabled === false ? display(data.disabledReason) || __text("s9d72e58af4a23952") : s.comments.length ? '' : __text("sfd4c868608ac0a90")});
   } catch (e) {
     if (current()) ctx.setData('commentsError',String(e.message));
   } finally {
@@ -767,12 +781,13 @@ async function loadComments(ctx,more) {
 function commentRow(c) {
   const user=c.user || c;
   const rating=c.ratingValue ?? c.rating;
-  return {id:String(c.id),author:display(user.nickname || user.username || c.nickname || c.username) || '用户',
+  return {id:String(c.id),canDelete:c.canDelete===true,interactive:['ai_approved','manual_approved','approved'].includes(c.status),
+    upvoteCount:Number(c.upvoteCount)||0,downvoteCount:Number(c.downvoteCount)||0,upLabel:display(c.upvoteCount||0),downLabel:display(c.downvoteCount||0),votedUp:c.viewerVote==='up',votedDown:c.viewerVote==='down',viewerVote:display(c.viewerVote),author:display(user.nickname || user.username || c.nickname || c.username) || __text("s0d0e1a86b3aa7877"),
     handle:user.nickname && user.username && user.nickname!==user.username ? '@'+user.username : '',
     avatar:accountAvatar(user) || accountAvatar(c),time:storeTime(c.createdAt),content:display(c.content),
-    badge:[flag(c.isSeller) ? '卖家' : '',flag(c.isPurchased) ? '已购' : ''].filter(Boolean).join(' · '),
+    badge:[flag(c.isSeller) ? __text("sd6074d12387baea1") : '',flag(c.isPurchased) ? __text("sd268eeff212acfb0") : ''].filter(Boolean).join(' · '),
     rating:flag(c.isPurchased) && Number(rating)>=1 && Number(rating)<=5 ? String(rating)+' / 5' : '',
-    moderation:({pending:'审核中',pending_ai:'审核中',pending_manual:'人工审核中',ai_rejected:'未通过审核',manual_rejected:'未通过审核',rejected:'未通过审核'})[c.status] || ''};
+    moderation:({pending:__text("sa9f71b911f2a8c3d"),pending_ai:__text("sa9f71b911f2a8c3d"),pending_manual:__text("s3b1ca312efe2c48e"),ai_rejected:__text("s96ad893e23d431a4"),manual_rejected:__text("s96ad893e23d431a4"),rejected:__text("s96ad893e23d431a4")})[c.status] || ''};
 }
 async function loadReplies(ctx,id,more=false) {
   const s=market(ctx),row=s?.comments?.find(c=>c.id===id);
@@ -783,7 +798,7 @@ async function loadReplies(ctx,id,more=false) {
   try {
     const data=normalizeOrderData(await readPublic('/comments/'+encodeURIComponent(id)+'/replies?page='+page+'&pageSize=10'));
     if(!current())return;
-    if(!Array.isArray(data.replies))throw Error('回复数据格式有误');
+    if(!Array.isArray(data.replies))throw Error(__text("s884c21cec01313b8"));
     row.replies=mergeRows(more ? row.replies : [],data.replies.map(commentRow));
     row.repliesPage=page;row.repliesMore=hasNextPage(data.pagination,page,data.replies.length,10);
     row.repliesEmpty=row.replies.length===0;
@@ -791,12 +806,61 @@ async function loadReplies(ctx,id,more=false) {
   finally {if(current()){row.repliesLoading=false;ctx.setData('comments',s.comments);}}
 }
 fluxdo.on('commentReplies',(ctx,a)=>loadReplies(ctx,a.id,a.more===true));
+async function loadRestock(ctx){
+  const s=market(ctx),revision=s?.seq;
+  if(!s)return;
+  const eligible=s.product?.productType==='cdk'&&stockValue(s.product)===0;
+  s.restock=null;write(ctx,{restockAvailable:eligible,restockLoading:eligible,restockSubscribed:false,restockLabel:__text("sb1a1d6de9d23b030"),restockError:''});
+  if(!eligible)return;
+  try{
+    if(!(await ldStore.status()).authorized)return;
+    const data=await buyerRequest(ctx,'/products/'+encodeURIComponent(s.id)+'/restock-subscription');
+    if(market(ctx)!==s||s.seq!==revision)return;
+    if(data.productId!=null&&String(data.productId)!==s.id)throw Error(__text("scf12d8965d963dbb"));
+    s.restock=data;write(ctx,{restockSubscribed:data.subscribed===true,restockLabel:data.subscribed?__text("s0fe7f3eba65b8356"):__text("sb1a1d6de9d23b030"),restockAvailable:data.canSubscribe!==false||data.subscribed===true});
+  }catch(error){if(market(ctx)===s&&s.seq===revision)ctx.setData('restockError',error.message);}
+  finally{if(market(ctx)===s&&s.seq===revision)ctx.setData('restockLoading',false);}
+}
+fluxdo.on('subscribeRestock',ctx=>buyerAction(ctx,async s=>{
+  if(s.product?.productType!=='cdk'||stockValue(s.product)!==0||s.restock?.subscribed||s.restock?.canSubscribe===false)return;
+  if(!(await ldStore.status()).authorized)throw Error(__text("sa8781c16e303179d"));
+  try{
+    const data=await buyerRequest(ctx,'/products/'+encodeURIComponent(s.id)+'/restock-subscription','POST');
+    if(!data?.subscribed)throw Error(__text("sea24d9dcf4e204e3"));
+    s.restock=data;write(ctx,{restockSubscribed:true,restockLabel:__text("s0fe7f3eba65b8356")});
+    await ctx.api.toast(__text("s9beb8b855bde1b55"));
+  }catch(error){await loadRestock(ctx);throw error;}
+}));
+fluxdo.on('restockRetry',loadRestock);
+fluxdo.on('commentVote',(ctx,a)=>buyerAction(ctx,async s=>{
+  const row=s.comments?.find(row=>row.id===a.id);if(!row?.interactive||!['up','down'].includes(a.vote))return;
+  const result=await buyerRequest(ctx,'/comments/'+encodeURIComponent(row.id)+'/vote','POST',{voteType:row.viewerVote===a.vote?'':a.vote});
+  if(!result||!['','up','down'].includes(result.viewerVote)||!Number.isInteger(result.upvoteCount)||!Number.isInteger(result.downvoteCount))throw Error(__text("s5aa0c59cc7fd1ecf"));
+  Object.assign(row,{...result,upLabel:String(result.upvoteCount),downLabel:String(result.downvoteCount),votedUp:result.viewerVote==='up',votedDown:result.viewerVote==='down'});ctx.setData('comments',s.comments);
+}));
+fluxdo.on('commentDelete',(ctx,a)=>buyerAction(ctx,async s=>{
+  const row=s.comments?.find(row=>row.id===a.id);if(!row?.canDelete)return;
+  if(!await ctx.api.dialogs.confirm({title:__text("sdd75eaf740e691db"),message:__text("s0e31f4514bebc00f"),confirmLabel:__text("s2f9daa828907b93f")}))return;
+  await buyerRequest(ctx,'/comments/'+encodeURIComponent(row.id),'DELETE');
+  await loadComments(ctx,false);
+}));
+fluxdo.on('reply',(ctx,a)=>{
+  const row=market(ctx)?.comments?.find(row=>row.id===a.id);if(row?.interactive)return fluxdo.navigate('comment',{mode:'reply',id:row.id,productId:ctx.params.id,author:row.author});
+});
+fluxdo.on('postReply',(ctx,a)=>buyerAction(ctx,async s=>{
+  if((ctx.page!=='comment'||ctx.params.mode!=='reply')||s.replySubmitted)return;
+  const content=String(a.values?.content||'').trim();if(content.length<2||content.length>300)throw Error(__text("sfa428d0151dbe525"));
+  const data=await buyerRequest(ctx,'/comments/'+encodeURIComponent(ctx.params.id)+'/replies','POST',{content});
+  if(!data?.reply?.id)throw Error(__text("sd4784562e9d32d92"));
+  s.replySubmitted=true;write(ctx,{replySubmitted:true,replyResult:commentRow(data.reply).moderation||__text("s3ef12cc6cf5def3e")});
+  for(const view of views.values())if(view.ctx?.page==='product'&&view.ctx.params.id===ctx.params.productId)view.commentsStale=true;
+}));
 fluxdo.on('commentsRetry',ctx => loadComments(ctx,market(ctx)?.commentsRetryMore===true));
 fluxdo.on('commentsMore',ctx => loadComments(ctx,true));
 // 分页失败可以继续读同一页，授权失效则清空上一账号的数据。
-const statusLabels = {pending:'待付款',pending_payment:'待付款',paying:'支付中',creating:'正在创建支付',confirming:'支付确认中',paid:'待发货',
-  delivered:'已交付',completed:'已完成',cancelled:'已取消',refunded:'已退款',refund_pending:'退款中',
-  refund_failed:'退款失败',external_dispute:'争议处理中',expired:'已过期',uploaded:'已上传',failed:'失败'};
+const statusLabels = {pending:__text("s10cbe2deb3b7c481"),pending_payment:__text("s10cbe2deb3b7c481"),paying:__text("s223933c75e19fbd0"),creating:__text("s486841a916dc8195"),confirming:__text("s723538ac9811968c"),paid:__text("s7abacdb0087f2080"),
+  delivered:__text("s624ecd8431832fac"),completed:__text("sf28461bb49c85647"),cancelled:__text("sa37778f17c5f3ee5"),refunded:__text("s9696e9a6176b5875"),refund_pending:__text("s682c865a6596206e"),
+  refund_failed:__text("sce80db80707257c0"),external_dispute:__text("sd866ec9a7d32b6ab"),expired:__text("s2fe0e3339ac4d1bb"),uploaded:__text("sf2f02049468d5858"),failed:__text("s28384d7afd2e4fa6")};
 // 与士多网页的订单服务边界一致，兼容接口混合返回的两种字段命名。
 // 显式驼峰字段优先，保留 null、false 和 0 的业务含义。
 function normalizeOrderData(value) {
@@ -867,14 +931,14 @@ function fillOrderImages(ctx,s) {
 }
 function orderSummary(o) {
   if (!o || typeof o.orderNo !== 'string' || !o.orderNo || typeof o.status !== 'string') {
-    throw Error('订单数据格式有误');
+    throw Error(__text("s5552b7c46bdc3d3b"));
   }
   const status = o.displayStatus || o.status;
   const amount = o.amount == null ? o.totalPrice : o.amount;
   const productId=display(o.productId || o.product?.id);
   const image=mediaUrl(o.product?.imageUrl || o.productImage || o.productImageUrl || o.imageUrl) || cachedProductImage(productId);
-  return {no:o.orderNo, title:display(o.product && o.product.name || o.productName) || '商品订单',
-    state:Object.prototype.hasOwnProperty.call(statusLabels,status) ? statusLabels[status] : '未知状态',
+  return {no:o.orderNo, title:display(o.product && o.product.name || o.productName) || __text("s1536e2eda90d32f6"),
+    state:Object.prototype.hasOwnProperty.call(statusLabels,status) ? statusLabels[status] : __text("sec0d9bdb00a4a8f6"),
     amount:amount == null || amount === '' ? '—' : money(amount),
     image,imageLoading:!image && /^[A-Za-z0-9_-]{1,128}$/.test(productId) && !(productImages.get(productId)?.expires>Date.now()),
     productId,seller:display(o.sellerNickname || o.sellerName || o.sellerUsername || o.seller?.username),
@@ -894,24 +958,24 @@ async function loadOrders(ctx, append, silent=false) {
   if(!detailPage && s.ordersQuery!==s.orderStatus){s.rows=[];s.more=false;s.ordersQuery=s.orderStatus;}
   s.loading = true;
   if (!silent) write(ctx,{loading:!append,loadingMore:append,initialLoading:detailPage && !s.order,ready:!!s.order,needsSession:false,error:'',empty:false,rows:s.rows,more:false,
-    hasDelivery:!!s.deliveryText,deliveryText:'',deliveryAction:'查看交付内容'});
+    hasDelivery:!!s.deliveryText,deliveryText:'',deliveryAction:__text("s3dcbc7f167493e08")});
   const sessionMissing = message => {
     clearOrderData(ctx,s);write(ctx,{needsSession:true,authorized:false,error:message});
   };
   try {
     const auth = await ldStore.status();
     if (!current()) return;
-    if (!auth.authorized) {sessionMissing('登录士多后查看订单和交付内容'); return;}
+    if (!auth.authorized) {sessionMissing(__text("s5d7437a5507dced4")); return;}
     ctx.setData('authorized',true);
     if (detailPage) {
       const no = ctx.params.no;
-      if (typeof no !== 'string' || !no) throw Error('缺少订单号');
+      if (typeof no !== 'string' || !no) throw Error(__text("sa9aa135f6f262a6d"));
       const data = normalizeOrderData(
         await read('/orders/' + encodeURIComponent(no) + '?role=buyer', true)
       );
       if (!current()) return;
       const row = orderSummary(data.order);
-      if (row.no !== no) throw Error('订单号与请求不一致');
+      if (row.no !== no) throw Error(__text("s49cf03051f5abf1a"));
       const previous=s.order;
       s.order=data.order;
       if(previous && previous.status!==data.order.status)orderChanged(data.order,s);
@@ -928,28 +992,28 @@ async function loadOrders(ctx, append, silent=false) {
       const couponDiscount=Number(data.order.couponDiscountAmount ?? snapshot.couponDiscountAmount ?? 0);
       const unitPrice=listed>0 ? listed : original/quantity,rate=Number(data.order.product?.discount);
       const reducedUnit=rate>0 && rate<1 ? unitPrice*rate : data.order.productSubtotal!=null && original>total ? total/quantity : unitPrice;
-      const fields=[['数量',String(quantity)],...(unitPrice>0 ? [['商品单价',money(unitPrice)]] : []),
-        ...(reducedUnit>=0 && reducedUnit<unitPrice ? [['折后单价',money(reducedUnit)]] : []),['商品小计',money(total)],
-        ...(original>total ? [['商品优惠','− '+money(original-total)]] : []),
-        ...(couponDiscount>0 ? [['优惠券',display(snapshot.name) || '已使用优惠券'],...(snapshot.discountType ? [['用券规则',couponRule(snapshot)]] : []),['优惠金额','− '+money(couponDiscount)]] : []),
-        ['应付积分',row.amount],...['seller','buyer'].map(role=>[role==='seller' ? '卖家' : '买家',orderParty(data.order,role)]).filter(([,value])=>value)].map(([label,value])=>({label,value}));
-      const times=[['创建时间',data.order.createdAt],['支付时间',data.order.paidAt || data.order.paidTime],['发货截止',data.order.fulfillment?.deadlineAt || data.order.fulfillmentDeadlineAt],['发货时间',data.order.deliveredAt],['完成时间',data.order.completedAt],['取消时间',data.order.cancelledAt],['退款时间',data.order.refundedAt]]
+      const fields=[[__text("s5e29d121dda011c5"),String(quantity)],...(unitPrice>0 ? [[__text("s13d0be2d1d7353e7"),money(unitPrice)]] : []),
+        ...(reducedUnit>=0 && reducedUnit<unitPrice ? [[__text("se9e90da1c3d0fbff"),money(reducedUnit)]] : []),[__text("se6c79dcfa0e277d9"),money(total)],
+        ...(original>total ? [[__text("sb09a2d3049cddd04"),'− '+money(original-total)]] : []),
+        ...(couponDiscount>0 ? [[__text("s3e2581c8de380ac7"),display(snapshot.name) || __text("sf69fe4df662045fe")],...(snapshot.discountType ? [[__text("sa9c208350d0984d9"),couponRule(snapshot)]] : []),[__text("s43d1a14f6bc6ea09"),'− '+money(couponDiscount)]] : []),
+        [__text("sb734dcee3fe05d10"),row.amount],...['seller','buyer'].map(role=>[role==='seller' ? __text("sd6074d12387baea1") : __text("s6d6a63f93c43899e"),orderParty(data.order,role)]).filter(([,value])=>value)].map(([label,value])=>({label,value}));
+      const times=[[__text("s07ec86e0f1d44f91"),data.order.createdAt],[__text("s91bc11e3f6846f89"),data.order.paidAt || data.order.paidTime],[__text("s2398a62e42a0aa64"),data.order.fulfillment?.deadlineAt || data.order.fulfillmentDeadlineAt],[__text("s5109aa0a33677d24"),data.order.deliveredAt],[__text("s9a62e0a4ea3a9a55"),data.order.completedAt],[__text("s5557418747fee254"),data.order.cancelledAt],[__text("s278e9b28fd230348"),data.order.refundedAt]]
         .filter(([,time])=>!!time).map(([label,time])=>({label,value:storeDate(time)}));
-      const logs={create:'创建订单',pay:'支付成功',deliver:'发货完成',complete:'确认收货',cancel:'取消订单',expire:'订单过期',refund:'订单退款',refund_request:'申请退款',refund_reject:'拒绝退款',repay:'重新发起支付',lock_cdk:'锁定卡密',unlock_cdk:'释放卡密',admin_complete:'管理员完结'};
+      const logs={create:__text("sccab0c8070d0d328"),pay:__text("sdc15e33d41055643"),deliver:__text("sa0ad9ae398bc3a01"),complete:__text("s81046af9be9cf885"),cancel:__text("s0428aab4b4448b73"),expire:__text("s55476a226ba2358c"),refund:__text("s5753d9360845fe80"),refund_request:__text("s3a72664b94dd8b6b"),refund_reject:__text("s62b98eeed00726c1"),repay:__text("s3e507758e908c27a"),lock_cdk:__text("sfc30896b91951e10"),unlock_cdk:__text("s4e55096a8f927d06"),admin_complete:__text("s0cfd7d0c15fffb49")};
       const deadline=data.order.payExpiredAt || data.order.expireAt || data.order.expiredAt;
       write(ctx,{orderImage:row.image,orderImageLoading:row.imageLoading,productId:row.productId,quantity:row.quantity,sellerName:row.seller,fields,times,
         tradeNo:display(data.order.ldcTradeNo),usage:display(data.order.product?.description || data.order.productDescription),
-        orderEvents:latestEvents(data.logs).map(e=>({title:logs[e.action] || display(e.action) || '订单更新',message:display(e.remark || e.note || e.message),time:storeDate(e.createdAt || e.time)})),
-        statusNote:awaiting ? confirming ? '支付结果确认中，请勿重复兑换。' : deadline ? '请在 '+storeDate(deadline)+' 前完成付款' : '订单待付款，付款后将按商品约定交付。' : data.order.status==='paid' ? '付款已确认，等待交付。' : '',
+        orderEvents:latestEvents(data.logs).map(e=>({title:logs[e.action] || display(e.action) || __text("s85e6b8b7b02b9e68"),message:display(e.remark || e.note || e.message),time:storeDate(e.createdAt || e.time)})),
+        statusNote:awaiting ? confirming ? __text("s3822326c2dd5e6a0") : deadline ? __text("sd16179775fe8cd5c")+storeDate(deadline)+__text("scabf4cc16c665b7e") : __text("s6c90ab0a5b512d51") : data.order.status==='paid' ? __text("s64a127e7a4362e4a") : '',
         canCheck:awaiting,canRepurchase:!!row.productId,canCancel:awaiting && !confirming});
       s.deliveryText = ['delivered','completed'].includes(data.order.status) && typeof content==='string' ? content : '';
       if(!s.deliveryText)s.revealed=false;
       write(ctx,{ready:true,orderTitle:row.title,orderNo:row.no,state:row.state,amount:row.amount,
         canPay:auth.paymentSupported && ['pending','pending_payment'].includes(data.order.status) && !confirming,
-        paymentAvailable:!s.paymentBusy,cancelLabel:'取消订单',
+        paymentAvailable:!s.paymentBusy,cancelLabel:__text("s0428aab4b4448b73"),
         hasDelivery:!!s.deliveryText,
         deliveryText:s.revealed ? s.deliveryText : '',error:'',
-        delivery:delivery === 'auto' || data.order.productType==='cdk' ? '自动发货' : '手动发货'});
+        delivery:delivery === 'auto' || data.order.productType==='cdk' ? __text("sa975900b2131e6ba") : __text("s68e1bf5ad3f8d4da")});
       scheduleOrderPoll(ctx,s);
     } else {
       const data = normalizeOrderData(
@@ -958,7 +1022,7 @@ async function loadOrders(ctx, append, silent=false) {
         }), true)
       );
       if (!current()) return;
-      if (!Array.isArray(data.orders) || !data.pagination) throw Error('订单列表格式有误');
+      if (!Array.isArray(data.orders) || !data.pagination) throw Error(__text("sb0919c5736a2929c"));
       const rows = data.orders.map(orderSummary), seen = new Set(append ? s.rows.map(r => r.no) : []);
       if(!append)s.rows=[];
       for (const row of rows) {
@@ -971,8 +1035,8 @@ async function loadOrders(ctx, append, silent=false) {
     }
   } catch (e) {
     if (!current()) return;
-    if (e.status === 401 || e.message === 'auth_required') sessionMissing('士多会话已失效。');
-    else if (e.status === 403) sessionMissing('当前账号无权查看这些订单。');
+    if (e.status === 401 || e.message === 'auth_required') sessionMissing(__text("sc489ccfcd6be89aa"));
+    else if (e.status === 403) sessionMissing(__text("sabf841909ef2ea18"));
     else {write(ctx,{error:String(e.message),more:s.more});if(silent)scheduleOrderPoll(ctx,s);}
   } finally {
     if (current()) {s.loading = false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});fillOrderImages(ctx,s);}
@@ -990,10 +1054,10 @@ function scheduleOrderPoll(ctx,s) {
   s.poll=setTimeout(async()=>{s.poll=null;if(market(ctx)===s && !s.hidden) {if(s.paymentBusy || s.loading)scheduleOrderPoll(ctx,s);else await loadOrders(ctx,false,true);}},4000);
 }
 const orderFilters = [
-  {status:'',label:'全部',name:'全部订单'}, {status:'pending',label:'待付款',name:'待付款订单'},
-  {status:'paid',label:'待发货',name:'待发货订单'}, {status:'delivered',label:'已发货',name:'已发货订单'},
-  {status:'completed',label:'已完成',name:'已完成订单'}, {status:'cancelled,expired',label:'已取消',name:'已取消订单'},
-  {status:'refund_pending,refunded,refund_failed,external_dispute',label:'退款',name:'退款订单'},
+  {status:'',label:__text("s5c55a67935af8f45"),name:__text("sc21af8cff389dc62")}, {status:'pending',label:__text("s10cbe2deb3b7c481"),name:__text("s2d1935e332f1f907")},
+  {status:'paid',label:__text("s7abacdb0087f2080"),name:__text("sde58f3de67e262b7")}, {status:'delivered',label:__text("s71731805279393ed"),name:__text("s2895c2b20b1a2625")},
+  {status:'completed',label:__text("sf28461bb49c85647"),name:__text("s7dc06fbbb37f8fad")}, {status:'cancelled,expired',label:__text("sa37778f17c5f3ee5"),name:__text("s69978dcde5ea6571")},
+  {status:'refund_pending,refunded,refund_failed,external_dispute',label:__text("sf1c91e1d205cdacd"),name:__text("scb446b487481167a")},
 ];
 function showOrderFilters(ctx) {
   const status = market(ctx).orderStatus || '';
@@ -1036,7 +1100,7 @@ async function loadAccountIdentity(ctx,refresh=false) {
       if(revision!==identityRevision)return null;
       if(profile.authenticated!==true || String(profile.user?.id)!==String(account.id) ||
         (profile.user?.site || 'linux.do')!=='linux.do') {
-        clearAccountIdentity();const error=Error('士多会话已失效。');error.status=401;throw error;
+        clearAccountIdentity();const error=Error(__text("sc489ccfcd6be89aa"));error.status=401;throw error;
       }
       // 旧会话可直接读取声明，头像不依赖校验接口是否附带完整用户资料。
       const sameClaims=String(claims.sub ?? claims.id)===String(account.id) && (claims.site || 'linux.do')==='linux.do';
@@ -1070,26 +1134,26 @@ async function loadOverview(ctx) {
       const [raw,unread]=await Promise.all([read('/user/attention',true),read('/messages/unread-summary',true)]);
       const data=normalizeOrderData(raw),unreadData=normalizeOrderData(unread);
       if(!current())return;
-      s.overviewStats=[{label:'待付款',value:display(data.pendingPaymentCount ?? 0)},{label:'待发货',value:display(data.awaitingDeliveryCount ?? 0)},
-        {label:'优惠券',value:display(data.unusedCouponCount ?? 0)},{label:'未读消息',value:display(notificationSummary?.totalUnread ?? unreadData.totalUnread ?? 0)}];
+      s.overviewStats=[{label:__text("s10cbe2deb3b7c481"),value:display(data.pendingPaymentCount ?? 0)},{label:__text("s7abacdb0087f2080"),value:display(data.awaitingDeliveryCount ?? 0)},
+        {label:__text("s3e2581c8de380ac7"),value:display(data.unusedCouponCount ?? 0)},{label:__text("s519491f4009ae588"),value:display(notificationSummary?.totalUnread ?? unreadData.totalUnread ?? 0)}];
       ctx.setData('stats',s.overviewStats);
       if(ctx.page==='account') {
-        const recent=(data.recentOrders || []).filter(order=>order.orderNo || order.id).map(order=>({no:display(order.orderNo || order.id),title:display(order.productName) || '商品订单',subtitle:[statusLabels[order.status] || '未知状态',order.amount!=null ? money(order.amount) : ''].filter(Boolean).join(' · ')}));
+        const recent=(data.recentOrders || []).filter(order=>order.orderNo || order.id).map(order=>({no:display(order.orderNo || order.id),title:display(order.productName) || __text("s1536e2eda90d32f6"),subtitle:[statusLabels[order.status] || __text("sec0d9bdb00a4a8f6"),order.amount!=null ? money(order.amount) : ''].filter(Boolean).join(' · ')}));
         write(ctx,{recentOrders:recent,hasRecentOrders:!!recent.length});
         if(s.spendingOpen)await loadSpending(ctx,s);
         if(!current())return;
       }
-      write(ctx,{refundHint:Number(data.refundAttentionCount)>0 ? display(data.refundAttentionCount)+' 笔售后待处理' : '',couponHint:Number(data.expiringCouponCount)>0 ? display(data.expiringCouponCount)+' 张即将到期' : ''});
+      write(ctx,{refundHint:Number(data.refundAttentionCount)>0 ? display(data.refundAttentionCount)+__text("sbdabaea1874b52d5") : '',couponHint:Number(data.expiringCouponCount)>0 ? display(data.expiringCouponCount)+__text("s3835ddcf61550a0d") : ''});
     } else {
       clearPrivateOverview(ctx,s);write(ctx,{accountName:'',accountAvatar:'',accountMeta:'',refundHint:'',couponHint:''});
       const data=await read('/stats');
       if(!current())return;
-      ctx.setData('stats',[{label:'在售商品',value:display(data.products?.online ?? '—')},{label:'今日订单',value:display(data.orders?.today ?? '—')},{label:'店铺',value:display(data.stores ?? '—')}]);
+      ctx.setData('stats',[{label:__text("s8fac7fdbf5293370"),value:display(data.products?.online ?? '—')},{label:__text("se4f6f3dbeaa71668"),value:display(data.orders?.today ?? '—')},{label:__text("s7c517652a3a76f14"),value:display(data.stores ?? '—')}]);
     }
     s.overviewLoaded=true;ctx.setData('overviewError','');
   } catch (error) {if(current()){
     if(error.status===401){clearAccountIdentity();clearPrivateOverview(ctx,s);s.overviewLoaded=false;s.overviewStats=null;write(ctx,{authorized:false,stats:[],refundHint:'',couponHint:''});}
-    write(ctx,{overviewError:'暂时无法更新统计，仍可进入浏览'});
+    write(ctx,{overviewError:__text("s52b7a60787231b6a")});
   }}
   finally {if(current())write(ctx,{overviewLoading:false,overviewInitialLoading:false});}
 }
@@ -1106,11 +1170,11 @@ async function loadSpending(ctx,state) {
     if(!(await ldStore.status()).authorized){if(current())clearPrivateOverview(ctx,state);return;}
     const dashboard=normalizeOrderData(await read('/user/dashboard',true));
     if(!current())return;
-    if(!dashboard.overview || !Array.isArray(dashboard.spendingDistribution?.categories))throw Error('消费记录格式有误');
+    if(!dashboard.overview || !Array.isArray(dashboard.spendingDistribution?.categories))throw Error(__text("sba423a4cd4e6daaf"));
     const rows=dashboard.spendingDistribution.categories.slice().sort((left,right)=>Number(right.amount)-Number(left.amount));
     const total=Math.max(Number(dashboard.spendingDistribution.totals?.amount) || 0, rows.reduce((sum,row)=>sum+Math.max(0,Number(row.amount) || 0),0));
-    write(ctx,{spendingEmpty:!rows.length,spendingSummary:'累计 '+display(dashboard.overview.totalPurchaseOrders ?? 0)+' 单 · '+money(dashboard.overview.totalSpent ?? 0),
-      spendingRows:rows.map(row=>({label:display(row.categoryName) || '其他',value:money(row.amount)+' · '+(total ? Math.round(Number(row.amount)*100/total) : 0)+'%'}))});state.spendingLoaded=true;
+    write(ctx,{spendingEmpty:!rows.length,spendingSummary:__text("sb9391b95f32694e9")+display(dashboard.overview.totalPurchaseOrders ?? 0)+__text("s507a693d494112fc")+money(dashboard.overview.totalSpent ?? 0),
+      spendingRows:rows.map(row=>({label:display(row.categoryName) || __text("sd2909f1647e7c891"),value:money(row.amount)+' · '+(total ? Math.round(Number(row.amount)*100/total) : 0)+'%'}))});state.spendingLoaded=true;
   } catch(error){if(current()){if(error.status===401){clearPrivateOverview(ctx,state);ctx.setData('authorized',false);}else ctx.setData('spendingError',error.message);}}
   finally {if(current()){state.spendingLoading=false;ctx.setData('spendingLoading',false);}}
 }
@@ -1132,16 +1196,16 @@ fluxdo.on('page.open',ctx => {
   }
   if(ctx.page==='account'){clearPrivateOverview(ctx,s);return loadOverview(ctx);}
   if(ctx.page==='messages')return loadMessages(ctx,false);
-  if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) return loadBuyerPage(ctx,false);
+  if (['favorites','coupons','coupon','refund','comment','merchant','reports','report'].includes(ctx.page)) return loadBuyerPage(ctx,false);
   if (ctx.page === 'product') write(ctx,{comments:[],commentStatsReady:false,commentsError:'',commentsMessage:'',commentsMore:false,commentsLoading:false});
   if (ctx.page === 'orders' || ctx.page === 'order') {
-    s.orderStatus=ctx.params.status || '';ctx.setData('filterName','全部订单');
+    s.orderStatus=ctx.params.status || '';ctx.setData('filterName',__text("sc21af8cff389dc62"));
     showOrderFilters(ctx);
     return loadOrders(ctx,false);
   }
   if (ctx.page === 'product' || ctx.page === 'review') return detail(ctx);
-  write(ctx,{selection:'全部 · 默认排序',stock:false,categoryMessage:'',filters:false,
-    filterLabel:'筛选与排序'});
+  write(ctx,{selection:__text("se577f60423015be7"),stock:false,categoryMessage:'',filters:false,
+    filterLabel:__text("s96a5252eb6800731")});
   write(ctx,{accountName:'',accountAvatar:'',authorized:false});
   loadAccountIdentity(ctx).catch(()=>{});
   return Promise.all([categories(ctx),load(ctx,false)]);
@@ -1158,7 +1222,7 @@ fluxdo.on('page.hide',ctx => {
   if(s.searchTimer) {clearTimeout(s.searchTimer);s.searchTimer=null;s.dirty=true;}
   if (ctx.page === 'order') {
     s.revealed = false;
-    write(ctx,{deliveryText:'',deliveryAction:'查看交付内容'});
+    write(ctx,{deliveryText:'',deliveryAction:__text("s3dcbc7f167493e08")});
   }
 });
 fluxdo.on('page.resume',(ctx,args) => {
@@ -1189,13 +1253,13 @@ fluxdo.on('login',async ctx => {
     relogCatalog();invalidateViews(s);
     if (s) s.dirty = false;
     if (ctx.page === 'orders' || ctx.page === 'order') await loadOrders(ctx,false);
-    else if (['favorites','coupons','coupon','refund','comment','merchant'].includes(ctx.page)) await loadBuyerPage(ctx,false);
+    else if (['favorites','coupons','coupon','refund','comment','merchant','reports','report'].includes(ctx.page)) await loadBuyerPage(ctx,false);
     else if (ctx.page === 'product' || ctx.page === 'review') await detail(ctx);
     else if(ctx.page==='account')await loadOverview(ctx);
     else if(ctx.page==='messages')await loadMessages(ctx,false);
     else if(ctx.page==='market')await refreshView(ctx);
     else ctx.setData('authorized',true);
-  } catch (error) {ctx.setData('loginError',error.message || '登录未完成，请稍后重试。');}
+  } catch (error) {ctx.setData('loginError',error.message || __text("sc1300de3847742ed"));}
   finally {ctx.setData('loggingIn',false);}
 });
 async function requestAccess(client,names) {
@@ -1206,10 +1270,10 @@ async function requestAccess(client,names) {
 async function payOrder(ctx,cancel) {
   const s = market(ctx);
   if (!s || s.paymentBusy || ctx.page !== 'order') return;
-  if (!cancel && !await requestAccess(ctx.api,['identity','serviceAccount','payments'])) {ctx.setData('paymentNote','未允许支付权限，再次点击支付可重新申请。');return;}
-  if (cancel && !await ctx.api.dialogs.confirm({title:'取消订单',message:'取消后将无法继续支付此订单。',confirmLabel:'取消订单'})) return;
+  if (!cancel && !await requestAccess(ctx.api,['identity','serviceAccount','payments'])) {ctx.setData('paymentNote',__text("s921e907911fdcb41"));return;}
+  if (cancel && !await ctx.api.dialogs.confirm({title:__text("s0428aab4b4448b73"),message:__text("s92a895adf8d4cabe"),confirmLabel:__text("s0428aab4b4448b73")})) return;
   s.cancelConfirmed = false;
-  ctx.setData('cancelLabel','取消订单');
+  ctx.setData('cancelLabel',__text("s0428aab4b4448b73"));
   s.paymentBusy=true;write(ctx,{paymentBusy:true,paymentAvailable:false,paymentNote:''});
   try {
     const result = cancel ? await ldStore.cancel(ctx.api,ctx.params.no) :
@@ -1220,7 +1284,7 @@ async function payOrder(ctx,cancel) {
     }
   } catch (_) {
     await loadOrders(ctx,false,true);
-    ctx.setData('paymentNote','操作未完成，请刷新订单核对当前状态。');
+    ctx.setData('paymentNote',__text("s58d16f5f371201fd"));
   }
   finally {
     s.paymentBusy=false;write(ctx,{paymentBusy:false,paymentAvailable:true});
@@ -1240,7 +1304,7 @@ fluxdo.on('delivery',ctx => {
   const s = market(ctx);
   if (ctx.page !== 'order' || !s || !s.deliveryText) return;
   s.revealed = !s.revealed;
-  write(ctx,{deliveryText:s.revealed ? s.deliveryText : '',deliveryAction:s.revealed?'收起交付内容':'查看交付内容'});
+  write(ctx,{deliveryText:s.revealed ? s.deliveryText : '',deliveryAction:s.revealed?__text("sf476a7f4a7324e05"):__text("s3dcbc7f167493e08")});
 });
 fluxdo.on('ordersFilter',(ctx,args) => {
   market(ctx).orderStatus = args.status;
@@ -1277,8 +1341,8 @@ function showQuote(ctx,s) {
   s.quoteDisplayed=true;
   write(ctx,{quoteReady:true,couponRows:q.coupons.map(c => ({
       id:c.id,label:c.name + ' · ' + money(c.amount),subtitle:c.detail,selected:c === coupon,variant:c === coupon ? 'tonal' : 'text'
-    })),unavailableCoupons:q.unavailable,choice:coupon ? coupon.name : '不使用优惠券',noCoupon:!coupon,noneVariant:coupon ? 'text' : 'tonal',
-    quoteNote:expired ? '之前选择的优惠券已不可用，请核对新报价。' : '',
+    })),unavailableCoupons:q.unavailable,choice:coupon ? coupon.name : __text("s62f82dbf90e2261c"),noCoupon:!coupon,noneVariant:coupon ? 'text' : 'tonal',
+    quoteNote:expired ? __text("s6afa877989f0095c") : '',
     payable:money(coupon ? coupon.amount : q.base)});
 }
 const validAmount = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
@@ -1297,24 +1361,24 @@ async function quote(ctx) {
     if (response.status === 401) {
       delete s.couponChoice;s.quoteEnabled=false;s.checkoutEnabled=false;
       write(ctx,{canQuote:false,authorized:false,nativeOrder:false});
-      throw Error('士多会话已失效，请重新登录。');
+      throw Error(__text("sc6f910e75ee682d8"));
     }
-    if (!response.ok) throw Error('士多报价失败（HTTP '+response.status+'）');
+    if (!response.ok) throw Error(__text("s2076be02c3c77b6c")+response.status+'）');
     const result = response.json(), q = normalizeOrderData(result.data);
     if (!result.success || !q || String(q.productId) !== s.id || q.quantity !== quantity ||
-        !Array.isArray(q.coupons) || !validAmount(q.payableAmount)) throw Error('士多返回的报价与当前商品或数量不符');
+        !Array.isArray(q.coupons) || !validAmount(q.payableAmount)) throw Error(__text("sc33a19956ca7ba6f"));
     const eligible = q.coupons.filter(c => c && c.eligible === true);
     const base = q.productSubtotal ?? (eligible.length === 0 ? q.payableAmount : null);
-    if (!validAmount(base)) throw Error('士多未返回可核对的商品小计');
+    if (!validAmount(base)) throw Error(__text("sc177b1f572e7cbe5"));
     const coupons = eligible.map(c => {
-      if (c.claimId == null || !validAmount(c.payableAmount)) throw Error('优惠券报价无法核对');
-      return {id:String(c.claimId),name:display(c.campaign?.name) || '优惠券',amount:c.payableAmount,
-        detail:[c.couponDiscountAmount!=null ? '减 '+money(c.couponDiscountAmount) : '',c.campaign?.expiresAt ? '有效至 '+storeDate(c.campaign.expiresAt) : ''].filter(Boolean).join(' · ')};
+      if (c.claimId == null || !validAmount(c.payableAmount)) throw Error(__text("s0d60443cb0d51d0f"));
+      return {id:String(c.claimId),name:display(c.campaign?.name) || __text("s3e2581c8de380ac7"),amount:c.payableAmount,
+        detail:[c.couponDiscountAmount!=null ? __text("sddb1f6e991316a96")+money(c.couponDiscountAmount) : '',c.campaign?.expiresAt ? __text("s8a8835014f8fc799")+storeDate(c.campaign.expiresAt) : ''].filter(Boolean).join(' · ')};
     });
-    s.quote = {base,coupons,unavailable:q.coupons.filter(item=>item?.eligible===false).map(item=>({label:display(item.campaign?.name) || '优惠券',reason:display(item.reason) || '当前不可使用'}))};
+    s.quote = {base,coupons,unavailable:q.coupons.filter(item=>item?.eligible===false).map(item=>({label:display(item.campaign?.name) || __text("s3e2581c8de380ac7"),reason:display(item.reason) || __text("s004a1f63d696a0f6")}))};
     showQuote(ctx,s);
   } catch (e) {
-    if (current()) ctx.setData('quoteNote',e.message === 'query_not_granted' ? '当前会话没有报价权限' : String(e.message));
+    if (current()) ctx.setData('quoteNote',e.message === 'query_not_granted' ? __text("sf6a71e815e9e5a03") : String(e.message));
   } finally {
     if (current()) {s.quoting=false;write(ctx,{quoting:false,quoteInitialLoading:false});}
   }
@@ -1330,7 +1394,7 @@ function showSubmission(ctx,s,result) {
   s.record = result;
   const state = result.state;
   write(ctx,{orderState:state,orderSummary:result.productId ?
-    '商品 '+ result.productId +' · '+result.quantity+' 件 · '+money(result.expectedAmount) : '',
+    __text("s2cf72adae922915c")+ result.productId +' · '+result.quantity+__text("s866d7cfe31e9c0a9")+money(result.expectedAmount) : '',
     orderNo:result.orderNo || '',canSubmit:s.checkoutEnabled && state === 'idle' && !!s.orderIntent && !s.orderBusy});
 }
 async function checkoutStatus(ctx,s) {
@@ -1362,11 +1426,11 @@ async function checkoutAction(ctx,kind) {
       if (openOrder) s.createdNavigation = {open:openOrder,orderNo:result.orderNo};
     }
     if (result?.state === 'rejected') {
-      clearQuote(ctx,s);note='士多未接受本次订单，请重新查价并核对数量。';
+      clearQuote(ctx,s);note=__text("s64f4f48685b1f8c7");
     } else if (result?.issue === 'authorization') {
-      note='士多没有接受当前账号的授权。恢复授权后，请查这笔订单的原提交结果。';
+      note=__text("s9719af3666a6d709");
     } else if (kind === 'finish') {showSubmission(ctx,s,{state:'idle'});clearQuote(ctx,s);}
-  } catch (_) {note='未能确认操作结果，请先查看当前订单记录。';}
+  } catch (_) {note=__text("s7f2b31cdd4958f30");}
   finally {
     s.orderBusy=false;
     if (market(ctx) === s) {
@@ -1387,7 +1451,7 @@ async function openCreatedOrder(ctx,s) {
     showSubmission(ctx,s,{state:'idle'});
     clearQuote(ctx,s);
   } catch (_) {
-    write(ctx,{orderNote:'订单已创建，请打开订单查看详情。'});
+    write(ctx,{orderNote:__text("sd6f4a5373aad6e48")});
   }
 }
 fluxdo.on('submitOrder',ctx => checkoutAction(ctx,'submit'));
@@ -1424,14 +1488,14 @@ async function openExternalProduct(ctx) {
     const response = await ctx.api.fetch(api + '/products/' + encodeURIComponent(s.id) + '/external-link',
       auth.authorized ? {credential:'account'} : {});
     if (!current()) return;
-    if (!response.ok) throw Error('读取兑换地址失败（HTTP ' + response.status + '）');
+    if (!response.ok) throw Error(__text("s7367398deb4a47e2") + response.status + '）');
     const result = response.json();
     const target = result.success === true && typeof result.data?.paymentLink === 'string'
       ? result.data.paymentLink.trim() : '';
-    if (!/^https?:\/\/[^\s/]+/i.test(target)) throw Error('士多返回的兑换地址无效');
+    if (!/^https?:\/\/[^\s/]+/i.test(target)) throw Error(__text("s54d4eb146c87c808"));
     await ctx.api.openUrl(target);
   } catch (error) {
-    if (current()) ctx.setData('externalError',error.message || '未能打开兑换地址，请重试。');
+    if (current()) ctx.setData('externalError',error.message || __text("s7aac13a8613a299e"));
   } finally {
     s.externalBusy = false;
     if (market(ctx) === s) ctx.setData('externalBusy',false);
@@ -1444,11 +1508,11 @@ fluxdo.on('more',ctx => load(ctx,true));
 fluxdo.on('filters',ctx => fluxdo.navigate('filters',{source:ctx.surface}));
 fluxdo.on('applyFilters',async ctx=>{
   const s=market(ctx);if(!s?.source)return;
-  if((s.min && (!Number.isFinite(Number(s.min)) || Number(s.min)<0)) || (s.max && (!Number.isFinite(Number(s.max)) || Number(s.max)<0)) || (s.min && s.max && Number(s.min)>Number(s.max))) {ctx.setData('filterError','请填写有效的价格范围');return;}
+  if((s.min && (!Number.isFinite(Number(s.min)) || Number(s.min)<0)) || (s.max && (!Number.isFinite(Number(s.max)) || Number(s.max)<0)) || (s.min && s.max && Number(s.min)>Number(s.max))) {ctx.setData('filterError',__text("s777b7515784978d6"));return;}
   for(const key of ['cat','catName','sort','sortName','direction','stock','min','max'])s.source[key]=s[key];
   s.source.dirty=true;await ctx.api.navigation.dismiss();
 });
-fluxdo.on('resetFilters',ctx=>{const s=market(ctx);Object.assign(s,{cat:'',catName:'全部',sort:'updated_at',direction:'DESC',sortName:'默认排序',stock:false,min:'',max:''});showFilters(ctx,s);write(ctx,{min:'',max:'',stock:false,filterError:''});});
+fluxdo.on('resetFilters',ctx=>{const s=market(ctx);Object.assign(s,{cat:'',catName:__text("s5c55a67935af8f45"),sort:'updated_at',direction:'DESC',sortName:__text("sbd1689042db64ba9"),stock:false,min:'',max:''});showFilters(ctx,s);write(ctx,{min:'',max:'',stock:false,filterError:''});});
 fluxdo.on('input',(ctx,a) => {
   market(ctx)[a.field] = display(a.value).trim();
   ctx.setData(a.field,display(a.value));
@@ -1468,16 +1532,20 @@ fluxdo.on('select',(ctx,a) => {
 
 // 买家业务仅属于士多插件，宿主不识别这些路由、字段和状态。
 async function buyerRequest(ctx, path, method = 'GET', body, authenticated = true) {
+  const revision=identityRevision;
+  const pendingAction=market(ctx);
+  if(authenticated&&(identitySigningOut||pendingAction?.buyerBusy&&pendingAction.buyerRevision!==revision))throw Error(__text("sc6f910e75ee682d8"));
   const response = await ctx.api.fetch(api + path, {
     method, ...(authenticated ? {credential:'account'} : {}),
     ...(body === undefined ? {} : {body}),
   });
+  if(authenticated&&revision!==identityRevision)throw Error(__text("sc6f910e75ee682d8"));
   let result;
-  try { result = response.json(); } catch (_) { throw Error('士多返回了无法识别的数据，请稍后重试'); }
+  try { result = response.json(); } catch (_) { throw Error(__text("s8d7c8cab5abd807b")); }
   if (!response.ok || result.success !== true) {
     const message = typeof result.error === 'string' ? result.error : result.error?.message;
-    const error = Error(response.status === 401 ? '登录已过期，请重新登录士多' : message || result.message || '请求失败（HTTP '+response.status+'）');
-    error.status = response.status;
+    const error = Error(response.status === 401 ? __text("sdd4791f810d73e26") : message || result.message || __text("s99841da5202b3b44")+response.status+'）');
+    error.status = response.status;error.code=result.errorCode || result.error?.code;error.details=result.details;
     throw error;
   }
   return normalizeOrderData(result.data);
@@ -1493,9 +1561,9 @@ function mergeRows(previous,rows) {
   return previous.concat(rows.filter(row=>{if(seen.has(row.id))return false;seen.add(row.id);return true;}));
 }
 function couponRule(c) {
-  if (c.discountType === 'fixed_amount') return '减 '+money(c.fixedAmount);
-  if (c.discountType === 'percentage') return (Number(c.percentageBps) / 1000).toFixed(1)+' 折 · 仅优惠 1 件';
-  return '优惠规则暂不可用';
+  if (c.discountType === 'fixed_amount') return __text("sddb1f6e991316a96")+money(c.fixedAmount);
+  if (c.discountType === 'percentage') return (Number(c.percentageBps) / 1000).toFixed(1)+__text("s5247d8c07d6671a0");
+  return __text("sa3e1c18d999a17e0");
 }
 function storeMillis(value) {
   const text=display(value).trim();
@@ -1513,7 +1581,7 @@ function storeTime(value) {
   const time=storeMillis(value);return Number.isFinite(time) ? new Date(time).toISOString() : '';
 }
 function storeDate(value) {
-  const time=storeMillis(value);return Number.isFinite(time) ? new Date(time+8*3600000).toISOString().slice(0,16).replace('T',' ')+'（北京时间）' : '—';
+  const time=storeMillis(value);return Number.isFinite(time) ? new Date(time+8*3600000).toISOString().slice(0,16).replace('T',' ')+__text("s5eb76ad8840e54ef") : '—';
 }
 function latestEvents(events) {
   const time=event=>storeMillis(event.createdAt || event.time) || 0;
@@ -1526,40 +1594,40 @@ function couponRow(c, claim = {}, tab='') {
   const expired=tab==='expired' || ['expired','disabled'].includes(c.state) || !!claim.invalidReason;
   const scheduled=c.state==='scheduled' || storeMillis(c.startsAt)>Date.now();
   const orderNo=display(reserved ? claim.reservedOrderNo : used ? claim.usedOrderNo : '');
-  const action=orderNo ? reserved ? '查看占用订单' : '查看使用订单' : used || reserved || expired || scheduled || (claim.status && claim.status!=='available') ? '' : '查看适用商品';
+  const action=orderNo ? reserved ? __text("sd463599969d011fd") : __text("sb4b259d532691577") : used || reserved || expired || scheduled || (claim.status && claim.status!=='available') ? '' : __text("s9d430a10fe2202b3");
   return {id:String(claim.claimId ?? claim.id ?? c.id),title:display(c.name),rule:couponRule(c),
-    seller:'卖家：'+display(c.sellerUsername),
-    scope:c.scopeType === 'product' ? display(c.productName) || '指定商品' : '该卖家店铺内商品',
-    minimum:Number(c.minSpend)>0 ? '满 '+money(c.minSpend) : '无门槛',
+    seller:__text("sd108e8381efc06d9")+display(c.sellerUsername),
+    scope:c.scopeType === 'product' ? display(c.productName) || __text("s56b16e0de1023604") : __text("s1ebe460b042cf85e"),
+    minimum:Number(c.minSpend)>0 ? __text("s7722051a54950075")+money(c.minSpend) : __text("s5dc260a4e61f85ed"),
     starts:storeDate(c.startsAt),expires:storeDate(c.expiresAt),
     usedAt:used && claim.usedAt ? storeDate(claim.usedAt) : '',actualDiscount:used && claim.actualDiscountAmount!=null ? money(claim.actualDiscountAmount) : '',
-    state:reserved ? '待支付订单占用' : used ? '已使用' : display(claim.invalidReason) || (expired ? '已失效' : scheduled ? '待生效' : ''),
+    state:reserved ? __text("s223afe5f1059ab14") : used ? __text("s9845c165151daee3") : display(claim.invalidReason) || (expired ? __text("s2fe5a8d0eee9f14c") : scheduled ? __text("s211daec74a20bd9b") : ''),
     productId:c.scopeType === 'product' && c.productId != null ? String(c.productId) : '',
     sellerId:display(c.sellerUserId), sellerUsername:display(c.sellerUsername), sellerSite:display(c.sellerSite),
     quantity:c.remainingQuantity!=null && c.totalQuantity!=null ? display(c.remainingQuantity)+' / '+display(c.totalQuantity) : '',orderNo,action};
 }
-const couponTabs = [{value:'unused',label:'未使用'},{value:'used',label:'已使用'},{value:'expired',label:'已过期'}];
+const couponTabs = [{value:'unused',label:__text("sfa73ed85e86a3ca9")},{value:'used',label:__text("s9845c165151daee3")},{value:'expired',label:__text("s2fe0e3339ac4d1bb")}];
 const refundReasons = [
-  {value:'not_received_or_unusable',label:'未收到或无法使用'},
-  {value:'not_as_described',label:'与物品描述不符'},
-  {value:'duplicate_or_mistaken_purchase',label:'重复购买或误购'},
-  {value:'seller_agreed',label:'卖家已同意退款'}, {value:'other',label:'其他问题'},
+  {value:'not_received_or_unusable',label:__text("s1f67ea1e80902ae2")},
+  {value:'not_as_described',label:__text("s1f287888abbc4243")},
+  {value:'duplicate_or_mistaken_purchase',label:__text("se4529a14e7fcfbd7")},
+  {value:'seller_agreed',label:__text("s4f4651beaef1b6dc")}, {value:'other',label:__text("s8e78f846ac547449")},
 ];
-const refundLabels = {requested:'等待卖家处理',negotiating:'协商中',processing:'退款执行中',
-  failed:'退款执行失败',unknown:'退款结果待核对',refunded:'已退款',rejected:'申请已拒绝',external_dispute:'已转 Credit 处理'};
-const refundEvents = {requested:'提交退款申请',contacted:'卖家联系协商',contact_updated:'更新协商记录',
-  approved:'卖家同意退款',rejected:'卖家拒绝申请',refund_succeeded:'退款成功',refund_failed:'退款执行失败',
-  refund_unknown:'退款结果待核对',external_dispute_detected:'转 Credit 处理',response_timeout_approved:'超时自动同意退款',
-  admin_approved:'管理员同意退款',admin_rejected:'管理员拒绝申请',admin_overridden:'管理员改判退款',
-  automatic_refund_started:'超时保障退款',seller_refund_started:'卖家主动退款',response_policy_enrolled:'通知处理时限',
-  response_deadline_reminder:'提醒处理时限',admin_retry_started:'管理员核查后重试',refund_admin_confirmed:'登记核对结果',
-  admin_confirmed_refunded:'确认已退款',admin_confirmed_failed:'确认未完成退款',admin_confirmed_external_dispute:'确认转 Credit 处理'};
+const refundLabels = {requested:__text("s3d93dd93e3fc3534"),negotiating:__text("s398c4c6e272a7034"),processing:__text("s49555c71afb8439e"),
+  failed:__text("saf5d792906390b7e"),unknown:__text("s64a5b415a7cee086"),refunded:__text("s9696e9a6176b5875"),rejected:__text("sc34a286d3ffdd17a"),external_dispute:__text("sce03c133cfb0a2f6")};
+const refundEvents = {requested:__text("s11a588ca6973412b"),contacted:__text("s378ff6b9c4c3d3c5"),contact_updated:__text("sec009989916d5f60"),
+  approved:__text("s3c0d34d587326860"),rejected:__text("s7b615b1e5c5898b0"),refund_succeeded:__text("s1e58b0b7106132ba"),refund_failed:__text("saf5d792906390b7e"),
+  refund_unknown:__text("s64a5b415a7cee086"),external_dispute_detected:__text("sa2a80799ad768a5f"),response_timeout_approved:__text("s78c65447fd46474b"),
+  admin_approved:__text("se2eb8a9585c9ee50"),admin_rejected:__text("s89e537190996045d"),admin_overridden:__text("sb028bcfeba09af56"),
+  automatic_refund_started:__text("sc54a6d9e57fd58ff"),seller_refund_started:__text("sa25fa068d68bfcea"),response_policy_enrolled:__text("s898759d3b5df8bb4"),
+  response_deadline_reminder:__text("s6e3aa6e41f728c9b"),admin_retry_started:__text("sa9653b95bcdf2258"),refund_admin_confirmed:__text("s96e71ec6687b5db6"),
+  admin_confirmed_refunded:__text("sc775716a00e9ab4f"),admin_confirmed_failed:__text("sc4870943d389f6d0"),admin_confirmed_external_dispute:__text("s95676f3863aa6819")};
 async function loadBuyerPage(ctx, more) {
   const s = market(ctx);
   if (!s || s.buyerBusy || (more && (s.loading || !s.more))) return;
   const revision = ++s.seq, current = () => market(ctx) === s && s.seq === revision;
   const page = more ? (s.page || 1) + 1 : 1;s.buyerRetryMore=more;
-  const queryKey=JSON.stringify([s.search,s.couponTab,s.collection]);
+  const queryKey=JSON.stringify([s.search,s.couponTab,s.collection,s.reportStatus]);
   if(!more && s.buyerQuery!==queryKey){s.rows=[];s.more=false;s.buyerReady=false;}
   s.buyerQuery=queryKey;
   s.loading = true;
@@ -1569,29 +1637,30 @@ async function loadBuyerPage(ctx, more) {
     if (!current()) return;
     write(ctx,{authorized:auth.authorized});
     if (!auth.authorized && !['coupon','merchant'].includes(ctx.page)) {
-      clearBuyerData(ctx,s);write(ctx,{needsSession:true,error:'登录士多后继续'}); return;
+      clearBuyerData(ctx,s);write(ctx,{needsSession:true,error:__text("s5a1220c895cfc20c")}); return;
     }
+    if(['reports','report'].includes(ctx.page)||ctx.page==='comment'&&ctx.params.mode)await loadCommunityPage(ctx,s,page,more,current);
     if (ctx.page === 'favorites' || ctx.page === 'coupons' || ctx.page === 'merchant') {
       const coupons = ctx.page === 'coupons';
       if (coupons) ctx.setData('tabs',couponTabs.map(t=>({...t,selected:t.value === (s.couponTab || 'unused')})));
-      if(ctx.page==='favorites')write(ctx,{collections:[{id:'favorites',label:'已收藏',selected:s.collection!=='blocked'},{id:'blocked',label:'不感兴趣',selected:s.collection==='blocked'}],
-        search:s.search,collectionHint:s.collection==='blocked' ? '搜索已隐藏的商品' : '搜索收藏的商品',collectionEmpty:s.collection==='blocked' ? '没有已隐藏的商品' : '还没有收藏商品'});
+      if(ctx.page==='favorites')write(ctx,{collections:[{id:'favorites',label:__text("s471dd4d7f86954d0"),selected:s.collection!=='blocked'},{id:'blocked',label:__text("s2abc3ad8d471e2ea"),selected:s.collection==='blocked'}],
+        search:s.search,collectionHint:s.collection==='blocked' ? __text("s2cc5b6e7db7790be") : __text("s2fa4f18941487a11"),collectionEmpty:s.collection==='blocked' ? __text("sfa9a68e9983d000e") : __text("s219045b1df2953a4")});
       const data = ctx.page==='merchant' ? normalizeOrderData(await readPublic('/merchants/'+encodeURIComponent(ctx.params.username)+'?'+params({page,site:ctx.params.site || '',userId:ctx.params.userId || ''}),auth)) : await buyerRequest(ctx, coupons
         ? '/my-coupons?'+params({status:s.couponTab || 'unused',page,pageSize:20})
         : (s.collection==='blocked' ? '/blocked-products?' : '/favorites?')+params({search:s.search,page,pageSize:20}), 'GET', undefined, auth.authorized);
       if (!current()) return;
       if(ctx.page==='merchant' && !more) {
-        if(!data.merchant?.username)throw Error('缺少店铺资料');
+        if(!data.merchant?.username)throw Error(__text("s270346cf890d1540"));
         const merchant=data.merchant,username=merchant.username,profile=data.profile || {};
         const sameId=profile.userId!=null && merchant.userId!=null && String(profile.userId)===String(merchant.userId);
         const sameName=typeof profile.username==='string' && profile.username.toLowerCase()===username.toLowerCase();
         const sameProfile=(sameId || sameName) && (!profile.userId || !merchant.userId || sameId) && (!profile.username || sameName) && (!profile.site || !merchant.site || profile.site===merchant.site);
         write(ctx,{merchantReady:true,merchantTitle:merchant.name || username,merchantMeta:['@'+username,merchant.trustLevel!=null ? 'TL'+merchant.trustLevel : ''].filter(Boolean).join(' · '),
           merchantAvatar:accountAvatar(merchant) || (sameProfile ? accountAvatar(profile) : ''),
-          merchantStats:[['在售',data.stats?.onlineCount],['上架',data.stats?.totalListedCount],['销量',data.stats?.totalSoldCount]].filter(([,value])=>value!=null).map(([label,value])=>({label,value:display(value)}))});
+          merchantStats:[[__text("s5cfd07c0021fd2bf"),data.stats?.onlineCount],[__text("s40c5340bc430b081"),data.stats?.totalListedCount],[__text("s7c348c349ca33032"),data.stats?.totalSoldCount]].filter(([,value])=>value!=null).map(([label,value])=>({label,value:display(value)}))});
       }
       const entries = coupons ? data.items : ctx.page==='merchant' ? data.products ?? [] : data.products;
-      if (!Array.isArray(entries)) throw Error('列表数据格式有误');
+      if (!Array.isArray(entries)) throw Error(__text("s15712a17084e1dd3"));
       const rows = entries.map(row=>coupons ? couponRow(row.campaign || {},row,s.couponTab || 'unused') : {...productView(row),hiddenItem:ctx.page==='favorites' && s.collection==='blocked',
         preferenceTime:ctx.page==='favorites' ? storeTime((s.collection==='blocked' ? row.blockedAt : row.favoritedAt) || row.updatedAt || row.createdAt) : ''});
       s.rows=mergeRows(more ? s.rows : [],rows);s.page=page;
@@ -1599,42 +1668,43 @@ async function loadBuyerPage(ctx, more) {
       write(ctx,{ready:true,rows:s.rows,more:s.more});
     } else if (ctx.page === 'coupon') {
       const token = String(ctx.params.token || '');
-      if (!/^[A-Za-z0-9_-]{1,256}$/.test(token)) throw Error('优惠券链接无效');
+      if (!/^[A-Za-z0-9_-]{1,256}$/.test(token)) throw Error(__text("sccabce4ef8be0814"));
       const data = normalizeOrderData(await readPublic('/coupons/'+encodeURIComponent(token),auth));
       if (!current()) return;
-      if (!data || data.id == null) throw Error('优惠券数据格式有误');
+      if (!data || data.id == null) throw Error(__text("saa5fa17d9249ec87"));
       s.coupon=data;s.claimAuthorized=auth.authorized;
-      const states = {scheduled:'尚未开始领取',expired:'优惠券已过期',paused:'卖家暂停领取',closed:'已停止领取',sold_out:'优惠券已领完',disabled:'优惠券已停用'};
+      const states = {scheduled:__text("sbfe8b73275c84810"),expired:__text("s8c0dd0e8ecb46c40"),paused:__text("s22ebde21493e1177"),closed:__text("s318e9ef0e71a5e97"),sold_out:__text("sa8ca24030fc46331"),disabled:__text("sa26be489f87fb4d8")};
       write(ctx,{ready:true,authorized:auth.authorized,coupon:couponRow(data,data.claim),description:display(data.description),
         canClaim:auth.authorized && data.claimable === true && !data.claimed,claimed:data.claimed === true,
-        claimLabel:data.claimed ? '已领取' : states[data.state] || '领取优惠券'});
-    } else if (ctx.page === 'comment') {
+        claimLabel:data.claimed ? __text("s426e458a41246bd5") : states[data.state] || __text("s4588f2bf30efdcde")});
+    } else if (ctx.page === 'comment' && !ctx.params.mode) {
+      ctx.setData('composeMode','comment');
       const data = await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments?page=1&pageSize=1');
       if (!current()) return;
       s.canComment=data.commentEnabled === true;
       s.canRate=data.viewerHasPurchased === true && data.viewerRating?.hasRated !== true;
-      const fields=[{name:'content',label:'评论内容',hint:'分享使用体验或提出问题（5–500 字）',type:'multiline',required:true,maxLength:500}];
-      if (s.canRate) fields.push({name:'rating',label:'商品评分（选填）',type:'choice',options:[{value:'',label:'不评分'},...Array.from({length:5},(_,i)=>({value:String(i+1),label:String(i+1)+' 星'}))]});
+      const fields=[{name:'content',label:__text("s16950541902212bc"),hint:__text("sdf24c3bc5c3dc874"),type:'multiline',required:true,maxLength:500}];
+      if (s.canRate) fields.push({name:'rating',label:__text("s73a5e8108381d813"),type:'choice',options:[{value:'',label:__text("s9385944716c2ed5e")},...Array.from({length:5},(_,i)=>({value:String(i+1),label:String(i+1)+__text("sd1005c4482ca2e97")}))]});
       write(ctx,{ready:true,canComment:s.canComment,fields,commentSubmitted:false,
-        error:s.canComment ? '' : display(data.disabledReason) || '该商品已关闭评论'});
+        error:s.canComment ? '' : display(data.disabledReason) || __text("s9d72e58af4a23952")});
     } else if (ctx.page === 'refund') {
       const data = await buyerRequest(ctx, '/orders/'+encodeURIComponent(ctx.params.no)+'/refund');
       if (!current()) return;
-      if (!data || data.role !== 'buyer' || !data.eligibility || typeof data.eligibility.canApply !== 'boolean') throw Error('退款状态格式有误');
+      if (!data || data.role !== 'buyer' || !data.eligibility || typeof data.eligibility.canApply !== 'boolean') throw Error(__text("s207d77f2a5294357"));
       const refund=data.refund;
-      if (refund && String(refund.orderNo) !== String(ctx.params.no)) throw Error('退款订单号与请求不一致');
+      if (refund && String(refund.orderNo) !== String(ctx.params.no)) throw Error(__text("s4a9c18b7b45305bd"));
       s.refund=data;
       write(ctx,{ready:true,canApply:!refund && data.eligibility.canApply === true,
-        refundState:refund ? refundLabels[refund.status] || '状态待核对' : '申请售后',
+        refundState:refund ? refundLabels[refund.status] || __text("s9640aa814a6a5b65") : __text("secd8a0c1a36693fc"),
         refundAmount:refund ? money(refund.refundAmount) : '',refundMessage:display(data.eligibility.message),
-        reason:display(refund?.reasonDetail),deadline:refund?.decisionDeadlineAt ? '处理时限：'+storeDate(refund.decisionDeadlineAt) : '',
-        refundDetails:refund ? [['退款原因',refundReasons.find(reason=>reason.value===refund.reasonCode)?.label || (refund.reasonCode==='shipment_timeout' ? '卖家超时未发货' : '')],
-          ['申请时间',refund.requestedAt ? storeDate(refund.requestedAt) : ''],['卖家说明',refund.sellerResponse]].filter(([,value])=>!!value).map(([label,value])=>({label,value})) : [],
-        events:latestEvents(refund?.events).map(event=>({title:refundEvents[event.action] || '售后状态更新',message:display(event.message),
-          time:[({seller:'卖家',buyer:'买家',admin:'平台',system:'系统'})[event.actorType],event.actorName ? '@'+String(event.actorName).replace(/^@/,'') : '',storeDate(event.createdAt)].filter(Boolean).join(' · ')})),
-        refundFields:[{name:'reasonCode',label:'退款原因',type:'choice',required:true,options:refundReasons},
-          {name:'reasonDetail',label:'问题描述',hint:'请说明具体问题（10–500 字）',type:'multiline',required:true,maxLength:500},
-          {name:'buyerContactedSeller',label:'已联系卖家协商',type:'toggle',value:false}],
+        reason:display(refund?.reasonDetail),deadline:refund?.decisionDeadlineAt ? __text("s4857afee920b0ed9")+storeDate(refund.decisionDeadlineAt) : '',
+        refundDetails:refund ? [[__text("s0ae01e9c7ed540de"),refundReasons.find(reason=>reason.value===refund.reasonCode)?.label || (refund.reasonCode==='shipment_timeout' ? __text("sa997850650073dfd") : '')],
+          [__text("se9b5d944cc4b72c2"),refund.requestedAt ? storeDate(refund.requestedAt) : ''],[__text("s07393bc40b879b70"),refund.sellerResponse]].filter(([,value])=>!!value).map(([label,value])=>({label,value})) : [],
+        events:latestEvents(refund?.events).map(event=>({title:refundEvents[event.action] || __text("s96fb25b3bf5d61df"),message:display(event.message),
+          time:[({seller:__text("sd6074d12387baea1"),buyer:__text("s6d6a63f93c43899e"),admin:__text("s910887705c7a66d2"),system:__text("s5b50d7c4b5950dc5")})[event.actorType],event.actorName ? '@'+String(event.actorName).replace(/^@/,'') : '',storeDate(event.createdAt)].filter(Boolean).join(' · ')})),
+        refundFields:[{name:'reasonCode',label:__text("s0ae01e9c7ed540de"),type:'choice',required:true,options:refundReasons},
+          {name:'reasonDetail',label:__text("s6a11331de9003411"),hint:__text("s6bf7765f66d223f3"),type:'multiline',required:true,maxLength:500},
+          {name:'buyerContactedSeller',label:__text("s722b05bb01971697"),type:'toggle',value:false}],
         hasGuide:typeof data.disputeGuideUrl === 'string' && data.disputeGuideUrl.startsWith('https://')});
     }
     if(current())s.buyerReady=true;
@@ -1643,24 +1713,100 @@ async function loadBuyerPage(ctx, more) {
   } finally {if (current()) {s.loading=false;write(ctx,{loading:false,initialLoading:false,loadingMore:false});}}
 }
 function clearBuyerData(ctx,state) {
-  state.rows=[];state.page=0;state.more=false;state.buyerReady=false;state.refund=null;state.coupon=null;state.canComment=false;state.canRate=false;
-  write(ctx,{authorized:false,ready:false,rows:[],more:false,canApply:false,canComment:false,canClaim:false,claimed:false,commentSubmitted:false,refundAmount:'',refundState:'',refundMessage:'',reason:'',deadline:'',refundDetails:[],events:[],hasGuide:false});
+  state.rows=[];state.page=0;state.more=false;state.buyerReady=false;state.refund=null;state.coupon=null;state.canComment=false;state.canRate=false;state.report=null;state.reportReceipt=null;state.submissionToken=null;state.reportFingerprint=null;state.supplementToken=null;state.supplementFingerprint=null;state.replySubmitted=false;
+  write(ctx,{report:{},reportReceipt:{},communityFields:[],events:[],evidence:[],reportSubmitted:false,replySubmitted:false,authorized:false,ready:false,rows:[],more:false,canApply:false,canComment:false,canClaim:false,claimed:false,commentSubmitted:false,refundAmount:'',refundState:'',refundMessage:'',reason:'',deadline:'',refundDetails:[],events:[],hasGuide:false});
 }
+const reportStates={pending:__text("s9079f70305629280"),processing:__text("s1e45077397dd8af8"),awaiting_info:__text("sa35ef95361b84d05"),resolved:__text("sdfb34a4f32ae5e15"),rejected:__text("sdfb34a4f32ae5e15")};
+const reportDecisions={confirmed_issue:__text("s9889ca492688ee3e"),no_violation:__text("s2372bb37d195fac0"),referred:__text("s01967a97b5821e88")};
+const reportCategories={delivery_issue:__text("s3e88557d5c9145ab"),content_mismatch:__text("s722bd268f67ae593"),promotion:__text("sae996b192f4a2c24"),fraud_risk:__text("sedc91cd8c41638ea"),purchase_flow_issue:__text("s584a7ab2c5cdb847"),privacy:__text("s919470833d4c2776"),harassment:__text("sf4d93c0b59ca2698"),factual_dispute:__text("s97d25b0cffd19183"),other:__text("sd2909f1647e7c891")};
+const categoriesForReport=type=>type==='comment'?['privacy','harassment','promotion','factual_dispute','other']:['delivery_issue','content_mismatch','promotion','fraud_risk','purchase_flow_issue','other'];
+function reportRow(raw){
+  return {id:raw.targetType+':'+raw.id,reportId:String(raw.id),type:raw.targetType,productId:display(raw.productId),orderNo:display(raw.orderNo),
+    title:display(raw.currentProductName||raw.productName)||__text("sf720037410abd938")+display(raw.productId),
+    state:(reportStates[raw.status]||__text("s9640aa814a6a5b65"))+(raw.reviewPending?__text("s30685985e63dcbc7"):''),
+    category:display(raw.reportCategoryLabel)||reportCategories[raw.category||raw.reportCategory]||'',reason:display(raw.reportReason),
+    decision:reportDecisions[raw.decision]||'',note:display(raw.adminNote),next:display(raw.nextStep),time:storeTime(raw.createdAt)};
+}
+async function loadCommunityPage(ctx,s,page,more,current){
+  if(ctx.page==='comment'&&ctx.params.mode==='reply'){
+    ctx.setData('composeMode','reply');
+    write(ctx,{pageTitle:__text("s3056d666ea7764b8"),ready:true,replySubmitted:!!s.replySubmitted,communityFields:[{name:'content',label:__text("s8d87cbe9b975b61c"),type:'multiline',required:true,maxLength:300}],communityTitle:__text("s3376176cc70d2779")+display(ctx.params.author)});return;
+  }
+  if(ctx.page==='comment'&&ctx.params.mode==='report'){
+    ctx.setData('composeMode','report');
+    if(!['product','comment'].includes(ctx.params.type))throw Error(__text("s4f912dc1d089ee8a"));
+    write(ctx,{pageTitle:__text("s592bec925cebd79d"),ready:true,reportSubmitted:!!s.reportReceipt,reportReceipt:s.reportReceipt||{},communityTitle:display(ctx.params.name),communityFields:[
+      {name:'category',label:__text("s6b6cde10fd0fb7d2"),type:'choice',required:true,options:categoriesForReport(ctx.params.type).map(value=>({value,label:reportCategories[value]}))},
+      {name:'reason',label:__text("sb110d4b5ef2f54e5"),hint:__text("s177af5bd4d7ccca1"),type:'multiline',required:true,maxLength:500},
+      {name:'orderNo',label:__text("s454a437615153df5"),type:'text',maxLength:80}]});return;
+  }
+  if(ctx.page==='reports'){
+    const data=await buyerRequest(ctx,'/reports?'+params({page,pageSize:20,status:s.reportStatus||''}));if(!current())return;
+    if(!Array.isArray(data.reports))throw Error(__text("s36a2442a4df541ba"));
+    const rows=data.reports.map(reportRow);s.rows=mergeRows(more?s.rows:[],rows);s.page=page;s.more=hasNextPage(data.pagination,page,rows.length);
+    write(ctx,{ready:true,rows:s.rows,more:s.more,reportTabs:[{value:'',label:__text("s5c55a67935af8f45")},...Object.entries(reportStates).map(([value,label])=>({value,label:value==='rejected'?__text("s7eae90ab25b8de47"):label}))].map(tab=>({...tab,selected:tab.value===(s.reportStatus||'')})),
+      reportStats:[{label:__text("s75da31470d2f9d7e"),value:display(data.stats?.open??0)},{label:__text("sa35ef95361b84d05"),value:display(data.stats?.awaitingInfo??0)},{label:__text("sdfb34a4f32ae5e15"),value:display(data.stats?.closed??0)}]});return;
+  }
+  if(!['product','comment'].includes(ctx.params.type))throw Error(__text("s4f912dc1d089ee8a"));
+  const data=await buyerRequest(ctx,'/reports/'+ctx.params.type+'/'+encodeURIComponent(ctx.params.id));if(!current())return;
+  if(String(data.report?.id)!==String(ctx.params.id)||data.report?.targetType!==ctx.params.type)throw Error(__text("s9bd5801df1a90cd7"));
+  s.report=data.report;
+  const review=['resolved','rejected'].includes(data.report.status);
+  write(ctx,{ready:true,report:reportRow(data.report),followupLabel:review?__text("s4f0c56a792e4a383"):__text("s6f3ebd2d3e876212"),
+    communityFields:[{name:'note',label:__text("sfb1201488f728ed7"),type:'multiline',required:true,maxLength:1000}],
+    events:latestEvents(data.events).map(event=>({title:reportDecisions[event.decision]||__text("sd9271468c38979b0"),message:display(event.publicNote),time:storeDate(event.createdAt)})),
+    snapshot:display(data.report.snapshot?.commentContent||data.report.snapshot?.description),hasReportOutcome:!!(data.report.decision||data.report.adminNote||data.report.nextStep),
+    evidence:(data.evidence||[]).map(file=>({id:display(file.id),label:display(file.name||file.fileName)||__text("s9046c12a6c6edbb8")})),
+    reportHint:__text("s1064520a8ea0d8b4")});
+}
+fluxdo.on('reports',()=>fluxdo.navigate('reports'));
+fluxdo.on('reportTab',(ctx,a)=>{const s=market(ctx);if(ctx.page==='reports'&&s&&!s.loading&&(a.value===''||Object.hasOwn(reportStates,a.value))){s.reportStatus=a.value;return loadBuyerPage(ctx,false);}});
+fluxdo.on('reportDetail',(ctx,a)=>{
+  const s=market(ctx),row=s?.rows?.find(row=>row.id===a.id),receipt=s?.reportReceipt;
+  const id=row?.reportId||receipt?.reportId,type=row?.type||receipt?.targetType;
+  if(id&&['product','comment'].includes(type))return fluxdo.navigate('report',{id,type});
+});
+fluxdo.on('reportProduct',ctx=>{const p=market(ctx)?.product;if(p)return fluxdo.navigate('comment',{mode:'report',type:'product',id:String(p.id),name:p.name});});
+fluxdo.on('reportComment',(ctx,a)=>{const row=market(ctx)?.comments?.find(row=>row.id===a.id);if(row?.interactive)return fluxdo.navigate('comment',{mode:'report',type:'comment',id:row.id,name:row.content});});
+fluxdo.on('submitReport',(ctx,a)=>buyerAction(ctx,async s=>{
+  if((ctx.page!=='comment'||ctx.params.mode!=='report')||s.reportReceipt)return;
+  const type=ctx.params.type,values=a.values||{},reason=String(values.reason||'').trim(),orderNo=String(values.orderNo||'').trim();
+  if(!['product','comment'].includes(type)||!categoriesForReport(type).includes(values.category)||reason.length<5||reason.length>500||orderNo.length>80)throw Error(__text("sf3e0799eeaa896af"));
+  const body={reason,category:values.category,orderNo},fingerprint=JSON.stringify(body);
+  if(s.reportFingerprint!==fingerprint){s.submissionToken=await ctx.api.crypto.uuid();s.reportFingerprint=fingerprint;}
+  let receipt;
+  try{receipt=await buyerRequest(ctx,'/'+(type==='comment'?'comments':'products')+'/'+encodeURIComponent(ctx.params.id)+'/report','POST',{...body,submissionToken:s.submissionToken});}
+  catch(error){if(error.code==='DUPLICATE_REPORT'&&error.details?.reportId)receipt={reportId:error.details.reportId,targetType:error.details.targetType||type};else throw error;}
+  if(!receipt?.reportId||receipt.targetType!==type)throw Error(__text("sa986a3f4e6101aa4"));
+  s.reportReceipt={reportId:String(receipt.reportId),targetType:receipt.targetType};write(ctx,{reportSubmitted:true,reportReceipt:s.reportReceipt});
+  invalidateViews(s,v=>v.ctx?.page==='reports');
+}));
+fluxdo.on('supplementReport',(ctx,a)=>buyerAction(ctx,async s=>{
+  if(ctx.page!=='report'||!s.report)return;
+  const note=String(a.values?.note||'').trim();if(note.length<5||note.length>1000)throw Error(__text("s4c7cea065f28c871"));
+  const review=['resolved','rejected'].includes(s.report.status),fingerprint=JSON.stringify({note,review});
+  if(s.supplementFingerprint!==fingerprint){s.supplementToken=await ctx.api.crypto.uuid();s.supplementFingerprint=fingerprint;}
+  await buyerRequest(ctx,'/reports/'+ctx.params.type+'/'+encodeURIComponent(ctx.params.id)+'/supplements','POST',{operationId:s.supplementToken,note,review});
+  s.supplementFingerprint=null;s.supplementToken=null;s.buyerBusy=false;
+  await loadBuyerPage(ctx,false);await ctx.api.toast(review?__text("s37cf48ee1551d050"):__text("sd7159d5ff330e286"));
+}));
+fluxdo.on('reportWeb',ctx=>{if(ctx.page==='report')return ctx.api.browser.open('https://ldcstore.com/user/reports/'+ctx.params.type+'/'+encodeURIComponent(ctx.params.id),{mode:'inApp'});});
 function relogCatalog() {
   imageSession++;productImages.clear();imageRequests.clear();
   for(const state of views.values())if(state.ctx?.page==='market') {
     state.slates?.clear();
     state.seq++;state.categoryRevision=(state.categoryRevision || 0)+1;state.rows=[];state.page=0;state.more=false;state.cursor='';state.dirty=true;state.categoriesDirty=true;
-    state.categories=[{id:'',name:'全部'}];state.cat='';state.catName='全部';showFilters(state.ctx,state);
+    state.categories=[{id:'',name:__text("s5c55a67935af8f45")}];state.cat='';state.catName=__text("s5c55a67935af8f45");showFilters(state.ctx,state);
     write(state.ctx,{rows:[],more:false,total:'',categoryMessage:''});
   }
 }
 async function buyerAction(ctx, action) {
   const s=market(ctx);
-  if (!s || s.buyerBusy || s.hidden) return;
-  s.buyerBusy=true;write(ctx,{buyerBusy:true,buyerError:''});
-  try { await action(s); }
-  catch(error) {if (market(ctx)===s) write(ctx,{buyerError:error.message,...(error.status===401 ? {authorized:false,needsSession:true} : {})});}
+  if (!s || s.buyerBusy || s.hidden || identitySigningOut) return;
+  const revision=identityRevision;
+  s.buyerBusy=true;s.buyerRevision=revision;write(ctx,{buyerBusy:true,buyerError:''});
+  try { const auth=await ldStore.status();if(revision!==identityRevision)return;if(!auth.authorized){write(ctx,{authorized:false,needsSession:true});throw Error(__text("sa8781c16e303179d"));} await action(s); }
+  catch(error) {if (market(ctx)===s&&revision===identityRevision) write(ctx,{buyerError:error.message,...(error.status===401 ? {authorized:false,needsSession:true} : {})});}
   finally {s.buyerBusy=false;if(market(ctx)===s){ctx.setData('buyerBusy',false);if(ctx.page==='messages')await syncMessageView(s);}}
 }
 fluxdo.on('favorites',()=>fluxdo.navigate('favorites'));
@@ -1672,28 +1818,28 @@ fluxdo.on('collectionTab',(ctx,args)=>{const state=market(ctx);if(ctx.page!=='fa
   state.collectionSearch=state.collectionSearch || {};state.collectionSearch[state.collection || 'favorites']=state.search;state.collection=args.id;state.search=state.collectionSearch[args.id] || '';return loadBuyerPage(ctx,false);});
 fluxdo.on('couponTab',(ctx,a)=>{const s=market(ctx);if(s && couponTabs.some(t=>t.value===a.value) && !s.loading) {s.couponTab=a.value;return loadBuyerPage(ctx,false);}});
 fluxdo.on('favorite',ctx=>buyerAction(ctx,async s=>{
-  if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error('请先登录士多');}
+  if (!(await ldStore.status()).authorized) {ctx.setData('authorized',false);throw Error(__text("sa8781c16e303179d"));}
   await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/favorite',s.favorited ? 'DELETE' : 'POST');
   s.favorited=!s.favorited;invalidateViews(s,v=>v.ctx?.page==='favorites');
-  write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? '已收藏' : '收藏商品'});
+  write(ctx,{favorited:s.favorited,favoriteLabel:s.favorited ? __text("s471dd4d7f86954d0") : __text("sdc3b32db862a0f9d")});
 }));
 fluxdo.on('comment',ctx=>fluxdo.navigate('comment',{id:ctx.params.id}));
 fluxdo.on('postComment',(ctx,a)=>buyerAction(ctx,async s=>{
   const content=String(a.values?.content || '').trim(),rating=Number(a.values?.rating);
-  if (!s.canComment || content.length<5 || content.length>500) throw Error('请填写 5–500 字的评论');
+  if (!s.canComment || content.length<5 || content.length>500) throw Error(__text("se7b74796e3c2a48a"));
   const body={content};
   if(s.canRate && Number.isInteger(rating) && rating>=1 && rating<=5) body.rating=rating;
   const result=await buyerRequest(ctx, '/products/'+encodeURIComponent(ctx.params.id)+'/comments','POST',body);
   for(const v of views.values())if(v.ctx?.page==='product' && v.ctx.params.id===ctx.params.id)v.commentsStale=true;
   s.canComment=false;
-  write(ctx,{commentSubmitted:true,canComment:false,commentResult:result?.message || '评论已提交，以士多审核结果为准'});
+  write(ctx,{commentSubmitted:true,canComment:false,commentResult:result?.message || __text("s9056a72ae79cc23b")});
 }));
 fluxdo.on('claimCoupon',ctx=>buyerAction(ctx,async s=>{
   if (!s.claimAuthorized || !s.coupon?.claimable || s.coupon.claimed) return;
   const result=await buyerRequest(ctx, '/coupons/'+encodeURIComponent(ctx.params.token)+'/claim','POST');
-  if (!result?.claim || !result.campaign) throw Error('领取结果待确认，请刷新优惠券');
+  if (!result?.claim || !result.campaign) throw Error(__text("s204fdaf68d08d9c6"));
   s.coupon={...result.campaign,claimed:true,claim:result.claim};invalidateViews(s,v=>['coupons','review','account'].includes(v.ctx?.page) || v.ctx?.page==null);
-  write(ctx,{coupon:couponRow(result.campaign,result.claim),claimed:true,canClaim:false,claimLabel:'已领取'});
+  write(ctx,{coupon:couponRow(result.campaign,result.claim),claimed:true,canClaim:false,claimLabel:__text("s426e458a41246bd5")});
 }));
 fluxdo.on('couponUse',(ctx,a)=>{
   const s=market(ctx),row=ctx.page==='coupon' ? s?.coupon && couponRow(s.coupon,s.coupon.claim) : s?.rows?.find(r=>r.id===a.id);
@@ -1714,9 +1860,9 @@ fluxdo.on('restoreProduct',(ctx,args)=>buyerAction(ctx,async state=>{
 fluxdo.on('refund',ctx=>fluxdo.navigate('refund',{no:ctx.params.no}));
 fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
   const values=a.values || {},reason=String(values.reasonDetail || '').trim();
-  if (s.refund?.refund || !s.refund?.eligibility?.canApply) throw Error('当前订单不可提交新的退款申请');
-  if (!refundReasons.some(r=>r.value===values.reasonCode) || reason.length<10 || reason.length>500) throw Error('请选择退款原因，并填写 10–500 字的问题描述');
-  if (!await ctx.api.dialogs.confirm({title:'提交退款申请',message:'订单 '+ctx.params.no+'\n'+refundReasons.find(r=>r.value===values.reasonCode).label+'\n提交后由士多和卖家处理，可在这里查看进度。',confirmLabel:'确认提交'})) return;
+  if (s.refund?.refund || !s.refund?.eligibility?.canApply) throw Error(__text("s8d60e9fef9b93e67"));
+  if (!refundReasons.some(r=>r.value===values.reasonCode) || reason.length<10 || reason.length>500) throw Error(__text("s67d4213837fb139c"));
+  if (!await ctx.api.dialogs.confirm({title:__text("s11a588ca6973412b"),message:__text("s358c8cffed6d643f")+ctx.params.no+'\n'+refundReasons.find(r=>r.value===values.reasonCode).label+__text("s243145b86bc8cca5"),confirmLabel:__text("s9ebe36f8cf23673a")})) return;
   if (market(ctx)!==s) return;
   let note;
   try {
@@ -1725,7 +1871,7 @@ fluxdo.on('applyRefund',(ctx,a)=>buyerAction(ctx,async s=>{
     invalidateViews(s,v=>['order','refund'].includes(v.ctx?.page) && v.ctx.params.no===ctx.params.no || v.ctx?.page==='account' || v.ctx?.page==null);
   } catch(error) {
     // 发送后只查询状态，不自动重复提交。
-    note=error.message+'。请核对最新售后状态后再操作。';
+    note=error.message+__text("s787cce5d0f45e4b3");
   }
   s.buyerBusy=false;
   await loadBuyerPage(ctx,false);
@@ -1740,7 +1886,7 @@ fluxdo.on('account',()=>fluxdo.navigate('account'));
 fluxdo.on('messages',()=>fluxdo.navigate('messages'));
 fluxdo.on('overviewRefresh',loadOverview);
 fluxdo.on('signOut',async ctx=>{
-  if(!await ctx.api.dialogs.confirm({title:'退出士多登录',message:'退出后仍可浏览商品。再次兑换时需要重新授权。',confirmLabel:'退出登录'}))return;
+  if(!await ctx.api.dialogs.confirm({title:__text("s385b320ec821e694"),message:__text("s7458ac806336744d"),confirmLabel:__text("s3ab8cc15939f3b5c")}))return;
   identitySigningOut=true;clearAccountIdentity();
   notificationBlocked=true;notificationSummary=null;notificationRetryAt=0;stopNotificationFallback();
   if(notificationRetryTimer)clearTimeout(notificationRetryTimer);notificationRetryTimer=null;
@@ -1749,7 +1895,7 @@ fluxdo.on('signOut',async ctx=>{
   relogCatalog();
   for(const v of views.values())if(v.ctx){v.seq++;v.overviewLoaded=false;v.overviewStats=null;v.overviewRevision=(v.overviewRevision || 0)+1;
     if(v.ctx.page==='account')clearPrivateOverview(v.ctx,v);
-    if(['favorites','coupons','coupon','comment','refund'].includes(v.ctx.page))clearBuyerData(v.ctx,v);
+    if(['favorites','coupons','coupon','comment','refund','reports','report'].includes(v.ctx.page))clearBuyerData(v.ctx,v);
     if(['orders','order'].includes(v.ctx.page))clearOrderData(v.ctx,v);
     if(v.ctx.page==='messages'){v.rows=[];v.page=0;v.more=false;v.messagesLoaded=false;v.messagesCheckPending=false;v.messagesChanged=false;write(v.ctx,{rows:[],more:false,unread:false,messagesChanged:false});}
     if(v.ctx.page==='product'){v.comments=[];v.commentsRevision=(v.commentsRevision || 0)+1;v.commentsPage=0;v.commentsLoading=false;write(v.ctx,{comments:[],commentsMore:false,commentsLoading:false,commentStatsReady:false,canComment:false});}
@@ -1771,11 +1917,11 @@ fluxdo.on('checkPayment',async ctx=>{
 
 fluxdo.on('sellerProfile',ctx=>{const p=market(ctx)?.product;if(p?.sellerUsername && (!p.sellerSite || p.sellerSite==='linux.do'))return ctx.api.forum.open({type:'user',username:p.sellerUsername});});
 
-const messageTabs=[{value:'',label:'全部'},{value:'unread',label:'未读'},{value:'read',label:'已读'}];
-const messageTypes={notification:'系统通知',seller_pending_delivery:'待发货提醒',seller_fulfillment_deadline:'卖家发货时限提醒',buyer_fulfillment_deadline:'发货保障通知',seller_fulfillment_policy:'卖家履约记录通知',product_offline:'商品下架通知',zero_stock_auto_offline:'库存下架提醒',product_comment:'商品评论通知',comment_reply:'评论回复通知',product_restock:'商品补货通知',buyer_order_delivered:'商品发货提醒',refund_reconciled:'退款核对结果',seller_restock_alert:'卖家补货提醒',restock_alert:'卖家补货提醒',top_service_active:'甄选服务生效通知',top_service_expired:'甄选服务到期通知'};
+const messageTabs=[{value:'',label:__text("s5c55a67935af8f45")},{value:'unread',label:__text("s4d0680f9efaef147")},{value:'read',label:__text("sefdd1a47e4beb2f9")}];
+const messageTypes={notification:__text("s94b7513eaddb2f53"),seller_pending_delivery:__text("s5f68685ab537d735"),seller_fulfillment_deadline:__text("sed90548f75d8ac52"),buyer_fulfillment_deadline:__text("s8bb51a4e532febe0"),seller_fulfillment_policy:__text("s8a5b4a8f3d8603d4"),product_offline:__text("sfbce1b50b6e93616"),zero_stock_auto_offline:__text("sf8075580c9d9f470"),product_comment:__text("s0acf8dcc2c723a29"),comment_reply:__text("s71f6b905342c52bf"),product_restock:__text("s1fe7861208bd1c1a"),buyer_order_delivered:__text("s2da6bf03ef3b59fc"),refund_reconciled:__text("s05a63ab155c111a5"),seller_restock_alert:__text("se5788379b068e4bb"),restock_alert:__text("se5788379b068e4bb"),top_service_active:__text("s9370278cffb19f9a"),top_service_expired:__text("s3462f4a8311ffae4")};
 function messageType(type) {
   const refund=/^(?:buyer|seller)_refund_(processing|succeeded|failed|unknown|exception|external_dispute)$/.exec(type);
-  return refund ? ({processing:'退款处理中',succeeded:'退款成功通知',failed:'退款异常通知',exception:'退款异常通知',unknown:'退款待核对通知',external_dispute:'Credit 处理通知'})[refund[1]] : messageTypes[type] || '系统通知';
+  return refund ? ({processing:__text("s5642ebf2112063f7"),succeeded:__text("s116db2538e69ac79"),failed:__text("saefd0a5dced6b22c"),exception:__text("saefd0a5dced6b22c"),unknown:__text("scf8d44ab3daffce5"),external_dispute:__text("sdd7c11a05ef9f1b1")})[refund[1]] : messageTypes[type] || __text("s94b7513eaddb2f53");
 }
 async function loadMessages(ctx,more,silent=false) {
   const s=market(ctx);if(!s || s.buyerBusy || (more && (s.loading || !s.more)))return;
@@ -1792,16 +1938,16 @@ async function loadMessages(ctx,more,silent=false) {
   try {
     const auth=await ldStore.status();if(!current())return;
     ctx.setData('authorized',auth.authorized);
-    if(!auth.authorized){s.rows=[];s.more=false;s.messagesLoaded=false;s.messagesChanged=false;s.messagesCheckPending=false;write(ctx,{needsSession:true,error:'登录士多后查看消息',rows:[],more:false,messagesChanged:false});return;}
+    if(!auth.authorized){s.rows=[];s.more=false;s.messagesLoaded=false;s.messagesChanged=false;s.messagesCheckPending=false;write(ctx,{needsSession:true,error:__text("s06c3614b35663015"),rows:[],more:false,messagesChanged:false});return;}
     const data=await buyerRequest(ctx,'/messages/system?'+params({page,pageSize:20,readStatus:s.readStatus || '',search:s.search || ''}));
     if(!current())return;
     if(silent && s.hidden){s.messagesCheckPending=true;return;}
-    if(!Array.isArray(data.messages))throw Error('消息数据格式有误');
+    if(!Array.isArray(data.messages))throw Error(__text("s79a07d520e433d2e"));
     const signature=messageSignature(data.messages);
     if(probe) {
       s.messagesChanged=s.messagesChanged || s.messagesFirstSignature!==signature;
     } else {
-      const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || '系统消息',content:display(m.content),type:messageType(m.messageType),
+      const rows=data.messages.map(m=>({id:String(m.id),title:display(m.title) || __text("s4ce218874bc990ad"),content:display(m.content),type:messageType(m.messageType),
         time:storeTime(m.createdAt),read:flag(m.isRead ?? m.is_read ?? m.read),link:display(m.link)}));
       s.rows=mergeRows(more ? s.rows : [],rows);s.page=page;s.more=hasNextPage(data.pagination,page,data.messages.length);
       s.messagesLoaded=true;
@@ -1833,7 +1979,7 @@ fluxdo.on('messageRead',(ctx,a)=>buyerAction(ctx,async s=>{
   if(s.page===1)s.messagesFirstSignature=messageSignature(s.rows);
 }));
 fluxdo.on('messagesReadAll',ctx=>buyerAction(ctx,async s=>{
-  if(!await ctx.api.dialogs.confirm({title:'全部标记已读',message:'将士多的全部系统消息标记为已读。',confirmLabel:'标记已读'}))return;
+  if(!await ctx.api.dialogs.confirm({title:__text("s4d3eebf1cf765ace"),message:__text("sd5615e4d51457956"),confirmLabel:__text("s71ef3f727b039321")}))return;
   if(market(ctx)!==s)return;
   await buyerRequest(ctx,'/messages/system/read-all','POST');invalidateViews(s,v=>v.ctx?.page==='account' || v.ctx?.page==null);
   s.buyerBusy=false;await loadMessages(ctx,false);
@@ -1846,3 +1992,6 @@ fluxdo.on('messageOpen',(ctx,a)=>{
   if(relative.startsWith('/') && !relative.startsWith('//') && !relative.includes('\\'))return ctx.api.browser.open('https://ldcstore.com'+relative,{mode:'inApp'});
 });
 fluxdo.on('webMessages',()=>fluxdo.session.open('/user/messages'));
+
+ host.on('host.environmentChanged',async ctx=>{await environment(ctx.api);for(const [id,source]of contexts){source.setData('i18n',catalogs[locale]);source.setData('pageTitle',catalogs[locale][titles[source.page]]||'');for(const [key,value]of records.get(id)||[])source.setData(key,translate(value));}});
+})(fluxdo);

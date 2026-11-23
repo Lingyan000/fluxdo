@@ -6,13 +6,14 @@ import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 void emit(Object? value) => stdout.writeln(jsonEncode(value));
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   final engine = await IsolateScriptEngine.spawn();
   engine.onMessage = (value) => emit({'type': 'message', 'message': value});
   engine.onFatal = (reason) => emit({'type': 'fatal', 'error': reason});
   await engine.evaluate(metaversePluginPrelude);
   emit({'type': 'ready'});
   try {
+    if (args.contains('--check')) return;
     await for (final line
         in stdin.transform(utf8.decoder).transform(const LineSplitter())) {
       final command = jsonDecode(line) as Map;
