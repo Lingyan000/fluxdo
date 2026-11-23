@@ -624,7 +624,11 @@ class MetaversePluginHost implements MetaversePluginBridge {
   }
 
   Future<void> _ensureAccountMigration() async {
-    if (!manifest.accountScoped || !manifest.requiredFeatures.contains('accountDataMigration')) return;
+    // 开发会话没有正式旧数据，且模块传输只能由当前热更新引擎持有。
+    if (_store.isolated || !manifest.accountScoped ||
+        !manifest.requiredFeatures.contains('accountDataMigration')) {
+      return;
+    }
     _requirePermission(MetaversePluginPermission.identity);
     final account = _accountAtStart;
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');

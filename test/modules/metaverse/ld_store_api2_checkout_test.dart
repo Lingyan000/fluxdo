@@ -374,6 +374,27 @@ void main() {
       expect(orders.requests, isEmpty);
     });
 
+    test('开发隔离存储不会启动第二个迁移引擎抢占热更新连接', () async {
+      host.shutdown();
+      store = MetaversePluginStore(preferences: await SharedPreferences.getInstance(),
+        secretStore: secrets, rootDirectory: () async => root, isolated: true);
+      await store.writeCode(manifest.id, (
+        ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
+        script: _withSubmissionProbe(File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync()),
+      ));
+      var starts = 0;
+      host = MetaversePluginHost(manifest: manifest, store: store, network: network,
+        delegate: delegate, engineFactory: () async {
+          expect(++starts, 1);
+          final engine = await IsolateScriptEngine.spawn();
+          engines.add(engine);
+          return engine;
+        });
+      expect((await invoke('status'))['result'], {'state': 'idle'});
+      expect(starts, 1);
+      expect(await store.readStorage(manifest.id), isEmpty);
+    });
+
     for (final mixed in [false, true]) {
       test('建单和恢复兼容订单号别名，驼峰优先=$mixed', () async {
         final order = {

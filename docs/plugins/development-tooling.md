@@ -1,6 +1,6 @@
 # 插件开发工具选型与热更新
 
-工具、脚手架和 SDK 0.12.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
+工具、脚手架和 SDK 0.14.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
 
 ## 选型依据
 
@@ -91,6 +91,8 @@ CLI、SDK 与脚手架具有 npm 发布配置；维护者需配置 npm 的包发
 ## 多语言项目
 
 SDK 0.13.0 的 `@fluxdo/plugin-sdk/i18n` 提供 `createTranslator(catalogs, baseLocale)`。`setLocale` 选择地区或语言回退，`text` 只替换产品文案的参数，不翻译服务器正文。脚手架 `--template localized` 提供可直接开发、热替换和打包的 TypeScript 示例；在 `host.environmentChanged` 和页面恢复时读取应用语言，再更新显示数据。
+
+SDK 0.14.0 的 `storage.partition` 支持账号分区迁移。开发热更新会话使用全新的隔离存储，不执行正式数据迁移，也不为迁移创建第二条模块连接。纯分类逻辑可在 SDK 测试宿主中用 `task` 上下文分发此事件并断言返回数据；正式升级、快照回退和账号切换需用已安装包验证。
 
 已有独立 JS/TS 脚本可使用 `fluxdo localize [目录]`，在 `fluxdo.config.json` 配置 `localization: {baseLocale, script, ui}`，将词典放在 `locales/<语言>.json`。命令生成脚本、RFW 和清单译文；`--check` 可用于 CI 检查产物。缺少显式词典翻译会失败；中文基准可自动生成台湾及香港繁体。带模块导入的 TS 项目使用 SDK 翻译函数并由 Vite 构建，不走独立脚本转换。
 
