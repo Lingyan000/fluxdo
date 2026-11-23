@@ -231,6 +231,58 @@ const ldStore = (() => {
     return saved;
   }
 
+  fluxdo.on('storage.partition', async (ctx, {accountId, legacy, account:own}) => {
+    const key = 'submission:' + accountId;
+    const records = {}, imported = {};
+    function merge(target, source) {
+      if (source == null) return;
+      if (typeof source !== 'object' || Array.isArray(source)) throw Error('checkout_record_invalid');
+      for (const name of Object.keys(source)) {
+        if (Object.prototype.hasOwnProperty.call(target, name) && target[name] !== source[name]) {
+          throw Error('checkout_record_conflict');
+        }
+        target[name] = source[name];
+      }
+    }
+    let pending = own[key] ?? null;
+    function restore(value) {
+      const candidate = validateRecord(value);
+      if (pending) {
+        validateRecord(pending);
+        for (const field of ['token','productId','quantity','expectedAmount','couponClaimId']) {
+          if ((pending[field] ?? null) !== (candidate[field] ?? null)) throw Error('checkout_record_conflict');
+        }
+        if (pending.orderNo && candidate.orderNo && pending.orderNo !== candidate.orderNo) throw Error('checkout_record_conflict');
+      }
+      if (!pending || (pending.state !== 'created' && candidate.state === 'created')) pending = candidate;
+    }
+    // 旧版本可能已把公共数据放进当时登录的账号分区；只认记录自己的账号键。
+    for (const name of Object.keys(own)) {
+      if (/^submission:\d+$/.test(name) && name !== key) {
+        if (legacy[name] != null && JSON.stringify(legacy[name]) !== JSON.stringify(own[name])) throw Error('checkout_record_conflict');
+        legacy[name] = own[name]; delete own[name];
+      }
+    }
+    for (const source of [legacy, own]) {
+      if (source !== own && source[key] != null) { restore(source[key]); delete source[key]; }
+      merge(records, source.legacyApi1Records);
+      merge(imported, source.legacyApi1Imported);
+      delete source.legacyApi1Records;
+      delete source.legacyApi1Imported;
+    }
+    const scope = 'v1:' + await ctx.api.crypto.sha256(JSON.stringify([
+      api + '/orders', api + '/order-submissions', 'linux.do:' + accountId, 'LDC',
+    ]));
+    if (Object.prototype.hasOwnProperty.call(records, scope)) {
+      try { restore(JSON.parse(records[scope])); } catch (_) { throw Error('checkout_record_invalid'); }
+      delete records[scope];
+    }
+    if (pending) own[key] = pending;
+    if (Object.keys(records).length) legacy.legacyApi1Records = records;
+    if (Object.keys(imported).length) legacy.legacyApi1Imported = imported;
+    return {legacy, account:own};
+  });
+
   async function record(account) {
     const key = 'submission:' + account;
     const saved = await fluxdo.storage.get(key);

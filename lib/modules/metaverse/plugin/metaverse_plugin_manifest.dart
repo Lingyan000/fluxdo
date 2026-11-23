@@ -413,6 +413,11 @@ class MetaversePluginManifest {
     if (capabilities.forum.isNotEmpty && !requiredFeatures.contains(PluginFeature.forumRead.name)) {
       throw const MetaverseManifestException('requiredFeatures', '论坛读取须声明 forumRead');
     }
+    if (requiredFeatures.contains('accountDataMigration') && (!identity ||
+        (capabilities.forum.isEmpty && MetaverseTaskSpec.parse(json['tasks']).isEmpty &&
+            !capabilities.notifications && !requiredFeatures.contains('navigationBadge')))) {
+      throw const MetaverseManifestException('requiredFeatures', '账号数据迁移需要 identity 和账号分区能力');
+    }
     if (pages.any((page) => page.navigation != null) && !requiredFeatures.contains(PluginFeature.navigationEntries.name)) {
       throw const MetaverseManifestException('requiredFeatures', '导航入口须声明 navigationEntries');
     }

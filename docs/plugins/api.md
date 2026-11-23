@@ -193,7 +193,7 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 | `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
 | `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
 
-键长度为 1–128，不能使用 `@forum-account:` 前缀。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有账号分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。声明论坛、任务、通知或底栏角标能力的插件使用账号分区，切换账号后旧实例不能读取或写入新账号。
+键长度为 1–128，`@` 前缀保留给宿主使用。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有账号分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。声明论坛、任务、通知或底栏角标能力的插件使用账号分区，切换账号后旧实例不能读取或写入新账号。
 
 `storage.compareAndSet(key, expected, value)` 在同一事务内比较 JSON 值、写入并返回布尔值。`null` 表示缺少键，写入 `null` 会删除键。页面和任务同时修改同一数据时，失败的一方应重新读取后再合并。需要此能力的插件声明 `atomicStorage`。
 
@@ -452,3 +452,5 @@ fluxdo.on('files.invalidated', ctx => { /* 清空已选文件和上传状态。 
 声明 `manifestLocalization` 后可用 `locales` 覆盖显示文字，例如 `{"en":{"name":"Store","pages.market.title":"Market"}}`。可翻译名称、简介、页面标题、导航标签、任务标题、偏好标题和选项；标识、资源路径、权限和来源不能翻译。按地区、语言、原始字段依次回退，译文不会改变已有权限审阅。市场条目可独立提供 `name/summary/description/changelog` 的 `locales`。
 
 声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐账号进行，失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。
+
+从公共数据切换到账号分区时，声明 `accountDataMigration` 并处理 `storage.partition`。该事件接收 `{accountId, legacy, account}`，返回新的 `{legacy, account}`，只在无网络、凭证和界面能力的隔离引擎中执行；迁移与正常页面都无法读取其他账号分区。必须保留无法归属的数据、处理冲突并移除已经消费的旧记录。执行时机、权限和并发规则同上文链接。

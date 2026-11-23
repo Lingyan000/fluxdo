@@ -401,7 +401,8 @@ class MetaversePluginsController
     await _store.settleRelease(previous);
     var data = await migrateMetaverseData(package: package, fromVersion: previous.manifest.dataVersion,
       data: await _store.readStorage(previous.id), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
-    if (!previous.manifest.accountScoped && next.manifest.accountScoped) {
+    if (!previous.manifest.accountScoped && next.manifest.accountScoped &&
+        !next.manifest.requiredFeatures.contains('accountDataMigration')) {
       // 只有安全存储中已绑定的唯一账号可继承旧公共分区；无法归属的数据保留在快照中。
       final accounts = <int>{};
       for (final name in previous.manifest.capabilities.credentials.keys) {

@@ -107,20 +107,22 @@ void main() {
     expect(await store.releaseStatus(old.id), isEmpty);
   });
 
-  test('新增后台任务按唯一凭证账号迁移旧数据，回退恢复原分区', () async {
-    final raw=updateManifest('1.1.0');
-    raw['permissions']={'network':['api.example.org'],'credentials':{'account':{'requests':[{'origin':'https://api.example.org','pathPrefix':'/api','methods':['GET']}]}}};
-    final source=controller.byId('example.updates')!.source;
-    final code=updatePackage('1.1.0').code;
-    await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse(raw),source:source,code:code));
-    await store.writeCredential('example.updates','account',const MetaverseCredential('fixture',accountId:42),
-      revision:store.credentialRevision('example.updates','account'),isActive:()=>true);
-    await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse({...raw,'version':'1.2.0',
-      'requiredFeatures':['scheduledTasks'],'tasks':[{'id':'refresh','title':'刷新'}]}),source:source,code:code));
-    expect(await store.readStorage('example.updates'),{'@forum-account:42:list':['alice']});
-    await controller.rollback('example.updates',reviewed:true);
-    expect(await store.readStorage('example.updates'),{'list':['alice']});
-  });
+  for (final custom in [false, true]) {
+    test('新增后台任务保留正确迁移入口，回退恢复原分区，自定义=$custom', () async {
+      final raw=updateManifest('1.1.0');
+      raw['permissions']={'network':['api.example.org'],'identity':true,'credentials':{'account':{'requests':[{'origin':'https://api.example.org','pathPrefix':'/api','methods':['GET']}]}}};
+      final source=controller.byId('example.updates')!.source;
+      final code=updatePackage('1.1.0').code;
+      await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse(raw),source:source,code:code));
+      await store.writeCredential('example.updates','account',const MetaverseCredential('fixture',accountId:42),
+        revision:store.credentialRevision('example.updates','account'),isActive:()=>true);
+      await controller.install(MetaversePluginPackage(manifest:MetaversePluginManifest.parse({...raw,'version':'1.2.0',
+        'requiredFeatures':['scheduledTasks',if(custom) 'accountDataMigration'],'tasks':[{'id':'refresh','title':'刷新'}]}),source:source,code:code));
+      expect(await store.readStorage('example.updates'),{custom ? 'list' : '@forum-account:42:list':['alice']});
+      await controller.rollback('example.updates',reviewed:true);
+      expect(await store.readStorage('example.updates'),{'list':['alice']});
+    });
+  }
 
   test('仅保留当前和上一版本代码，运行成功后仍可显式回退', () async {
     await controller.install(updatePackage('1.1.0'));
@@ -137,6 +139,59 @@ void main() {
           .length,
       2,
     );
+  });
+
+  test('账号迁移仅在隔离引擎分类，完成后幂等且不改变其他账号数据', () async {
+    const script = '''fluxdo.on('storage.partition', async (ctx, args) => {
+      const key = 'saved:' + args.accountId;
+      if (JSON.stringify(args).includes('other')) throw Error('跨账号数据泄露');
+      const own = args.account;
+      if (args.legacy[key]) { own.saved = args.legacy[key]; delete args.legacy[key]; }
+      return {legacy:args.legacy, account:own};
+    });''';
+    final before = <String, Object?>{
+      'saved:42': ['alice'], 'saved:43': ['bob'],
+      '@forum-account:7:saved': ['other'],
+    };
+    final after = await migrateMetaverseAccountData(data: before, account: 42,
+      script: script, engineFactory: createMetaverseScriptEngine);
+    expect(after['@forum-account:42:saved'], ['alice']);
+    expect(after['@forum-account:7:saved'], ['other']);
+    expect(after['saved:43'], ['bob']);
+    expect(before['saved:42'], ['alice']);
+    expect(await migrateMetaverseAccountData(data: after, account: 42,
+      script: script, engineFactory: () async => throw StateError('重复启动')), same(after));
+    final second = await migrateMetaverseAccountData(data: after, account: 43,
+      script: script, engineFactory: createMetaverseScriptEngine);
+    expect(second['@forum-account:43:saved'], ['bob']);
+    expect(second['saved:43'], isNull);
+  });
+
+  test('账号迁移拒绝网络、凭证、存储直写和伪造账号前缀', () async {
+    for (final body in [
+      'await ctx.api.fetch("https://api.example.org");',
+      'await ctx.api.credentials.status("account");',
+      'await ctx.api.storage.set("bypass",true);',
+      'args.account["@forum-account:99:saved"]=true;',
+      'args.legacy["@internal"]=true;',
+    ]) {
+      final data = <String, Object?>{'saved': true};
+      await expectLater(migrateMetaverseAccountData(data: data, account: 42,
+        script: 'fluxdo.on("storage.partition",async(ctx,args)=>{$body return args;});',
+        engineFactory: createMetaverseScriptEngine), throwsA(anything));
+      expect(data, {'saved': true});
+    }
+  });
+
+  test('迁移提交拒绝覆盖并发修改或已经撤销的账号', () async {
+    final before = await store.readStorage('example.updates');
+    await store.updateStorage('example.updates', 'concurrent', true);
+    expect(await store.commitStorageMigration('example.updates', before,
+      {'migrated': true}, checkActive: () {}), false);
+    final current = await store.readStorage('example.updates');
+    await expectLater(store.commitStorageMigration('example.updates', current,
+      {'migrated': true}, checkActive: () => throw StateError('账号已退出')), throwsStateError);
+    expect(await store.readStorage('example.updates'), current);
   });
 
   test('备份不含代码或凭证，暂存恢复不改变安装索引，旧索引不再普通导入', () async {

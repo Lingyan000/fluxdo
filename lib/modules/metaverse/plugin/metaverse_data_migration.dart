@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import 'metaverse_plugin_installer.dart';
@@ -14,6 +15,67 @@ Map<String, Object?> partitionMetaverseData(Map<String, Object?> data, int? acco
     result.remove(entry.key);
   }
   return result;
+}
+
+/// 旧公共数据只能在隔离脚本中分类，页面与后台任务始终只读取自己的账号分区。
+/// 设计依据: docs/plugins/automatic-updates.md §版本恢复与数据迁移。
+Future<Map<String, Object?>> migrateMetaverseAccountData({
+  required Map<String, Object?> data,
+  required int account,
+  required String script,
+  required MetaverseScriptEngineFactory engineFactory,
+}) async {
+  final legacy = <String, Object?>{
+    for (final entry in data.entries)
+      if (!entry.key.startsWith('@')) entry.key: entry.value,
+  };
+  final prefix = '@forum-account:$account:';
+  final current = <String, Object?>{
+    for (final entry in data.entries)
+      if (entry.key.startsWith(prefix)) entry.key.substring(prefix.length): entry.value,
+  };
+  final marker = '@account-migration:$account';
+  final revision = sha256.convert(utf8.encode(script)).toString();
+  Map<String, Object?> stamp(Map<String, Object?> source) => {
+    'revision': revision,
+    'source': sha256.convert(utf8.encode(jsonEncode(source))).toString(),
+  };
+  if (const DeepCollectionEquality().equals(data[marker], stamp(legacy))) {
+    return data;
+  }
+  final bridge = _MigrationBridge({}, partitionOnly: true);
+  final runtime = await MetaversePluginRuntime.start(
+    engineFactory: engineFactory,
+    script: script,
+    bridge: bridge,
+  );
+  try {
+    final output = await runtime.runTask(
+      'account-migration', background: false, event: 'storage.partition',
+      arguments: {'accountId': account, 'legacy': legacy, 'account': current},
+    );
+    bool validData(Object? value) => value is Map<String, dynamic> &&
+        value.keys.every((key) => key.isNotEmpty && key.length <= 128 && !key.startsWith('@'));
+    if (output is! Map<String, dynamic> || !validData(output['legacy']) ||
+        !validData(output['account'])) {
+      throw const MetaversePluginCallException('account_migration_invalid_result');
+    }
+    final remaining = (output['legacy'] as Map).cast<String, Object?>();
+    final migrated = (output['account'] as Map).cast<String, Object?>();
+    final result = <String, Object?>{
+      for (final entry in data.entries)
+        if (entry.key.startsWith('@') && !entry.key.startsWith(prefix)) entry.key: entry.value,
+      ...remaining,
+      for (final entry in migrated.entries) '$prefix${entry.key}': entry.value,
+      marker: stamp(remaining),
+    };
+    if (utf8.encode(jsonEncode(result)).length > MetaversePluginStore.maxStorageBytes) {
+      throw const MetaversePluginCallException('storage_limit');
+    }
+    return result;
+  } finally {
+    runtime.dispose();
+  }
 }
 
 /// 迁移运行器只处理数据副本，不提供网络、凭证、页面或系统任务能力。
@@ -33,6 +95,7 @@ Future<Map<String, Object?>> migrateMetaverseData({
   if (data.isEmpty) return {};
   final groups = <String, Map<String, Object?>>{};
   for (final entry in data.entries) {
+    if (entry.key.startsWith('@account-migration:')) continue;
     final match = RegExp(r'^(@forum-account:(?:null|\d+):)(.*)$')
         .firstMatch(entry.key);
     final prefix = match?[1] ?? '';
@@ -73,12 +136,16 @@ Future<Map<String, Object?>> migrateMetaverseData({
 }
 
 class _MigrationBridge implements MetaversePluginBridge {
-  _MigrationBridge(this.data);
+  _MigrationBridge(this.data, {this.partitionOnly = false});
   final Map<String, Object?> data;
+  final bool partitionOnly;
   @override
   void log(String level, String message) {}
   @override
   Future<Object?> call(String method, Map<String, Object?> params) async {
+    if (partitionOnly && method != 'crypto.sha256' && method != 'host.features') {
+      throw const MetaversePluginCallException('account_migration_isolated');
+    }
     String key(Object? value) {
       if (value is! String ||
           value.isEmpty ||
@@ -98,6 +165,12 @@ class _MigrationBridge implements MetaversePluginBridge {
     }
 
     switch (method) {
+      case 'crypto.sha256' when partitionOnly:
+        final text = params['text'];
+        if (text is! String || utf8.encode(text).length > MetaversePluginStore.maxStorageBytes) {
+          throw const MetaversePluginCallException('crypto_invalid_text');
+        }
+        return sha256.convert(utf8.encode(text)).toString();
       case 'host.features':
         return PluginFeatures.supported.toList();
       case 'storage.get':

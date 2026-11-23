@@ -115,7 +115,7 @@ class MetaversePluginRuntime {
   void Function()? _onSurfaceReady;
 
   final _surfaces = <String, MetaversePluginSurface>{};
-  final _tasks = <String, Completer<void>>{};
+  final _tasks = <String, Completer<Object?>>{};
   final _timers = <int, _PluginTimer>{};
   int _surfaceSeq = 0;
   int _deliverySeq = 0;
@@ -170,16 +170,16 @@ class MetaversePluginRuntime {
   }
 
   /// 任务拥有受限上下文，无界面与用户点击激活，超时由宿主中断实例。
-  Future<void> runTask(String id, {required bool background, Duration timeout = const Duration(seconds: 20),
+  Future<Object?> runTask(String id, {required bool background, Duration timeout = const Duration(seconds: 20),
       String event = 'task.run', Map<String, Object?>? arguments}) async {
     if (_tasks.isNotEmpty) throw StateError('已有执行中的任务');
     final surface = MetaversePluginSurface._('t${++_surfaceSeq}', 'task', null, {'id': id, 'background': background});
-    final done = Completer<void>();
+    final done = Completer<Object?>();
     _surfaces[surface.id] = surface;
     _tasks[surface.id] = done;
     try {
       _dispatchRaw(surface, event, arguments ?? {'id': id, 'background': background});
-      await done.future.timeout(timeout);
+      return await done.future.timeout(timeout);
     } finally {
       _tasks.remove(surface.id);
       _surfaces.remove(surface.id);
@@ -312,7 +312,7 @@ class MetaversePluginRuntime {
       case 'task.done':
         final done = _tasks[message['s']];
         if (done != null && !done.isCompleted) {
-          if (message['ok'] == true) { done.complete(); }
+          if (message['ok'] == true) { done.complete(message['result']); }
           else { done.completeError(MetaversePluginCallException(_text(message['error'], 200))); }
         }
       case 'call':

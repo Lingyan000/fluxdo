@@ -30,6 +30,7 @@ enum PluginFeature {
   fileAttachments,
   captchaChallenge,
   manifestLocalization,
+  accountDataMigration,
 }
 
 class PluginFeatures {

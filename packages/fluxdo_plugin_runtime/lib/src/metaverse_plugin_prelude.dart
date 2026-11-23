@@ -246,17 +246,17 @@ const metaversePluginPrelude = r'''
         }
         var eventId = ++seq;
         post({t: 'event', phase: 'start', id: eventId});
-        function done(error) {
+        function done(error, result) {
           if (name === 'page.open' || name === 'card.load') post({t:'surface.ready', ok:!error});
           if (delivery) post({t: 'delivery.done', d: delivery});
           post({t: 'event', phase: 'end', id: eventId});
-          if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : ''});
+          if (task) post({t: 'task.done', s: taskSurface, ok: !error, error: error ? String(error.message || error) : '', result: name === 'storage.partition' ? result : null});
         }
         try {
           var result = handler(makeContext(JSON.parse(infoJson)), JSON.parse(argsJson));
           if (result && typeof result.then === 'function') {
-            result.then(function () { done(); }, function (error) { report(name, error); done(error); });
-          } else { done(); }
+            result.then(function (value) { done(null, value); }, function (error) { report(name, error); done(error); });
+          } else { done(null, result); }
         } catch (error) {
           report(name, error);
           done(error);

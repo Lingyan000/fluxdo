@@ -2,6 +2,7 @@ import 'metaverse_event_stream.dart';
 import 'metaverse_plugin_files.dart';
 import 'metaverse_captcha_request.dart';
 import 'metaverse_task.dart';
+import 'metaverse_data_migration.dart';
 import 'metaverse_ui_validator.dart';
 import 'metaverse_component_contract.dart';
 import 'dart:async';
@@ -248,6 +249,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
   Timer? _idleTimer;
   int _generation = 0;
   int? _accountAtStart;
+  String? _storageMigrationScript;
+  Future<void>? _storageMigration;
   bool Function()? _taskActive;
   final _forumAvatars = <Uri>{};
   final _streamBudget = MetaverseStreamBudget();
@@ -440,6 +443,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
   /// 停止脚本并释放引擎；之后 [open] 会重新启动。
   void shutdown() {
     _generation++;
+    _storageMigration = null;
+    _storageMigrationScript = null;
     _files.close();
     _fileUiSurface = null;
     _closeStreams();
@@ -475,6 +480,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
       }
       final code = await (codeLoader?.call() ?? _store.readCode(id));
       if (generation != _generation) throw const PluginOperationCancelled();
+      _storageMigrationScript = code.script;
       final library = _taskActive == null ? MetaversePluginInstaller.validateUi(manifest, code.ui) : null;
       final runtime = await MetaversePluginRuntime.start(
         engineFactory: _engineFactory,
@@ -615,6 +621,40 @@ class MetaversePluginHost implements MetaversePluginBridge {
     final account = _delegate.currentAccountId();
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');
     return '@forum-account:$_accountAtStart:$key';
+  }
+
+  Future<void> _ensureAccountMigration() async {
+    if (!manifest.accountScoped || !manifest.requiredFeatures.contains('accountDataMigration')) return;
+    _requirePermission(MetaversePluginPermission.identity);
+    final account = _accountAtStart;
+    if (account == null) throw const MetaversePluginCallException('forum_auth_required');
+    final generation = _generation;
+    void check() {
+      _requirePermission(MetaversePluginPermission.identity);
+      if (generation != _generation || account != _delegate.currentAccountId() ||
+          (_taskActive != null && !_taskActive!())) {
+        throw const PluginOperationCancelled();
+      }
+    }
+    Future<void> migrate() async {
+      final script = _storageMigrationScript;
+      if (script == null) throw const PluginOperationCancelled();
+      for (var attempt = 0; ; attempt++) {
+        check();
+        final previous = await _store.readStorage(id);
+        final migrated = await migrateMetaverseAccountData(data: previous,
+          account: account, script: script, engineFactory: _engineFactory);
+        check();
+        if (identical(previous, migrated) || await _store.commitStorageMigration(
+            id, previous, migrated, checkActive: check)) {
+          return;
+        }
+        if (attempt >= 2) throw const MetaversePluginCallException('account_migration_busy');
+      }
+    }
+    final pending = _storageMigration ??= migrate();
+    try { await pending; check(); }
+    catch (_) { if (identical(_storageMigration, pending)) _storageMigration = null; rethrow; }
   }
 
   Future<Object?> _streamCall(String method, Map<String, Object?> params) async {
@@ -796,6 +836,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
           (_taskActive != null && !_taskActive!())) {
         throw const MetaversePluginCallException('task_cancelled');
       }
+    }
+    if (method.startsWith('storage.')) {
+      await _ensureAccountMigration();
+      checkActive();
     }
     switch (method) {
       case 'captcha.request':
@@ -1295,7 +1339,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   String _storageKey(Map<String, Object?> params) {
     final key = params['key'];
-    if (key is! String || key.isEmpty || key.length > _maxStorageKey || key.startsWith('@forum-account:')) {
+    if (key is! String || key.isEmpty || key.length > _maxStorageKey || key.startsWith('@')) {
       throw const MetaversePluginCallException('存储键不合法');
     }
     return key;

@@ -307,6 +307,16 @@ class MetaversePluginStore {
   Future<void> writeStorage(String id, Map<String, Object?> data) =>
       _operations.run(id, () => _writeStorage(id, data));
 
+  /// 隔离迁移结束后比较整个快照，避免另一个引擎或进程的写入被覆盖。
+  Future<bool> commitStorageMigration(String id, Map<String, Object?> expected,
+      Map<String, Object?> next, {required void Function() checkActive}) =>
+      _operations.run(id, () => _dataTransaction(id, (db) {
+        checkActive();
+        if (!const DeepCollectionEquality().equals(_readData(db), expected)) return false;
+        _saveData(db, next);
+        return true;
+      }));
+
   Future<Map<String, Object?>> updateStorage(String id, String key, Object? value, {bool Function()? isActive}) =>
       updateStorageEntries(id, {key: value}, isActive: isActive);
 

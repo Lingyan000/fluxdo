@@ -11,10 +11,12 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_manifest.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_permission.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 class _Orders implements HttpClientAdapter {
   final requests = <RequestOptions>[];
@@ -95,6 +97,7 @@ void main() {
     late _Delegate delegate;
     final engines = <IsolateScriptEngine>[];
     Future<void> signIn(int id) async {
+      host.shutdown();
       delegate.account = id;
       await store.writeCredential(
         manifest.id,
@@ -224,7 +227,7 @@ void main() {
     });
 
     test('记录损坏时保留现场，账号在请求期间变化后拒绝回写', () async {
-      await store.updateStorage(manifest.id, 'submission:42', {
+      await store.updateStorage(manifest.id, '@forum-account:42:submission:42', {
         'invalid': true,
       });
       expect(
@@ -232,68 +235,127 @@ void main() {
         'checkout_record_invalid',
       );
       expect(orders.requests, isEmpty);
-      await store.updateStorage(manifest.id, 'submission:42', null);
+      await store.updateStorage(manifest.id, '@forum-account:42:submission:42', null);
       orders.afterRequest = () => delegate.account = 43;
-      expect((await invoke('submit', intent))['failure'], 'auth_required');
+      expect((await invoke('submit', intent))['failure'], 'forum_account_changed');
       final saved =
-          (await store.readStorage(manifest.id))['submission:42'] as Map;
+          (await store.readStorage(manifest.id))['@forum-account:42:submission:42'] as Map;
       expect(saved['state'], 'pending');
       expect(saved['orderNo'], isNull);
     });
 
-    test('旧版多账号记录按所属账号原号迁移，已消费记录不会重复导入', () async {
-      String scope(int account) => sha256
-          .convert(
-            utf8.encode(
-              jsonEncode([
-                'https://api2.ldspro.qzz.io/api/shop/orders',
-                'https://api2.ldspro.qzz.io/api/shop/order-submissions',
-                'linux.do:$account',
-                'LDC',
-              ]),
-            ),
-          )
-          .toString();
-      final pending = {
-        ...intent,
-        'token': 'ord_${'a' * 32}',
-        'state': 'pending',
-      };
-      await secrets.writeLegacyRecord(manifest.id, scope(42), jsonEncode(pending));
-      await secrets.writeLegacyRecord(
-        manifest.id,
-        scope(43),
-        jsonEncode({...pending, 'token': 'ord_${'b' * 32}'}),
-      );
-      await store.importLegacyStorage(manifest.id);
-      expect(
-        ((await invoke('status'))['result'] as Map)['token'],
-        pending['token'],
-      );
+    for (final misplaced in [false, true]) {
+      test('旧版多账号记录按所属账号原号迁移，不重复导入，误分区=$misplaced', () async {
+        String scope(int account) => sha256
+            .convert(
+              utf8.encode(
+                jsonEncode([
+                  'https://api2.ldspro.qzz.io/api/shop/orders',
+                  'https://api2.ldspro.qzz.io/api/shop/order-submissions',
+                  'linux.do:$account',
+                  'LDC',
+                ]),
+              ),
+            )
+            .toString();
+        final pending = {
+          ...intent,
+          'token': 'ord_${'a' * 32}',
+          'state': 'pending',
+        };
+        await secrets.writeLegacyRecord(manifest.id, scope(42), jsonEncode(pending));
+        await secrets.writeLegacyRecord(
+          manifest.id,
+          scope(43),
+          jsonEncode({...pending, 'token': 'ord_${'b' * 32}'}),
+        );
+        await store.importLegacyStorage(manifest.id);
+        if (misplaced) {
+          final data = await store.readStorage(manifest.id);
+          await store.writeStorage(manifest.id, {
+            for (final entry in data.entries) '@forum-account:42:${entry.key}': entry.value,
+          });
+        }
+        expect(
+          ((await invoke('status'))['result'] as Map)['token'],
+          pending['token'],
+        );
+        expect(orders.requests, isEmpty);
+        var data = await store.readStorage(manifest.id);
+        expect((data['legacyApi1Records'] as Map).keys, ['v1:${scope(43)}']);
+        orders.status = 200;
+        orders.body = {
+          'success': true,
+          'data': {
+            'exists': true,
+            'order': {'orderNo': 'EX-1'},
+          },
+        };
+        await invoke('recover');
+        expect(orders.requests.single.uri.path, endsWith('/${pending['token']}'));
+        await invoke('finish', 'EX-1');
+        await store.importLegacyStorage(manifest.id);
+        expect((await invoke('status'))['result'], {'state': 'idle'});
+        await signIn(43);
+        expect(
+          ((await invoke('status'))['result'] as Map)['token'],
+          'ord_${'b' * 32}',
+        );
+        data = await store.readStorage(manifest.id);
+        expect(data['legacyApi1Records'], isNull);
+        expect(await secrets.readLegacyRecord(manifest.id, scope(42)), isNotNull);
+      });
+    }
+
+    for (final misplaced in [false, true]) {
+      test('迁移旧提交到所属账号并保留原提交号，误分区=$misplaced', () async {
+        final prefix = misplaced ? '@forum-account:42:' : '';
+        final pending = {...intent, 'state': 'pending', 'token': 'ord_${'b' * 32}'};
+        await store.updateStorage(manifest.id, '${prefix}submission:43', pending);
+        expect((await invoke('status'))['result'], {'state': 'idle'});
+        await signIn(43);
+        expect((await invoke('status'))['result'], pending);
+        expect(orders.requests, isEmpty);
+        final data = await store.readStorage(manifest.id);
+        expect(data['@forum-account:43:submission:43'], pending);
+        expect(data['${prefix}submission:43'], isNull);
+        await signIn(42);
+        expect((await invoke('status'))['result'], {'state': 'idle'});
+      });
+    }
+
+    test('旧记录和现有记录冲突时不覆盖、不创建订单，保留两份记录', () async {
+      final old = {...intent, 'state': 'pending', 'token': 'ord_${'a' * 32}'};
+      final current = {...old, 'token': 'ord_${'b' * 32}'};
+      await store.updateStorageEntries(manifest.id, {
+        'submission:42': old,
+        '@forum-account:42:submission:42': current,
+      });
+      final before = await store.readStorage(manifest.id);
+      expect((await invoke('submit', intent))['failure'], 'checkout_record_conflict');
+      expect(await store.readStorage(manifest.id), before);
       expect(orders.requests, isEmpty);
-      var data = await store.readStorage(manifest.id);
-      expect((data['legacyApi1Records'] as Map).keys, ['v1:${scope(43)}']);
-      orders.status = 200;
-      orders.body = {
-        'success': true,
-        'data': {
-          'exists': true,
-          'order': {'orderNo': 'EX-1'},
-        },
-      };
-      await invoke('recover');
-      expect(orders.requests.single.uri.path, endsWith('/${pending['token']}'));
-      await invoke('finish', 'EX-1');
-      await store.importLegacyStorage(manifest.id);
-      expect((await invoke('status'))['result'], {'state': 'idle'});
-      await signIn(43);
-      expect(
-        ((await invoke('status'))['result'] as Map)['token'],
-        'ord_${'b' * 32}',
-      );
-      data = await store.readStorage(manifest.id);
-      expect(data['legacyApi1Records'], isNull);
-      expect(await secrets.readLegacyRecord(manifest.id, scope(42)), isNotNull);
+    });
+
+    test('身份权限关闭时不迁移，授权后同一实例可以恢复记录', () async {
+      host.shutdown();
+      host = MetaversePluginHost(manifest: manifest, store: store, network: network,
+        delegate: delegate, blockedPermissions: {MetaversePluginPermission.identity},
+        engineFactory: () async {
+          final engine = await IsolateScriptEngine.spawn();
+          engines.add(engine);
+          return engine;
+        });
+      final before = {'submission:42': {...intent, 'state': 'pending', 'token': 'ord_${'a' * 32}'}};
+      await store.writeStorage(manifest.id, before);
+      await host.open(kind: 'card');
+      await expectLater(host.call('storage.get', {'key': 'submission:42'}),
+        throwsA(isA<MetaversePluginCallException>().having((e) => e.message,
+          'message', 'permission_denied:identity')));
+      expect(await store.readStorage(manifest.id), before);
+      host.applyGrantedPermissions({});
+      expect((await invoke('status'))['result'], before['submission:42']);
+      expect(orders.requests, isEmpty);
     });
 
     for (final mixed in [false, true]) {

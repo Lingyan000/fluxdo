@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.13.1",
+  "sdkVersion": "0.14.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
@@ -38,7 +38,8 @@
     "notificationStatus",
     "fileAttachments",
     "captchaChallenge",
-    "manifestLocalization"
+    "manifestLocalization",
+    "accountDataMigration"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -50,5 +51,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "f0f785fc5a0d4015dc4783af5459c92972fd52e9"
   },
-  "typesSha256": "9a4c2f9a4c292546ca06eeb5d5509fcb96668683e1f7712e092cb1a2448e7649"
+  "typesSha256": "7ba367b0683f92767cc32c43bbc3e3619f1f960bd59d0fb8d1c0f2821e23d2b2"
 }
