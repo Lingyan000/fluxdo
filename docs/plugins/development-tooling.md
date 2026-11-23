@@ -1,6 +1,6 @@
 # 插件开发工具选型与热更新
 
-工具、脚手架和 SDK 0.9.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
+工具、脚手架和 SDK 0.11.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
 
 ## 选型依据
 
@@ -73,6 +73,8 @@ SDK 0.6.0 增加 `cardNavigation` 与 `contentPresentation`，CLI 同时校验�
 SDK 0.7.0 增加 `eventStreams`、SSE 订阅与状态事件。开发中心的实时连接示例可动态查看消息、断线与重连，测试宿主通过 `dispatch("stream.event", ...)` 注入事件，不依赖真实服务。
 
 SDK 0.9.0 增加 `pageChrome`。页面可通过清单的 `appBar.title` 和 `appBar.actions` 引用 RFW 组件，与正文共用数据和事件来源。CLI 同时校验能力声明和组件引用；宿主保留返回、关闭与安全区。参见[页面标题栏](components.md#页面标题栏)。
+
+SDK 0.11.0 增加 `credentialClaims` 与 `iconButtonContent`。插件可通过 `credentials.status(name, {jwt: true})` 获取所属有效凭证的声明用于展示资料，不能将未验签的声明当作服务端身份核验。标题栏按钮可使用 `IconButton.child` 组合头像等原生组件，并保留按钮的交互和无障碍语义。
 
 ## 模拟场景和发布
 

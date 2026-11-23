@@ -22,7 +22,7 @@ flowchart TD
 
 目录包含 `plugin.json`、`main.js`、`ui.rfwtxt`。用 `dart run tool/pack_metaverse_plugin.dart <目录> <输出文件>` 生成 `.fluxplugin`。三个远端资源须同源，导入时检查大小、清单、脚本路径和组件引用。
 
-新插件声明 `schema: 9` 与 `apiVersion: 2`。完整示例见 [示例积分](examples/metaverse-plugin/plugin.json)，多页面业务示例见 [LD士多](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)。
+新插件声明 `schema: 12` 与 `apiVersion: 2`，通过 `requiredFeatures` 声明运行所必需的宿主能力。较早 schema 的最小兼容示例见 [示例积分](examples/metaverse-plugin/plugin.json)，多页面业务示例见 [LD士多](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)。
 
 | 字段 | 作用 |
 | --- | --- |
@@ -64,12 +64,7 @@ widget Card = Column(
 );
 ```
 
-可用组件（详见 `createMetaverseWidgetLibrary`）：
-
-- 布局：`Row` `Column` `Stack` `Padding` `SizedBox` `Expanded` `ListView` `Wrap`
-  等 rfw 自带组件（只放行了布局类，`Image` 与 `Container` 被换成宿主版本）。
-- `Surface` `Label` `Button` `IconButton` `Symbol` `Image` `ListItem` `Divider`
-  `Spinner` `ProgressBar` `Chip` `Gap` `Toggle` `TextInput`。
+可用组件以[组件参考](plugins/components.md)和生产注册表 `createMetaverseWidgetLibrary` 为准。页面级组件提供列表、网格、详情、表单、固定操作区和自定义标题栏；基础组件提供布局、输入、图片、头像与加载占位。开发中心直接使用生产组件预览，SDK 的参数契约由同一注册表导出，避免另维护一份不完整的组件清单。
 
 颜色写主题色名（`primary`、`onSurfaceVariant`、`error`…）或 `0xAARRGGBB`；
 文字样式写主题名（`bodyMedium`、`titleMedium`、`headlineMedium`…）。
@@ -80,6 +75,8 @@ widget Card = Column(
 图片请求携带宿主 User-Agent、图片 Accept 头，以及清单 HTTPS 主页的公开 origin 作为 Referer，使用独立的匿名客户端。每次跳转重新检查域名权限、宿主保留域名和公网地址，最多请求六次。HTTP 图片地址及跳转目标先升级为 HTTPS，再进行连接，支持合法的非标准 HTTPS 端口与包含下划线的图片主机。所有连接都校验 TLS 域名，且不附带 Cookie 或授权凭证。
 
 单张下载上限为 16 MiB。根据文件内容识别格式，可兼容图床错误标注的 MIME 类型。位图解码尺寸限制为 1024 × 1024，SVG 使用静态渲染器，不执行脚本或加载外链子资源。加载失败后可点击重试。
+
+图片由宿主统一合并并发下载，并按插件、来源、账号和权限上下文隔离缓存。读取缓存仍需先检查权限；可持久化的图片遵守响应缓存策略，带查询参数或经过重定向的图片不写入磁盘。插件数据重置、卸载和应用外部图片缓存清理覆盖对应缓存，详见[组件参考](plugins/components.md)。业务 API、授权与付款响应不使用图片缓存。
 
 插件下载、API 与图片请求共用宿主的 DNS 选择。启用加密 DNS 时使用所选解析器，否则使用系统 DNS。直连筛选会拒绝回环、普通私网、链路本地等地址，并保留 `198.18.0.0/15` 和 `2001:2::/48` 中的 Fake-IP 候选，由系统路由送交 VPN。这两个范围只作为已通过域名审核的 DNS 结果使用，URL 中的 IP 字面量仍被拒绝。TLS 始终校验原域名。候选在截取数量上限前交错地址族，IPv6 不可达时可以尝试 IPv4。Dart 应急出口也使用同一解析快照并尝试备用连接。
 
@@ -96,7 +93,9 @@ API 1 的通用网络、界面和手填 token 继续兼容。旧服务授权与�
 
 ## 运行与验证
 
-运行时协议位于 `packages/fluxdo_plugin_runtime`。Flutter、原生引擎、网络和应用能力适配位于 `lib/modules/metaverse/plugin`。脚本隔离、调用限额、原生执行中断与内存硬上限已具备，详见 [架构实施记录](plugins/architecture-review.md)。
+运行时协议位于 `packages/fluxdo_plugin_runtime`。Flutter、原生引擎、网络和应用能力适配位于 `lib/modules/metaverse/plugin`，论坛和系统任务等应用服务由 `lib/modules/metaverse/host` 注入。服务接口、数据映射、页面业务和刷新策略留在独立插件。
+
+每插件使用独立 QuickJS isolate，宿主设置原生执行截止时间、JS 堆及栈上限，并在停止时中断原生执行。协议与资源边界见[开发入口](plugins/README.md#必需能力与资源边界)，引擎升级需保留的本地修复见 [qjs 维护说明](../packages/qjs/FLUXDO_PATCHES.md)。安装、定时更新、回退及迁移契约见[插件定时更新](plugins/automatic-updates.md)。
 
 开发中心 API 示例使用模拟桥。登录、建单与付款回归采用固定响应，实际付款由用户在应用收银台确认。
 

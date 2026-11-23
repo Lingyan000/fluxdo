@@ -1,6 +1,6 @@
 # 插件开发
 
-本目录面向 FluxDO 插件作者。通用能力清单使用 schema 12、apiVersion 2，兼容 schema 9–11。士多 2.3 使用 API 2，宿主在迁移期间继续支持 API 1。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
+本目录面向 FluxDO 插件作者。新插件使用 schema 12、apiVersion 2，宿主兼容 schema 9–11，并为 API 1 保留通用网络、界面和手填 token 能力。应用内「元宇宙 → 插件管理 → 更多 → 开发中心」提供组件预览、参数调整、事件记录和 API 模拟。
 
 开发工具的选型、热更新验证及当前接入范围见 [开发工具与热更新](development-tooling.md)。
 
@@ -23,7 +23,6 @@ TypeScript 可以在开发阶段编译为 JavaScript，再将输出文件作为 
 - [API 参考](api.md)覆盖脚本环境、事件、网络、存储、账号、导航和应用支付接口。
 - [组件参考](components.md)覆盖当前注册的宿主组件及 rfw 布局组件。
 - [清单、权限与现有协议](../metaverse-plugin.md)介绍安装格式、网络限制和授权协议。
-- [架构审计与改造方案](architecture-review.md)记录现状、参考项目、日志与数据管理、插件源和迁移验收。
 - [最小示例](../examples/metaverse-plugin/)可用于首次安装与事件联调。
 - [LD士多实现](https://github.com/Lingyan000/fluxdo-plugins/tree/main/plugins/ld-store)展示多页面商城接入。
 
