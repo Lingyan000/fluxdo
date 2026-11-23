@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../l10n/s.dart';
 import '../pages/chat/channel/chat_channel_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
@@ -196,6 +197,43 @@ class LocalNotificationService {
       return await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission() ?? false;
     }
     return true;
+  }
+
+  /// 每次查询系统当前状态；不把插件的授权记录当成系统授权。
+  Future<String> pluginPermissionStatus() async {
+    await initialize(requestPermission: false);
+    bool? enabled;
+    if (Platform.isAndroid) {
+      final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      enabled = await android?.areNotificationsEnabled();
+      if (enabled == true) {
+        final channels = await android?.getNotificationChannels();
+        if (channels?.any((channel) => channel.id == 'metaverse_plugins' && channel.importance == Importance.none) == true) {
+          enabled = false;
+        }
+      }
+    } else if (Platform.isIOS) {
+      final permissions = await _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()?.checkPermissions();
+      if (permissions != null) enabled = permissions.isEnabled || permissions.isProvisionalEnabled;
+    } else if (Platform.isMacOS) {
+      final permissions = await _plugin.resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()?.checkPermissions();
+      if (permissions != null) enabled = permissions.isEnabled || permissions.isProvisionalEnabled;
+    }
+    return enabled == null ? 'unknown' : enabled ? 'allowed' : 'denied';
+  }
+
+  bool get canOpenPluginNotificationSettings =>
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS || Platform.isWindows;
+
+  Future<bool> openPluginNotificationSettings() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      return await const MethodChannel('com.github.lingyan000.fluxdo/browser')
+          .invokeMethod<bool>('openNotificationSettings') ?? false;
+    }
+    final uri = Platform.isMacOS
+        ? Uri.parse('x-apple.systempreferences:com.apple.Notifications-Settings.extension')
+        : Platform.isWindows ? Uri.parse('ms-settings:notifications') : null;
+    return uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> showPlugin({required int id, required String pluginName, required String title, required String body}) async {

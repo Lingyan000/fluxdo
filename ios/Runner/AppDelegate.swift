@@ -120,6 +120,15 @@ import workmanager_apple
     )
     browserChannel.setMethodCallHandler { (call, result) in
       switch call.method {
+      case "openNotificationSettings":
+        let target: String
+        if #available(iOS 16.0, *) {
+          target = UIApplication.openNotificationSettingsURLString
+        } else {
+          target = UIApplication.openSettingsURLString
+        }
+        guard let url = URL(string: target) else { result(false); return }
+        UIApplication.shared.open(url, options: [:]) { success in result(success) }
       case "resolveAppLink":
         // iOS 无法获取目标应用的名称和图标
         result(["canResolve": false, "appName": nil, "packageName": nil, "appIcon": nil])

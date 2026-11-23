@@ -82,6 +82,8 @@ declare namespace FluxDO {
       cancel(id: string): Promise<null>;
     };
     notifications: {
+      status(): Promise<{authorized: boolean; system: 'allowed' | 'denied' | 'unknown'; canOpenSettings: boolean}>;
+      openSettings(): Promise<boolean>;
       isAllowed(): Promise<boolean>;
       revoke(): Promise<null>;
       requestPermission(): Promise<boolean>;

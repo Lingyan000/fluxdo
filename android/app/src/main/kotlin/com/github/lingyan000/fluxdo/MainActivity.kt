@@ -399,6 +399,27 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "openDefaultLinkSettings" -> result.success(openDefaultLinkSettings())
+                "openNotificationSettings" -> {
+                    try {
+                        val intent = if (android.os.Build.VERSION.SDK_INT >= 26) {
+                            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                            if (manager.areNotificationsEnabled() && manager.getNotificationChannel("metaverse_plugins") != null) {
+                                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    .putExtra(Settings.EXTRA_CHANNEL_ID, "metaverse_plugins")
+                            } else {
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            }
+                        } else {
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
                 "openInBrowser" -> {
                     val url = call.argument<String>("url")
                     if (url != null) {

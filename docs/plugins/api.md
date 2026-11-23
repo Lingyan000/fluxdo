@@ -363,6 +363,7 @@ await ctx.api.forum.open({type: 'topic', topicId: 42, postNumber: 1});
 | `ctx.api.navigation.setBadge(page, count)` | 需要 `navigationBadge` 及该页的 `navigation` 入口，`0` 清除，最大 99999。不会自行添加底栏入口。 |
 | `ctx.api.navigation.dismiss()` | `modalDismiss`。完成表单后从当前插件弹层调用，成功关闭返回 `true`。普通页面、卡片或被其他路由覆盖时返回 `false`。 |
 | `ctx.api.notifications.requestPermission()` / `isAllowed()` / `revoke()` | 声明 `permissions.notifications: true` 和 `localNotifications`。申请须由可见界面的点击触发；用户可从宿主管理页撤销。`isAllowed()` 返回该账号对该插件的授权，系统也可独立静音。撤销同时取消已发通知。 |
+| `ctx.api.notifications.status()` / `openSettings()` | 声明 `notificationStatus`。状态返回 `{authorized, system, canOpenSettings}`；`system` 为 `allowed`、`denied` 或 `unknown`。`authorized` 仅表示当前账号给插件的许可；系统拒绝后保留插件偏好，发送时返回 `notification_system_denied`，不会计入已投递。`openSettings()` 必须由用户点击触发，不自动更改许可；Android 定位插件通知渠道，未创建渠道或全局禁用时打开应用通知设置，iOS 定位应用通知设置，macOS/Windows 打开系统通知设置，Linux 返回 false。 |
 | `ctx.api.notifications.show({key,title,body,page,params?})` / `cancel(key)` | 只打开本插件声明的页面；系统通知只携带宿主编号。同键一分钟内合并，每插件每分钟最多三条。停用、换源、退出账号后不能再由旧通知打开原页面。 |
 
 ```js

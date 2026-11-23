@@ -73,11 +73,22 @@ class MetaverseTaskActions {
       case 'notifications.requestPermission':
         final granted = await notifications.requestPluginPermission();
         checkActive();
-        store.allowNotifications(account, plugin, granted);
+        // 插件确认已完成，系统拒绝由独立状态展示，保留用户的插件通知偏好。
+        store.allowNotifications(account, plugin, true);
         await changed();
         return granted;
       case 'notifications.isAllowed':
         return store.notificationsAllowed(account, plugin);
+      case 'notifications.status':
+        final system = await notifications.pluginPermissionStatus();
+        checkActive();
+        return {
+          'authorized': store.notificationsAllowed(account, plugin),
+          'system': system,
+          'canOpenSettings': notifications.canOpenPluginNotificationSettings,
+        };
+      case 'notifications.openSettings':
+        return notifications.openPluginNotificationSettings();
       case 'notifications.revoke':
         store.allowNotifications(account, plugin, false);
         final ids = store.notificationIds(plugin, account: account);
@@ -101,6 +112,11 @@ class MetaverseTaskActions {
           throw const MetaversePluginCallException(
             'notification_permission_denied',
           );
+        }
+        final system = await notifications.pluginPermissionStatus();
+        checkActive();
+        if (system == 'denied') {
+          throw const MetaversePluginCallException('notification_system_denied');
         }
         final key = _text(params['key'], 64),
             title = _text(params['title'], 100);

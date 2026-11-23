@@ -656,7 +656,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
     if (_taskActive != null && !const {
       'forum.read', 'storage.get', 'storage.set', 'storage.setMany', 'storage.remove', 'storage.compareAndSet',
       'host.features', 'host.environment', 'preferences.get', 'user.get', 'tasks.list', 'navigation.setBadge',
-      'notifications.show', 'notifications.cancel', 'notifications.isAllowed', 'crypto.uuid', 'crypto.sha256', 'fetch',
+      'notifications.show', 'notifications.cancel', 'notifications.isAllowed', 'notifications.status', 'crypto.uuid', 'crypto.sha256', 'fetch',
     }.contains(method)) {
       throw const MetaversePluginCallException('task_has_no_ui');
     }
@@ -720,6 +720,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
           checkActive();
           return _delegate.taskOperation(method, params, checkActive: checkActive);
         });
+      case 'notifications.status':
+        if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        final status = await _delegate.taskOperation(method, params, checkActive: checkActive);
+        checkActive();
+        return {...(status as Map<String, Object?>), if (blockedPermissions.contains(MetaversePluginPermission.notifications)) 'authorized': false};
+      case 'notifications.openSettings':
+        if (!manifest.capabilities.notifications) throw const MetaversePluginCallException('notification_permission_denied');
+        return _userInitiatedUi((_) => _delegate.taskOperation(method, params, checkActive: checkActive));
       case 'notifications.show':
       case 'notifications.cancel':
       case 'notifications.isAllowed':

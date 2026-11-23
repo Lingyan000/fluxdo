@@ -143,6 +143,8 @@ const metaversePluginPrelude = r'''
       list: function () { return call('tasks.list'); }
     }),
     notifications: Object.freeze({
+      status: function () { return call('notifications.status'); },
+      openSettings: function () { return call('notifications.openSettings'); },
       isAllowed: function () { return call('notifications.isAllowed'); },
       revoke: function () { return call('notifications.revoke'); },
       requestPermission: function () { return call('notifications.requestPermission'); },

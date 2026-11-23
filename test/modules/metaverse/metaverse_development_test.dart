@@ -106,7 +106,7 @@ globalThis.__devReceive = payload => {
       isEmpty,
     );
   });
-  test('配对只接受回环地址和完整随机令牌', () {
+  test('明文配对只接受回环地址和完整随机令牌', () {
     final key = 'a' * 32;
     expect(
       DevelopmentConnection.parse('fluxdo-dev://127.0.0.1:5174?key=$key').port,

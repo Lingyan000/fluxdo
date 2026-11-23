@@ -26,6 +26,7 @@ enum PluginFeature {
   navigationReplacement,
   credentialClaims,
   iconButtonContent,
+  notificationStatus,
 }
 
 class PluginFeatures {

@@ -1,6 +1,6 @@
 # 插件开发工具选型与热更新
 
-工具、脚手架和 SDK 0.11.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
+工具、脚手架和 SDK 0.12.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
 
 ## 选型依据
 
@@ -39,7 +39,7 @@ Vite 用于开发期的模块依赖图、TypeScript 转换缓存、文件监听�
 
 ## CLI 和宿主接入边界
 
-- fluxdo dev 监听本机回环端口；App 开发中心粘贴配对地址后审阅权限。Android 使用 adb reverse，桌面同机连接；暂不提供局域网无线和 iOS 真机连接。--stdio 保留模块测试入口。
+- `fluxdo dev` 默认监听回环，Android 可使用 `adb reverse`。`fluxdo dev --lan 本机IPv4` 显式绑定局域网网卡，Android、iOS 和桌面可无线配对；使用临时 TLS 证书，App 按配对地址中的 SHA-256 指纹验证后才发送会话令牌。iOS 首次连接须允许本地网络访问。服务重启后配对地址失效，须重新配对；`--stdio` 保留模块测试入口。
 - 应用使用独立开发实例，不能覆盖已安装正式插件的数据和凭证。
 - RFW 变化走组件库替换；JS 变化走模块 HMR；不兼容更新由宿主重启实例。
 - 权限和所需能力变化重新校验，新增权限仍需用户确认。
@@ -83,3 +83,7 @@ SDK 0.8.0 的 createScenario 提供可显式控制的权限、账号、离线、
 [data-migration 示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/data-migration)包含隔离存储迁移、语言选择及声明式设置。插件可在 preferences.changed、host.environmentChanged 和恢复可见时重新读取宿主环境。
 
 脚手架包含手动触发的 GitHub Actions 发布模板，完成类型检查、模拟测试、打包和 SHA-256，再创建草稿 Release。作者可配置 PLUGIN_SIGNING_KEY 与轮换时的 PLUGIN_PREVIOUS_SIGNING_KEY；临时私钥文件受限权限且退出步骤即删除，不进入包或产物。作者审阅草稿后自行发布，再提交生成的市场条目。发布信任与撤回规则见[定时更新](automatic-updates.md)。
+
+SDK 0.12.0 提供 `notifications.status()` 和用户点击限定的 `notifications.openSettings()`。插件授权与操作系统设置分别查询；系统关闭通知时仍可正常同步数据。Windows、Linux 无法查询完整投递许可时返回 `unknown`，不把未知当成已授权。
+
+CLI、SDK 与脚手架具有 npm 发布配置；维护者需配置 npm 的包发布权限和可信发布者后运行独立仓库的发布工作流。尚未发布到 npm 时使用 GitHub Release 的 tgz。脚手架 `--distribution npm` 可生成 npm 版本依赖，默认继续使用可取得的 GitHub Release。
