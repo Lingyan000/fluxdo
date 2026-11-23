@@ -14,7 +14,6 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_store.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
 import 'package:fluxdo/services/storage/secret_store.dart';
-import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Orders implements HttpClientAdapter {
@@ -57,13 +56,26 @@ class _Delegate extends MetaversePluginHostDelegate {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<void> main() async {
-  String? unavailable;
+String _withSubmissionProbe(String script) {
+  // 测试入口放在发行脚本的本地化闭包内，不向生产插件暴露提交管理器。
+  const closureEnd = '})(fluxdo);';
+  final end = script.lastIndexOf(closureEnd);
+  expect(end, greaterThanOrEqualTo(0));
+  expect(script.substring(end).trim(), closureEnd);
+  return '${script.substring(0, end)}\n'
+      '''fluxdo.on('fixture.order', async (ctx, args) => {
   try {
-    (await IsolateScriptEngine.spawn()).dispose();
-  } on MetaverseScriptException catch (error) {
-    unavailable = '脚本引擎原生库不可用 $error';
-  }
+    const result = args.action === 'parallel'
+      ? await Promise.all([ldStore.submission('submit', args.value), ldStore.submission('submit', args.value)])
+      : await ldStore.submission(args.action, args.value);
+    ctx.setData('result', result);
+  } catch (error) { ctx.setData('failure', error.message); }
+  ctx.setData('finished', true);
+});
+$closureEnd''';
+}
+
+void main() {
   final manifest = MetaversePluginManifest.parse(
     jsonDecode(File('test/fixtures/metaverse/ld-store/plugin.json').readAsStringSync()),
   );
@@ -73,7 +85,7 @@ Future<void> main() async {
     'expectedAmount': 12.5,
   };
 
-  group('士多脚本管理提交记录', skip: unavailable, () {
+  group('士多脚本管理提交记录', () {
     late Directory root;
     late MetaversePluginStore store;
     late InMemorySecretStore secrets;
@@ -81,6 +93,7 @@ Future<void> main() async {
     late MetaversePluginNetwork network;
     late _Orders orders;
     late _Delegate delegate;
+    final engines = <IsolateScriptEngine>[];
     Future<void> signIn(int id) async {
       delegate.account = id;
       await store.writeCredential(
@@ -125,28 +138,31 @@ Future<void> main() async {
       );
       await store.writeCode(manifest.id, (
         ui: File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
-        script: '''${File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync()}
-fluxdo.on('fixture.order', async (ctx, args) => {
-  try {
-    const result = args.action === 'parallel'
-      ? await Promise.all([ldStore.submission('submit', args.value), ldStore.submission('submit', args.value)])
-      : await ldStore.submission(args.action, args.value);
-    ctx.setData('result', result);
-  } catch (error) { ctx.setData('failure', error.message); }
-  ctx.setData('finished', true);
-});''',
+        script: _withSubmissionProbe(
+          File('test/fixtures/metaverse/ld-store/main.js').readAsStringSync(),
+        ),
       ));
       host = MetaversePluginHost(
         manifest: manifest,
         store: store,
         network: network,
-        engineFactory: createMetaverseScriptEngine,
+        engineFactory: () async {
+          final engine = await IsolateScriptEngine.spawn();
+          engines.add(engine);
+          return engine;
+        },
         delegate: delegate,
       );
       await signIn(42);
     });
     tearDown(() async {
       host.shutdown();
+      for (final engine in engines) {
+        engine.dispose();
+      }
+      await Future.wait(engines.map((engine) => engine.terminated))
+          .timeout(const Duration(seconds: 5));
+      engines.clear();
       network.dispose();
       await root.delete(recursive: true);
     });
