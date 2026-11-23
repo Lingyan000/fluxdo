@@ -14,14 +14,18 @@ class FollowingFeedState {
     this.loading = false,
     this.loadingMore = false,
     this.hasMore = true,
+    this.initialized = false,
     this.error,
+    this.errorStack,
     this.moreError,
   });
   final List<FollowingPost> posts;
   final bool loading;
   final bool loadingMore;
   final bool hasMore;
+  final bool initialized;
   final Object? error;
+  final StackTrace? errorStack;
   final Object? moreError;
 }
 
@@ -37,6 +41,9 @@ class FollowingFeedNotifier extends StateNotifier<FollowingFeedState> {
       posts: state.posts,
       loading: true,
       hasMore: state.hasMore,
+      initialized: state.initialized,
+      error: state.error,
+      errorStack: state.errorStack,
     );
     try {
       final result = await _load(null);
@@ -45,13 +52,16 @@ class FollowingFeedNotifier extends StateNotifier<FollowingFeedState> {
       state = FollowingFeedState(
         posts: _unique(result.posts),
         hasMore: result.hasMore && result.posts.isNotEmpty,
+        initialized: true,
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted || revision != _revision) return;
       state = FollowingFeedState(
         posts: state.posts,
         hasMore: state.hasMore,
+        initialized: true,
         error: error,
+        errorStack: stackTrace,
       );
     }
   }
@@ -70,6 +80,7 @@ class FollowingFeedNotifier extends StateNotifier<FollowingFeedState> {
       posts: previous.posts,
       loadingMore: true,
       hasMore: true,
+      initialized: previous.initialized,
     );
     try {
       final result = await _load(cursor);
@@ -79,12 +90,14 @@ class FollowingFeedNotifier extends StateNotifier<FollowingFeedState> {
       state = FollowingFeedState(
         posts: _unique([...previous.posts, ...result.posts]),
         hasMore: result.hasMore && next != null && next != cursor,
+        initialized: true,
       );
     } catch (error) {
       if (!mounted || revision != _revision) return;
       state = FollowingFeedState(
         posts: previous.posts,
         hasMore: true,
+        initialized: previous.initialized,
         moreError: error,
       );
     }

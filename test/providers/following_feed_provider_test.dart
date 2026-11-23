@@ -83,7 +83,7 @@ void main() {
     await loading;
   });
 
-  test('解析服务端嵌套用户、话题及微秒时间', () {
+  test('解析服务端嵌套用户、话题、分类及微秒时间', () {
     final response = FollowingFeedResponse.fromJson({
       'posts': [
         {
@@ -92,7 +92,7 @@ void main() {
           'post_number': 3,
           'created_at': '2026-11-17T00:00:00.123456Z',
           'user': {'id': 2, 'username': 'alice', 'avatar_template': '/avatar'},
-          'topic': {'id': 7, 'title': '讨论'},
+          'topic': {'id': 7, 'title': '讨论', 'category_id': 12},
           'excerpt': '<p>回复</p>',
         },
       ],
@@ -102,6 +102,7 @@ void main() {
     expect(response.hasMore, true);
     expect(response.posts.single.author.username, 'alice');
     expect(response.posts.single.title, '讨论');
+    expect(response.posts.single.categoryId, 12);
     expect(
       response.posts.single.createdAt!.microsecondsSinceEpoch,
       DateTime.utc(2026, 11, 17, 0, 0, 0, 123, 456).microsecondsSinceEpoch,

@@ -14,6 +14,7 @@ import 'package:m3e_ui/m3e_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/services/local_notification_service.dart';
+import 'package:fluxdo/models/category.dart';
 import 'package:fluxdo/models/topic.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/models/following_feed.dart';
@@ -21,9 +22,12 @@ import 'package:fluxdo/navigation/nav_action_bus.dart';
 import 'package:fluxdo/pages/following_feed_page.dart';
 import 'package:fluxdo/pages/follow_list_page.dart';
 import 'package:fluxdo/pages/user_profile_page.dart';
+import 'package:fluxdo/providers/category_provider.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/following_feed_provider.dart';
 import 'package:fluxdo/providers/following_feed_migration_provider.dart';
+import 'package:fluxdo/providers/preferences_provider.dart';
+import 'package:fluxdo/providers/selected_topic_provider.dart';
 import 'package:fluxdo/providers/shortcut_provider.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
@@ -32,7 +36,9 @@ import 'package:fluxdo/theme/app_theme.dart';
 import 'package:fluxdo/theme/theme_registry.dart';
 import 'package:fluxdo/theme/theme_resolver.dart';
 import 'package:fluxdo/widgets/common/error_view.dart';
+import 'package:fluxdo/widgets/user/activity_card_layout.dart';
 import 'package:fluxdo/widgets/user/activity_post_card.dart';
+import 'package:fluxdo/widgets/user/user_profile_skeleton.dart';
 
 import '../helpers/preview_fonts.dart';
 
@@ -347,6 +353,7 @@ void main() {
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         currentUserProvider.overrideWith(_User.new),
+        categoryMapProvider.overrideWithValue(const AsyncValue.data({})),
         followingFeedProvider('alice').overrideWith(
           (ref) => FollowingFeedNotifier((before) async {
             cursors.add(before);
@@ -388,7 +395,7 @@ void main() {
 
   for (final expressive in [true, false]) {
     for (final hasPosts in [true, false]) {
-      testWidgets('刷新只显示一个指示器并保留内容 M3E=$expressive 有动态=$hasPosts', (
+      testWidgets('首屏骨架屏、刷新单指示器并保留内容 M3E=$expressive 有动态=$hasPosts', (
         tester,
       ) async {
         var pending = Completer<FollowingFeedResponse>();
@@ -416,15 +423,12 @@ void main() {
             return pending.future;
           },
         );
-        final list = find.byType(ListView).first;
-        final inlineLoading = find.descendant(
-          of: list,
-          matching: find.byType(LoadingSpinner),
-        );
         expect(requests, 1);
-        expect(inlineLoading, findsOneWidget);
+        expect(find.byType(UserActionListSkeleton), findsOneWidget);
+        expect(find.byTooltip('刷新'), findsNothing);
         pending.complete(response);
         await tester.pumpAndSettle();
+        expect(find.byType(UserActionListSkeleton), findsNothing);
 
         var nonce = 0;
         void refreshFromNavigation() {
@@ -437,7 +441,7 @@ void main() {
 
         void expectSingleRefresh({bool retrying = false}) {
           expect(container.read(followingFeedProvider('alice')).loading, true);
-          expect(inlineLoading, findsNothing);
+          expect(find.byType(UserActionListSkeleton), findsNothing);
           expect(
             find.byType(LoadingSpinner),
             expressive ? findsOneWidget : findsNothing,
@@ -455,34 +459,56 @@ void main() {
           expect(tester.takeException(), isNull);
         }
 
-        final refreshActions = <Future<void> Function()>[
-          () => tester.drag(list, const Offset(0, 350)),
-          () => tester.tap(find.byTooltip('刷新')),
-          () async => refreshFromNavigation(),
-          () async => desktopRefreshNotifier.value++,
+        final scrollable = hasPosts
+            ? find.byType(ListView).first
+            : find.byType(CustomScrollView).first;
+        final refreshActions = <({bool resetsToTop, Future<void> Function() run})>[
+          (
+            resetsToTop: false,
+            run: () => tester.drag(scrollable, const Offset(0, 350)),
+          ),
+          (
+            resetsToTop: false,
+            run: () async => desktopRefreshNotifier.value++,
+          ),
+          (
+            resetsToTop: true,
+            run: () async => refreshFromNavigation(),
+          ),
         ];
         for (var i = 0; i < refreshActions.length; i++) {
-          final scroll = tester.widget<ListView>(list).controller!;
+          final action = refreshActions[i];
+          final scroll = hasPosts
+              ? tester.widget<ListView>(scrollable).controller!
+              : null;
           if (hasPosts && i > 0) {
-            scroll.jumpTo(240);
+            scroll!.jumpTo(240);
             await tester.pumpAndSettle();
           }
-          final offset = scroll.offset;
-          final firstPostTop = hasPosts
+          final offset = scroll?.offset ?? 0;
+          final firstPostTop = hasPosts && !action.resetsToTop
               ? tester.getTopLeft(find.byType(ActivityPostCard).first)
               : null;
           pending = Completer<FollowingFeedResponse>();
-          await refreshActions[i]();
+          await action.run();
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 300));
           await tester.pump(const Duration(milliseconds: 200));
           expect(requests, i + 2);
           expectSingleRefresh();
-          expect(scroll.offset, offset);
-          if (hasPosts) {
+          if (hasPosts && !action.resetsToTop) {
+            expect(scroll!.offset, offset);
             expect(
               tester.getTopLeft(find.byType(ActivityPostCard).first),
               firstPostTop,
+            );
+          }
+          if (action.resetsToTop) {
+            expect(
+              container.read(
+                navScrollProgressProvider(NavEntryIds.followingFeed),
+              ),
+              0.0,
             );
           }
           refreshFromNavigation();
@@ -492,16 +518,16 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.byType(LoadingSpinner), findsNothing);
           expect(find.byType(RefreshProgressIndicator), findsNothing);
-          expect(scroll.offset, offset);
+          if (hasPosts) {
+            expect(scroll!.offset, action.resetsToTop ? 0.0 : offset);
+          }
         }
 
         pending = Completer<FollowingFeedResponse>();
-        await tester.tap(find.byTooltip('刷新'));
+        desktopRefreshNotifier.value++;
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
         pending.completeError(StateError('offline'));
-        await tester.pumpAndSettle();
-        tester.widget<ListView>(list).controller!.jumpTo(0);
         await tester.pumpAndSettle();
         expect(find.byType(ErrorView), findsOneWidget);
         pending = Completer<FollowingFeedResponse>();
@@ -519,12 +545,177 @@ void main() {
       });
     }
   }
+
+  testWidgets('卡片展示动作图标、回复正文优先、分类、屏蔽过滤、滚动进度与底部留白', (
+    tester,
+  ) async {
+    final category = Category(
+      id: 42,
+      name: '开发调优',
+      slug: 'dev',
+      color: '0088CC',
+      textColor: 'FFFFFF',
+    );
+    final container = await _pumpFeed(
+      tester,
+      size: const Size(390, 844),
+      bottomPadding: 80,
+      categories: {42: category},
+      load: (_) async => FollowingFeedResponse(
+        posts: [
+          FollowingPost(
+            id: 1,
+            topicId: 101,
+            postNumber: 1,
+            createdAtRaw: '2026-11-17T00:00:03.000000Z',
+            title: '新话题标题',
+            author: TopicUser(id: 2, username: 'bob', avatarTemplate: ''),
+            excerpt: '<p>主题正文</p>',
+            categoryId: 42,
+          ),
+          FollowingPost(
+            id: 2,
+            topicId: 102,
+            postNumber: 5,
+            createdAtRaw: '2026-11-17T00:00:02.000000Z',
+            title: '被回复的话题',
+            author: TopicUser(id: 3, username: 'carol', avatarTemplate: ''),
+            excerpt: '<p>这是回复正文</p>',
+            categoryId: 42,
+          ),
+          FollowingPost(
+            id: 3,
+            topicId: 103,
+            postNumber: 1,
+            createdAtRaw: '2026-11-17T00:00:01.000000Z',
+            title: '被屏蔽用户的帖子',
+            author: TopicUser(id: 4, username: 'blocked', avatarTemplate: ''),
+          ),
+          for (var i = 4; i <= 15; i++)
+            FollowingPost(
+              id: i,
+              topicId: 100 + i,
+              postNumber: 1,
+              createdAtRaw:
+                  '2026-11-16T00:00:${i.toString().padLeft(2, '0')}.000000Z',
+              title: '更多动态 $i',
+              author: TopicUser(id: 2, username: 'bob', avatarTemplate: ''),
+            ),
+        ],
+        hasMore: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 不再显示多余的独立「加载更多」按钮
+    expect(find.byType(TextButton), findsNothing);
+    // 列表底部避让悬浮底栏高度
+    final listView = tester.widget<ListView>(find.byType(ListView).first);
+    expect((listView.padding as EdgeInsets).bottom, greaterThanOrEqualTo(92));
+    // 分类展示
+    expect(find.text('开发调优'), findsNWidgets(2));
+    // 发帖和回复的动作图标与回复 bodyFirst
+    final cards = tester
+        .widgetList<ActivityPostCard>(find.byType(ActivityPostCard))
+        .toList();
+    expect(cards[0].actionIcon, Symbols.article_rounded);
+    expect(cards[0].bodyFirst, false);
+    expect(cards[1].actionIcon, Symbols.reply_rounded);
+    expect(cards[1].bodyFirst, true);
+
+    // 滚动上报进度到 navScrollProgressProvider
+    listView.controller!.jumpTo(320);
+    await tester.pump();
+    expect(
+      container.read(navScrollProgressProvider(NavEntryIds.followingFeed)),
+      320.0,
+    );
+
+    // 本地屏蔽过滤
+    await container
+        .read(preferencesProvider.notifier)
+        .setBlockedUsernames(['blocked']);
+    await tester.pumpAndSettle();
+    expect(find.text('被屏蔽用户的帖子'), findsNothing);
+
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('双栏选中态判定与 ActivityPostCard 高亮透传', (tester) async {
+    final post1 = FollowingPost(
+      id: 1,
+      topicId: 101,
+      postNumber: 1,
+      createdAtRaw: '2026-11-17T00:00:03.000000Z',
+      title: '话题 A',
+      author: TopicUser(id: 2, username: 'bob', avatarTemplate: ''),
+    );
+    final post2 = FollowingPost(
+      id: 2,
+      topicId: 101,
+      postNumber: 5,
+      createdAtRaw: '2026-11-17T00:00:02.000000Z',
+      title: '话题 A',
+      author: TopicUser(id: 3, username: 'carol', avatarTemplate: ''),
+    );
+    const selected = PaneEntry.topic(topicId: 101, scrollToPostNumber: 5);
+    expect(
+      isFollowingPostSelected(wide: true, selectedTop: selected, post: post1),
+      false,
+    );
+    expect(
+      isFollowingPostSelected(wide: true, selectedTop: selected, post: post2),
+      true,
+    );
+    expect(
+      isFollowingPostSelected(wide: false, selectedTop: selected, post: post2),
+      false,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ActivityPostCard(
+            position: (index: 0, count: 1),
+            highlighted: true,
+            title: '话题 A',
+            actionLabel: '回复了',
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+    final frame = tester.widget<ActivityCardFrame>(
+      find.byType(ActivityCardFrame),
+    );
+    expect(frame.highlighted, true);
+  });
+
+  testWidgets('未登录时使用统一空态组件展示', (tester) async {
+    await _pumpFeed(
+      tester,
+      loggedIn: false,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AppEmptyState), findsOneWidget);
+    expect(find.text('登录后查看关注动态'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+}
+
+class _NullUser extends CurrentUserNotifier {
+  @override
+  Future<User?> build() async => null;
 }
 
 Future<ProviderContainer> _pumpFeed(
   WidgetTester tester, {
   FollowingFeedLoader? load,
   bool expressive = true,
+  bool loggedIn = true,
+  double bottomPadding = 0,
+  Map<int, Category> categories = const {},
   Map<String, Object> preferences = const {
     'seeking_config': '{"users":["bob"]}',
     'following_feed_migration_seen': true,
@@ -551,8 +742,11 @@ Future<ProviderContainer> _pumpFeed(
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
-      currentUserProvider.overrideWith(_User.new),
+      currentUserProvider.overrideWith(
+        loggedIn ? _User.new : _NullUser.new,
+      ),
       discourseServiceProvider.overrideWithValue(_FollowService()),
+      categoryMapProvider.overrideWithValue(AsyncValue.data(categories)),
       followingFeedProvider('alice').overrideWith(
         (ref) =>
             FollowingFeedNotifier(load ?? (_) async => _emptyFeed)..refresh(),
@@ -570,14 +764,19 @@ Future<ProviderContainer> _pumpFeed(
               theme ?? ThemeData(extensions: [M3eFlags(enabled: expressive)]),
           locale: locale,
           debugShowCheckedModeBanner: false,
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context)
-                .copyWith(textScaler: TextScaler.linear(scale)),
-            child: RepaintBoundary(
-              key: const ValueKey('feed-capture'),
-              child: child!,
-            ),
-          ),
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: TextScaler.linear(scale),
+                padding: mq.padding.copyWith(bottom: bottomPadding),
+              ),
+              child: RepaintBoundary(
+                key: const ValueKey('feed-capture'),
+                child: child!,
+              ),
+            );
+          },
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: AppLocaleUtils.supportedLocales,
           navigatorObservers: [?observer],

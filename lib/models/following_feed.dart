@@ -39,7 +39,7 @@ class FollowingPost {
         avatarTemplate: user['avatar_template'] as String? ?? '',
       ),
       excerpt: json['excerpt'] as String?,
-      categoryId: json['category_id'] as int?,
+      categoryId: json['category_id'] as int? ?? topic['category_id'] as int?,
     );
   }
 }
