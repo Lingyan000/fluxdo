@@ -26,9 +26,12 @@ import '../pages/image_viewer_page.dart';
 import '../pages/mermaid_viewer_page.dart';
 import '../pages/topic_detail_page/topic_detail_page.dart';
 import '../models/topic.dart' show Post, MentionedUser, LinkCount;
+import '../providers/core_providers.dart';
 import '../providers/download_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/selected_topic_provider.dart';
 import '../services/discourse/discourse_service.dart';
+import '../services/auth_session.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
@@ -46,6 +49,7 @@ import '../widgets/common/image_context_menu.dart';
 import '../widgets/common/image_lift_menu.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/post/quote_image_scope.dart';
+import '../widgets/post/interactive_quote_card.dart';
 import '../widgets/content/animated_svg_view.dart';
 import '../widgets/content/audio/discourse_audio_player.dart';
 import '../widgets/content/svg_view.dart';
@@ -103,6 +107,7 @@ class FluxdoRenderCallbacks {
     required this.codeBlockHighlighter,
     required this.codeBlockBuilder,
     required this.quoteAvatarBuilder,
+    this.quoteCardBuilder,
     required this.footnoteTapHandler,
     required this.lazyVideoBuilder,
     required this.iframeBuilder,
@@ -127,6 +132,7 @@ class FluxdoRenderCallbacks {
   final CodeBlockHighlighter codeBlockHighlighter;
   final CodeBlockBuilder codeBlockBuilder;
   final QuoteAvatarBuilder quoteAvatarBuilder;
+  final QuoteCardBuilder? quoteCardBuilder;
   final FootnoteTapHandler footnoteTapHandler;
   final LazyVideoBuilder lazyVideoBuilder;
   final IframeBuilder iframeBuilder;
@@ -196,6 +202,7 @@ class FluxdoRenderCallbacks {
       codeBlockHighlighter: codeBlockHighlighter,
       codeBlockBuilder: codeBlockBuilder,
       quoteAvatarBuilder: quoteAvatarBuilder,
+      quoteCardBuilder: quoteCardBuilder,
       oneboxBuilder: oneboxBuilder,
       imageGridBuilder: imageGridBuilder,
       footnoteTapHandler: footnoteTapHandler,
@@ -910,6 +917,7 @@ class FluxdoRenderCallbacks {
   /// 监听 CurrentPostScope 的 post 状态变化)。
   factory FluxdoRenderCallbacks.forPost({
     required Post post,
+    String? heroTagNamespace,
     // 链接点击追踪 + 图片引用菜单需要 topicId(Post 模型本身不含 topicId,
     // 由调用方透传)。为 null 时(如分享截图场景)不追踪点击、图片菜单隐藏
     // 「引用」「复制引用」,对齐 legacy 在 topicId==null 时的降级行为。
@@ -926,7 +934,7 @@ class FluxdoRenderCallbacks {
     List<ImageRun> Function()? lightboxImageRunsProvider,
   }) {
     final postId = post.id;
-    final heroNamespace = 'post_$postId';
+    final heroNamespace = heroTagNamespace ?? 'post_$postId';
     // 画廊数据惰性构建:预解析 cooked 收集 Discourse lightbox 口径的画廊项
     // (Web 版 PhotoSwipe 的 dataSource 来自 `a.lightbox`,不是所有 <img>;
     // 裸图只能单图打开,不参与左右切换)。
@@ -1005,6 +1013,34 @@ class FluxdoRenderCallbacks {
       codeBlockHighlighter: _codeBlockHighlighter,
       codeBlockBuilder: _codeBlockBuilder,
       quoteAvatarBuilder: _quoteAvatarBuilder,
+      quoteCardBuilder: (context, quote, layout, bodyStyle) {
+        final sourceTopicId = quote.topicId ?? topicId;
+        return Consumer(
+          builder: (context, ref, _) {
+            final blocked = ref.watch(
+              preferencesProvider.select((prefs) => prefs.normalizedBlockedUsernames),
+            );
+            return ValueListenableBuilder<int>(
+              valueListenable: AuthSession().generationChanges,
+              builder: (context, generation, _) => InteractiveQuoteCard(
+                key: ValueKey((generation, postId, quote.id, sourceTopicId,
+                    quote.postNumber, quote.full, quote.sourceMissing)),
+                quote: quote,
+                layout: layout,
+                bodyStyle: bodyStyle,
+                topicId: sourceTopicId,
+                currentTopicId: topicId,
+                blockedUsernames: blocked,
+                loadPost: (topicId, number) => ref
+                    .read(discourseServiceProvider)
+                    .getPostByNumber(topicId, number),
+                openTopic: (context, topicId, number) =>
+                    _defaultInternalLinkTap(context, topicId, null, number),
+              ),
+            );
+          },
+        );
+      },
       footnoteTapHandler: _footnoteHandler(heroNamespace, topicId),
       lazyVideoBuilder: _lazyVideoHandler(post.linkCounts ?? const []),
       iframeBuilder: _iframeBuilder,

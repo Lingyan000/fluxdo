@@ -15,6 +15,7 @@ import 'discourse/discourse_service.dart';
 import 'network/cookie/boundary_sync_service.dart';
 import 'network/cookie/cookie_jar_service.dart';
 import 'network/cookie/webview_cookie_priming.dart';
+import 'network/webview/webview_adapter_settings_service.dart';
 import 'preloaded_data_service.dart';
 import 'webview_session_cookie_refresh_service.dart';
 
@@ -22,10 +23,10 @@ enum BrowserTrustPreloadPath { native, webView }
 
 /// 启动预加载当前所处阶段，供启动页展示等待状态。
 enum BrowserTrustPreloadStage {
-  /// 原生直连加载首页数据
+  /// 通过应用网络栈加载首页数据
   native,
 
-  /// 原生不可信或失败，经共享 WebView 加载首页
+  /// 兼容模式通过共享 WebView 加载首页文档
   webView,
 
   /// WebView 通道超时/不可用，回退原生直连
@@ -103,7 +104,6 @@ class BrowserTrustCoordinator {
   BrowserTrustCoordinator._();
   static final BrowserTrustCoordinator instance = BrowserTrustCoordinator._();
 
-  static const Duration _trustedClearanceMinTtl = Duration(minutes: 10);
   static const Duration _requestClearanceMinTtl = Duration(seconds: 30);
   static const Duration _webViewPreloadTimeout = Duration(seconds: 25);
   static const Duration _domSnapshotTimeout = Duration(seconds: 12);
@@ -127,8 +127,7 @@ class BrowserTrustCoordinator {
   /// 导航 context,供 bootstrap 被 CF 挡下时主动发起 CF 验证(showManualVerify)。
   BuildContext? _navigatorContext;
 
-  /// 服务端最近一次以 CF(403/429)拒绝 cf_clearance 的时刻。在此窗口内,即使本地
-  /// cf_clearance 的 TTL 仍足够,也视为不可信——避免冷启动盲信本地 clearance 再撞墙。
+  /// 会话同步最近一次收到 CF 拒绝的时刻，供首批业务请求的信任检查使用。
   DateTime? _lastClearanceRejectedAt;
   static const Duration _clearanceRejectionTtl = Duration(minutes: 2);
 
@@ -192,8 +191,7 @@ class BrowserTrustCoordinator {
     );
   }
 
-  /// 确保预加载完成。可信时走 native Dio；不可信时独占共享 WebView
-  /// 加载一次首页并复用 HTML hydrate。
+  /// 首页默认通过应用网络栈请求。兼容模式使用共享 WebView 读取首页文档。
   Future<void> ensurePreloaded({String reason = 'unknown'}) {
     if (_preload.isLoaded) return Future.value();
 
@@ -203,16 +201,16 @@ class BrowserTrustCoordinator {
       return active;
     }
 
-    late final Future<void> future;
-    preloadStage.value = BrowserTrustPreloadStage.native;
-    future = _ensurePreloadedInternal(reason: reason).whenComplete(() {
-      if (identical(_activePreload, future)) {
+    // 先登记本轮请求，阶段通知触发的调用也能复用它。
+    final preload = Completer<void>();
+    _activePreload = preload.future;
+    preload.complete(
+      _ensurePreloadedInternal(reason: reason).whenComplete(() {
         _activePreload = null;
         preloadStage.value = null;
-      }
-    });
-    _activePreload = future;
-    return future;
+      }),
+    );
+    return preload.future;
   }
 
   Future<bool> ensureBrowserTrust({
@@ -311,56 +309,39 @@ class BrowserTrustCoordinator {
   }
 
   Future<void> _ensurePreloadedInternal({required String reason}) async {
-    final nativeTrusted = await _isNativePreloadTrusted();
-    if (nativeTrusted) {
-      _lastPreloadPath = BrowserTrustPreloadPath.native;
-      _log('preload path=native reason=$reason');
-      try {
-        await _preload.ensureLoaded();
-        _log('native preload success reason=$reason');
-        _startBrowserTrustAfterNativePreload(reason: reason);
+    if (WebViewAdapterSettingsService.instance.effectiveEnabled) {
+      // 兼容模式通过文档导航读取首页内嵌的预加载数据。
+      preloadStage.value = BrowserTrustPreloadStage.webView;
+      _log('preload path=startup_webview mode=compatibility reason=$reason');
+      final cancellation = BrowserTrustRunCancellation();
+      final hydrated = await runBrowserTrustTaskWithSafeTimeout<bool>(
+        task: _hydratePreloadThroughWebView(
+          reason: reason,
+          cancellation: cancellation,
+        ),
+        timeout: _webViewPreloadTimeout,
+        cancellation: cancellation,
+      );
+      if (hydrated == true) {
+        _lastPreloadPath = BrowserTrustPreloadPath.webView;
+        _log('startup WebView preload success reason=$reason');
+        _startClearanceRefreshIfLoggedIn();
         return;
-      } catch (e) {
-        _log(
-          'trusted native preload failed, switching to startup WebView: $e',
-          level: 'warning',
-        );
       }
-    }
-
-    _log('preload path=startup_webview reason=$reason');
-    preloadStage.value = BrowserTrustPreloadStage.webView;
-    var hydrated = false;
-    final cancellation = BrowserTrustRunCancellation();
-    final hydrateTask = _hydratePreloadThroughWebView(
-      reason: reason,
-      cancellation: cancellation,
-    );
-    final hydrateResult = await runBrowserTrustTaskWithSafeTimeout<bool>(
-      task: hydrateTask,
-      timeout: _webViewPreloadTimeout,
-      cancellation: cancellation,
-    );
-    if (hydrateResult == null) {
-      _log('startup WebView preload timeout', level: 'warning');
+      _log(
+        'startup WebView preload ${hydrated == null ? 'timed out' : 'unavailable'}, '
+        'fallback native reason=$reason',
+        level: 'warning',
+      );
+      preloadStage.value = BrowserTrustPreloadStage.fallback;
     } else {
-      hydrated = hydrateResult;
-    }
-    if (hydrated) {
-      _lastPreloadPath = BrowserTrustPreloadPath.webView;
-      _log('startup WebView preload success reason=$reason');
-      _startClearanceRefreshIfLoggedIn();
-      return;
+      preloadStage.value = BrowserTrustPreloadStage.native;
     }
 
     _lastPreloadPath = BrowserTrustPreloadPath.native;
-    _log(
-      'startup WebView preload unavailable, fallback native reason=$reason',
-      level: 'warning',
-    );
-    preloadStage.value = BrowserTrustPreloadStage.fallback;
+    _log('preload path=native reason=$reason');
     await _preload.ensureLoaded();
-    _log('fallback native preload success reason=$reason');
+    _log('native preload success reason=$reason');
     _startBrowserTrustAfterNativePreload(reason: reason);
   }
 
@@ -708,42 +689,6 @@ class BrowserTrustCoordinator {
       trusted: true,
       requestGeneration: generation,
     );
-  }
-
-  Future<bool> _isNativePreloadTrusted() async {
-    if (_clearanceRecentlyRejected) {
-      _log(
-        'native trust check: untrusted, clearance recently rejected by server',
-        level: 'warning',
-      );
-      return false;
-    }
-    if (!_jar.isInitialized) {
-      await _jar.initialize();
-    }
-    final clearance = await _jar.getCanonicalCookie('cf_clearance');
-    if (clearance == null || clearance.value.isEmpty) {
-      _log('native trust check: untrusted, no cf_clearance');
-      return false;
-    }
-    if (!CookieJarService.matchesAppHost(clearance.domain)) {
-      _log(
-        'native trust check: untrusted, domain=${clearance.domain}',
-        level: 'warning',
-      );
-      return false;
-    }
-    final expiresAt = clearance.expiresAt?.toLocal();
-    if (expiresAt == null) {
-      _log('native trust check: trusted, no expires');
-      return true;
-    }
-    final ttl = expiresAt.difference(DateTime.now());
-    final trusted = ttl >= _trustedClearanceMinTtl;
-    _log(
-      'native trust check: trusted=$trusted ttl=${ttl.inSeconds}s expires=${expiresAt.toIso8601String()}',
-    );
-    return trusted;
   }
 
   Future<bool> _isRequestGateTrusted() async {

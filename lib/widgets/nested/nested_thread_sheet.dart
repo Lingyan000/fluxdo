@@ -14,6 +14,7 @@ import '../../utils/blocked_user_filter.dart';
 import '../../utils/dialog_utils.dart';
 import '../common/app_bottom_sheet.dart';
 import '../common/positioned_stream_list.dart';
+import '../post/quote_navigation_scope.dart';
 import 'nested_post_card.dart';
 
 /// 打开深层嵌套子树弹框
@@ -37,25 +38,33 @@ void showNestedThreadSheet({
   void Function(String selectedText, Post post)? onQuoteSelection,
 }) {
   final reading = NestedReadingScope.maybeOf(context);
+  final jumpFromParent = QuoteNavigationScope.jumpFor(context, topicId) ?? onJumpToPost;
   showAppBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (context) => _NestedThreadSheetContent(
-      sourceReading: reading,
-      rootPostNumber: rootPostNumber,
-      node: node,
+    builder: (context) => QuoteNavigationScope(
       topicId: topicId,
-      detail: detail,
-      params: params,
-      maxDepth: maxDepth,
-      isLoggedIn: isLoggedIn,
-      onReply: onReply,
-      onEdit: onEdit,
-      onRefreshPost: onRefreshPost,
-      onJumpToPost: onJumpToPost,
-      onSolutionChanged: onSolutionChanged,
-      onQuoteSelection: onQuoteSelection,
+      onJump: (number) {
+        Navigator.of(context).pop();
+        jumpFromParent(number);
+      },
+      child: _NestedThreadSheetContent(
+        sourceReading: reading,
+        rootPostNumber: rootPostNumber,
+        node: node,
+        topicId: topicId,
+        detail: detail,
+        params: params,
+        maxDepth: maxDepth,
+        isLoggedIn: isLoggedIn,
+        onReply: onReply,
+        onEdit: onEdit,
+        onRefreshPost: onRefreshPost,
+        onJumpToPost: onJumpToPost,
+        onSolutionChanged: onSolutionChanged,
+        onQuoteSelection: onQuoteSelection,
+      ),
     ),
   );
 }

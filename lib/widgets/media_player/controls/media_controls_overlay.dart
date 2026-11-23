@@ -1001,7 +1001,7 @@ class _CompactIconButton extends StatelessWidget {
       child: SizedBox(
         width: 36,
         height: 36,
-        child: IconTheme(
+        child: IconTheme.merge(
           data: IconThemeData(color: MediaOverlayStyle.foreground, size: size),
           child: Center(child: icon),
         ),

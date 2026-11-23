@@ -42,7 +42,12 @@ import '../../theme/app_colors.dart';
 /// 相对时间是排版期快照,不随分钟自刷(widget 版每卡挂 Timer 自刷,
 /// 正是要消灭的常驻成本;列表刷新/数据换代即更新)。
 class TopicCardLayout {
-  TopicCardLayout._(this.key);
+  TopicCardLayout._(this.key, IconThemeData iconTheme)
+    : _iconVariations = appIconFontVariations(
+        appIconThemeDefaults.merge(iconTheme),
+      );
+
+  final List<ui.FontVariation> _iconVariations;
 
   final String key;
 
@@ -197,7 +202,7 @@ class TopicCardLayout {
     );
     final cached = _cache[identity];
     if (cached != null && cached._stamp == stamp) return cached;
-    final layout = TopicCardLayout._(identity).._stamp = stamp;
+    final layout = TopicCardLayout._(identity, theme.iconTheme).._stamp = stamp;
     _put(identity, layout);
 
     final scheme = theme.colorScheme;
@@ -291,7 +296,7 @@ class TopicCardLayout {
     );
     final cached = _cache[identity];
     if (cached != null && cached._stamp == stamp) return cached;
-    final layout = TopicCardLayout._(identity).._stamp = stamp;
+    final layout = TopicCardLayout._(identity, theme.iconTheme).._stamp = stamp;
     _put(identity, layout);
 
     final scheme = theme.colorScheme;
@@ -398,16 +403,13 @@ class TopicCardLayout {
   }
 
   /// 单字形图标小段落(排版期构建一次,绘制期直接画)
-  static ui.Paragraph _iconParagraph(IconData icon, double size, Color color) {
+  ui.Paragraph _iconParagraph(IconData icon, double size, Color color) {
     final b = ui.ParagraphBuilder(_pStyle(fontSize: size, maxLines: 1))
       ..pushStyle(
         ui.TextStyle(
           color: color,
           fontFamily: _iconFontFamily(icon),
-          fontVariations: const [
-            ui.FontVariation('opsz', 24),
-            ui.FontVariation('wght', 400),
-          ],
+          fontVariations: _iconVariations,
           fontSize: size,
           height: 1.0,
         ),

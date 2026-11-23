@@ -268,46 +268,45 @@ class _CommentInputSheetState extends State<_CommentInputSheet> {
                   visualDensity: VisualDensity.compact,
                 ),
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    autofocus: true,
-                    inputFormatters: const [EmojiShortcodeDeleteFormatter()],
-                    style: theme.textTheme.bodyMedium,
-                    minLines: 1,
-                    maxLines: 5,
-                    textInputAction: PlatformUtils.isMobile
-                        ? TextInputAction.newline
-                        : TextInputAction.send,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.4),
-                      border: OutlineInputBorder(
-                        borderRadius: context.shapes.borderRadius(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
-                      ),
-                      hintText: S.current.postVoting_commentHint,
-                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.5,
-                        ),
-                      ),
-                      counterText: '',
+                  child: InputFieldShell(
+                    radius: 20,
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.4,
                     ),
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _handleSubmit(),
-                    onTap: () {
-                      // 移动端点输入框收起表情面板,让虚拟键盘接管
-                      if (_showEmojiPanel && PlatformUtils.isMobile) {
-                        setState(() => _showEmojiPanel = false);
-                      }
-                    },
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      autofocus: true,
+                      inputFormatters: const [EmojiShortcodeDeleteFormatter()],
+                      style: theme.textTheme.bodyMedium,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: PlatformUtils.isMobile
+                          ? TextInputAction.newline
+                          : TextInputAction.send,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
+                        ),
+                        hintText: S.current.postVoting_commentHint,
+                        hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
+                        counterText: '',
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) => _handleSubmit(),
+                      onTap: () {
+                        // 移动端点输入框收起表情面板,让虚拟键盘接管
+                        if (_showEmojiPanel && PlatformUtils.isMobile) {
+                          setState(() => _showEmojiPanel = false);
+                        }
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

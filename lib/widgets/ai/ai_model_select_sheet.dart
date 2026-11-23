@@ -9,7 +9,6 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../../l10n/s.dart';
 import '../../utils/dialog_utils.dart';
-import '../common/app_bottom_sheet.dart';
 
 /// 弹出模型选择 sheet
 ///
@@ -82,37 +81,35 @@ class _AiModelSelectSheetState extends ConsumerState<_AiModelSelectSheet> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: TextField(
-              controller: _searchController,
-              autofocus: false,
-              onChanged: (value) => setState(() => _query = value),
-              decoration: InputDecoration(
-                hintText: context.l10n.ai_modelSearchHint,
-                prefixIcon: Icon(
-                  Symbols.search_rounded,
-                  size: 20,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Symbols.close_rounded, size: 18),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _query = '');
-                        },
-                      ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHigh,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: context.shapes.borderRadius(12),
-                  borderSide: BorderSide.none,
+            child: InputFieldShell(
+              color: theme.colorScheme.surfaceContainerHigh,
+              child: TextField(
+                controller: _searchController,
+                autofocus: false,
+                onChanged: (value) => setState(() => _query = value),
+                textAlignVertical: TextAlignVertical.center,
+                decoration: InputDecoration(
+                  hintText: context.l10n.ai_modelSearchHint,
+                  prefixIcon: Icon(
+                    Symbols.search_rounded,
+                    size: 20,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Symbols.close_rounded, size: 18),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
               ),
             ),

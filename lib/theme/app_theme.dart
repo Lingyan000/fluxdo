@@ -1,3 +1,4 @@
+import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoPageTransitionsBuilder;
 import 'package:material_ui/material_ui.dart';
@@ -12,16 +13,21 @@ import 'shape_presets.dart';
 import 'style_decorations.dart';
 import 'theme_style.dart';
 
-/// Material Symbols 全局轴默认：fill=0 走线框，weight/grade/opticalSize
-/// 给出与现有视觉匹配的中性值。状态类图标需在使用处显式传 `fill: 1`。
-IconThemeData _appIconTheme(Color color) => IconThemeData(
-  color: color,
-  size: 24,
-  fill: 0,
-  weight: 400,
-  grade: 0,
-  opticalSize: 24,
-);
+/// 旧 Material 的兼容层会重建 IconTheme，需要在其内部恢复应用的图标主题。
+class AppThemeBridge extends StatelessWidget {
+  const AppThemeBridge({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final icons = appIconThemeDefaults.merge(Theme.of(context).iconTheme);
+    // ignore: deprecated_member_use
+    return MaterialUiCompatibilityBridge(
+      child: IconTheme(data: icons, child: child),
+    );
+  }
+}
 
 /// 页面转场:框架在 Android 的默认(PredictiveBack,常规导航兜底到
 /// FadeForwards)是入场/离场两页各套一个整页 FadeTransition —— Impeller
@@ -163,12 +169,12 @@ ThemeData buildAppTheme(
     pageTransitionsTheme: fullscreenSwipeBack
         ? _fullscreenSwipePageTransitionsTheme
         : _pageTransitionsTheme,
-    iconTheme: _appIconTheme(scheme.onSurface),
-    primaryIconTheme: _appIconTheme(scheme.onPrimary),
+    iconTheme: appIconThemeDefaults.copyWith(color: scheme.onSurface),
+    primaryIconTheme: appIconThemeDefaults.copyWith(color: scheme.onPrimary),
     // 操作入口使用强调色；正文辅助图标仍继承 onSurface，业务状态可显式覆写。
     appBarTheme: AppBarThemeData(
-      iconTheme: _appIconTheme(emphasis.accent),
-      actionsIconTheme: _appIconTheme(emphasis.accent),
+      iconTheme: appIconThemeDefaults.copyWith(color: emphasis.accent),
+      actionsIconTheme: appIconThemeDefaults.copyWith(color: emphasis.accent),
     ),
     listTileTheme: ListTileThemeData(iconColor: emphasis.accent),
     extensions: [

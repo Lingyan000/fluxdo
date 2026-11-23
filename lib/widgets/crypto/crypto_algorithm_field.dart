@@ -154,38 +154,36 @@ class _CryptoAlgorithmPickerSheetState
   }
 
   Widget _buildSearchField(ThemeData theme, AppLocalizations s) {
-    return TextField(
-      key: const ValueKey('crypto-picker-search'),
-      controller: _searchController,
-      autofocus: false,
-      onChanged: (value) => setState(() => _query = value),
-      decoration: InputDecoration(
-        hintText: s.crypto_searchHint,
-        prefixIcon: Icon(
-          Icons.search_rounded,
-          size: 20,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        suffixIcon: _query.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close_rounded, size: 18),
-                visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() => _query = '');
-                },
-              ),
-        filled: true,
-        fillColor: theme.colorScheme.surfaceContainerHigh,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: context.shapes.borderRadius(12),
-          borderSide: BorderSide.none,
+    return InputFieldShell(
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: TextField(
+        key: const ValueKey('crypto-picker-search'),
+        controller: _searchController,
+        autofocus: false,
+        onChanged: (value) => setState(() => _query = value),
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          hintText: s.crypto_searchHint,
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _query = '');
+                  },
+                ),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
       ),
     );

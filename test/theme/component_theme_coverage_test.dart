@@ -38,38 +38,55 @@ class _NotificationCounts extends NotificationCountNotifier {
 }
 
 void main() {
-  testWidgets('通知图标在顶栏区域用强调色、在侧栏用次要色，徽标继续显示', (tester) async {
+  testWidgets('首页、AppBar 和侧栏的通知图标继承相同字形，保留区域颜色和徽标', (tester) async {
+    const appBarButton = NotificationIconButton();
+    const homeButton = NotificationIconButton(compact: true);
+    const sidebarButton = NotificationIconButton(key: ValueKey('sidebar'));
     for (final brightness in Brightness.values) {
       final theme = _theme(ShapePreset.standard, brightness);
-      for (final topBar in [true, false]) {
-        const button = NotificationIconButton(compact: true);
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              notificationCountStateProvider.overrideWith(
-                _NotificationCounts.new,
-              ),
-            ],
-            child: TranslationProvider(
-              child: MaterialApp(
-                theme: theme,
-                home: Scaffold(
-                  body: topBar ? const TopBarIconScope(child: button) : button,
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            notificationCountStateProvider.overrideWith(_NotificationCounts.new),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: theme,
+              builder: (context, child) => AppThemeBridge(child: child!),
+              home: Scaffold(
+                appBar: AppBar(actions: const [appBarButton]),
+                body: const Column(
+                  children: [TopBarIconScope(child: homeButton), sidebarButton],
                 ),
               ),
             ),
           ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final (button, color) in [
+        (appBarButton, theme.colorScheme.primary),
+        (homeButton, theme.colorScheme.primary),
+        (sidebarButton, theme.colorScheme.onSurfaceVariant),
+      ]) {
+        final bell = find.descendant(
+          of: find.byWidget(button),
+          matching: find.byIcon(Symbols.notifications_rounded),
         );
-        await tester.pumpAndSettle();
-        final icon = tester.element(find.byIcon(Symbols.notifications_rounded));
-        expect(
-          IconTheme.of(icon).color,
-          topBar
-              ? theme.colorScheme.primary
-              : theme.colorScheme.onSurfaceVariant,
+        final glyph = tester.widget<RichText>(
+          find.descendant(of: bell, matching: find.byType(RichText)),
         );
-        expect(find.text('3'), findsOneWidget);
+        final style = glyph.text.style!;
+        expect(style.color, color);
+        expect(style.fontSize, 24);
+        expect(style.fontVariations, const [
+          FontVariation('FILL', 0),
+          FontVariation('wght', 400),
+          FontVariation('GRAD', 0),
+          FontVariation('opsz', 24),
+        ]);
       }
+      expect(find.text('3'), findsNWidgets(3));
     }
   });
   for (final preset in ShapePreset.values) {

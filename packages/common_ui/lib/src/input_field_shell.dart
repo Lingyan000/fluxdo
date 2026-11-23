@@ -20,9 +20,8 @@ extension InputDecorationWithoutBorder on InputDecoration {
 
 /// 自带底色与圆角的输入框外壳（搜索胶囊、面板里的搜索栏等）。
 ///
-/// 主题给输入框配置的边框（含聚焦高亮、出错色）画在外壳的轮廓上，与
-/// 底色、圆角对齐；里面的输入框不再画自己的边框，避免出现缩在内容区、
-/// 与外壳错位的第二个框。主题没有配置输入框边框时外壳不画线。
+/// 描边沿外壳轮廓绘制，下划线只在外壳底部绘制；颜色和粗细跟随输入框主题。
+/// 里面的输入框不再绘制边框，主题未配置边框时外壳也不画线。
 class InputFieldShell extends StatefulWidget {
   const InputFieldShell({
     super.key,
@@ -32,6 +31,7 @@ class InputFieldShell extends StatefulWidget {
     this.padding = EdgeInsets.zero,
     this.height,
     this.hasError = false,
+    this.surfaceBuilder,
   });
 
   /// 包含输入框的内容
@@ -49,6 +49,18 @@ class InputFieldShell extends StatefulWidget {
   /// 是否显示出错状态的边框
   final bool hasError;
 
+  final Widget Function(InputBorder? border, Widget child)? surfaceBuilder;
+
+  static ShapeBorder borderShape(
+    RoundedSuperellipseBorder outline,
+    InputBorder? border,
+  ) {
+    if (border is UnderlineInputBorder) {
+      return _UnderlineShellBorder(outline, border);
+    }
+    return outline.copyWith(side: border?.borderSide ?? BorderSide.none);
+  }
+
   @override
   State<InputFieldShell> createState() => _InputFieldShellState();
 }
@@ -59,16 +71,25 @@ class _InputFieldShellState extends State<InputFieldShell> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final inputTheme = InputDecorationTheme.of(context);
     final states = <WidgetState>{
       if (_focused) WidgetState.focused,
       if (_hovered) WidgetState.hovered,
       if (widget.hasError) WidgetState.error,
     };
-    final side = _resolveSide(inputTheme, states);
-    final shape = RoundedSuperellipseBorder(
-      borderRadius: context.shapes.borderRadius(widget.radius),
+    final border = _resolveBorder(inputTheme, states);
+    // 边框由外壳绘制，里面的输入框不再套主题边框
+    final child = InputDecorationTheme(
+      data: inputTheme.copyWith(
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        filled: false,
+      ),
+      child: widget.child,
     );
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -77,40 +98,48 @@ class _InputFieldShellState extends State<InputFieldShell> {
         canRequestFocus: false,
         skipTraversal: true,
         onFocusChange: (focused) => setState(() => _focused = focused),
-        child: Container(
-          height: widget.height,
-          padding: widget.padding,
-          decoration: ShapeDecoration(
-            color:
-                widget.color ??
-                theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-            shape: shape,
-          ),
-          foregroundDecoration: side == BorderSide.none
-              ? null
-              : ShapeDecoration(shape: shape.copyWith(side: side)),
-          // 边框由外壳绘制，里面的输入框不再套主题边框
-          child: InputDecorationTheme(
-            data: inputTheme.copyWith(
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              errorBorder: InputBorder.none,
-              focusedErrorBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              filled: false,
-            ),
-            child: widget.child,
-          ),
-        ),
+        child: _buildSurface(context, border, child),
       ),
     );
   }
 
-  /// 按输入框主题的规则取当前状态的边框线
-  static BorderSide _resolveSide(
+  Widget _buildSurface(
+    BuildContext context,
+    InputBorder? border,
+    Widget child,
+  ) {
+    final surfaceBuilder = widget.surfaceBuilder;
+    if (surfaceBuilder != null) {
+      return SizedBox(
+        height: widget.height,
+        child: surfaceBuilder(
+          border,
+          Padding(padding: widget.padding, child: child),
+        ),
+      );
+    }
+    final colors = Theme.of(context).colorScheme;
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: context.shapes.borderRadius(widget.radius),
+    );
+    return Container(
+      height: widget.height,
+      padding: widget.padding,
+      decoration: ShapeDecoration(
+        color:
+            widget.color ??
+            colors.surfaceContainerHighest.withValues(alpha: 0.5),
+        shape: shape,
+      ),
+      foregroundDecoration: ShapeDecoration(
+        shape: InputFieldShell.borderShape(shape, border),
+      ),
+      child: child,
+    );
+  }
+
+  /// 按输入框主题的规则取当前状态的边框
+  static InputBorder? _resolveBorder(
     InputDecorationThemeData theme,
     Set<WidgetState> states,
   ) {
@@ -122,13 +151,55 @@ class _InputFieldShellState extends State<InputFieldShell> {
       (false, true) => theme.focusedBorder,
       (false, false) => theme.enabledBorder,
     };
-    final resolved =
-        border ??
+    return border ??
         WidgetStateProperty.resolveAs<InputBorder?>(theme.border, states);
-    if (resolved == null) return BorderSide.none;
-    // 外壳本身就是容器：描边风格的线常驻；下划线风格平时靠底色区分，
-    // 只在聚焦、出错时画出高亮框
-    if (!resolved.isOutline && !focused && !error) return BorderSide.none;
-    return resolved.borderSide;
   }
+}
+
+class _UnderlineShellBorder extends ShapeBorder {
+  const _UnderlineShellBorder(this.outline, this.underline);
+
+  final RoundedSuperellipseBorder outline;
+  final UnderlineInputBorder underline;
+
+  @override
+  EdgeInsetsGeometry get dimensions => underline.dimensions;
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      outline.getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => Path.combine(
+    PathOperation.intersect,
+    getOuterPath(rect, textDirection: textDirection),
+    underline.getInnerPath(rect, textDirection: textDirection),
+  );
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    if (underline.borderSide.style == BorderStyle.none) return;
+    canvas.save();
+    canvas.clipPath(getOuterPath(rect, textDirection: textDirection));
+    underline.paint(canvas, rect, textDirection: textDirection);
+    canvas.restore();
+  }
+
+  @override
+  _UnderlineShellBorder scale(double factor) => _UnderlineShellBorder(
+    outline.copyWith(borderRadius: outline.borderRadius * factor),
+    underline.copyWith(
+      borderSide: underline.borderSide.scale(factor),
+      borderRadius: underline.borderRadius * factor,
+    ),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _UnderlineShellBorder &&
+      other.outline == outline &&
+      other.underline == underline;
+
+  @override
+  int get hashCode => Object.hash(outline, underline);
 }

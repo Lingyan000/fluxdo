@@ -890,6 +890,7 @@ void main() {
         final page = tester.getRect(browser);
         expect(hint, findsNothing);
         expect(tester.getRect(surface), card);
+        expect(tester.widget<Material>(surface).borderOnForeground, isFalse);
         expect(page.height, greaterThan(card.height / 2));
         expect(
           page.top,

@@ -281,6 +281,7 @@ class NewEngineChunkSegment extends ConsumerWidget {
           codeBlockHighlighter: callbacks.codeBlockHighlighter,
           codeBlockBuilder: callbacks.codeBlockBuilder,
           quoteAvatarBuilder: callbacks.quoteAvatarBuilder,
+          quoteCardBuilder: callbacks.quoteCardBuilder,
           footnoteTapHandler: callbacks.footnoteTapHandler,
           lazyVideoBuilder: callbacks.lazyVideoBuilder,
           iframeBuilder: callbacks.iframeBuilder,

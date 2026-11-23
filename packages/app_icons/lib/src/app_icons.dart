@@ -19,6 +19,24 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'icon_painters.dart';
 
+/// Material Symbols 全局轴默认：fill=0 走线框，weight/grade/opticalSize
+/// 给出与现有视觉匹配的中性值。状态类图标需在使用处显式传 `fill: 1`。
+const appIconThemeDefaults = IconThemeData(
+  size: 24,
+  fill: 0,
+  weight: 400,
+  grade: 0,
+  opticalSize: 24,
+);
+
+/// 段落中的 Material Symbols 与 Icon 使用同一组可变字体轴。
+List<FontVariation> appIconFontVariations(IconThemeData theme) => [
+  if (theme.fill != null) FontVariation('FILL', theme.fill!),
+  if (theme.weight != null) FontVariation('wght', theme.weight!),
+  if (theme.grade != null) FontVariation('GRAD', theme.grade!),
+  if (theme.opticalSize != null) FontVariation('opsz', theme.opticalSize!),
+];
+
 /// 一个"图标值"——可能是字体图标（[IconData]）或自绘图标（[AppCustomIcon]）。
 ///
 /// 中心层暴露的所有图标常量都是 [AppIconSpec]；调用方用 [AppIcon] 渲染时

@@ -976,48 +976,45 @@ class _CategoryDrawerState extends ConsumerState<CategoryDrawer> {
             // —— 搜索框：本地过滤，实色胶囊与顶栏同族 ——
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-              child: _DrawerFloatingSurface(
-                scrolledUnder: _scrolledUnder,
-                borderRadius: 20,
-                child: SizedBox(
-                  height: 40,
-                  child: TextField(
-                    controller: _tagQueryController,
-                    onChanged: (v) => setState(() => _tagQuery = v),
-                    style: const TextStyle(fontSize: 14),
-                    textAlignVertical: TextAlignVertical.center,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: S.current.tag_searchHint,
-                      hintStyle: TextStyle(
-                        fontSize: 14,
-                        color: colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.7,
-                        ),
+              child: InputFieldShell(
+                height: 40,
+                surfaceBuilder: (border, child) => _DrawerFloatingSurface(
+                  scrolledUnder: _scrolledUnder,
+                  borderRadius: 20,
+                  inputBorder: border,
+                  child: child,
+                ),
+                child: TextField(
+                  controller: _tagQueryController,
+                  onChanged: (v) => setState(() => _tagQuery = v),
+                  style: const TextStyle(fontSize: 14),
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: S.current.tag_searchHint,
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
                       ),
-                      prefixIcon: Icon(
-                        Symbols.search_rounded,
-                        size: 20,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      suffixIcon: _tagQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Symbols.close_rounded,
-                                size: 18,
-                              ),
-                              color: colorScheme.onSurfaceVariant,
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                _tagQueryController.clear();
-                                setState(() => _tagQuery = '');
-                              },
-                            )
-                          : null,
-                      filled: false,
-                      contentPadding: const EdgeInsets.only(right: 12),
-                      border: InputBorder.none,
                     ),
+                    prefixIcon: Icon(
+                      Symbols.search_rounded,
+                      size: 20,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    suffixIcon: _tagQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Symbols.close_rounded, size: 18),
+                            color: colorScheme.onSurfaceVariant,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              _tagQueryController.clear();
+                              setState(() => _tagQuery = '');
+                            },
+                          )
+                        : null,
+                    contentPadding: const EdgeInsets.only(right: 12),
                   ),
                 ),
               ),
@@ -1521,12 +1518,14 @@ class _DrawerFloatingSurface extends StatelessWidget {
     required this.borderRadius,
     required this.child,
     this.color,
+    this.inputBorder,
     this.elevation = 2.0,
   });
 
   final ValueListenable<bool> scrolledUnder;
   final double borderRadius;
   final Color? color;
+  final InputBorder? inputBorder;
   final double elevation;
   final Widget child;
 
@@ -1544,16 +1543,18 @@ class _DrawerFloatingSurface extends StatelessWidget {
         builder: (context, t, child) {
           final colors = Theme.of(context).colorScheme;
           final shadows = context.themeStyle.shadows;
+          final border = inputBorder;
+          final outline = RoundedSuperellipseBorder(
+            borderRadius: context.shapes.borderRadius(borderRadius),
+            side: shadows || border != null
+                ? BorderSide.none
+                : BorderSide(color: colors.outlineVariant.withValues(alpha: t)),
+          );
           return Material(
             color: color ?? colors.surfaceContainerHigh,
-            shape: RoundedSuperellipseBorder(
-              borderRadius: context.shapes.borderRadius(borderRadius),
-              side: shadows
-                  ? BorderSide.none
-                  : BorderSide(
-                      color: colors.outlineVariant.withValues(alpha: t),
-                    ),
-            ),
+            shape: border == null
+                ? outline
+                : InputFieldShell.borderShape(outline, border),
             clipBehavior: Clip.antiAlias,
             elevation: shadows ? elevation * t : 0,
             shadowColor: Colors.black26,

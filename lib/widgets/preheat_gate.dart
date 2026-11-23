@@ -523,7 +523,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
   _PreheatStatus? _exitStatus;
 
   bool _showSkip = false;
-  bool _verificationLayout = false;
+  bool _hasShownVerificationPage = false;
   bool _statusRevealed = false;
   bool _slow = false;
   bool _offline = false;
@@ -596,9 +596,9 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
 
   void _onStatusInputChanged() {
     _update(() {
-      if (_verificationHost.pageVisible && !_verificationLayout) {
-        // 重新加载或切换文档时只遮住网页，标题和页脚留在原位直到离开启动页。
-        _verificationLayout = true;
+      if (_verificationHost.pageVisible && !_hasShownVerificationPage) {
+        // 用户开始人工验证后，等待结果和重新加载期间仍可跳过。
+        _hasShownVerificationPage = true;
         _skipTimer?.cancel();
         _showSkip = widget.onSkip != null;
       }
@@ -664,7 +664,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_verificationLayout)
+          if (_hasShownVerificationPage)
             title
           else
             ValueListenableBuilder<bool>(
@@ -680,7 +680,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
               ),
             ),
           const SizedBox(height: 12),
-          if (_verificationLayout)
+          if (_hasShownVerificationPage)
             message
           else
             AnimatedOpacity(
@@ -710,7 +710,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
-    if (_verificationLayout) return button;
+    if (_hasShownVerificationPage) return button;
     const duration = Duration(milliseconds: 400);
     return IgnorePointer(
       ignoring: !_showSkip || widget.exiting,
@@ -795,7 +795,8 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
                     child: const SizedBox.expand(),
                   ),
                 ),
-                if (!_verificationLayout)
+                // 网页收起检查结果时，恢复居中的启动标志和状态提示。
+                if (!_verificationHost.pageVisible)
                   LayoutId(
                     id: _LaunchPart.logo,
                     child: ScaleTransition(
@@ -886,7 +887,7 @@ class _PreheatLoadingState extends State<_PreheatLoading> {
                         Wrap(
                           alignment: WrapAlignment.center,
                           children: [
-                            if (_verificationLayout ||
+                            if (_hasShownVerificationPage ||
                                 _verificationHost.reloadPage != null)
                               TextButton(
                                 onPressed: _verificationHost.reloadPage,

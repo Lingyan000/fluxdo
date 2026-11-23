@@ -226,8 +226,26 @@ void main() {
     await tester.pump();
     expect(browser.hitTestable(), findsNothing);
     expect(skip.hitTestable(), findsOneWidget);
-    expect(find.byType(PreheatLogo), findsNothing);
+    expect(find.byType(PreheatLogo), findsOneWidget);
     expect(tester.state(browser), same(original));
+
+    await controller.widgetEvent('interactiveBegin');
+    await tester.pump();
+    expect(tester.getRect(browser.hitTestable()), area);
+    await controller.widgetEvent('interactiveEnd');
+    page.onLoadStart!(controller.wrapped, WebUri(controller.documentUrl));
+    await tester.pump();
+    final checking = find.text(gate.l10n.cf_panelCheckingResult);
+    final logo = find.byType(PreheatLogo);
+    expect(browser.hitTestable(), findsNothing);
+    expect(logo, findsOneWidget);
+    expect(
+      tester.getTopLeft(checking).dy,
+      greaterThan(tester.getBottomLeft(logo).dy),
+    );
+    expect(tester.getRect(skip), skipPosition);
+    expect(tester.state(browser), same(original));
+
     page.onReceivedHttpError!(
       controller.wrapped,
       WebResourceRequest(

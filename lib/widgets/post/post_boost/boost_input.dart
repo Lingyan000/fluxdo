@@ -199,52 +199,51 @@ class _BoostInputSheetState extends ConsumerState<_BoostInputSheet> {
                 ),
                 // 输入框
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    readOnly: _showEmojiPanel && PlatformUtils.isMobile,
-                    showCursor: true,
-                    inputFormatters: const [EmojiShortcodeDeleteFormatter()],
-                    style: theme.textTheme.bodyMedium,
-                    textInputAction: TextInputAction.send,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.4),
-                      border: OutlineInputBorder(
-                        borderRadius: context.shapes.borderRadius(20),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
-                      ),
-                      hintText: context.l10n.boost_placeholder,
-                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.5,
+                  child: InputFieldShell(
+                    radius: 20,
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.4,
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      readOnly: _showEmojiPanel && PlatformUtils.isMobile,
+                      showCursor: true,
+                      inputFormatters: const [EmojiShortcodeDeleteFormatter()],
+                      style: theme.textTheme.bodyMedium,
+                      textInputAction: TextInputAction.send,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
+                        ),
+                        hintText: context.l10n.boost_placeholder,
+                        hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        ),
+                        counterText: '',
+                        suffixText: '$visibleLength/$_maxVisibleLength',
+                        suffixStyle: theme.textTheme.labelSmall?.copyWith(
+                          color: isReplyIntent
+                              ? theme.colorScheme.error
+                              : theme.colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.5,
+                                ),
                         ),
                       ),
-                      counterText: '',
-                      suffixText: '$visibleLength/$_maxVisibleLength',
-                      suffixStyle: theme.textTheme.labelSmall?.copyWith(
-                        color: isReplyIntent
-                            ? theme.colorScheme.error
-                            : theme.colorScheme.onSurfaceVariant.withValues(
-                                alpha: 0.5,
-                              ),
-                      ),
+                      onChanged: (_) => setState(() {}),
+                      onSubmitted: (_) => _handleSubmit(),
+                      onTap: () {
+                        // 移动端：点击输入框时收起表情面板（让虚拟键盘接管）
+                        // 桌面端：保持表情面板，因为没有虚拟键盘来填充空间
+                        if (_showEmojiPanel && PlatformUtils.isMobile) {
+                          setState(() => _showEmojiPanel = false);
+                        }
+                      },
                     ),
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _handleSubmit(),
-                    onTap: () {
-                      // 移动端：点击输入框时收起表情面板（让虚拟键盘接管）
-                      // 桌面端：保持表情面板，因为没有虚拟键盘来填充空间
-                      if (_showEmojiPanel && PlatformUtils.isMobile) {
-                        setState(() => _showEmojiPanel = false);
-                      }
-                    },
                   ),
                 ),
                 const SizedBox(width: 8),

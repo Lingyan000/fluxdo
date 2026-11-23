@@ -374,6 +374,9 @@ class CfVerificationDialog extends StatelessWidget {
       elevation: 5,
       color: scheme.surface,
       shadowColor: scheme.shadow.withValues(alpha: 0.35),
+      // macOS 会按 Flutter 前景绘制的外接矩形屏蔽原生视图的点击。
+      // 描边要画在 WebView 下方，否则整个网页都会被挡住。
+      borderOnForeground: false,
       shape: RoundedSuperellipseBorder(
         borderRadius: context.shapes.borderRadius(20),
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.65)),
