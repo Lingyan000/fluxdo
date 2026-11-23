@@ -12,6 +12,7 @@ import '../../../providers/theme_provider.dart';
 import '../../../utils/responsive.dart';
 import '../controllers/topic_position_info.dart';
 import 'topic_bottom_bar.dart';
+import 'topic_bottom_menu_layer.dart';
 import 'topic_filter_controls.dart';
 import '../controllers/topic_reply_session.dart';
 
@@ -61,6 +62,12 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
   /// 底栏回复入口胶囊的 key
   final GlobalKey replyEntryKey;
 
+  /// 底栏原地展开宫格菜单会话（null 时沿用旧弹出菜单）
+  final TopicBottomMenuSession? menuSession;
+
+  /// 底栏右侧操作组的 key：宫格菜单从它原地展开
+  final GlobalKey? menuSourceKey;
+
   const TopicDetailOverlay({
     super.key,
     required this.showBottomBarListenable,
@@ -85,6 +92,8 @@ class TopicDetailOverlay extends ConsumerStatefulWidget {
     required this.filter,
     this.replySession,
     required this.replyEntryKey,
+    this.menuSession,
+    this.menuSourceKey,
   });
 
   /// 回顶按钮显隐：随底栏一起出现（往回滑表示想回去），且不在顶部
@@ -152,7 +161,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
     if (!mounted ||
         _hintChecked ||
         widget.filter.isNestedMode ||
-        _composing ||
+        _panelActive ||
         widget.totalCount <= 1 ||
         !widget.showBottomBarListenable.value) {
       return;
@@ -199,6 +208,9 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
       filter: widget.filter,
       replyEntryKey: _replyEntryKey,
       replyEntryHiddenListenable: widget.replySession?.presentedNotifier,
+      menuSourceKey: widget.menuSourceKey,
+      onOpenBottomMenu: widget.menuSession?.open,
+      menuPresentedListenable: widget.menuSession?.presentedNotifier,
     );
 
     final stack = Stack(
@@ -249,6 +261,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
           listenable: Listenable.merge([
             widget.showBottomBarListenable,
             ?widget.replySession?.activeNotifier,
+            ?widget.menuSession?.activeNotifier,
           ]),
           child: TopicDetailOverlay.alignWithBar(
             context,
@@ -318,11 +331,11 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                 ) -
                 TopicBottomBarMetrics.gap,
             child: IgnorePointer(
-              ignoring: _composing,
+              ignoring: _panelActive,
               child: AnimatedOpacity(
                 duration: _motion,
                 curve: TopicBottomBarMetrics.motionCurve,
-                opacity: _composing ? 0 : 1,
+                opacity: _panelActive ? 0 : 1,
                 child: child,
               ),
             ),
@@ -339,6 +352,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
               widget.showBottomBarListenable,
               _hintVisible,
               ?widget.replySession?.activeNotifier,
+              ?widget.menuSession?.activeNotifier,
             ]),
             child: TopicDetailOverlay.alignWithBar(
               context,
@@ -347,7 +361,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
             builder: (context, child) {
               if (!_hintChecked &&
                   widget.showBottomBarListenable.value &&
-                  !_composing) {
+                  !_panelActive) {
                 WidgetsBinding.instance.addPostFrameCallback(
                   (_) => _maybeShowHint(),
                 );
@@ -355,7 +369,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
               final visible =
                   _hintVisible.value &&
                   widget.showBottomBarListenable.value &&
-                  !_composing;
+                  !_panelActive;
               return Positioned(
                 key: const ValueKey('bar_gesture_hint'),
                 left: 0,
@@ -394,6 +408,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
   }
 
   bool get _composing => widget.replySession?.active ?? false;
+  bool get _panelActive => _composing || (widget.menuSession?.active ?? false);
 
   /// 悬浮形态：卡片宽度跟随帖子列，离底边留出安全区与边距
   Widget _wrapFloating(Widget bar) {

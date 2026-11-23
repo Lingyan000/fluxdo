@@ -85,6 +85,7 @@ import 'widgets/nested_post_list.dart';
 import 'widgets/private_message_participants.dart';
 import 'widgets/topic_detail_overlay.dart';
 import 'widgets/topic_bottom_bar.dart';
+import 'widgets/topic_bottom_menu_layer.dart';
 import 'widgets/topic_filter_controls.dart';
 import 'widgets/topic_reading_rail.dart';
 import 'widgets/topic_quick_reply.dart';
@@ -241,6 +242,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
 
   /// 底栏回复入口胶囊:快捷回复面板与完整编辑器的变形起点
   final GlobalKey _replyEntryKey = GlobalKey();
+
+  /// 底栏原地展开的宫格菜单会话与右侧锚点
+  final TopicBottomMenuSession _bottomMenuSession = TopicBottomMenuSession();
+  final GlobalKey _bottomMenuSourceKey = GlobalKey();
 
   /// 宽屏停靠编辑器(阅读栏形态下的回复编辑器,非模态)
   late final TopicDockedComposerController _dockedComposer =
@@ -519,6 +524,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       confirmSwitch: _confirmReplyTargetSwitch,
     );
     _replySession.activeNotifier.addListener(_onReplySessionActiveChanged);
+    _bottomMenuSession.activeNotifier.addListener(_onBottomMenuActiveChanged);
     DraftsSignal.localRevision.addListener(_refreshReplyDraftPreview);
     _refreshReplyDraftPreview();
 
@@ -795,6 +801,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       _replySession.close();
       return;
     }
+    if (_bottomMenuSession.active) {
+      _bottomMenuSession.close();
+      return;
+    }
     if (_dockedComposer.isOpen && !_dockedComposer.minimized) {
       _dockedComposer.toggleMinimized();
       return;
@@ -1002,6 +1012,10 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     DraftsSignal.localRevision.removeListener(_refreshReplyDraftPreview);
     _replySession.activeNotifier.removeListener(_onReplySessionActiveChanged);
     _replySession.dispose();
+    _bottomMenuSession.activeNotifier.removeListener(
+      _onBottomMenuActiveChanged,
+    );
+    _bottomMenuSession.dispose();
     _dockedComposer.dispose();
     _dockedInset.dispose();
     _replyDraftPreview.dispose();
@@ -2257,9 +2271,24 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     }());
   }
 
+  void _syncBottomBarHold() {
+    _controller.holdBottomBar =
+        _replySession.active || _bottomMenuSession.active;
+  }
+
   void _onReplySessionActiveChanged() {
-    _controller.holdBottomBar = _replySession.active;
+    if (_replySession.active && _bottomMenuSession.active) {
+      _bottomMenuSession.close();
+    }
+    _syncBottomBarHold();
     _refreshReplyDraftPreview();
+  }
+
+  void _onBottomMenuActiveChanged() {
+    if (_bottomMenuSession.active && _replySession.active) {
+      _replySession.close();
+    }
+    _syncBottomBarHold();
   }
 
   /// 快捷回复可用:已登录、可回复,且不在宽屏阅读栏形态(那里用停靠编辑器)
@@ -2349,6 +2378,66 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               child: Text(l10n.topicDetail_quickReplyKeepContent),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  /// 底栏原地展开宫格菜单层（挂在 Scaffold 之外，切筛选重加载时保持挂载）
+  Widget _buildBottomMenuLayer(TopicDetailParams params) {
+    return Consumer(
+      builder: (context, ref, _) {
+        final detail = ref.watch(topicDetailProvider(params)).value;
+        if (detail == null) return const SizedBox.shrink();
+        final notifier = ref.read(topicDetailProvider(params).notifier);
+        final isLoggedIn = ref.watch(currentUserProvider).value != null;
+        final isInReadLater = ref.watch(
+          readLaterProvider.select(
+            (items) => items.any((item) => item.topicId == widget.topicId),
+          ),
+        );
+        final replyEntryState = _replyEntryState(detail, isLoggedIn);
+        final bookmarked =
+            _bookmarkEditTarget(detail) != null || detail.bookmarked;
+        return TopicBottomMenuLayer(
+          session: _bottomMenuSession,
+          sourceKey: _bottomMenuSourceKey,
+          data: TopicBottomMenuData(
+            filter: _filterControls(detail, notifier),
+            showBookmark: replyEntryState != TopicReplyEntryState.login,
+            bookmarked: bookmarked,
+            isInReadLater: isInReadLater,
+            isPrivateMessage: detail.isPrivateMessage,
+            isLoggedIn: isLoggedIn,
+            notificationLevel: detail.notificationLevel,
+            onBookmark: _handleBottomBarBookmark,
+            onToggleReadLater: _handleReadLater,
+            onOpenFind: () => ref
+                .read(topicSearchProvider(widget.topicId).notifier)
+                .enterSearchMode(),
+            onShareTopic: _shareTopic,
+            onShowMembers: detail.isPrivateMessage
+                ? _showPrivateMessageMembers
+                : null,
+            onOpenNotification: () {
+              final latest = ref.read(topicDetailProvider(params)).value;
+              if (latest == null) return;
+              showNotificationLevelSheet(
+                context,
+                latest.notificationLevel,
+                (level) => _handleNotificationLevelChanged(notifier, level),
+              );
+            },
+            onOpenInBrowser: _openInBrowser,
+            onOpenReadingSettings: () {
+              Navigator.push(
+                context,
+                InteractionPageRoute(
+                  builder: (_) => const ReadingSettingsPage(),
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -2493,12 +2582,18 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     TopicDetail detail,
     TopicDetailNotifier notifier,
   ) {
+    final userFilter = notifier.usernameFilter;
+    final isAuthorFilter =
+        userFilter != null && userFilter == detail.createdBy?.username;
+    final isOtherUserFilter = userFilter != null && !isAuthorFilter;
     return TopicFilterControls(
       hasSummary: detail.hasSummary,
       isPostVoting: detail.isPostVoting,
       isSummaryMode: notifier.isSummaryMode,
       isActivityMode: notifier.isActivityMode,
       isAuthorOnlyMode: notifier.isAuthorOnlyMode,
+      usernameFilter: userFilter,
+      isOtherUserFilter: isOtherUserFilter,
       isTopLevelMode: notifier.isTopLevelMode,
       isNestedMode: _isNestedView,
       isLoading: _isSwitchingMode,
@@ -2533,6 +2628,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
       isSummaryMode: notifier.isSummaryMode,
       isActivityMode: notifier.isActivityMode,
       isAuthorOnlyMode: notifier.isAuthorOnlyMode,
+      usernameFilter: notifier.usernameFilter,
       isTopLevelMode: notifier.isTopLevelMode,
       isNestedMode: _isNestedView,
       isLoading: _isSwitchingMode,
@@ -2560,6 +2656,8 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           ? _replySession
           : null,
       replyEntryKey: _replyEntryKey,
+      menuSession: _bottomMenuSession,
+      menuSourceKey: _bottomMenuSourceKey,
       tocVisibleListenable: _tocVisible,
       onOpenTimeline: _showTimelineSheetForCurrent,
       bookmarked: bookmarked,
@@ -2761,7 +2859,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
           (level) => _handleNotificationLevelChanged(notifier, level),
         );
       case ProgressGestureAction.filter:
-        _showFilterSheet();
+        if (_railMode) {
+          _showFilterSheet();
+        } else {
+          _bottomMenuSession.open();
+        }
       case ProgressGestureAction.toggleNestedView:
         _toggleNestedView();
       case ProgressGestureAction.aiAssistant:
@@ -3177,6 +3279,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
             child: child!,
           ),
         ),
+        Positioned.fill(child: _buildBottomMenuLayer(params)),
         Positioned.fill(child: _buildQuickReplyLayer(params)),
       ],
     );
@@ -3366,6 +3469,11 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
     // 移到右侧常驻,底部不再放任何东西
     final railMode = pageWidth >= _readingRailMinWidth;
     _railMode = railMode;
+    if (railMode && _bottomMenuSession.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _bottomMenuSession.close();
+      });
+    }
     _pageHeight = pageHeight;
     // 初始加载或切换模式时显示骨架屏
     // 注意：当 hasError 为 true 时，即使 isLoading 也为 true（AsyncLoading.copyWithPrevious 语义），

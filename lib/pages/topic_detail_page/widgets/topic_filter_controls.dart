@@ -13,6 +13,8 @@ class TopicFilterControls {
     this.isSummaryMode = false,
     this.isActivityMode = false,
     this.isAuthorOnlyMode = false,
+    this.usernameFilter,
+    this.isOtherUserFilter = false,
     this.isTopLevelMode = false,
     this.isNestedMode = false,
     this.isLoading = false,
@@ -29,6 +31,8 @@ class TopicFilterControls {
   final bool isSummaryMode;
   final bool isActivityMode;
   final bool isAuthorOnlyMode;
+  final String? usernameFilter;
+  final bool isOtherUserFilter;
   final bool isTopLevelMode;
   final bool isNestedMode;
   final bool isLoading;
@@ -55,6 +59,14 @@ class TopicFilterControls {
       return (Symbols.history_rounded, l10n.topicDetail_sortByActivity);
     }
     if (isAuthorOnlyMode) {
+      if (isOtherUserFilter &&
+          usernameFilter != null &&
+          usernameFilter!.isNotEmpty) {
+        return (
+          Symbols.person_search_rounded,
+          l10n.topicDetail_userOnly(usernameFilter!),
+        );
+      }
       return (Symbols.person_rounded, l10n.topicDetail_authorOnly);
     }
     if (isTopLevelMode) {
@@ -66,6 +78,8 @@ class TopicFilterControls {
 }
 
 /// 筛选按钮：未激活时弹出筛选菜单，激活时高亮当前模式、点按取消。
+/// 传入 [onOpenPanel] 时改为在底栏原地展开宫格面板（激活态同样打开面板以
+/// 支持切换或取消）。
 /// [showLabel] 为 true 时带文字（宽屏阅读栏），否则只有图标（底栏）。
 class TopicFilterButton extends StatelessWidget {
   const TopicFilterButton({
@@ -73,16 +87,37 @@ class TopicFilterButton extends StatelessWidget {
     required this.controls,
     this.showLabel = false,
     this.openOnPress = true,
+    this.onOpenPanel,
   });
 
   final TopicFilterControls controls;
   final bool showLabel;
   final bool openOnPress;
+  final VoidCallback? onOpenPanel;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final c = controls;
+    if (onOpenPanel != null && !showLabel) {
+      final (icon, label) = c.active(context);
+      return IconButton(
+        onPressed: onOpenPanel,
+        tooltip: c.hasActiveFilter
+            ? label
+            : context.l10n.topicDetail_moreOptions,
+        icon: Icon(
+          icon,
+          color: c.hasActiveFilter ? context.emphasis.accent : null,
+        ),
+        style: c.hasActiveFilter
+            ? IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.primaryContainer,
+              )
+            : null,
+        visualDensity: VisualDensity.compact,
+      );
+    }
     if (c.hasActiveFilter) {
       final (icon, label) = c.active(context);
       final onPressed = c.isLoading ? null : c.onCancelFilter;

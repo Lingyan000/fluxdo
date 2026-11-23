@@ -99,6 +99,15 @@ class TopicBottomBar extends ConsumerStatefulWidget {
   /// 快捷回复面板在屏上时隐藏回复入口胶囊（面板正是从它变形出来的）
   final ValueListenable<bool>? replyEntryHiddenListenable;
 
+  /// 右侧操作组的 key：底栏宫格菜单从它的位置原地向上展开
+  final GlobalKey? menuSourceKey;
+
+  /// 点击右侧按钮展开底栏宫格面板（为空时回退原弹出菜单）
+  final VoidCallback? onOpenBottomMenu;
+
+  /// 底栏宫格面板在屏上时隐藏右侧原位按钮，避免半透明玻璃下露出重影
+  final ValueListenable<bool>? menuPresentedListenable;
+
   const TopicBottomBar({
     super.key,
     required this.streamIndexListenable,
@@ -117,6 +126,9 @@ class TopicBottomBar extends ConsumerStatefulWidget {
     required this.filter,
     this.replyEntryKey,
     this.replyEntryHiddenListenable,
+    this.menuSourceKey,
+    this.onOpenBottomMenu,
+    this.menuPresentedListenable,
   });
 
   @override
@@ -231,6 +243,50 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
     );
   }
 
+  Widget _buildTrailingActions(
+    BuildContext context, {
+    required bool showBookmark,
+    required bool gestureBar,
+  }) {
+    final actions = KeyedSubtree(
+      key: widget.menuSourceKey,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 未登录时书签无从保存
+          if (showBookmark)
+            IconButton(
+              onPressed: widget.onBookmark,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                Symbols.bookmark_rounded,
+                fill: widget.bookmarked ? 1 : 0,
+                color: widget.bookmarked ? context.emphasis.selected : null,
+              ),
+              tooltip: widget.bookmarked
+                  ? context.l10n.topicDetail_editBookmark
+                  : context.l10n.common_addBookmark,
+            ),
+          TopicFilterButton(
+            controls: widget.filter,
+            openOnPress: !gestureBar,
+            onOpenPanel: widget.onOpenBottomMenu,
+          ),
+        ],
+      ),
+    );
+    final hidden = widget.menuPresentedListenable;
+    if (hidden == null) return actions;
+    return ValueListenableBuilder<bool>(
+      valueListenable: hidden,
+      child: actions,
+      builder: (context, isHidden, child) => IgnorePointer(
+        ignoring: isHidden,
+        child: Opacity(opacity: isHidden ? 0 : 1, child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -266,25 +322,10 @@ class _TopicBottomBarState extends ConsumerState<TopicBottomBar> {
                     infoSource: widget.infoSource,
                     onTap: widget.onOpenTimeline,
                   ),
-                // 未登录时书签无从保存
-                if (showBookmark)
-                  IconButton(
-                    onPressed: widget.onBookmark,
-                    visualDensity: VisualDensity.compact,
-                    icon: Icon(
-                      Symbols.bookmark_rounded,
-                      fill: widget.bookmarked ? 1 : 0,
-                      color: widget.bookmarked
-                          ? context.emphasis.selected
-                          : null,
-                    ),
-                    tooltip: widget.bookmarked
-                        ? context.l10n.topicDetail_editBookmark
-                        : context.l10n.common_addBookmark,
-                  ),
-                TopicFilterButton(
-                  controls: widget.filter,
-                  openOnPress: !gestureBar,
+                _buildTrailingActions(
+                  context,
+                  showBookmark: showBookmark,
+                  gestureBar: gestureBar,
                 ),
               ],
             );
