@@ -143,7 +143,7 @@ impl UpstreamProxyConfig {
 }
 
 /// 核心配置。宿主每次配置变化都下发完整一份。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetConfig {
     /// 本地监听地址（WebView CONNECT 与指纹采样端点），固定回环
     #[serde(default = "default_bind_addr")]

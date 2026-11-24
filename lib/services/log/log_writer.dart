@@ -56,6 +56,9 @@ class LogWriter {
   /// path_provider，且悬挂的 Timer 会让 testWidgets 失败）
   static bool _initialized = false;
 
+  /// 当前 isolate 是否已完成日志落盘初始化（后台短任务 isolate 通常不初始化）
+  static bool get isInitialized => _initialized;
+
   /// 未初始化时缓冲的最大条数，防止 init 失败后无限增长
   static const int _maxPendingLines = 500;
 

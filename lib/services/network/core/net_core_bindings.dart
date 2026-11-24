@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:ffi/ffi.dart';
 
 import '../../app_logger.dart';
+import '../../log/log_writer.dart';
 import '../../network_logger.dart';
 
 /// 网络核心的 FFI 绑定：加载动态库并暴露 C 接口。
@@ -52,14 +53,21 @@ class NetCoreBindings {
   late final void Function() _initLogging;
   late final void Function(Pointer<NativeFunction<NetCoreLogCallback>>)
   _setLogCallback;
+  int Function(Pointer<NativeFunction<NetCoreLogCallback>>)? _registerLogHost;
+  void Function(int)? _unregisterLogHost;
   late final void Function(int) _setLogLevel;
 
   /// 持有当前 isolate 的回调；原生宿主必须在热重启前解除它。
-  // ignore: unused_field
   NativeCallable<NetCoreLogCallback>? _logCallback;
+  int _logHostId = 0;
+  void Function()? _verboseListener;
   late final void Function(Pointer<NativeFunction<NetCoreEventCallback>>)
   _setEventCallback;
+  int Function(Pointer<NativeFunction<NetCoreEventCallback>>)?
+  _registerEventHost;
+  void Function(int)? _unregisterEventHost;
   late final int Function(Pointer<Utf8>) _init;
+  int Function(Pointer<Utf8>)? _ensureInit;
   late final void Function() _shutdown;
   late final Pointer<Utf8> Function() _statusJson;
   late final void Function() _resetConnections;
@@ -100,6 +108,18 @@ class NetCoreBindings {
             Void Function(Pointer<NativeFunction<NetCoreLogCallback>>),
             void Function(Pointer<NativeFunction<NetCoreLogCallback>>)
           >('fluxdo_net_set_log_callback');
+      if (lib.providesSymbol('fluxdo_net_register_log_host') &&
+          lib.providesSymbol('fluxdo_net_unregister_log_host')) {
+        _registerLogHost = lib
+            .lookupFunction<
+              Uint64 Function(Pointer<NativeFunction<NetCoreLogCallback>>),
+              int Function(Pointer<NativeFunction<NetCoreLogCallback>>)
+            >('fluxdo_net_register_log_host');
+        _unregisterLogHost = lib
+            .lookupFunction<Void Function(Uint64), void Function(int)>(
+              'fluxdo_net_unregister_log_host',
+            );
+      }
       _setLogLevel = lib
           .lookupFunction<Void Function(Uint8), void Function(int)>(
             'fluxdo_net_set_log_level',
@@ -109,11 +129,30 @@ class NetCoreBindings {
             Void Function(Pointer<NativeFunction<NetCoreEventCallback>>),
             void Function(Pointer<NativeFunction<NetCoreEventCallback>>)
           >('fluxdo_net_set_event_callback');
+      if (lib.providesSymbol('fluxdo_net_register_event_host') &&
+          lib.providesSymbol('fluxdo_net_unregister_event_host')) {
+        _registerEventHost = lib
+            .lookupFunction<
+              Uint64 Function(Pointer<NativeFunction<NetCoreEventCallback>>),
+              int Function(Pointer<NativeFunction<NetCoreEventCallback>>)
+            >('fluxdo_net_register_event_host');
+        _unregisterEventHost = lib
+            .lookupFunction<Void Function(Uint64), void Function(int)>(
+              'fluxdo_net_unregister_event_host',
+            );
+      }
       _init = lib
           .lookupFunction<
             Int32 Function(Pointer<Utf8>),
             int Function(Pointer<Utf8>)
           >('fluxdo_net_init');
+      if (lib.providesSymbol('fluxdo_net_ensure_init')) {
+        _ensureInit = lib
+            .lookupFunction<
+              Int32 Function(Pointer<Utf8>),
+              int Function(Pointer<Utf8>)
+            >('fluxdo_net_ensure_init');
+      }
       _shutdown = lib.lookupFunction<Void Function(), void Function()>(
         'fluxdo_net_shutdown',
       );
@@ -176,8 +215,9 @@ class NetCoreBindings {
           .lookupFunction<Void Function(Uint64), void Function(int)>(
             'fluxdo_net_request_resume',
           );
-      // 先接好日志出口再初始化：启动阶段的日志也要进应用日志
-      _bindLogging();
+      // 先接好日志出口再初始化：仅在已初始化落盘日志的 isolate 绑定，
+      // 避免后台短任务 isolate 抢占日志回调或在退出后遗留死回调。
+      _bindLoggingIfReady();
       _initLogging();
       if (Platform.isAndroid && !_initAndroidContext(lib)) {
         return false;
@@ -190,15 +230,52 @@ class NetCoreBindings {
     }
   }
 
+  /// 当前 isolate 完成 [LogWriter.init] 后补绑核心日志出口（幂等）。
+  void ensureLoggingBound() {
+    if (!_initialized) return;
+    _bindLoggingIfReady();
+  }
+
   /// 核心日志转进应用日志（type: network），级别跟随详细日志开关：
   /// 平时只收 info 及以上，开发者模式下连 debug（逐请求耗时等）一起收。
-  void _bindLogging() {
+  void _bindLoggingIfReady() {
+    if (_logCallback != null || !LogWriter.isInitialized) return;
     final callback = NativeCallable<NetCoreLogCallback>.listener(_onLog);
-    _setLogCallback(callback.nativeFunction);
+    final registerLogHost = _registerLogHost;
+    if (registerLogHost != null) {
+      final hostId = registerLogHost(callback.nativeFunction);
+      if (hostId == 0) {
+        callback.close();
+        return;
+      }
+      _logHostId = hostId;
+    } else {
+      _logHostId = 0;
+      _setLogCallback(callback.nativeFunction);
+    }
     _logCallback = callback;
     void syncLevel() => _setLogLevel(AppLogger.verboseNotifier.value ? 4 : 3);
+    _verboseListener = syncLevel;
     syncLevel();
     AppLogger.verboseNotifier.addListener(syncLevel);
+  }
+
+  /// 释放当前 isolate 注册的核心日志回调，不影响同进程其他 isolate。
+  void releaseLogHost() {
+    final callback = _logCallback;
+    final hostId = _logHostId;
+    final listener = _verboseListener;
+    if (listener != null) {
+      AppLogger.verboseNotifier.removeListener(listener);
+      _verboseListener = null;
+    }
+    if (callback == null) return;
+    _logCallback = null;
+    _logHostId = 0;
+    if (hostId != 0 && _unregisterLogHost != null) {
+      _unregisterLogHost!(hostId);
+    }
+    callback.close();
   }
 
   static void _onLog(int level, Pointer<Uint8> ptr, int length) {
@@ -254,12 +331,31 @@ class NetCoreBindings {
   /// [requestWrite] 的返回值：核心的请求体缓冲已满，稍后重试。
   static const int writeWouldBlock = 1;
 
+  bool get supportsEventHosts =>
+      isAvailable && _registerEventHost != null && _unregisterEventHost != null;
+
+  int registerEventHost(
+    Pointer<NativeFunction<NetCoreEventCallback>> callback,
+  ) {
+    final register = _registerEventHost;
+    return register == null ? 0 : register(callback);
+  }
+
+  void unregisterEventHost(int hostId) {
+    if (hostId == 0) return;
+    _unregisterEventHost?.call(hostId);
+  }
+
   void setEventCallback(
     Pointer<NativeFunction<NetCoreEventCallback>> callback,
   ) => _setEventCallback(callback);
 
-  /// 启动核心，返回本地监听端口；-1 表示失败。
+  /// 启动（或强制重启）核心，返回本地监听端口；-1 表示失败。
   int start(String configJson) => _withUtf8(configJson, _init);
+
+  /// 确保核心按给定配置运行；同进程已有等价配置的核心在运行时直接复用。
+  int ensureStart(String configJson) =>
+      _withUtf8(configJson, _ensureInit ?? _init);
 
   void shutdown() => _shutdown();
 

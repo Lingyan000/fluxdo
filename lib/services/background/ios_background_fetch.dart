@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../local_notification_service.dart';
 import '../network/cookie/cookie_jar_service.dart';
 import '../network/cookie/csrf_token_service.dart';
+import '../network/core/net_core_http_adapter.dart';
 import '../network/discourse_dio.dart';
 import '../../models/notification.dart';
 
@@ -24,6 +25,7 @@ const String _kSharedSessionKey = 'bg_shared_session_key';
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
+    Dio? dio;
     try {
       debugPrint('[iOSBgFetch] 开始执行后台任务: $taskName');
 
@@ -47,7 +49,7 @@ void callbackDispatcher() {
       final sharedSessionKey = prefs.getString(_kSharedSessionKey);
 
       // 3. 创建临时 Dio，短超时单次轮询
-      final dio = DiscourseDio.create(
+      dio = DiscourseDio.create(
         receiveTimeout: const Duration(seconds: 10),
         defaultHeaders: {
           'Accept': 'application/json',
@@ -153,6 +155,9 @@ void callbackDispatcher() {
       debugPrint('[iOSBgFetch] 后台任务失败: $e');
       debugPrint('[iOSBgFetch] $stack');
       return false;
+    } finally {
+      dio?.close(force: true);
+      NetCoreHttpAdapter.releaseEventHost();
     }
   });
 }

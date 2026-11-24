@@ -3,11 +3,12 @@
 //! 用户在应用里导出日志排查网络问题时，建连、选址、DNS、探针这些核心内部过程
 //! 必须在里面——只进 logcat 的话，桌面端和 iOS 上的用户根本拿不到。
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use crate::host_callback::HostCallback;
-#[cfg(test)]
 use parking_lot::Mutex;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
@@ -23,11 +24,61 @@ pub type LogCallback = extern "C" fn(u8, *mut u8, usize);
 const CERTIFICATE_VERIFY_TARGET: &str = "rama_tls_boring::client::verify";
 
 static CALLBACK: HostCallback<LogCallback> = HostCallback::new();
+static LOG_HOSTS: Mutex<Option<HashMap<u64, Arc<HostCallback<LogCallback>>>>> = Mutex::new(None);
+static NEXT_LOG_HOST_ID: AtomicU64 = AtomicU64::new(1);
 /// 交给宿主的最低级别，取值同回调级别；0 表示不交给宿主。
 static HOST_LEVEL: AtomicU8 = AtomicU8::new(3);
 
 pub fn set_callback(callback: Option<LogCallback>) {
     CALLBACK.set(callback);
+}
+
+/// 为单个 Dart isolate 注册独立的日志回调，返回宿主 id（>= 1），不覆盖同进程其他宿主。
+pub fn register_callback(callback: LogCallback) -> u64 {
+    let host_id = NEXT_LOG_HOST_ID.fetch_add(1, Ordering::Relaxed);
+    LOG_HOSTS
+        .lock()
+        .get_or_insert_with(HashMap::new)
+        .insert(host_id, Arc::new(HostCallback::with_value(callback)));
+    host_id
+}
+
+/// 注销指定宿主的日志回调，并等待该宿主正在执行的投递返回。
+pub fn unregister_callback(host_id: u64) {
+    if host_id == 0 {
+        return;
+    }
+    let removed = LOG_HOSTS
+        .lock()
+        .as_mut()
+        .and_then(|map| map.remove(&host_id));
+    if let Some(entry) = removed {
+        entry.set(None);
+    }
+}
+
+/// 注销全部日志回调（供原生宿主在热重启前统一清理）。
+pub fn clear_all_callbacks() {
+    CALLBACK.set(None);
+    let removed: Vec<_> = {
+        let mut guard = LOG_HOSTS.lock();
+        guard
+            .as_mut()
+            .map(|map| map.drain().map(|(_, entry)| entry).collect())
+            .unwrap_or_default()
+    };
+    for entry in removed {
+        entry.set(None);
+    }
+}
+
+fn deliver_payload(target: &HostCallback<LogCallback>, code: u8, payload: Vec<u8>) {
+    target.with(|callback| {
+        let mut payload = payload.into_boxed_slice();
+        let (ptr, len) = (payload.as_mut_ptr(), payload.len());
+        std::mem::forget(payload);
+        callback(code, ptr, len);
+    });
 }
 
 pub fn set_host_level(level: u8) {
@@ -81,35 +132,55 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for HostLayer {
         if code > HOST_LEVEL.load(Ordering::Relaxed) {
             return;
         }
-        CALLBACK.with(|callback| {
-            let mut visitor = MessageVisitor::default();
-            event.record(&mut visitor);
-            let mut fields = serde_json::Map::new();
-            if let Some(scope) = ctx.event_scope(event) {
-                for span in scope.from_root() {
-                    if let Some(values) = span
-                        .extensions()
-                        .get::<serde_json::Map<String, serde_json::Value>>()
-                    {
-                        fields.extend(values.clone());
-                    }
+        let hosts: Vec<Arc<HostCallback<LogCallback>>> = {
+            let guard = LOG_HOSTS.lock();
+            guard
+                .as_ref()
+                .map(|map| map.values().cloned().collect())
+                .unwrap_or_default()
+        };
+        let has_legacy = CALLBACK.is_set();
+        if !has_legacy && hosts.is_empty() {
+            return;
+        }
+        let mut visitor = MessageVisitor::default();
+        event.record(&mut visitor);
+        let mut fields = serde_json::Map::new();
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope.from_root() {
+                if let Some(values) = span
+                    .extensions()
+                    .get::<serde_json::Map<String, serde_json::Value>>()
+                {
+                    fields.extend(values.clone());
                 }
             }
-            fields.extend(visitor.values.clone());
-            if certificate_rejection {
-                fields.insert("event".into(), "tls_certificate_rejected".into());
-            }
-            let payload = serde_json::json!({
-                "target": metadata.target(),
-                "fields": fields,
-                "message": visitor.finish(),
-            })
-            .to_string();
-            let mut payload = payload.into_bytes().into_boxed_slice();
-            let (ptr, len) = (payload.as_mut_ptr(), payload.len());
-            std::mem::forget(payload);
-            callback(code, ptr, len);
-        });
+        }
+        fields.extend(visitor.values.clone());
+        if certificate_rejection {
+            fields.insert("event".into(), "tls_certificate_rejected".into());
+        }
+        let payload = serde_json::json!({
+            "target": metadata.target(),
+            "fields": fields,
+            "message": visitor.finish(),
+        })
+        .to_string();
+        if hosts.is_empty() {
+            deliver_payload(&CALLBACK, code, payload.into_bytes());
+            return;
+        }
+        if !has_legacy && hosts.len() == 1 {
+            deliver_payload(&hosts[0], code, payload.into_bytes());
+            return;
+        }
+        let bytes = payload.into_bytes();
+        if has_legacy {
+            deliver_payload(&CALLBACK, code, bytes.clone());
+        }
+        for host in &hosts {
+            deliver_payload(host, code, bytes.clone());
+        }
     }
 }
 
@@ -262,6 +333,44 @@ mod tests {
         assert_eq!(failure["fields"]["addressFamily"], "ipv4");
         assert_eq!(failure["fields"]["echRequested"], true);
         assert!(failure["fields"]["error"].as_str().unwrap().contains("untrusted test peer"));
+    }
+
+    #[test]
+    fn multiple_log_hosts_receive_events_independently_and_survive_peer_unregister() {
+        static SEEN_A: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        static SEEN_B: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        extern "C" fn capture_a(_: u8, ptr: *mut u8, len: usize) {
+            let payload = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) };
+            SEEN_A.lock().push(String::from_utf8(payload.into_vec()).unwrap());
+        }
+        extern "C" fn capture_b(_: u8, ptr: *mut u8, len: usize) {
+            let payload = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) };
+            SEEN_B.lock().push(String::from_utf8(payload.into_vec()).unwrap());
+        }
+
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        clear_all_callbacks();
+        SEEN_A.lock().clear();
+        SEEN_B.lock().clear();
+        set_host_level(3);
+
+        let host_a = register_callback(capture_a);
+        let host_b = register_callback(capture_b);
+        assert_ne!(host_a, 0);
+        assert_ne!(host_b, 0);
+        assert_ne!(host_a, host_b);
+
+        let subscriber = tracing_subscriber::registry().with(HostLayer);
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("first event");
+            unregister_callback(host_b);
+            tracing::info!("second event");
+        });
+        clear_all_callbacks();
+
+        assert_eq!(SEEN_A.lock().len(), 2);
+        assert_eq!(SEEN_B.lock().len(), 1);
+        assert!(SEEN_A.lock()[1].contains("second event"));
     }
 
 }
