@@ -43,6 +43,7 @@ class TopicReadingRail extends StatefulWidget {
     this.nextRootListenable,
     this.returnButton,
     this.jumpHistory,
+    this.onOpenReaderMode,
   });
 
   /// 栏宽（不含与帖子列的间距）
@@ -74,6 +75,7 @@ class TopicReadingRail extends StatefulWidget {
   final ValueListenable<VoidCallback?>? nextRootListenable;
   final Widget? returnButton;
   final TopicJumpHistory? jumpHistory;
+  final VoidCallback? onOpenReaderMode;
 
   @override
   State<TopicReadingRail> createState() => _TopicReadingRailState();
@@ -135,6 +137,29 @@ class _TopicReadingRailState extends State<TopicReadingRail> {
           alignment: Alignment.centerLeft,
           child: TopicFilterButton(controls: widget.filter, showLabel: true),
         ),
+        if (widget.onOpenReaderMode != null) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              key: const ValueKey('reading_rail_reader_mode'),
+              onPressed: widget.onOpenReaderMode,
+              style: TextButton.styleFrom(
+                foregroundColor: theme.colorScheme.onSurfaceVariant,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                visualDensity: VisualDensity.compact,
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: context.shapes.borderRadius(10),
+                ),
+              ),
+              icon: const Icon(Symbols.menu_book_rounded, size: 18),
+              label: Text(context.l10n.topicDetail_readerMode),
+            ),
+          ),
+        ],
         if (widget.nextRootListenable != null)
           ValueListenableBuilder<VoidCallback?>(
             valueListenable: widget.nextRootListenable!,

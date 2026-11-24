@@ -278,5 +278,43 @@
     }
   },
   "topics_markPinnedRead": "Mark pinned topics as read",
-  "topics_markPinnedReadFailed": "Could not mark pinned topics as read. Please try again."
+  "topics_markPinnedReadFailed": "Could not mark pinned topics as read. Please try again.",
+  "topicDetail_readerMode": "Reader mode",
+  "reader_estimatedMinutes": "~{minutes} min read",
+  "@reader_estimatedMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_toc": "Contents",
+  "reader_typesetting": "Appearance",
+  "reader_emptyToc": "No headings found",
+  "reader_backToDiscussion": "Back to discussion",
+  "reader_backToDiscussionCount": "Back to discussion ({count} replies)",
+  "@reader_backToDiscussionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_endOfMainPost": "End of post",
+  "reader_fontSize": "Font size",
+  "reader_lineSpacing": "Line spacing",
+  "reader_spacingCompact": "Compact",
+  "reader_spacingNormal": "Standard",
+  "reader_spacingRelaxed": "Relaxed",
+  "reader_fontWeight": "Weight",
+  "reader_weightNormal": "Regular",
+  "reader_weightMedium": "Medium",
+  "reader_weightSemiBold": "Semibold",
+  "reader_fontFamily": "Typeface",
+  "reader_paperBackground": "Paper",
+  "reader_paperDefault": "Default",
+  "reader_paperWarm": "Warm paper",
+  "reader_paperGreen": "Soft green",
+  "reader_paperDarkHint": "Follows the active dark theme in dark mode",
+  "reader_resetTypesetting": "Reset"
 }

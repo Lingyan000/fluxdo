@@ -12,6 +12,7 @@ void handleTopicDetailMoreMenuSelection(
   required void Function() onOpenInBrowser,
   required void Function() onFilter,
   required void Function() onReadingSettings,
+  void Function()? onReaderMode,
   void Function()? onShowMembers,
   void Function()? onToggleArchiveMessage,
 }) {
@@ -57,6 +58,9 @@ void handleTopicDetailMoreMenuSelection(
       return;
     case 'reading_settings':
       onReadingSettings();
+      return;
+    case 'reader_mode':
+      onReaderMode?.call();
       return;
   }
 }
