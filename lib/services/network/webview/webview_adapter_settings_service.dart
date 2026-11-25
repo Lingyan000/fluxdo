@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../constants.dart';
 import '../../log/log_writer.dart';
+import '../cookie/csrf_token_service.dart';
 
 /// WebView 适配器设置服务
 ///
@@ -125,7 +126,17 @@ class WebViewAdapterSettingsService {
   }
 
   void _syncEffectiveEnabled() {
-    effectiveNotifier.value = enabled || sessionFallbackEnabled;
+    final next = enabled || sessionFallbackEnabled;
+    final changed = effectiveNotifier.value != next;
+    effectiveNotifier.value = next;
+    if (changed) {
+      // 切换网络通道（core ↔ webview）后清空缓存的 CSRF token 及冷却状态，
+      // 避免拿旧通道取到的 token 去配新通道里的 _forum_session。
+      final csrf = CsrfTokenService();
+      if (csrf.csrfToken != null || csrf.lastFailureAt != null) {
+        csrf.clearCsrfToken();
+      }
+    }
   }
 
   /// 重置单例内部状态，仅用于测试，使 initialize() 可重新执行。
