@@ -568,6 +568,12 @@ class WebViewSessionCookieRefreshService {
         'plugin': result['plugin']?.toString(),
         'endpoint': endpoint,
         'status': status,
+        if (result['cfMitigated'] != null &&
+            result['cfMitigated'].toString().isNotEmpty)
+          'cfMitigated': result['cfMitigated'].toString(),
+        if (result['contentType'] != null &&
+            result['contentType'].toString().isNotEmpty)
+          'contentType': result['contentType'].toString(),
         'error': result['error']?.toString(),
       });
       return ok
@@ -654,6 +660,29 @@ class WebViewSessionCookieRefreshService {
     } catch (e) {}
   }
 
+  function isCfChallengeResponse(response, text) {
+    const status = response ? response.status : 0;
+    if (status !== 403 && status !== 429) return false;
+    const cfMitigated = (response.headers && response.headers.get('cf-mitigated') || '').trim().toLowerCase();
+    if (cfMitigated === 'challenge') return true;
+    const contentType = (response.headers && response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && contentType.indexOf('text/html') < 0) return false;
+    const body = String(text || '');
+    if (body.indexOf('cf_chl_opt') >= 0) return true;
+    if (body.indexOf('challenge-platform') >= 0 && body.indexOf('cloudflare') >= 0) return true;
+    if (body.indexOf('Just a moment') >= 0 && (body.indexOf('cloudflare') >= 0 || body.indexOf('cf-challenge') >= 0)) return true;
+    return false;
+  }
+
+  function createHttpError(message, response, text) {
+    const err = new Error(message);
+    err.status = response ? response.status : null;
+    err.cfMitigated = (response && response.headers && response.headers.get('cf-mitigated')) || '';
+    err.contentType = (response && response.headers && response.headers.get('content-type')) || '';
+    err.cfBlocked = isCfChallengeResponse(response, text);
+    return err;
+  }
+
   async function readCsrfToken() {
     try {
       const response = await fetch('/session/csrf', {
@@ -695,7 +724,7 @@ class WebViewSessionCookieRefreshService {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error('POST ' + url + ' -> ' + response.status + ': ' + text.slice(0, 160));
+      throw createHttpError('POST ' + url + ' -> ' + response.status + ': ' + text.slice(0, 160), response, text);
     }
     return {
       url,
@@ -734,7 +763,7 @@ class WebViewSessionCookieRefreshService {
     });
     const html = await response.text();
     if (!response.ok) {
-      throw new Error('home fetch -> ' + response.status + ': ' + html.slice(0, 120));
+      throw createHttpError('home fetch -> ' + response.status + ': ' + html.slice(0, 120), response, html);
     }
 
     const assetPattern = /(https?:\\/\\/[^"'\\s<>]+\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?|\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?)/g;
@@ -829,11 +858,23 @@ class WebViewSessionCookieRefreshService {
     });
   } catch (e) {
     var msg = String(e && e.message ? e.message : e);
-    // home fetch / postForm 失败时 throw 的 message 形如 "... -> 403: ...",
-    // 从中解析出 HTTP status,把 403/429 标记为 CF 拦截,供 dart 侧统一处理。
-    var statusMatch = msg.match(/->\\s*(\\d{3})/);
-    var st = statusMatch ? parseInt(statusMatch[1], 10) : null;
-    return done({ ok: false, phase: 'exception', error: msg, status: st, cfBlocked: st === 403 || st === 429 });
+    var st = e && typeof e.status === 'number' ? e.status : null;
+    if (st === null) {
+      var statusMatch = msg.match(/->\\s*(\\d{3})/);
+      st = statusMatch ? parseInt(statusMatch[1], 10) : null;
+    }
+    var cfBlocked = Boolean(e && e.cfBlocked === true);
+    var cfMitigated = e && e.cfMitigated ? String(e.cfMitigated) : '';
+    var contentType = e && e.contentType ? String(e.contentType) : '';
+    return done({
+      ok: false,
+      phase: 'exception',
+      error: msg,
+      status: st,
+      cfBlocked: cfBlocked,
+      cfMitigated: cfMitigated,
+      contentType: contentType
+    });
   }
 })();
 ''';

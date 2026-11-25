@@ -53,4 +53,45 @@ void main() {
       if (controllerError) expect(event['errorType'], 'StateError');
     });
   }
+
+  test('脚本返回 not_logged_in 403 且 cfBlocked=false 时不误判为 CF 拦截', () async {
+    platform.controller.evaluate = (source) async {
+      final match = RegExp(
+        r'const handlerName = "([^"]+)";',
+      ).firstMatch(source);
+      if (match != null) {
+        final name = match.group(1)!;
+        platform.controller.handlers[name]?.call([
+          jsonEncode({
+            'ok': false,
+            'phase': 'exception',
+            'status': 403,
+            'cfBlocked': false,
+            'contentType': 'application/json; charset=utf-8',
+            'error':
+                'POST /rky1u -> 403: {"errors":["您需要登录才能执行此操作。"],"error_type":"not_logged_in"}',
+          }),
+        ]);
+      }
+      return null;
+    };
+
+    final result = await WebViewSessionCookieRefreshService.instance
+        .runOnController(
+          platform.controller.wrapped,
+          reason: 'not_logged_in_test',
+        );
+    expect(result.ok, isFalse);
+    expect(result.cfBlocked, isFalse);
+    expect(result.status, 403);
+
+    final exported = LogPolicy.export(await LogWriter.readAllContent());
+    final event = const LineSplitter()
+        .convert(exported)
+        .map((line) => jsonDecode(line) as Map<String, dynamic>)
+        .singleWhere((row) => row['event'] == 'webview_session_bootstrap_result');
+    expect(event['cfBlocked'], isNull);
+    expect(event['status'], 403);
+    expect(event['contentType'], 'application/json; charset=utf-8');
+  });
 }
