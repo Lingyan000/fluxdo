@@ -17,6 +17,7 @@ import '../../common/perf_span_box.dart';
 import '../post_boost/boost_actions.dart';
 import '../post_boost/boost_danmaku.dart';
 import '../post_signature_block.dart';
+import '../image_reply_scope.dart';
 import '../small_action_item.dart';
 import '../../crypto/crypto_decrypt_sheet.dart';
 import '../../topic/assign_sheet.dart';
@@ -324,62 +325,67 @@ class _PostItemState extends ConsumerState<PostItem> {
                               // 新引擎自带自研逻辑选区(SelectionScope + 手势层 +
                               // toolbar)。引用:toolbar 点「引用」→ onQuoteRequest
                               // (plainText) → QuoteSelectionHelper 在原始 cooked 匹配。
-                              return data.callbacks.render(
-                                cookedHtml: data.preprocessedCooked,
-                                parsedNodes: data.parsedNodes,
-                                // 正文字号经 baseTextStyle 注入 contentFontScale
-                                // (此前新引擎分支未接入,顺带修复)。
-                                baseTextStyle: theme.textTheme.bodyMedium
-                                    ?.copyWith(
-                                      // 主题可放宽行高（如纸质的书页排版）
-                                      height:
-                                          context.themeStyle.bodyLineHeight ??
-                                          1.5,
-                                      fontSize:
-                                          (theme
-                                                  .textTheme
-                                                  .bodyMedium
-                                                  ?.fontSize ??
-                                              14) *
-                                          ref
-                                              .watch(preferencesProvider)
-                                              .contentFontScale,
-                                    ),
-                                // 自研选区恒开(外层系统 SelectionArea 已拆):
-                                // 未登录时 onQuoteRequest 为 null,toolbar 自动
-                                // 降级只留「复制/复制引用」。
-                                selectionEnabled: true,
-                                onQuoteRequest: widget.onQuoteSelection == null
-                                    ? null
-                                    : (plainText) => widget.onQuoteSelection!(
-                                        plainText,
-                                        post,
+                              return ImageReplyScope(
+                                post: post,
+                                fallbackHandler: widget.onQuoteImage,
+                                child: data.callbacks.render(
+                                  cookedHtml: data.preprocessedCooked,
+                                  parsedNodes: data.parsedNodes,
+                                  // 正文字号经 baseTextStyle 注入 contentFontScale
+                                  // (此前新引擎分支未接入,顺带修复)。
+                                  baseTextStyle: theme.textTheme.bodyMedium
+                                      ?.copyWith(
+                                        // 主题可放宽行高（如纸质的书页排版）
+                                        height:
+                                            context.themeStyle.bodyLineHeight ??
+                                            1.5,
+                                        fontSize:
+                                            (theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.fontSize ??
+                                                14) *
+                                            ref
+                                                .watch(preferencesProvider)
+                                                .contentFontScale,
                                       ),
-                                onCopyQuoteRequest: (plainText) =>
-                                    QuoteSelectionHelper.copyQuoteToClipboard(
-                                      selectedText: plainText,
-                                      post: post,
-                                      topicId: widget.topicId,
-                                    ),
-                                onCopyToast: () => ToastService.showSuccess(
-                                  context.l10n.common_copiedToClipboard,
+                                  // 自研选区恒开(外层系统 SelectionArea 已拆):
+                                  // 未登录时 onQuoteRequest 为 null,toolbar 自动
+                                  // 降级只留「复制/复制引用」。
+                                  selectionEnabled: true,
+                                  onQuoteRequest:
+                                      widget.onQuoteSelection == null
+                                      ? null
+                                      : (plainText) => widget.onQuoteSelection!(
+                                          plainText,
+                                          post,
+                                        ),
+                                  onCopyQuoteRequest: (plainText) =>
+                                      QuoteSelectionHelper.copyQuoteToClipboard(
+                                        selectedText: plainText,
+                                        post: post,
+                                        topicId: widget.topicId,
+                                      ),
+                                  onCopyToast: () => ToastService.showSuccess(
+                                    context.l10n.common_copiedToClipboard,
+                                  ),
+                                  // 划词「解密」:选中文本命中密文特征时 toolbar 显示,
+                                  // 打开加解密工具箱解密面板(ENC1/OpenSSL/编码)。
+                                  onDecryptRequest: (plainText) =>
+                                      showCryptoDecryptSheet(
+                                        context: context,
+                                        initialCiphertext: plainText,
+                                        onQuoteReply:
+                                            widget.onQuoteSelection == null
+                                            ? null
+                                            : (plaintext) =>
+                                                  widget.onQuoteSelection!(
+                                                    plaintext,
+                                                    post,
+                                                  ),
+                                      ),
+                                  decryptTextDetector: isDecryptableText,
                                 ),
-                                // 划词「解密」:选中文本命中密文特征时 toolbar 显示,
-                                // 打开加解密工具箱解密面板(ENC1/OpenSSL/编码)。
-                                onDecryptRequest: (plainText) =>
-                                    showCryptoDecryptSheet(
-                                      context: context,
-                                      initialCiphertext: plainText,
-                                      onQuoteReply:
-                                          widget.onQuoteSelection == null
-                                          ? null
-                                          : (plaintext) =>
-                                                widget.onQuoteSelection!(
-                                                  plaintext,
-                                                  post,
-                                                ),
-                                    ),
-                                decryptTextDetector: isDecryptableText,
                               );
                             },
                           ),

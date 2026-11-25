@@ -49,6 +49,9 @@ class ImageContextMenu {
     void Function(String quote, Post post)? onQuoteImage,
     Offset? position,
     VoidCallback? onClose,
+    VoidCallback? onEdit,
+    VoidCallback? onRecognize,
+    String? editLabel,
     // 引用/复制引用用的 markdown(理想情况是 `![alt](upload://sha1.ext)`,
     // 对齐 Web 端「复制引用」原样保留图片格式的行为)。为 null 时(如
     // cooked 里找不到匹配 img)降级用 `![image](CDN 完整 URL)`。
@@ -73,6 +76,9 @@ class ImageContextMenu {
       heroTag: heroTag,
       fileName: fileName,
       onClose: onClose,
+      onEdit: onEdit,
+      onRecognize: onRecognize,
+      editLabel: editLabel,
     );
 
     final press = position != null
@@ -140,8 +146,25 @@ class ImageContextMenu {
     String? heroTag,
     String? fileName,
     VoidCallback? onClose,
+    VoidCallback? onEdit,
+    VoidCallback? onRecognize,
+    String? editLabel,
   }) {
     return [
+      if (onEdit != null)
+        _ImageAction(
+          'edit',
+          Symbols.edit_rounded,
+          editLabel ?? S.current.imageUpload_editImage,
+          onEdit,
+        ),
+      if (onRecognize != null)
+        _ImageAction(
+          'recognize',
+          Symbols.document_scanner_rounded,
+          S.current.imageViewer_recognizeText,
+          onRecognize,
+        ),
       if (showViewFullImage)
         _ImageAction(
           'viewFull',

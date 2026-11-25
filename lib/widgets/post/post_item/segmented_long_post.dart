@@ -15,6 +15,7 @@ import '../../../utils/fluxdo_render_callbacks.dart';
 import '../post_boost/boost_actions.dart';
 import '../post_boost/boost_danmaku.dart';
 import '../post_signature_block.dart';
+import '../image_reply_scope.dart';
 import 'quote_selection_helper.dart';
 import 'render_parse_cache.dart';
 import 'widgets/post_footer_section/post_footer_section.dart';
@@ -360,7 +361,7 @@ class NewEngineChunkSegment extends ConsumerWidget {
         showBottomBorder: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: content,
+          child: ImageReplyScope(post: post, child: content),
         ),
       ),
     );

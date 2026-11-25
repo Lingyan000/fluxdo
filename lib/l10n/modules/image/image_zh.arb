@@ -143,6 +143,20 @@
       }
     }
   },
+  "imageViewer_editReply": "编辑图片并回复",
+  "imageViewer_editFrameHint": "动图将编辑首帧，结果保存为静态图片",
+  "imageViewer_editFailed": "图片编辑失败，请重试",
+  "imageViewer_replyUploadFailed": "图片上传失败，已保留编辑结果，点击编辑图片并回复可重试",
+  "imageViewer_recognizeText": "识别文字",
+  "imageViewer_recognizing": "正在识别文字",
+  "imageViewer_noText": "没有识别到文字",
+  "imageViewer_ocrFailed": "文字识别失败，请重试",
+  "imageViewer_downloadOcr": "下载文字识别模型",
+  "imageViewer_ocrDownloadFailed": "模型下载或校验失败，请重试",
+  "imageViewer_ocrDownloadDescription": "首次使用需下载约 {size} MiB 的识字模型，下载后可离线识别图片中的文字。",
+  "@imageViewer_ocrDownloadDescription": {
+    "placeholders": { "size": { "type": "String" } }
+  },
   "imageViewer_grantPermission": "请授予相册访问权限",
   "imageViewer_saveFailed": "保存失败: {error}",
   "@imageViewer_saveFailed": {

@@ -1,4 +1,9 @@
 import 'dart:async' show Timer, unawaited;
+import 'dart:io';
+
+import 'package:dio/dio.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
@@ -26,12 +31,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/shortcut_binding.dart';
 import '../providers/shortcut_provider.dart';
+import '../providers/core_providers.dart';
 import '../services/toast_service.dart';
 import '../utils/platform_utils.dart';
 import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
+import '../widgets/common/image_text_sheet.dart';
+import '../widgets/markdown_editor/app_image_editor.dart';
+import '../widgets/post/image_reply_scope.dart';
+import '../utils/image_tool_bytes.dart';
 
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -47,6 +57,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   final List<String>? heroTags;
   final int initialIndex;
   final bool enableShare;
+  final ValueChanged<String>? onReply;
 
   /// 缩略图 URL，加载原图时先显示缩略图避免闪烁
   final String? thumbnailUrl;
@@ -77,6 +88,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     this.heroTags,
     this.initialIndex = 0,
     this.enableShare = false,
+    this.onReply,
     this.thumbnailUrl,
     this.thumbnailUrls,
     this.filenames,
@@ -172,7 +184,7 @@ class ImageViewerPage extends ConsumerStatefulWidget {
     BoxFit? heroSourceFit,
     double heroSourceRadius = 0,
     bool heroSourceCircular = false,
-  }) {
+  }) async {
     // Hero 飞行是框架级硬条件:只发生在同一 Navigator 的两个 PageRoute
     // 之间(HeroController._maybeStartHeroTransition 对非 PageRoute 直接
     // 返回)。从弹窗(PopupRoute,如通知页面弹窗/用户卡片)里打开时
@@ -184,41 +196,49 @@ class ImageViewerPage extends ConsumerStatefulWidget {
       heroTag = null;
       heroTags = null;
     }
-    return Navigator.push(
-      context,
-      InteractionPageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.transparent,
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return ImageViewerPage(
-            imageUrl: imageUrl,
-            heroTag: heroTag,
-            galleryImages: galleryImages,
-            heroTags: heroTags,
-            initialIndex: initialIndex,
-            enableShare: enableShare,
-            thumbnailUrl: thumbnailUrl,
-            thumbnailUrls: thumbnailUrls,
-            filenames: filenames,
-            heroSourceFit: heroSourceFit,
-            heroSourceRadius: heroSourceRadius,
-            heroSourceCircular: heroSourceCircular,
-          );
-        },
-        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
-            buildPredictiveBackPageTransitions(
-              context,
-              animation,
-              secondaryAnimation,
-              child,
-              // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
-              // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
-              // 返回一致 —— 单一分支原则。
-              transitionBuilder: (_, animation, _, child) =>
-                  _RouteFade(animation: animation, child: child),
-            ),
-      ),
+    final reply = ImageReplyScope.resolve(context);
+    final route = InteractionPageRouteBuilder<String>(
+      opaque: false,
+      barrierColor: Colors.transparent,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return ImageViewerPage(
+          imageUrl: imageUrl,
+          heroTag: heroTag,
+          galleryImages: galleryImages,
+          heroTags: heroTags,
+          initialIndex: initialIndex,
+          enableShare: enableShare,
+          onReply: reply == null
+              ? null
+              : (markdown) {
+                  if (ModalRoute.of(context)?.isCurrent ?? false) {
+                    Navigator.of(context).pop(markdown);
+                  }
+                },
+          thumbnailUrl: thumbnailUrl,
+          thumbnailUrls: thumbnailUrls,
+          filenames: filenames,
+          heroSourceFit: heroSourceFit,
+          heroSourceRadius: heroSourceRadius,
+          heroSourceCircular: heroSourceCircular,
+        );
+      },
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          buildPredictiveBackPageTransitions(
+            context,
+            animation,
+            secondaryAnimation,
+            child,
+            // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
+            // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
+            // 返回一致 —— 单一分支原则。
+            transitionBuilder: (_, animation, _, child) =>
+                _RouteFade(animation: animation, child: child),
+          ),
     );
+    final markdown = await Navigator.push<String>(context, route);
+    await route.completed;
+    if (markdown != null) reply?.call(markdown);
   }
 
   /// 打开内存图片查看器
@@ -306,6 +326,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   bool _predecodePaused = false;
   final _isSaving = ValueNotifier(false);
   final _isSharing = ValueNotifier(false);
+  final _isEditing = ValueNotifier(false);
+  final _toolCancellation = CancelToken();
+  Uint8List? _pendingReplyImage;
+  String? _pendingReplySource;
   final _showUI = ValueNotifier(true);
 
   /// 系统栏是否被本页隐藏(沉浸模式)。退场起点据此提前恢复
@@ -709,6 +733,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _showUI.dispose();
     _isSaving.dispose();
     _isSharing.dispose();
+    _isEditing.dispose();
+    _toolCancellation.cancel();
     _predecodeDelay?.cancel();
     _predecoder.dispose();
     HeroVisibilityController.instance.setExitFlightRect(null);
@@ -733,6 +759,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   /// 显示图片长按菜单（不含「查看大图」，因为已在查看页内）
   void _showContextMenu(BuildContext context, {Offset? position}) {
+    if (_isEditing.value) return;
     ImageContextMenu.show(
       context: context,
       imageUrl: _currentImageUrl,
@@ -740,6 +767,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       fileName: _currentFilename,
       position: position,
       onClose: () => Navigator.of(context).pop(),
+      onEdit: _isEditing.value ? null : _editCurrentImage,
+      onRecognize: _recognizeText,
+      editLabel: widget.onReply == null
+          ? S.current.imageUpload_editImage
+          : S.current.imageViewer_editReply,
     );
   }
 
@@ -864,6 +896,85 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (filenames == null) return null;
     if (currentIndex < filenames.length) return filenames[currentIndex];
     return null;
+  }
+
+  Future<Uint8List> _loadToolImage(String? url, CancelToken token) async {
+    final bytes =
+        widget.imageBytes ??
+        await BlobImageCache.fetch(
+          BlobImageCache.originalBucket,
+          url!,
+          cancellation: token,
+        );
+    if (token.isCancelled) throw token.cancelError!;
+    return ImageToolBytes.png(bytes);
+  }
+
+  void _recognizeText() {
+    final url = widget.imageBytes == null ? _currentImageUrl : null;
+    showImageTextSheet(
+      context,
+      loadImage: (token) => _loadToolImage(url, token),
+    );
+  }
+
+  Future<void> _editCurrentImage() async {
+    if (_isEditing.value) return;
+    _isEditing.value = true;
+    final url = widget.imageBytes == null ? _currentImageUrl : null;
+    Directory? temporary;
+    try {
+      Uint8List? edited = _pendingReplySource == url
+          ? _pendingReplyImage
+          : null;
+      if (edited == null) {
+        final bytes = await _loadToolImage(url, _toolCancellation);
+        if (!mounted) return;
+        edited = await showAppImageEditor(context, bytes: bytes);
+      }
+      if (!mounted || edited == null) return;
+      if (widget.onReply == null) {
+        await ImageSaveUtils.saveBytes(
+          edited,
+          fileName: 'edited_${DateTime.now().millisecondsSinceEpoch}.png',
+        );
+        return;
+      }
+      // 上传失败保留编辑结果，重试不会丢失已经完成的标注。
+      _pendingReplyImage = edited;
+      _pendingReplySource = url;
+      temporary = await (await getTemporaryDirectory()).createTemp(
+        'fluxdo_image_reply_',
+      );
+      final file = await File(p.join(temporary.path, 'edited.png'))
+          .writeAsBytes(edited);
+      if (!mounted) return;
+      final upload = await ref
+          .read(discourseServiceProvider)
+          .uploadImage(file.path, cancelToken: _toolCancellation);
+      if (!mounted) return;
+      _pendingReplyImage = null;
+      widget.onReply!(upload.toMarkdown());
+    } catch (_) {
+      if (mounted) {
+        ToastService.showError(
+          _pendingReplyImage == null
+              ? S.current.imageViewer_editFailed
+              : S.current.imageViewer_replyUploadFailed,
+        );
+      }
+    } finally {
+      try {
+        if (temporary != null) {
+          final file = File(p.join(temporary.path, 'edited.png'));
+          if (await file.exists()) await file.delete();
+          await temporary.delete();
+        }
+      } catch (error) {
+        debugPrint('[ImageViewer] 清理编辑图片临时文件失败 $error');
+      }
+      if (mounted) _isEditing.value = false;
+    }
   }
 
   /// 保存当前图片（移动端进相册、桌面端另存为文件）
@@ -1367,6 +1478,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _showUI,
     _isSaving,
     _isSharing,
+    _isEditing,
     _activeHeroPage,
   ]);
 
@@ -1479,9 +1591,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         ),
                       )
                     : null,
-                trailing: _controlButton(
-                  Symbols.close_rounded,
-                  () => Navigator.of(context).pop(),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _controlButton(
+                      Symbols.more_vert_rounded,
+                      _showTools,
+                      busy: _isEditing.value,
+                      tooltip: MaterialLocalizations.of(context)
+                          .moreButtonTooltip,
+                    ),
+                    _controlButton(
+                      Symbols.close_rounded,
+                      () => Navigator.of(context).pop(),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1526,6 +1650,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     IconData icon,
     VoidCallback action, {
     bool busy = false,
+    String? tooltip,
   }) {
     return SizedBox.square(
       dimension: kMinInteractiveDimension,
@@ -1538,11 +1663,46 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           ),
           Positioned.fill(
             child: IconButton(
+              tooltip: tooltip,
               onPressed: busy ? null : action,
               icon: busy
                   ? const LoadingSpinner(size: 16, color: Colors.white)
                   : Icon(icon, color: Colors.white),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTools() {
+    AppBottomSheet.show<void>(
+      context: context,
+      contentPadding: EdgeInsets.zero,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Symbols.edit_rounded),
+            title: Text(
+              widget.onReply == null
+                  ? S.current.imageUpload_editImage
+                  : S.current.imageViewer_editReply,
+            ),
+            subtitle: Text(S.current.imageViewer_editFrameHint),
+            enabled: !_isEditing.value,
+            onTap: () {
+              Navigator.pop(ctx);
+              _editCurrentImage();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Symbols.document_scanner_rounded),
+            title: Text(S.current.imageViewer_recognizeText),
+            onTap: () {
+              Navigator.pop(ctx);
+              _recognizeText();
+            },
           ),
         ],
       ),
