@@ -327,7 +327,12 @@ class GestureDetails {
 
   bool movePage(Offset delta, Axis axis) {
     if (totalScale! <= 1.0) {
-      return false;
+      return switch (axis) {
+        Axis.horizontal =>
+          delta.dx != 0 && delta.dx.abs() > delta.dy.abs(),
+        Axis.vertical =>
+          delta.dy != 0 && delta.dy.abs() > delta.dx.abs(),
+      };
     }
     switch (axis) {
       case Axis.horizontal:

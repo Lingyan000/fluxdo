@@ -50,6 +50,10 @@
   "dataManagement_importSuccess": "Data imported, please restart app",
   "dataManagement_importWarning": "Importing will overwrite current settings. Restart required.",
   "dataManagement_noCache": "No cache",
+  "dataManagement_ocrModel": "Offline OCR models",
+  "dataManagement_ocrModelNotDownloaded": "Not downloaded",
+  "dataManagement_clearOcrModelTitle": "Delete offline OCR models",
+  "dataManagement_clearOcrModelContent": "Deleting frees local storage. Models can be re-downloaded when using text recognition or privacy masking.",
   "dataManagement_settingsCount": "Contains {count} settings",
   "dataManagement_title": "Data Management"
 }

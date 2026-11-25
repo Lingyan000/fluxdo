@@ -34,10 +34,15 @@ extension _JumpHistoryActions on _TopicDetailPageState {
   Future<bool> _runReadingJump(
     Future<bool> Function(TopicJumpAttempt attempt) jump, {
     bool returning = false,
+    bool recordHistory = true,
+    bool coalesceExplore = false,
   }) async {
     final attempt = _jumpHistory.begin(
       _captureReadingPosition(),
       returning: returning,
+      recordHistory: recordHistory,
+      coalesceExplore: coalesceExplore,
+      originVisiblePosts: _controller.visiblePostNumbers,
     );
     _nestedJumpCompletion?.complete(false);
     _nestedJumpCompletion = null;
@@ -59,13 +64,81 @@ extension _JumpHistoryActions on _TopicDetailPageState {
           _controller.selectKeyboardPostNumber(null);
           _controller.updateSelectedPostIndicator(null);
         }
-        _jumpHistory.finish(
+        final recorded = _jumpHistory.finish(
           attempt,
           succeeded: succeeded,
           destination: _captureReadingPosition(),
         );
+        _syncObservedScrollPixels();
+        if (recorded && !returning && !_railMode) {
+          _controller.revealBottomBar();
+        }
       }
     }
+  }
+
+  void _syncObservedScrollPixels() {
+    final sc = _controller.scrollController;
+    _lastObservedScrollPixels = sc.hasClients ? sc.position.pixels : null;
+  }
+
+  void _markUserScrolledForJumpHistory() {
+    if (_isRefreshing ||
+        _jumpHistory.hasPending ||
+        !_controller.isPositioned ||
+        _controller.hasPendingPostScroll ||
+        _controller.progressLoad.value != null) {
+      return;
+    }
+    _jumpHistory.markUserScrolled();
+    _syncObservedScrollPixels();
+  }
+
+  void _handleScrollDeltaForJumpHistory() {
+    if (_jumpHistory.target == null ||
+        _isRefreshing ||
+        _jumpHistory.hasPending ||
+        !_controller.isPositioned ||
+        _controller.hasPendingPostScroll ||
+        _controller.progressLoad.value != null) {
+      return;
+    }
+    final sc = _controller.scrollController;
+    if (!sc.hasClients) return;
+    final pixels = sc.position.pixels;
+    final previous = _lastObservedScrollPixels;
+    if (previous == null) {
+      _lastObservedScrollPixels = pixels;
+      return;
+    }
+    if ((pixels - previous).abs() >= 12) {
+      _lastObservedScrollPixels = pixels;
+      _jumpHistory.markUserScrolled();
+      _observeReadingForJumpHistory();
+    }
+  }
+
+  void _observeReadingForJumpHistory() {
+    if (_jumpHistory.target == null ||
+        _isRefreshing ||
+        _jumpHistory.hasPending ||
+        !_controller.isPositioned ||
+        _controller.hasPendingPostScroll ||
+        _controller.progressLoad.value != null) {
+      return;
+    }
+    final currentPostNumber = _isNestedView
+        ? (_nestedReadingSession.position?.postNumber ??
+              _controller.viewportPostNumber)
+        : _controller.viewportPostNumber;
+    if (currentPostNumber == null) return;
+    _jumpHistory.observeReading(
+      currentPostNumber: currentPostNumber,
+      visiblePostNumbers: _controller.visiblePostNumbers,
+      currentPosition: _captureReadingPosition(),
+      isNestedView: _isNestedView,
+      nestedContextTarget: _isNestedView ? _nestedTargetPostNumber : null,
+    );
   }
 
   Future<void> _returnToReadingPosition() async {

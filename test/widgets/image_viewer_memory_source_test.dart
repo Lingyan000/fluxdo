@@ -20,7 +20,7 @@ import 'package:fluxdo/services/ocr/ocr_model_store.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/utils/share_utils.dart';
 import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
-import 'package:fluxdo/widgets/common/image_text_sheet.dart';
+import 'package:fluxdo/widgets/common/image_live_overlay.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
@@ -298,28 +298,38 @@ void main() {
   });
 
   for (final svg in [false, true]) {
-    testWidgets('${svg ? 'SVG' : '位图'} 识字复用受控读取器的已加载图片', (tester) async {
-      final bytes = svg
-          ? Uint8List.fromList(utf8.encode(
-              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32">'
-              '<rect width="24" height="32" fill="#4178aa"/></svg>',
-            ))
-          : img.encodeJpg(img.Image(width: 24, height: 32));
-      await show(tester, () async => bytes);
-      await tester.tap(find.byIcon(Symbols.more_vert_rounded));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(S.current.imageViewer_recognizeText));
-      await tester.pumpAndSettle();
-      final sheet = tester.widget<ImageTextSheet>(find.byType(ImageTextSheet));
-      final png = await tester.runAsync(() => sheet.loadImage(CancelToken()));
-      final decoded = img.decodePng(png!);
-      expect(decoded, isNotNull);
-      expect(decoded!.width / decoded.height, closeTo(24 / 32, 0.01));
-      expect(loads, 1);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      await tester.pumpAndSettle();
-    });
+    for (final mode in ImageLiveOverlayMode.values) {
+      testWidgets('${svg ? 'SVG' : '位图'} ${mode.name} 复用受控读取器的已加载图片', (tester) async {
+        final bytes = svg
+            ? Uint8List.fromList(utf8.encode(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32">'
+                '<rect width="24" height="32" fill="#4178aa"/></svg>',
+              ))
+            : img.encodeJpg(img.Image(width: 24, height: 32));
+        await show(
+          tester,
+          () async => bytes,
+          size: svg ? const Size(320, 700) : const Size(360, 800),
+          scale: svg ? 1.6 : 1,
+        );
+        await tester.tap(find.byIcon(mode == ImageLiveOverlayMode.liveText
+            ? Symbols.document_scanner_rounded
+            : Symbols.translate_rounded));
+        await tester.pumpAndSettle();
+        final overlay = tester.widget<ImageLiveOverlay>(find.byType(ImageLiveOverlay));
+        expect(overlay.mode, mode);
+        expect(overlay.sourceKey, 'memory');
+        expect(overlay.gestureController, isNotNull);
+        final png = await tester.runAsync(() => overlay.loadImage(CancelToken()));
+        final decoded = img.decodePng(png!);
+        expect(decoded, isNotNull);
+        expect(decoded!.width / decoded.height, closeTo(24 / 32, 0.01));
+        expect(loads, 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+      });
+    }
   }
 
   testWidgets('受控读取器的图片可直接进入编辑器且不重复加载', (tester) async {
@@ -355,12 +365,17 @@ void main() {
           .onPressed,
       isNull,
     );
-    expect(
-      tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Symbols.more_vert_rounded),
-      ).onPressed,
-      isNull,
-    );
+    for (final icon in [
+      Symbols.more_vert_rounded,
+      Symbols.edit_rounded,
+      Symbols.document_scanner_rounded,
+      Symbols.translate_rounded,
+    ]) {
+      expect(
+        tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon)).onPressed,
+        isNull,
+      );
+    }
     await snapshot(tester, 'error-light');
     await tester.tap(find.byIcon(Symbols.close_rounded));
     await tester.pumpAndSettle();

@@ -7,11 +7,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/discourse_cache_manager.dart';
+import 'package:fluxdo/services/local_notification_service.dart' show navigatorKey;
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/widgets/common/hero_image.dart';
 import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   const url = 'https://example.test/portrait.png';
@@ -55,33 +59,39 @@ void main() {
     white.dispose();
 
     boundary = GlobalKey();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
-        child: RepaintBoundary(
-          key: boundary,
-          child: MaterialApp(
-            builder: (_, child) => ImmersiveInsetsHoldScope(child: child!),
-            home: Builder(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: HeroImage(
-                    heroTag: tag,
-                    coverFlight: cover,
-                    flightImage: thumb,
-                    onTap: () => ImageViewerPage.open(
-                      context,
-                      url,
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        child: TranslationProvider(
+          child: RepaintBoundary(
+            key: boundary,
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              builder: (_, child) => ImmersiveInsetsHoldScope(child: child!),
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: Center(
+                    child: HeroImage(
                       heroTag: tag,
-                      thumbnailUrl: url,
-                      filenames: filename ? const ['portrait.png'] : null,
-                      heroSourceFit: cover ? BoxFit.cover : null,
-                    ),
-                    child: SizedBox(
-                      width: 64,
-                      height: 128,
-                      child: Image(
-                        image: thumb,
-                        fit: cover ? BoxFit.cover : BoxFit.contain,
+                      coverFlight: cover,
+                      flightImage: thumb,
+                      onTap: () => ImageViewerPage.open(
+                        context,
+                        url,
+                        heroTag: tag,
+                        thumbnailUrl: url,
+                        filenames: filename ? const ['portrait.png'] : null,
+                        heroSourceFit: cover ? BoxFit.cover : null,
+                      ),
+                      child: SizedBox(
+                        width: 64,
+                        height: 128,
+                        child: Image(
+                          image: thumb,
+                          fit: cover ? BoxFit.cover : BoxFit.contain,
+                        ),
                       ),
                     ),
                   ),
@@ -120,18 +130,18 @@ void main() {
     }
   }
 
-  testWidgets('点开时，飞行末帧和落位后的上下渐变连续', (tester) async {
+  testWidgets('点开时，飞行末帧和落位后的画面边缘亮度连续', (tester) async {
     await open(tester);
     await tester.pump(const Duration(milliseconds: 284));
     expect(find.byType(CoverContainFlightImage), findsOneWidget);
     final before = await edgeBrightness(tester);
     await tester.pumpAndSettle();
     final after = await edgeBrightness(tester);
-    expect(after, everyElement(lessThan(180)));
+    expect(after, [255, 255]);
     expectContinuous(before, after);
   });
 
-  testWidgets('点关闭时，图片开始缩回的首帧保留上下渐变', (tester) async {
+  testWidgets('点关闭时，图片开始缩回的首帧保持画面边缘亮度', (tester) async {
     await open(tester);
     await tester.pumpAndSettle();
     final before = await edgeBrightness(tester);
@@ -144,7 +154,7 @@ void main() {
     expectContinuous(before, after);
   });
 
-  testWidgets('打开途中立即关闭，上下渐变在换向时连续', (tester) async {
+  testWidgets('打开途中立即关闭，画面边缘亮度在换向时连续', (tester) async {
     await open(tester);
     await tester.pump(const Duration(milliseconds: 254));
     expect(find.byType(CoverContainFlightImage), findsOneWidget);
@@ -154,11 +164,11 @@ void main() {
     final after = await edgeBrightness(tester);
     await tester.pumpAndSettle();
     expect(find.byType(ImageViewerPage), findsNothing);
-    expect(before, everyElement(lessThan(180)));
+    expect(before, [255, 255]);
     expectContinuous(before, after);
   });
 
-  testWidgets('取消交互式返回，渐变和关闭按钮都交回查看器', (tester) async {
+  testWidgets('取消交互式返回，画面和关闭按钮都交回查看器', (tester) async {
     Future<void> backGesture(String method, [double? progress]) =>
         tester.binding.defaultBinaryMessenger.handlePlatformMessage(
           'flutter/backgesture',
@@ -195,11 +205,11 @@ void main() {
     expect(find.byType(ImageViewerPage), findsNothing);
   }, variant: const TargetPlatformVariant({TargetPlatform.android}));
 
-  testWidgets('返回裁剪缩略图时，顶部渐变连续，无文件名的图片底部保持原亮度', (tester) async {
+  testWidgets('无文件名的图片返回裁剪缩略图时保持边缘原亮度', (tester) async {
     await open(tester, cover: true, filename: false);
     await tester.pumpAndSettle();
     final before = await edgeBrightness(tester);
-    expect(before.first, lessThan(180));
+    expect(before.first, 255);
     expect(before.last, 255);
     await tester.tap(find.byIcon(Symbols.close_rounded));
     await tester.pump();
@@ -209,7 +219,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('点图隐藏工具栏后，返回首帧不会重新画出渐变', (tester) async {
+  testWidgets('点图隐藏工具栏后，返回首帧不会出现额外遮罩', (tester) async {
     await open(tester);
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(70, 18));

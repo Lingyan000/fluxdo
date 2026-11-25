@@ -350,6 +350,7 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
           ListenableBuilder(
             listenable: Listenable.merge([
               widget.showBottomBarListenable,
+              ?widget.jumpHistory,
               ?widget.replySession?.activeNotifier,
               ?widget.menuSession?.activeNotifier,
             ]),
@@ -367,25 +368,41 @@ class _TopicDetailOverlayState extends ConsumerState<TopicDetailOverlay> {
                 ),
               ),
             ),
-            builder: (context, child) => AnimatedPositioned(
-              key: const ValueKey('reading_return_button'),
-              duration: _motion,
-              curve: TopicBottomBarMetrics.motionCurve,
-              left: 0,
-              right: 0,
-              bottom: TopicDetailOverlay.floatingButtonBase(
-                context,
-                widget.showBottomBarListenable.value,
-              ),
-              child: IgnorePointer(
-                ignoring: _panelActive,
-                child: AnimatedOpacity(
-                  opacity: _panelActive ? 0 : 1,
-                  duration: _motion,
-                  child: child,
+            builder: (context, child) {
+              final hasTarget =
+                  widget.jumpHistory == null ||
+                  widget.jumpHistory!.target != null;
+              final visible =
+                  widget.showBottomBarListenable.value &&
+                  !_panelActive &&
+                  hasTarget;
+              return AnimatedPositioned(
+                key: const ValueKey('reading_return_button'),
+                duration: _motion,
+                curve: TopicBottomBarMetrics.motionCurve,
+                left: 0,
+                right: 0,
+                bottom: TopicDetailOverlay.floatingButtonBase(
+                  context,
+                  widget.showBottomBarListenable.value,
                 ),
-              ),
-            ),
+                child: IgnorePointer(
+                  ignoring: !visible,
+                  child: AnimatedOpacity(
+                    opacity: visible ? 1 : 0,
+                    duration: _motion,
+                    curve: TopicBottomBarMetrics.motionCurve,
+                    child: AnimatedScale(
+                      scale: visible ? 1 : 0.88,
+                      alignment: Alignment.bottomLeft,
+                      duration: _motion,
+                      curve: TopicBottomBarMetrics.motionCurve,
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         // 底栏真正可见时才计入一次引导。
         if (!widget.filter.isNestedMode &&

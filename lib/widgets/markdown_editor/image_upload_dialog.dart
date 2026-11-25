@@ -11,8 +11,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
+import '../common/app_bottom_sheet.dart';
 import 'image_compression_strategy.dart';
 import 'app_image_editor.dart';
+import 'image_privacy_mask_page.dart';
 import '../../../../../l10n/s.dart';
 
 /// 回车 = 按当前设置直接上传(桌面端一键确认;移动端软键盘回车不经这条
@@ -129,6 +131,42 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+  }
+
+  Future<void> _maskPrivacy() async {
+    if (!_compressionStrategy.canEdit) {
+      ToastService.showError(
+        S.current.imageUpload_editNotSupported(
+          _compressionStrategy.displayName,
+        ),
+      );
+      return;
+    }
+
+    final bytes = await File(_currentImagePath).readAsBytes();
+    if (!mounted) return;
+    final result = await showImagePrivacyMaskPage(
+      context,
+      bytes: bytes,
+      encodePng: _editorOutputFormat == OutputFormat.png,
+    );
+
+    if (result != null && mounted) {
+      final tempDir = await getTemporaryDirectory();
+      final maskedPath = p.join(
+        tempDir.path,
+        'masked_${DateTime.now().millisecondsSinceEpoch}.$_editorExtension',
+      );
+      await File(maskedPath).writeAsBytes(result);
+
+      setState(() {
+        _currentImagePath = maskedPath;
+        _compressionStrategy = ImageCompressionStrategyFactory.fromPath(
+          maskedPath,
+        );
+      });
+      await _loadImageInfo();
+    }
   }
 
   Future<void> _editImage() async {
@@ -352,18 +390,33 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
 
               const SizedBox(height: 8),
 
-              // 编辑图片按钮
-              OutlinedButton.icon(
-                onPressed: _isProcessing || !_compressionStrategy.canEdit
-                    ? null
-                    : _editImage,
-                icon: const Icon(Symbols.edit_rounded),
-                label: Text(
-                  _compressionStrategy.canEdit
-                      ? S.current.imageUpload_editImage
-                      : S.current.imageUpload_editNotSupportedLabel,
+              // 隐私打码与编辑图片按钮
+              if (_compressionStrategy.canEdit)
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _isProcessing ? null : _maskPrivacy,
+                        icon: const Icon(Symbols.shield_lock_rounded, size: 18),
+                        label: Text(S.current.imageMask_entryButton),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isProcessing ? null : _editImage,
+                        icon: const Icon(Symbols.edit_rounded, size: 18),
+                        label: Text(S.current.imageUpload_editImage),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: null,
+                  icon: const Icon(Symbols.edit_rounded),
+                  label: Text(S.current.imageUpload_editNotSupportedLabel),
                 ),
-              ),
             ],
           ),
         ),
@@ -404,10 +457,11 @@ Future<ImageUploadResult?> showImageUploadDialog(
 
 /// 多图上传确认弹框中的单张图片信息
 class _MultiImageItem {
-  final String path;
+  String path;
   final String name;
-  final ImageCompressionStrategy strategy;
+  ImageCompressionStrategy strategy;
   int? size;
+  bool masked = false;
 
   _MultiImageItem({
     required this.path,
@@ -513,6 +567,74 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
     setState(() => _items.removeAt(index));
   }
 
+  Future<void> _showItemActions(int index) async {
+    if (_isProcessing) return;
+    final item = _items[index];
+    if (!item.strategy.canEdit) {
+      ToastService.showError(
+        S.current.imageUpload_editNotSupported(item.strategy.displayName),
+      );
+      return;
+    }
+    final action = await AppBottomSheet.show<String>(
+      context: context,
+      contentPadding: EdgeInsets.zero,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Symbols.shield_lock_rounded),
+            title: Text(S.current.imageMask_entryButton),
+            onTap: () => Navigator.pop(ctx, 'mask'),
+          ),
+          ListTile(
+            leading: const Icon(Symbols.edit_rounded),
+            title: Text(S.current.imageUpload_editImage),
+            onTap: () => Navigator.pop(ctx, 'edit'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'mask') {
+      await _processItem(index, isMask: true);
+    } else if (action == 'edit') {
+      await _processItem(index, isMask: false);
+    }
+  }
+
+  Future<void> _processItem(int index, {required bool isMask}) async {
+    final item = _items[index];
+    final isPng = p.extension(item.path).toLowerCase() == '.png';
+    final bytes = await File(item.path).readAsBytes();
+    if (!mounted) return;
+    final Uint8List? result = isMask
+        ? await showImagePrivacyMaskPage(context, bytes: bytes, encodePng: isPng)
+        : await showAppImageEditor(
+            context,
+            bytes: bytes,
+            outputFormat: isPng ? OutputFormat.png : OutputFormat.jpg,
+          );
+    if (result == null || !mounted) return;
+
+    final tempDir = await getTemporaryDirectory();
+    final ext = isPng ? 'png' : 'jpg';
+    final prefix = isMask ? 'masked' : 'edited';
+    final outPath = p.join(
+      tempDir.path,
+      '${prefix}_${DateTime.now().millisecondsSinceEpoch}_$index.$ext',
+    );
+    await File(outPath).writeAsBytes(result);
+    final newSize = await File(outPath).length();
+    if (!mounted) return;
+    setState(() {
+      item.path = outPath;
+      item.strategy = ImageCompressionStrategyFactory.fromPath(outPath);
+      item.size = newSize;
+      if (isMask) item.masked = true;
+    });
+  }
+
   Future<void> _submit() async {
     setState(() => _isProcessing = true);
 
@@ -569,28 +691,53 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        Container(
-                          decoration: ShapeDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            shape: RoundedSuperellipseBorder(
-                              borderRadius: context.shapes.borderRadius(8),
+                        GestureDetector(
+                          onTap: _isProcessing
+                              ? null
+                              : () => _showItemActions(index),
+                          child: Container(
+                            decoration: ShapeDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest,
+                              shape: RoundedSuperellipseBorder(
+                                borderRadius: context.shapes.borderRadius(8),
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Image.file(
+                              File(item.path),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Icon(
+                                    Symbols.broken_image_rounded,
+                                    size: 24,
+                                    color: theme.colorScheme.outline,
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Image.file(
-                            File(item.path),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Center(
-                                child: Icon(
-                                  Symbols.broken_image_rounded,
-                                  size: 24,
-                                  color: theme.colorScheme.outline,
-                                ),
-                              );
-                            },
-                          ),
                         ),
+                        // 已打码角标
+                        if (item.masked)
+                          Positioned(
+                            top: 2,
+                            left: 2,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: ShapeDecoration(
+                                color: theme.colorScheme.primary,
+                                shape: RoundedSuperellipseBorder(
+                                  borderRadius: context.shapes.borderRadius(8),
+                                ),
+                              ),
+                              child: Icon(
+                                Symbols.shield_lock_rounded,
+                                size: 12,
+                                color: theme.colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
                         // 删除按钮
                         Positioned(
                           top: 2,
@@ -644,7 +791,14 @@ class _MultiImageUploadDialogState extends State<MultiImageUploadDialog> {
                     );
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
+                Text(
+                  S.current.imageMask_multiTapHint,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
 
                 // 压缩质量滑块
                 Row(

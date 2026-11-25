@@ -99,6 +99,10 @@
   "dataManagement_importSuccess": "資料已匯入，請重啟應用",
   "dataManagement_importWarning": "匯入後將覆蓋當前對應的設定項，需要重啟應用生效。",
   "dataManagement_noCache": "無快取",
+  "dataManagement_ocrModel": "離線文字辨識模型",
+  "dataManagement_ocrModelNotDownloaded": "未下載",
+  "dataManagement_clearOcrModelTitle": "刪除離線文字辨識模型",
+  "dataManagement_clearOcrModelContent": "刪除後可釋放本機儲存空間，下次使用圖片辨識或隱私打碼時可重新下載。",
   "dataManagement_settingsCount": "包含 {count} 項設定",
   "@dataManagement_settingsCount": {
     "placeholders": {

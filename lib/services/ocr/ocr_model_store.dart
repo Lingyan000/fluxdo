@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../app_logger.dart';
 import '../network/flux_request_spec.dart';
 import '../translation_service.dart';
 
@@ -97,6 +98,7 @@ class OcrModelStore {
   final Dio _dio;
   final Future<Directory> Function() _directory;
   Future<void>? _pending;
+  final Map<String, ({int size, int modifiedMs})> _verifiedFiles = {};
 
   static Future<Directory> _defaultDirectory() async => Directory(
     p.join(
@@ -118,7 +120,7 @@ class OcrModelStore {
   Future<bool> isReady() async {
     final dir = await _directory();
     for (final file in bundles.expand((b) => b.files)) {
-      if (!await _valid(
+      if (!await _isFileReady(
         File(p.join(dir.path, file.name)),
         file.size,
         file.sha256Hex,
@@ -129,10 +131,79 @@ class OcrModelStore {
     return true;
   }
 
-  static Future<bool> _valid(File file, int size, String digest) async =>
-      await file.exists() &&
-      await file.length() == size &&
-      (await sha256.bind(file.openRead()).first).toString() == digest;
+  /// 清理内存中的校验缓存（例如推理打开模型异常时强制重新校验磁盘文件）。
+  void invalidateVerificationCache() => _verifiedFiles.clear();
+
+  /// 返回模型目录当前占用的总字节数（包含断点临时文件）。
+  Future<int> installedBytes() async {
+    final dir = await _directory();
+    if (!await dir.exists()) return 0;
+    var total = 0;
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        try {
+          total += await entity.length();
+        } on FileSystemException {
+          // 并发删除时跳过
+        }
+      }
+    }
+    return total;
+  }
+
+  /// 删除已下载的离线识字模型以释放存储空间。
+  Future<void> clear() async {
+    while (_pending != null) {
+      try {
+        await _pending;
+      } catch (_) {}
+    }
+    _verifiedFiles.clear();
+    final dir = await _directory();
+    if (await dir.exists()) {
+      await dir.delete(recursive: true);
+    }
+  }
+
+  Future<bool> _isFileReady(File file, int size, String digest) async {
+    final stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file || stat.size != size) {
+      _verifiedFiles.remove(file.path);
+      return false;
+    }
+    final modifiedMs = stat.modified.millisecondsSinceEpoch;
+    final cached = _verifiedFiles[file.path];
+    if (cached != null &&
+        cached.size == size &&
+        cached.modifiedMs == modifiedMs) {
+      return true;
+    }
+    final ok = await _validHash(file, size, digest);
+    if (ok) {
+      _verifiedFiles[file.path] = (size: size, modifiedMs: modifiedMs);
+    } else {
+      _verifiedFiles.remove(file.path);
+    }
+    return ok;
+  }
+
+  static Future<bool> _valid(File file, int size, String digest) async {
+    if (!await file.exists() || await file.length() != size) return false;
+    return _validHash(file, size, digest);
+  }
+
+  static Future<bool> _validHash(File file, int size, String digest) async {
+    // 超过 1 MiB 的模型文件放到独立 isolate 计算 SHA-256，避免主线程卡顿。
+    if (size >= 1024 * 1024) {
+      final path = file.path;
+      return Isolate.run(() async {
+        final f = File(path);
+        if (!await f.exists() || await f.length() != size) return false;
+        return (await sha256.bind(f.openRead()).first).toString() == digest;
+      });
+    }
+    return (await sha256.bind(file.openRead()).first).toString() == digest;
+  }
 
   Future<void> download({
     required CancelToken cancelToken,
@@ -176,7 +247,7 @@ class OcrModelStore {
       final missing = <OcrModelFile>[];
       for (final spec in bundle.files) {
         token.throwIfCancellationRequested();
-        if (await _valid(
+        if (await _isFileReady(
           File(p.join(dir.path, spec.name)),
           spec.size,
           spec.sha256Hex,
@@ -201,6 +272,11 @@ class OcrModelStore {
           );
           token.throwIfCancellationRequested();
           await part.rename(file.path);
+          final stat = await file.stat();
+          _verifiedFiles[file.path] = (
+            size: stat.size,
+            modifiedMs: stat.modified.millisecondsSinceEpoch,
+          );
         } on Exception catch (error) {
           token.throwIfCancellationRequested();
           if (error is! DioException &&
@@ -211,6 +287,10 @@ class OcrModelStore {
               error is! TlsException) {
             rethrow;
           }
+          AppLogger.warning(
+            'OCR 模型主源下载失败，切换备用源: ${spec.name} ($error)',
+            tag: 'OCR',
+          );
           final remaining = missing.fold(0, (n, f) => n + f.size);
           await _fromArchive(
             dir,
@@ -274,6 +354,11 @@ class OcrModelStore {
         token.throwIfCancellationRequested();
         final target = p.join(dir.path, spec.name);
         await File(p.join(staging.path, spec.name)).rename(target);
+        final stat = await File(target).stat();
+        _verifiedFiles[target] = (
+          size: stat.size,
+          modifiedMs: stat.modified.millisecondsSinceEpoch,
+        );
         final part = File('$target.part');
         if (await part.exists()) await part.delete();
       }

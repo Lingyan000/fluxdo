@@ -178,7 +178,7 @@ void main() {
               await Future<void>.delayed(const Duration(milliseconds: 25));
             });
             await tester.pump(const Duration(milliseconds: 50));
-            if (find.byIcon(Symbols.more_vert_rounded).evaluate().isNotEmpty) {
+            if (find.byIcon(Symbols.edit_rounded).evaluate().isNotEmpty) {
               break;
             }
           }
