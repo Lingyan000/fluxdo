@@ -333,6 +333,64 @@ test('商品详情兼容混合字段，折扣异常退回原价，类型和购�
  product={...product,seller_site:'other.example'};p=await t.page('product',{id:'p1'});assert.equal(p.data.buy,true);
  product={...product,product_type:'store',stock:0};p=await t.page('product',{id:'p1'});assert.equal(p.data.linkProduct,true);assert.equal(p.data.buy,true);
 });
+const storeClaims=(overrides={})=>({sub:'42',site:'linux.do',trust_level:3,exp:Math.floor(Date.now()/1000)+3600,...overrides});
+function trustShop({claims=storeClaims(),profile={authenticated:true,user:{id:42,site:'linux.do'}},product={}}={}) {
+  return setup({claims,respond:r=>{
+    if(r.url.pathname.endsWith('/auth/verify'))return profile;
+    if(r.url.pathname.endsWith('/quote'))return {productId:'p1',quantity:1,productSubtotal:5,payableAmount:5,coupons:[]};
+    if(r.url.pathname.endsWith('/products/p1'))return {product:{id:'p1',price:5,stock:2,purchase_trust_level:1,...product}};
+    return {};
+  }});
+}
+test('校验接口只返回身份时使用士多凭证等级，L3 可兑换最低 L1 商品并进入核价',async()=>{
+  for(const level of [0,1,2,3,4,'3'])for(const required of [1,3,4]) {
+    const t=trustShop({claims:storeClaims({trust_level:level}),product:{purchase_trust_level:required}});
+    // 论坛等级和士多会话可能不同，购买资格不从宿主论坛资料推断。
+    t.api.user.get=async()=>({id:42,username:'tester',trustLevel:4});
+    const product=await t.page('product',{id:'p1'}),allowed=Number(level)>=required;
+    assert.equal(product.data.buy,allowed,`TL${level} / 最低 TL${required}`);
+    await t.fire(product,'review');assert.equal(t.nav.length,allowed?1:0);
+    const review=await t.page('review',{id:'p1'});
+    assert.equal(review.data.canSubmit,allowed);
+    assert.equal(t.calls.filter(r=>r.url.pathname.endsWith('/quote')).length,allowed?1:0);
+    assert.ok(t.calls.every(r=>r.method==='GET'||r.url.pathname.endsWith('/quote')));
+  }
+});
+test('服务端明确返回的等级优先且保留真实 L0，账号页与购买页判断一致',async()=>{
+  for(const level of [0,'0',1,'3']) {
+    const t=trustShop({profile:{authenticated:true,user:{id:'42',trust_level:level}}});
+    const account=await t.page('account');assert.match(account.data.accountMeta,new RegExp('TL'+level+'$'));
+    const product=await t.page('product',{id:'p1'});assert.equal(product.data.buy,Number(level)>=1);
+  }
+  const t=trustShop({claims:null,profile:{authenticated:true,user:{id:42,trustLevel:3}}});
+  assert.equal((await t.page('product',{id:'p1'})).data.buy,true);
+});
+test('未知或不属于当前有效会话的等级不能伪装成 L0 或放行核价',async()=>{
+  const candidates=[null,...[null,'',' ',true,[],{},-1,5,3.5,'3x'].map(trust_level=>storeClaims({trust_level})),
+    storeClaims({sub:'99'}),storeClaims({site:'idcflare.com'}),storeClaims({exp:1}),storeClaims({exp:null}),
+    storeClaims({nbf:Math.floor(Date.now()/1000)+3600})];
+  for(const claims of candidates) {
+    const t=trustShop({claims}),p=await t.page('review',{id:'p1'});
+    assert.equal(p.data.buy,false);assert.equal(p.data.canSubmit,false);
+    assert.match(p.data.buyLabel,/暂时无法核对购买资格/);
+    assert.equal(t.calls.some(r=>r.url.pathname.endsWith('/quote')),false);
+  }
+});
+test('身份校验失败或服务故障时不使用凭证声明放行购买',async()=>{
+  for(const profile of [{authenticated:false,user:{id:42}},{authenticated:true,user:{id:99}},
+    {authenticated:true,user:{id:42,site:'idcflare.com'}},{failure:401},{failure:503}]) {
+    const t=trustShop({profile}),p=await t.page('review',{id:'p1'});
+    assert.equal(p.data.buy,false);assert.equal(p.data.canSubmit,false);
+    assert.equal(t.calls.some(r=>r.url.pathname.endsWith('/quote')),false);
+    if(profile.failure!==503)assert.equal(p.data.authorized,false);
+  }
+});
+test('等级读取失败不能覆盖售罄、测试商品或自己的商品等确定原因',async()=>{
+  for(const [product,label]of [[{stock:0},/已售罄/],[{isTestMode:true},/测试中/],[{sellerUserId:42},/自己的商品/]]) {
+    const t=trustShop({claims:null,product}),p=await t.page('product',{id:'p1'});
+    assert.equal(p.data.buy,false);assert.match(p.data.buyLabel,label);
+  }
+});
 test('详情使用权威可用库存和已购限额，CDK 不限库存不误报售罄',async()=>{
  let product={id:'p1',price:5,product_type:'cdk',cdk_stats:{total:-1},stock:0};
  const t=setup({respond:r=>r.url.pathname.endsWith('/comments')?{comments:[],pagination:{}}:{product}});
@@ -551,7 +609,7 @@ test('订单手动刷新保留交付区域并收起敏感内容',async()=>{
  const refreshing=t.fire(p,'ordersRefresh');await flush();assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
  release({order});await refreshing;assert.equal(p.data.hasDelivery,true);assert.equal(p.data.deliveryText,'');
 });
-const restoredClaims={sub:'42',username:'tester',avatar_template:'/user_avatar/linux.do/tester/{size}/321.png'};
+const restoredClaims=storeClaims({username:'tester',avatar_template:'/user_avatar/linux.do/tester/{size}/321.png'});
 test('恢复已有会话从凭证声明取得头像，商城与我的士多共用资料并保留商品',async()=>{
  const t=setup({claims:restoredClaims,respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42}}:{products:[],pagination:{},categories:[]}});
  const p=await t.page('market');await flush();

@@ -189,6 +189,7 @@ jobs:
           test/modules/metaverse/metaverse_content_components_test.dart
           test/modules/metaverse/metaverse_page_components_test.dart
           test/modules/metaverse/ld_store_api2_checkout_test.dart
+          test/modules/metaverse/ld_store_api2_login_test.dart
           test/modules/metaverse/metaverse_native_ui_test.dart
       - name: Verify shared image viewer and controlled image sources
         working-directory: app

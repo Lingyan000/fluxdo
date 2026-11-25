@@ -34,6 +34,21 @@ class _Delegate extends MetaversePluginHostDelegate {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+String _withLoginProbe(String script) {
+  // 探针置于发行脚本的本地化闭包内，不向生产插件暴露登录管理器。
+  const closureEnd = '})(fluxdo);';
+  final end = script.lastIndexOf(closureEnd);
+  expect(end, greaterThanOrEqualTo(0));
+  expect(script.substring(end).trim(), closureEnd);
+  return '${script.substring(0, end)}\n'
+      '''fluxdo.on('fixture.login', async ctx => {
+  try { ctx.setData('result', await ldStore.login(ctx.api)); }
+  catch (error) { ctx.setData('failure', error.message); }
+  ctx.setData('finished', true);
+});
+$closureEnd''';
+}
+
 Future<void> main() async {
   String? unavailable;
   try {
@@ -93,12 +108,7 @@ Future<void> main() async {
         await tester.runAsync(() async {
           await store.writeCode(manifest.id, (
             ui: ui,
-            script: '''$script
-fluxdo.on('fixture.login', async ctx => {
-  try { ctx.setData('result', await ldStore.login(ctx.api)); }
-  catch (error) { ctx.setData('failure', error.message); }
-  ctx.setData('finished', true);
-});''',
+            script: _withLoginProbe(script),
           ));
           final surface = await host.open(kind: 'card');
           host.attachSurface(surface, context);
