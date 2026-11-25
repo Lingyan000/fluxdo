@@ -1,6 +1,6 @@
 # 插件开发工具选型与热更新
 
-工具、脚手架和 SDK 0.14.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
+工具、脚手架和 SDK 0.15.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合组件与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
 
 ## 选型依据
 
@@ -103,3 +103,31 @@ SDK 0.14.0 的 `storage.partition` 支持账号分区迁移。开发热更新会
 诊断包含连接状态、宿主能力、缺失能力、权限开关、界面可见性与尺寸、数据字段类型和列表长度、API 次数/错误数/累计与最大耗时。不读取页面正文、文件字节、本地存储值或凭证。数据是最近一次采样，网络耗时不是逐帧性能分析。仅开发会话累计 API 指标，正式安装不额外记录该信息。回环可使用明文；局域网连接先验证配对证书指纹，再发送认证头。配对地址本身是临时凭证，不应写入仓库或公开日志。
 
 市场发布校验同时核对 GitHub Release 是否为草稿或预发布、附件 URL、包摘要、身份及能力。`preview` 必须对应 GitHub 预发布；语义版本没有后缀也不能据此把预发布自动当作稳定版。
+
+## 查询与分页
+
+SDK 0.15.0 的 `@fluxdo/plugin-sdk/data` 提供 `createQueryClient`、`createPagedList` 和 `QueryCancelledError`，由 Vite 打包到插件脚本，不增加宿主业务 API。独立脚本的本地化编译可声明 `runtimeHelpers: ["data"]`，使用同版的 `fluxdoData` 对象；产物不依赖运行时 CDN。
+
+```ts
+import {createQueryClient, createPagedList} from '@fluxdo/plugin-sdk/data';
+const queries = createQueryClient({identity: account.id});
+const data = await queries.query(['categories'], readCategories, {
+  ttl: 300_000, tags: ['catalog'],
+});
+queries.invalidate({tags: ['catalog']});
+queries.setIdentity(nextAccount.id);
+const list = createPagedList({load: loadPage, itemKey: item => item.id});
+list.reset({search: '', category: 'all'});
+await list.load();
+await list.load({more: true});
+```
+
+查询默认最多 64 条、按 JSON UTF-8 保守估计共 2 MiB。同键在途读取合并，失败保留旧数据；失效、手动更新、账号变化或释放后拒绝旧响应回写。分页保留刷新前内容、按稳定标识合并条目，游标不前进时终止继续加载。查询键必须包含影响结果的账号和筛选。关闭页面时释放分页控制器，退出账号时清空实例内缓存。工具不会重试调用，也不会发送建单、付款或消息；业务写操作成功后由插件明确失效相关标签或更新对应条目。
+
+显式普通存储通过清单的 `storage` 与 `storageScopes` 声明，见 [API 存储作用域](api.md#普通存储作用域)。模拟宿主可设置 `storageScope`、`accountId`，账号区用独立命名空间，默认仍兼容旧测试的共享数据。
+
+## 持续验证
+
+Windows 固定 Flutter 版本、字体、尺寸、主题与时间，对比组件黄金图；其他桌面平台运行同一布局断言与真实 QuickJS 测试。黄金图变化必须查看差异再更新，不能用更新基线掩盖溢出。查询基准记录同键请求次数、缓存淘汰和真实引擎耗时，不把测试机的耗时当作手机帧率保证。
+
+移动端工作流用最小设备壳编译生产 QuickJS 引擎与运行时协议，在 Android 模拟器和 iOS 模拟器执行查询、分页、通道通信及销毁。它不加载真实账号，不能替代系统生物识别、后台调度或真实服务授权验收。公开服务契约在市场仓库定时执行匿名 GET，与离线回归分开；上游故障不会被当成代码单测失败。

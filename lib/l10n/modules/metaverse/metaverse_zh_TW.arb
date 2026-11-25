@@ -176,6 +176,7 @@
   "metaverse_apiNotificationStatus": "分別檢查外掛授權與系統通知狀態。系統關閉通知時，可由使用者點擊開啟通知設定。",
   "metaverse_apiBadge": "設定外掛導覽頁的未讀數，傳入 0 即可清除標記。",
   "metaverse_pluginData": "資料與儲存",
+  "metaverse_developerStorageGuide": "清單 storage.scopes 宣告 shared（外掛共用）和 account（目前帳號），default 指定預設範圍。帳號資料需要身分權限；一般儲存 API 的最後一個參數可指定 scope: 'shared'。SDK 的 @fluxdo/plugin-sdk/data 提供查詢去重、有限快取、局部失效和分頁；切換帳號時清空快取，離頁時取消分頁。可在 API 範例修改 scope，查看兩個分區互不覆蓋。",
   "metaverse_resetPluginData": "重設外掛程式資料",
   "metaverse_resetPluginDataConfirm": "將停止「{name}」，清除其本機資料和服務登入狀態。",
   "metaverse_pluginLogs": "外掛程式記錄",

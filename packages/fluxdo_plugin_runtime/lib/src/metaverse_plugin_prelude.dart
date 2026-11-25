@@ -129,11 +129,11 @@ const metaversePluginPrelude = r'''
     }),
     captcha: Object.freeze({request: function (options) { return call('captcha.request', options); }}),
     storage: Object.freeze({
-      get: function (key) { return call('storage.get', { key: String(key) }); },
-      set: function (key, value) { return call('storage.set', { key: String(key), value: value === undefined ? null : value }); },
-      setMany: function (entries) { return call('storage.setMany', {entries: entries}); },
-      compareAndSet: function (key, expected, value) { return call('storage.compareAndSet', {key: String(key), expected: expected, value: value}); },
-      remove: function (key) { return call('storage.remove', { key: String(key) }); }
+      get: function (key, options) { return call('storage.get', { key: String(key), scope: options && options.scope }); },
+      set: function (key, value, options) { return call('storage.set', { key: String(key), value: value === undefined ? null : value, scope: options && options.scope }); },
+      setMany: function (entries, options) { return call('storage.setMany', {entries: entries, scope: options && options.scope}); },
+      compareAndSet: function (key, expected, value, options) { return call('storage.compareAndSet', {key: String(key), expected: expected, value: value, scope: options && options.scope}); },
+      remove: function (key, options) { return call('storage.remove', { key: String(key), scope: options && options.scope }); }
     }),
 
     credentials: Object.freeze({

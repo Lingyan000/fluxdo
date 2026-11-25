@@ -3,7 +3,7 @@ declare namespace FluxDO {
   type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
   type Record = { [key: string]: Json };
   type BrowserMode = 'ask' | 'inApp' | 'external' | 'preference';
-  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement' | 'credentialClaims' | 'iconButtonContent' | 'notificationStatus' | 'fileAttachments' | 'captchaChallenge' | 'manifestLocalization' | 'accountDataMigration';
+  type Feature = 'browserModes' | 'automaticPagination' | 'gridLayouts' | 'virtualGrid' | 'confirmationDialog' | 'nativeExecutionLimits' | 'navigationEntries' | 'forumRead' | 'scheduledTasks' | 'localNotifications' | 'navigationBadge' | 'atomicStorage' | 'runtimePermissions' | 'adaptiveCollections' | 'modalDismiss' | 'cardNavigation' | 'contentPresentation' | 'eventStreams' | 'dataMigrations' | 'hostEnvironment' | 'pluginPreferences' | 'pageChrome' | 'loadingPlaceholders' | 'navigationReplacement' | 'credentialClaims' | 'iconButtonContent' | 'notificationStatus' | 'fileAttachments' | 'captchaChallenge' | 'manifestLocalization' | 'accountDataMigration' | 'storageScopes' | 'extendedPages';
   type ManagedPermission = 'identity' | 'serviceAccount' | 'payments' | 'forumProfiles' | 'forumActivity' | 'forumFollowing' | 'background' | 'notifications' | 'links' | 'publicImages';
   type PermissionState = Partial<{[key in ManagedPermission | 'sandbox' | 'network' | 'foregroundTasks']: boolean}>;
   interface FetchOptions {
@@ -56,7 +56,8 @@ declare namespace FluxDO {
   interface StreamState {id: string; state: 'connecting' | 'open' | 'retrying' | 'closed'; reason?: string; status?: number; retryInMs?: number}
   interface AccountPartitionEvent {accountId:number;legacy:Record;account:Record}
   interface AccountPartitionResult {legacy:Record;account:Record}
-  interface MigrationEvent {fromVersion:number;toVersion:number}
+  interface MigrationEvent {fromVersion:number;toVersion:number;scope:'legacy'|'account'|'shared'}
+  interface StorageOptions {scope:'shared'|'account'}
   interface Api {
     on<E extends string>(name: E, handler: (ctx: Context, args: E extends 'stream.event' ? StreamEvent : E extends 'stream.state' ? StreamState : E extends 'storage.migrate' ? MigrationEvent : E extends 'storage.partition' ? AccountPartitionEvent : E extends 'files.progress' ? FileProgress : Record) => E extends 'storage.partition' ? AccountPartitionResult | Promise<AccountPartitionResult> : void | Promise<void>): () => void;
     fetch(url: string, options?: FetchOptions): Promise<Response>;
@@ -84,11 +85,11 @@ declare namespace FluxDO {
     };
     dialogs: { confirm(options: Confirmation): Promise<boolean> };
     storage: {
-      get<T = Json>(key: string): Promise<T | null>;
-      set(key: string, value: Json): Promise<null>;
-      setMany(entries: Record): Promise<null>;
-      compareAndSet<T>(key: string, expected: T | null, value: T | null): Promise<boolean>;
-      remove(key: string): Promise<null>;
+      get<T = Json>(key: string, options?: StorageOptions): Promise<T | null>;
+      set(key: string, value: Json, options?: StorageOptions): Promise<null>;
+      setMany(entries: Record, options?: StorageOptions): Promise<null>;
+      compareAndSet<T>(key: string, expected: T | null, value: T | null, options?: StorageOptions): Promise<boolean>;
+      remove(key: string, options?: StorageOptions): Promise<null>;
     };
     tasks: {
       schedule(options: {id: string; intervalSeconds: number; background?: boolean}): Promise<boolean>;

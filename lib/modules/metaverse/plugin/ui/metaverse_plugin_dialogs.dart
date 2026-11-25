@@ -369,6 +369,7 @@ void showMetaversePluginToast(String pluginName, String message, String type) {
 List<String> _approvalLabels(BuildContext context, List<String> changes) {
   final l = context.l10n;
   return changes.map((change) => switch (change.split('.').first) {
+    'storage' => l.metaverse_pluginData,
     'network' => l.metaverse_permissionNetwork,
     'identity' => l.metaverse_permissionIdentity,
     'publicImages' => l.metaverse_permissionImages,

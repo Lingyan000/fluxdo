@@ -108,7 +108,7 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   LinkOpenMode _browserMode = LinkOpenMode.ask;
   bool _previewGranted = false;
   final _storage = <String, Object?>{
-    'example': {'value': 1},
+    'shared:example': {'value': 1},
   };
   final _events = <String>[];
   Uint8List? _pickedFile;
@@ -207,6 +207,13 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
   }
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
+    String storageKey(String key) {
+      final scope = params['scope'] ?? 'shared';
+      if (scope != 'shared' && scope != 'account') {
+        throw const MetaversePluginCallException('storage_scope_not_declared');
+      }
+      return '$scope:$key';
+    }
     switch (method) {
       case 'files.pick':
         final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['png','jpg','jpeg','webp']);
@@ -362,24 +369,24 @@ class _ApiPreviewState extends State<MetaverseApiPreviewPage> {
         }
         return widget.example.result;
       case 'storage.compareAndSet':
-        final key = params['key'] as String;
+        final key = storageKey(params['key'] as String);
         if (!const DeepCollectionEquality().equals(_storage[key], params['expected'])) return false;
         if (params['value'] == null) { _storage.remove(key); } else { _storage[key] = params['value']; }
         return true;
       case 'storage.get':
-        return _storage['${params['key']}'];
+        return _storage[storageKey(params['key'] as String)];
       case 'storage.set':
-        _storage['${params['key']}'] = params['value'];
+        _storage[storageKey(params['key'] as String)] = params['value'];
         return null;
       case 'storage.remove':
-        _storage.remove('${params['key']}');
+        _storage.remove(storageKey(params['key'] as String));
         return null;
       case 'storage.setMany':
         for (final entry in (params['entries'] as Map).entries) {
           if (entry.value == null) {
-            _storage.remove(entry.key);
+            _storage.remove(storageKey(entry.key as String));
           } else {
-            _storage[entry.key as String] = entry.value;
+            _storage[storageKey(entry.key as String)] = entry.value;
           }
         }
         return null;

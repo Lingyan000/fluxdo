@@ -2,6 +2,8 @@
 
 当前宿主支持脚本 API 版本 1 和 2。版本 2 使用 schema 9 至 12。运行时协议位于 `packages/fluxdo_plugin_runtime`，应用能力由 `MetaversePluginHost` 注入。
 
+清单默认最多声明 16 个页面。需要更多独立路由时，声明 `extendedPages` 可扩展到 32 个；总清单、脚本与界面容量限制仍适用。路由声明不会预先创建页面或发起请求。
+
 ## API 2 通用能力
 
 服务插件负责发起授权、处理回调、交换服务凭证、调用业务接口及刷新交付结果。宿主提供 Connect 账号授权、按范围注入凭证、原生 LDC 收银台。宿主结合清单和用户当前的权限选择检查每次调用。
@@ -193,7 +195,21 @@ fluxdo.on('surface.close', (ctx) => pages.delete(ctx.surface));
 | `fluxdo.storage.setMany(entries)` | object → Promise<null> | 在一个事务中修改多个键 |
 | `fluxdo.storage.remove(key)` | string → Promise<null> | 删除该键 |
 
-键长度为 1–128，`@` 前缀保留给宿主使用。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有账号分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。声明论坛、任务、通知或底栏角标能力的插件使用账号分区，切换账号后旧实例不能读取或写入新账号。
+键长度为 1–128，`@` 前缀保留给宿主使用。卡片、页面和工作任务共享插件目录中的 `data.sqlite`，首次读取时迁移已有 `storage.json`。每个插件所有分区合计上限 2 MiB。「清空插件数据」清除全部分区并停止任务。切换账号后旧账号实例不能读取或写入新账号。
+
+### 普通存储作用域
+
+新 API 2 插件使用 schema 12，声明 `requiredFeatures: ["storageScopes"]` 及 `storage: {"default":"account","scopes":["shared","account"]}`。账号范围同时需要 `permissions.identity: true`。所有普通存储方法接受最后一个可选参数 `{scope: "shared" | "account"}`；省略时使用清单的默认分区。只能选择声明的分区，不能指定账号 ID。账号范围在未登录或身份权限关闭时拒绝，共享范围仍可使用。
+
+```js
+await ctx.api.storage.set('draft', {quantity: 1}); // 当前账号
+await ctx.api.storage.set('categories', [{id: 1, name: '工具'}], {scope: 'shared'});
+const categories = await ctx.api.storage.get('categories', {scope: 'shared'});
+```
+
+`shared` 是同一插件跨账号共享的数据，不能放订单、私信或凭证。新增可读范围或改变默认分区需要重新审阅。旧账号分区不会自动变成共享数据；从遗留共享模式升级到同时具有账号区的插件，使用 `storage.partition` 归属旧数据。显式共享区使用独立命名空间，未归属的遗留数据不会被共享读取。已经声明显式作用域的插件不能通过普通升级删掉声明；回退使用对应版本的数据快照。
+
+未声明 `storage` 的旧清单继续兼容：声明论坛、任务、通知或底栏角标能力时使用账号分区，否则使用遗留共享区。新插件应明确声明，避免后来增加能力时意外改变数据归属。SDK 脚手架默认声明仅共享区，加入账号功能时需一起调整清单。
 
 `storage.compareAndSet(key, expected, value)` 在同一事务内比较 JSON 值、写入并返回布尔值。`null` 表示缺少键，写入 `null` 会删除键。页面和任务同时修改同一数据时，失败的一方应重新读取后再合并。需要此能力的插件声明 `atomicStorage`。
 
@@ -451,6 +467,6 @@ fluxdo.on('files.invalidated', ctx => { /* 清空已选文件和上传状态。 
 
 声明 `manifestLocalization` 后可用 `locales` 覆盖显示文字，例如 `{"en":{"name":"Store","pages.market.title":"Market"}}`。可翻译名称、简介、页面标题、导航标签、任务标题、偏好标题和选项；标识、资源路径、权限和来源不能翻译。按地区、语言、原始字段依次回退，译文不会改变已有权限审阅。市场条目可独立提供 `name/summary/description/changelog` 的 `locales`。
 
-声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐账号进行，失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。
+声明 dataMigrations 与 dataVersion 后，storage.migrate 只在数据版本增加时触发。其 ctx.api 仅允许普通存储与 host.features，fromVersion/toVersion 是正整数。迁移在副本上逐分区进行，事件 `scope` 标识 `shared`、`account` 或未归属的 `legacy`；不能借 scope 参数跨区读写。失败保留旧版，不会重复联网或重放付款。详见[版本恢复与数据迁移](automatic-updates.md#版本恢复与数据迁移)。
 
 从公共数据切换到账号分区时，声明 `accountDataMigration` 并处理 `storage.partition`。该事件接收 `{accountId, legacy, account}`，返回新的 `{legacy, account}`，只在无网络、凭证和界面能力的隔离引擎中执行；迁移与正常页面都无法读取其他账号分区。必须保留无法归属的数据、处理冲突并移除已经消费的旧记录。执行时机、权限和并发规则同上文链接。

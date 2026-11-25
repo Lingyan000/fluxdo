@@ -16,6 +16,10 @@ extension MetaverseApprovalChange on MetaversePluginManifest {
       ),
     );
     final changes = <String>[];
+    if (!old.storageScopes.containsAll(storageScopes) ||
+        defaultStorageScope != old.defaultStorageScope) {
+      changes.add('storage');
+    }
     if (!hosts(networkHosts, old.networkHosts)) changes.add('network');
     if (identity && !old.identity) changes.add('identity');
     if (publicImages && !old.publicImages) changes.add('publicImages');

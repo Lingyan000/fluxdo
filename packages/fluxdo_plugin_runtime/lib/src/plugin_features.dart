@@ -31,6 +31,8 @@ enum PluginFeature {
   captchaChallenge,
   manifestLocalization,
   accountDataMigration,
+  storageScopes,
+  extendedPages,
 }
 
 class PluginFeatures {

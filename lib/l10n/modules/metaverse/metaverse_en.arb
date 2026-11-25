@@ -176,6 +176,7 @@
   "metaverse_apiNotificationStatus": "Check plugin authorization and system notification status separately. A user action can open system notification settings.",
   "metaverse_apiBadge": "Set the unread count for a plugin navigation page. Pass 0 to clear it.",
   "metaverse_pluginData": "Data and storage",
+  "metaverse_developerStorageGuide": "Declare shared and account in storage.scopes, with default selecting the default scope. Account data requires identity permission. The last argument of storage APIs can specify scope: 'shared'. @fluxdo/plugin-sdk/data provides request deduplication, bounded caching, targeted invalidation and pagination. Clear caches when accounts change and cancel pagination when leaving a page. Change scope in the API examples to try independent partitions.",
   "metaverse_resetPluginData": "Reset plugin data",
   "metaverse_resetPluginDataConfirm": "Stop {name} and clear its local data and service session.",
   "metaverse_pluginLogs": "Plugin logs",

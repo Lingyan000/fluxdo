@@ -233,6 +233,7 @@ class MetaversePluginsController
       data: (backup['data'] as Map).cast<String, Object?>(), engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
     data = await migrateMetaverseAccountPartitions(package: package, data: data,
       engineFactory: ref.read(metaverseScriptEngineFactoryProvider));
+    data = prepareMetaverseStorageScopes(previous: old, next: package.manifest, data: data);
     await _install(package, choices, restoreData: data,
       restorePreferences: (backup['preferences'] as Map? ?? const {}).cast<String, Object?>());
     MetaverseUpdateStore(await ref.read(metaversePluginDirectoryProvider.future)).setAllowed(byId(old.id)!, backup['autoUpdate'] != false);
@@ -415,6 +416,7 @@ class MetaversePluginsController
       }
       data = partitionMetaverseData(data, accounts.length == 1 ? accounts.single : null);
     }
+    data = prepareMetaverseStorageScopes(previous: previous.manifest, next: next.manifest, data: data);
     await _store.prepareRelease(previous, next, data);
   }
 

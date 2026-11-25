@@ -117,7 +117,7 @@ const metaverseApiExamples = [
   MetaverseApiExample('auth.signOut', '', null, permission: 'auth'),
   MetaverseApiExample(
     'storage.setMany',
-    "{current: {value: 1}, previous: null}",
+    "{current: {value: 1}, previous: null}, {scope: 'shared'}",
     null,
     apiVersion: 2,
   ),
@@ -188,7 +188,7 @@ const metaverseApiExamples = [
     'headers': <String, Object?>{},
     'body': '{"items":[]}',
   }, permission: 'network'),
-  MetaverseApiExample('storage.get', "'example'", {'value': 1}),
+  MetaverseApiExample('storage.get', "'example', {scope: 'shared'}", {'value': 1}),
   MetaverseApiExample('storage.compareAndSet', "'example', {value: 1}, {value: 2}", true, apiVersion: 2),
   MetaverseApiExample('storage.set', "'example', {value: 1}", null),
   MetaverseApiExample('storage.remove', "'example'", null),

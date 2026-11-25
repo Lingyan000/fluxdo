@@ -178,6 +178,7 @@
   "metaverse_apiNotificationStatus": "分别检查插件授权与系统通知状态。系统关闭通知时，可由用户点击打开通知设置。",
   "metaverse_apiBadge": "设置插件导航页的未读数，传入 0 清除角标。",
   "metaverse_pluginData": "数据与存储",
+  "metaverse_developerStorageGuide": "清单 storage.scopes 声明 shared（插件共享）和 account（当前账号），default 指定默认范围。账号数据需要身份权限；普通存储 API 的最后一个参数可指定 scope: 'shared'。SDK 的 @fluxdo/plugin-sdk/data 提供查询去重、有限缓存、局部失效和分页；切换账号时清空缓存，离页时取消分页。可在 API 示例修改 scope，查看两个分区互不覆盖。",
   "metaverse_resetPluginData": "重置插件数据",
   "metaverse_resetPluginDataConfirm": "将停止「{name}」，清除其本地数据和服务登录状态。",
   "@metaverse_resetPluginDataConfirm": {"placeholders":{"name":{"type":"String"}}},

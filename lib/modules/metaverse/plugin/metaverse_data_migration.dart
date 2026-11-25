@@ -6,6 +6,34 @@ import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 
 import 'metaverse_plugin_installer.dart';
 import 'metaverse_plugin_store.dart';
+import 'metaverse_plugin_manifest.dart';
+
+/// 显式共享区与遗留未归属数据使用不同命名空间，增加共享区不能暴露旧账号数据。
+/// 设计依据: docs/plugins/api.md §普通存储作用域。
+Map<String, Object?> prepareMetaverseStorageScopes({
+  required MetaversePluginManifest previous,
+  required MetaversePluginManifest next,
+  required Map<String, Object?> data,
+}) {
+  if (previous.explicitStorage && !next.explicitStorage) {
+    throw const MetaversePluginCallException('storage_scopes_cannot_be_removed');
+  }
+  if (!previous.explicitStorage && !previous.accountScoped &&
+      next.explicitStorage && !next.accountScoped) {
+    final result = Map<String, Object?>.of(data);
+    for (final entry in data.entries.where((entry) => !entry.key.startsWith('@'))) {
+      final key = '@shared:${entry.key}';
+      if (result.containsKey(key) &&
+          !const DeepCollectionEquality().equals(result[key], entry.value)) {
+        throw const MetaversePluginCallException('storage_scope_conflict');
+      }
+      result[key] = entry.value;
+      result.remove(entry.key);
+    }
+    return result;
+  }
+  return data;
+}
 
 Map<String, Object?> partitionMetaverseData(Map<String, Object?> data, int? account) {
   final result = Map<String, Object?>.of(data);
@@ -125,7 +153,7 @@ Future<Map<String, Object?>> migrateMetaverseData({
   final groups = <String, Map<String, Object?>>{};
   for (final entry in data.entries) {
     if (entry.key.startsWith('@account-migration:')) continue;
-    final match = RegExp(r'^(@forum-account:(?:null|\d+):)(.*)$')
+    final match = RegExp(r'^(@forum-account:(?:null|\d+):|@shared:)(.*)$')
         .firstMatch(entry.key);
     final prefix = match?[1] ?? '';
     (groups[prefix] ??= {})[match?[2] ?? entry.key] = entry.value;
@@ -136,7 +164,9 @@ Future<Map<String, Object?>> migrateMetaverseData({
     if (watch.elapsed >= const Duration(seconds: 20)) {
       throw const MetaversePluginCallException('migration_timeout');
     }
-    final bridge = _MigrationBridge(Map.of(group.value));
+    final scope = group.key == '@shared:' ? 'shared' :
+        group.key.startsWith('@forum-account:') ? 'account' : 'legacy';
+    final bridge = _MigrationBridge(Map.of(group.value), scope: scope);
     final runtime = await MetaversePluginRuntime.start(
       engineFactory: engineFactory,
       script: package.code.script,
@@ -148,7 +178,7 @@ Future<Map<String, Object?>> migrateMetaverseData({
         background: false,
         event: 'storage.migrate',
         timeout: const Duration(seconds: 20) - watch.elapsed,
-        arguments: {'fromVersion': fromVersion, 'toVersion': target},
+        arguments: {'fromVersion': fromVersion, 'toVersion': target, 'scope': scope},
       );
       result.addAll(
         bridge.data.map((key, value) => MapEntry('${group.key}$key', value)),
@@ -165,15 +195,19 @@ Future<Map<String, Object?>> migrateMetaverseData({
 }
 
 class _MigrationBridge implements MetaversePluginBridge {
-  _MigrationBridge(this.data, {this.partitionOnly = false});
+  _MigrationBridge(this.data, {this.partitionOnly = false, this.scope = 'legacy'});
   final Map<String, Object?> data;
   final bool partitionOnly;
+  final String scope;
   @override
   void log(String level, String message) {}
   @override
   Future<Object?> call(String method, Map<String, Object?> params) async {
     if (partitionOnly && method != 'crypto.sha256' && method != 'host.features') {
       throw const MetaversePluginCallException('account_migration_isolated');
+    }
+    if (method.startsWith('storage.') && params['scope'] != null && params['scope'] != scope) {
+      throw const MetaversePluginCallException('migration_scope_mismatch');
     }
     String key(Object? value) {
       if (value is! String ||

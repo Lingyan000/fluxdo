@@ -124,7 +124,16 @@ class MetaversePluginManifest {
 
   static const schemaVersion = 12;
   List<MetaverseTaskSpec> get tasks => MetaverseTaskSpec.parse(raw['tasks']);
-  bool get accountScoped => capabilities.forum.isNotEmpty || tasks.isNotEmpty || capabilities.notifications || requiredFeatures.contains('navigationBadge');
+  bool get explicitStorage => raw.containsKey('storage');
+  Set<String> get storageScopes => explicitStorage
+      ? Set<String>.from((raw['storage'] as Map)['scopes'] as List)
+      : {defaultStorageScope};
+  String get defaultStorageScope => explicitStorage
+      ? (raw['storage'] as Map)['default'] as String
+      : (capabilities.forum.isNotEmpty || tasks.isNotEmpty ||
+          capabilities.notifications || requiredFeatures.contains('navigationBadge'))
+          ? 'account' : 'shared';
+  bool get accountScoped => storageScopes.contains('account');
   List<String> get requiredFeatures => PluginFeatures.parse(raw['requiredFeatures']);
   List<String> get missingFeatures => PluginFeatures.missing(requiredFeatures);
   static const supportedApiVersions = {1, 2};
@@ -205,6 +214,8 @@ class MetaversePluginManifest {
     runtimeSupported,
     capabilities.approval,
     tasks.map((t) => t.id).toSet(),
+    storageScopes,
+    defaultStorageScope,
     links.map((r) => (r.host, r.path, r.page)).toList(),
   ];
   bool sameApprovalAs(MetaversePluginManifest other) =>
@@ -308,6 +319,21 @@ class MetaversePluginManifest {
       max: 16,
     );
     final identity = permissions['identity'] == true;
+    if (json.containsKey('storage')) {
+      final storage = json['storage'];
+      if (schema < 12 || apiVersion != 2 ||
+          !requiredFeatures.contains('storageScopes') ||
+          storage is! Map<String, dynamic> ||
+          storage.keys.any((key) => key != 'default' && key != 'scopes') ||
+          storage['scopes'] is! List || (storage['scopes'] as List).isEmpty ||
+          (storage['scopes'] as List).length > 2 ||
+          (storage['scopes'] as List).any((scope) => scope != 'shared' && scope != 'account') ||
+          (storage['scopes'] as List).toSet().length != (storage['scopes'] as List).length ||
+          !(storage['scopes'] as List).contains(storage['default']) ||
+          ((storage['scopes'] as List).contains('account') && !identity)) {
+        throw const MetaverseManifestException('storage', '声明 storageScopes、default 和 scopes；账号存储需要 identity');
+      }
+    }
     final MetaversePluginCapabilities capabilities;
     try {
       capabilities = MetaversePluginCapabilities.parse(
@@ -389,8 +415,8 @@ class MetaversePluginManifest {
         ),
       );
     }
-    if (pages.length > 16) {
-      throw const MetaverseManifestException('pages', '最多 16 个页面');
+    if (pages.length > 32 || (pages.length > 16 && !requiredFeatures.contains('extendedPages'))) {
+      throw const MetaverseManifestException('pages', '默认最多 16 个页面；声明 extendedPages 后最多 32 个');
     }
 
     if (json.containsKey('tasks') || permissions.containsKey('background') || permissions.containsKey('notifications') || requiredFeatures.contains('navigationBadge')) {
@@ -413,9 +439,11 @@ class MetaversePluginManifest {
     if (capabilities.forum.isNotEmpty && !requiredFeatures.contains(PluginFeature.forumRead.name)) {
       throw const MetaverseManifestException('requiredFeatures', '论坛读取须声明 forumRead');
     }
-    if (requiredFeatures.contains('accountDataMigration') && (!identity ||
-        (capabilities.forum.isEmpty && MetaverseTaskSpec.parse(json['tasks']).isEmpty &&
-            !capabilities.notifications && !requiredFeatures.contains('navigationBadge')))) {
+    final accountStorage = json['storage'] is Map
+        ? ((json['storage'] as Map)['scopes'] as List).contains('account')
+        : capabilities.forum.isNotEmpty || MetaverseTaskSpec.parse(json['tasks']).isNotEmpty ||
+            capabilities.notifications || requiredFeatures.contains('navigationBadge');
+    if (requiredFeatures.contains('accountDataMigration') && (!identity || !accountStorage)) {
       throw const MetaverseManifestException('requiredFeatures', '账号数据迁移需要 identity 和账号分区能力');
     }
     if (pages.any((page) => page.navigation != null) && !requiredFeatures.contains(PluginFeature.navigationEntries.name)) {

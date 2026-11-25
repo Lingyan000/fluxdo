@@ -249,6 +249,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
   Timer? _idleTimer;
   int _generation = 0;
   int? _accountAtStart;
+  bool _accountBound = false;
   String? _storageMigrationScript;
   Future<void>? _storageMigration;
   bool Function()? _taskActive;
@@ -473,6 +474,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   Future<void> _start(int generation) async {
     _accountAtStart = _delegate.currentAccountId();
+    _accountBound = true;
     try {
       await _delegate.prepareStart();
       if (!manifest.runtimeSupported) {
@@ -616,8 +618,18 @@ class MetaversePluginHost implements MetaversePluginBridge {
     }
   }
 
-  String _accountStorageKey(String key) {
-    if (!manifest.accountScoped) return key;
+  String _storageScope(Map<String, Object?> params) {
+    final scope = params['scope'] ?? manifest.defaultStorageScope;
+    if (scope is! String || !manifest.storageScopes.contains(scope) ||
+        (params.containsKey('scope') && !manifest.explicitStorage)) {
+      throw const MetaversePluginCallException('storage_scope_not_declared');
+    }
+    return scope;
+  }
+
+  String _accountStorageKey(String key, Map<String, Object?> params) {
+    if (_storageScope(params) == 'shared') return manifest.explicitStorage ? '@shared:$key' : key;
+    if (manifest.explicitStorage) _requirePermission(MetaversePluginPermission.identity);
     final account = _delegate.currentAccountId();
     if (account == null) throw const MetaversePluginCallException('forum_auth_required');
     return '@forum-account:$_accountAtStart:$key';
@@ -822,7 +834,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
 
   Future<Object?> _call(String method, Map<String, Object?> params) async {
     if (_retired) throw const PluginOperationCancelled();
-    if (manifest.accountScoped && _accountAtStart != _delegate.currentAccountId()) {
+    // 实例中可能缓存账号响应；共享存储不代表脚本可以跨账号继续运行。
+    if ((manifest.accountScoped || _accountBound) && _accountAtStart != _delegate.currentAccountId()) {
       throw const MetaversePluginCallException('forum_account_changed');
     }
     if (_taskActive != null && !_taskActive!()) throw const MetaversePluginCallException('task_cancelled');
@@ -841,7 +854,8 @@ class MetaversePluginHost implements MetaversePluginBridge {
         throw const MetaversePluginCallException('task_cancelled');
       }
     }
-    if (method.startsWith('storage.')) {
+    if (method.startsWith('storage.') && _storageScope(params) == 'account') {
+      if (manifest.explicitStorage) _requirePermission(MetaversePluginPermission.identity);
       await _ensureAccountMigration();
       checkActive();
     }
@@ -1032,7 +1046,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
         }
 
       case 'storage.get':
-        final key = _accountStorageKey(_storageKey(params));
+        final key = _accountStorageKey(_storageKey(params), params);
         final generation = _generation;
         final account = _delegate.currentAccountId();
         final data = await _store.readStorage(id);
@@ -1042,14 +1056,14 @@ class MetaversePluginHost implements MetaversePluginBridge {
         checkActive();
         return data[key];
       case 'storage.set':
-        return _writeStorage(_storageKey(params), params['value']);
+        return _writeStorage(_storageKey(params), params['value'], params);
       case 'storage.compareAndSet':
         if (!params.containsKey('expected') || !params.containsKey('value')) {
           throw const MetaversePluginCallException('storage_invalid_arguments');
         }
-        return _store.compareAndSet(id, _accountStorageKey(_storageKey(params)), params['expected'], params['value'], checkActive: checkActive);
+        return _store.compareAndSet(id, _accountStorageKey(_storageKey(params), params), params['expected'], params['value'], checkActive: checkActive);
       case 'storage.remove':
-        return _writeStorage(_storageKey(params), null);
+        return _writeStorage(_storageKey(params), null, params);
       case 'storage.setMany':
         final entries = params['entries'];
         if (entries is! Map<String, dynamic> || entries.length > 128) {
@@ -1059,7 +1073,7 @@ class MetaversePluginHost implements MetaversePluginBridge {
           _storageKey({'key': key});
         }
         try {
-          await _store.updateStorageEntries(id, entries.map((key, value) => MapEntry(_accountStorageKey(key), value)), isActive: () { checkActive(); return true; });
+          await _store.updateStorageEntries(id, entries.map((key, value) => MapEntry(_accountStorageKey(key, params), value)), isActive: () { checkActive(); return true; });
         } on StateError {
           throw const MetaversePluginCallException('存储空间已满');
         }
@@ -1349,10 +1363,10 @@ class MetaversePluginHost implements MetaversePluginBridge {
     return key;
   }
 
-  Future<Object?> _writeStorage(String key, Object? value) async {
+  Future<Object?> _writeStorage(String key, Object? value, Map<String, Object?> params) async {
     try {
       final generation = _generation, account = _delegate.currentAccountId();
-      await _store.updateStorage(id, _accountStorageKey(key), value, isActive: () => generation == _generation && account == _delegate.currentAccountId() && (_taskActive?.call() ?? true));
+      await _store.updateStorage(id, _accountStorageKey(key, params), value, isActive: () => generation == _generation && account == _delegate.currentAccountId() && (_taskActive?.call() ?? true));
     } on StateError {
       throw const MetaversePluginCallException('存储空间已满');
     }

@@ -454,6 +454,7 @@ class _DeveloperGuides extends StatelessWidget {
         l.metaverse_developerManifestGuide,
       ),
       (Symbols.code_rounded, 'main.js', l.metaverse_developerScriptGuide),
+      (Symbols.storage_rounded, l.metaverse_pluginData, l.metaverse_developerStorageGuide),
       (Symbols.apps_rounded, l.metaverse_developerNavigationTitle, l.metaverse_developerNavigationGuide),
       (Symbols.widgets_rounded, 'ui.rfwtxt', l.metaverse_developerUiGuide),
       (

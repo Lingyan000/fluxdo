@@ -57,5 +57,6 @@ console.log('SDK 类型与开发中心覆盖全部 '+actual.length+' 个公开�
 if(process.env.FLUXDO_PLUGIN_TOOLS){
  const tools=process.env.FLUXDO_PLUGIN_TOOLS;
  assert.equal(readFileSync(resolve(tools,'packages/sdk/testing/prelude.js'),'utf8').replaceAll('\r\n','\n'),prelude,'模拟宿主必须使用同版生产前导脚本');
+ assert.equal(readFileSync(resolve(tools,'packages/sdk/data/index.mjs'),'utf8').replaceAll('\r\n','\n'),readFileSync(new URL('test/fixtures/metaverse/sdk/data.mjs',root),'utf8').replaceAll('\r\n','\n'),'数据工具真实引擎夹具必须同步');
  assert.deepEqual(JSON.parse(readFileSync(resolve(tools,'packages/sdk/schema/components.json'),'utf8')),JSON.parse(readFileSync(new URL('test/fixtures/metaverse/sdk/components.json',root),'utf8')),'组件契约必须同步');
 }
