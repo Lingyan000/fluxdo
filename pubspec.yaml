@@ -23,6 +23,7 @@ workspace:
   - packages/enhanced_cookie_jar
   - packages/extended_image_lite
   - packages/fluxdo_js_runtime
+  - packages/fluxdo_ocr
   - packages/fluxdo_render
   - packages/m3e_ui
   - packages/pangutext
@@ -134,6 +135,9 @@ dependencies:
   jni: ^1.1.2
   package_info_plus: ^10.2.2
   pro_image_editor: ^14.29.0
+  fluxdo_ocr:
+    path: packages/fluxdo_ocr
+  yaml: ^3.1.4
   flutter_image_compress: ^2.5.1
   image: ^4.13.1
   flutter_math_fork: ^0.7.4

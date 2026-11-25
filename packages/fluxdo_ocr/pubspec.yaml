@@ -1,0 +1,16 @@
+name: fluxdo_ocr
+description: FluxDO 图片识字使用的 ONNX Runtime CPU 推理接口。
+publish_to: none
+resolution: workspace
+version: 0.1.0
+
+environment:
+  sdk: ^3.14.0
+
+dependencies:
+  archive: ^4.7.1
+  code_assets: ^2.2.0
+  crypto: ^3.0.8
+  ffi: ^2.2.0
+  hooks: ^2.2.0
+  native_toolchain_c: ^0.19.6
