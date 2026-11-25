@@ -66,6 +66,106 @@ void main() {
   const form = '''FormPage(fields: data.fields, resetKey: data.resetKey,
     loading: data.loading, onChanged: event "change" {}, onSubmit: event "submit" {})''';
 
+  const timeline = '''TimelinePage(identity: data.identity,
+    itemKeys: [...for item in data.items: item.id],
+    items: [...for item in data.items: SizedBox(height: 80.0, child: Label(text: item.id))],
+    hasMore: data.more, loadingMore: data.loadingMore, error: data.error,
+    endRevision: data.endRevision, onLoadMore: event "more" {}, onRetry: event "retry" {},
+    footer: TextInput(value: data.draft, hint: "消息", variant: "filled", minLines: 1,
+      maxLines: 4, maxLength: 10, showCounter: false, readOnly: data.busy, onChanged: event "input" {}))''';
+
+  testWidgets('时间线首次定位、历史追加和新消息保留阅读位置，主动操作回到最新', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var rows = [for (var i = 40; i > 0; i--) {'id': '记录 $i'}];
+    data.updateAll({'identity': 'one', 'items': rows, 'more': true});
+    await show(tester, timeline);
+    await tester.pumpAndSettle();
+    final list = find.byType(ListView);
+    final controller = tester.widget<ListView>(list).controller!;
+    expect(controller.offset, 0);
+    expect(find.text('记录 40').hitTestable(), findsOneWidget);
+    expect(events, isEmpty);
+    controller.jumpTo(600);
+    await tester.pumpAndSettle();
+    final anchor = find.text('记录 30');
+    final before = tester.getTopLeft(anchor).dy;
+    rows = [...rows, {'id': '记录 0'}];
+    data.update('items', rows);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(anchor).dy, closeTo(before, 1));
+    rows = [{'id': '记录 42'}, {'id': '记录 41'}, ...rows];
+    data.update('items', rows);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(anchor).dy, closeTo(before, 1));
+    expect(find.text(S.current.metaverse_timelineLatest), findsOneWidget);
+    data.update('endRevision', 1);
+    await tester.pumpAndSettle();
+    expect(controller.offset, 0);
+    expect(find.text('记录 42').hitTestable(), findsOneWidget);
+    controller.jumpTo(400);
+    await tester.pumpAndSettle();
+    data.update('identity', 'two');
+    data.update('items', [{'id': '另一会话'}]);
+    await tester.pumpAndSettle();
+    expect(controller.offset, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('时间线短内容上滑历史分页只触发一次，错误可重试', (tester) async {
+    data.updateAll({'items': [{'id': '一条记录'}], 'more': true});
+    await show(tester, timeline);
+    await tester.drag(find.byType(ListView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    expect(events.where((e) => e.name == 'more'), hasLength(1));
+    data.update('error', '历史加载失败');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(S.current.common_retry));
+    expect(events.last.name, 'retry');
+    data.update('error', '');
+    data.update('loadingMore', true);
+    await tester.pump();
+    data.update('loadingMore', false);
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    expect(events.where((e) => e.name == 'more'), hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('输入随内容增高、按可见字符限制、发送只读与键盘安全区', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewInsets);
+    data.update('items', [{'id': '最新记录'}]);
+    await show(tester, timeline, scale: 1.5);
+    final input = find.byType(TextField);
+    final initial = tester.getSize(input).height;
+    await tester.enterText(input, '一\n二\n三');
+    await tester.pumpAndSettle();
+    expect(tester.getSize(input).height, greaterThan(initial));
+    await tester.enterText(input, '😀' * 12);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(input).controller!.text, '😀' * 10);
+    data.update('busy', true);
+    await tester.pump();
+    expect(tester.widget<TextField>(input).readOnly, isTrue);
+    expect(tester.getRect(input).bottom, lessThanOrEqualTo(666));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(input).bottom, lessThanOrEqualTo(420));
+    expect(find.text('最新记录').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('表单校验必填、回传原生字段并在加载时禁用', (tester) async {
     data.update('fields', [
       {'name': 'title', 'label': '标题', 'required': true},

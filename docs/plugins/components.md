@@ -41,6 +41,7 @@ widget SearchPage = PageLayout(
 | 组件 | 参数与默认值 | 事件及行为 |
 | --- | --- | --- |
 | `PageLayout` | `children`、可选 `toolbar`、`footer`、`loading: false`、`hasMore: false`、`loadingMore: false`、`loadMoreError: ""` | `onRefresh`、`onLoadMore`。有界页面提供滚动内容和底部操作区域，最大内容宽度 960。刷新完成需把 loading 改回 false |
+| `TimelinePage` | `identity`、`items`、`itemKeys`、`header`、`footer`、`loadingPlaceholder`、`loading`、`loadingMore`、`hasMore`、`error`、`emptyTitle`、`moreLabel`、`endRevision` | `onLoadMore`、`onRetry`。需要 `timelinePages`，使用下方时间线顺序与定位约定 |
 | `ListPage` | `items`、可选 `toolbar`、`search`、`header`、`actions`、`emptyTitle`、`error`、`loading: false`、`hasMore: false`、`loadingMore: false`、`moreLabel` | `onRefresh`、`onRetry`、`onLoadMore`。分组列表按需构建，上滑接近底部时加载下一页，也保留手动加载入口，刷新保留已有条目 |
 | `DetailPage` | `sections`、可选 `toolbar`、`header`、`actions`、`emptyTitle`、`error`、`loading: false` | `onRefresh`、`onRetry`。分区间距与底部操作由页面管理，刷新保留已有内容 |
 | `FormPage` | `fields`、`resetKey: ""`、`loading: false`、可选 `header`、`actions`、`submitLabel` | `onChanged` 回传 `{field, value}`，校验通过后 `onSubmit` 回传 `{values}`。加载期间禁用输入与提交 |
@@ -70,7 +71,7 @@ widget SearchPage = PageLayout(
 | `Gap` | `size: 8` | 宽高相等的空白 |
 | `Toggle` | `value: false` | `onChanged` 追加 `{value: bool}` |
 | `SearchInput` | `value: ""`、`hint` | `onChanged`、`onSubmitted` 追加 `{value: string}`。清空按钮同时触发两者，提交后收起输入焦点 |
-| `TextInput` | `value: ""`、`label`、`hint`、`obscure: false`、`maxLines: 1` | `onChanged`、`onSubmitted` 追加 `{value: string}`。obscure 强制单行 |
+| `TextInput` | `value: ""`、`label`、`hint`、`obscure: false`、`minLines`、`maxLines: 1`、`maxLength`、`variant: "standard"`、`enabled: true`、`readOnly: false`、`showCounter: true` | `onChanged`、`onSubmitted` 追加 `{value: string}`。obscure 强制单行；`filled` 使用公共输入框外壳；设置 minLines 后随输入增高。扩展选项要求 `inputOptions` |
 
 `Label.style` 支持 displaySmall、headlineLarge、headlineMedium、headlineSmall、titleLarge、titleMedium、titleSmall、bodyLarge、bodyMedium、bodySmall、labelLarge、labelMedium、labelSmall。
 
@@ -243,3 +244,13 @@ widget Market = GridPage(layout: "equalHeight", minTileWidth: 150.0,
 
 页面滚动区延伸至系统手势区域，末尾 padding 保护最后一项；固定底部操作在手势区域上方。
 空的底部插槽不会保留操作栏间距。普通声明式页面由宿主提供安全间距，不需要再包整页 SafeArea。
+
+### 时间线
+
+`TimelinePage` 接收从新到旧排列的 `items`，并以相同顺序传入唯一、稳定的字符串 `itemKeys`。最新项位于屏幕底部，追加历史放在数组末尾。组件只负责显示、定位与分页触发；网络协议、消息身份和发送资格均由插件负责。清单页面使用 `scroll: false`，不要再套滚动容器。
+
+更换会话或查询时修改 `identity`，以重置定位。位于最新位置时自动跟随内容与键盘高度变化；正在查看历史时保留可见条目的位置，显示“回到最新”按钮。主动发送成功等操作可递增 `endRevision` 回到末尾，轮询、加载历史和只读刷新不应修改它。移除正在阅读的条目时只能保留其余可见条目的位置，不保证已经被删除的锚点。
+
+向历史方向滑动到边界时触发 `onLoadMore`，内容不足一屏也支持继续滑动。插件需回写 `loadingMore`、`hasMore` 和 `error`，失败不会循环请求。初次加载可提供等高的 `loadingPlaceholder`，空态和错误通过 `emptyTitle`、`error`、`onRetry` 呈现。
+
+`footer` 复用统一底部背景、最大宽度及安全区，不应再加一层整栏内边距。多行编辑建议使用 `TextInput(variant: "filled", minLines: 1, maxLines: 4, maxLength: 500)`；发送期间可设 `readOnly: true` 保留焦点和草稿，避免禁用输入导致键盘收起。`maxLength` 按用户可见字符限制，业务仍需校验服务端长度规则。

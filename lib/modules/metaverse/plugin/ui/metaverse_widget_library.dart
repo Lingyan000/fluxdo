@@ -31,6 +31,7 @@ part 'metaverse_form_component.dart';
 part 'metaverse_tile_grid.dart';
 part 'metaverse_grid_page.dart';
 part 'metaverse_content_components.dart';
+part 'metaverse_timeline_page.dart';
 
 /// rfw 里宿主组件库的名字：插件界面描述用 `import fluxdo;` 引入。
 const metaverseWidgetLibraryName = LibraryName(<String>['fluxdo']);
@@ -589,6 +590,12 @@ Map<String, LocalWidgetBuilder> _hostWidgets(
     hint: source.v<String>(['hint']),
     obscure: source.v<bool>(['obscure']) == true,
     maxLines: source.v<int>(['maxLines']) ?? 1,
+    minLines: source.v<int>(['minLines']),
+    maxLength: source.v<int>(['maxLength']),
+    filled: source.v<String>(['variant']) == 'filled',
+    enabled: source.v<bool>(['enabled']) ?? true,
+    readOnly: source.v<bool>(['readOnly']) ?? false,
+    showCounter: source.v<bool>(['showCounter']) ?? true,
     onChanged: source.handler(
       ['onChanged'],
       (HandlerTrigger trigger) =>
@@ -616,6 +623,7 @@ class _PluginPageLayout extends StatefulWidget {
     this.hasMore = false,
     this.loadingMore = false,
     this.loadMoreError = '',
+    this.body,
   });
   final List<Widget> children;
   final Widget? toolbar;
@@ -630,6 +638,7 @@ class _PluginPageLayout extends StatefulWidget {
   final bool hasMore;
   final bool loadingMore;
   final String loadMoreError;
+  final Widget? body;
   @override
   State<_PluginPageLayout> createState() => _PluginPageLayoutState();
 }
@@ -751,6 +760,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
       if (!constraints.hasBoundedHeight) {
         return Column(mainAxisSize: MainAxisSize.min, children: [?widget.toolbar, scroll, ?widget.footer]);
       }
+      if (widget.body != null) scroll = widget.body!;
       if (widget.onRefresh != null) {
         scroll = M3eRefreshIndicator(
           onRefresh: () {
@@ -782,7 +792,10 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             PageBackdrop(
               child: _PluginOptionalPadding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
-                child: widget.footer,
+                child: Center(heightFactor: 1, child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 928),
+                  child: SizedBox(width: double.infinity, child: widget.footer),
+                )),
               ),
             ),
         ],
@@ -964,6 +977,12 @@ class _PluginTextInput extends StatefulWidget {
     required this.maxLines,
     required this.onChanged,
     required this.onSubmitted,
+    this.minLines,
+    this.maxLength,
+    this.filled = false,
+    this.enabled = true,
+    this.readOnly = false,
+    this.showCounter = true,
   });
 
   final String value;
@@ -972,6 +991,12 @@ class _PluginTextInput extends StatefulWidget {
   final String? hint;
   final bool obscure;
   final int maxLines;
+  final int? minLines;
+  final int? maxLength;
+  final bool filled;
+  final bool enabled;
+  final bool readOnly;
+  final bool showCounter;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
@@ -1031,17 +1056,31 @@ class _PluginTextInputState extends State<_PluginTextInput> {
         onSubmitted: _submitSearch,
       ));
     }
-    return TextField(
+    final maxLines = widget.obscure ? 1 : widget.maxLines.clamp(1, 20);
+    final field = TextField(
       controller: _controller,
       obscureText: widget.obscure,
-      maxLines: widget.obscure ? 1 : widget.maxLines,
+      enabled: widget.enabled,
+      readOnly: widget.readOnly,
+      minLines: widget.minLines?.clamp(1, maxLines),
+      maxLines: maxLines,
+      maxLength: widget.maxLength?.clamp(1, 10000),
+      textAlignVertical: TextAlignVertical.center,
+      style: Theme.of(context).textTheme.bodyLarge,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
       decoration: InputDecoration(
         labelText: widget.label,
         hintText: widget.hint,
+        counterText: widget.showCounter ? null : '',
+        isDense: widget.filled,
+        contentPadding: widget.filled
+            ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+            : null,
+        visualDensity: widget.filled ? VisualDensity.standard : null,
       ),
     );
+    return widget.filled ? InputFieldShell(child: field) : field;
   }
 
   void _submitSearch(String value) {

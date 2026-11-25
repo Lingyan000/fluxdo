@@ -33,6 +33,8 @@ enum PluginFeature {
   accountDataMigration,
   storageScopes,
   extendedPages,
+  timelinePages,
+  inputOptions,
 }
 
 class PluginFeatures {

@@ -65,6 +65,14 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
       previewHeight: 360,
     ),
     MetaverseComponentExample(
+      'TimelinePage',
+      description: l.metaverse_componentTimelinePage,
+      'TimelinePage(identity: "preview", itemKeys: ["new", "old"], items: [Surface(child: Label(text: data.title)), Padding(padding: [0.0, 0.0, 0.0, 12.0], child: Surface(child: Label(text: data.message)))], hasMore: data.hasMore, loadingMore: data.loadingMore, endRevision: data.endRevision, onLoadMore: event "loadMore" {}, footer: TextInput(value: data.value, hint: data.title, variant: "filled", minLines: 1, maxLines: 4, onChanged: event "change" {}))',
+      {...title, 'value': '', 'hasMore': true, 'loadingMore': false, 'endRevision': 0},
+      ranges: {'endRevision': (0, 10)},
+      previewHeight: 400,
+    ),
+    MetaverseComponentExample(
       'ListPage',
       description: l.metaverse_componentListPage,
       'ListPage(loading: data.loading, loadingMore: data.loadingMore, error: data.error, emptyTitle: data.emptyTitle, moreLabel: data.moreLabel, onRetry: event "retry" {}, hasMore: data.hasMore, onRefresh: event "refresh" {}, onLoadMore: event "loadMore" {}, toolbar: SearchInput(value: data.value, hint: data.title, onChanged: event "change" {}), items: [ListItem(title: data.title, subtitle: data.message, onTap: event "open" {id: "one"}), ListItem(title: data.message, onTap: event "open" {id: "two"})])',
@@ -279,8 +287,11 @@ List<MetaverseComponentExample> metaverseComponentExamples(AppLocalizations l) {
     MetaverseComponentExample(
       'TextInput',
       description: l.metaverse_componentTextInput,
-      'TextInput(value: data.value, label: data.label, hint: data.hint, obscure: data.obscure, maxLines: data.maxLines, onChanged: event "change" {}, onSubmitted: event "submit" {})',
-      {...label, 'value': '', 'hint': '', 'obscure': false, 'maxLines': 1},
+      'TextInput(value: data.value, label: data.label, hint: data.hint, obscure: data.obscure, minLines: data.minLines, maxLines: data.maxLines, maxLength: data.maxLength, variant: data.variant, enabled: data.enabled, readOnly: data.readOnly, showCounter: data.showCounter, onChanged: event "change" {}, onSubmitted: event "submit" {})',
+      {...label, 'value': '', 'hint': '', 'obscure': false, 'minLines': 1, 'maxLines': 4,
+        'maxLength': 500, 'variant': 'filled', 'enabled': true, 'readOnly': false, 'showCounter': true},
+      options: {'variant': ['standard', 'filled']},
+      ranges: {'minLines': (1, 5), 'maxLines': (1, 10), 'maxLength': (1, 500)},
     ),
   ];
 }

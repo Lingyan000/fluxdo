@@ -1831,7 +1831,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
                   ),
                   data: DynamicContent({ ...data,
                     'favoriteLabel':'收藏商品','canComment':true,'buyerError':'','buyerBusy':false,
-                    if(name=='Chat') ...{'chatRows':[{'id':'1','mine':false,'system':false,'author':'participant','content':'I am looking for this tool.','time':'2026-11-25T04:00:00Z'},{'id':'2','mine':true,'system':false,'author':'tester','content':'Let me check.','time':'2026-11-25T04:01:00Z'}], 'chatDraft':'','chatError':'','chatState':'洽谈中','chatOrder':'','canSend':true,'chatSending':false,'chatMore':true},
+                    if(name=='Chat') ...{'chatIdentity':'12','chatKeys':['2','1'],'chatRows':[{'id':'2','mine':true,'system':false,'author':'tester','content':'我看一下，稍后回复你。','time':'2026-11-25T04:01:00Z'},{'id':'1','mine':false,'system':false,'author':'lin','content':'你好，这个工具支持多个设备吗？','time':'2026-11-25T04:00:00Z'}], 'chatDraft':'','chatError':'','chatReady':true,'chatState':'洽谈中','chatOrder':'','canSend':true,'chatSendEnabled':false,'chatSending':false,'chatMore':true},
                     if(name=='Chats') 'rows':[{'id':'12','requestId':'7','title':'开发者工具','name':'participant','summary':'有新进展','state':'洽谈中','unread':true}],
                     'canApply':true,'refundState':'申请售后','refundAmount':'',
                     'refundMessage':'如商品存在问题，可以申请退款。','deadline':'',
@@ -1871,6 +1871,8 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
                 'Filters' => '筛选与排序',
                 'Account' => '我的士多',
                 'Messages' => '系统消息',
+                'Chat' => '开发工具授权',
+                'Chats' => '求购洽谈',
                 _ => 'LD士多',
               },
               brightness: brightness,
@@ -1886,13 +1888,28 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
           if (name == 'Chat') {
             expect(find.text('发送'), findsOneWidget);
             expect(find.text('加载更早消息'), findsOneWidget);
-            final theirs = find.ancestor(of: find.text('I am looking for this tool.'), matching: find.byType(AnimatedAlign));
-            final mine = find.ancestor(of: find.text('Let me check.'), matching: find.byType(AnimatedAlign));
+            final theirs = find.ancestor(of: find.text('你好，这个工具支持多个设备吗？'), matching: find.byType(AnimatedAlign)).first;
+            final mine = find.ancestor(of: find.text('我看一下，稍后回复你。'), matching: find.byType(AnimatedAlign)).first;
             expect(tester.widget<AnimatedAlign>(theirs).alignment, Alignment.centerLeft);
             expect(tester.widget<AnimatedAlign>(mine).alignment, Alignment.centerRight);
+            expect(find.byType(InputFieldShell), findsOneWidget);
+            expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
           }
           if (width == 390) {
             await snapshot(tester, '${name.toLowerCase()}-${brightness.name}');
+          }
+          if (name == 'Chat') {
+            tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+            await tester.enterText(find.byType(TextField), '想确认一下设备数量。\n谢谢！');
+            await tester.pumpAndSettle();
+            final input = tester.getRect(find.byType(TextField));
+            expect(input.bottom, lessThanOrEqualTo(544));
+            expect(input.left, closeTo(16, 1));
+            expect(tester.getRect(find.text('我看一下，稍后回复你。')).bottom, lessThan(input.top));
+            await snapshot(tester, 'chat-keyboard-${width.toInt()}-${brightness.name}');
+            tester.view.resetViewInsets();
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
           }
           if (name == 'Product') {
             final buy = find.widgetWithText(FilledButton, '立即兑换');

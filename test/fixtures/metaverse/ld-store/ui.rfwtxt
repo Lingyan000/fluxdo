@@ -427,24 +427,35 @@ widget Reminders = Column(crossAxisAlignment: "stretch", children: [
 
 widget Chats = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
   error: data.error, emptyTitle: data.i18n.s67ae84e7d6e725ce, onRefresh: event "chatsRefresh" {}, onRetry: event "chatsRefresh" {}, onLoadMore: event "chatsMore" {},
-  toolbar: SearchInput(value: data.search, hint: data.i18n.sa1d2eeb92daadfb2, onChanged: event "chatsSearch" {}, onSubmitted: event "chatsRefresh" {}),
+  toolbar: SearchInput(value: data.search, hint: data.i18n.sfeb95554de093549, onChanged: event "chatsSearch" {}, onSubmitted: event "chatsRefresh" {}),
   header: Column(children: [BuyerLogin(), switch data.chatsChanged {true: Button(label: data.i18n.s5fb4d306840d8230, variant: "tonal", onPressed: event "chatsRefresh" {}), default: SizedBoxShrink()}]),
   items: [...for row in data.rows: ContentRow(title: row.title, summary: row.summary, meta: row.name, leading: Avatar(label: row.name),
     detail: Column(mainAxisSize: "min", children: [Chip(label: row.state), switch row.unread {true: Label(text: data.i18n.s4d0680f9efaef147, color: "primary", style: "labelSmall"), default: SizedBoxShrink()}]), onTap: event "chatOpen" {id: row.id})]
 );
 widget ChatActions = Row(mainAxisSize: "min", children: [IconButton(icon: "refresh", tooltip: data.i18n.sa4298ff38b78934f, loading: data.loading, onPressed: event "chatRefresh" {})]);
-widget Chat = PageLayout(loading: data.loading, onRefresh: event "chatRefresh" {},
-  footer: switch data.canSend {true: Padding(padding: [16.0, 8.0, 16.0, 8.0], child: Row(crossAxisAlignment: "end", children: [
-    Expanded(child: TextInput(value: data.chatDraft, hint: data.i18n.sdb22e2ae145b6715, maxLines: 2, onChanged: event "chatInput" {})), Gap(size: 8),
-    Button(label: data.i18n.sedecf0ae6e5144f9, loading: data.chatSending, onPressed: event "chatSend" {})])), default: SizedBoxShrink()},
-  children: [BuyerLogin(), Wrap(spacing: 8.0, children: [Chip(label: data.chatState), switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}]),
-    switch data.chatError {"": SizedBoxShrink(), default: Label(text: data.chatError, color: "error")},
-    switch data.chatMore {true: Button(label: data.i18n.s5bf3f2d2f4f7ad09, variant: "text", loading: data.loadingMore, onPressed: event "chatOlder" {}), default: SizedBoxShrink()},
+widget ChatSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", children: [
+  Align(alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(width: 220, height: 72, radius: 16)), Gap(size: 16),
+  Align(alignment: {x: 1.0, y: 0.0}, child: SkeletonBox(width: 160, height: 56, radius: 16)),
+]));
+widget Chat = TimelinePage(identity: data.chatIdentity, itemKeys: data.chatKeys,
+  loading: data.loading, loadingPlaceholder: ChatSkeleton(), emptyTitle: data.i18n.se29432d115e1ae1a, error: data.chatError,
+  onRetry: event "chatRefresh" {}, hasMore: data.chatMore, loadingMore: data.loadingMore,
+  moreLabel: data.i18n.s5bf3f2d2f4f7ad09, onLoadMore: event "chatOlder" {}, endRevision: data.chatEndRevision,
+  header: Column(crossAxisAlignment: "stretch", children: [BuyerLogin(), Wrap(spacing: 8.0, crossAxisAlignment: "center", children: [
+    switch data.chatReady {true: Chip(label: data.chatState), default: SizedBoxShrink()},
+    switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}])]),
+  footer: switch data.canSend {true: Row(crossAxisAlignment: "end", children: [
+    Expanded(child: TextInput(value: data.chatDraft, hint: data.i18n.sa410452649b38b31, variant: "filled", minLines: 1, maxLines: 4,
+      maxLength: 500, showCounter: false, readOnly: data.chatSending, onChanged: event "chatInput" {})), Gap(size: 8),
+    Button(label: data.i18n.sedecf0ae6e5144f9, enabled: data.chatSendEnabled, loading: data.chatSending, onPressed: event "chatSend" {})]), default: SizedBoxShrink()},
+  items: [
     ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: {x: switch message.system {true: 0.0, default: switch message.mine {true: 1.0, default: -1.0}}, y: 0.0}, child:
-      Surface(color: switch message.mine {true: "secondaryContainer", default: "surfaceContainerLow"}, child: Column(mainAxisSize: "min", crossAxisAlignment: "start", children: [
-        switch message.system {true: SizedBoxShrink(), default: Label(text: message.author, style: "labelMedium", color: "onSurfaceVariant")},
-        SelectableLabel(text: message.content), Gap(size: 6), RelativeTime(value: message.time)
-      ]))))
+      FractionallySizedBox(widthFactor: 0.88, alignment: {x: switch message.mine {true: 1.0, default: -1.0}, y: 0.0}, child:
+        Align(alignment: {x: switch message.mine {true: 1.0, default: -1.0}, y: 0.0}, child:
+          Surface(padding: [14.0, 10.0], color: switch message.mine {true: "secondaryContainer", default: "surfaceContainerLow"}, child: Column(mainAxisSize: "min", crossAxisAlignment: "start", children: [
+            switch message.system {true: SizedBoxShrink(), default: switch message.mine {true: SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 4.0], child: Label(text: message.author, style: "labelMedium", color: "onSurfaceVariant"))}},
+            SelectableLabel(text: message.content), Gap(size: 6), RelativeTime(value: message.time)
+          ]))))))
   ]
 );
 

@@ -1680,22 +1680,37 @@ const metaverseComponentContract = {
   },
   "TextInput": {
     "parameters": [
+      "enabled",
       "hint",
       "label",
+      "maxLength",
       "maxLines",
+      "minLines",
       "obscure",
       "onChanged",
       "onSubmitted",
-      "value"
+      "readOnly",
+      "showCounter",
+      "value",
+      "variant"
     ],
     "types": {
+      "enabled": [
+        "boolean"
+      ],
       "hint": [
         "string"
       ],
       "label": [
         "string"
       ],
+      "maxLength": [
+        "integer"
+      ],
       "maxLines": [
+        "integer"
+      ],
+      "minLines": [
         "integer"
       ],
       "obscure": [
@@ -1707,7 +1722,16 @@ const metaverseComponentContract = {
       "onSubmitted": [
         "event"
       ],
+      "readOnly": [
+        "boolean"
+      ],
+      "showCounter": [
+        "boolean"
+      ],
       "value": [
+        "string"
+      ],
+      "variant": [
         "string"
       ]
     }
@@ -1739,6 +1763,75 @@ const metaverseComponentContract = {
       "spacing": [
         "integer",
         "number"
+      ]
+    }
+  },
+  "TimelinePage": {
+    "parameters": [
+      "emptyTitle",
+      "endRevision",
+      "error",
+      "footer",
+      "hasMore",
+      "header",
+      "identity",
+      "itemKeys",
+      "items",
+      "loading",
+      "loadingMore",
+      "loadingPlaceholder",
+      "moreLabel",
+      "onLoadMore",
+      "onRetry"
+    ],
+    "types": {
+      "emptyTitle": [
+        "string"
+      ],
+      "endRevision": [
+        "integer"
+      ],
+      "error": [
+        "string"
+      ],
+      "footer": [
+        "widget"
+      ],
+      "hasMore": [
+        "boolean"
+      ],
+      "header": [
+        "widget"
+      ],
+      "identity": [
+        "string"
+      ],
+      "itemKeys": [
+        "list"
+      ],
+      "itemKeys.*": [
+        "string"
+      ],
+      "items": [
+        "list"
+      ],
+      "loading": [
+        "boolean"
+      ],
+      "loadingMore": [
+        "boolean"
+      ],
+      "loadingPlaceholder": [
+        "widget"
+      ],
+      "moreLabel": [
+        "string"
+      ],
+      "onLoadMore": [
+        "event"
+      ],
+      "onRetry": [
+        "event"
       ]
     }
   },

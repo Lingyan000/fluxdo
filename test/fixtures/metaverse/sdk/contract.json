@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.15.0",
+  "sdkVersion": "0.16.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,
@@ -41,7 +41,9 @@
     "manifestLocalization",
     "accountDataMigration",
     "storageScopes",
-    "extendedPages"
+    "extendedPages",
+    "timelinePages",
+    "inputOptions"
   ],
   "limits": {
     "manifestBytes": 32768,
@@ -53,5 +55,5 @@
     "repository": "Lingyan000/fluxdo",
     "commit": "db710de2065c7da9e4a2cc351620766e136b6115"
   },
-  "typesSha256": "5ae49b478e5aa90d8fc39a1075f1942543181b9fae88d3220952c58553204ae9"
+  "typesSha256": "0206778ac0add72e000fe29cca1d904562c0753dc31daf1e6ec57afc40f8d8d2"
 }

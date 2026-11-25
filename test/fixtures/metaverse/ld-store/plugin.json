@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.8.1",
+  "version": "2.9.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -279,7 +279,9 @@
     "manifestLocalization",
     "accountDataMigration",
     "storageScopes",
-    "extendedPages"
+    "extendedPages",
+    "timelinePages",
+    "inputOptions"
   ],
   "tasks": [
     {

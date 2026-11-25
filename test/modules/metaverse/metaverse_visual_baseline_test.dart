@@ -28,6 +28,44 @@ void main() {
         .load();
   });
   for (final brightness in Brightness.values) {
+    for (final width in [320.0, 800.0]) {
+      testWidgets('时间线输入基线 ${brightness.name} $width', (tester) async {
+        tester.view.physicalSize = Size(width, 720);
+        tester.view.devicePixelRatio = 1;
+        tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetViewInsets);
+        final runtime = Runtime()
+          ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+          ..update(metaversePluginLibraryName, parseLibraryFile('''
+            import fluxdo;
+            widget Main = TimelinePage(identity: "example", itemKeys: ["2", "1"],
+              header: Label(text: "Conversation", style: "titleMedium"),
+              footer: Row(crossAxisAlignment: "end", children: [
+                Expanded(child: TextInput(value: "A longer message\\nReady to send", variant: "filled", minLines: 1, maxLines: 4, maxLength: 500, showCounter: false)), Gap(size: 8),
+                Button(label: "Send", onPressed: event "send" {})]),
+              items: [
+                Padding(padding: [0.0, 6.0], child: Align(alignment: {x: 1.0, y: 0.0}, child: Surface(color: "secondaryContainer", child: Label(text: "Thanks!")))),
+                Padding(padding: [0.0, 6.0], child: Align(alignment: {x: -1.0, y: 0.0}, child: Surface(child: Label(text: "You can use it on two devices."))))
+              ]);
+          '''));
+        addTearDown(runtime.dispose);
+        final key = GlobalKey();
+        await tester.pumpWidget(TranslationProvider(child: MaterialApp(
+          theme: ThemeData(fontFamily: 'PluginBaseline', colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: brightness), extensions: const [UiShapes.standard]),
+          builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(width == 320 ? 1.4 : 1)), child: child!),
+          home: RepaintBoundary(key: key, child: Scaffold(body: RemoteWidget(runtime: runtime,
+            widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Main'), data: DynamicContent()))),
+        )));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(tester.getRect(find.byType(TextField)).bottom, lessThanOrEqualTo(480));
+        if (Platform.environment['PLUGIN_GOLDENS'] == '1') {
+          await expectLater(find.byKey(key), matchesGoldenFile('goldens/timeline-${brightness.name}-${width.toInt()}.png'));
+        }
+      });
+    }
     for (final width in [390.0, 800.0]) {
       for (final loading in [true, false]) {
         testWidgets('插件布局基线 ${brightness.name} $width loading=$loading', (

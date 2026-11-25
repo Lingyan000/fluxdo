@@ -2,6 +2,24 @@ part of 'metaverse_widget_library.dart';
 
 /// 页面级组件沿用公共页面外壳，数据与操作由插件传入。
 Map<String, LocalWidgetBuilder> _pageWidgets() => {
+  'TimelinePage': (context, source) => _PluginTimelinePage(
+    identity: source.v<String>(['identity']) ?? '',
+    items: source.childList(['items']),
+    itemKeys: [for (var i = 0; i < source.length(['itemKeys']); i++)
+      source.v<String>(['itemKeys', i]) ?? ''],
+    loading: source.v<bool>(['loading']) == true,
+    loadingMore: source.v<bool>(['loadingMore']) == true,
+    hasMore: source.v<bool>(['hasMore']) == true,
+    error: source.v<String>(['error']) ?? '',
+    endRevision: source.v<int>(['endRevision']) ?? 0,
+    header: source.optionalChild(['header']),
+    footer: source.optionalChild(['footer']),
+    loadingPlaceholder: source.optionalChild(['loadingPlaceholder']),
+    emptyTitle: source.v<String>(['emptyTitle']),
+    moreLabel: source.v<String>(['moreLabel']),
+    onLoadMore: source.voidHandler(['onLoadMore']),
+    onRetry: source.voidHandler(['onRetry']),
+  ),
   'FormPage': (context, source) {
     final fields = _readFormFields(source);
     if (fields == null) {

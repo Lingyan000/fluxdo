@@ -147,6 +147,8 @@
   "metaverse_componentToggle": "開關 · 切換布林值並回傳事件",
   "metaverse_componentSearchInput": "搜尋框 · 輸入、清除與提交查詢",
   "metaverse_componentTextInput": "輸入框 · 文字輸入與隱藏字元",
+  "metaverse_componentTimelinePage": "時間軸 · 最新內容、歷史分頁與閱讀位置保留",
+  "metaverse_timelineLatest": "回到最新",
   "metaverse_developerLanguageTitle": "JavaScript 與原生介面",
   "metaverse_developerLanguageGuide": "插件使用 JavaScript 編寫業務，透過 fluxdo API 呼叫應用程式能力。ui.rfwtxt 將資料與互動綁定到原生元件。Dart 實作宿主與能力橋接。",
   "metaverse_developerTypeScriptGuide": "TypeScript 可在開發時編譯為 JavaScript，再打包 main.js。目前尚未提供 TypeScript 類型宣告和建置範本。",

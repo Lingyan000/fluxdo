@@ -147,6 +147,8 @@
   "metaverse_componentToggle": "Toggle · Change a boolean and emit an event",
   "metaverse_componentSearchInput": "Search input · Enter, clear and submit a query",
   "metaverse_componentTextInput": "Text input · Text entry and obscured characters",
+  "metaverse_componentTimelinePage": "Timeline · Latest entries, history and reading position",
+  "metaverse_timelineLatest": "Jump to latest",
   "metaverse_developerLanguageTitle": "JavaScript and native UI",
   "metaverse_developerLanguageGuide": "Plugins implement business logic in JavaScript and call app capabilities through the fluxdo API. ui.rfwtxt binds data and events to native components. Dart implements the host and capability bridge.",
   "metaverse_developerTypeScriptGuide": "TypeScript can be compiled to JavaScript before packaging main.js. Type declarations and a TypeScript build template are not yet provided.",
