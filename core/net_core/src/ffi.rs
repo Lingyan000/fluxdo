@@ -67,29 +67,39 @@ type EventCallback = extern "C" fn(u64, u8, *mut u8, usize);
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static CORE: Mutex<Option<Arc<Core>>> = Mutex::new(None);
+/// 串行化核心启停与复用检查，避免同进程多 isolate 并发停监听/绑同一端口竞态。
+static LIFECYCLE_LOCK: Mutex<()> = Mutex::new(());
 static CALLBACK: HostCallback<EventCallback> = HostCallback::new();
+/// 按宿主 id 隔离的事件回调表：同进程内多个 Dart isolate 互不覆盖回调。
+static HOST_CALLBACKS: Mutex<Option<HashMap<u64, Arc<HostCallback<EventCallback>>>>> =
+    Mutex::new(None);
+static NEXT_HOST_ID: AtomicU64 = AtomicU64::new(1);
 static REQUESTS: Mutex<Option<HashMap<u64, RequestHandle>>> = Mutex::new(None);
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 static HOST_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// 请求始终属于发起它的 isolate，普通网络核心 stop/start 不改变这个归属。
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct RequestEvents {
     id: u64,
     host_generation: u64,
+    host_callback: Option<Arc<HostCallback<EventCallback>>>,
 }
 
 impl RequestEvents {
-    fn new(id: u64) -> Self {
+    fn new(id: u64, host_callback: Option<Arc<HostCallback<EventCallback>>>) -> Self {
         Self {
             id,
             host_generation: HOST_GENERATION.load(Ordering::Acquire),
+            host_callback,
         }
     }
 }
 
 /// 一个在途请求的控制面。
 struct RequestHandle {
+    /// 所属事件宿主 id（0 表示兼容旧单槽回调）
+    host_id: u64,
     /// 请求体分块的写入端；无请求体时为 None
     body: Option<mpsc::Sender<Vec<u8>>>,
     cancel: CancellationToken,
@@ -114,18 +124,26 @@ fn requests() -> parking_lot::MappedMutexGuard<'static, HashMap<u64, RequestHand
     })
 }
 
+fn host_callbacks()
+-> parking_lot::MappedMutexGuard<'static, HashMap<u64, Arc<HostCallback<EventCallback>>>> {
+    parking_lot::MutexGuard::map(HOST_CALLBACKS.lock(), |slot| {
+        slot.get_or_insert_with(HashMap::new)
+    })
+}
+
 /// 把载荷交给宿主。缓冲区所有权随之移交，宿主负责调用 [`fluxdo_net_buffer_free`]。
-fn emit(events: RequestEvents, kind: EventKind, payload: Vec<u8>) {
+fn emit(events: &RequestEvents, kind: EventKind, payload: Vec<u8>) {
     emit_with_permit(events, kind, payload, None);
 }
 
 fn emit_with_permit(
-    events: RequestEvents,
+    events: &RequestEvents,
     kind: EventKind,
     payload: Vec<u8>,
     permit: Option<OwnedSemaphorePermit>,
 ) {
-    CALLBACK.with(|callback| {
+    let target = events.host_callback.as_deref().unwrap_or(&CALLBACK);
+    target.with(|callback| {
         // 旧任务即使稍后才退出，也不能投递给新 isolate。
         // 普通 shutdown 仍需向当前 isolate 投递取消错误，不能用请求表是否清空判断。
         if events.host_generation != HOST_GENERATION.load(Ordering::Acquire) {
@@ -154,7 +172,7 @@ fn transfer_payload(payload: Vec<u8>, permit: Option<OwnedSemaphorePermit>) -> (
     (ptr, len)
 }
 
-fn emit_error(events: RequestEvents, error: &NetError) {
+fn emit_error(events: &RequestEvents, error: &NetError) {
     let payload = serde_json::json!({
         "kind": error.kind(),
         "message": error.to_string(),
@@ -167,6 +185,9 @@ fn emit_error(events: RequestEvents, error: &NetError) {
 struct RequestMeta {
     #[serde(default)]
     pinned_addresses: Vec<std::net::IpAddr>,
+    /// 发起请求所属的事件宿主 id；0 表示兼容旧宿主使用的默认单槽回调。
+    #[serde(default)]
+    host_id: u64,
     method: String,
     url: String,
     #[serde(default)]
@@ -276,6 +297,25 @@ pub extern "C" fn fluxdo_net_set_log_callback(callback: Option<crate::log::LogCa
     crate::log::set_callback(callback);
 }
 
+/// 为当前 Dart isolate 注册独立的日志回调，返回宿主 id（>= 1）；传空指针返回 0。
+/// 同进程内多个 isolate 可独立订阅日志，不会相互覆盖。
+#[unsafe(no_mangle)]
+pub extern "C" fn fluxdo_net_register_log_host(callback: Option<crate::log::LogCallback>) -> u64 {
+    catch_unwind(AssertUnwindSafe(|| match callback {
+        Some(callback) => crate::log::register_callback(callback),
+        None => 0,
+    }))
+    .unwrap_or(0)
+}
+
+/// 注销指定宿主的日志回调，不影响同进程其他 isolate。
+#[unsafe(no_mangle)]
+pub extern "C" fn fluxdo_net_unregister_log_host(host_id: u64) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        crate::log::unregister_callback(host_id);
+    }));
+}
+
 /// 交给宿主的最低日志级别：0 关闭、1 error、2 warn、3 info、4 debug。
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_set_log_level(level: u8) {
@@ -334,12 +374,44 @@ pub extern "C" fn fluxdo_net_set_event_callback(callback: Option<EventCallback>)
     }));
 }
 
-/// 启动（或按新配置重启）核心。返回本地监听端口，失败返回 -1。
-///
-/// # Safety
-/// `config_json` 必须是有效的 NUL 结尾字符串，或空指针。
+/// 为当前 Dart isolate 注册独立的事件回调，返回宿主 id（>= 1）；传空指针返回 0。
+/// 同进程内多个 isolate（如主界面与后台任务）各自持有独立宿主 id，互不覆盖回调。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn fluxdo_net_init(config_json: *const c_char) -> c_int {
+pub extern "C" fn fluxdo_net_register_event_host(callback: Option<EventCallback>) -> u64 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let Some(callback) = callback else {
+            return 0;
+        };
+        let host_id = NEXT_HOST_ID.fetch_add(1, Ordering::Relaxed);
+        host_callbacks().insert(host_id, Arc::new(HostCallback::with_value(callback)));
+        host_id
+    }))
+    .unwrap_or(0)
+}
+
+/// 注销指定宿主的事件回调并取消该宿主名下的在途请求，不影响同进程其他 isolate。
+#[unsafe(no_mangle)]
+pub extern "C" fn fluxdo_net_unregister_event_host(host_id: u64) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if host_id == 0 {
+            return;
+        }
+        let removed = host_callbacks().remove(&host_id);
+        if let Some(entry) = removed {
+            entry.set(None);
+        }
+        let cancelled: Vec<_> = requests()
+            .iter()
+            .filter(|(_, handle)| handle.host_id == host_id)
+            .map(|(_, handle)| handle.cancel.clone())
+            .collect();
+        for cancel in cancelled {
+            cancel.cancel();
+        }
+    }));
+}
+
+fn init_core(config_json: *const c_char, reuse_if_matching: bool) -> c_int {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(json) = c_str(config_json) else {
             warn!("init: missing config");
@@ -352,10 +424,19 @@ pub unsafe extern "C" fn fluxdo_net_init(config_json: *const c_char) -> c_int {
                 return -1;
             }
         };
+        let _lifecycle = LIFECYCLE_LOCK.lock();
+        let previous = CORE.lock().clone();
+        if reuse_if_matching
+            && let Some(existing) = &previous
+            && existing.matches_config(&config)
+        {
+            let port = existing.port().unwrap_or(0);
+            debug!("Network core reused with matching config (listener port {port})");
+            return c_int::from(port);
+        }
         // 重启：先停旧实例的监听把端口让出来（WebView2 的代理端口定死在环境里，
         // 新实例必须绑回同一个端口），但旧实例留在 CORE 里继续承接请求，
         // 新实例就位后再原子替换——中间没有「核心不在」的空窗。
-        let previous = CORE.lock().clone();
         let started = runtime().block_on(async {
             if let Some(previous) = &previous {
                 previous.stop_listener().await;
@@ -380,10 +461,30 @@ pub unsafe extern "C" fn fluxdo_net_init(config_json: *const c_char) -> c_int {
     .unwrap_or(-1)
 }
 
+/// 启动（或按新配置强制重启）核心。返回本地监听端口，失败返回 -1。
+///
+/// # Safety
+/// `config_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_init(config_json: *const c_char) -> c_int {
+    init_core(config_json, false)
+}
+
+/// 确保核心按给定配置运行：同进程已有等价配置的核心在运行时直接复用，
+/// 避免后台 isolate 与主 isolate 并发启动时误拆本地监听或清空连接池。
+///
+/// # Safety
+/// `config_json` 必须是有效的 NUL 结尾字符串，或空指针。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fluxdo_net_ensure_init(config_json: *const c_char) -> c_int {
+    init_core(config_json, true)
+}
+
 /// 停止核心并断开所有连接。
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_shutdown() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
+        let _lifecycle = LIFECYCLE_LOCK.lock();
         let core = CORE.lock().take();
         if let Some(core) = core {
             runtime().block_on(core.stop_listener());
@@ -395,14 +496,21 @@ pub extern "C" fn fluxdo_net_shutdown() {
 }
 
 /// 在旧 Dart isolate 销毁前由原生宿主同步调用，不能等新 main() 启动后再清理。
-/// 先断开两个回调出口并等待正在投递的调用退出，再取消请求和停止监听。
+/// 先断开全部回调出口并等待正在投递的调用退出，再取消请求和停止监听。
 /// Tokio runtime 可以复用；新 isolate 会重新注册回调并启动核心。
 #[unsafe(no_mangle)]
 pub extern "C" fn fluxdo_net_detach_host() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         CALLBACK.set(None);
         HOST_GENERATION.fetch_add(1, Ordering::AcqRel);
-        crate::log::set_callback(None);
+        let removed_hosts: Vec<_> = host_callbacks()
+            .drain()
+            .map(|(_, entry)| entry)
+            .collect();
+        for entry in removed_hosts {
+            entry.set(None);
+        }
+        crate::log::clear_all_callbacks();
         fluxdo_net_shutdown();
     }));
 }
@@ -633,6 +741,15 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
             warn!("request: core not running");
             return 0;
         };
+        let host_callback = if meta.host_id == 0 {
+            None
+        } else {
+            let Some(cb) = host_callbacks().get(&meta.host_id).cloned() else {
+                warn!("request: unknown event host {}", meta.host_id);
+                return 0;
+            };
+            Some(cb)
+        };
 
         let client = if pinned {
             if (meta.pinned_addresses.is_empty() && !proxy_resolves_host)
@@ -645,7 +762,7 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
             core.client()
         };
         let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-        let events = RequestEvents::new(id);
+        let events = RequestEvents::new(id, host_callback);
         let cancel = CancellationToken::new();
         // 请求体分块缓冲：宿主写得快时在这里排队，不会丢
         let (body_tx, body_rx) = if meta.has_body {
@@ -658,6 +775,7 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
         requests().insert(
             id,
             RequestHandle {
+                host_id: meta.host_id,
                 body: body_tx,
                 cancel: cancel.clone(),
                 paused: paused_tx,
@@ -671,7 +789,7 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
                 let outcome = tokio::select! {
                     biased;
                     () = cancel.cancelled() => Err(NetError::Cancelled),
-                    outcome = run_request(events, client, meta, body_rx, paused_rx) => outcome,
+                    outcome = run_request(&events, client, meta, body_rx, paused_rx) => outcome,
                 };
                 match &outcome {
                     Ok(()) => {}
@@ -689,7 +807,7 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
                     ),
                 }
                 if let Err(error) = outcome {
-                    emit_error(events, &error);
+                    emit_error(&events, &error);
                 }
                 requests().remove(&id);
             }
@@ -701,7 +819,7 @@ fn start_request(meta_json: *const c_char, pinned: bool, proxy_resolves_host: bo
 }
 
 async fn run_request(
-    events: RequestEvents,
+    events: &RequestEvents,
     client: Arc<HttpEgressClient>,
     meta: RequestMeta,
     body_rx: Option<mpsc::Receiver<Vec<u8>>>,
@@ -1017,13 +1135,14 @@ mod tests {
         unsafe { fluxdo_net_buffer_free(ptr, len) };
     }
 
-    fn insert_test_request() -> (u64, CancellationToken) {
+    fn insert_test_request(host_id: u64) -> (u64, CancellationToken) {
         let id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
         let cancel = CancellationToken::new();
         let (paused, _) = watch::channel(false);
         requests().insert(
             id,
             RequestHandle {
+                host_id,
                 body: None,
                 cancel: cancel.clone(),
                 paused,
@@ -1037,9 +1156,9 @@ mod tests {
         let _host = crate::host_callback::TEST_HOST_LOCK.lock();
         EVENT_COUNT.store(0, Ordering::Relaxed);
         fluxdo_net_set_event_callback(Some(capture_event));
-        let (old_id, cancelled) = insert_test_request();
-        let old_events = RequestEvents::new(old_id);
-        emit(old_events, EventKind::Data, vec![1]);
+        let (old_id, cancelled) = insert_test_request(0);
+        let old_events = RequestEvents::new(old_id, None);
+        emit(&old_events, EventKind::Data, vec![1]);
         assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
 
         fluxdo_net_detach_host();
@@ -1053,14 +1172,14 @@ mod tests {
         // 旧任务晚到的数据必须直接丢弃，并归还尚未转移给宿主的字节预算。
         let budget = Arc::new(Semaphore::new(4096));
         let permit = budget.clone().try_acquire_many_owned(4096).unwrap();
-        emit_with_permit(old_events, EventKind::Data, vec![2], Some(permit));
+        emit_with_permit(&old_events, EventKind::Data, vec![2], Some(permit));
         assert_eq!(budget.available_permits(), 4096);
         assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
 
-        let (new_id, _) = insert_test_request();
-        let new_events = RequestEvents::new(new_id);
-        emit(new_events, EventKind::Data, vec![3]);
-        emit(new_events, EventKind::Done, Vec::new());
+        let (new_id, _) = insert_test_request(0);
+        let new_events = RequestEvents::new(new_id, None);
+        emit(&new_events, EventKind::Data, vec![3]);
+        emit(&new_events, EventKind::Done, Vec::new());
         assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 3);
         fluxdo_net_detach_host();
     }
@@ -1070,12 +1189,128 @@ mod tests {
         let _host = crate::host_callback::TEST_HOST_LOCK.lock();
         EVENT_COUNT.store(0, Ordering::Relaxed);
         fluxdo_net_set_event_callback(Some(capture_event));
-        let (id, cancelled) = insert_test_request();
-        let events = RequestEvents::new(id);
+        let (id, cancelled) = insert_test_request(0);
+        let events = RequestEvents::new(id, None);
         fluxdo_net_shutdown();
         assert!(cancelled.is_cancelled());
-        emit_error(events, &NetError::Cancelled);
+        emit_error(&events, &NetError::Cancelled);
         assert_eq!(EVENT_COUNT.load(Ordering::Relaxed), 1);
+        fluxdo_net_detach_host();
+    }
+
+    #[test]
+    fn independent_event_hosts_do_not_hijack_or_cancel_each_other() {
+        static HOST_A_COUNT: AtomicU64 = AtomicU64::new(0);
+        static HOST_B_COUNT: AtomicU64 = AtomicU64::new(0);
+
+        extern "C" fn capture_a(_: u64, _: u8, ptr: *mut u8, len: usize) {
+            HOST_A_COUNT.fetch_add(1, Ordering::Relaxed);
+            unsafe { fluxdo_net_buffer_free(ptr, len) };
+        }
+        extern "C" fn capture_b(_: u64, _: u8, ptr: *mut u8, len: usize) {
+            HOST_B_COUNT.fetch_add(1, Ordering::Relaxed);
+            unsafe { fluxdo_net_buffer_free(ptr, len) };
+        }
+
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        HOST_A_COUNT.store(0, Ordering::Relaxed);
+        HOST_B_COUNT.store(0, Ordering::Relaxed);
+
+        let host_a = fluxdo_net_register_event_host(Some(capture_a));
+        let host_b = fluxdo_net_register_event_host(Some(capture_b));
+        assert_ne!(host_a, 0);
+        assert_ne!(host_b, 0);
+        assert_ne!(host_a, host_b);
+
+        let cb_a = host_callbacks().get(&host_a).cloned().unwrap();
+        let cb_b = host_callbacks().get(&host_b).cloned().unwrap();
+        let (req_a, cancel_a) = insert_test_request(host_a);
+        let (req_b, cancel_b) = insert_test_request(host_b);
+        let events_a = RequestEvents::new(req_a, Some(cb_a));
+        let events_b = RequestEvents::new(req_b, Some(cb_b));
+
+        emit(&events_a, EventKind::Data, vec![1]);
+        emit(&events_b, EventKind::Data, vec![2]);
+        assert_eq!(HOST_A_COUNT.load(Ordering::Relaxed), 1);
+        assert_eq!(HOST_B_COUNT.load(Ordering::Relaxed), 1);
+
+        // 后台宿主退出并注销：只取消后台宿主的在途请求，主宿主不受影响。
+        fluxdo_net_unregister_event_host(host_b);
+        assert!(cancel_b.is_cancelled());
+        assert!(!cancel_a.is_cancelled());
+
+        // 后台宿主的迟到事件必须被丢弃且归还预算；主宿主继续正常收包。
+        let budget = Arc::new(Semaphore::new(4096));
+        let permit = budget.clone().try_acquire_many_owned(4096).unwrap();
+        emit_with_permit(&events_b, EventKind::Data, vec![3], Some(permit));
+        assert_eq!(budget.available_permits(), 4096);
+        assert_eq!(HOST_B_COUNT.load(Ordering::Relaxed), 1);
+
+        emit(&events_a, EventKind::Data, vec![4]);
+        emit(&events_a, EventKind::Done, Vec::new());
+        assert_eq!(HOST_A_COUNT.load(Ordering::Relaxed), 3);
+
+        fluxdo_net_detach_host();
+        assert!(cancel_a.is_cancelled());
+    }
+
+    #[test]
+    fn request_start_rejects_unregistered_event_host() {
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        let config = CString::new("{}").unwrap();
+        let port = unsafe { fluxdo_net_init(config.as_ptr()) };
+        assert!(port > 0);
+
+        let meta = CString::new(
+            r#"{"host_id":999999,"method":"GET","url":"https://linux.do/"}"#,
+        )
+        .unwrap();
+        let id = unsafe { fluxdo_net_request_start(meta.as_ptr()) };
+        assert_eq!(id, 0);
+
+        fluxdo_net_detach_host();
+    }
+
+    #[test]
+    fn ensure_init_reuses_matching_core_and_restarts_on_config_change() {
+        let _host = crate::host_callback::TEST_HOST_LOCK.lock();
+        let base_config = CString::new(r#"{"enable_doh":false}"#).unwrap();
+        let port1 = unsafe { fluxdo_net_ensure_init(base_config.as_ptr()) };
+        assert!(port1 > 0);
+        let core1 = CORE.lock().clone().expect("core started");
+
+        // 同进程另一 isolate 以等价配置调用 ensure_init（含 bind_port=0 或相同端口）：直接复用。
+        let same_port = CString::new(format!(
+            r#"{{"bind_port":{port1},"enable_doh":false}}"#
+        ))
+        .unwrap();
+        let port2 = unsafe { fluxdo_net_ensure_init(same_port.as_ptr()) };
+        assert_eq!(port2, port1);
+        let core2 = CORE.lock().clone().expect("core still running");
+        assert!(Arc::ptr_eq(&core1, &core2));
+
+        let zero_port = CString::new(r#"{"bind_port":0,"enable_doh":false}"#).unwrap();
+        let port3 = unsafe { fluxdo_net_ensure_init(zero_port.as_ptr()) };
+        assert_eq!(port3, port1);
+        let core3 = CORE.lock().clone().expect("core still running");
+        assert!(Arc::ptr_eq(&core1, &core3));
+
+        // 显式调用 fluxdo_net_init 仍会强制重建。
+        let port4 = unsafe { fluxdo_net_init(same_port.as_ptr()) };
+        assert_eq!(port4, port1);
+        let core4 = CORE.lock().clone().expect("core restarted");
+        assert!(!Arc::ptr_eq(&core1, &core4));
+
+        // 配置变化时 ensure_init 会按新配置重建。
+        let changed = CString::new(format!(
+            r#"{{"bind_port":{port1},"enable_doh":false,"prefer_ipv6":true}}"#
+        ))
+        .unwrap();
+        let port5 = unsafe { fluxdo_net_ensure_init(changed.as_ptr()) };
+        assert_eq!(port5, port1);
+        let core5 = CORE.lock().clone().expect("core rebuilt for changed config");
+        assert!(!Arc::ptr_eq(&core4, &core5));
+
         fluxdo_net_detach_host();
     }
 

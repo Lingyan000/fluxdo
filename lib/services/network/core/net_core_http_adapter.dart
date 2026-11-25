@@ -38,6 +38,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
   /// 在途请求：核心的事件按 id 投递到这里。
   static final Map<int, _PendingRequest> _pending = {};
   static NativeCallable<NetCoreEventCallback>? _callback;
+  static int _hostId = 0;
 
   /// 请求体缓冲满时的退避区间（核心用非阻塞写，满了由这里重试）。
   /// 建连期间缓冲会一直满着，指数退避避免空转。
@@ -49,14 +50,44 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
   final Set<int> _ownedRequests = {};
   bool _closed = false;
 
-  /// 每个 isolate 注册一次；原生宿主必须在热重启前解除旧回调。
-  static void _ensureCallback(NetCoreBindings bindings) {
-    if (_callback != null) return;
+  /// 每个 isolate 注册一次独立事件宿主；同进程多个 isolate 互不覆盖回调。
+  static int _ensureCallback(NetCoreBindings bindings) {
+    if (_callback != null) return _hostId;
     final callback = Zone.root.run(
       () => NativeCallable<NetCoreEventCallback>.listener(_onEvent),
     );
-    bindings.setEventCallback(callback.nativeFunction);
+    if (bindings.supportsEventHosts) {
+      final hostId = bindings.registerEventHost(callback.nativeFunction);
+      if (hostId == 0) {
+        callback.close();
+        throw StateError('注册网络核心事件宿主失败');
+      }
+      _hostId = hostId;
+    } else {
+      _hostId = 0;
+      bindings.setEventCallback(callback.nativeFunction);
+    }
     _callback = callback;
+    return _hostId;
+  }
+
+  /// 释放当前 isolate 在网络核心注册的事件宿主并取消本 isolate 遗留请求，
+  /// 不影响同进程内其他 isolate（供后台短任务退出前调用）。
+  static void releaseEventHost({NetCoreBindings? bindings}) {
+    final callback = _callback;
+    final hostId = _hostId;
+    if (callback == null) return;
+    _callback = null;
+    _hostId = 0;
+    final target = bindings ?? NetCoreBindings.instance;
+    if (hostId != 0 && target.supportsEventHosts) {
+      target.unregisterEventHost(hostId);
+    }
+    for (final pending in _pending.values.toList()) {
+      pending.onError('{"kind":"cancelled","message":"事件宿主已释放"}');
+    }
+    _pending.clear();
+    callback.close();
   }
 
   static void _onEvent(int id, int kindCode, Pointer<Uint8> ptr, int length) {
@@ -121,7 +152,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
         reason: _bindings.lastInitError ?? '网络核心不可用',
       );
     }
-    _ensureCallback(_bindings);
+    final hostId = _ensureCallback(_bindings);
 
     options.extra.putIfAbsent('traceId', LogPolicy.newTraceId);
     options.extra.putIfAbsent('attemptId', LogPolicy.newTraceId);
@@ -135,6 +166,7 @@ class NetCoreHttpAdapter implements HttpClientAdapter {
       trace['bodyCountStage'] = 'core-input';
     }
     final meta = jsonEncode({
+      if (hostId != 0) 'host_id': hostId,
       'method': options.method.toUpperCase(),
       if (pinnedOnly || pluginRequests)
         'pinned_addresses': options.extra['pinnedAddresses'],

@@ -101,7 +101,9 @@ class NetCoreService {
       final restarting = _status.running;
       final started = DateTime.now();
       NetworkHealthMonitor.instance.reset(reason: 'core_start');
-      final port = _bindings.start(configJson);
+      final port = forceRestart
+          ? _bindings.start(configJson)
+          : _bindings.ensureStart(configJson);
       if (port < 0) {
         // 具体原因由核心日志给出（同在网络日志里）
         _lastError = '网络核心启动失败';

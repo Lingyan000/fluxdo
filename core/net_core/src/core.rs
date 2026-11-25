@@ -170,6 +170,16 @@ impl Core {
         self.listener.port()
     }
 
+    /// 判断当前运行中的核心配置是否与请求配置等价（`bind_port` 为 0 或等于当前端口视为一致）。
+    pub fn matches_config(&self, requested: &NetConfig) -> bool {
+        if requested.bind_port != 0 && self.port() != Some(requested.bind_port) {
+            return false;
+        }
+        let mut current = self.config.clone();
+        current.bind_port = requested.bind_port;
+        current == *requested
+    }
+
     /// 停止本地监听并等端口释放。客户端不受影响：在途请求照常走完，
     /// 重启期间新请求也仍由旧实例承接，直到新实例就位。
     pub async fn stop_listener(&self) {

@@ -415,5 +415,43 @@
     }
   },
   "topics_markPinnedRead": "置顶话题全部标为已读",
-  "topics_markPinnedReadFailed": "置顶话题标为已读失败，请重试"
+  "topics_markPinnedReadFailed": "置顶话题标为已读失败，请重试",
+  "topicDetail_readerMode": "纯净阅读",
+  "reader_estimatedMinutes": "约 {minutes} 分钟",
+  "@reader_estimatedMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_toc": "目录",
+  "reader_typesetting": "排版",
+  "reader_emptyToc": "本文暂无目录标题",
+  "reader_backToDiscussion": "返回原帖查看讨论",
+  "reader_backToDiscussionCount": "返回原帖查看讨论（{count} 条回复）",
+  "@reader_backToDiscussionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_endOfMainPost": "正文已读完",
+  "reader_fontSize": "字号",
+  "reader_lineSpacing": "行距",
+  "reader_spacingCompact": "紧凑",
+  "reader_spacingNormal": "标准",
+  "reader_spacingRelaxed": "宽松",
+  "reader_fontWeight": "字重",
+  "reader_weightNormal": "常规",
+  "reader_weightMedium": "适中",
+  "reader_weightSemiBold": "加粗",
+  "reader_fontFamily": "字体",
+  "reader_paperBackground": "纸张底色",
+  "reader_paperDefault": "默认",
+  "reader_paperWarm": "暖纸",
+  "reader_paperGreen": "护眼绿",
+  "reader_paperDarkHint": "深色模式下固定跟随当前深色主题",
+  "reader_resetTypesetting": "恢复默认"
 }

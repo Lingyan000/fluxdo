@@ -387,5 +387,43 @@
     }
   },
   "topics_markPinnedRead": "置頂話題全部標為已讀",
-  "topics_markPinnedReadFailed": "置頂話題標為已讀失敗，請重試"
+  "topics_markPinnedReadFailed": "置頂話題標為已讀失敗，請重試",
+  "topicDetail_readerMode": "純淨閱讀",
+  "reader_estimatedMinutes": "約 {minutes} 分鐘",
+  "@reader_estimatedMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_toc": "目錄",
+  "reader_typesetting": "排版",
+  "reader_emptyToc": "本文暫無目錄標題",
+  "reader_backToDiscussion": "返回原帖查看討論",
+  "reader_backToDiscussionCount": "返回原帖查看討論（{count} 條回覆）",
+  "@reader_backToDiscussionCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reader_endOfMainPost": "正文已讀完",
+  "reader_fontSize": "字體大小",
+  "reader_lineSpacing": "行距",
+  "reader_spacingCompact": "緊湊",
+  "reader_spacingNormal": "標準",
+  "reader_spacingRelaxed": "寬鬆",
+  "reader_fontWeight": "字重",
+  "reader_weightNormal": "常規",
+  "reader_weightMedium": "適中",
+  "reader_weightSemiBold": "加粗",
+  "reader_fontFamily": "字體",
+  "reader_paperBackground": "紙張底色",
+  "reader_paperDefault": "預設",
+  "reader_paperWarm": "暖紙",
+  "reader_paperGreen": "護眼綠",
+  "reader_paperDarkHint": "深色模式下固定跟隨現時深色主題",
+  "reader_resetTypesetting": "重設預設"
 }

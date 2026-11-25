@@ -70,6 +70,7 @@ class TopicBottomMenuData {
     required this.onOpenNotification,
     required this.onOpenInBrowser,
     required this.onOpenReadingSettings,
+    this.onOpenReaderMode,
   });
 
   final TopicFilterControls filter;
@@ -87,6 +88,7 @@ class TopicBottomMenuData {
   final VoidCallback onOpenNotification;
   final VoidCallback onOpenInBrowser;
   final VoidCallback onOpenReadingSettings;
+  final VoidCallback? onOpenReaderMode;
 }
 
 typedef _MenuSourceGeometry = ({
@@ -562,14 +564,35 @@ class _TopicBottomMenuLayerState extends State<TopicBottomMenuLayer>
                   opacity: contentOpacity,
                   child: Row(
                     children: [
-                      Flexible(
-                        child: _FooterActionButton(
-                          key: const ValueKey('bottom_menu_footer_reading'),
-                          icon: Symbols.auto_stories_rounded,
-                          label: l10n.settings_reading,
-                          onTap: () => _runAction(data.onOpenReadingSettings),
+                      if (data.onOpenReaderMode != null) ...[
+                        Flexible(
+                          child: _FooterActionButton(
+                            key: const ValueKey(
+                              'bottom_menu_footer_reader_mode',
+                            ),
+                            icon: Symbols.menu_book_rounded,
+                            label: l10n.topicDetail_readerMode,
+                            onTap: () => _runAction(data.onOpenReaderMode!),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 2),
+                        IconButton(
+                          key: const ValueKey('bottom_menu_footer_reading'),
+                          onPressed: () =>
+                              _runAction(data.onOpenReadingSettings),
+                          visualDensity: VisualDensity.compact,
+                          tooltip: l10n.settings_reading,
+                          icon: const Icon(Symbols.tune_rounded, size: 20),
+                        ),
+                      ] else
+                        Flexible(
+                          child: _FooterActionButton(
+                            key: const ValueKey('bottom_menu_footer_reading'),
+                            icon: Symbols.auto_stories_rounded,
+                            label: l10n.settings_reading,
+                            onTap: () => _runAction(data.onOpenReadingSettings),
+                          ),
+                        ),
                       if (filter.hasActiveFilter) ...[
                         const SizedBox(width: 4),
                         Flexible(

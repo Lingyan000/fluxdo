@@ -796,6 +796,21 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     }
   }
 
+  /// 按需把指定目录字体注册给引擎并记入 [ThemeState.loadedFonts]。
+  ///
+  /// 供纯净阅读等支持独立选择目录字体的页面使用，确保未设为全局正文字体时
+  /// 也能在下载完成后或首次进入时即时生效。
+  Future<bool> ensureFontLoaded(String id) async {
+    if (state.loadedFonts.contains(id)) return true;
+    final entry = FontCatalog.byId(id);
+    if (entry == null) return false;
+    if (!await FontDownloadService.instance.register(entry)) return false;
+    if (mounted && !state.loadedFonts.contains(id)) {
+      state = state.copyWith(loadedFonts: {...state.loadedFonts, id});
+    }
+    return true;
+  }
+
   /// 冷启动在 runApp 前注册已选字体，避免首帧先用系统字体再切换。
   static Future<void> preloadFonts(SharedPreferences prefs) async {
     final state = _loadTheme(prefs);

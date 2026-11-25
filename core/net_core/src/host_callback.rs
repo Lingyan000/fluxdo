@@ -14,6 +14,16 @@ impl<T: Copy> HostCallback<T> {
         }
     }
 
+    pub(crate) const fn with_value(callback: T) -> Self {
+        Self {
+            callback: Mutex::new(Some(callback)),
+        }
+    }
+
+    pub(crate) fn is_set(&self) -> bool {
+        self.callback.lock().is_some()
+    }
+
     /// 返回时，旧回调已没有正在执行的原生调用。
     pub(crate) fn set(&self, callback: Option<T>) {
         *self.callback.lock() = callback;

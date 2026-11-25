@@ -41,6 +41,7 @@ import '../../utils/blocked_user_filter.dart';
 import '../../utils/responsive.dart';
 import '../../providers/app_state_refresher.dart';
 import '../login_page.dart';
+import '../topic_reader_page/topic_reader_page.dart';
 import '../../utils/share_utils.dart';
 import '../../providers/preferences_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -2026,9 +2027,26 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
               InteractionPageRoute(builder: (_) => const ReadingSettingsPage()),
             );
           },
+          onReaderMode: _openReaderMode,
         );
       },
       itemBuilder: (context) => [
+        if (!detail.isPrivateMessage)
+          PopupMenuItem(
+            value: 'reader_mode',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Symbols.menu_book_rounded,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                const SizedBox(width: 12),
+                Text(context.l10n.topicDetail_readerMode),
+              ],
+            ),
+          ),
         if (canEditTopic)
           PopupMenuItem(
             value: 'edit_topic',
@@ -2452,9 +2470,21 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
                 ),
               );
             },
+            onOpenReaderMode: detail.isPrivateMessage ? null : _openReaderMode,
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openReaderMode() async {
+    final detail = ref.read(topicDetailProvider(_params)).value;
+    if (detail == null || !mounted) return;
+    await Navigator.push<void>(
+      context,
+      InteractionPageRoute<void>(
+        builder: (_) => TopicReaderPage(initialDetail: detail),
+      ),
     );
   }
 
@@ -2759,6 +2789,7 @@ class _TopicDetailPageState extends ConsumerState<TopicDetailPage>
         returnButton: _returnButton,
         jumpHistory: _jumpHistory,
         nextRootListenable: _isNestedView ? _nestedPostListController : null,
+        onOpenReaderMode: detail.isPrivateMessage ? null : _openReaderMode,
       ),
     );
   }

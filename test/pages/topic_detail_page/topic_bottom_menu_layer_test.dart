@@ -87,6 +87,7 @@ void main() {
     VoidCallback? onOpenNotification,
     VoidCallback? onOpenInBrowser,
     VoidCallback? onOpenReadingSettings,
+    VoidCallback? onOpenReaderMode,
   }) {
     return TopicBottomMenuData(
       filter: filter ?? const TopicFilterControls(),
@@ -104,6 +105,7 @@ void main() {
       onOpenNotification: onOpenNotification ?? () {},
       onOpenInBrowser: onOpenInBrowser ?? () {},
       onOpenReadingSettings: onOpenReadingSettings ?? () {},
+      onOpenReaderMode: onOpenReaderMode,
     );
   }
 
@@ -517,5 +519,55 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('提供纯净阅读回调时显示在底行，点击后收起面板并触发回调', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 812);
+    addTearDown(tester.view.reset);
+
+    final session = TopicBottomMenuSession();
+    final sourceKey = GlobalKey();
+    final streamIndex = ValueNotifier<int>(2);
+    var readerCalls = 0;
+    addTearDown(() {
+      session.dispose();
+      streamIndex.dispose();
+    });
+
+    await tester.pumpWidget(
+      buildHarness(
+        session: session,
+        sourceKey: sourceKey,
+        data: makeData(
+          filter: const TopicFilterControls(hasSummary: true),
+          onOpenReaderMode: () => readerCalls++,
+        ),
+        streamIndex: streamIndex,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(TopicFilterButton));
+    await tester.pumpAndSettle();
+
+    // 热门与其它三个筛选项应共处第一排，不再单独被挤成通栏第三排。
+    final authorRect = tester.getRect(
+      find.byKey(const ValueKey('bottom_menu_tile_author')),
+    );
+    final hotRect = tester.getRect(
+      find.byKey(const ValueKey('bottom_menu_tile_hot')),
+    );
+    expect(hotRect.top, closeTo(authorRect.top, 1.0));
+
+    final readerButton = find.byKey(
+      const ValueKey('bottom_menu_footer_reader_mode'),
+    );
+    expect(readerButton, findsOneWidget);
+
+    await tester.tap(readerButton);
+    await tester.pumpAndSettle();
+    expect(readerCalls, 1);
+    expect(session.active, isFalse);
   });
 }
