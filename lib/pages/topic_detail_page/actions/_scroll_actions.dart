@@ -9,6 +9,7 @@ extension _ScrollActions on _TopicDetailPageState {
 
     _scheduleCheckTitleVisibility();
     _controller.handleScroll();
+    _handleScrollDeltaForJumpHistory();
     // TOC scroll-spy(内部节流;无目录时零开销)
     _tocController.scheduleSpyUpdate();
     if (_isNestedView || _controller.progressLoad.value != null) return;
@@ -58,6 +59,7 @@ extension _ScrollActions on _TopicDetailPageState {
 
     // 记录当前浏览位置，用于布局切换时恢复
     _controller.updateViewportPostNumber(postNumber);
+    _observeReadingForJumpHistory();
     final positionNotifier = ref.read(
       detailScrollPositionProvider((
         topicId: widget.topicId,
@@ -157,6 +159,7 @@ extension _ScrollActions on _TopicDetailPageState {
 
   void _updateVisiblePosts(Set<int> visiblePostNumbers) {
     _controller.updateVisiblePosts(visiblePostNumbers);
+    _observeReadingForJumpHistory();
   }
 
   Future<void> _scrollToTop() async {
@@ -231,7 +234,7 @@ extension _ScrollActions on _TopicDetailPageState {
     }
     _controller.updateSelectedPostIndicator(targetPostNumber);
     _selectShortcutPostNumber(detail, targetPostNumber);
-    await _jumpToPostInTopic(targetPostNumber);
+    await _jumpToPostInTopic(targetPostNumber, recordHistory: false);
   }
 
   int _resolveNavigationAnchorPostNumber(List<Post> posts, int delta) {
@@ -405,8 +408,16 @@ extension _ScrollActions on _TopicDetailPageState {
     return true;
   }
 
-  Future<void> _scrollToPost(int postNumber) async {
-    await _runReadingJump((attempt) => _positionAtPost(postNumber, attempt));
+  Future<void> _scrollToPost(
+    int postNumber, {
+    bool recordHistory = true,
+    bool coalesceExplore = false,
+  }) async {
+    await _runReadingJump(
+      (attempt) => _positionAtPost(postNumber, attempt),
+      recordHistory: recordHistory,
+      coalesceExplore: coalesceExplore,
+    );
   }
 
   Future<bool> _positionAtPost(

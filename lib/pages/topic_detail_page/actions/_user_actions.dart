@@ -165,7 +165,7 @@ extension _UserActions on _TopicDetailPageState {
         // 键盘仍在收起中，等下一帧再检查
         _scrollAfterKeyboardDismiss(postNumber);
       } else {
-        _scrollToPost(postNumber);
+        _scrollToPost(postNumber, recordHistory: false);
       }
     });
   }
@@ -1199,7 +1199,10 @@ extension _UserActions on _TopicDetailPageState {
               Navigator.pop(context);
               if (postNumber != null && postNumber > 0) {
                 unawaited(
-                  _jumpToPostInTopic(postNumber.clamp(1, detail.postsCount)),
+                  _jumpToPostInTopic(
+                    postNumber.clamp(1, detail.postsCount),
+                    coalesceExplore: true,
+                  ),
                 );
               }
             },

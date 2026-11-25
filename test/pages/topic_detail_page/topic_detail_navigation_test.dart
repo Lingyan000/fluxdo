@@ -273,7 +273,7 @@ void main() {
     await tester.pump(const Duration(seconds: 31));
   }
 
-  testWidgets('手机连续跳转后逐级回到原楼内偏移，收起底栏仍可返回', (tester) async {
+  testWidgets('手机连续跳转后逐级回到原楼内偏移，收起底栏同步隐藏、展开后可返回', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 812);
     addTearDown(tester.view.reset);
@@ -312,8 +312,15 @@ void main() {
     expect(overlay.menuSession!.active, isFalse);
     expect(tester.widget<AnimatedOpacity>(returnOpacity).opacity, 1);
     expect(find.text('回到 #80').hitTestable(), findsOneWidget);
+    // 下滑隐藏底栏时返回入口同步收起，不遮挡阅读正文。
     (overlay.showBottomBarListenable as ValueNotifier<bool>).value = false;
     await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(returnOpacity).opacity, 0);
+    expect(find.text('回到 #80').hitTestable(), findsNothing);
+    // 重新唤出底栏后入口恢复可见并可逐级返回。
+    (overlay.showBottomBarListenable as ValueNotifier<bool>).value = true;
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(returnOpacity).opacity, 1);
     await tester.tap(find.text('回到 #80'));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(floor(80)).dy, closeTo(second, .5));
@@ -326,6 +333,8 @@ void main() {
     bar.onAction(ProgressGestureAction.nextPost);
     await tester.pumpAndSettle();
     expectFloorAtTop(tester, 61);
+    // 顺序翻帖不弹出返回入口。
+    expect(find.text('回到 #60'), findsNothing);
     await disposePage(tester);
   });
 
@@ -453,7 +462,7 @@ void main() {
     await disposePage(tester);
   });
 
-  testWidgets('宽屏返回入口在阅读侧栏，关闭后下一次跳转建立新记录', (tester) async {
+  testWidgets('宽屏返回入口在阅读侧栏，连续探索合并过路站，关闭后下一次跳转建立新记录', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 900);
     addTearDown(tester.view.reset);
@@ -469,12 +478,21 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      tester.widget<TopicReturnButton>(find.byType(TopicReturnButton)).style,
+      TopicReturnButtonStyle.rail,
+    );
+    // 未滚动停留时继续拖时间线探索，过路站 #80 不堆叠成额外层级。
+    rail.onJumpToIndex(70);
+    await tester.pumpAndSettle();
+    expect(find.text('回到 #60'), findsOneWidget);
+    expect(find.text('回到 #80'), findsNothing);
     await tester.tap(find.byTooltip('清除返回记录'));
     await tester.pumpAndSettle();
     expect(find.text('回到 #60'), findsNothing);
     rail.onJumpToIndex(50);
     await tester.pumpAndSettle();
-    expect(find.text('回到 #80'), findsOneWidget);
+    expect(find.text('回到 #70'), findsOneWidget);
     await disposePage(tester);
   });
 

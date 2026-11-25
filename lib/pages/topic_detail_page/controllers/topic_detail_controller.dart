@@ -105,6 +105,7 @@ class TopicDetailController extends ChangeNotifier {
   final ListController postListController = ListController();
   int positionRevision = 0;
   final VoidCallback? onScrolled;
+  final VoidCallback? onUserScroll;
 
   TopicScrollState _scrollState;
   double _accumulatedScrollDelta = 0;
@@ -218,6 +219,7 @@ class TopicDetailController extends ChangeNotifier {
     required this.screenTrack,
     required bool trackEnabled,
     this.onScrolled,
+    this.onUserScroll,
     int? initialPostNumber,
   }) : _trackEnabled = trackEnabled,
        _scrollState = TopicScrollState(jumpTargetPostNumber: initialPostNumber);
@@ -229,6 +231,7 @@ class TopicDetailController extends ChangeNotifier {
   bool get showBottomBar => _scrollState.showBottomBar;
   bool get hasInitialScrolled => _scrollState.hasInitialScrolled;
   bool get isPositioned => _scrollState.isPositioned;
+  bool get hasPendingPostScroll => _pendingPostScroll != null;
   int? get jumpTargetPostNumber => _scrollState.jumpTargetPostNumber;
   int? get initialPostNumber => _scrollState.initialPostNumber;
   int? get viewportPostNumber => _scrollState.viewportPostNumber;
@@ -325,6 +328,7 @@ class TopicDetailController extends ChangeNotifier {
 
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
+      onUserScroll?.call();
       _handleBottomBarScrollDelta(notification.scrollDelta ?? 0);
     }
 
@@ -337,7 +341,17 @@ class TopicDetailController extends ChangeNotifier {
 
   /// 处理桌面端鼠标滚轮/触控板滚动，避免依赖 dragDetails。
   void handlePointerScroll(double delta) {
+    if (delta != 0) onUserScroll?.call();
     _handleBottomBarScrollDelta(delta);
+  }
+
+  /// 主动跳转记录了返回锚点时展开底栏，让用户知道已记住来源；后续下滑会照常自动收起。
+  void revealBottomBar() {
+    _accumulatedScrollDelta = 0;
+    if (!_scrollState.showBottomBar) {
+      _scrollState = _scrollState.copyWith(showBottomBar: true);
+      showBottomBarNotifier.value = true;
+    }
   }
 
   /// 底栏是否随滚动自动隐藏（偏好开关）；关闭时立即恢复显示并常驻

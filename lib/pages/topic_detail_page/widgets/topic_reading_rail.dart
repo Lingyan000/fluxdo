@@ -110,23 +110,38 @@ class _TopicReadingRailState extends State<TopicReadingRail> {
         if (!TopicReadingRail._builtIn.contains(action)) action,
     ];
 
-    final tools = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.returnButton != null && widget.jumpHistory != null)
-          ListenableBuilder(
-            listenable: widget.jumpHistory!,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: widget.returnButton,
-            ),
-            builder: (context, child) => Padding(
+    Widget? buildReturnEntry({double top = 0, double bottom = 0}) {
+      if (widget.returnButton == null || widget.jumpHistory == null) {
+        return null;
+      }
+      return ListenableBuilder(
+        listenable: widget.jumpHistory!,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: widget.returnButton,
+        ),
+        builder: (context, child) {
+          final hasTarget = widget.jumpHistory!.target != null;
+          return AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topLeft,
+            child: Padding(
               padding: EdgeInsets.only(
-                bottom: widget.jumpHistory!.target == null ? 0 : 16,
+                top: hasTarget ? top : 0,
+                bottom: hasTarget ? bottom : 0,
               ),
               child: child,
             ),
-          ),
+          );
+        },
+      );
+    }
+
+    final tools = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!showsProgress) ?buildReturnEntry(bottom: 8),
         TopicReplyEntry(
           state: widget.replyEntryState,
           draftListenable: widget.replyDraftListenable,
@@ -249,6 +264,7 @@ class _TopicReadingRailState extends State<TopicReadingRail> {
                     totalCount: widget.totalCount,
                     infoSource: widget.infoSource,
                   ),
+                  ?buildReturnEntry(top: 6),
                   const SizedBox(height: 16),
                   tools,
                 ],
