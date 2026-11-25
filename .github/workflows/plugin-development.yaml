@@ -127,6 +127,10 @@ jobs:
         working-directory: tools
       - run: pnpm build
         working-directory: tools
+      # 准备脚本会直接导入 slang，首次检出需先解析依赖才能启动。
+      - name: Install application dependencies
+        working-directory: app
+        run: flutter pub get
       - name: Prepare application
         working-directory: app
         run: dart tool/project_prep.dart test
@@ -240,6 +244,7 @@ jobs:
         with:
           flutter-version: '3.50.0'
           cache: true
+      - run: flutter pub get
       - run: dart tool/project_prep.dart test
       - name: Test real engine, storage and native component layout
         run: |
@@ -264,6 +269,7 @@ jobs:
         with:
           flutter-version: '3.50.0'
           cache: true
+      - run: flutter pub get
       - run: dart tool/project_prep.dart test
       - name: Compare fixed component baselines
         env:
