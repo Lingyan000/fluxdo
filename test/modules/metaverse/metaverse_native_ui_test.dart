@@ -1607,6 +1607,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
   });
 
   final data = <String, Object?>{
+    'chatDraftError': '',
     'i18n': (jsonDecode(File('test/fixtures/metaverse/ld-store-locales.json').readAsStringSync()) as Map)['zh'],
     'overviewLoading':false,'stats':[{'value':'24','label':'在售商品'},{'value':'8','label':'今日订单'},{'value':'3','label':'店铺'}],
     'accountName':'','usage':'','tradeNo':'','refundHint':'','couponHint':'','sellerProfileAvailable':true,'overviewError':'','value':'12.50','original':'20.00','discount':'38% 优惠','buyLabel':'立即兑换',
@@ -1788,6 +1789,52 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     });
   }
   for (final brightness in Brightness.values) {
+    testWidgets('会话骨架空态错误与输入发送状态 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final content = DynamicContent({...data, 'chatIdentity': '12', 'chatKeys': <Object>[], 'chatRows': <Object>[],
+        'chatReady': false, 'chatOrder': '', 'chatState': '', 'chatError': '', 'chatDraft': '',
+        'chatDraftError': '', 'chatSendEnabled': false, 'chatSending': false, 'canSend': false, 'loading': true});
+      final events = <String>[];
+      await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+        widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Chat'), data: content,
+        onEvent: (name, args) {
+          events.add(name);
+          if (name == 'chatInput') content.updateAll({'chatDraft': args['value'], 'chatSendEnabled': (args['value'] as String).trim().isNotEmpty});
+          if (name == 'chatSend') content.update('chatSending', true);
+        }), title: '求购洽谈', brightness: brightness));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(SkeletonBox), findsNWidgets(2));
+      await snapshot(tester, 'chat-loading-${brightness.name}', settle: false);
+      content.updateAll({'loading': false, 'chatError': '读取会话失败，请重试'});
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.common_retry));
+      expect(events.last, 'chatRefresh');
+      await snapshot(tester, 'chat-error-${brightness.name}');
+      content.updateAll({'chatError': '', 'chatReady': true, 'chatState': '洽谈中', 'canSend': true});
+      await tester.pumpAndSettle();
+      expect(find.text('还没有消息'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
+      await snapshot(tester, 'chat-empty-${brightness.name}');
+      await tester.enterText(find.byType(TextField), '你好，想了解一下设备数量。');
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNotNull);
+      await snapshot(tester, 'chat-compose-${brightness.name}');
+      await tester.tap(find.widgetWithText(FilledButton, '发送'));
+      await tester.pump();
+      expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '你好，想了解一下设备数量。');
+      expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '发送')).onPressed, isNull);
+      content.update('chatSending', false);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
     for (final width in [320.0, 390.0, 800.0]) {
       testWidgets('士多页面 ${brightness.name} $width 布局与底部操作区', (tester) async {
         tester.view.physicalSize = Size(width, 844);

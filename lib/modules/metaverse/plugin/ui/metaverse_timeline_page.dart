@@ -97,6 +97,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
   void didUpdateWidget(_PluginTimelinePage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final identityChanged = oldWidget.identity != widget.identity;
+    if (identityChanged || widget.items.isEmpty) _away = false;
     final keysChanged =
         oldWidget.itemKeys.length != widget.itemKeys.length ||
         Iterable<int>.generate(widget.itemKeys.length)
@@ -172,7 +173,36 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
     final items = validKeys ? widget.items : const <Widget>[];
     return _PluginPageLayout(
       loading: widget.loading,
-      toolbar: widget.header,
+      toolbar: items.isNotEmpty && widget.error.isNotEmpty
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ?widget.header,
+                Semantics(
+                  liveRegion: true,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.error,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
+                      ),
+                      if (widget.onRetry != null)
+                        TextButton(
+                          onPressed: widget.onRetry,
+                          child: Text(context.l10n.common_retry),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : widget.header,
       footer: widget.footer,
       body: Stack(
         children: [
@@ -180,78 +210,85 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 960),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _onScroll,
-                  child: ListView.builder(
-                    key: _viewport,
-                    controller: _scroll,
-                    reverse: true,
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      16,
-                      16,
-                      16 +
-                          (widget.footer == null
-                              ? MediaQuery.paddingOf(context).bottom
-                              : 0),
-                    ),
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    itemCount: items.length + 1,
-                    findChildIndexCallback: (key) {
-                      if (key is! ValueKey<String>) return null;
-                      final index = widget.itemKeys.indexOf(key.value);
-                      return index < 0 ? null : index;
-                    },
-                    itemBuilder: (context, index) {
-                      if (index < items.length) {
-                        final id = widget.itemKeys[index];
-                        return KeyedSubtree(
-                          key: ValueKey(id),
-                          child: KeyedSubtree(
-                            key: _keys.putIfAbsent(id, GlobalKey.new),
-                            child: items[index],
-                          ),
-                        );
-                      }
-                      if (items.isEmpty) {
-                        return widget.loading &&
-                                widget.loadingPlaceholder != null
-                            ? widget.loadingPlaceholder!
-                            : _PluginPageStatus(
-                                loading: widget.loading,
-                                error: widget.error,
-                                emptyTitle: widget.emptyTitle,
-                                onRetry: widget.onRetry,
-                              );
-                      }
-                      if (widget.error.isNotEmpty) {
-                        return _PluginPageStatus(
+                child: items.isEmpty && !widget.loading
+                    ? SingleChildScrollView(
+                        primary: false,
+                        padding: const EdgeInsets.all(16),
+                        child: _PluginPageStatus(
                           error: widget.error,
+                          emptyTitle: widget.emptyTitle,
                           onRetry: widget.onRetry,
-                        );
-                      }
-                      if (widget.loadingMore) {
-                        return const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Center(child: LoadingSpinner(size: 24)),
-                        );
-                      }
-                      if (!widget.hasMore || widget.onLoadMore == null) {
-                        return const SizedBox.shrink();
-                      }
-                      return Center(
-                        child: TextButton(
-                          onPressed: widget.loading ? null : _loadMore,
-                          child: Text(
-                            widget.moreLabel ?? context.l10n.common_more,
-                          ),
                         ),
-                      );
-                    },
-                  ),
-                ),
+                      )
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: _onScroll,
+                        child: ListView.builder(
+                          key: _viewport,
+                          controller: _scroll,
+                          reverse: true,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            16,
+                            16,
+                            16 +
+                                (widget.footer == null
+                                    ? MediaQuery.paddingOf(context).bottom
+                                    : 0),
+                          ),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: items.length + 1,
+                          findChildIndexCallback: (key) {
+                            if (key is! ValueKey<String>) return null;
+                            final index = widget.itemKeys.indexOf(key.value);
+                            return index < 0 ? null : index;
+                          },
+                          itemBuilder: (context, index) {
+                            if (index < items.length) {
+                              final id = widget.itemKeys[index];
+                              return KeyedSubtree(
+                                key: ValueKey(id),
+                                child: KeyedSubtree(
+                                  key: _keys.putIfAbsent(id, GlobalKey.new),
+                                  child: items[index],
+                                ),
+                              );
+                            }
+                            if (items.isEmpty) {
+                              return widget.loading &&
+                                      widget.loadingPlaceholder != null
+                                  ? widget.loadingPlaceholder!
+                                  : _PluginPageStatus(
+                                      loading: widget.loading,
+                                      error: widget.error,
+                                      emptyTitle: widget.emptyTitle,
+                                      onRetry: widget.onRetry,
+                                    );
+                            }
+                            if (widget.loadingMore) {
+                              return const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Center(child: LoadingSpinner(size: 24)),
+                              );
+                            }
+                            if (!widget.hasMore || widget.onLoadMore == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Center(
+                              child: TextButton(
+                                onPressed:
+                                    widget.loading || widget.error.isNotEmpty
+                                    ? null
+                                    : _loadMore,
+                                child: Text(
+                                  widget.moreLabel ?? context.l10n.common_more,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
               ),
             ),
           ),

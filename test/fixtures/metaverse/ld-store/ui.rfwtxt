@@ -444,10 +444,12 @@ widget Chat = TimelinePage(identity: data.chatIdentity, itemKeys: data.chatKeys,
   header: Column(crossAxisAlignment: "stretch", children: [BuyerLogin(), Wrap(spacing: 8.0, crossAxisAlignment: "center", children: [
     switch data.chatReady {true: Chip(label: data.chatState), default: SizedBoxShrink()},
     switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}])]),
-  footer: switch data.canSend {true: Row(crossAxisAlignment: "end", children: [
+  footer: switch data.canSend {true: Column(mainAxisSize: "min", crossAxisAlignment: "stretch", children: [
+    switch data.chatDraftError {"": SizedBoxShrink(), default: Label(text: data.chatDraftError, style: "bodySmall", color: "error")},
+    Row(crossAxisAlignment: "end", children: [
     Expanded(child: TextInput(value: data.chatDraft, hint: data.i18n.sa410452649b38b31, variant: "filled", minLines: 1, maxLines: 4,
       maxLength: 500, showCounter: false, readOnly: data.chatSending, onChanged: event "chatInput" {})), Gap(size: 8),
-    Button(label: data.i18n.sedecf0ae6e5144f9, enabled: data.chatSendEnabled, loading: data.chatSending, onPressed: event "chatSend" {})]), default: SizedBoxShrink()},
+    Button(label: data.i18n.sedecf0ae6e5144f9, enabled: data.chatSendEnabled, loading: data.chatSending, onPressed: event "chatSend" {})])]), default: SizedBoxShrink()},
   items: [
     ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: {x: switch message.system {true: 0.0, default: switch message.mine {true: 1.0, default: -1.0}}, y: 0.0}, child:
       FractionallySizedBox(widthFactor: 0.88, alignment: {x: switch message.mine {true: 1.0, default: -1.0}, y: 0.0}, child:
