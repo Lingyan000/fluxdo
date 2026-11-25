@@ -21,15 +21,30 @@ Future<void> main(List<String> args) async {
       .toList(growable: false);
 
   if (!Platform.isMacOS) {
-    stderr.writeln('iOS 无签名 IPA 只能在 macOS 上打包');
+    _cliUi.error('iOS 无签名 IPA 只能在 macOS 上打包');
     exit(64);
   }
 
+  _cliUi.intro('FluxDO iOS IPA', subtitle: '无签名 IPA 构建工具');
+
   final version = await _resolveVersion(filteredArgs);
   if (version.isEmpty) {
-    stderr.writeln('无法确定版本号');
-    exit(1);
+    _cliUi.cancel('已取消');
+    return;
   }
+
+  final ipaDir = Directory('build/ios/ipa')..createSync(recursive: true);
+  final ipaPath = p.join(ipaDir.path, 'fluxdo-$version-nosign.ipa');
+
+  _cliUi.summaryBox(
+    title: '打包计划',
+    rows: [
+      CliSummaryRow('版本号', version, highlight: true),
+      CliSummaryRow('输出路径', ipaPath),
+      const CliSummaryRow('签名模式', '无签名 (--no-codesign)', dim: true),
+    ],
+  );
+  stdout.writeln('');
 
   if (!yes &&
       (await _cliUi.confirm(
@@ -37,30 +52,39 @@ Future<void> main(List<String> args) async {
             defaultValue: true,
           ) !=
           true)) {
-    stdout.writeln('==> 已取消');
+    _cliUi.cancel('已取消构建');
     return;
   }
 
-  final ipaDir = Directory('build/ios/ipa')..createSync(recursive: true);
-  final ipaPath = p.join(ipaDir.path, 'fluxdo-$version-nosign.ipa');
-
-  stdout.writeln('==> 构建 iOS 无签名 IPA ($version)');
+  final watch = Stopwatch()..start();
+  _cliUi.step('[1/2] 构建 iOS 应用');
   await runOrExit(
     title: '构建 iOS 应用',
     executable: Platform.resolvedExecutable,
-    arguments: const ['tool/flutterw.dart', 'build', 'ios', '--release', '--no-codesign'],
+    arguments: const [
+      'tool/flutterw.dart',
+      'build',
+      'ios',
+      '--release',
+      '--no-codesign',
+    ],
   );
 
   final runnerApp = Directory('build/ios/iphoneos/Runner.app');
   if (!runnerApp.existsSync()) {
-    stderr.writeln('缺少构建产物: ${runnerApp.path}');
+    _cliUi.error('缺少构建产物: ${runnerApp.path}');
     exit(1);
   }
 
+  _cliUi.step('[2/2] 打包 IPA');
   final tempDir = await Directory.systemTemp.createTemp('fluxdo_ipa_');
   try {
-    final payloadDir = Directory(p.join(tempDir.path, 'Payload'))..createSync(recursive: true);
-    await _copyDirectory(runnerApp, Directory(p.join(payloadDir.path, 'Runner.app')));
+    final payloadDir = Directory(p.join(tempDir.path, 'Payload'))
+      ..createSync(recursive: true);
+    await _copyDirectory(
+      runnerApp,
+      Directory(p.join(payloadDir.path, 'Runner.app')),
+    );
 
     final ipaFile = File(ipaPath);
     if (ipaFile.existsSync()) {
@@ -68,7 +92,7 @@ Future<void> main(List<String> args) async {
     }
 
     await runOrExit(
-      title: '打包 IPA',
+      title: '压缩 Payload 为 IPA',
       executable: 'zip',
       arguments: ['-qr', ipaFile.absolute.path, 'Payload'],
       workingDirectory: tempDir.path,
@@ -79,7 +103,22 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  stdout.writeln('==> IPA 已输出: $ipaPath');
+  watch.stop();
+  final sizeMb = (File(ipaPath).lengthSync() / (1024 * 1024)).toStringAsFixed(1);
+  stdout.writeln('');
+  _cliUi.summaryBox(
+    title: 'IPA 构建完成',
+    isSuccess: true,
+    rows: [
+      CliSummaryRow('输出文件', ipaPath, highlight: true),
+      CliSummaryRow('文件大小', '$sizeMb MB'),
+      CliSummaryRow(
+        '总耗时',
+        '${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)}s',
+      ),
+    ],
+  );
+  stdout.writeln('');
 }
 
 Future<String> _resolveVersion(List<String> args) async {
@@ -125,5 +164,6 @@ Future<void> _copyDirectory(Directory source, Directory destination) async {
 
 const _usage = '''
 用法:
+  mise r ipa [版本号] [-y|--yes]
   dart tool/build_ipa_nosign.dart [版本号] [-y|--yes]
 ''';

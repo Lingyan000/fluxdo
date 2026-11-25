@@ -1,12 +1,12 @@
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 /// 帖子内容 AI 翻译服务。
 class AiTranslationService {
-  AiTranslationService({required AiChatService chatService})
-    : _chatService = chatService;
+  AiTranslationService({required this.chatService});
 
-  final AiChatService _chatService;
+  final AiChatService chatService;
 
   /// 流式翻译 [text] 到 [targetLanguage]，每个事件是一段增量文本。
   Stream<String> translateStream({
@@ -16,7 +16,7 @@ class AiTranslationService {
     required String text,
     required String targetLanguage,
   }) async* {
-    final stream = _chatService.sendChatStream(
+    final stream = chatService.sendChatStream(
       provider: provider,
       model: model.id,
       apiKey: apiKey,
@@ -67,11 +67,21 @@ class AiTranslationService {
   /// cooked HTML 转为供翻译的纯文本。
   static String extractPlainText(String cookedHtml) {
     final document = html_parser.parse(cookedHtml);
+    for (final element in document.querySelectorAll('script, style')) {
+      element.remove();
+    }
     for (final img in document.querySelectorAll('img')) {
-      final alt = img.attributes['alt'];
-      img.replaceWith(
-        html_parser.parseFragment(alt != null && alt.isNotEmpty ? alt : ''),
-      );
+      img.replaceWith(dom.Text(img.attributes['alt'] ?? ''));
+    }
+    for (final br in document.querySelectorAll('br')) {
+      br.replaceWith(dom.Text('\n'));
+    }
+    // HTML 的 text 不包含块元素边界，补上段落和列表的换行。
+    for (final block in document.querySelectorAll(
+      'p, div, section, article, blockquote, pre, li, tr, h1, h2, h3, h4, h5, h6',
+    )) {
+      block.nodes.insert(0, dom.Text('\n'));
+      block.nodes.add(dom.Text('\n'));
     }
     final text = document.body?.text ?? cookedHtml;
     return text

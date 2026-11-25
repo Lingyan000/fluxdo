@@ -12,7 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
 import 'image_compression_strategy.dart';
-import 'image_editor_i18n_zh.dart';
+import 'app_image_editor.dart';
 import '../../../../../l10n/s.dart';
 
 /// 回车 = 按当前设置直接上传(桌面端一键确认;移动端软键盘回车不经这条
@@ -141,24 +141,12 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
       return;
     }
 
-    final result = await Navigator.of(context).push<Uint8List>(
-      InteractionPageRoute(
-        builder: (context) => ProImageEditor.file(
-          File(_currentImagePath),
-          callbacks: ProImageEditorCallbacks(
-            onImageEditingComplete: (Uint8List bytes) async {
-              Navigator.of(context).pop(bytes);
-            },
-          ),
-          configs: ProImageEditorConfigs(
-            i18n: buildImageEditorI18nZh(),
-            imageGeneration: ImageGenerationConfigs(
-              outputFormat: _editorOutputFormat,
-              maxOutputSize: Size(1920, 1920),
-            ),
-          ),
-        ),
-      ),
+    final bytes = await File(_currentImagePath).readAsBytes();
+    if (!mounted) return;
+    final result = await showAppImageEditor(
+      context,
+      bytes: bytes,
+      outputFormat: _editorOutputFormat,
     );
 
     if (result != null && mounted) {

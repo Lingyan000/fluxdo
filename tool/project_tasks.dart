@@ -6,8 +6,21 @@ import '_workspace_cli.dart';
 
 enum _BuildMode { debug, release }
 
+Future<void> Function(String command)? _projectPrepHandler;
+Future<void> Function(List<String> buildArgs)? _flutterBuildHandler;
+
 Future<void> main(List<String> args) async {
+  await runProjectTasks(args);
+}
+
+Future<void> runProjectTasks(
+  List<String> args, {
+  Future<void> Function(String command)? onProjectPrep,
+  Future<void> Function(List<String> buildArgs)? onFlutterBuild,
+}) async {
   enterWorkspaceRoot();
+  _projectPrepHandler = onProjectPrep;
+  _flutterBuildHandler = onFlutterBuild;
 
   if (args.isEmpty) {
     stderr.writeln(_usage);
@@ -51,7 +64,7 @@ Future<void> main(List<String> args) async {
 
 Future<void> _appClean() async {
   await runFlutterOrExit(title: '执行 flutter clean', arguments: const ['clean']);
-  resetPubGetStamp();
+  resetToolingStamps();
 }
 
 Future<void> _appRebuild(List<String> args) async {
@@ -63,6 +76,11 @@ Future<void> _appRebuild(List<String> args) async {
   }
 
   await _appClean();
+  final buildHandler = _flutterBuildHandler;
+  if (buildHandler != null) {
+    await buildHandler(args);
+    return;
+  }
   await runOrExit(
     title: '执行 flutter build ${args.join(' ')}',
     executable: Platform.resolvedExecutable,
@@ -203,25 +221,103 @@ Future<void> _releasePrepare(List<String> args) async {
   final strictAnalyze = args.contains('--strict-analyze');
   final skipAnalyze = args.contains('--skip-analyze');
   final skipTest = args.contains('--skip-test');
+  final fullAnalyze = args.contains('--full-analyze');
+  final fullTest = args.contains('--full-test');
 
   await _runProjectPrep('app');
 
+  await runOrExit(
+    title: '校验启动动画生成物',
+    executable: Platform.resolvedExecutable,
+    arguments: const ['tool/gen_splash_motion.dart', '--check'],
+  );
+
   if (!skipAnalyze) {
-    await runFlutterOrExit(
-      title: strictAnalyze ? '执行 flutter analyze' : '执行 flutter analyze（非严格模式）',
-      arguments: [
-        'analyze',
-        if (!strictAnalyze) ...const [
-          '--no-fatal-infos',
-          '--no-fatal-warnings',
+    final targets = fullAnalyze ? const ['lib'] : await _changedLibDartFilesSinceLastTag();
+    if (targets == null) {
+      await runFlutterOrExit(
+        title: strictAnalyze
+            ? '执行 flutter analyze lib'
+            : '执行 flutter analyze lib（仅拦截 error）',
+        arguments: [
+          'analyze',
+          '--no-pub',
+          if (!strictAnalyze) ...const [
+            '--no-fatal-infos',
+            '--no-fatal-warnings',
+          ],
+          'lib',
         ],
-      ],
-    );
+      );
+    } else if (targets.isEmpty) {
+      stdout.writeln('==> 自上次发版以来未修改 lib/**/*.dart，跳过 analyze');
+    } else {
+      await runFlutterOrExit(
+        title: strictAnalyze
+            ? '执行增量 flutter analyze（${targets.length} 个文件）'
+            : '执行增量 flutter analyze（${targets.length} 个文件，仅拦截 error）',
+        arguments: [
+          'analyze',
+          '--no-pub',
+          if (!strictAnalyze) ...const [
+            '--no-fatal-infos',
+            '--no-fatal-warnings',
+          ],
+          ...targets,
+        ],
+      );
+    }
   }
 
   if (!skipTest) {
-    await _testAll(const [], includePrep: false);
+    if (fullTest) {
+      await _testAll(const [], includePrep: false);
+    } else {
+      await runFlutterOrExit(
+        title: '执行架构守卫测试 (test/architecture)',
+        arguments: const ['test', '--no-pub', 'test/architecture'],
+      );
+    }
   }
+}
+
+/// 返回自最近一个 `v*` tag 以来新增或修改的 `lib/**/*.dart` 文件列表。
+/// 若无法定位历史 tag（如浅克隆或首次发版），返回 `null` 回退到整目录 `lib`。
+Future<List<String>?> _changedLibDartFilesSinceLastTag() async {
+  final tagResult = await _runProcess('git', const [
+    'tag',
+    '--list',
+    'v*',
+    '--sort=-v:refname',
+  ]);
+  if (tagResult.exitCode != 0) {
+    return null;
+  }
+  final latestTag = tagResult.combinedOutput
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim())
+      .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+  if (latestTag.isEmpty) {
+    return null;
+  }
+
+  final diffResult = await _runProcess('git', [
+    'diff',
+    '--name-only',
+    '--diff-filter=ACMR',
+    latestTag,
+    '--',
+    'lib',
+  ]);
+  if (diffResult.exitCode != 0) {
+    return null;
+  }
+
+  return diffResult.combinedOutput
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.trim())
+      .where((line) => line.endsWith('.dart') && File(line).existsSync())
+      .toList();
 }
 
 List<_FlutterTestTask> _buildWorkspaceTestTasks(List<String> args) {
@@ -774,6 +870,10 @@ void _stageFile(String sourcePath, String targetPath) {
 }
 
 Future<void> _runProjectPrep(String command) {
+  final handler = _projectPrepHandler;
+  if (handler != null) {
+    return handler(command);
+  }
   return runOrExit(
     title: '执行项目预处理 $command',
     executable: Platform.resolvedExecutable,
@@ -1448,7 +1548,7 @@ const _usage = '''
   dart tool/project_tasks.dart run:prepare [--debug|--release|--profile] [--target-platform=<platforms>]
   dart tool/project_tasks.dart native:prepare [certs|auto|desktop|windows|macos|linux|android|ios|all] [--debug|--release|--profile] [--arch=arm64|x86_64]
   dart tool/project_tasks.dart native:doctor [--target-platform=android-arm64,android-arm,android-x64]
-  dart tool/project_tasks.dart release:prepare [--skip-analyze] [--skip-test] [--strict-analyze]
+  dart tool/project_tasks.dart release:prepare [--skip-analyze] [--skip-test] [--full-analyze] [--full-test] [--strict-analyze]
 ''';
 
 class _WorkspaceTestPackage {

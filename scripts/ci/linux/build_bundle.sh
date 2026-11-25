@@ -5,8 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-# 与 FVM/CI 共用项目固定版本，仍允许构建环境显式覆盖。
-FLUTTER_VERSION="${FLUTTER_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["flutter"])' "${PROJECT_ROOT}/.fvmrc")}"
+# 与 mise.toml / CI 共用项目固定版本，仍允许构建环境显式覆盖。
+FLUTTER_VERSION="${FLUTTER_VERSION:-$(python3 -c 'import re,sys; text=open(sys.argv[1]).read(); m=re.search(r"^\s*flutter\s*=\s*\"([^\"]+)\"", text, re.M); assert m, "mise.toml missing flutter"; print(m.group(1))' "${PROJECT_ROOT}/mise.toml")}"
 FLUTTER_ROOT="${FLUTTER_ROOT:-$HOME/flutter}"
 FLUTTER_ARCHIVE="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
 FLUTTER_URL="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/${FLUTTER_ARCHIVE}"

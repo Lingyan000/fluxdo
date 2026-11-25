@@ -70,7 +70,10 @@ macos/Runner/native/*
 # iOS Rust static libraries (generated from Rust)
 ios/rust_libs/
 
-# FVM Version Cache
+# IDE SDK 链接（由 mise postinstall / tool/sync_ide_sdk.dart 生成）
+.tooling/
+
+# 旧版 FVM 本地缓存（历史遗留目录不入库）
 .fvm/
 
 # Codex

@@ -2,6 +2,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
+import 'package:fluxdo/models/translation_engine.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -154,11 +155,12 @@ void main() {
     expect(reloaded.read(preferencesProvider).showFilterHint, isFalse);
   });
 
-  test('AI 翻译偏好可以持久化并恢复', () async {
+  test('翻译服务切换后可以持久化并恢复', () async {
     final container = await _createContainer();
     addTearDown(container.dispose);
 
     final notifier = container.read(preferencesProvider.notifier);
+    await notifier.setTranslationEngine(TranslationEngine.bilibili);
     await notifier.setAiTranslationEnabled(true);
     await notifier.setAiTranslationTargetLanguage('ja');
     await notifier.setAiTranslationModelKey('provider:model');
@@ -170,8 +172,62 @@ void main() {
     addTearDown(reloaded.dispose);
 
     final state = reloaded.read(preferencesProvider);
+    expect(state.translationEngine, TranslationEngine.bilibili);
     expect(state.aiTranslationEnabled, isTrue);
     expect(state.aiTranslationTargetLanguage, 'ja');
     expect(state.aiTranslationModelKey, 'provider:model');
+  });
+
+  test('旧版 AI 翻译用户继续使用 AI，关闭再开启不会重置服务', () async {
+    final container = await _createContainer(
+      initialValues: {
+        'pref_ai_translation_enabled': true,
+        'pref_ai_translation_model': 'provider:model',
+      },
+    );
+    addTearDown(container.dispose);
+    expect(
+      container.read(preferencesProvider).translationEngine,
+      TranslationEngine.ai,
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setAiTranslationEnabled(false);
+    final reloaded = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(
+          container.read(sharedPreferencesProvider),
+        ),
+      ],
+    );
+    addTearDown(reloaded.dispose);
+    expect(
+      reloaded.read(preferencesProvider).translationEngine,
+      TranslationEngine.ai,
+    );
+  });
+
+  test('新用户开启翻译再启动仍使用 Google', () async {
+    final container = await _createContainer();
+    addTearDown(container.dispose);
+    expect(
+      container.read(preferencesProvider).translationEngine,
+      TranslationEngine.google,
+    );
+    await container
+        .read(preferencesProvider.notifier)
+        .setAiTranslationEnabled(true);
+    final reloaded = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(
+          container.read(sharedPreferencesProvider),
+        ),
+      ],
+    );
+    addTearDown(reloaded.dispose);
+    expect(
+      reloaded.read(preferencesProvider).translationEngine,
+      TranslationEngine.google,
+    );
   });
 }

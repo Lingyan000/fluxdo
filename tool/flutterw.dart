@@ -7,9 +7,29 @@ import '_workspace_cli.dart';
 const _commandsRequiringAppPrep = {'run', 'build', 'drive'};
 const _commandsRequiringTestPrep = {'test'};
 
+const _runDeviceShortcuts = <String>{
+  'macos',
+  'windows',
+  'linux',
+  'ios',
+  'android',
+  'chrome',
+  'edge',
+  'web-server',
+  'all',
+};
+
 Future<void> main(List<String> args) async {
+  await runFlutterWrapper(args);
+}
+
+Future<void> runFlutterWrapper(
+  List<String> rawArgs, {
+  Future<void> Function(String mode)? onProjectPrep,
+  Future<void> Function(List<String> nativePrepareArgs)? onNativePrepare,
+}) async {
   enterWorkspaceRoot();
-  args = List.of(args);
+  final args = List<String>.of(rawArgs);
 
   if (args.isEmpty) {
     stderr.writeln('用法: dart tool/flutterw.dart <flutter args...>');
@@ -17,6 +37,11 @@ Future<void> main(List<String> args) async {
   }
 
   final command = _firstFlutterCommand(args);
+  if (command == 'run' || command == 'drive') {
+    _normalizeRunDeviceShortcut(args, command!);
+  }
+
+  var requireAndroidJava = false;
   if (command != null && _commandsRequiringAppPrep.contains(command)) {
     _addReleaseVersion(args);
     // rfw 的核心组件注册会保留动态图标解码，AOT 图标裁剪无法分析该入口。
@@ -26,24 +51,59 @@ Future<void> main(List<String> args) async {
         !args.contains('--no-tree-shake-icons')) {
       args.add('--no-tree-shake-icons');
     }
-    await runOrExit(
-      title: '执行项目预处理',
-      executable: Platform.resolvedExecutable,
-      arguments: const ['tool/project_prep.dart', 'app'],
+    if (onProjectPrep != null) {
+      await onProjectPrep('app');
+    } else {
+      await runOrExit(
+        title: '执行项目预处理',
+        executable: Platform.resolvedExecutable,
+        arguments: const ['tool/project_prep.dart', 'app'],
+      );
+    }
+    final targets = await _runNativePrepIfNeeded(
+      command,
+      args,
+      onNativePrepare: onNativePrepare,
     );
-    await _runNativePrepIfNeeded(command, args);
+    requireAndroidJava = targets.any((target) => target.platform == 'android');
   } else if (command != null && _commandsRequiringTestPrep.contains(command)) {
-    await runOrExit(
-      title: '执行测试预处理',
-      executable: Platform.resolvedExecutable,
-      arguments: const ['tool/project_prep.dart', 'test'],
-    );
+    if (onProjectPrep != null) {
+      await onProjectPrep('test');
+    } else {
+      await runOrExit(
+        title: '执行测试预处理',
+        executable: Platform.resolvedExecutable,
+        arguments: const ['tool/project_prep.dart', 'test'],
+      );
+    }
   }
 
   await runFlutterOrExit(
     title: '执行 flutter ${args.join(' ')}',
     arguments: args,
+    requireAndroidJava: requireAndroidJava,
   );
+}
+
+/// 支持 `run macos` / `run android --profile` 等位置简写，自动展开为 `-d <target>`。
+void _normalizeRunDeviceShortcut(List<String> args, String command) {
+  if (_extractOptionValue(args, '-d', '--device-id') != null) {
+    return;
+  }
+  final commandIndex = args.indexOf(command);
+  if (commandIndex == -1) return;
+
+  final nextIndex = commandIndex + 1;
+  if (nextIndex >= args.length) return;
+
+  final candidate = args[nextIndex];
+  if (candidate.startsWith('-')) return;
+
+  if (_runDeviceShortcuts.contains(candidate.toLowerCase())) {
+    args
+      ..removeAt(nextIndex)
+      ..insertAll(nextIndex, ['-d', candidate.toLowerCase()]);
+  }
 }
 
 void _addReleaseVersion(List<String> args) {
@@ -53,35 +113,48 @@ void _addReleaseVersion(List<String> args) {
   )) {
     return;
   }
+  final pubspec = File('pubspec.yaml');
+  if (!pubspec.existsSync()) {
+    return;
+  }
   final version =
       _extractOptionValue(args, '--build-name', '--build-name') ??
-      RegExp(r'^version:[ \t]*(\S+)', multiLine: true)
-          .firstMatch(File('pubspec.yaml').readAsStringSync())
-          ?.group(1)
-          ?.split('+')
-          .first;
+      RegExp(
+        r'^version:[ \t]*(\S+)',
+        multiLine: true,
+      ).firstMatch(pubspec.readAsStringSync())?.group(1)?.split('+').first;
   if (version != null) args.add('--dart-define=$key=$version');
 }
 
-Future<void> _runNativePrepIfNeeded(String command, List<String> args) async {
+Future<List<_NativeTarget>> _runNativePrepIfNeeded(
+  String command,
+  List<String> args, {
+  Future<void> Function(List<String> nativePrepareArgs)? onNativePrepare,
+}) async {
   final targets = await _detectNativeTargets(command, args);
   final prepared = <String>{};
   for (final target in targets) {
     final key = '${target.platform}/${target.androidTargetPlatform}';
     if (prepared.add(key)) {
-      await _prepareNativeTarget(target, command, args);
+      await _prepareNativeTarget(
+        target,
+        command,
+        args,
+        onNativePrepare: onNativePrepare,
+      );
     }
   }
+  return targets;
 }
 
 Future<void> _prepareNativeTarget(
   _NativeTarget target,
   String command,
-  List<String> args,
-) async {
+  List<String> args, {
+  Future<void> Function(List<String> nativePrepareArgs)? onNativePrepare,
+}) async {
   final buildMode = _detectBuildMode(command, args);
-  final nativeArgs = <String>[
-    'tool/project_tasks.dart',
+  final taskArgs = <String>[
     'native:prepare',
     target.platform,
     buildMode,
@@ -91,18 +164,24 @@ Future<void> _prepareNativeTarget(
         _extractOptionValue(args, '--target-platform', '--target-platform') ??
         target.androidTargetPlatform;
     if (targetPlatform != null && targetPlatform.isNotEmpty) {
-      nativeArgs.add('--target-platform=$targetPlatform');
+      taskArgs.add('--target-platform=$targetPlatform');
     }
   } else if (target.platform == 'macos') {
     final macOsArch = target.macOsArch;
     if (macOsArch != null && macOsArch.isNotEmpty) {
-      nativeArgs.add('--arch=$macOsArch');
+      taskArgs.add('--arch=$macOsArch');
     }
   }
+
+  if (onNativePrepare != null) {
+    await onNativePrepare(taskArgs);
+    return;
+  }
+
   await runOrExit(
     title: '准备 ${target.platform} 原生产物',
     executable: Platform.resolvedExecutable,
-    arguments: nativeArgs,
+    arguments: ['tool/project_tasks.dart', ...taskArgs],
   );
 }
 
@@ -306,7 +385,6 @@ Future<List<_FlutterDevice>> _loadFlutterDevices(List<String> args) async {
       flutterExecutable,
       discoveryArgs,
       runInShell: Platform.isWindows,
-      environment: await androidBuildEnvironment(),
       workingDirectory: workspaceRootPath,
     );
     if (result.exitCode != 0) {

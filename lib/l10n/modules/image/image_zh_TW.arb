@@ -143,6 +143,17 @@
       }
     }
   },
+  "imageViewer_editReply": "編輯圖片並回覆",
+  "imageViewer_editFrameHint": "動圖將編輯第一幀，結果儲存為靜態圖片",
+  "imageViewer_editFailed": "圖片編輯失敗，請重試",
+  "imageViewer_replyUploadFailed": "圖片上傳失敗，已保留編輯結果，點擊編輯圖片並回覆可重試",
+  "imageViewer_recognizeText": "辨識文字",
+  "imageViewer_recognizing": "正在辨識文字",
+  "imageViewer_noText": "沒有辨識到文字",
+  "imageViewer_ocrFailed": "文字辨識失敗，請重試",
+  "imageViewer_downloadOcr": "下載文字辨識模型",
+  "imageViewer_ocrDownloadFailed": "模型下載或驗證失敗，請重試",
+  "imageViewer_ocrDownloadDescription": "首次使用需下載約 {size} MiB 的識字模型，下載後可離線辨識圖片中的文字。",
   "imageViewer_grantPermission": "請授予相簿訪問許可權",
   "imageViewer_saveFailed": "儲存失敗: {error}",
   "@imageViewer_saveFailed": {

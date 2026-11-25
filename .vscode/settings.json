@@ -2,5 +2,5 @@
   "cSpell.words": [
     "fluxdo"
   ],
-  "dart.flutterSdkPath": ".fvm/versions/3.50.0"
+  "dart.flutterSdkPath": ".tooling/flutter_sdk"
 }

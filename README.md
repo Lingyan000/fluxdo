@@ -55,8 +55,8 @@ brew install --cask Lingyan000/tap/fluxdo
 
 ### 前置要求
 
-- Flutter SDK 3.50.0（版本由 `.fvmrc` 固定）
-- Rust 工具链（用于编译 DOH 代理）
+- **推荐方式**：安装 [mise](https://mise.jdx.dev/)（按 `mise.toml` 一键配齐 Flutter 3.50.0、Rust 1.96.0、JDK 21 与本地任务入口）
+- **不使用 `mise`**：自行准备 Flutter 3.50.0 与 Rust 1.96+，直接通过 `dart tool/cli.dart` 运行，体验一致
 - Android Studio / Xcode（移动端开发）
 
 ### 安装步骤
@@ -67,37 +67,28 @@ brew install --cask Lingyan000/tap/fluxdo
    cd fluxdo
    ```
 
-2. **初始化工作区**
+2. **使用 `mise`（推荐）**
+   - 安装 `mise`：macOS `brew install mise` / Windows `winget install jdx.mise`（或 `scoop install mise`）/ Linux `curl https://mise.run | sh`（Arch：`sudo pacman -S mise`）
+   - 安装工具链、初始化并运行：
+     ```bash
+     mise install
+     mise init
+     mise dev macos       # windows / linux / android / ios 同理
+     ```
+   `mise install` 会自动同步 `.tooling/flutter_sdk` 链接（供 VS Code / Android Studio 直接识别）；`mise init` 会一键完成子模块拉取、`melos bootstrap`、`flutter pub get`、l10n 生成和代理证书同步。
+
+3. **不安装 `mise`（已有 Flutter / Rust 环境）**
    ```bash
-   melos bootstrap
+   dart tool/cli.dart init
+   dart tool/cli.dart dev macos
    ```
-   如果没有安装全局 `melos`，可改用 `dart run melos bootstrap`。
-   这一步只负责 workspace 依赖和链接初始化。
+   `dart tool/cli.dart init` 同样会自动把本机当前的 Flutter SDK 链接到 `.tooling/flutter_sdk` 并完成全部预处理。
 
-3. **安装 `just`**
-   - Windows：`winget install --id Casey.Just --exact`
-   - Windows：`scoop install just`
-   - Windows：`choco install just`
-   - 通用：`cargo install just`
-
-4. **同步项目状态**
+   如需透传额外 Flutter 参数（如 `--dart-define`）：
    ```bash
-   just sync
-   ```
-   这一步会统一完成 `flutter pub get`、l10n 生成和代理证书资源同步。
-
-5. **运行应用**
-   ```bash
-   just run -- -d windows
-   just run -- -d macos
-   just run -- -d linux
-   just run -- --dart-define=cronetHttpNoPlay=true
-   ```
-
-   如果你不想安装 `just`，也可以直接调用 Dart 入口：
-   ```bash
-   dart run tool/project_prep.dart app
-   dart run tool/flutterw.dart run -d windows
+   mise dev -- --dart-define=cronetHttpNoPlay=true
+   # 或
+   dart tool/cli.dart dev --dart-define=cronetHttpNoPlay=true
    ```
 
 ## 开发

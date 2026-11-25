@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '_workspace_cli.dart';
+import 'gen_l10n.dart' as gen_l10n;
 
 const _certCrtPath = 'core/net_core/certs/ca.crt';
 const _certDerPath = 'core/net_core/certs/ca.der';
@@ -9,6 +10,14 @@ const _androidCertPath = 'android/app/src/main/res/raw/proxy_ca.der';
 const _androidKeyPropertiesPath = 'android/key.properties';
 
 Future<void> main(List<String> args) async {
+  await runProjectPrep(args);
+}
+
+Future<void> runProjectPrep(
+  List<String> args, {
+  bool forceL10n = false,
+  Future<void> Function(List<String> doctorArgs)? onNativeDoctor,
+}) async {
   enterWorkspaceRoot();
 
   final command = args.isEmpty ? 'app' : args.first;
@@ -16,16 +25,16 @@ Future<void> main(List<String> args) async {
   switch (command) {
     case 'app':
     case 'bootstrap':
-      await _prepareApp(includeCerts: true);
+      await _prepareApp(includeCerts: true, forceL10n: forceL10n);
       return;
     case 'test':
-      await _prepareApp(includeCerts: false);
+      await _prepareApp(includeCerts: false, forceL10n: forceL10n);
       return;
     case 'certs':
       await _ensureProxyCertResources();
       return;
     case 'doctor':
-      await _runDoctor(args.sublist(1));
+      await _runDoctor(args.sublist(1), onNativeDoctor: onNativeDoctor);
       return;
     case 'help':
     case '--help':
@@ -39,20 +48,16 @@ Future<void> main(List<String> args) async {
   }
 }
 
-Future<void> _prepareApp({required bool includeCerts}) async {
+Future<void> _prepareApp({
+  required bool includeCerts,
+  required bool forceL10n,
+}) async {
+  await syncIdeFlutterSdkLink(quiet: true);
   await ensurePubGet();
-  await _generateL10n();
+  await gen_l10n.runGenL10n(force: forceL10n);
   if (includeCerts) {
     await _ensureProxyCertResources();
   }
-}
-
-Future<void> _generateL10n() {
-  return runOrExit(
-    title: '生成 l10n',
-    executable: Platform.resolvedExecutable,
-    arguments: const ['tool/gen_l10n.dart'],
-  );
 }
 
 Future<void> _ensureProxyCertResources() async {
@@ -115,12 +120,22 @@ bool _syncIfNeeded(File source, File target) {
   return true;
 }
 
-Future<void> _runDoctor(List<String> args) async {
+Future<void> _runDoctor(
+  List<String> args, {
+  Future<void> Function(List<String> doctorArgs)? onNativeDoctor,
+}) async {
   stdout.writeln('==> 检查开发环境');
+  await _printCommandStatus(
+    'mise',
+    'mise',
+    const ['--version'],
+    optionalHint: '未安装（可选，可直接使用 dart tool/cli.dart）',
+  );
   await _printCommandStatus('Flutter', flutterExecutable, const ['--version']);
   await _printCommandStatus('Dart', Platform.resolvedExecutable, const ['--version']);
   await _printCommandStatus('Cargo', 'cargo', const ['--version']);
   await _printAndroidJavaStatus();
+  await _printIdeSdkLinkStatus();
 
   stdout.writeln('==> 检查 l10n 生成状态');
   final l10nResult = await _runProcess(
@@ -146,6 +161,11 @@ Future<void> _runDoctor(List<String> args) async {
   stdout.writeln('==> 检查 Android 签名状态');
   _printAndroidSigningStatus();
 
+  if (onNativeDoctor != null) {
+    await onNativeDoctor(args);
+    return;
+  }
+
   await runOrExit(
     title: '检查 Android 网络核心构建环境',
     executable: Platform.resolvedExecutable,
@@ -153,8 +173,27 @@ Future<void> _runDoctor(List<String> args) async {
   );
 }
 
+Future<void> _printIdeSdkLinkStatus() async {
+  final sdkHome = resolveFlutterHome();
+  final linkDir = Directory(ideFlutterSdkLinkPath);
+  if (!linkDir.existsSync()) {
+    stdout.writeln(
+      '[MISSING] IDE Flutter SDK 链接 ($ideFlutterSdkLinkPath)，执行 mise r sdk:link 创建',
+    );
+    return;
+  }
+  final resolved = linkDir.resolveSymbolicLinksSync();
+  if (sdkHome != null && resolved == Directory(sdkHome).resolveSymbolicLinksSync()) {
+    stdout.writeln('[OK] IDE Flutter SDK 链接: $ideFlutterSdkLinkPath -> $resolved');
+    return;
+  }
+  stdout.writeln(
+    '[STALE] IDE Flutter SDK 链接: $ideFlutterSdkLinkPath -> $resolved (期望 $sdkHome)，执行 mise r sdk:link 修复',
+  );
+}
+
 Future<void> _printAndroidJavaStatus() async {
-  final runtime = await resolveAndroidJavaRuntime();
+  final runtime = await resolveAndroidJavaRuntime(forceProbe: true);
   if (runtime == null) {
     stdout.writeln('[MISSING] Android Gradle JDK: 未找到受支持的 JDK 17+/ < 26');
     return;
@@ -212,7 +251,9 @@ void _printAndroidSigningStatus() {
   }
 
   if (missingFields.isEmpty) {
-    stdout.writeln('[OK] Android local signing: ${storeFile!.path}（debug/profile/release）');
+    stdout.writeln(
+      '[OK] Android local signing: ${storeFile!.path}（debug/profile/release）',
+    );
     return;
   }
 
@@ -231,14 +272,13 @@ Map<String, String> _readSimpleProperties(File file) {
 
     final equalIndex = line.indexOf('=');
     final colonIndex = line.indexOf(':');
-    final separatorIndex =
-        equalIndex == -1
-            ? colonIndex
-            : colonIndex == -1
-            ? equalIndex
-            : equalIndex < colonIndex
-            ? equalIndex
-            : colonIndex;
+    final separatorIndex = equalIndex == -1
+        ? colonIndex
+        : colonIndex == -1
+        ? equalIndex
+        : equalIndex < colonIndex
+        ? equalIndex
+        : colonIndex;
     if (separatorIndex <= 0) {
       continue;
     }
@@ -286,14 +326,20 @@ File? _resolveAndroidStoreFile(String? rawPath) {
 Future<void> _printCommandStatus(
   String label,
   String executable,
-  List<String> arguments,
-) async {
+  List<String> arguments, {
+  String? optionalHint,
+}) async {
   final result = await _runProcess(executable, arguments);
   if (result.exitCode == 0) {
     final firstLine = result.combinedOutput
         .split(RegExp(r'\r?\n'))
         .firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
     stdout.writeln('[OK] $label: $firstLine');
+    return;
+  }
+
+  if (optionalHint != null) {
+    stdout.writeln('[OPTIONAL] $label: $optionalHint');
     return;
   }
 

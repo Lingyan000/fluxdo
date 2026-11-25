@@ -1,5 +1,5 @@
 {
-  "_comment": "启动 logo 描线动画的单一真源。Flutter 启动页与 Android 原生启动屏都由 tool/gen_splash_motion.dart 从本文件生成，改完执行 just splash-motion。时间区间为占总时长的比例；曲线为三次贝塞尔控制点 [x1, y1, x2, y2]。",
+  "_comment": "启动 logo 描线动画的单一真源。Flutter 启动页与 Android 原生启动屏都由 tool/gen_splash_motion.dart 从本文件生成，改完执行 mise r splash-motion。时间区间为占总时长的比例；曲线为三次贝塞尔控制点 [x1, y1, x2, y2]。",
   "durationMs": 1000,
   "logoSizeDp": 108,
   "strokeWidthDp": 2.5,

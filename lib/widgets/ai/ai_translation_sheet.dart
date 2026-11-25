@@ -1,185 +1,192 @@
 import 'dart:async';
-import 'package:common_ui/common_ui.dart';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../l10n/s.dart';
+import '../../models/translation_engine.dart';
 import '../../providers/ai_translation_provider.dart';
+import '../../providers/preferences_provider.dart';
 import '../../services/ai_translation_service.dart';
 import '../../services/toast_service.dart';
-import '../../utils/dialog_utils.dart';
+import '../../services/translation_service.dart';
+import '../common/app_bottom_sheet.dart';
 
-/// 打开帖子 AI 翻译弹层。弹层独立于楼层树，避免破坏帖子实例缓存。
+/// 帖子和图片识字结果共用翻译界面，识字结果直接作为纯文本传递。
 void showAiTranslationSheet(
   BuildContext context, {
   required String cookedHtml,
 }) {
-  showAppBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (ctx) => AppSheetScaffold(
-      maxHeightFactor: 0.85,
-      child: _AiTranslationSheetBody(cookedHtml: cookedHtml),
-    ),
+  showTextTranslationSheet(
+    context,
+    text: AiTranslationService.extractPlainText(cookedHtml),
   );
 }
 
-class _AiTranslationSheetBody extends ConsumerStatefulWidget {
-  const _AiTranslationSheetBody({required this.cookedHtml});
+Future<void> showTextTranslationSheet(
+  BuildContext context, {
+  required String text,
+}) => AppBottomSheet.show<void>(
+  context: context,
+  title: context.l10n.ai_translationTitle,
+  maxHeightFactor: 0.85,
+  builder: (_) => TranslationSheetBody(text: text),
+);
 
-  final String cookedHtml;
+class TranslationSheetBody extends ConsumerStatefulWidget {
+  const TranslationSheetBody({super.key, required this.text});
+
+  final String text;
 
   @override
-  ConsumerState<_AiTranslationSheetBody> createState() =>
-      _AiTranslationSheetBodyState();
+  ConsumerState<TranslationSheetBody> createState() =>
+      _TranslationSheetBodyState();
 }
 
-class _AiTranslationSheetBodyState
-    extends ConsumerState<_AiTranslationSheetBody> {
-  final StringBuffer _result = StringBuffer();
+class _TranslationSheetBodyState extends ConsumerState<TranslationSheetBody> {
+  final _result = StringBuffer();
   StreamSubscription<String>? _subscription;
+  CancelToken? _cancelToken;
   Timer? _flushTimer;
-  bool _dirty = false;
-  bool _firstDeltaShown = false;
+  late TranslationEngine _engine;
+  late String _target;
+  int _generation = 0;
   bool _streaming = false;
   bool _truncated = false;
   String? _error;
 
-  /// 高频 token 合并为约 12 FPS 的 UI 更新，避免长译文逐 token 重建。
-  static const _flushInterval = Duration(milliseconds: 80);
-
   @override
   void initState() {
     super.initState();
+    _engine = ref.read(preferencesProvider).translationEngine;
+    _target = ref.read(aiTranslationTargetLanguageProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
-  @override
-  void dispose() {
-    _flushTimer?.cancel();
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _markDirty() {
-    if (!_firstDeltaShown) {
-      _firstDeltaShown = true;
-      _dirty = false;
-      setState(() {});
-      return;
-    }
-    _dirty = true;
-    _flushTimer ??= Timer(_flushInterval, () {
-      _flushTimer = null;
-      if (!mounted || !_dirty) return;
-      _dirty = false;
-      setState(() {});
-    });
-  }
-
-  Future<void> _start() async {
-    if (!mounted) return;
-    await _subscription?.cancel();
-    setState(() {
-      _result.clear();
-      _error = null;
-      _firstDeltaShown = false;
-      _truncated = false;
-      _streaming = true;
-    });
-
-    final selected = ref.read(aiTranslationSelectedModelProvider);
-    if (selected == null) {
-      setState(() {
-        _streaming = false;
-        _error = S.current.ai_translationNoModel;
-      });
-      return;
-    }
-    final apiKey = await AiProviderListNotifier.getApiKey(selected.provider.id);
-    if (!mounted) return;
-    if (apiKey == null || apiKey.trim().isEmpty) {
-      setState(() {
-        _streaming = false;
-        _error = S.current.ai_translationNoApiKey;
-      });
-      return;
-    }
-
-    final text = AiTranslationService.extractPlainText(widget.cookedHtml);
-    if (text.isEmpty) {
-      setState(() {
-        _streaming = false;
-        _error = S.current.ai_translationEmptyContent;
-      });
-      return;
-    }
-    final clamped = AiTranslationService.clampForTranslation(text);
-    if (clamped.truncated) {
-      setState(() => _truncated = true);
-    }
-
-    final target = ref.read(aiTranslationTargetLanguageProvider);
-    final service = ref.read(aiTranslationServiceProvider);
-    _subscription = service
-        .translateStream(
-          provider: selected.provider,
-          model: selected.model,
-          apiKey: apiKey.trim(),
-          text: clamped.text,
-          targetLanguage: aiTranslationLanguageLabel(target),
-        )
-        .listen(
-          (delta) {
-            if (!mounted) return;
-            _result.write(delta);
-            _markDirty();
-          },
-          onError: (Object error) {
-            if (!mounted) return;
-            _flushTimer?.cancel();
-            _flushTimer = null;
-            _dirty = false;
-            setState(() {
-              _streaming = false;
-              _error = S.current.ai_translationFailed;
-            });
-            debugPrint('[AiTranslation] 翻译失败: $error');
-          },
-          onDone: () {
-            if (!mounted) return;
-            _flushTimer?.cancel();
-            _flushTimer = null;
-            _dirty = false;
-            setState(() {
-              _streaming = false;
-              // 流正常结束却一个 TextDelta 都没有:推理模型把预算烧在
-              // thinking 上导致正文被截断、内容策略拦截、provider 返回空
-              // SSE body 都会走到这里。不置错误的话 build 会落进
-              // `_result.isEmpty` 的 spinner 分支且永不退出 —— 既没有提示
-              // 也没有重试入口。对齐 AiPostReviewService 的空结果保护。
-              if (_result.isEmpty) _error = S.current.ai_translationFailed;
-            });
-          },
-        );
-  }
-
-  /// 中途停止:保留已生成的部分译文;一个字都没出时落进错误分支
-  /// 给出「已停止」+ 重试,避免停在永久 spinner。
-  void _stop() {
+  void _cancel() {
+    _generation++;
+    _cancelToken?.cancel();
     _subscription?.cancel();
     _subscription = null;
     _flushTimer?.cancel();
     _flushTimer = null;
-    _dirty = false;
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    if (!mounted) return;
+    _cancel();
+    final generation = _generation;
+    final cancelToken = _cancelToken = CancelToken();
+    setState(() {
+      _result.clear();
+      _error = null;
+      _truncated = false;
+      _streaming = true;
+    });
+    try {
+      var text = widget.text.trim();
+      if (text.isEmpty) throw S.current.ai_translationEmptyContent;
+      Stream<String> stream;
+      if (_engine == TranslationEngine.ai) {
+        final selected = ref.read(aiTranslationSelectedModelProvider);
+        if (selected == null) throw S.current.ai_translationNoModel;
+        final apiKey = await AiProviderListNotifier.getApiKey(
+          selected.provider.id,
+        );
+        if (!mounted || generation != _generation) return;
+        if (apiKey == null || apiKey.trim().isEmpty) {
+          throw S.current.ai_translationNoApiKey;
+        }
+        final clamped = AiTranslationService.clampForTranslation(text);
+        _truncated = clamped.truncated;
+        text = clamped.text;
+        stream = ref
+            .read(aiTranslationServiceProvider)
+            .translateStream(
+              provider: selected.provider,
+              model: selected.model,
+              apiKey: apiKey.trim(),
+              text: text,
+              targetLanguage: aiTranslationLanguageLabel(_target),
+            );
+      } else {
+        stream = ref
+            .read(translationServiceProvider)
+            .translate(
+              engine: _engine,
+              text: text,
+              targetCode: _target,
+              targetName: aiTranslationLanguageLabel(_target),
+              cancelToken: cancelToken,
+            );
+      }
+      if (!mounted || generation != _generation) return;
+      _subscription = stream.listen(
+        (delta) {
+          if (!mounted || generation != _generation) return;
+          final first = _result.isEmpty;
+          _result.write(delta);
+          if (first) {
+            setState(() {});
+          } else {
+            _flushTimer ??= Timer(const Duration(milliseconds: 80), () {
+              _flushTimer = null;
+              if (mounted && generation == _generation) setState(() {});
+            });
+          }
+        },
+        onError: (Object error) => _failed(error, generation),
+        onDone: () {
+          if (!mounted || generation != _generation) return;
+          _flushTimer?.cancel();
+          _flushTimer = null;
+          setState(() {
+            _streaming = false;
+            if (_result.toString().trim().isEmpty) {
+              _error = S.current.ai_translationFailed;
+            }
+          });
+        },
+        cancelOnError: true,
+      );
+    } catch (error) {
+      _failed(error, generation);
+    }
+  }
+
+  void _failed(Object error, int generation) {
+    if (!mounted || generation != _generation) return;
+    _flushTimer?.cancel();
+    _flushTimer = null;
     setState(() {
       _streaming = false;
-      if (_result.isEmpty) _error = S.current.ai_translationStopped;
+      _error = switch (error) {
+        String message => message,
+        TranslationException(failure: TranslationFailure.rateLimited) =>
+          S.current.ai_translationRateLimited,
+        TranslationException(failure: TranslationFailure.incomplete) =>
+          S.current.ai_translationIncomplete,
+        _ => S.current.ai_translationFailed,
+      };
+    });
+  }
+
+  void _stop() {
+    _cancel();
+    setState(() {
+      _streaming = false;
+      _error = S.current.ai_translationStopped;
     });
   }
 
@@ -191,122 +198,108 @@ class _AiTranslationSheetBodyState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final target = ref.watch(aiTranslationTargetLanguageProvider);
-    final selected = ref.watch(aiTranslationSelectedModelProvider);
     final l10n = context.l10n;
-
+    final selected = _engine == TranslationEngine.ai
+        ? ref.watch(aiTranslationSelectedModelProvider)
+        : null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Wrap(
+          spacing: 16,
           children: [
-            Icon(
-              Symbols.translate_rounded,
-              size: 20,
-              color: context.emphasis.accent,
+            DropdownButton<TranslationEngine>(
+              value: _engine,
+              hint: Text(l10n.ai_translationEngine),
+              items: [
+                for (final engine in TranslationEngine.values)
+                  DropdownMenuItem(
+                    value: engine,
+                    child: Text(translationEngineLabel(engine)),
+                  ),
+              ],
+              onChanged: (engine) {
+                if (engine == null || engine == _engine) return;
+                _engine = engine;
+                ref
+                    .read(preferencesProvider.notifier)
+                    .setTranslationEngine(engine);
+                _start();
+              },
             ),
-            const SizedBox(width: 8),
-            Text(
-              l10n.ai_translationTitle,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              aiTranslationLanguageLabel(target),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            DropdownButton<String>(
+              value: _target,
+              hint: Text(l10n.ai_translationTargetLanguage),
+              items: [
+                for (final language in aiTranslationLanguages.entries)
+                  DropdownMenuItem(
+                    value: language.key,
+                    child: Text(language.value),
+                  ),
+              ],
+              onChanged: (target) {
+                if (target == null || target == _target) return;
+                _target = target;
+                _start();
+              },
             ),
           ],
         ),
         if (selected != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              '${selected.provider.name} / ${selected.model.name ?? selected.model.id}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+          Text(
+            '${selected.provider.name} / ${selected.model.name ?? selected.model.id}',
+            style: theme.textTheme.bodySmall,
           ),
         if (_truncated)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              l10n.ai_translationTruncated,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.tertiary,
-              ),
-            ),
-          ),
+          Text(l10n.ai_translationTruncated, style: theme.textTheme.bodySmall),
         const SizedBox(height: 12),
         Flexible(
           child: SingleChildScrollView(
-            child: _error != null
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Column(
-                      children: [
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.error,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        FilledButton.tonal(
-                          onPressed: _start,
-                          child: Text(l10n.common_retry),
-                        ),
-                      ],
-                    ),
-                  )
-                : _result.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 32),
-                    child: Center(
-                      child: SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
-                      ),
-                    ),
-                  )
-                : SelectableText(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_result.isNotEmpty)
+                  SelectableText(
                     _result.toString(),
-                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.55),
+                    style: theme.textTheme.bodyMedium,
                   ),
+                if (_result.isEmpty && _streaming)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: LoadingSpinner()),
+                  ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _error!,
+                    style: TextStyle(color: theme.colorScheme.error),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _start,
+                      child: Text(l10n.common_retry),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (_streaming) ...[
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ),
+            if (_streaming)
               TextButton.icon(
                 onPressed: _stop,
-                icon: const Icon(Symbols.stop_rounded, size: 18),
+                icon: const Icon(Symbols.stop_rounded),
                 label: Text(l10n.ai_stopGenerate),
               ),
-            ],
             TextButton.icon(
               onPressed: _result.isEmpty ? null : _copy,
-              icon: const Icon(Symbols.content_copy_rounded, size: 18),
+              icon: const Icon(Symbols.content_copy_rounded),
               label: Text(l10n.common_copy),
             ),
           ],

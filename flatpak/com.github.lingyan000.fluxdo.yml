@@ -113,6 +113,11 @@ modules:
       - type: dir
         path: stage/source-tree
         dest: source-tree
+      # 构建沙箱离线，提前准备识字所需的微软 CPU 运行库。
+      - type: file
+        url: https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.19.2/microsoft.ml.onnxruntime.1.19.2.nupkg
+        sha256: fa133c8fe6238445a0dd3e8447baa5c7d16f418caa8e576c7e253ba77b27b61b
+        dest: source-tree/packages/fluxdo_ocr/.dart_tool/runtime
       - type: file
         url: https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-linux-x64
         sha256: ed652b2f32e0851d1946894fb8333f5b677c1b2ce6b9d187910a67f8b99da028

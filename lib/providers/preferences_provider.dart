@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/topic_card_style.dart';
+import '../models/translation_engine.dart';
 import '../navigation/nav_action_bus.dart';
 import '../services/network/request_scheduler_config.dart';
 import '../services/uploads/upload_settings.dart';
@@ -230,8 +231,10 @@ class AppPreferences {
   /// 发帖前 AI 审核使用的模型 key（providerId:modelId）
   final String? aiPostReviewModelKey;
 
-  /// AI 翻译功能开关。关闭时帖子菜单不显示翻译入口。
+  /// 翻译功能开关。关闭时帖子菜单不显示翻译入口。
   final bool aiTranslationEnabled;
+
+  final TranslationEngine translationEngine;
 
   /// AI 翻译目标语言。null 表示跟随应用语言。
   final String? aiTranslationTargetLanguage;
@@ -374,6 +377,7 @@ class AppPreferences {
     this.aiPostReviewEnabled = false,
     this.aiPostReviewModelKey,
     this.aiTranslationEnabled = false,
+    this.translationEngine = TranslationEngine.google,
     this.aiTranslationTargetLanguage,
     this.aiTranslationModelKey,
     this.hcaptchaCreateEndpoint,
@@ -444,6 +448,7 @@ class AppPreferences {
     bool? aiPostReviewEnabled,
     Object? aiPostReviewModelKey = _unset,
     bool? aiTranslationEnabled,
+    TranslationEngine? translationEngine,
     Object? aiTranslationTargetLanguage = _unset,
     Object? aiTranslationModelKey = _unset,
     Object? hcaptchaCreateEndpoint = _unset,
@@ -518,6 +523,7 @@ class AppPreferences {
           ? this.aiPostReviewModelKey
           : aiPostReviewModelKey as String?,
       aiTranslationEnabled: aiTranslationEnabled ?? this.aiTranslationEnabled,
+      translationEngine: translationEngine ?? this.translationEngine,
       aiTranslationTargetLanguage:
           identical(aiTranslationTargetLanguage, _unset)
           ? this.aiTranslationTargetLanguage
@@ -617,6 +623,7 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _aiPostReviewEnabledKey = 'pref_ai_post_review_enabled';
   static const String _aiPostReviewModelPrefKey = 'pref_ai_post_review_model';
   static const String _aiTranslationEnabledKey = 'pref_ai_translation_enabled';
+  static const String _translationEngineKey = 'pref_translation_engine';
   static const String _aiTranslationTargetLanguageKey =
       'pref_ai_translation_target_language';
   static const String _aiTranslationModelPrefKey = 'pref_ai_translation_model';
@@ -712,6 +719,14 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           aiPostReviewModelKey: _prefs.getString(_aiPostReviewModelPrefKey),
           aiTranslationEnabled:
               _prefs.getBool(_aiTranslationEnabledKey) ?? false,
+          translationEngine:
+              TranslationEngine.tryParse(
+                _prefs.getString(_translationEngineKey),
+              ) ??
+              ((_prefs.getBool(_aiTranslationEnabledKey) ?? false) ||
+                      _prefs.getString(_aiTranslationModelPrefKey) != null
+                  ? TranslationEngine.ai
+                  : TranslationEngine.google),
           aiTranslationTargetLanguage: _prefs.getString(
             _aiTranslationTargetLanguageKey,
           ),
@@ -787,6 +802,10 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
               EmojiHandler.defaultPreference,
         ),
       ) {
+    // 首次迁移即固定服务，避免新用户开启翻译后被识别成旧版 AI 用户。
+    if (!_prefs.containsKey(_translationEngineKey)) {
+      _prefs.setString(_translationEngineKey, state.translationEngine.name);
+    }
     isPortraitLocked = state.portraitLock;
     TopicCardStyleScope.current = state.topicCardStyle;
     EmojiHandler.setPreference(state.emojiStyle);
@@ -1026,6 +1045,11 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     if (state.aiTranslationEnabled == enabled) return;
     state = state.copyWith(aiTranslationEnabled: enabled);
     await _prefs.setBool(_aiTranslationEnabledKey, enabled);
+  }
+
+  Future<void> setTranslationEngine(TranslationEngine engine) async {
+    state = state.copyWith(translationEngine: engine);
+    await _prefs.setString(_translationEngineKey, engine.name);
   }
 
   Future<void> setAiTranslationTargetLanguage(String? language) async {

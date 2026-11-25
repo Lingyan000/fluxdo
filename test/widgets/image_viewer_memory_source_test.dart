@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:app_icons/app_icons.dart';
+import 'package:dio/dio.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -11,15 +12,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
+import 'package:fluxdo/providers/image_ocr_provider.dart';
+import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+import 'package:fluxdo/services/ocr/ocr_model_store.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/utils/share_utils.dart';
 import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
+import 'package:fluxdo/widgets/common/image_text_sheet.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/preview_fonts.dart';
+
+class _UnavailableOcrModels extends Fake implements OcrModelStore {
+  @override
+  Future<bool> isReady() async => false;
+}
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -99,8 +111,14 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
     addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({'pref_dialog_blur': false});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          ocrModelStoreProvider.overrideWithValue(_UnavailableOcrModels()),
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navigatorKey,
@@ -279,6 +297,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final svg in [false, true]) {
+    testWidgets('${svg ? 'SVG' : '位图'} 识字复用受控读取器的已加载图片', (tester) async {
+      final bytes = svg
+          ? Uint8List.fromList(utf8.encode(
+              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32">'
+              '<rect width="24" height="32" fill="#4178aa"/></svg>',
+            ))
+          : img.encodeJpg(img.Image(width: 24, height: 32));
+      await show(tester, () async => bytes);
+      await tester.tap(find.byIcon(Symbols.more_vert_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(S.current.imageViewer_recognizeText));
+      await tester.pumpAndSettle();
+      final sheet = tester.widget<ImageTextSheet>(find.byType(ImageTextSheet));
+      final png = await tester.runAsync(() => sheet.loadImage(CancelToken()));
+      final decoded = img.decodePng(png!);
+      expect(decoded, isNotNull);
+      expect(decoded!.width / decoded.height, closeTo(24 / 32, 0.01));
+      expect(loads, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
+  }
+
+  testWidgets('受控读取器的图片可直接进入编辑器且不重复加载', (tester) async {
+    await show(tester, () async => img.encodeJpg(img.Image(width: 24, height: 32)));
+    await tester.tap(find.byIcon(Symbols.more_vert_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(S.current.imageUpload_editImage));
+    for (var i = 0; i < 100 && find.byType(ProImageEditor).evaluate().isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(ProImageEditor), findsOneWidget);
+    expect(loads, 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('失败态可关闭且小屏大字无溢出', (tester) async {
     await show(
       tester,
@@ -293,6 +353,12 @@ void main() {
             find.widgetWithIcon(IconButton, Symbols.save_alt_rounded),
           )
           .onPressed,
+      isNull,
+    );
+    expect(
+      tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Symbols.more_vert_rounded),
+      ).onPressed,
       isNull,
     );
     await snapshot(tester, 'error-light');

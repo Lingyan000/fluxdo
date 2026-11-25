@@ -17,7 +17,8 @@ def plan(paths, all_platforms=False):
     core = any(p.startswith('core/net_core/') for p in paths)
     dart = ci or any(p.startswith(('lib/', 'test/', 'packages/', '.agents/')) or
                      p in ('pubspec.yaml', 'pubspec.lock', 'AGENTS.md', '.gitmodules',
-                           'analysis_options.yaml', 'tool/gen_l10n.dart', 'tool/project_prep.dart')
+                           'analysis_options.yaml', 'mise.toml', 'tool/cli.dart',
+                           'tool/_workspace_cli.dart', 'tool/gen_l10n.dart', 'tool/project_prep.dart')
                      for p in paths)
     python = ci or core or any(p.startswith('tool/') for p in paths)
     platforms = [dict(platform=row['platform'], os=row['os']) for row in CONFIG['platforms']

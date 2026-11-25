@@ -33,6 +33,16 @@ void main() {
     expect(clamped.text, '短内容');
   });
 
+  test('提取帖子文本保留段落、换行和字面图片说明', () {
+    expect(
+      AiTranslationService.extractPlainText(
+        '<p>First<br>line</p><p>Second</p><ul><li>A</li><li>B</li></ul>'
+        '<img alt="&lt;hello&gt;"><script>bad()</script>',
+      ),
+      'First\nline\n\nSecond\n\nA\n\nB\n<hello>',
+    );
+  });
+
   test('系统提示包含目标语言和只输出译文约束', () {
     final prompt = AiTranslationService.buildSystemPrompt('日本語');
 

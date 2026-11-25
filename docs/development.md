@@ -2,59 +2,58 @@
 
 ## 分层约定
 
+- `mise`：统一工具链版本管理（Flutter、Rust、JDK）与本地开发任务入口
 - `melos`：仅用于 workspace bootstrap
-- `just`：本地开发者入口，定位接近 `npm run`
-- `tool/*.dart`：真实脚本实现，也是 CI / IDE / 自动化调用入口
+- `tool/*.dart`：真实脚本实现（`tool/cli.dart` 为单进程总入口，原脚本文件保留独立兼容给 CI / IDE）
 
 ## 快速开始
 
-1. 初始化 workspace：
+1. 安装 `mise`：
+
+   - macOS：`brew install mise`
+   - Windows：`winget install jdx.mise`（或 `scoop install mise`）
+   - Linux：`curl https://mise.run | sh`（Arch：`sudo pacman -S mise`）
+
+   按 `mise` 提示把 shell 激活脚本加入配置（例如 zsh：`eval "$(mise activate zsh)"`），可选启用补全：`mise completion zsh`。
+
+2. 安装项目工具链（Flutter 3.50.0、Rust 1.96.0、JDK 21）并自动生成 IDE SDK 链接：
 
    ```bash
-   melos bootstrap
+   mise install
    ```
 
-   如果没有全局 `melos`，可改用：
+   `postinstall` hook 会自动把当前激活的 Flutter SDK 链接到 `.tooling/flutter_sdk`（macOS/Linux 用符号链接，Windows 用无需管理员权限的 Junction）。
+
+3. 一键初始化工作区（拉取 `fluxdo_render` 子模块、同步 SDK 链接、`melos bootstrap`、生成 l10n 与证书）：
 
    ```bash
-   dart run melos bootstrap
-   ```
-
-2. 安装 `just`：
-
-   - Windows：`winget install --id Casey.Just --exact`
-   - Windows：`scoop install just`
-   - Windows：`choco install just`
-   - 通用：`cargo install just`
-
-3. 显式同步项目状态：
-
-   ```bash
-   just sync
+   mise init
    ```
 
 4. 运行应用：
 
    ```bash
-   just run -- -d windows
-   just run -- -d macos
-   just run -- -d linux
-   just run -- --dart-define=cronetHttpNoPlay=true
+   mise dev windows
+   mise dev macos
+   mise dev linux
+   mise dev android --profile
+   mise dev -- --dart-define=cronetHttpNoPlay=true
    ```
 
-如果你不想安装 `just`，可以直接调用 Dart 入口：
+如果你不想通过 `mise` 任务运行，也可以直接调用 Dart 入口：
 
 ```bash
-dart run tool/project_prep.dart app
-dart run tool/flutterw.dart run -d windows
+dart tool/cli.dart sync
+dart tool/cli.dart dev macos
 ```
 
-## Flutter SDK 与 UI 包
+## Flutter SDK、工具链与 UI 包
 
-项目通过 `.fvmrc` 固定 Flutter 3.50.0（Dart 3.14）。使用 FVM 时，在仓库根目录执行
-`fvm use --skip-pub-get`，再运行 `just sync` 或 `just run`。`just` 按 `.fvmrc` 选择
-`.fvm/versions/<版本>/bin` 下的 Dart 和 Flutter。切换分支后若提示缺少对应版本，再执行一次
-`fvm use --skip-pub-get` 即可。没有本地 `.fvm` 目录时，`just` 使用 `PATH` 中的 SDK，其版本需与项目匹配。
+项目通过根目录的 [mise.toml](../mise.toml) 统一固定 Flutter 3.50.0（Dart 3.14）、Rust 1.96.0 和 Android Gradle JDK（Temurin 21）。
+
+- 切换分支或升级版本后，执行 `mise install` 即可同步全部工具链并自动更新 `.tooling/flutter_sdk`；如需手动刷新链接，可执行 `mise r sdk:link`。
+- VS Code 通过 `.vscode/settings.json` 直接指向 `.tooling/flutter_sdk`，无需个人配置；推荐安装 `.vscode/extensions.json` 中的 `mise-vscode` 扩展获得任务面板与 `mise.toml` 补全。
+- Android Studio / IntelliJ 只需在 `Settings -> Languages & Frameworks -> Flutter` 中将 Flutter SDK path 指向 `<repo>/.tooling/flutter_sdk` 一次，后续版本升级与切分支都会自动跟随。
 
 应用、公共 UI 包与 `fluxdo_render` 使用独立的 `material_ui` / `cupertino_ui`。
 主窗口和小程序启动窗口通过官方兼容桥为尚未迁移的第三方组件提供旧主题和本地化。
@@ -71,77 +70,87 @@ Apple 继续使用 CocoaPods；未启用 HCPP。
 
 ## 常用命令
 
-- `just sync`：显式同步依赖、l10n 生成物和代理证书资源；适合首次拉代码、切分支、修改 ARB 后或 IDE 调试前预热
-- `just l10n`：单独生成国际化代码
-- `just l10n-check`：检查国际化生成物是否最新
-- `just clean`：执行 `flutter clean` 并重置依赖指纹
-- `just rebuild -- <flutter build args...>`：先清理，再执行 `flutter build`
-- `just run -- <flutter run args...>`：执行 `flutter run`
-- `just build -- <flutter build args...>`：执行 `flutter build`
-- `just test -- <flutter test args...>`：执行 `flutter test`
-- `just drive -- <flutter drive args...>`：执行 `flutter drive`
-- `just native -- <args...>`：显式准备原生产物
-- `just doctor`：检查 Flutter / Dart / Cargo、l10n 状态、证书状态和 Android 本地签名状态
-- `just analyze -- <args...>`：执行 `flutter analyze`
-- `just release-check`：执行发版前检查
-- `just release`：稳定版发版入口
-- `just prerelease`：预发布发版入口
-- `just ipa`：构建无签名 iOS IPA
+执行 `mise tasks` 查看完整任务列表，或直接执行 `mise run`（简写 `mise r`）进入模糊搜索交互选择。不与 `mise` 内置命令重名的任务可直接 `mise <任务>` 调用（`sync`、`doctor` 与内置命令同名，用 `mise r sync` / `mise r doctor`）：
 
-当透传参数以 `-` 开头时，记得用 `--` 分隔，例如：
+- `mise init`：首次克隆或新建 git worktree 一键初始化（子模块 + SDK 链接 + bootstrap + sync）
+- `mise bootstrap`：初始化 workspace 依赖和包链接（`melos bootstrap`）
+- `mise r sync`：显式同步依赖、增量 l10n 生成物、代理证书资源与 IDE SDK 链接
+- `mise sdk:link`：把当前激活的 Flutter SDK 链接到 `.tooling/flutter_sdk`
+- `mise l10n`：生成国际化代码（带增量指纹缓存；加 `-- --force` 强制重跑）
+- `mise l10n:check`：严格检查国际化生成物是否最新
+- `mise splash-motion` / `mise splash-motion:check`：生成或校验启动 logo 描线动画
+- `mise clean`：执行 `flutter clean` 并重置依赖与 l10n 缓存指纹
+- `mise rebuild <flutter build args...>`：先清理，再执行 `flutter build`
+- `mise dev [macos|windows|linux|ios|android|chrome] [flutter run args...]`：运行应用（支持直接写平台简写；`mise r run` / `mise r r` 为别名）
+- `mise build <target> [flutter build args...]`：执行 `flutter build`（别名 `mise r b`）
+- `mise test [flutter test args...]`：执行工作区测试（别名 `mise r t`）
+- `mise test:arch`：运行全部架构守卫测试（提交前必跑）
+- `mise drive [flutter drive args...]`：执行 `flutter drive`
+- `mise native [args...]`：显式准备原生产物
+- `mise r doctor`：检查 `mise` / Flutter / Dart / Cargo / JDK、SDK 链接、l10n、证书和 Android 本地签名状态（别名 `mise r d`）
+- `mise analyze [args...]`：执行 `flutter analyze`（别名 `mise r a`）
+- `mise net:check [dart|rust|python]`：运行网络回归检查
+- `mise render:golden`：运行 `packages/fluxdo_render` 全量 golden 测试
+- `mise release:check`：执行发版前检查
+- `mise release`：交互式发版向导（支持选稳定版 / 预发布）
+- `mise prerelease`：预发布发版向导
+- `mise ipa`：构建无签名 iOS IPA
+
+当透传参数与 `mise` 自身的短参数冲突（如 `-f`、`-j`）时，可用 `--` 分隔：
 
 ```bash
-just run -- -d windows
-just release -- patch --dry-run
+mise dev macos --release
+mise release patch --dry-run
+mise l10n -- --force
 ```
 
 ## 自动行为
 
-- `just run` / `just build` / `just drive` 会自动执行项目预处理，并在能识别目标平台时自动执行对应的 `native:prepare`
-- `just test` 会自动执行测试所需的 `pub get + l10n`
-- `just release` / `just prerelease` 会在真正写入版本号和打 tag 前自动执行发版前检查
-- `just sync` 不是 hook，而是手动的显式预热命令；日常直接 `just run` / `just build` 即可
+- `mise dev` / `mise build` / `mise drive` 会以单进程自动执行项目预处理（带依赖与 l10n 增量跳过），并在能识别目标平台时自动执行对应的 `native:prepare`
+- `mise test` 会自动执行测试所需的 `pub get + 增量 l10n`
+- `mise release` / `mise prerelease` 会在真正写入版本号和打 tag 前自动执行发版前检查
+- `mise r sync` 不是 hook，而是手动的显式预热命令；日常直接 `mise dev` / `mise build` 即可
 - 插件界面的 rfw 核心组件包含动态图标解码，统一入口对 profile/release 默认传入 `--no-tree-shake-icons`。直接调用 `flutter build` 时需要自行传入该选项，命令行显式指定的裁剪选项会保留。
 
 ## 国际化工作流
 
 - 协作源文件只保留 `lib/l10n/modules/**` 下的模块化 ARB
 - `lib/l10n/slang/` 和 `lib/l10n/generated/app_localizations_compat.g.dart` 不提交 Git
-- 修改 ARB 后，执行 `just sync` 或 `just l10n`
-- 日常运行/构建入口会自动处理 l10n，不需要额外手写 pre-run hook
+- 修改 ARB 后，执行 `mise r sync` 或 `mise r l10n`
+- 日常运行/构建入口会自动处理 l10n，未改动 ARB 时自动命中增量缓存跳过
 
 ## IDE 集成
 
-- Android Studio / IntelliJ 的共享运行配置提交在 [`.run/`](</D:/teng/Documents/i/ldx/.run/>)，不放进被忽略的 `.idea/`
+- Android Studio / IntelliJ 的共享运行配置提交在 [`.run/`](../.run/)，不放进被忽略的 `.idea/`
 - `FluxDO` 运行配置的 before-launch 只保留一个 `Run Prepare`
 - 这个 before-launch 会串行执行 `app:prepare` 和 `native:prepare auto`，避免 IDE 按多个步骤反复弹终端
-- VS Code 的 [launch.json](/D:/teng/Documents/i/ldx/.vscode/launch.json:1) 和 [tasks.json](/D:/teng/Documents/i/ldx/.vscode/tasks.json:1) 也已切到同一套预处理链路
+- VS Code 的 [launch.json](../.vscode/launch.json) 和 [tasks.json](../.vscode/tasks.json) 也已切到同一套预处理链路
 
 ## 平台约定
 
 - Android 只有在 `android/key.properties` 和 keystore 都完整可用时才使用本地签名
 - 当本地签名材料完整时，`debug/profile/release` 都会使用本地签名
 - 当本地签名材料缺失时，`debug` 使用默认 debug signing，`profile/release` 自动回退到 debug signing
-- Android 构建会优先使用 Android Studio 自带 JBR；如需手动指定，可设置 `FLUXDO_ANDROID_JAVA_HOME`
+- Android 构建优先使用 `mise.toml` 托管的 JDK（`JAVA_HOME`）或 `FLUXDO_ANDROID_JAVA_HOME`，未配置时自动回退探测 Android Studio 自带 JBR
 - Apple 平台不再把 `DEVELOPMENT_TEAM` 写死在共享 `pbxproj`
-- 如需 Xcode 真机签名或本地签名构建，复制 [apple/Local.xcconfig.example](/D:/teng/Documents/i/ldx/apple/Local.xcconfig.example:1) 为 `apple/Local.xcconfig`，按文件内注释选择签名方案
-- 原生产物准备统一走 `just native -- ...` 或 `dart run tool/project_tasks.dart native:prepare ...`
+- 如需 Xcode 真机签名或本地签名构建，复制 [apple/Local.xcconfig.example](../apple/Local.xcconfig.example) 为 `apple/Local.xcconfig`，按文件内注释选择签名方案
+- 原生产物准备统一走 `mise r native ...` 或 `dart tool/project_tasks.dart native:prepare ...`
 - Windows / iOS 平台工程已移除内置 cargo / shell build hook，只消费仓库脚本预先落盘的 native 产物
 - macOS 保留一个轻量级 bundle copy/sign 阶段，只负责拷贝和签名已准备好的 native 产物
 
 ## Linux 桌面开发（Arch / Omarchy）
 
-使用 `.fvmrc` 固定的 Flutter 版本，以及 Rust 1.96 或更新的稳定版。
-先把 Flutter 的 `bin/` 和 `$HOME/.cargo/bin` 加入 `PATH`。
+通过 `mise install` 安装 `mise.toml` 固定的 Flutter 3.50.0、Rust 1.96.0 与 JDK 21。
 
 安装构建和运行依赖：
 
 ```bash
 sudo pacman -S --needed base-devel clang cmake ninja pkgconf python git curl xz \
   gtk3 libx11 libxi libepoxy libsecret wayland wpewebkit alsa-lib mpv \
-  gst-plugins-base gst-plugins-good gst-libav just
+  gst-plugins-base gst-plugins-good gst-libav mise
+mise install
 flutter doctor -v
-just run -- -d linux
+mise dev linux
 ```
 
 `flutter doctor` 的 Linux toolchain 应通过；只开发 Linux 桌面时不需要配置
@@ -154,7 +163,7 @@ FDO 后端时仍需要这两个旧库。音频依赖 GStreamer，视频依赖系
 仅安装 Flutter 工具链不足以运行完整应用。
 
 在 Try Omarchy 中开发时，建议把 Windows 共享目录中的源码同步到 Linux
-主目录再构建，并排除 `.dart_tool/`、`build/`、`.fvm/`、`.pub-cache/`、
+主目录再构建，并排除 `.dart_tool/`、`build/`、`.tooling/`、`.pub-cache/`、
 `core/net_core/target/` 和各平台的原生产物。Windows 生成的路径、插件链接和
 二进制不能直接用于 Linux；也不要让两个系统同时写同一套构建缓存。
 通过 SSH 启动图形应用时，需要使用当前桌面会话的 `DISPLAY`、
@@ -163,7 +172,7 @@ FDO 后端时仍需要这两个旧库。音频依赖 GStreamer，视频依赖系
 内存较小的虚拟机可减少首次 Rust 调试构建的资源消耗：
 
 ```bash
-CARGO_BUILD_JOBS=3 CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 just run -- -d linux
+CARGO_BUILD_JOBS=3 CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0 mise dev linux
 ```
 
 验证 Linux WebView 的 SSL 回调与本地 HTTPS 加载（需要 `openssl` 和图形会话）：
@@ -183,7 +192,7 @@ WPE 的导航动作只提供目标窗口名称，无法可靠区分主页面和�
 当作外部链接。此检查在收到响应后、提交文档前执行。
 它不会安装系统证书或使用论坛账号，结束时清理临时文件并退出；结果输出为
 `FLUXDO_WEBVIEW_SMOKE` JSON，可用环境变量 `FLUXDO_SMOKE_REPORT` 指定报告路径。
-完成后使用 `just run -- -d linux` 恢复正常应用入口。
+完成后使用 `mise dev linux` 恢复正常应用入口。
 
 ## macOS 代码签名
 
@@ -221,12 +230,12 @@ CI 发版使用同一张证书：把 p12 的 base64 与密码配置为仓库 sec
 `network-regression.yaml` 在 PR、dev/main 推送时按改动路径选择检查；文档改动只经过选择和结果汇总。
 同一 PR 的旧任务会被新提交取消，不启动 BrowserStack、不连接私有 Tailnet、不探测公网指纹服务。
 
-本地复用同一入口（先完成 `just sync` 或 `dart tool/project_prep.dart test`）：
+本地复用同一入口（先完成 `mise r sync` 或 `dart tool/project_prep.dart test`）：
 
 ```sh
-python3 tool/ci/network_checks.py dart
-python3 tool/ci/network_checks.py rust
-python3 tool/ci/network_checks.py python
+mise r net:check dart
+mise r net:check rust
+mise r net:check python
 ```
 
 - Dart：网络专项测试、全部架构守卫、定向 analyze。范围在 `tool/ci/network_checks.json`，没有接入应用的存量全量失败。
