@@ -440,7 +440,7 @@ widget Chat = PageLayout(loading: data.loading, onRefresh: event "chatRefresh" {
   children: [BuyerLogin(), Wrap(spacing: 8.0, children: [Chip(label: data.chatState), switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}]),
     switch data.chatError {"": SizedBoxShrink(), default: Label(text: data.chatError, color: "error")},
     switch data.chatMore {true: Button(label: data.i18n.s5bf3f2d2f4f7ad09, variant: "text", loading: data.loadingMore, onPressed: event "chatOlder" {}), default: SizedBoxShrink()},
-    ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: switch message.system {true: "center", default: switch message.mine {true: "centerRight", default: "centerLeft"}}, child:
+    ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: {x: switch message.system {true: 0.0, default: switch message.mine {true: 1.0, default: -1.0}}, y: 0.0}, child:
       Surface(color: switch message.mine {true: "secondaryContainer", default: "surfaceContainerLow"}, child: Column(mainAxisSize: "min", crossAxisAlignment: "start", children: [
         switch message.system {true: SizedBoxShrink(), default: Label(text: message.author, style: "labelMedium", color: "onSurfaceVariant")},
         SelectableLabel(text: message.content), Gap(size: 6), RelativeTime(value: message.time)

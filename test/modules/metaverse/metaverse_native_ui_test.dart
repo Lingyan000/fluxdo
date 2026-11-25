@@ -1831,7 +1831,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
                   ),
                   data: DynamicContent({ ...data,
                     'favoriteLabel':'收藏商品','canComment':true,'buyerError':'','buyerBusy':false,
-                    if(name=='Chat') ...{'chatRows':[{'id':'1','mine':false,'system':false,'author':'participant','content':'I am looking for this tool.','time':'2026-11-25T04:00:00Z'}], 'chatDraft':'','chatError':'','chatState':'洽谈中','chatOrder':'','canSend':true,'chatSending':false,'chatMore':true},
+                    if(name=='Chat') ...{'chatRows':[{'id':'1','mine':false,'system':false,'author':'participant','content':'I am looking for this tool.','time':'2026-11-25T04:00:00Z'},{'id':'2','mine':true,'system':false,'author':'tester','content':'Let me check.','time':'2026-11-25T04:01:00Z'}], 'chatDraft':'','chatError':'','chatState':'洽谈中','chatOrder':'','canSend':true,'chatSending':false,'chatMore':true},
                     if(name=='Chats') 'rows':[{'id':'12','requestId':'7','title':'开发者工具','name':'participant','summary':'有新进展','state':'洽谈中','unread':true}],
                     'canApply':true,'refundState':'申请售后','refundAmount':'',
                     'refundMessage':'如商品存在问题，可以申请退款。','deadline':'',
@@ -1883,6 +1883,14 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
           );
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: name);
+          if (name == 'Chat') {
+            expect(find.text('发送'), findsOneWidget);
+            expect(find.text('加载更早消息'), findsOneWidget);
+            final theirs = find.ancestor(of: find.text('I am looking for this tool.'), matching: find.byType(AnimatedAlign));
+            final mine = find.ancestor(of: find.text('Let me check.'), matching: find.byType(AnimatedAlign));
+            expect(tester.widget<AnimatedAlign>(theirs).alignment, Alignment.centerLeft);
+            expect(tester.widget<AnimatedAlign>(mine).alignment, Alignment.centerRight);
+          }
           if (width == 390) {
             await snapshot(tester, '${name.toLowerCase()}-${brightness.name}');
           }
