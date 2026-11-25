@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../../constants.dart';
+import '../../log/log_writer.dart';
 import '../../network_logger.dart';
 import '../../windows_webview_environment_service.dart';
 import 'h3_calibration_status.dart';
@@ -55,6 +56,7 @@ class FingerprintTemplateService {
   Completer<void>? _cancelProbe;
   int _generation = 0;
   String? _h3Attempted;
+  String? _lastAuditSignature;
 
   /// 核心启动后调用：检查模板，必要时采样。并发调用合并为一次。
   Future<void> ensure(int port, {bool waitForH3 = true}) {
@@ -100,6 +102,7 @@ class FingerprintTemplateService {
     _cancelProbe = null;
     templateReady.value = false;
     _h3Attempted = null;
+    _lastAuditSignature = null;
   }
 
   Future<void> _ensure(
@@ -163,6 +166,7 @@ class FingerprintTemplateService {
           status.ready &&
           !status.needsRevalidation &&
           status.userAgent == userAgent;
+      _logCapabilityAudit(port, generation, status);
     }
     // 启动阶段只需要等待 TLS/H2 校验；可选 H3 采样继续使用同一个串行任务。
     // 不能让未启用 QUIC 的 WebView 将首次业务请求额外阻塞两个探针超时。
@@ -264,18 +268,7 @@ class FingerprintTemplateService {
   Future<_TemplateStatus?> _status(int port) async {
     if (_testStatus != null) {
       final value = await _testStatus!(port);
-      return value == null
-          ? null
-          : _TemplateStatus(
-              ready: value['ready'] == true,
-              userAgent: value['user_agent'] as String?,
-              needsRevalidation: value['needs_revalidation'] == true,
-              cacheState: value['cache_state'] as String?,
-              h3: H3CalibrationStatus.fromJson(value['h3']),
-              h3Epoch: _h3Epoch(value['h3']?['epoch']),
-              h3Ports: _h3Ports(value['h3']?['probe_ports']),
-              h3Spki: _h3Spki(value['h3']?['probe_spki']),
-            );
+      return value == null ? null : _parseStatus(value);
     }
     final client = HttpClient()..findProxy = (_) => 'DIRECT';
     try {
@@ -288,22 +281,88 @@ class FingerprintTemplateService {
           .join()
           .timeout(_statusTimeout);
       final json = jsonDecode(body) as Map<String, dynamic>;
-      return _TemplateStatus(
-        ready: json['ready'] == true,
-        userAgent: json['user_agent'] as String?,
-        needsRevalidation: json['needs_revalidation'] == true,
-        cacheState: json['cache_state'] as String?,
-        h3: H3CalibrationStatus.fromJson(json['h3']),
-        h3Epoch: _h3Epoch(json['h3']?['epoch']),
-        h3Ports: _h3Ports(json['h3']?['probe_ports']),
-        h3Spki: _h3Spki(json['h3']?['probe_spki']),
-      );
+      return _parseStatus(json);
     } catch (e) {
       NetworkLogger.log('[Fingerprint] 读取模板状态失败: $e', level: 'warning');
       return null;
     } finally {
       client.close(force: true);
     }
+  }
+
+  _TemplateStatus _parseStatus(Map<String, dynamic> json) {
+    final rawCapabilities = json['tls_capabilities'];
+    final tlsCapabilities = rawCapabilities is Map
+        ? Map<String, dynamic>.from(rawCapabilities)
+        : null;
+    return _TemplateStatus(
+      ready: json['ready'] == true,
+      userAgent: json['user_agent'] as String?,
+      needsRevalidation: json['needs_revalidation'] == true,
+      cacheState: json['cache_state'] as String?,
+      source: json['source'] as String?,
+      tlsPermuteExtensions: json['tls_permute_extensions'] is bool
+          ? json['tls_permute_extensions'] as bool
+          : null,
+      fetchHeadersSampled: json['fetch_headers_sampled'] is bool
+          ? json['fetch_headers_sampled'] as bool
+          : null,
+      tlsCapabilities: tlsCapabilities,
+      h3: H3CalibrationStatus.fromJson(json['h3']),
+      h3Epoch: _h3Epoch(json['h3']?['epoch']),
+      h3Ports: _h3Ports(json['h3']?['probe_ports']),
+      h3Spki: _h3Spki(json['h3']?['probe_spki']),
+    );
+  }
+
+  void _logCapabilityAudit(int port, int generation, _TemplateStatus? status) {
+    final capabilities = status?.tlsCapabilities;
+    if (status == null || capabilities == null || capabilities.isEmpty) return;
+
+    final auditStatus = capabilities['status']?.toString() ?? 'unknown';
+    final backend = capabilities['backend']?.toString() ?? 'unknown';
+    final rawDifferences = capabilities['differences'];
+    final diffFields = rawDifferences is Map
+        ? (rawDifferences.keys.map((k) => k.toString()).toList()..sort())
+        : const <String>[];
+    final signature = jsonEncode([
+      port,
+      generation,
+      status.ready,
+      status.source,
+      status.tlsPermuteExtensions,
+      auditStatus,
+      backend,
+      diffFields,
+    ]);
+    if (_lastAuditSignature == signature) return;
+    _lastAuditSignature = signature;
+
+    final isMatch = auditStatus == 'checked_fields_match';
+    final level = isMatch ? 'info' : 'warning';
+    final diffSummary = diffFields.isEmpty ? 'none' : diffFields.join(',');
+    final summaryMessage =
+        '[Fingerprint] TLS 能力审计：status=$auditStatus, backend=$backend, '
+        'source=${status.source ?? 'unknown'}, '
+        'permute=${status.tlsPermuteExtensions}, '
+        'diff=$diffSummary';
+    NetworkLogger.log(summaryMessage, level: level);
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': level,
+      'type': 'network',
+      'event': 'fingerprint_capability_audit',
+      'message': summaryMessage,
+      'ready': status.ready,
+      'source': status.source,
+      'cacheState': status.cacheState,
+      'tlsPermuteExtensions': status.tlsPermuteExtensions,
+      'fetchHeadersSampled': status.fetchHeadersSampled,
+      'auditStatus': auditStatus,
+      'backend': backend,
+      'diffFields': diffFields,
+      'tlsCapabilities': capabilities,
+    });
   }
 
   static int _h3Epoch(dynamic value) => value is int && value >= 0 ? value : 0;
@@ -325,6 +384,10 @@ class _TemplateStatus {
     required this.userAgent,
     required this.needsRevalidation,
     this.cacheState,
+    this.source,
+    this.tlsPermuteExtensions,
+    this.fetchHeadersSampled,
+    this.tlsCapabilities,
     required this.h3,
     this.h3Epoch = 0,
     this.h3Ports = const [],
@@ -335,6 +398,10 @@ class _TemplateStatus {
   final String? userAgent;
   final bool needsRevalidation;
   final String? cacheState;
+  final String? source;
+  final bool? tlsPermuteExtensions;
+  final bool? fetchHeadersSampled;
+  final Map<String, dynamic>? tlsCapabilities;
   final H3CalibrationStatus h3;
   final int h3Epoch;
   final List<int> h3Ports;
