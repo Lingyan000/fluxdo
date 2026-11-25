@@ -112,7 +112,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Lingyan000/fluxdo-plugin-tools
-          ref: 36573a68697e1c0985354d99483be6622c883723
+          ref: 7c463e33b8c1ff44ff63c32a60c18675aaaf34e7
           path: tools
           persist-credentials: false
       - uses: actions/setup-node@v4
