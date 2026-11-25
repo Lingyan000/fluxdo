@@ -1814,7 +1814,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
           'Product',
           'Review',
           'BuyerOrders',
-          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant','Filters','Account','Messages',
+          'BuyerOrder','Favorites','Coupons','Coupon','CommentForm','Refund','Merchant','Filters','Account','Messages','Chats','Chat',
         ]) {
           final actionWidget = {'Market':'MarketActions','Product':'ProductActions','BuyerOrder':'OrderActions','Messages':'MessageActions'}[name];
           await tester.pumpWidget(
@@ -1831,6 +1831,8 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
                   ),
                   data: DynamicContent({ ...data,
                     'favoriteLabel':'收藏商品','canComment':true,'buyerError':'','buyerBusy':false,
+                    if(name=='Chat') ...{'chatRows':[{'id':'1','mine':false,'system':false,'author':'participant','content':'I am looking for this tool.','time':'2026-11-25T04:00:00Z'}], 'chatDraft':'','chatError':'','chatState':'洽谈中','chatOrder':'','canSend':true,'chatSending':false,'chatMore':true},
+                    if(name=='Chats') 'rows':[{'id':'12','requestId':'7','title':'开发者工具','name':'participant','summary':'有新进展','state':'洽谈中','unread':true}],
                     'canApply':true,'refundState':'申请售后','refundAmount':'',
                     'refundMessage':'如商品存在问题，可以申请退款。','deadline':'',
                     'refundFields':[
@@ -1963,7 +1965,7 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
   }
   test('已发布插件的静态图标均有原生映射', () {
     final sources = [File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
-      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.3.1.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
+      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.4.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
     for (final source in sources) {
       for (final match in RegExp(r'(?:icon:|Symbol\(name:)\s*"([a-z_]+)"').allMatches(source)) {
         expect(metaverseIcons, contains(match[1]), reason: match[0]);

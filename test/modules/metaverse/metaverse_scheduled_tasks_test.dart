@@ -201,7 +201,7 @@ void main() {
       lookup: (_) async => throw StateError('测试禁止网络'),
     );
     package = await MetaversePluginInstaller(network: network).importBundle(
-      File('test/fixtures/metaverse/activity-feed-1.3.1.fluxplugin').openRead(),
+      File('test/fixtures/metaverse/activity-feed-1.4.0.fluxplugin').openRead(),
     );
     installed = InstalledMetaversePlugin(
       manifest: package.manifest,

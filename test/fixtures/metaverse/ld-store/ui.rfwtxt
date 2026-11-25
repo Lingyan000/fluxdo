@@ -44,6 +44,7 @@ widget OrderActions = Row(mainAxisSize: "min", children: [
   IconButton(icon: "refresh", tooltip: data.i18n.s2629d5778dd57bbb, loading: data.loading, onPressed: event "ordersRefresh" {}),
 ]);
 widget MessageActions = Row(mainAxisSize: "min", children: [
+  IconButton(icon: "mail", tooltip: data.i18n.s76d90cc920c904c8, onPressed: event "chats" {}),
   IconButton(icon: "done_all", tooltip: data.i18n.s231cbc4337c5a60c, enabled: data.unread, loading: data.buyerBusy, onPressed: event "messagesReadAll" {}),
   IconButton(icon: "open_in_new", tooltip: data.i18n.s7881bea001a5cf2a, onPressed: event "webMessages" {}),
 ]);
@@ -293,6 +294,7 @@ widget Account = ListPage(loading: data.overviewLoading, onRefresh: event "overv
     ListItem(title: data.i18n.s29d8e8ee6822135d, leading: Symbol(name: "flag"), trailing: Symbol(name: "chevron_right"), onTap: event "reports" {}),
     switch data.authorized {true: ListItem(title: data.i18n.s03671d6ddf237f70, leading: Symbol(name: "notifications"), trailing: Symbol(name: "chevron_right"), onTap: event "reminders" {}), default: SizedBoxShrink()},
     switch data.remindersOpen {true: Padding(padding: [16.0], child: Reminders()), default: SizedBoxShrink()},
+    ListItem(title: data.i18n.s76d90cc920c904c8, leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "chats" {}),
     ListItem(title: data.i18n.sb3761fb805dae671, leading: Symbol(name: "mail"), trailing: Symbol(name: "chevron_right"), onTap: event "messages" {}),
     switch data.authorized {true: ListItem(title: data.i18n.s06662ffb634d236a, subtitle: data.spendingSummary, leading: Symbol(name: "payments"), trailing: Label(text: switch data.spendingOpen {true: data.i18n.safd4b783536b8297, default: data.i18n.s00bd3960fea8ea98}, style: "labelMedium", color: "primary"), onTap: event "spending" {}), default: SizedBoxShrink()},
     switch data.spendingOpen {true: Padding(padding: [16.0], child: Column(crossAxisAlignment: "stretch", children: [
@@ -421,5 +423,29 @@ widget Reminders = Column(crossAxisAlignment: "stretch", children: [
   switch data.reminderSettings {true: Button(label: data.i18n.s6e8a57892e5bdb78, variant: "text", onPressed: event "reminderSettings" {}), default: SizedBoxShrink()},
   Label(text: data.reminderError, color: "error"),
 ]);
+
+
+widget Chats = ListPage(loadingPlaceholder: RowsSkeleton(), loading: data.loading, loadingMore: data.loadingMore, hasMore: data.more,
+  error: data.error, emptyTitle: data.i18n.s67ae84e7d6e725ce, onRefresh: event "chatsRefresh" {}, onRetry: event "chatsRefresh" {}, onLoadMore: event "chatsMore" {},
+  toolbar: SearchInput(value: data.search, hint: data.i18n.sa1d2eeb92daadfb2, onChanged: event "chatsSearch" {}, onSubmitted: event "chatsRefresh" {}),
+  header: Column(children: [BuyerLogin(), switch data.chatsChanged {true: Button(label: data.i18n.s5fb4d306840d8230, variant: "tonal", onPressed: event "chatsRefresh" {}), default: SizedBoxShrink()}]),
+  items: [...for row in data.rows: ContentRow(title: row.title, summary: row.summary, meta: row.name, leading: Avatar(label: row.name),
+    detail: Column(mainAxisSize: "min", children: [Chip(label: row.state), switch row.unread {true: Label(text: data.i18n.s4d0680f9efaef147, color: "primary", style: "labelSmall"), default: SizedBoxShrink()}]), onTap: event "chatOpen" {id: row.id})]
+);
+widget ChatActions = Row(mainAxisSize: "min", children: [IconButton(icon: "refresh", tooltip: data.i18n.sa4298ff38b78934f, loading: data.loading, onPressed: event "chatRefresh" {})]);
+widget Chat = PageLayout(loading: data.loading, onRefresh: event "chatRefresh" {},
+  footer: switch data.canSend {true: Padding(padding: [16.0, 8.0, 16.0, 8.0], child: Row(crossAxisAlignment: "end", children: [
+    Expanded(child: TextInput(value: data.chatDraft, hint: data.i18n.sdb22e2ae145b6715, maxLines: 2, onChanged: event "chatInput" {})), Gap(size: 8),
+    Button(label: data.i18n.sedecf0ae6e5144f9, loading: data.chatSending, onPressed: event "chatSend" {})])), default: SizedBoxShrink()},
+  children: [BuyerLogin(), Wrap(spacing: 8.0, children: [Chip(label: data.chatState), switch data.chatOrder {"": SizedBoxShrink(), default: Button(label: data.i18n.s4ba21d5819453996, variant: "text", onPressed: event "chatOrder" {})}]),
+    switch data.chatError {"": SizedBoxShrink(), default: Label(text: data.chatError, color: "error")},
+    switch data.chatMore {true: Button(label: data.i18n.s5bf3f2d2f4f7ad09, variant: "text", loading: data.loadingMore, onPressed: event "chatOlder" {}), default: SizedBoxShrink()},
+    ...for message in data.chatRows: Padding(padding: [0.0, 6.0], child: Align(alignment: switch message.system {true: "center", default: switch message.mine {true: "centerRight", default: "centerLeft"}}, child:
+      Surface(color: switch message.mine {true: "secondaryContainer", default: "surfaceContainerLow"}, child: Column(mainAxisSize: "min", crossAxisAlignment: "start", children: [
+        switch message.system {true: SizedBoxShrink(), default: Label(text: message.author, style: "labelMedium", color: "onSurfaceVariant")},
+        SelectableLabel(text: message.content), Gap(size: 6), RelativeTime(value: message.time)
+      ]))))
+  ]
+);
 
 widget LocalizedTitle = Label(text: data.pageTitle, style: "titleLarge", maxLines: 1);

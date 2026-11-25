@@ -3,7 +3,7 @@
   "apiVersion": 2,
   "id": "community.fluxdo.ldstore",
   "name": "LD士多",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "author": "FluxDO 社区",
   "description": "浏览与搜索商品，原生登录、确认订单、使用 LDC 支付并查看交付内容。",
   "homepage": "https://ldcstore.com/",
@@ -222,6 +222,25 @@
       "appBar": {
         "title": "LocalizedTitle"
       }
+    },
+    {
+      "id": "chats",
+      "widget": "Chats",
+      "title": "求购洽谈",
+      "scroll": false,
+      "appBar": {
+        "title": "LocalizedTitle"
+      }
+    },
+    {
+      "id": "chat",
+      "widget": "Chat",
+      "title": "求购洽谈",
+      "scroll": false,
+      "appBar": {
+        "actions": "ChatActions",
+        "title": "LocalizedTitle"
+      }
     }
   ],
   "links": [
@@ -258,7 +277,9 @@
     "navigationEntries",
     "notificationStatus",
     "manifestLocalization",
-    "accountDataMigration"
+    "accountDataMigration",
+    "storageScopes",
+    "extendedPages"
   ],
   "tasks": [
     {
@@ -287,6 +308,8 @@
       "pages.messages.title": "LD Store messages",
       "pages.reports.title": "My reports",
       "pages.report.title": "Report progress",
+      "pages.chats.title": "Conversations",
+      "pages.chat.title": "Conversations",
       "tasks.messages.title": "Check store messages"
     },
     "zh_TW": {
@@ -309,6 +332,8 @@
       "pages.messages.title": "士多訊息",
       "pages.reports.title": "我的舉報",
       "pages.report.title": "舉報進度",
+      "pages.chats.title": "求購洽談",
+      "pages.chat.title": "求購洽談",
       "tasks.messages.title": "檢查士多新訊息"
     },
     "zh_HK": {
@@ -331,7 +356,16 @@
       "pages.messages.title": "士多消息",
       "pages.reports.title": "我的舉報",
       "pages.report.title": "舉報進度",
+      "pages.chats.title": "求購洽談",
+      "pages.chat.title": "求購洽談",
       "tasks.messages.title": "檢查士多新消息"
     }
+  },
+  "storage": {
+    "default": "account",
+    "scopes": [
+      "shared",
+      "account"
+    ]
   }
 }

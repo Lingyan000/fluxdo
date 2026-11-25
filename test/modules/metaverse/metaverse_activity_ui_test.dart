@@ -35,7 +35,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/preview_fonts.dart';
 
-const _bundle = 'test/fixtures/metaverse/activity-feed-1.3.1.fluxplugin';
+const _bundle = 'test/fixtures/metaverse/activity-feed-1.4.0.fluxplugin';
 const _plugin = 'community.fluxdo.activity';
 const _screenshots = bool.fromEnvironment('PLUGIN_SNAPSHOTS');
 
@@ -403,17 +403,19 @@ void main() {
       find.text(S.current.metaverse_permissionForumActivity),
       findsOneWidget,
     );
+    expect(find.text(S.current.metaverse_permissionIdentity), findsOneWidget);
     expect(find.text(S.current.metaverse_forumProfiles), findsNothing);
     await tester.pump(const Duration(milliseconds: 400));
     await snapshot(tester, 'request-permission');
     await tester.tap(find.text(S.current.common_cancel));
-    await until(find.textContaining('未允许读取动态'));
+    await until(find.textContaining('未允许读取当前账号、读取动态'));
     expect(find.text('mori'), findsOneWidget);
     expect(forum.reads, isEmpty);
     expect(
       plugins.byId(_plugin)!.allows(MetaversePluginPermission.forumActivity),
       isFalse,
     );
+    expect(plugins.byId(_plugin)!.allows(MetaversePluginPermission.identity), isFalse);
     await tester.tap(find.text('订阅此人'));
     await until(allow);
     await tester.tap(allow);
@@ -428,6 +430,7 @@ void main() {
           .allows(MetaversePluginPermission.forumActivity),
       isTrue,
     );
+    expect(plugins.byId(_plugin)!.allows(MetaversePluginPermission.identity), isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     var terminated = false;

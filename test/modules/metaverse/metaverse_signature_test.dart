@@ -7,6 +7,14 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart'
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 
 void main() {
+  test('实际发行插件包通过原生签名和安装结构校验',() async {
+    final network=MetaversePluginNetwork();addTearDown(network.dispose);
+    for(final name in ['ld-store-2.8.0','activity-feed-1.4.0']) {
+      final result=await MetaversePluginInstaller(network:network).importBundle(File('test/fixtures/metaverse/$name.fluxplugin').openRead());
+      expect(result.signature,isNotNull);
+      expect(result.manifest.requiredFeatures,contains('storageScopes'));
+    }
+  });
   final fixtures = jsonDecode(
     File('test/fixtures/metaverse/sdk/signatures.json').readAsStringSync(),
   ) as Map;
