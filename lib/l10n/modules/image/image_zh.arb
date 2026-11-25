@@ -189,6 +189,48 @@
   },
   "imageViewer_copySelected": "复制所选",
   "imageViewer_translateSelected": "翻译所选",
+  "imageMask_title": "隐私打码",
+  "imageMask_entryButton": "隐私打码",
+  "imageMask_scanning": "正在扫描敏感信息",
+  "imageMask_scanningQr": "正在检测二维码",
+  "imageMask_foundCount": "检测到 {count} 处隐私",
+  "@imageMask_foundCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "imageMask_maskedCount": "已打码 {count} 处",
+  "@imageMask_maskedCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "imageMask_noneFound": "未检测到敏感信息，可点击文字行或拖动框选打码",
+  "imageMask_ocrNotDownloadedHint": "未下载识字模型，当前仅检测二维码",
+  "imageMask_downloadOcrAction": "下载识字模型",
+  "imageMask_styleMosaic": "马赛克",
+  "imageMask_styleBlur": "模糊",
+  "imageMask_styleSolid": "纯色",
+  "imageMask_modeAuto": "智能点选",
+  "imageMask_modeManual": "框选打码",
+  "imageMask_hintAuto": "点击高亮框切换打码，点击任意文字行补充打码",
+  "imageMask_hintManual": "在图片上拖动框选需要遮挡的区域",
+  "imageMask_undo": "撤销",
+  "imageMask_clearAll": "清空",
+  "imageMask_selectAll": "全选隐私",
+  "imageMask_apply": "应用打码",
+  "imageMask_applying": "正在生成打码图片",
+  "imageMask_applyFailed": "应用打码失败，请重试",
+  "imageMask_catPhone": "手机号",
+  "imageMask_catEmail": "邮箱",
+  "imageMask_catIdCard": "身份证",
+  "imageMask_catBankCard": "银行卡",
+  "imageMask_catSecret": "密钥/Token",
+  "imageMask_catIp": "IP 地址",
+  "imageMask_catAccount": "账号/隐私",
+  "imageMask_catQrCode": "二维码",
+  "imageMask_catManual": "手动区域",
+  "imageMask_multiTapHint": "点击缩略图可对单张图片进行隐私打码或编辑",
   "imageViewer_grantPermission": "请授予相册访问权限",
   "imageViewer_saveFailed": "保存失败: {error}",
   "@imageViewer_saveFailed": {
