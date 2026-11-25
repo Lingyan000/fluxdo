@@ -340,6 +340,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   int _liveOverlayPage = 0;
   Offset? _liveOverlayTap;
   VoidCallback? _liveOverlayTapMissed;
+  bool _imageLongPressSelecting = false;
   Timer? _passiveOcrTimer;
   bool _passiveOcrArmed = false;
   ImageGestureController? _observedGestureController;
@@ -1118,13 +1119,22 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     Offset globalPosition, {
     required bool isMemory,
   }) async {
+    final targetPage = currentIndex;
+    _imageLongPressSelecting = false;
     void openMenu() {
-      if (!mounted) return;
+      if (!mounted || !context.mounted || currentIndex != targetPage) return;
       if (isMemory) {
         _showBytesContextMenu(context);
       } else {
         _showContextMenu(context);
       }
+    }
+
+    if (!PlatformUtils.isDesktop &&
+        _liveOverlayMode.value == ImageLiveOverlayMode.liveText &&
+        (_liveOverlayKey.currentState?.selectTextAt(globalPosition) ?? false)) {
+      _imageLongPressSelecting = true;
+      return;
     }
 
     if (PlatformUtils.isDesktop ||
@@ -1136,13 +1146,19 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
 
     final ready = await ref.read(ocrModelStoreProvider).isReady();
-    if (!mounted) return;
+    if (!mounted ||
+        !context.mounted ||
+        currentIndex != targetPage ||
+        _liveOverlayMode.value != null) {
+      return;
+    }
     if (!ready) {
       openMenu();
       return;
     }
 
     HapticFeedback.mediumImpact();
+    _imageLongPressSelecting = true;
     _openLiveOverlay(
       ImageLiveOverlayMode.liveText,
       tapPosition: globalPosition,
@@ -1188,6 +1204,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   void _recognizeText() => _openLiveOverlay(ImageLiveOverlayMode.liveText);
 
   void _translateImage() => _openLiveOverlay(ImageLiveOverlayMode.translate);
+
+  void _onImageLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (!_imageLongPressSelecting) return;
+    _liveOverlayKey.currentState?.updateLongPressSelection(
+      details.globalPosition,
+    );
+  }
+
+  void _onImageLongPressEnd() {
+    _imageLongPressSelecting = false;
+    _liveOverlayKey.currentState?.endLongPressSelection();
+  }
 
   Future<void> _editCurrentImage() async {
     if (_isEditing.value) return;
@@ -1623,6 +1651,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         isMemory: true,
                       ),
                     ),
+                    onLongPressMoveUpdate: _onImageLongPressMoveUpdate,
+                    onLongPressEnd: (_) => _onImageLongPressEnd(),
+                    onLongPressCancel: _onImageLongPressEnd,
                     onSecondaryTapUp: (details) => _showBytesContextMenu(
                       context,
                       position: details.globalPosition,
@@ -1699,6 +1730,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         isMemory: false,
                       ),
                     ),
+                    onLongPressMoveUpdate: _onImageLongPressMoveUpdate,
+                    onLongPressEnd: (_) => _onImageLongPressEnd(),
+                    onLongPressCancel: _onImageLongPressEnd,
                     onSecondaryTapUp: (details) => _showContextMenu(
                       context,
                       position: details.globalPosition,
@@ -1755,17 +1789,16 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                         isMemory: false,
                       ),
                     ),
+                    onLongPressMoveUpdate: _onImageLongPressMoveUpdate,
+                    onLongPressEnd: (_) => _onImageLongPressEnd(),
+                    onLongPressCancel: _onImageLongPressEnd,
                     onSecondaryTapUp: (details) => _showContextMenu(
                       context,
                       position: details.globalPosition,
                     ),
                     child: ExtendedImageGesturePageView.builder(
                       itemCount: images.length,
-                      physics:
-                          _liveOverlayMode.value ==
-                              ImageLiveOverlayMode.liveText
-                          ? const NeverScrollableScrollPhysics()
-                          : const BouncingScrollPhysics(),
+                      physics: const BouncingScrollPhysics(),
                       controller: _ensureGalleryPageController,
                       onPageChanged: (index) {
                         // 离场页重置缩放(与旧行为一致:PageView 不缓存

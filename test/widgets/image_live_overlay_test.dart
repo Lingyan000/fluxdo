@@ -56,7 +56,7 @@ void main() {
     testWidgets(
       kind == PointerDeviceKind.mouse
           ? 'PC 端鼠标在细文字行上直接按下拖动即可跨行选字且不被底图抢走'
-          : '移动端单指在文字行上直接按下滑动即可跨行选字',
+          : '移动端普通滑动文字仍交给底图，不抢占平移或翻页',
       (tester) async {
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(400, 400);
@@ -151,9 +151,10 @@ void main() {
         await gesture.up();
         await tester.pump();
 
-        expect(overlayKey.currentState!.hasSelection, isTrue);
-        expect(find.text('复制'), findsOneWidget);
-        expect(backgroundPanned, isFalse);
+        final isMouse = kind == PointerDeviceKind.mouse;
+        expect(overlayKey.currentState!.hasSelection, isMouse);
+        expect(find.text('复制'), isMouse ? findsOneWidget : findsNothing);
+        expect(backgroundPanned, !isMouse);
         expect(tester.takeException(), isNull);
 
         chromeVisible.dispose();
