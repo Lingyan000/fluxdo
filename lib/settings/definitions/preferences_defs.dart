@@ -9,6 +9,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/s.dart';
+import '../../models/translation_engine.dart';
 import '../../modules/mini_apps/mini_app_engine_picker.dart';
 import '../../providers/ai_post_review_provider.dart';
 import '../../providers/ai_translation_provider.dart';
@@ -366,12 +367,43 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
             await notifier.setAiTranslationEnabled(v);
             if (!v) return;
             final prefs = ref.read(preferencesProvider);
-            if (prefs.aiTranslationModelKey != null) return;
+            if (prefs.translationEngine != TranslationEngine.ai ||
+                prefs.aiTranslationModelKey != null) {
+              return;
+            }
             final selected = ref.read(aiTranslationSelectedModelProvider);
             if (selected == null) return;
             await notifier.setAiTranslationModelKey(
               buildAiModelKey(selected.provider.id, selected.model.id),
             );
+          },
+        ),
+        ActionModel(
+          id: 'translationEngine',
+          title: l10n.ai_translationEngine,
+          icon: Symbols.translate_rounded,
+          getDynamicSubtitle: (ref) => translationEngineLabel(
+            ref.watch(preferencesProvider).translationEngine,
+          ),
+          onTap: (context, ref) async {
+            final engine = await showAppDialog<TranslationEngine>(
+              context: context,
+              builder: (ctx) => SimpleDialog(
+                title: Text(l10n.ai_translationEngine),
+                children: [
+                  for (final engine in TranslationEngine.values)
+                    SimpleDialogOption(
+                      onPressed: () => Navigator.pop(ctx, engine),
+                      child: Text(translationEngineLabel(engine)),
+                    ),
+                ],
+              ),
+            );
+            if (engine != null && context.mounted) {
+              await ref
+                  .read(preferencesProvider.notifier)
+                  .setTranslationEngine(engine);
+            }
           },
         ),
         ActionModel(

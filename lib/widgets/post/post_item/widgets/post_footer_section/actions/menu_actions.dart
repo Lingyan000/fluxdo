@@ -113,8 +113,7 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                   },
                 ),
               // 菜单点击后才构建，用 read 避免给楼层常驻树增加监听。
-              if (ref.read(preferencesProvider).aiTranslationEnabled &&
-                  ref.read(aiTranslationSelectedModelProvider) != null)
+              if (ref.read(preferencesProvider).aiTranslationEnabled)
                 ListTile(
                   leading: Icon(
                     Symbols.translate_rounded,

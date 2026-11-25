@@ -2,6 +2,9 @@ import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/ai_translation_service.dart';
+import '../services/translation_service.dart';
+import '../models/translation_engine.dart';
+import '../l10n/s.dart';
 import 'ai_post_review_provider.dart';
 import 'locale_provider.dart';
 import 'preferences_provider.dart';
@@ -24,7 +27,7 @@ final aiTranslationTargetLanguageProvider = Provider<String>((ref) {
   final preferred = ref.watch(
     preferencesProvider.select((p) => p.aiTranslationTargetLanguage),
   );
-  if (preferred != null && preferred.isNotEmpty) return preferred;
+  if (aiTranslationLanguages.containsKey(preferred)) return preferred!;
   final locale = ref.watch(localeProvider);
   final tag = locale?.toLanguageTag() ?? 'zh-CN';
   if (tag.startsWith('zh')) {
@@ -38,6 +41,18 @@ final aiTranslationTargetLanguageProvider = Provider<String>((ref) {
 
 String aiTranslationLanguageLabel(String code) =>
     aiTranslationLanguages[code] ?? code;
+
+String translationEngineLabel(TranslationEngine engine) => switch (engine) {
+  TranslationEngine.google => S.current.ai_translationGoogle,
+  TranslationEngine.bilibili => S.current.ai_translationBilibili,
+  TranslationEngine.ai => S.current.ai_translationAi,
+};
+
+final translationServiceProvider = Provider<TranslationService>((ref) {
+  final service = TranslationService();
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 /// 偏好指定模型优先，否则使用默认文本模型或首个可用文本模型
 /// （回退逻辑与 AI 审核共用 [resolveSelectedTextAiModel]）。
