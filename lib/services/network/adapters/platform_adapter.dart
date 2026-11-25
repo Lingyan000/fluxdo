@@ -245,6 +245,13 @@ bool requestCanUseWebViewAdapter(RequestOptions options) {
         isBinaryResponse &&
         WebViewAdapterSettingsService.instance.canUseWebView(uri);
   }
+  // 首页预加载等显式声明可走浏览器的同源主站 HTML 请求，在开启/临时开启
+  // 兼容模式或 CF 验证后原生重试仍被拦时，应允许由 WebView 适配器接管。
+  if (resourceKind == WebViewHttpAdapter.resourceKindHtml) {
+    return (method == 'GET' || method == 'HEAD') &&
+        !isBinaryResponse &&
+        WebViewAdapterSettingsService.instance.canUseWebView(uri);
+  }
 
   if (!WebViewAdapterSettingsService.instance.canUseWebView(uri)) {
     return false;

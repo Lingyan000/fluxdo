@@ -309,6 +309,7 @@ class BrowserTrustCoordinator {
   }
 
   Future<void> _ensurePreloadedInternal({required String reason}) async {
+    var fallbackFromUnavailableWebView = false;
     if (WebViewAdapterSettingsService.instance.effectiveEnabled) {
       // 兼容模式通过文档导航读取首页内嵌的预加载数据。
       preloadStage.value = BrowserTrustPreloadStage.webView;
@@ -334,13 +335,16 @@ class BrowserTrustCoordinator {
         level: 'warning',
       );
       preloadStage.value = BrowserTrustPreloadStage.fallback;
+      fallbackFromUnavailableWebView = true;
     } else {
       preloadStage.value = BrowserTrustPreloadStage.native;
     }
 
     _lastPreloadPath = BrowserTrustPreloadPath.native;
     _log('preload path=native reason=$reason');
-    await _preload.ensureLoaded();
+    await _preload.ensureLoaded(
+      skipWebViewAdapter: fallbackFromUnavailableWebView,
+    );
     _log('native preload success reason=$reason');
     _startBrowserTrustAfterNativePreload(reason: reason);
   }

@@ -63,6 +63,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
   static const String cookieModeExtraKey = 'webViewCookieMode';
   static const String resourceKindImage = 'image';
   static const String resourceKindUpload = 'upload';
+  static const String resourceKindHtml = 'html';
   static const String cookieModeReadOnly = 'readOnly';
   static const String cookieModeNone = 'none';
   static const Set<String> _supportedFetchCacheModes = {

@@ -4,8 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/browser_trust_coordinator.dart';
 import 'package:fluxdo/services/cf_challenge_service.dart';
+import 'package:fluxdo/services/network/adapters/platform_adapter.dart';
+import 'package:fluxdo/services/network/adapters/webview_http_adapter.dart';
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
 import 'package:fluxdo/services/network/exceptions/api_exception.dart';
+import 'package:fluxdo/services/network/flux_request_spec.dart';
 import 'package:fluxdo/services/network/system_proxy_service.dart';
 import 'package:fluxdo/services/network/webview/site_webview_runtime.dart';
 import 'package:fluxdo/services/network/webview/webview_adapter_settings_service.dart';
@@ -96,6 +99,11 @@ void main() {
       final request = http.requests.single;
       expect(request.method, 'GET');
       expect(request.extra['requestTag'], 'preload-home');
+      expect(
+        request.extra[WebViewHttpAdapter.resourceKindExtraKey],
+        WebViewHttpAdapter.resourceKindHtml,
+      );
+      expect(requestCanUseWebViewAdapter(request), isTrue);
       expect(preload.siteSettingsSync?['title'], 'FluxDO');
     });
   }
@@ -169,6 +177,8 @@ void main() {
         null,
       ]);
       expect(http.requests, hasLength(1));
+      expect(http.requests.single.extra[FluxRequestKeys.skipWebViewAdapter], isTrue);
+      expect(requestCanUseWebViewAdapter(http.requests.single), isFalse);
       expect(preload.isLoaded, isTrue);
     });
   }

@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/network/adapters/platform_adapter.dart';
+import 'package:fluxdo/services/network/adapters/webview_http_adapter.dart';
+import 'package:fluxdo/services/network/flux_request_spec.dart';
 
 void main() {
   group('requestCanUseWebViewAdapter', () {
@@ -10,6 +12,7 @@ void main() {
       String baseUrl = 'https://linux.do',
       ResponseType? responseType,
       Map<String, dynamic>? headers,
+      Map<String, dynamic>? extra,
     }) {
       return RequestOptions(
         path: path,
@@ -17,6 +20,7 @@ void main() {
         method: method,
         responseType: responseType,
         headers: headers,
+        extra: extra,
       );
     }
 
@@ -50,10 +54,51 @@ void main() {
       );
     });
 
-    test('明确 HTML 请求不进入兼容提示', () {
+    test('明确 HTML 请求默认不进入兼容提示，显式标注的主站 HTML 可由 WebView 接管', () {
       expect(
         requestCanUseWebViewAdapter(
           options('/', headers: {'Accept': 'text/html'}),
+        ),
+        isFalse,
+      );
+      expect(
+        requestCanUseWebViewAdapter(
+          options(
+            '/',
+            headers: {'Accept': 'text/html'},
+            extra: {
+              WebViewHttpAdapter.resourceKindExtraKey:
+                  WebViewHttpAdapter.resourceKindHtml,
+            },
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        requestCanUseWebViewAdapter(
+          options(
+            '/',
+            headers: {'Accept': 'text/html'},
+            extra: {
+              WebViewHttpAdapter.resourceKindExtraKey:
+                  WebViewHttpAdapter.resourceKindHtml,
+              FluxRequestKeys.skipWebViewAdapter: true,
+            },
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        requestCanUseWebViewAdapter(
+          options(
+            '/',
+            baseUrl: 'https://cdk.linux.do',
+            headers: {'Accept': 'text/html'},
+            extra: {
+              WebViewHttpAdapter.resourceKindExtraKey:
+                  WebViewHttpAdapter.resourceKindHtml,
+            },
+          ),
         ),
         isFalse,
       );

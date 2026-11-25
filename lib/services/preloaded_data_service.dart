@@ -7,7 +7,9 @@ import 'package:material_ui/material_ui.dart';
 import '../constants.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
+import 'network/adapters/webview_http_adapter.dart';
 import 'network/discourse_dio.dart';
+import 'network/flux_request_spec.dart';
 import 'network/cookie/csrf_token_service.dart';
 import 'cf_challenge_service.dart';
 import 'cf_clearance_refresh_service.dart';
@@ -115,8 +117,8 @@ class PreloadedDataService {
   }
 
   /// 确保预加载数据已准备好
-  Future<void> ensureLoaded() async {
-    await _ensureLoaded();
+  Future<void> ensureLoaded({bool skipWebViewAdapter = false}) async {
+    await _ensureLoaded(skipWebViewAdapter: skipWebViewAdapter);
   }
 
   /// 获取 currentUser 数据（包含通知计数等）
@@ -575,7 +577,7 @@ class PreloadedDataService {
   }
 
   /// 确保数据已加载
-  Future<void> _ensureLoaded() async {
+  Future<void> _ensureLoaded({bool skipWebViewAdapter = false}) async {
     if (_loaded) return;
     if (_loading) {
       // 等待正在进行的加载完成
@@ -584,11 +586,11 @@ class PreloadedDataService {
       }
       if (_loaded) return; // 上次成功了才跳过
     }
-    await _loadPreloadedData();
+    await _loadPreloadedData(skipWebViewAdapter: skipWebViewAdapter);
   }
 
   /// 加载预加载数据
-  Future<void> _loadPreloadedData() async {
+  Future<void> _loadPreloadedData({bool skipWebViewAdapter = false}) async {
     if (_loading) return;
     _loading = true;
 
@@ -603,6 +605,10 @@ class PreloadedDataService {
             if (AppConstants.skipCsrfForHomeRequest) 'skipCsrf': true,
             // 诊断标注:首页 HTML 是 CF 盾高发路径,日志里需可辨识
             'requestTag': 'preload-home',
+            // 允许在兼容模式（永久或临时）及 CF 重试兜底时由 WebView 适配器接管。
+            WebViewHttpAdapter.resourceKindExtraKey:
+                WebViewHttpAdapter.resourceKindHtml,
+            if (skipWebViewAdapter) FluxRequestKeys.skipWebViewAdapter: true,
           },
         ),
       );
