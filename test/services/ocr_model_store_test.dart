@@ -34,23 +34,24 @@ void main() {
   final model = [1, 2, 3, 4, 5, 6], config = [10, 20, 30];
   final archive = TarEncoder().encodeBytes(
     Archive()
-      ..addFile(ArchiveFile.bytes('rec_infer/inference.onnx', model))
-      ..addFile(ArchiveFile.bytes('rec_infer/inference.yml', config))
+      ..addFile(ArchiveFile.bytes('rec_infer/rec.tflite', model))
+      ..addFile(ArchiveFile.bytes('rec_infer/rec.yml', config))
       ..addFile(ArchiveFile.string('rec_infer/README.md', '说明')),
   );
   String digest(List<int> bytes) => sha256.convert(bytes).toString();
   final bundle = OcrModelBundle(
-    'rec',
-    'pinned',
-    archive.length,
-    digest(archive),
-    [
-      OcrModelFile('rec.onnx', 'inference.onnx', model.length, digest(model)),
-      OcrModelFile('rec.yml', 'inference.yml', config.length, digest(config)),
+    baseUrl: 'https://modelscope.cn/models/fluxdo/test/resolve/pinned/',
+    archiveBaseUrl: 'https://backup.example/ocr/',
+    archiveName: 'rec_infer',
+    archiveSize: archive.length,
+    archiveSha: digest(archive),
+    files: [
+      OcrModelFile('rec.tflite', 'rec.tflite', model.length, digest(model)),
+      OcrModelFile('rec.yml', 'rec.yml', config.length, digest(config)),
     ],
   );
   ResponseBody direct(RequestOptions request) => ResponseBody.fromBytes(
-    request.uri.path.endsWith('.onnx') ? model : config,
+    request.uri.path.endsWith('.tflite') ? model : config,
     200,
   );
   File local(String name) => File(p.join(directory.path, name));
@@ -79,7 +80,7 @@ void main() {
   });
 
   test('缓存按 SHA 校验，主源仅补齐损坏文件，后续使用不再联网', () async {
-    await local('rec.onnx').writeAsBytes(model.reversed.toList());
+    await local('rec.tflite').writeAsBytes(model.reversed.toList());
     await local('rec.yml').writeAsBytes(config);
     expect(await store.isReady(), isFalse);
     await download();
@@ -90,7 +91,7 @@ void main() {
     ]);
   });
 
-  test('主源中断后用一个 BOS 包补齐模型和同一份字典，清理各自的断点', () async {
+  test('主源中断后用一个备用包补齐模型和同一份字典，清理各自的断点', () async {
     await local('rec_infer.tar.part').writeAsBytes(archive.take(5).toList());
     adapter.respond = (request, _) {
       if (request.uri.toString() == bundle.archiveUrl) {
@@ -119,17 +120,19 @@ void main() {
     expect(await store.isReady(), isTrue);
     expect(
       await directory.list().map((f) => p.basename(f.path)).toList(),
-      unorderedEquals(['rec.onnx', 'rec.yml']),
+      unorderedEquals(['rec.tflite', 'rec.yml']),
     );
     expect(adapter.requests, hasLength(2));
   });
 
   test('主源只续传缺失的字节；服务器忽略 Range 时可以从头覆盖', () async {
     for (final range in [true, false]) {
-      if (await local('rec.onnx').exists()) await local('rec.onnx').delete();
-      await local('rec.onnx.part').writeAsBytes(model.take(2).toList());
+      if (await local('rec.tflite').exists()) {
+        await local('rec.tflite').delete();
+      }
+      await local('rec.tflite.part').writeAsBytes(model.take(2).toList());
       adapter.respond = (request, _) {
-        if (!request.uri.path.endsWith('.onnx')) return direct(request);
+        if (!request.uri.path.endsWith('.tflite')) return direct(request);
         expect(request.headers[HttpHeaders.rangeHeader], 'bytes=2-');
         return range
             ? ResponseBody.fromBytes(
@@ -143,12 +146,12 @@ void main() {
       };
       await download();
       expect(await store.isReady(), isTrue);
-      expect(await local('rec.onnx.part').exists(), isFalse);
+      expect(await local('rec.tflite.part').exists(), isFalse);
     }
   });
 
   test('已经下载的识别模型保留，只有字典缺失时也能从备用包恢复', () async {
-    await local('rec.onnx').writeAsBytes(model);
+    await local('rec.tflite').writeAsBytes(model);
     adapter.respond = (request, _) => request.uri.host == 'modelscope.cn'
         ? ResponseBody.fromBytes([30, 20, 10], 200)
         : ResponseBody.fromBytes(archive, 200);
@@ -181,9 +184,9 @@ void main() {
         ? ResponseBody.fromBytes(model.sublist(0, 2), 200)
         : ResponseBody.fromString('', 503);
     await expectLater(download(), throwsA(isA<DioException>()));
-    expect(await local('rec.onnx.part').readAsBytes(), model.sublist(0, 2));
+    expect(await local('rec.tflite.part').readAsBytes(), model.sublist(0, 2));
     adapter.respond = (request, _) {
-      if (!request.uri.path.endsWith('.onnx')) return direct(request);
+      if (!request.uri.path.endsWith('.tflite')) return direct(request);
       expect(request.headers[HttpHeaders.rangeHeader], 'bytes=2-');
       return ResponseBody.fromBytes(
         model.sublist(2),
@@ -195,7 +198,7 @@ void main() {
     };
     await download();
     expect(await store.isReady(), isTrue);
-    expect(await local('rec.onnx.part').exists(), isFalse);
+    expect(await local('rec.tflite.part').exists(), isFalse);
   });
 
   test('首个面板取消时不触发备用下载，排队的面板可以继续', () async {
@@ -243,5 +246,51 @@ void main() {
     await store.clear();
     expect(await store.installedBytes(), 0);
     expect(await store.isReady(), isFalse);
+  });
+
+  test('未配置项目模型源时不请求其他人的服务，已安装模型仍可离线使用', () async {
+    store.dispose();
+    store = OcrModelStore(
+      dio: Dio()..httpClientAdapter = adapter,
+      directory: () async => directory,
+      bundles: [
+        OcrModelBundle(
+          baseUrl: '',
+          archiveName: bundle.archiveName,
+          archiveSize: bundle.archiveSize,
+          archiveSha: bundle.archiveSha,
+          files: bundle.files,
+        ),
+      ],
+    );
+    await expectLater(download(), throwsStateError);
+    expect(adapter.requests, isEmpty);
+    await local('rec.tflite').writeAsBytes(model);
+    await local('rec.yml').writeAsBytes(config);
+    await download();
+    expect(await store.isReady(), isTrue);
+    expect(adapter.requests, isEmpty);
+  });
+
+  test('没有备用源时保留主源断点并报告原错误', () async {
+    store.dispose();
+    store = OcrModelStore(
+      dio: Dio()..httpClientAdapter = adapter,
+      directory: () async => directory,
+      bundles: [
+        OcrModelBundle(
+          baseUrl: bundle.baseUrl,
+          archiveName: bundle.archiveName,
+          archiveSize: bundle.archiveSize,
+          archiveSha: bundle.archiveSha,
+          files: bundle.files,
+        ),
+      ],
+    );
+    adapter.respond = (_, _) =>
+        ResponseBody.fromBytes(model.sublist(0, 2), 200);
+    await expectLater(download(), throwsA(isA<HttpException>()));
+    expect(adapter.requests, hasLength(1));
+    expect(await local('rec.tflite.part').readAsBytes(), model.sublist(0, 2));
   });
 }
