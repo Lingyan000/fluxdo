@@ -99,6 +99,10 @@
   "dataManagement_importSuccess": "数据已导入，请重启应用",
   "dataManagement_importWarning": "导入后将覆盖当前对应的设置项，需要重启应用生效。",
   "dataManagement_noCache": "无缓存",
+  "dataManagement_ocrModel": "离线识字模型",
+  "dataManagement_ocrModelNotDownloaded": "未下载",
+  "dataManagement_clearOcrModelTitle": "删除离线识字模型",
+  "dataManagement_clearOcrModelContent": "删除后可释放本地存储空间，下次使用图片识字或隐私打码时可重新下载。",
   "dataManagement_settingsCount": "包含 {count} 项设置",
   "@dataManagement_settingsCount": {
     "placeholders": {

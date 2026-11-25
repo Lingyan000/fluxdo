@@ -157,6 +157,38 @@
   "@imageViewer_ocrDownloadDescription": {
     "placeholders": { "size": { "type": "String" } }
   },
+  "imageViewer_downloadingOcr": "正在下载识字模型",
+  "imageViewer_downloadingOcrProgress": "已下载 {downloaded} / {total} MiB",
+  "@imageViewer_downloadingOcrProgress": {
+    "placeholders": {
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "imageViewer_detectingText": "正在定位文字区域",
+  "imageViewer_recognizingProgress": "正在识别文字（{completed}/{total}）",
+  "@imageViewer_recognizingProgress": {
+    "placeholders": {
+      "completed": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "imageViewer_ocrModelReadyHint": "全程本地离线推理，图片不会上传到任何服务器",
+  "imageViewer_ocrStats": "{lines} 行 · {chars} 字",
+  "@imageViewer_ocrStats": {
+    "placeholders": {
+      "lines": { "type": "int" },
+      "chars": { "type": "int" }
+    }
+  },
+  "imageViewer_ocrSelectedStats": "已选 {count} 字",
+  "@imageViewer_ocrSelectedStats": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "imageViewer_copySelected": "复制所选",
+  "imageViewer_translateSelected": "翻译所选",
   "imageViewer_grantPermission": "请授予相册访问权限",
   "imageViewer_saveFailed": "保存失败: {error}",
   "@imageViewer_saveFailed": {

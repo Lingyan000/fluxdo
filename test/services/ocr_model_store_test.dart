@@ -73,7 +73,9 @@ void main() {
   });
   tearDown(() async {
     store.dispose();
-    await directory.delete(recursive: true);
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
   });
 
   test('缓存按 SHA 校验，主源仅补齐损坏文件，后续使用不再联网', () async {
@@ -230,5 +232,16 @@ void main() {
       isTrue,
     );
     expect(adapter.requests, hasLength(3));
+  });
+
+  test('支持查询已下载模型大小并彻底删除释放空间', () async {
+    expect(await store.installedBytes(), 0);
+    await download();
+    expect(await store.installedBytes(), model.length + config.length);
+    expect(await store.isReady(), isTrue);
+
+    await store.clear();
+    expect(await store.installedBytes(), 0);
+    expect(await store.isReady(), isFalse);
   });
 }

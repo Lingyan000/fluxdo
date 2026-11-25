@@ -11,6 +11,7 @@ import '../l10n/s.dart';
 import '../utils/share_utils.dart';
 import '../providers/app_state_refresher.dart';
 import '../providers/core_providers.dart';
+import '../providers/image_ocr_provider.dart';
 import '../providers/theme_provider.dart';
 import '../utils/dialog_utils.dart';
 import '../services/data_management/cache_size_service.dart';
@@ -64,6 +65,7 @@ class _CacheManagementSectionState
   Map<ImageCacheCategory, int>? _breakdown;
   int _aiChatDataSize = -1;
   int _cookieCacheSize = -1;
+  int _ocrModelSize = -1;
   bool _isClearing = false;
 
   /// 勾选状态。默认全选(Telegram 同款)。
@@ -77,16 +79,19 @@ class _CacheManagementSectionState
 
   Future<void> _loadCacheSizes() async {
     final prefs = ref.read(sharedPreferencesProvider);
+    final ocrStore = ref.read(ocrModelStoreProvider);
     final results = await Future.wait([
       CacheSizeService.getImageCacheBreakdown(),
       CacheSizeService.getAiChatDataSize(prefs),
       CacheSizeService.getCookieCacheSize(),
+      ocrStore.installedBytes(),
     ]);
     if (mounted) {
       setState(() {
         _breakdown = results[0] as Map<ImageCacheCategory, int>;
         _aiChatDataSize = results[1] as int;
         _cookieCacheSize = results[2] as int;
+        _ocrModelSize = results[3] as int;
       });
     }
   }
@@ -176,6 +181,32 @@ class _CacheManagementSectionState
       await AiChatStorageService(prefs).deleteAllSessions();
       setState(() => _aiChatDataSize = 0);
       ToastService.showSuccess(S.current.dataManagement_aiChatCleared);
+    } catch (e) {
+      ToastService.showError(S.current.common_clearFailed(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isClearing = false);
+    }
+  }
+
+  Future<void> _clearOcrModel() async {
+    final size = _ocrModelSize;
+    final confirmed = await _showConfirmDialog(
+      title: S.current.dataManagement_clearOcrModelTitle,
+      content: S.current.dataManagement_clearOcrModelContent,
+      confirmText: S.current.common_clear,
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isClearing = true);
+    try {
+      await ref.read(ocrModelStoreProvider).clear();
+      ref.read(localOcrServiceProvider).clearCache();
+      if (mounted) {
+        setState(() => _ocrModelSize = 0);
+      }
+      ToastService.showSuccess(
+        S.current.dataManagement_freedSpace(CacheSizeService.formatSize(size)),
+      );
     } catch (e) {
       ToastService.showError(S.current.common_clearFailed(e.toString()));
     } finally {
@@ -330,6 +361,14 @@ class _CacheManagementSectionState
           children: [
             _buildLocalDataTile(
               theme: theme,
+              icon: Symbols.document_scanner_rounded,
+              title: context.l10n.dataManagement_ocrModel,
+              size: _ocrModelSize,
+              emptyLabel: context.l10n.dataManagement_ocrModelNotDownloaded,
+              onClear: _isClearing ? null : _clearOcrModel,
+            ),
+            _buildLocalDataTile(
+              theme: theme,
               icon: Symbols.smart_toy_rounded,
               title: context.l10n.dataManagement_aiChatData,
               size: _aiChatDataSize,
@@ -422,12 +461,16 @@ class _CacheManagementSectionState
     required IconData icon,
     required String title,
     required int size,
+    String? emptyLabel,
     required VoidCallback? onClear,
   }) {
+    final subtitle = size == 0 && emptyLabel != null
+        ? emptyLabel
+        : _formatCacheSize(size);
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
-      subtitle: Text(_formatCacheSize(size)),
+      subtitle: Text(subtitle),
       trailing: TextButton(
         onPressed: size <= 0 ? null : onClear,
         child: Text(S.current.common_clear),

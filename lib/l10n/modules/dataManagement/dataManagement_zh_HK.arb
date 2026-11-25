@@ -99,6 +99,10 @@
   "dataManagement_importSuccess": "數據已導入，請重啓應用",
   "dataManagement_importWarning": "導入後將覆蓋當前對應的設置項，需要重啓應用生效。",
   "dataManagement_noCache": "無緩存",
+  "dataManagement_ocrModel": "離線識字模型",
+  "dataManagement_ocrModelNotDownloaded": "未下載",
+  "dataManagement_clearOcrModelTitle": "刪除離線識字模型",
+  "dataManagement_clearOcrModelContent": "刪除後可釋放本機存儲空間，下次使用圖片識字或私隱打碼時可重新下載。",
   "dataManagement_settingsCount": "包含 {count} 項設置",
   "@dataManagement_settingsCount": {
     "placeholders": {
