@@ -2098,7 +2098,7 @@ fluxdo.on('signOut',async ctx=>{
     if(v.ctx.page==='account')clearPrivateOverview(v.ctx,v);
     if(['favorites','coupons','coupon','comment','refund','reports','report'].includes(v.ctx.page))clearBuyerData(v.ctx,v);
     if(['orders','order'].includes(v.ctx.page))clearOrderData(v.ctx,v);
-    if(['chat','chats'].includes(v.ctx.page)){stopChat(v);v.chatRows=[];v.rows=[];v.chatSession=null;v.chatDraft='';write(v.ctx,{chatRows:[],rows:[],canSend:false,needsSession:true,chatDraft:'',more:false});}
+    if(['chat','chats'].includes(v.ctx.page)){stopChat(v);clearChatData(v.ctx,v);v.rows=[];write(v.ctx,{rows:[],more:false});}
     if(v.ctx.page==='messages'){v.rows=[];v.page=0;v.more=false;v.messagesLoaded=false;v.messagesCheckPending=false;v.messagesChanged=false;write(v.ctx,{rows:[],more:false,unread:false,messagesChanged:false});}
     if(v.ctx.page==='product'){v.comments=[];v.commentsRevision=(v.commentsRevision || 0)+1;v.commentsPage=0;v.commentsLoading=false;write(v.ctx,{comments:[],commentsMore:false,commentsLoading:false,commentStatsReady:false,canComment:false});}
     write(v.ctx,{accountName:'',accountAvatar:'',accountMeta:'',authorized:false,stats:[]});}
@@ -2292,6 +2292,10 @@ fluxdo.on('evidenceUpload',async ctx=>{
 const chatStates={negotiating:__text("sa59068cdddd4b20f"),paid_pending_confirm:__text("s0a52f8af1bdaf495"),paid:__text("s0a52f8af1bdaf495"),closed:__text("s6744b4c6a9aa0038"),cancelled:__text("sa37778f17c5f3ee5")};
 const chatId=value=>/^[1-9][0-9]{0,19}$/.test(String(value??''))?String(value):'';
 function chatCurrent(ctx,s,revision){return market(ctx)===s && !s.hidden && revision===s.chatRevision;}
+function clearChatData(ctx,s){
+  s.chatRows=[];s.chatSession=null;s.chatDraft='';s.chatOrder='';s.chatRead=null;s.chatMore=false;s.chatUncertain=null;
+  write(ctx,{chatRows:[],canSend:false,needsSession:true,authorized:false,chatDraft:'',chatOrder:'',chatState:'',chatMore:false,chatReady:false});
+}
 function showChatMessages(ctx,s){
   const rows=[...(s.chatRows||[])].sort((a,b)=>storeMillis(a.createdAt)-storeMillis(b.createdAt)||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
   s.chatRows=rows.slice(-500);
@@ -2323,7 +2327,7 @@ async function syncChat(ctx,{older=false,initial=false}={}){
   s.chatLoading=true;write(ctx,{loading:initial&&!s.chatSession,loadingMore:older,error:'',chatError:'',needsSession:false});
   try{
     const auth=await ldStore.status();if(!current())return;ctx.setData('authorized',auth.authorized);
-    if(!auth.authorized){s.chatRows=[];write(ctx,{chatRows:[],canSend:false,needsSession:true});return;}
+    if(!auth.authorized){clearChatData(ctx,s);return;}
     if(!s.chatSession||initial){
       const data=await buyerRequest(ctx,'/buy-sessions/'+id+'?requestId='+requestId);if(!current())return;
       if(chatId(data.session?.id)!==id || (data.request?.id && chatId(data.request.id)!==requestId))throw Error(__text("s9a41470ab3d3c3e1"));
@@ -2346,7 +2350,7 @@ async function syncChat(ctx,{older=false,initial=false}={}){
     if(!older&&latest&&s.chatRead!==latest){
       try{await buyerRequest(ctx,'/buy-sessions/'+id+'/read','POST',{lastReadMessageId:latest});if(current())s.chatRead=latest;}catch(_){/* 已读同步失败不覆盖消息；下次刷新重试。 */}
     }
-  }catch(error){if(current()){if(error.status===401){s.chatRows=[];s.chatSession=null;write(ctx,{chatRows:[],canSend:false,needsSession:true});}ctx.setData('chatError',error.message);}}
+  }catch(error){if(current()){if(error.status===401)clearChatData(ctx,s);ctx.setData('chatError',error.message);}}
   finally{if(current()){s.chatLoading=false;write(ctx,{loading:false,loadingMore:false});scheduleChat(ctx,s);}}
 }
 function scheduleChat(ctx,s){

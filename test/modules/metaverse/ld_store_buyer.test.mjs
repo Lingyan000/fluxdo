@@ -69,6 +69,10 @@ test('求购会话按实际协议读取，历史去重，发送防连点并由�
   await t.fire(p,'chatOlder');assert.equal(p.data.chatRows.length,1);assert.ok(t.calls.some(r=>r.url.searchParams.get('beforeId')==='2'));
   await t.fire(p,'chatInput',{value:'测试消息'});await Promise.all([t.fire(p,'chatSend'),t.fire(p,'chatSend')]);assert.equal(sends,1);assert.equal(p.data.chatDraft,'');assert.equal(p.data.chatRows.length,2);
   assert.ok([...t.pendingTimers.values()].some(timer=>timer.delay===15000));
+  t.setAuthorized(false);await t.fire(p,'chatRefresh');
+  assert.equal(p.data.canSend,false);assert.equal(p.data.chatRows.length,0);assert.equal(p.data.chatOrder,'');
+  await t.fire(p,'chatOrder');assert.equal(t.nav.length,2);
+  assert.ok(![...t.pendingTimers.values()].some(timer=>timer.delay===15000));
 });
 test('关闭会话不能发送，离页后的迟到响应不展示，发送超时不自动重试',async()=>{
   let closed=true,fail=false,sends=0;
