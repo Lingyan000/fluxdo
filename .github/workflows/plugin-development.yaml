@@ -225,7 +225,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # macOS ARM 首次资源构建约需 17 分钟，为测试与清理保留独立余量。
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 30 || 20 }}
     steps:
       - uses: actions/checkout@v4
         with:
