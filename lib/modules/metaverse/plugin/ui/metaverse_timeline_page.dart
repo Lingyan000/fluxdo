@@ -35,22 +35,42 @@ class _PluginTimelinePage extends StatefulWidget {
 }
 
 class _PluginTimelinePageState extends State<_PluginTimelinePage> {
-  final _scroll = ScrollController(keepScrollOffset: false);
-  final _viewport = GlobalKey();
-  final _keys = <String, GlobalKey>{};
+  final _scroll = ScrollController(
+    keepScrollOffset: false,
+    initialScrollOffset: -16,
+  );
+  static const _center = ValueKey('timeline-origin');
+  String? _origin;
   bool _away = false;
   bool _requested = false;
   int _generation = 0;
+  double _bottomPadding = 16;
 
   @override
   void initState() {
     super.initState();
+    _origin = widget.itemKeys.firstOrNull;
     _scroll.addListener(_onPosition);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final padding =
+        16 +
+        (widget.footer == null ? MediaQuery.paddingOf(context).bottom : 0.0);
+    if (_bottomPadding == padding) return;
+    _bottomPadding = padding;
+    if (!_scroll.hasClients || _scroll.position.extentBefore <= 80) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) _scroll.jumpTo(-_bottomPadding);
+      });
+    }
   }
 
   void _onPosition() {
     if (!_scroll.hasClients) return;
-    final away = _scroll.offset > 80;
+    final away = _scroll.position.extentBefore > 80;
     if (_away != away) setState(() => _away = away);
   }
 
@@ -80,23 +100,32 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
     widget.onLoadMore!();
   }
 
-  void _latest({bool animate = true}) {
+  Future<void> _latest({bool animate = true}) async {
     if (!_scroll.hasClients) return;
-    if (!animate || MediaQuery.disableAnimationsOf(context)) {
-      _scroll.jumpTo(0);
-    } else {
-      _scroll.animateTo(
-        0,
+    if (animate && !MediaQuery.disableAnimationsOf(context)) {
+      await _scroll.animateTo(
+        _scroll.position.minScrollExtent,
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
       );
     }
+    if (!mounted) return;
+    setState(() {
+      _origin = widget.itemKeys.firstOrNull;
+      _away = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scroll.hasClients) _scroll.jumpTo(-_bottomPadding);
+    });
   }
 
   @override
   void didUpdateWidget(_PluginTimelinePage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final identityChanged = oldWidget.identity != widget.identity;
+    _bottomPadding =
+        16 +
+        (widget.footer == null ? MediaQuery.paddingOf(context).bottom : 0.0);
     if (identityChanged || widget.items.isEmpty) _away = false;
     final keysChanged =
         oldWidget.itemKeys.length != widget.itemKeys.length ||
@@ -114,48 +143,17 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
       return;
     }
     final generation = ++_generation;
-    final atEnd = !_scroll.hasClients || _scroll.offset <= 80;
+    final atEnd = !_scroll.hasClients || _scroll.position.extentBefore <= 80;
     final follow =
         identityChanged || atEnd || oldWidget.endRevision != widget.endRevision;
-    GlobalKey? anchor;
-    double? previousY;
-    final viewport = _viewport.currentContext?.findRenderObject();
-    if (!follow && viewport is RenderBox) {
-      final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
-      for (final id in oldWidget.itemKeys) {
-        if (!widget.itemKeys.contains(id)) continue;
-        final key = _keys[id];
-        final box = key?.currentContext?.findRenderObject();
-        if (box is! RenderBox || !box.hasSize) continue;
-        final rect = box.localToGlobal(Offset.zero) & box.size;
-        if (rect.overlaps(bounds)) {
-          anchor = key;
-          previousY = rect.top;
-          break;
-        }
-      }
-    }
-    if (identityChanged) _keys.clear();
-    final active = widget.itemKeys.toSet();
-    _keys.removeWhere((id, _) => !active.contains(id));
+    // 新内容在中心之前生长，历史在中心之后追加。保持中心不变即可保留
+    // 布局坐标，不依赖新增数量、行高或离屏条目是否还在懒加载缓存中。
+    final reset = follow || !widget.itemKeys.contains(_origin);
+    if (!reset) return;
+    _origin = widget.itemKeys.firstOrNull;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _generation || !_scroll.hasClients) return;
-      if (follow) {
-        _latest(animate: false);
-        return;
-      }
-      final box = anchor?.currentContext?.findRenderObject();
-      if (box is RenderBox && box.hasSize && previousY != null) {
-        final correction = previousY - box.localToGlobal(Offset.zero).dy;
-        if (correction.abs() > .5) {
-          _scroll.jumpTo(
-            (_scroll.offset + correction).clamp(
-              0,
-              _scroll.position.maxScrollExtent,
-            ),
-          );
-        }
-      }
+      _scroll.jumpTo(-_bottomPadding);
     });
   }
 
@@ -171,6 +169,9 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
         widget.itemKeys.length == widget.items.length &&
         widget.itemKeys.toSet().length == widget.items.length;
     final items = validKeys ? widget.items : const <Widget>[];
+    final originIndex = items.isEmpty
+        ? 0
+        : math.max(0, widget.itemKeys.indexOf(_origin ?? ''));
     return _PluginPageLayout(
       loading: widget.loading,
       toolbar: items.isNotEmpty && widget.error.isNotEmpty
@@ -222,71 +223,104 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
                       )
                     : NotificationListener<ScrollNotification>(
                         onNotification: _onScroll,
-                        child: ListView.builder(
-                          key: _viewport,
+                        child: CustomScrollView(
                           controller: _scroll,
                           reverse: true,
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            16,
-                            16,
-                            16 +
-                                (widget.footer == null
-                                    ? MediaQuery.paddingOf(context).bottom
-                                    : 0),
-                          ),
+                          center: _center,
                           physics: const AlwaysScrollableScrollPhysics(),
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: items.length + 1,
-                          findChildIndexCallback: (key) {
-                            if (key is! ValueKey<String>) return null;
-                            final index = widget.itemKeys.indexOf(key.value);
-                            return index < 0 ? null : index;
-                          },
-                          itemBuilder: (context, index) {
-                            if (index < items.length) {
-                              final id = widget.itemKeys[index];
-                              return KeyedSubtree(
-                                key: ValueKey(id),
-                                child: KeyedSubtree(
-                                  key: _keys.putIfAbsent(id, GlobalKey.new),
-                                  child: items[index],
-                                ),
-                              );
-                            }
-                            if (items.isEmpty) {
-                              return widget.loading &&
-                                      widget.loadingPlaceholder != null
-                                  ? widget.loadingPlaceholder!
-                                  : _PluginPageStatus(
-                                      loading: widget.loading,
-                                      error: widget.error,
-                                      emptyTitle: widget.emptyTitle,
-                                      onRetry: widget.onRetry,
+                          slivers: [
+                            SliverToBoxAdapter(
+                              child: SizedBox(height: _bottomPadding),
+                            ),
+                            SliverPadding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (_, index) => KeyedSubtree(
+                                    key: ValueKey(
+                                      widget.itemKeys[originIndex - 1 - index],
+                                    ),
+                                    child: items[originIndex - 1 - index],
+                                  ),
+                                  childCount: originIndex,
+                                  findChildIndexCallback: (key) {
+                                    if (key is! ValueKey<String>) return null;
+                                    final index = widget.itemKeys.indexOf(
+                                      key.value,
                                     );
-                            }
-                            if (widget.loadingMore) {
-                              return const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: Center(child: LoadingSpinner(size: 24)),
-                              );
-                            }
-                            if (!widget.hasMore || widget.onLoadMore == null) {
-                              return const SizedBox.shrink();
-                            }
-                            return Center(
-                              child: TextButton(
-                                onPressed:
-                                    widget.loading || widget.error.isNotEmpty
-                                    ? null
-                                    : _loadMore,
-                                child: Text(
-                                  widget.moreLabel ?? context.l10n.common_more,
+                                    return index >= 0 && index < originIndex
+                                        ? originIndex - 1 - index
+                                        : null;
+                                  },
                                 ),
                               ),
-                            );
-                          },
+                            ),
+                            SliverPadding(
+                              key: _center,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (_, index) {
+                                    final row = originIndex + index;
+                                    if (row < items.length) {
+                                      return KeyedSubtree(
+                                        key: ValueKey(widget.itemKeys[row]),
+                                        child: items[row],
+                                      );
+                                    }
+                                    if (items.isEmpty) {
+                                      return widget.loadingPlaceholder ??
+                                          const Center(child: LoadingSpinner());
+                                    }
+                                    if (widget.loadingMore) {
+                                      return const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: Center(
+                                          child: LoadingSpinner(size: 24),
+                                        ),
+                                      );
+                                    }
+                                    if (!widget.hasMore ||
+                                        widget.onLoadMore == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Center(
+                                      child: TextButton(
+                                        onPressed:
+                                            widget.loading ||
+                                                widget.error.isNotEmpty
+                                            ? null
+                                            : _loadMore,
+                                        child: Text(
+                                          widget.moreLabel ??
+                                              context.l10n.common_more,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  childCount: items.length - originIndex + 1,
+                                  findChildIndexCallback: (key) {
+                                    if (key is! ValueKey<String>) return null;
+                                    final index = widget.itemKeys.indexOf(
+                                      key.value,
+                                    );
+                                    return index >= originIndex
+                                        ? index - originIndex
+                                        : null;
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SliverToBoxAdapter(
+                              child: SizedBox(height: 16),
+                            ),
+                          ],
                         ),
                       ),
               ),
