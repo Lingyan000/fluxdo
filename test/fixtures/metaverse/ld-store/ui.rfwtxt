@@ -285,10 +285,12 @@ widget BuyerLogin = switch data.needsSession {true: LoginButton(), default: Size
 widget Account = ListPage(loading: data.overviewLoading, onRefresh: event "overviewRefresh" {},
   header: Column(crossAxisAlignment: "stretch", children: [
     switch data.accountName {"": SizedBoxShrink(), default: Padding(padding: [0.0, 0.0, 0.0, 20.0], child: Row(children: [Avatar(label: data.accountName, url: data.accountAvatar, size: 48), Gap(size: 12), Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: data.accountName, style: "titleLarge", bold: true), Label(text: data.accountMeta, style: "bodySmall", color: "onSurfaceVariant")]))]))},
-    Statistics(items: data.stats, loading: data.overviewInitialLoading), Gap(size: 12), Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant"), LoginButton()]),
+    Statistics(items: data.stats, loading: data.overviewInitialLoading),
+    switch data.overviewError {"": SizedBoxShrink(), default: Padding(padding: [0.0, 12.0, 0.0, 0.0], child: Label(text: data.overviewError, style: "bodySmall", color: "onSurfaceVariant"))},
+    switch data.authorized {true: SizedBoxShrink(), default: Padding(padding: [0.0, 20.0, 0.0, 0.0], child: LoginButton())}]),
   items: [
     ListItem(title: data.i18n.s7c7dea47f57597f4, subtitle: data.i18n.s7c2fda7ef4a1229c, leading: Symbol(name: "history"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {}),
-    switch data.refundHint {"": SizedBoxShrink(), default: ListItem(title: data.refundHint, leading: Symbol(name: "info"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {status: "refund_pending,refunded,refund_failed"})},
+    switch data.hasRefundAttention {true: ListItem(title: data.refundHint, leading: Symbol(name: "info"), trailing: Symbol(name: "chevron_right"), onTap: event "orders" {status: "refund_pending,refunded,refund_failed"}), default: SizedBoxShrink()},
     ListItem(title: data.i18n.s9385bfefca5882f1, leading: Symbol(name: "favorite"), trailing: Symbol(name: "chevron_right"), onTap: event "favorites" {}),
     ListItem(title: data.i18n.s731c8bf2f14a1505, subtitle: data.couponHint, leading: Symbol(name: "gift"), trailing: Symbol(name: "chevron_right"), onTap: event "coupons" {}),
     ListItem(title: data.i18n.s29d8e8ee6822135d, leading: Symbol(name: "flag"), trailing: Symbol(name: "chevron_right"), onTap: event "reports" {}),

@@ -23,28 +23,51 @@ Widget _buildStatistics(BuildContext context, DataSource source) {
       );
       final rows = math.max(1, (count / capacity).ceil());
       final columns = math.max(1, (count / rows).ceil());
+      final itemWidth = math.max(0.0, (width - 12 * (columns - 1)) / columns);
+      final theme = Theme.of(context);
+      final valueStyle = theme.textTheme.headlineSmall
+          ?.copyWith(fontWeight: FontWeight.w600);
+      final labelStyle = theme.textTheme.labelMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      );
+      Widget placeholder(String text, TextStyle? style, double preferredWidth) {
+        // 用真实字体和文字缩放测量行高，加载完成时保持相同的行距与布局。
+        final painter = TextPainter(
+          text: TextSpan(
+            text: text.isEmpty ? '0' : text,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          locale: Localizations.maybeLocaleOf(context),
+          textHeightBehavior: DefaultTextStyle.of(context).textHeightBehavior,
+        )..layout(maxWidth: itemWidth);
+        final height = painter.height;
+        painter.dispose();
+        return SkeletonBox(
+          width: math.min(itemWidth, preferredWidth * textScale),
+          height: height,
+        );
+      }
       final content = Wrap(
         spacing: 12,
         runSpacing: 16,
         children: [
           for (final item in items)
             SizedBox(
-              width: math.max(0, (width - 12 * (columns - 1)) / columns),
+              width: itemWidth,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (loading) const SkeletonBox(width: 56, height: 28) else Text(
-                    item.value,
-                    style: Theme.of(context).textTheme.headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  if (loading)
+                    placeholder(item.value, valueStyle, 56)
+                  else
+                    Text(item.value, style: valueStyle),
                   const SizedBox(height: 4),
-                  if (loading) const SkeletonBox(width: 72, height: 16) else Text(
-                    item.label,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  if (loading && item.label.isEmpty)
+                    placeholder('', labelStyle, 72)
+                  else
+                    Text(item.label, style: labelStyle),
                 ],
               ),
             ),

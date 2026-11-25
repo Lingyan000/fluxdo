@@ -205,7 +205,7 @@ test('服务卡片取数有明确加载状态，刷新失败保留上次统计',
   const data={},ctx={surface:'card',params:{},api:t.api,setData:(k,v)=>data[k]=v};
   const loading=t.handlers.get('card.load')(ctx);
   await flush();
-  assert.equal(data.overviewLoading,true);assert.equal(data.stats,undefined);
+  assert.equal(data.overviewLoading,true);assert.equal(data.stats.length,4);assert.ok(data.stats.every(row=>row.value==='—'));
   resolve();await loading;
   assert.equal(data.overviewLoading,false);assert.equal(data.stats[0].value,'3');
   failed=true;await t.handlers.get('card.refresh')(ctx);
@@ -590,6 +590,35 @@ test('取消收银台不刷新交付，不让其他页面失效',async()=>{
  const p=await t.page('order',{no:'O1'});await t.fire(p,'payOrder');
  assert.equal(t.calls.filter(r=>r.method==='POST').length,0);
  assert.equal(t.calls.length,3);assert.equal(p.data.state,'待付款');
+});
+test('统计首次加载保留标签与未知数值，售后入口只随明确计数显示，刷新保留内容',async()=>{
+ let release,failed=false;const pending=new Promise(resolve=>release=resolve);
+ const t=setup({respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42}}:
+   r.url.pathname.endsWith('/attention')?(failed?{failure:503}:pending):{}});
+ const data={},ctx={surface:'overview',page:'account',params:{},api:t.api,setData:(key,value)=>data[key]=value};
+ const opening=t.handlers.get('page.open')(ctx);await flush();
+ assert.equal(data.overviewInitialLoading,true);assert.equal(data.hasRefundAttention,false);assert.equal(data.refundHint,'');
+ assert.deepEqual(Array.from(data.stats,row=>row.label),['待付款','待发货','优惠券','未读消息']);
+ assert.ok(data.stats.every(row=>row.value==='—'));
+ release({pendingPaymentCount:3,refundAttentionCount:2});await opening;
+ assert.equal(data.overviewInitialLoading,false);assert.equal(data.hasRefundAttention,true);assert.equal(data.refundHint,'2 笔售后待处理');
+ const stats=JSON.stringify(data.stats);failed=true;
+ const refreshing=t.fire({ctx},'overviewRefresh');assert.equal(data.overviewInitialLoading,false);await refreshing;
+ assert.equal(JSON.stringify(data.stats),stats);assert.equal(data.hasRefundAttention,true);assert.ok(data.overviewError);
+ t.setAuthorized(false);await t.fire({ctx},'overviewRefresh');
+ assert.equal(data.hasRefundAttention,false);assert.equal(data.refundHint,'');assert.equal(data.stats.length,3);
+});
+test('统计首次失败结束占位且不伪造零，游客加载只预留三项统计',async()=>{
+ for(const authorized of [true,false]) {
+   let release;const pending=new Promise(resolve=>release=resolve);
+   const t=setup({authorized,respond:r=>r.url.pathname.endsWith('/auth/verify')?{authenticated:true,user:{id:42}}:pending});
+   const data={},ctx={surface:'overview',page:'account',params:{},api:t.api,setData:(key,value)=>data[key]=value};
+   const opening=t.handlers.get('page.open')(ctx);await flush();
+   assert.equal(data.stats.length,authorized?4:3);assert.ok(data.stats.every(row=>row.value==='—'));
+   release({failure:503});await opening;
+   assert.equal(data.overviewInitialLoading,false);assert.ok(data.overviewError);assert.equal(data.hasRefundAttention,false);
+   assert.ok(data.stats.every(row=>row.value==='—'));
+ }
 });
 test('统计刷新保留已读数据，失效会话清除头像和私人消息',async()=>{
  let fail=false;

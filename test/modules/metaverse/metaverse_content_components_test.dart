@@ -199,6 +199,34 @@ void main() {
     expect(find.byType(Skeleton), findsNothing);
   });
 
+  for (final scale in [1.0, 1.8]) {
+    testWidgets('统计加载保留标签与字体行高，切换后下方内容不跳动 $scale', (tester) async {
+      tester.view.physicalSize = const Size(320, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      data.updateAll({'loading': false, 'stats': [
+        for (var i = 0; i < 4; i++) {'value': '$i', 'label': '统计项目$i'},
+      ]});
+      await show(tester, 'Column(crossAxisAlignment:"stretch",children:[Statistics(loading:data.loading,items:data.stats),Label(text:"菜单入口")])', scale: scale);
+      final labels = [for (var i = 0; i < 4; i++) tester.getTopLeft(find.text('统计项目$i'))];
+      final menu = tester.getTopLeft(find.text('菜单入口'));
+      final valueHeight = tester.getSize(find.text('0')).height;
+      data.update('loading', true);
+      await tester.pump();
+      expect(find.byType(SkeletonBox), findsNWidgets(4));
+      expect(tester.getSize(find.byType(SkeletonBox).first).height, valueHeight);
+      for (var i = 0; i < 4; i++) {
+        expect(tester.getTopLeft(find.text('统计项目$i')), labels[i]);
+      }
+      expect(tester.getTopLeft(find.text('菜单入口')), menu);
+      data.update('loading', false);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('菜单入口')), menu);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('全宽按钮填满底栏，图标操作的加载与禁用阻止点击', (tester) async {
     data.updateAll({'loading':false,'enabled':true,'selected':false});
     await show(tester, 'PageLayout(loading:false,children:[IconButton(icon:"favorite",selected:data.selected,loading:data.loading,enabled:data.enabled,onPressed:event "save" {})],footer:Button(label:"确认",fullWidth:true,onPressed:event "confirm" {}))');

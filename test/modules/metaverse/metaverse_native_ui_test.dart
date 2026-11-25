@@ -1708,6 +1708,62 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     ],
   };
   for (final brightness in Brightness.values) {
+    for (final width in [320.0, 390.0, 800.0]) {
+      testWidgets('我的士多加载不出现空白入口且统计等高 ${brightness.name} $width', (tester) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final runtime = Runtime()
+          ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+          ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+        addTearDown(runtime.dispose);
+        final initial = {...data, 'authorized': true, 'accountName': 'Lin', 'accountMeta': '@lin · TL3',
+          'overviewLoading': true, 'overviewInitialLoading': true,
+          'stats': [for (final label in ['待付款','待发货','优惠券','未读消息']) {'value':'—','label':label}],
+        }..remove('refundHint');
+        final content = DynamicContent(initial);
+        await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+          widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Account'), data: content),
+          title: '我的士多', brightness: brightness, cardMode: SegmentedCardMode.outlined,
+          scale: width == 320 ? 1.6 : 1, reducedMotion: true));
+        await tester.pumpAndSettle();
+        void noEmptyRows() {
+          for (final tile in tester.widgetList<ListTile>(find.byType(ListTile))) {
+            expect((tile.title! as Text).data?.trim(), isNotEmpty);
+          }
+          expect(tester.takeException(), isNull);
+        }
+        noEmptyRows();
+        expect(find.byIcon(Symbols.info_rounded), findsNothing);
+        expect(find.byType(SkeletonBox), findsNWidgets(4));
+        expect(find.text('待付款'), findsOneWidget);
+        final menuTop = tester.getTopLeft(find.text('我的订单')).dy;
+        await snapshot(tester, 'account-loading-${brightness.name}-${width.toInt()}');
+        content.updateAll({'overviewLoading': false, 'overviewInitialLoading': false,
+          'stats': [{'value':'3','label':'待付款'},{'value':'2','label':'待发货'},{'value':'4','label':'优惠券'},{'value':'5','label':'未读消息'}]});
+        await tester.pumpAndSettle();
+        noEmptyRows();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(tester.getTopLeft(find.text('我的订单')).dy, closeTo(menuTop, 0.01));
+        await snapshot(tester, 'account-loaded-${brightness.name}-${width.toInt()}');
+        content.update('overviewLoading', true);
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('3'), findsOneWidget);
+        content.updateAll({'overviewLoading': false, 'hasRefundAttention': true, 'refundHint': '2 笔售后待处理'});
+        await tester.pumpAndSettle();
+        expect(find.text('2 笔售后待处理'), findsOneWidget);
+        noEmptyRows();
+        content.updateAll({'hasRefundAttention': false, 'refundHint': '',
+          'stats': initial['stats'], 'overviewError': '暂时无法更新统计，仍可进入浏览'});
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Symbols.info_rounded), findsNothing);
+        expect(find.byType(SkeletonBox), findsNothing);
+        noEmptyRows();
+        await snapshot(tester, 'account-error-${brightness.name}-${width.toInt()}');
+      });
+    }
     testWidgets('我的士多未登录与登录后分组末项圆角 ${brightness.name}', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;

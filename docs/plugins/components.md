@@ -56,7 +56,7 @@ widget SearchPage = PageLayout(
 | `IconButton` | `icon`、可选 `child`、`tooltip`、`enabled: true`、`loading: false`、可选 `selected` | `onPressed`。加载或禁用时不能点击；选中图标使用实心填充。`iconButtonContent` 能力允许用 `child` 替换图标，例如 `Avatar(size: 28)`，保留按钮触区、提示、键盘焦点和禁用语义。未知图标使用 extension，省略回调时禁用 |
 | `Symbol` | `name`、`size`、`color` | 未知图标使用 extension |
 | `Image` | `url`、`width`、`height`、`fit: cover`、`radius: 0`、`preview: false` | HTTPS 匿名加载，跳转逐跳校验图片权限，HTTP 地址先升级 HTTPS。支持位图和静态 SVG，失败后可点击重试。响应最多 16 MiB，位图解码尺寸受组件限制 |
-| `Statistics` | `items: [{value, label}]`，最多 12 项；`loading: false` | 数字与标签自动分列，大字与窄屏换行。加载期间显示骨架，不把未知值当作 0。无内置点击行为，可放在整卡入口中 |
+| `Statistics` | `items: [{value, label}]`，最多 12 项；`loading: false` | 数字与标签自动分列，大字与窄屏换行。加载时保留已提供的标签，数值用匹配字体行高的骨架占位；提前传入条目和标签可保持列数与布局稳定，不把未知值当作 0。无内置点击行为，可放在整卡入口中 |
 | `Amount` | `value`、`unit`、`original`、`style: titleLarge`、`color` | 主题金额，原值删除线，空间不足时换行；值由插件格式化 |
 | `QuantityInput` | `value`、`min: 1`、`max: 9999`、`enabled: true` | `onChanged` 回传 `{value: number}`，边界禁用增减；脚本回写 value |
 | `Markdown` | `text`，最多 131072 字符 | 标题、列表、表格、代码、强调与链接，原始 HTML 作为文本。图片通过插件图片出口；`onLink` 仅在点击时回传 `{url}` |
