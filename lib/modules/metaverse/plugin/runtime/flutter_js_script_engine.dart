@@ -230,7 +230,8 @@ void _engineMain((SendPort, Duration, int) options) {
       if (exception is JSException) exception.value.release();
     }
     final String? fatal;
-    if (watch.elapsed >= timeout) {
+    // 原生计时与 Dart Stopwatch 在不同平台的精度不同，不能靠二次计时猜测中断。
+    if (engine.deadlineExceeded || watch.elapsed >= timeout) {
       fatal = '脚本执行超时';
     } else if (bridgeLimitReached) {
       fatal = '插件消息超过传输上限';

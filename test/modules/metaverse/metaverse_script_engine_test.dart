@@ -3,11 +3,29 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo_plugin_runtime/fluxdo_plugin_runtime.dart';
 import 'package:fluxdo/modules/metaverse/plugin/runtime/flutter_js_script_engine.dart';
+import 'package:qjs/qjs.dart';
 
 /// 真实 JS 引擎的契约测试。
 ///
 /// 原生库通过 Dart native assets 构建，缺失应使测试失败，不能静默跳过。
 Future<void> main() async {
+  test('原生截止中断保留状态，清除后可以重新执行', () {
+    final runtime = JSRuntime.create();
+    addTearDown(runtime.release);
+    runtime.setDeadline(const Duration(milliseconds: 20));
+    try {
+      runtime.evaluateJavascript('while (true) {}').release();
+      fail('死循环应被原生截止时间中断');
+    } on JSException catch (error) {
+      error.value.release();
+    }
+    expect(runtime.deadlineExceeded, isTrue);
+    runtime.clearDeadline();
+    expect(runtime.deadlineExceeded, isFalse);
+    runtime.evaluateJavascript('1 + 1').release();
+    runtime.setDeadline(const Duration(seconds: 1));
+    expect(runtime.deadlineExceeded, isFalse);
+  });
   group('IsolateScriptEngine', () {
     late IsolateScriptEngine engine;
     late List<Object?> messages;
@@ -125,6 +143,7 @@ Future<void> main() async {
         const Duration(milliseconds: 50),
         (_) => ticks++,
       );
+      addTearDown(ticker.cancel);
       final reason = await fatal.future.timeout(const Duration(seconds: 5));
       ticker.cancel();
 

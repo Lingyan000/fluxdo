@@ -114,6 +114,7 @@ struct QJSABIRuntime {
   // Sandbox controls. deadline_us is only touched on the isolate's thread;
   // interrupt_requested may be set from any thread.
   uint64_t deadline_us;
+  bool deadline_exceeded;
   qjs_atomic_flag_t interrupt_requested;
   QJSABIPromiseRejectionTracker rejection_tracker;
   // While a module evaluates, rejections are held back until it is known
@@ -191,7 +192,11 @@ static int interrupt_handler(JSRuntime *js_rt, void *opaque) {
   (void)js_rt;
   struct QJSABIRuntime *rt = (struct QJSABIRuntime *)opaque;
   if (qjs_atomic_flag_exchange(&rt->interrupt_requested, 0)) return 1;
-  return rt->deadline_us != 0 && monotonic_now_us() >= rt->deadline_us;
+  if (rt->deadline_us != 0 && monotonic_now_us() >= rt->deadline_us) {
+    rt->deadline_exceeded = true;
+    return 1;
+  }
+  return 0;
 }
 
 static void runtime_retain(struct QJSABIRuntime *rt) {
@@ -1001,6 +1006,7 @@ void qjs_runtime_update_stack_top(struct QJSABIRuntime *rt) {
 }
 
 void qjs_runtime_set_deadline(struct QJSABIRuntime *rt, uint64_t timeout_us) {
+  rt->deadline_exceeded = false;
   uint64_t deadline = monotonic_now_us() + timeout_us;
   // 0 means "no deadline", and an overflow means "never".
   rt->deadline_us = deadline < timeout_us ? 0 : (deadline == 0 ? 1 : deadline);
@@ -1008,6 +1014,12 @@ void qjs_runtime_set_deadline(struct QJSABIRuntime *rt, uint64_t timeout_us) {
 
 void qjs_runtime_clear_deadline(struct QJSABIRuntime *rt) {
   rt->deadline_us = 0;
+  rt->deadline_exceeded = false;
+}
+
+// 由原生中断记录结果，宿主无需用另一个时钟推断是否触发过截止时间。
+bool qjs_runtime_deadline_exceeded(struct QJSABIRuntime *rt) {
+  return rt->deadline_exceeded;
 }
 
 uint64_t qjs_runtime_get_id(struct QJSABIRuntime *rt) {

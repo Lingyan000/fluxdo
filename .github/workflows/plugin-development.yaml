@@ -240,7 +240,9 @@ jobs:
           cache: true
       - run: dart tool/project_prep.dart test
       - name: Test real engine, storage and native component layout
-        run: flutter test --reporter expanded test/modules/metaverse/metaverse_script_engine_test.dart test/modules/metaverse/metaverse_data_tools_test.dart test/modules/metaverse/metaverse_storage_scopes_test.dart test/modules/metaverse/metaverse_pagination_test.dart test/modules/metaverse/metaverse_visual_baseline_test.dart
+        run: |
+          mkdir -p assets/certs
+          flutter test --reporter expanded test/modules/metaverse/metaverse_script_engine_test.dart test/modules/metaverse/metaverse_data_tools_test.dart test/modules/metaverse/metaverse_storage_scopes_test.dart test/modules/metaverse/metaverse_pagination_test.dart test/modules/metaverse/metaverse_visual_baseline_test.dart
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -264,7 +266,10 @@ jobs:
       - name: Compare fixed component baselines
         env:
           PLUGIN_GOLDENS: '1'
-        run: flutter test --reporter expanded test/modules/metaverse/metaverse_visual_baseline_test.dart
+        run: |
+          New-Item -ItemType Directory -Force assets/certs | Out-Null
+          flutter test --reporter expanded test/modules/metaverse/metaverse_visual_baseline_test.dart
+          exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

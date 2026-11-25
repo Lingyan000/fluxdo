@@ -325,6 +325,7 @@ QJS_DART_EXPORT void qjs_runtime_update_stack_top(struct QJSABIRuntime *rt);
 // execution is interrupted immediately once it has passed.
 QJS_DART_EXPORT void qjs_runtime_set_deadline(struct QJSABIRuntime *rt, uint64_t timeout_us);
 QJS_DART_EXPORT void qjs_runtime_clear_deadline(struct QJSABIRuntime *rt);
+QJS_DART_EXPORT bool qjs_runtime_deadline_exceeded(struct QJSABIRuntime *rt);
 
 // Unique id of a live runtime, for qjs_runtime_request_interrupt.
 QJS_DART_EXPORT uint64_t qjs_runtime_get_id(struct QJSABIRuntime *rt);

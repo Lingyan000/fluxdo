@@ -8,6 +8,15 @@ import 'package:plugin_mobile_smoke/script_engine.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('设备超时终止脚本并通知宿主', (tester) async {
+    final engine=await IsolateScriptEngine.spawn(timeout:const Duration(milliseconds:100));
+    final fatal=Completer<String>();engine.onFatal=fatal.complete;
+    try {
+      await expectLater(engine.evaluate('while(true){}'),throwsA(isA<MetaverseScriptException>()));
+      expect(await fatal.future.timeout(const Duration(seconds:5)),contains('超时'));
+      await engine.terminated.timeout(const Duration(seconds:5));
+    } finally {engine.dispose();}
+  });
   testWidgets('设备执行查询、分页与隔离销毁', (tester) async {
     await tester.pumpWidget(const Directionality(textDirection:TextDirection.ltr,child:Center(child:Text('Plugin runtime smoke'))));
     final engine=await IsolateScriptEngine.spawn();
