@@ -257,4 +257,26 @@ void main(List<String> args) {
       ]);
     },
   );
+
+  test(
+    'run expands platform positional shortcuts like "run windows" to "-d windows"',
+    () async {
+      final result = await run(['run', 'windows', '--release']);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(calls(), [
+        ['project_prep.dart', 'app'],
+        ['project_tasks.dart', 'native:prepare', 'windows', '--release'],
+        ['fake_flutter.dart', 'run', '-d', 'windows', '--release'],
+      ]);
+    },
+  );
+
+  test('run expands web positional shortcut without native prep', () async {
+    final result = await run(['run', 'chrome']);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(calls(), [
+      ['project_prep.dart', 'app'],
+      ['fake_flutter.dart', 'run', '-d', 'chrome'],
+    ]);
+  });
 }

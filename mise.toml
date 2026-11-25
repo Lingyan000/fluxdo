@@ -1,0 +1,178 @@
+# FluxDO 工具链与开发任务统一配置（mise）
+# 安装工具链：mise install
+# 查看任务列表：mise tasks（或直接 mise r 进入交互式选择）
+
+[tools]
+flutter = "3.50.0"
+rust = "1.96.0"
+java = "temurin-21"
+
+[hooks]
+# 安装或升级工具链后，自动把当前 Flutter SDK 链接到 .tooling/flutter_sdk，
+# 供 VS Code (.vscode/settings.json) 与 Android Studio 统一引用。
+postinstall = "dart tool/sync_ide_sdk.dart"
+
+# ============================================================================
+# 初始化与环境
+# ============================================================================
+
+[tasks.init]
+description = "首次克隆或新建 worktree 一键初始化（子模块 + SDK 链接 + bootstrap + sync）"
+raw = true
+run = "dart tool/cli.dart init"
+
+[tasks.bootstrap]
+description = "初始化工作区依赖与包链接 (melos bootstrap)"
+raw = true
+run = "dart tool/cli.dart bootstrap"
+
+[tasks.sync]
+description = "同步项目状态（pub get、增量 l10n、代理证书、IDE SDK 链接）"
+raw = true
+run = "dart tool/cli.dart sync"
+
+[tasks."sdk:link"]
+description = "同步 .tooling/flutter_sdk 指向当前激活的 Flutter SDK"
+raw = true
+run = "dart tool/cli.dart sdk:link"
+
+[tasks.doctor]
+description = "检查开发环境、SDK 链接、l10n、证书与原生构建环境"
+alias = "d"
+raw = true
+run = "dart tool/cli.dart doctor"
+
+# ============================================================================
+# 日常开发与构建
+# ============================================================================
+
+[tasks.dev]
+description = "运行应用（flutter run，支持直接写平台简写，如 mise dev macos）"
+alias = ["r", "run"]
+raw = true
+run = "dart tool/cli.dart dev"
+
+[tasks.build]
+description = "执行 flutter build（如 mise r build macos / mise r build apk --release）"
+alias = "b"
+raw = true
+run = "dart tool/cli.dart build"
+
+[tasks.drive]
+description = "执行 flutter drive"
+raw = true
+run = "dart tool/cli.dart drive"
+
+[tasks.clean]
+description = "执行 flutter clean 并重置依赖与 l10n 缓存指纹"
+raw = true
+run = "dart tool/cli.dart clean"
+
+[tasks.rebuild]
+description = "先 clean 再 build"
+raw = true
+run = "dart tool/cli.dart rebuild"
+
+[tasks.native]
+description = "显式准备平台原生产物（如 mise r native macos --debug）"
+raw = true
+run = "dart tool/cli.dart native"
+
+# ============================================================================
+# 代码生成与资源校验
+# ============================================================================
+
+[tasks.l10n]
+description = "生成国际化代码（有增量缓存；加 --force 强制重跑）"
+sources = [
+  "slang.yaml",
+  "lib/l10n/modules/**/*.arb",
+  "tool/gen_l10n.dart",
+  "tool/gen_slang_compat.dart",
+]
+outputs = [
+  "lib/l10n/slang/strings.g.dart",
+  "lib/l10n/generated/app_localizations_compat.g.dart",
+]
+raw = true
+run = "dart tool/cli.dart l10n"
+
+[tasks."l10n:check"]
+description = "严格校验国际化生成结果是否最新"
+raw = true
+run = "dart tool/cli.dart l10n --check"
+
+[tasks."splash-motion"]
+description = "从单一规格生成启动 logo 描线动画（Flutter 启动页 + 原生启动屏）"
+sources = [
+  "tool/splash_motion/logo_motion.json",
+  "tool/gen_splash_motion.dart",
+]
+raw = true
+run = "dart tool/gen_splash_motion.dart"
+
+[tasks."splash-motion:check"]
+description = "校验启动动画生成结果是否最新"
+raw = true
+run = "dart tool/gen_splash_motion.dart --check"
+
+[tasks.certs]
+description = "生成并同步代理证书资源"
+raw = true
+run = "dart tool/cli.dart certs"
+
+# ============================================================================
+# 检查与测试
+# ============================================================================
+
+[tasks.analyze]
+description = "执行 flutter analyze"
+alias = "a"
+raw = true
+run = "flutter analyze"
+
+[tasks.test]
+description = "执行工作区测试（自动准备依赖与增量 l10n）"
+alias = "t"
+raw = true
+run = "dart tool/cli.dart test"
+
+[tasks."test:arch"]
+description = "运行全部架构守卫测试（提交前必跑）"
+raw = true
+run = "flutter test test/architecture"
+
+[tasks."net:check"]
+description = "运行网络回归检查（dart | rust | python）"
+raw = true
+run = "python3 tool/ci/network_checks.py"
+
+[tasks."render:golden"]
+description = "在 packages/fluxdo_render 中运行全量 golden 测试"
+dir = "packages/fluxdo_render"
+raw = true
+run = "flutter test"
+
+# ============================================================================
+# 发版与打包
+# ============================================================================
+
+[tasks."release:check"]
+description = "发版前快速检查（生成物校验 + 增量 analyze + 架构守卫；支持 --full-analyze / --full-test）"
+raw = true
+run = "dart tool/cli.dart release:check"
+
+[tasks.release]
+description = "发版向导（无参进入交互式流程，支持选稳定版/预发布）"
+raw = true
+run = "dart tool/cli.dart release"
+
+[tasks.prerelease]
+description = "预发布发版向导（直达 prerelease 通道）"
+raw = true
+run = "dart tool/cli.dart prerelease"
+
+[tasks.ipa]
+description = "构建 iOS 无签名 IPA（无参进入交互式版本输入与确认）"
+raw = true
+run = "dart tool/build_ipa_nosign.dart"

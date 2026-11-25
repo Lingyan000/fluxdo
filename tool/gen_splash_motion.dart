@@ -15,8 +15,8 @@ import '_workspace_cli.dart';
 // - 两端共用的启动底色：res/values(-night)/splash_colors.xml、
 //   iOS LaunchBackground.colorset
 //
-// 用法：dart run tool/gen_splash_motion.dart [--check]
-// --check 只比对生成结果是否最新，不写文件（供 CI / just splash-motion-check）。
+// 用法：dart tool/gen_splash_motion.dart [--check]
+// --check 只比对生成结果是否最新，不写文件（供 CI / mise r splash-motion:check）。
 
 const _specPath = 'tool/splash_motion/logo_motion.json';
 const _dartOut = 'lib/widgets/preheat_logo_motion.g.dart';
@@ -25,11 +25,11 @@ const _iosColorset =
     'ios/Runner/Assets.xcassets/LaunchBackground.colorset/Contents.json';
 const _header =
     '// 由 tool/gen_splash_motion.dart 根据 $_specPath 生成，勿手改。\n'
-    '// 修改动画请改规格文件后执行 `just splash-motion`。\n';
+    '// 修改动画请改规格文件后执行 `mise r splash-motion`。\n';
 const _xmlHeader =
     '<?xml version="1.0" encoding="utf-8"?>\n'
     '<!-- 由 tool/gen_splash_motion.dart 根据 $_specPath 生成，勿手改。\n'
-    '     修改动画请改规格文件后执行 just splash-motion。 -->\n';
+    '     修改动画请改规格文件后执行 mise r splash-motion。 -->\n';
 
 Future<void> main(List<String> args) async {
   enterWorkspaceRoot();
@@ -60,7 +60,7 @@ Future<void> main(List<String> args) async {
   }
   if (checkOnly) {
     if (stale) {
-      stderr.writeln('启动动画生成结果过期，请执行 just splash-motion');
+      stderr.writeln('启动动画生成结果过期，请执行 mise r splash-motion');
       exit(1);
     }
     stdout.writeln('启动动画生成结果为最新');

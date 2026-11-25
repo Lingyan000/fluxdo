@@ -22,7 +22,7 @@ packages/
   app_icons/            图标库
 core/net_core/          网络核心（Rust）
 assets/themes/          内置主题 JSON（启动时自动扫描）
-tool/                   just 命令背后的 Dart 脚本
+tool/                   mise 任务背后的 Dart 脚本
 test/architecture/      架构守卫测试
 .agents/skills/         按需加载的工作流
 ```
@@ -30,15 +30,18 @@ test/architecture/      架构守卫测试
 ## 命令
 
 ```sh
-just sync          # pub get、生成 l10n、证书资源；just run / build 会自动执行
-just doctor        # 检查开发环境与生成产物
-just l10n          # 生成国际化代码；just l10n-check 校验是否最新
-just analyze       # flutter analyze
-just test          # 工作区测试；参数透传给 flutter test
-just run / build   # flutter run / build
+mise install             # 按 mise.toml 安装 Flutter / Rust / JDK 并同步 .tooling/flutter_sdk
+mise init                # 新克隆 / 新 worktree 一键初始化（子模块 + SDK 链接 + bootstrap + sync）
+mise r sync              # pub get、增量 l10n、证书资源；mise dev / build 会自动执行
+mise r doctor            # 检查开发环境与生成产物
+mise l10n                # 生成国际化代码；mise l10n:check 校验是否最新
+mise analyze             # flutter analyze
+mise test                # 工作区测试；参数透传给 flutter test
+mise test:arch           # 全部架构守卫测试（提交前必跑）
+mise dev / build         # flutter run / build（支持 mise dev macos 等简写）
 ```
 
-新建 git worktree 后先执行 `git submodule update --init packages/fluxdo_render` 和 `just l10n`，否则会出现大量与改动无关的编译错误。
+新建 git worktree 后执行 `mise init`（会自动拉取 `packages/fluxdo_render` 子模块、同步 SDK 链接与生成 l10n），否则会出现大量与改动无关的编译错误。
 
 ## 约定
 

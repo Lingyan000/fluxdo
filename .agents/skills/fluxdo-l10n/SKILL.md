@@ -24,8 +24,8 @@ description: 在新增或修改界面文案、给文案加参数、补繁体或�
 5. 生成并校验：
 
    ```sh
-   just l10n
-   just l10n-check
+   mise r l10n
+   mise r l10n:check
    ```
 
 ## 使用
@@ -36,5 +36,5 @@ description: 在新增或修改界面文案、给文案加参数、补繁体或�
 
 ## 常见报错
 
-- **`The getter 'xxx' isn't defined for the type 'AppLocalizations'`**：生成产物过期，执行 `just l10n`。拉取别人的提交或新建 worktree 后最常见。
+- **`The getter 'xxx' isn't defined for the type 'AppLocalizations'`**：生成产物过期，执行 `mise r l10n`（必要时加 `--force`）。拉取别人的提交或新建 worktree 后最常见。
 - **生成时报 placeholder 错误**：`zh` 的 arb 缺少对应的 `@key` 声明。
