@@ -730,6 +730,26 @@ test('商家资料来自独立响应，即使没有公开商品仍显示头像�
   assert.equal(merchant.data.merchantTitle,'店主');assert.equal(merchant.data.merchantAvatar,'https://cdn.example/seller.png');assert.equal(merchant.data.merchantMeta,'@seller · TL3');
   assert.deepEqual(Array.from(merchant.data.merchantStats,stat=>stat.value),['0','1','269']);assert.equal(merchant.data.more,false);
 });
+test('评论首次请求使用骨架，空结果与失败互斥，刷新保留统计且关闭后停止分页',async()=>{
+  let release;let response=new Promise(resolve=>release=resolve);
+  const shop=setup({authorized:false,respond:r=>r.url.pathname.endsWith('/comments')?response:{product:{id:'p1',stock:1}}});
+  const p=await shop.page('product',{id:'p1'});await flush();
+  assert.equal(p.data.commentsInitialLoading,true);assert.equal(p.data.commentsMessage,'');assert.equal(p.data.commentStatsReady,false);
+  release({failure:503});await flush();
+  assert.equal(p.data.commentsInitialLoading,false);assert.equal(p.data.commentsLoading,false);assert.ok(p.data.commentsError);assert.equal(p.data.commentsMessage,'');
+  response=new Promise(resolve=>release=resolve);const retry=shop.fire(p,'commentsRetry');await flush();
+  assert.equal(p.data.commentsInitialLoading,true);assert.equal(p.data.commentsError,'');
+  release({comments:[],commentEnabled:true,summary:{ratedCount:0,favoriteCount:2},pagination:{hasMore:false}});await retry;
+  assert.equal(p.data.commentsInitialLoading,false);assert.equal(p.data.commentsMessage,'暂无评论');assert.equal(p.data.commentStats[0].value,'—');
+  const stats=JSON.stringify(p.data.commentStats),count=shop.calls.length;
+  await shop.fire(p,'commentsMore');assert.equal(shop.calls.length,count);
+  response=new Promise(resolve=>release=resolve);const refresh=shop.fire(p,'commentsRetry');await flush();
+  assert.equal(p.data.commentsInitialLoading,false);assert.equal(p.data.commentsLoading,true);assert.equal(JSON.stringify(p.data.commentStats),stats);
+  release({comments:[],commentEnabled:false,disabledReason:'该商品已关闭评论',pagination:{hasMore:true}});await refresh;
+  assert.equal(p.data.commentsMore,false);assert.equal(p.data.canComment,false);assert.equal(p.data.commentsMessage,'该商品已关闭评论');
+  const closedCount=shop.calls.length;await shop.fire(p,'commentsMore');assert.equal(shop.calls.length,closedCount);
+  assert.ok(shop.calls.every(r=>r.method==='GET'));
+});
 test('评论使用嵌套作者资料、购买标识、评分摘要及毫秒时间，回复按需分页',async()=>{
   const sample=storefront.comments,comment={...sample.comments[0],nickname:'旧名称',avatar_url:null,reply_count:2};
   const shop=setup({authorized:false,respond:request=>request.url.pathname.endsWith('/replies') ? {replies:[{id:request.url.searchParams.get('page'),user:{username:'seller',avatar_template:'/user_avatar/linux.do/seller/{size}/1.png'},is_seller:true,content:'回复',created_at:'1794155801'}],pagination:{hasMore:request.url.searchParams.get('page')==='1'}} : request.url.pathname.endsWith('/comments') ? {...sample,comments:[comment]} : {product:storefront.product}});

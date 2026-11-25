@@ -1634,6 +1634,9 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     'error': '',
     'externalError': '',
     'externalBusy': false,
+    'restockAvailable': false,
+    'restockLoading': false,
+    'restockError': '',
     'comments': <Object?>[],
     'recentOrders': <Object?>[], 'unavailableCoupons': <Object?>[], 'refundDetails': <Object?>[],
     'commentsError': '',
@@ -1708,6 +1711,91 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     ],
   };
   for (final brightness in Brightness.values) {
+    for (final layout in [(320.0, 1.0), (320.0, 1.6), (390.0, 1.0), (800.0, 1.0)]) {
+      testWidgets('商品评论空态间距与加载错误互斥 ${brightness.name} $layout', (tester) async {
+        final (width, scale) = layout;
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final runtime = Runtime()
+          ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+          ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+        addTearDown(runtime.dispose);
+        final content = DynamicContent({...data, 'image': '', 'authorized': true, 'buyerError': '',
+          'canComment': false, 'commentStatsReady': false, 'commentsInitialLoading': true, 'commentsLoading': true,
+          'commentsMessage': '', 'commentsError': '',
+        });
+        final events = <String>[];
+        await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+          widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Product'), data: content,
+          onEvent: (name, _) => events.add(name)), title: '商品详情', brightness: brightness, scale: scale, reducedMotion: true));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('商品评论'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsWidgets);
+        expect(find.byType(AppEmptyState), findsNothing);
+        if (width == 390) await snapshot(tester, 'comments-loading-${brightness.name}');
+
+        content.updateAll({'commentsInitialLoading': false, 'commentsLoading': false, 'commentsError': '评论暂时加载失败'});
+        await tester.pumpAndSettle();
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('重新加载评论'), findsOneWidget);
+        await tester.ensureVisible(find.text('重新加载评论'));
+        await tester.tap(find.text('重新加载评论'));
+        expect(events.last, 'commentsRetry');
+        if (width == 390) await snapshot(tester, 'comments-error-${brightness.name}');
+
+        content.updateAll({'commentsError': '', 'commentsMessage': '暂无评论', 'canComment': true, 'commentStatsReady': true,
+          'commentStats': [{'value':'—','label':'评分'},{'value':'0','label':'已评分'},{'value':'2','label':'收藏'},{'value':'0 / 0','label':'评论 / 回复'}]});
+        await tester.pumpAndSettle();
+        expect(find.byType(AppEmptyState), findsOneWidget);
+        expect(find.text('暂无评论'), findsOneWidget);
+        expect(find.text('重新加载评论'), findsNothing);
+        expect(find.text(S.current.common_retry), findsNothing);
+        final statsCard = find.ancestor(of: find.text('评论 / 回复'), matching: find.byType(Material)).first;
+        expect(tester.getTopLeft(find.byType(AppEmptyState)).dy - tester.getBottomLeft(statsCard).dy, greaterThanOrEqualTo(16));
+        expect(tester.getTopLeft(statsCard).dy - tester.getBottomLeft(find.text('商品评论')).dy, greaterThanOrEqualTo(16));
+        await tester.ensureVisible(find.text('商品评论'));
+        await tester.pumpAndSettle();
+        await snapshot(tester, 'comments-empty-${brightness.name}-${width.toInt()}-$scale');
+        await tester.ensureVisible(find.text('暂无评论'));
+        await tester.pumpAndSettle();
+        if (scale > 1) await snapshot(tester, 'comments-empty-large-${brightness.name}');
+
+        content.updateAll({'commentStatsReady': false, 'commentsMessage': '该商品已关闭评论', 'canComment': false});
+        await tester.pumpAndSettle();
+        expect(find.text('写评论'), findsNothing);
+        expect(find.text('评分'), findsNothing);
+        expect(find.text('该商品已关闭评论'), findsOneWidget);
+        expect(tester.getTopLeft(find.byType(AppEmptyState)).dy - tester.getBottomLeft(find.text('商品评论')).dy, greaterThanOrEqualTo(16));
+
+        content.updateAll({'commentsMessage': '', 'commentsMore': true, 'commentsLoading': true, 'comments': [
+          {'id':'c1','author':'买家','handle':'@buyer','avatar':'','content':'说明清楚，兑换顺利。','time':'2026-11-24T12:00:00Z','rating':'','badge':'已购','moderation':'',
+            'interactive':false,'canDelete':false,'repliesOpen':true,'replies':<Object>[],'repliesEmpty':true,'repliesError':'','repliesMore':false,'repliesLoading':false},
+        ]});
+        await tester.pump();
+        expect(find.byType(LoadingSpinner), findsOneWidget);
+        expect(find.byType(SkeletonBox), findsNothing);
+        expect(find.text('更多评论'), findsNothing);
+        expect(find.text('说明清楚，兑换顺利。'), findsOneWidget);
+        expect(find.text('暂无可见回复'), findsOneWidget);
+        content.updateAll({'commentsLoading': false, 'commentsError': '评论暂时加载失败'});
+        await tester.pumpAndSettle();
+        expect(find.byType(LoadingSpinner), findsNothing);
+        expect(find.text('更多评论'), findsNothing);
+        expect(find.text('重新加载评论'), findsOneWidget);
+        expect(find.text('说明清楚，兑换顺利。'), findsOneWidget);
+        content.update('commentsError', '');
+        await tester.pumpAndSettle();
+        expect(find.text('更多评论'), findsOneWidget);
+        await tester.ensureVisible(find.text('更多评论'));
+        await tester.tap(find.text('更多评论'));
+        expect(events.last, 'commentsMore');
+        if (width == 390) await snapshot(tester, 'comments-content-${brightness.name}');
+        expect(tester.takeException(), isNull);
+      });
+    }
     for (final width in [320.0, 390.0, 800.0]) {
       testWidgets('我的士多加载不出现空白入口且统计等高 ${brightness.name} $width', (tester) async {
         tester.view.physicalSize = Size(width, 900);

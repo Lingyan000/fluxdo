@@ -137,31 +137,51 @@ widget Product = PageLayout(loading: data.loading, onRefresh: event "retry" {},
       Gap(size: 12), Label(text: data.listedAt, style: "bodySmall", color: "onSurfaceVariant"), BuyerFeedback(), LoginButton(),
       ...for rule in data.rules: Padding(padding: [0.0, 4.0, 0.0, 4.0], child: Row(crossAxisAlignment: "start", children: [Symbol(name: "info", size: 18.0, color: "onSurfaceVariant"), Gap(size: 8), Expanded(child: Label(text: rule, color: "onSurfaceVariant"))])),
       Gap(size: 24), SectionTitle(title: data.i18n.s64717955bcfdb7ca), Gap(size: 12), Markdown(text: data.description, onLink: event "contentLink" {}),
-      Gap(size: 28), Wrap(spacing: 16.0, runSpacing: 4.0, crossAxisAlignment: "center", children: [SectionTitle(title: data.i18n.s68fe685324cbdee2),
-        switch data.canComment {true: Button(label: data.i18n.s1d345684bc1e9c7f, icon: "edit", variant: "text", onPressed: event "comment" {}), default: SizedBoxShrink()},
-      ]), Gap(size: 8),
-      switch data.commentStatsReady {true: Statistics(items: data.commentStats), default: SizedBoxShrink()},
-      ...for comment in data.comments: Padding(padding: [0.0, 8.0, 0.0, 12.0], child: Column(crossAxisAlignment: "stretch", children: [
-        CommentBody(item: comment),
-        Wrap(spacing: 4.0, runSpacing: 4.0, children: [
-          switch comment.interactive {true: Wrap(spacing: 2.0, crossAxisAlignment: "center", children: [IconButton(icon: "thumb_up", tooltip: data.i18n.se27882c866cfb391, selected: comment.votedUp, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "up"}), Label(text: comment.upLabel), IconButton(icon: "thumb_down", tooltip: data.i18n.s25be83fba61bb37d, selected: comment.votedDown, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "down"}), Label(text: comment.downLabel), Button(label: data.i18n.scf945e21ddefbb46, variant: "text", onPressed: event "reply" {id: comment.id}), IconButton(icon: "flag", tooltip: data.i18n.s4899a3328d1fa181, onPressed: event "reportComment" {id: comment.id})]), default: SizedBoxShrink()},
-          switch comment.canDelete {true: IconButton(icon: "delete", tooltip: data.i18n.sdd75eaf740e691db, onPressed: event "commentDelete" {id: comment.id}), default: SizedBoxShrink()},
-        ]),
-        switch comment.repliesOpen {true: Padding(padding: [20.0, 8.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [
-          ...for reply in comment.replies: Padding(padding: [0.0, 0.0, 0.0, 12.0], child: CommentBody(item: reply)),
-          switch comment.repliesEmpty {true: Label(text: data.i18n.s1eb1a110e96f31ca, style: "bodySmall", color: "onSurfaceVariant"), default: SizedBoxShrink()},
-          switch comment.repliesError {"": switch comment.repliesMore {true: Button(label: data.i18n.s6d1cc8074d748015, variant: "text", loading: comment.repliesLoading, onPressed: event "commentReplies" {id: comment.id, more: true}), default: switch comment.repliesLoading {true: TextSkeleton(), default: SizedBoxShrink()}}, default: Column(children: [Label(text: comment.repliesError, color: "error"), Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "commentReplies" {id: comment.id, more: comment.repliesMore})])},
-        ])), default: switch comment.replyLabel {"": SizedBoxShrink(), default: Button(label: comment.replyLabel, variant: "text", onPressed: event "commentReplies" {id: comment.id})}},
-      ])),
-      Label(text: data.commentsMessage, color: "onSurfaceVariant"),
-      switch data.commentsLoading {true: Spinner(), default: SizedBoxShrink()},
-      switch data.commentsError {"": SizedBoxShrink(), default: Column(children: [Label(text: data.commentsError, color: "error"), Button(label: data.i18n.se856ce979d5683fa, variant: "text", onPressed: event "commentsRetry" {})])},
-      switch data.commentsMore {true: Button(label: data.i18n.s6394005b5e43f108, variant: "text", onPressed: event "commentsMore" {}), default: SizedBoxShrink()},
+      Gap(size: 28), ProductComments(),
     ]), default: SizedBoxShrink()},
     switch data.error {"": SizedBoxShrink(), default: EmptyState(icon: "error", title: data.error, action: ActionBar(actions: [Button(label: data.i18n.sb8784c8dd5636ff2, onPressed: event "retry" {}), Button(label: data.i18n.s7f281f3b43f16289, variant: "text", onPressed: event "webProduct" {})]))},
   ],
 );
 
+widget ProductComments = Column(crossAxisAlignment: "stretch", children: [
+  Wrap(spacing: 16.0, runSpacing: 8.0, crossAxisAlignment: "center", children: [
+    SectionTitle(title: data.i18n.s68fe685324cbdee2),
+    switch data.canComment {true: Button(label: data.i18n.s1d345684bc1e9c7f, icon: "edit", variant: "text", onPressed: event "comment" {}), default: SizedBoxShrink()},
+  ]), Gap(size: 16),
+  switch data.commentStatsReady {true: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: Surface(child: Statistics(items: data.commentStats))), default: SizedBoxShrink()},
+  ...for comment in data.comments: Padding(padding: [0.0, 4.0, 0.0, 20.0], child: Column(crossAxisAlignment: "stretch", children: [
+    CommentBody(item: comment),
+    Wrap(spacing: 4.0, runSpacing: 8.0, children: [
+      switch comment.interactive {true: Wrap(spacing: 2.0, runSpacing: 8.0, crossAxisAlignment: "center", children: [IconButton(icon: "thumb_up", tooltip: data.i18n.se27882c866cfb391, selected: comment.votedUp, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "up"}), Label(text: comment.upLabel), IconButton(icon: "thumb_down", tooltip: data.i18n.s25be83fba61bb37d, selected: comment.votedDown, enabled: switch data.buyerBusy {true: false, default: true}, onPressed: event "commentVote" {id: comment.id, vote: "down"}), Label(text: comment.downLabel), Button(label: data.i18n.scf945e21ddefbb46, variant: "text", onPressed: event "reply" {id: comment.id}), IconButton(icon: "flag", tooltip: data.i18n.s4899a3328d1fa181, onPressed: event "reportComment" {id: comment.id})]), default: SizedBoxShrink()},
+      switch comment.canDelete {true: IconButton(icon: "delete", tooltip: data.i18n.sdd75eaf740e691db, onPressed: event "commentDelete" {id: comment.id}), default: SizedBoxShrink()},
+    ]),
+    switch comment.repliesOpen {true: Padding(padding: [20.0, 12.0, 0.0, 0.0], child: Column(crossAxisAlignment: "stretch", children: [
+      ...for reply in comment.replies: Padding(padding: [0.0, 0.0, 0.0, 16.0], child: CommentBody(item: reply)),
+      switch comment.repliesEmpty {true: Padding(padding: [0.0, 8.0, 0.0, 8.0], child: Label(text: data.i18n.s1eb1a110e96f31ca, style: "bodySmall", color: "onSurfaceVariant")), default: SizedBoxShrink()},
+      switch comment.repliesError {"": switch comment.repliesMore {true: Button(label: data.i18n.s6d1cc8074d748015, variant: "text", loading: comment.repliesLoading, onPressed: event "commentReplies" {id: comment.id, more: true}), default: switch comment.repliesLoading {true: TextSkeleton(), default: SizedBoxShrink()}}, default: Column(crossAxisAlignment: "stretch", children: [Label(text: comment.repliesError, color: "error"), Gap(size: 8), Button(label: data.i18n.sb8784c8dd5636ff2, variant: "text", onPressed: event "commentReplies" {id: comment.id, more: comment.repliesMore})])},
+    ])), default: switch comment.replyLabel {"": SizedBoxShrink(), default: Padding(padding: [0.0, 8.0, 0.0, 0.0], child: Button(label: comment.replyLabel, variant: "text", onPressed: event "commentReplies" {id: comment.id}))}},
+  ])),
+  CommentsStatus(),
+]);
+widget CommentsSkeleton = Skeleton(child: Column(crossAxisAlignment: "stretch", children: [
+  Row(children: [SkeletonBox(width: 32, height: 32, radius: 16), Gap(size: 12), SkeletonBox(width: 112, height: 16)]),
+  Gap(size: 16), SkeletonBox(height: 16), Gap(size: 8),
+  FractionallySizedBox(widthFactor: 0.65, alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(height: 16)),
+  Gap(size: 12), Align(alignment: {x: -1.0, y: 0.0}, child: SkeletonBox(width: 80, height: 12)), Gap(size: 20),
+]));
+widget CommentsStatus = switch data.commentsInitialLoading {
+  true: CommentsSkeleton(),
+  default: switch data.commentsLoading {
+    true: Padding(padding: [0.0, 16.0, 0.0, 16.0], child: Center(child: Spinner())),
+    default: switch data.commentsError {
+      "": switch data.commentsMessage {
+        "": switch data.commentsMore {true: Padding(padding: [0.0, 8.0, 0.0, 8.0], child: Button(label: data.i18n.s6394005b5e43f108, variant: "text", onPressed: event "commentsMore" {})), default: SizedBoxShrink()},
+        default: EmptyState(icon: "mail", title: data.commentsMessage),
+      },
+      default: EmptyState(icon: "error", title: data.commentsError, action: Button(label: data.i18n.se856ce979d5683fa, variant: "text", onPressed: event "commentsRetry" {})),
+    },
+  },
+};
 widget CommentBody = Column(crossAxisAlignment: "stretch", children: [
   Row(children: [Avatar(label: args.item.author, url: args.item.avatar, size: 32), Gap(size: 10), Expanded(child: Column(crossAxisAlignment: "start", children: [Label(text: args.item.author, style: "titleSmall"), switch args.item.handle {"": SizedBoxShrink(), default: Label(text: args.item.handle, style: "labelSmall", color: "onSurfaceVariant")} ])), Label(text: args.item.rating, style: "labelSmall", color: "primary")]),
   Gap(size: 8), SelectableLabel(text: args.item.content), Gap(size: 6), Wrap(spacing: 8.0, runSpacing: 4.0, children: [
