@@ -221,6 +221,19 @@ List<SettingsGroup> buildPreferencesGroups(BuildContext context) {
           ),
           condition: () => Platform.isAndroid,
         ),
+        SwitchModel(
+          id: 'imageDirectTextSelect',
+          title: l10n.imageViewer_directTextSelect,
+          subtitle: PlatformUtils.isDesktop
+              ? l10n.imageViewer_directTextSelectDescDesktop
+              : l10n.imageViewer_directTextSelectDescMobile,
+          icon: Symbols.document_scanner_rounded,
+          getValue: (ref) =>
+              ref.watch(preferencesProvider).imageDirectTextSelect,
+          onChanged: (ref, v) => ref
+              .read(preferencesProvider.notifier)
+              .setImageDirectTextSelect(v),
+        ),
       ],
     ),
     SettingsGroup(

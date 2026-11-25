@@ -51,6 +51,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     VoidCallback? onEdit,
     VoidCallback? onRecognize,
+    VoidCallback? onTranslate,
     String? editLabel,
     // 引用/复制引用用的 markdown(理想情况是 `![alt](upload://sha1.ext)`,
     // 对齐 Web 端「复制引用」原样保留图片格式的行为)。为 null 时(如
@@ -78,6 +79,7 @@ class ImageContextMenu {
       onClose: onClose,
       onEdit: onEdit,
       onRecognize: onRecognize,
+      onTranslate: onTranslate,
       editLabel: editLabel,
     );
 
@@ -148,6 +150,7 @@ class ImageContextMenu {
     VoidCallback? onClose,
     VoidCallback? onEdit,
     VoidCallback? onRecognize,
+    VoidCallback? onTranslate,
     String? editLabel,
   }) {
     return [
@@ -164,6 +167,13 @@ class ImageContextMenu {
           Symbols.document_scanner_rounded,
           S.current.imageViewer_recognizeText,
           onRecognize,
+        ),
+      if (onTranslate != null)
+        _ImageAction(
+          'translate',
+          Symbols.translate_rounded,
+          S.current.imageViewer_translateImage,
+          onTranslate,
         ),
       if (showViewFullImage)
         _ImageAction(

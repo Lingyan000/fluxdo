@@ -91,6 +91,40 @@ class ImageGestureController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 缩放到指定倍率（桌面端快捷键、缩放按钮用），保持视口当前焦点位置不跳变。
+  void zoomTo(double targetScale, {Offset? focalPoint}) {
+    final current = _details;
+    final clamped = targetScale.clamp(_config.minScale, _config.maxScale);
+    if (clamped <= _config.initialScale + 0.01) {
+      details = GestureDetails(
+        offset: Offset.zero,
+        totalScale: _config.initialScale,
+        gestureDetails: current,
+        actionType: ActionType.pan,
+        userOffset: false,
+      );
+      return;
+    }
+    final rawCenter =
+        current?.rawDestinationRect?.center ??
+        current?.layoutRect?.center ??
+        Offset.zero;
+    final oldScale = current?.totalScale ?? _config.initialScale;
+    final oldOffset = current?.offset ?? Offset.zero;
+    final oldCenter = rawCenter * oldScale + oldOffset;
+    final anchor = focalPoint ?? current?.layoutRect?.center ?? rawCenter;
+    final ratio = oldScale > 0 ? clamped / oldScale : 1.0;
+    final newCenter = anchor + (oldCenter - anchor) * ratio;
+    final nextOffset = newCenter - rawCenter * clamped;
+    details = GestureDetails(
+      offset: nextOffset,
+      totalScale: clamped,
+      gestureDetails: current,
+      actionType: ActionType.zoom,
+      userOffset: false,
+    );
+  }
+
   /// 重置回初始状态(如画廊翻页离场时,与旧行为「离页即重置缩放」一致)
   void reset() {
     _slideOffset = Offset.zero;

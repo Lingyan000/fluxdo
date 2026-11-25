@@ -478,4 +478,5 @@ class ExtendedImageGesturePageViewState
 
   bool get isHolding => _hold != null;
   bool get isDraging => _drag != null;
+  bool get canDragPage => _gestureRecognizers.isNotEmpty;
 }

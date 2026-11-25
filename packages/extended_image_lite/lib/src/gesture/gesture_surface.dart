@@ -307,18 +307,35 @@ class GestureSurfaceState extends State<GestureSurface>
   }
 
   void _handlePointerSignal(PointerSignalEvent event) {
-    if (event is PointerScrollEvent && event.kind == PointerDeviceKind.mouse) {
-      handleScaleStart(ScaleStartDetails(focalPoint: event.position));
+    if (event is PointerScrollEvent &&
+        (event.kind == PointerDeviceKind.mouse ||
+            event.kind == PointerDeviceKind.trackpad)) {
       final double dy = event.scrollDelta.dy;
       final double dx = event.scrollDelta.dx;
+      // 仅垂直滚轮触发缩放；忽略水平滚动，避免触控板/横向滚轮误缩放。
+      if (dy == 0 || dy.abs() < dx.abs()) {
+        return;
+      }
+      handleScaleStart(ScaleStartDetails(focalPoint: event.position));
+      final double scaleFactor =
+          (1.0 + _reverseIf(dy * _gestureConfig.speed / 600.0)).clamp(
+            0.78,
+            1.28,
+          );
       handleScaleUpdate(
         ScaleUpdateDetails(
           focalPoint: event.position,
-          scale:
-              1.0 +
-              _reverseIf(
-                (dy.abs() > dx.abs() ? dy : dx) * _gestureConfig.speed / 1000.0,
-              ),
+          scale: scaleFactor,
+          focalPointDelta: Offset.zero,
+        ),
+      );
+      handleScaleEnd(ScaleEndDetails());
+    } else if (event is PointerScaleEvent) {
+      handleScaleStart(ScaleStartDetails(focalPoint: event.position));
+      handleScaleUpdate(
+        ScaleUpdateDetails(
+          focalPoint: event.position,
+          scale: event.scale.clamp(0.5, 2.0),
           focalPointDelta: Offset.zero,
         ),
       );
@@ -348,7 +365,8 @@ class GestureSurfaceState extends State<GestureSurface>
 
   @override
   void handleScaleUpdate(ScaleUpdateDetails details) {
-    if (_slidePageState != null &&
+    if (_pageViewState?.isDraging != true &&
+        _slidePageState != null &&
         details.scale == 1.0 &&
         (gestureDetails!.totalScale ?? 1) <= 1 &&
         gestureDetails!.userOffset &&
@@ -398,8 +416,9 @@ class GestureSurfaceState extends State<GestureSurface>
       return;
     }
 
-    // totalScale > 1 and page view is starting to move
-    if (_pageViewState != null) {
+    // 画廊内单指横向拖拽：未放大时兜底接管（桌面鼠标首帧位移超过 2px 时
+    // ScaleGestureRecognizer 会早于父级水平拖拽胜出），放大后撞边同样让渡切页。
+    if (_pageViewState != null && _pageViewState!.canDragPage) {
       final ExtendedImageGesturePageViewState pageViewState = _pageViewState!;
 
       final Axis axis = pageViewState.widget.scrollDirection;

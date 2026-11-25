@@ -1,5 +1,6 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
@@ -30,6 +31,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/shortcut_binding.dart';
+import '../providers/image_ocr_provider.dart';
+import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
 import '../providers/core_providers.dart';
 import '../services/toast_service.dart';
@@ -38,7 +41,7 @@ import '../utils/share_utils.dart';
 import '../widgets/common/app_bottom_sheet.dart';
 import '../widgets/common/hero_image.dart';
 import '../widgets/common/image_context_menu.dart';
-import '../widgets/common/image_text_sheet.dart';
+import '../widgets/common/image_live_overlay.dart';
 import '../widgets/markdown_editor/app_image_editor.dart';
 import '../widgets/post/image_reply_scope.dart';
 import '../utils/image_tool_bytes.dart';
@@ -331,6 +334,17 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   Uint8List? _pendingReplyImage;
   String? _pendingReplySource;
   final _showUI = ValueNotifier(true);
+  final _zoomScale = ValueNotifier<double>(1.0);
+  final _liveOverlayMode = ValueNotifier<ImageLiveOverlayMode?>(null);
+  final _liveOverlayKey = GlobalKey<ImageLiveOverlayState>();
+  int _liveOverlayPage = 0;
+  Offset? _liveOverlayTap;
+  VoidCallback? _liveOverlayTapMissed;
+  Timer? _passiveOcrTimer;
+  bool _passiveOcrArmed = false;
+  ImageGestureController? _observedGestureController;
+  Timer? _desktopIdleTimer;
+  bool _pointerOnChrome = false;
 
   /// 系统栏是否被本页隐藏(沉浸模式)。退场起点据此提前恢复
   bool _systemUiHidden = false;
@@ -372,7 +386,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     double maxScale = 4.0,
     double animationMaxScale = 4.5,
   }) {
-    return _gestureControllers.putIfAbsent(
+    final controller = _gestureControllers.putIfAbsent(
       index,
       () => ImageGestureController(
         config: GestureConfig(
@@ -386,9 +400,32 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           inPageView: inPageView,
           initialAlignment: InitialAlignment.center,
           hitTestBehavior: HitTestBehavior.opaque,
+          reverseMousePointerScrollDirection: true,
         ),
       ),
     );
+    if (index == (widget.imageBytes != null ? 0 : currentIndex)) {
+      _bindObservedGestureController(controller);
+    }
+    return controller;
+  }
+
+  void _bindObservedGestureController(ImageGestureController? controller) {
+    if (identical(_observedGestureController, controller)) return;
+    _observedGestureController?.removeListener(_onActiveGestureChanged);
+    _observedGestureController = controller;
+    _observedGestureController?.addListener(_onActiveGestureChanged);
+    final nextScale = controller?.details?.totalScale ?? 1.0;
+    if ((nextScale - _zoomScale.value).abs() > 0.005) {
+      _zoomScale.value = nextScale;
+    }
+  }
+
+  void _onActiveGestureChanged() {
+    final nextScale = _observedGestureController?.details?.totalScale ?? 1.0;
+    if ((nextScale - _zoomScale.value).abs() > 0.005) {
+      _zoomScale.value = nextScale;
+    }
   }
 
   /// 获取指定索引的 hero tag
@@ -591,6 +628,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     HeroVisibilityController.instance.setHiddenTagSilent(
       _getHeroTagForIndex(currentIndex),
     );
+    _schedulePassiveOcrIfNeeded();
   }
 
   @override
@@ -729,8 +767,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _desktopIdleTimer?.cancel();
+    _passiveOcrTimer?.cancel();
+    _observedGestureController?.removeListener(_onActiveGestureChanged);
     _dismissOffset.dispose();
     _showUI.dispose();
+    _zoomScale.dispose();
+    _liveOverlayMode.dispose();
     _isSaving.dispose();
     _isSharing.dispose();
     _isEditing.dispose();
@@ -753,8 +796,133 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }
 
   void _toggleUI() {
+    _desktopIdleTimer?.cancel();
     _showUI.value = !_showUI.value;
     _updateSystemUI();
+  }
+
+  /// 桌面端仅在鼠标移入顶部关闭区、底部操作坞区或画廊左右切图边缘区时唤醒控制条；
+  /// 在画面中间浏览/阅读/移动鼠标时保持隐藏不打扰，避免底栏反复跳出遮挡图片。
+  void _onDesktopMouseHover(PointerHoverEvent event) {
+    if (!PlatformUtils.isDesktop) return;
+    final size = MediaQuery.sizeOf(context);
+    if (size.isEmpty) return;
+    final pos = event.position;
+    final isGallery = (widget.galleryImages?.length ?? 1) > 1;
+    final inBottomDockZone = pos.dy >= size.height - 92;
+    final inTopCloseZone =
+        pos.dy <= 68 && (isGallery || pos.dx >= size.width - 120);
+    final inSideArrowZone =
+        isGallery &&
+        _liveOverlayMode.value == null &&
+        pos.dy >= size.height * 0.25 &&
+        pos.dy <= size.height * 0.75 &&
+        (pos.dx <= 76 || pos.dx >= size.width - 76);
+
+    if (inBottomDockZone || inTopCloseZone || inSideArrowZone) {
+      if (!_showUI.value) {
+        _showUI.value = true;
+        _updateSystemUI();
+      }
+      _armDesktopIdleTimer();
+    } else if (_showUI.value && !_pointerOnChrome) {
+      // 鼠标已离开边缘区回到画面中央：若尚未启动倒计时则温和倒计时自动收起
+      _desktopIdleTimer ??= Timer(const Duration(milliseconds: 2200), () {
+        _desktopIdleTimer = null;
+        if (!mounted || _pointerOnChrome) return;
+        if (_liveOverlayKey.currentState?.hasSelection ?? false) return;
+        if (_showUI.value) {
+          _showUI.value = false;
+          _updateSystemUI();
+        }
+      });
+    }
+  }
+
+  void _armDesktopIdleTimer() {
+    _desktopIdleTimer?.cancel();
+    _desktopIdleTimer = null;
+    if (!PlatformUtils.isDesktop || _pointerOnChrome) return;
+    _desktopIdleTimer = Timer(const Duration(milliseconds: 2200), () {
+      _desktopIdleTimer = null;
+      if (!mounted || _pointerOnChrome) return;
+      if (_liveOverlayKey.currentState?.hasSelection ?? false) return;
+      if (_showUI.value) {
+        _showUI.value = false;
+        _updateSystemUI();
+      }
+    });
+  }
+
+  void _setPointerOnChrome(bool hovering) {
+    _pointerOnChrome = hovering;
+    if (hovering) {
+      _desktopIdleTimer?.cancel();
+      _desktopIdleTimer = null;
+    } else {
+      _armDesktopIdleTimer();
+    }
+  }
+
+  void _goToPage(int target) {
+    final images = widget.galleryImages;
+    if (images == null || images.length <= 1) return;
+    final clamped = target.clamp(0, images.length - 1);
+    if (clamped == currentIndex) return;
+    _ensureGalleryPageController.animateToPage(
+      clamped,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  ImageGestureController? get _activeGestureController =>
+      _gestureControllers[widget.imageBytes != null ? 0 : currentIndex];
+
+  void _stepZoom(double delta) {
+    final controller = _activeGestureController;
+    if (controller == null) return;
+    final current = controller.details?.totalScale ?? 1.0;
+    final next = (current + delta).clamp(1.0, controller.config.maxScale);
+    controller.zoomTo(next);
+  }
+
+  void _resetZoom() {
+    _activeGestureController?.zoomTo(1.0);
+  }
+
+  Future<void> _copyActiveContent() async {
+    if (await (_liveOverlayKey.currentState?.copySelectionIfAny() ??
+        Future.value(false))) {
+      return;
+    }
+    if (widget.imageBytes != null) {
+      await _copyMemoryImage();
+      return;
+    }
+    try {
+      final bytes = await BlobImageCache.fetch(
+        BlobImageCache.originalBucket,
+        _currentImageUrl,
+      );
+      if (bytes.isEmpty) return;
+      final clipboard = SystemClipboard.instance;
+      if (clipboard == null) return;
+      final item = DataWriterItem()..add(Formats.png(bytes));
+      await clipboard.write([item]);
+      if (mounted) ToastService.showSuccess(S.current.image_copied);
+    } catch (_) {
+      if (mounted) ToastService.showError(S.current.image_copyFailed);
+    }
+  }
+
+  void _handleEscapeAction() {
+    if (_liveOverlayKey.currentState?.clearSelectionIfAny() ?? false) return;
+    if (_liveOverlayMode.value != null) {
+      _closeLiveOverlay();
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   /// 显示图片长按菜单（不含「查看大图」，因为已在查看页内）
@@ -769,6 +937,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       onClose: () => Navigator.of(context).pop(),
       onEdit: _isEditing.value ? null : _editCurrentImage,
       onRecognize: _recognizeText,
+      onTranslate: _translateImage,
       editLabel: widget.onReply == null
           ? S.current.imageUpload_editImage
           : S.current.imageViewer_editReply,
@@ -910,13 +1079,115 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     return ImageToolBytes.png(bytes);
   }
 
-  void _recognizeText() {
-    final url = widget.imageBytes == null ? _currentImageUrl : null;
-    showImageTextSheet(
-      context,
-      loadImage: (token) => _loadToolImage(url, token),
+  void _schedulePassiveOcrIfNeeded() {
+    _passiveOcrTimer?.cancel();
+    _passiveOcrTimer = null;
+    if (!PlatformUtils.isDesktop) return;
+    if (_liveOverlayMode.value != null ||
+        _currentImageMayBeAnimated ||
+        !ref.read(preferencesProvider).imageDirectTextSelect) {
+      if (_passiveOcrArmed && mounted) {
+        setState(() => _passiveOcrArmed = false);
+      }
+      return;
+    }
+    final targetPage = currentIndex;
+    _passiveOcrTimer = Timer(const Duration(milliseconds: 260), () async {
+      _passiveOcrTimer = null;
+      if (!mounted ||
+          targetPage != currentIndex ||
+          _liveOverlayMode.value != null ||
+          _currentImageMayBeAnimated ||
+          !ref.read(preferencesProvider).imageDirectTextSelect) {
+        return;
+      }
+      final ready = await ref.read(ocrModelStoreProvider).isReady();
+      if (!mounted ||
+          !ready ||
+          targetPage != currentIndex ||
+          _liveOverlayMode.value != null ||
+          !ref.read(preferencesProvider).imageDirectTextSelect) {
+        return;
+      }
+      setState(() => _passiveOcrArmed = true);
+    });
+  }
+
+  Future<void> _handleImageLongPress(
+    BuildContext context,
+    Offset globalPosition, {
+    required bool isMemory,
+  }) async {
+    void openMenu() {
+      if (!mounted) return;
+      if (isMemory) {
+        _showBytesContextMenu(context);
+      } else {
+        _showContextMenu(context);
+      }
+    }
+
+    if (PlatformUtils.isDesktop ||
+        _isEditing.value ||
+        _liveOverlayMode.value != null ||
+        !ref.read(preferencesProvider).imageDirectTextSelect) {
+      openMenu();
+      return;
+    }
+
+    final ready = await ref.read(ocrModelStoreProvider).isReady();
+    if (!mounted) return;
+    if (!ready) {
+      openMenu();
+      return;
+    }
+
+    HapticFeedback.mediumImpact();
+    _openLiveOverlay(
+      ImageLiveOverlayMode.liveText,
+      tapPosition: globalPosition,
+      onTapMissed: openMenu,
     );
   }
+
+  void _openLiveOverlay(
+    ImageLiveOverlayMode mode, {
+    Offset? tapPosition,
+    VoidCallback? onTapMissed,
+  }) {
+    _passiveOcrTimer?.cancel();
+    setState(() {
+      if (_liveOverlayMode.value == mode &&
+          _liveOverlayPage == currentIndex &&
+          tapPosition == null) {
+        _liveOverlayMode.value = null;
+        _liveOverlayTap = null;
+        _liveOverlayTapMissed = null;
+      } else {
+        _liveOverlayPage = currentIndex;
+        _liveOverlayTap = tapPosition;
+        _liveOverlayTapMissed = onTapMissed;
+        _liveOverlayMode.value = mode;
+      }
+    });
+    if (_liveOverlayMode.value == null) {
+      _schedulePassiveOcrIfNeeded();
+    }
+  }
+
+  void _closeLiveOverlay() {
+    if (_liveOverlayMode.value == null) return;
+    setState(() {
+      _liveOverlayMode.value = null;
+      _liveOverlayTap = null;
+      _liveOverlayTapMissed = null;
+    });
+    _schedulePassiveOcrIfNeeded();
+  }
+
+  void _recognizeText() => _openLiveOverlay(ImageLiveOverlayMode.liveText);
+
+  void _translateImage() => _openLiveOverlay(ImageLiveOverlayMode.translate);
 
   Future<void> _editCurrentImage() async {
     if (_isEditing.value) return;
@@ -1060,7 +1331,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 内存图片的长按 / 右键菜单（保存 / 复制 / 分享）
+  /// 内存图片的长按 / 右键菜单（编辑 / 识别文字 / 保存 / 复制 / 分享）
   void _showBytesContextMenu(BuildContext context, {Offset? position}) {
     if (widget.imageBytes == null) return;
 
@@ -1076,6 +1347,29 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           context: context,
           position: relativeRect,
           items: [
+            if (!_isEditing.value)
+              PopupMenuItem(
+                value: 'edit',
+                child: _BytesMenuRow(
+                  icon: Symbols.edit_rounded,
+                  label: S.current.imageUpload_editImage,
+                ),
+              ),
+            PopupMenuItem(
+              value: 'recognize',
+              child: _BytesMenuRow(
+                icon: Symbols.document_scanner_rounded,
+                label: S.current.imageViewer_recognizeText,
+              ),
+            ),
+            PopupMenuItem(
+              value: 'translate',
+              child: _BytesMenuRow(
+                icon: Symbols.translate_rounded,
+                label: S.current.imageViewer_translateImage,
+              ),
+            ),
+            const PopupMenuDivider(),
             PopupMenuItem(
               value: 'save',
               child: _BytesMenuRow(
@@ -1102,6 +1396,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           ],
         ).then((value) {
           switch (value) {
+            case 'edit':
+              _editCurrentImage();
+            case 'recognize':
+              _recognizeText();
+            case 'translate':
+              _translateImage();
             case 'save':
               _saveMemoryImage();
             case 'copy':
@@ -1121,6 +1421,31 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (!_isEditing.value)
+              ListTile(
+                leading: const Icon(Symbols.edit_rounded),
+                title: Text(S.current.imageUpload_editImage),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _editCurrentImage();
+                },
+              ),
+            ListTile(
+              leading: const Icon(Symbols.document_scanner_rounded),
+              title: Text(S.current.imageViewer_recognizeText),
+              onTap: () {
+                Navigator.pop(ctx);
+                _recognizeText();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Symbols.translate_rounded),
+              title: Text(S.current.imageViewer_translateImage),
+              onTap: () {
+                Navigator.pop(ctx);
+                _translateImage();
+              },
+            ),
             ListTile(
               leading: const Icon(Symbols.save_alt_rounded),
               title: Text(ImageSaveUtils.actionLabel),
@@ -1185,7 +1510,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 桌面端包裹快捷键退出（从 shortcutProvider 读取 closeOverlay 绑定）
+  /// 桌面端包裹完整快捷键（Esc 逐层退出、左右方向键切图、+/- / 0 缩放、Space 对比原图、Cmd/Ctrl+C 复制）
+  /// 以及鼠标活动唤醒 / 静止自动淡出控制条。
   Widget _wrapDesktopShortcuts(BuildContext context, Widget child) {
     if (!PlatformUtils.isDesktop) return child;
     return Consumer(
@@ -1193,12 +1519,44 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         final binding = ref
             .read(shortcutProvider.notifier)
             .getBinding(ShortcutAction.closeOverlay);
-        return CallbackShortcuts(
-          bindings: {
-            if (binding != null)
-              binding.activator: () => Navigator.of(context).pop(),
-          },
-          child: Focus(autofocus: true, child: child),
+        final isMac = Platform.isMacOS;
+        return MouseRegion(
+          onHover: _onDesktopMouseHover,
+          child: CallbackShortcuts(
+            bindings: {
+              if (binding != null) binding.activator: _handleEscapeAction,
+              const SingleActivator(LogicalKeyboardKey.escape):
+                  _handleEscapeAction,
+              const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                  _goToPage(currentIndex - 1),
+              const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                  _goToPage(currentIndex + 1),
+              const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                  _goToPage(currentIndex - 1),
+              const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                  _goToPage(currentIndex + 1),
+              const SingleActivator(LogicalKeyboardKey.equal): () =>
+                  _stepZoom(0.5),
+              const SingleActivator(LogicalKeyboardKey.add): () =>
+                  _stepZoom(0.5),
+              const SingleActivator(LogicalKeyboardKey.numpadAdd): () =>
+                  _stepZoom(0.5),
+              const SingleActivator(LogicalKeyboardKey.minus): () =>
+                  _stepZoom(-0.5),
+              const SingleActivator(LogicalKeyboardKey.numpadSubtract): () =>
+                  _stepZoom(-0.5),
+              const SingleActivator(LogicalKeyboardKey.digit0): _resetZoom,
+              const SingleActivator(LogicalKeyboardKey.numpad0): _resetZoom,
+              const SingleActivator(LogicalKeyboardKey.space): () =>
+                  _liveOverlayKey.currentState?.toggleOriginalPeek(),
+              SingleActivator(
+                LogicalKeyboardKey.keyC,
+                meta: isMac,
+                control: !isMac,
+              ): () => unawaited(_copyActiveContent()),
+            },
+            child: Focus(autofocus: true, child: child),
+          ),
         );
       },
     );
@@ -1206,6 +1564,31 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   @override
   Widget build(BuildContext context) {
+    final directTextSelect = ref.watch(
+      preferencesProvider.select((p) => p.imageDirectTextSelect),
+    );
+    ref.listen<bool>(
+      preferencesProvider.select((p) => p.imageDirectTextSelect),
+      (prev, next) {
+        if (prev == next) return;
+        if (next) {
+          _schedulePassiveOcrIfNeeded();
+        } else {
+          _passiveOcrTimer?.cancel();
+          if (_passiveOcrArmed && mounted) {
+            setState(() => _passiveOcrArmed = false);
+          }
+        }
+      },
+    );
+    final hasExplicitOverlay = _liveOverlayMode.value != null;
+    final hasPassiveOverlay =
+        !hasExplicitOverlay &&
+        PlatformUtils.isDesktop &&
+        directTextSelect &&
+        _passiveOcrArmed &&
+        !_currentImageMayBeAnimated;
+
     // 内存图片模式
     if (widget.imageBytes != null) {
       return _wrapDesktopShortcuts(
@@ -1233,7 +1616,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 children: [
                   GestureDetector(
                     onTap: _toggleUI,
-                    onLongPress: () => _showBytesContextMenu(context),
+                    onLongPressStart: (details) => unawaited(
+                      _handleImageLongPress(
+                        context,
+                        details.globalPosition,
+                        isMemory: true,
+                      ),
+                    ),
                     onSecondaryTapUp: (details) => _showBytesContextMenu(
                       context,
                       position: details.globalPosition,
@@ -1254,6 +1643,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       },
                     ),
                   ),
+                  if (hasExplicitOverlay || hasPassiveOverlay)
+                    _buildActiveLiveOverlay(passive: hasPassiveOverlay),
                   _buildControls(),
                 ],
               ),
@@ -1301,7 +1692,13 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   // 单图模式：使用最简结构，避免 PageView 带来的空白/手势问题
                   GestureDetector(
                     onTap: _toggleUI,
-                    onLongPress: () => _showContextMenu(context),
+                    onLongPressStart: (details) => unawaited(
+                      _handleImageLongPress(
+                        context,
+                        details.globalPosition,
+                        isMemory: false,
+                      ),
+                    ),
                     onSecondaryTapUp: (details) => _showContextMenu(
                       context,
                       position: details.globalPosition,
@@ -1351,23 +1748,44 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   // 画廊模式：使用 ExtendedImageGesturePageView 支持滑动切换
                   GestureDetector(
                     onTap: _toggleUI,
-                    onLongPress: () => _showContextMenu(context),
+                    onLongPressStart: (details) => unawaited(
+                      _handleImageLongPress(
+                        context,
+                        details.globalPosition,
+                        isMemory: false,
+                      ),
+                    ),
                     onSecondaryTapUp: (details) => _showContextMenu(
                       context,
                       position: details.globalPosition,
                     ),
                     child: ExtendedImageGesturePageView.builder(
                       itemCount: images.length,
-                      physics: const BouncingScrollPhysics(),
+                      physics:
+                          _liveOverlayMode.value ==
+                              ImageLiveOverlayMode.liveText
+                          ? const NeverScrollableScrollPhysics()
+                          : const BouncingScrollPhysics(),
                       controller: _ensureGalleryPageController,
                       onPageChanged: (index) {
                         // 离场页重置缩放(与旧行为一致:PageView 不缓存
                         // 离屏页,离页即回初始状态)
                         _gestureControllers[currentIndex]?.reset();
                         _pageDirection = index >= currentIndex ? 1 : -1;
+                        _passiveOcrTimer?.cancel();
                         setState(() {
                           currentIndex = index;
+                          _passiveOcrArmed = false;
+                          if (_liveOverlayMode.value != null) {
+                            _liveOverlayMode.value = null;
+                            _liveOverlayTap = null;
+                            _liveOverlayTapMissed = null;
+                          }
                         });
+                        _schedulePassiveOcrIfNeeded();
+                        _bindObservedGestureController(
+                          _gestureControllers[index],
+                        );
                         _activeHeroPage.value = index;
                         // 更新底层页面应该隐藏的图片
                         final newTag = _getHeroTagForIndex(index);
@@ -1440,12 +1858,38 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     ),
                   ),
 
+                if (hasExplicitOverlay || hasPassiveOverlay)
+                  _buildActiveLiveOverlay(passive: hasPassiveOverlay),
                 if (heroTag == null) _buildControls(),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildActiveLiveOverlay({required bool passive}) {
+    final mode = passive
+        ? ImageLiveOverlayMode.liveText
+        : _liveOverlayMode.value!;
+    final url = widget.imageBytes == null ? _currentImageUrl : null;
+    final pageIdx = widget.imageBytes != null ? 0 : currentIndex;
+    final sourceKey = widget.imageBytes != null ? 'memory' : '$pageIdx:$url';
+    return ImageLiveOverlay(
+      key: _liveOverlayKey,
+      sourceKey: sourceKey,
+      mode: mode,
+      passive: passive,
+      loadImage: (token) => _loadToolImage(url, token),
+      gestureController: _gestureControllers[pageIdx],
+      chromeVisible: _showUI,
+      initialTapGlobalPosition: passive ? null : _liveOverlayTap,
+      onInitialTapMissed: passive ? null : _liveOverlayTapMissed,
+      onClose: _closeLiveOverlay,
+      onModeChanged: (next) => setState(() => _liveOverlayMode.value = next),
+      onChromeHoverChanged: _setPointerOnChrome,
+      onRequestToggleChrome: _toggleUI,
     );
   }
 
@@ -1476,6 +1920,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   late final _controlChanges = Listenable.merge([
     _showUI,
+    _zoomScale,
+    _liveOverlayMode,
     _isSaving,
     _isSharing,
     _isEditing,
@@ -1508,135 +1954,237 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   }) {
     final padding = MediaQuery.paddingOf(context);
     final pageSize = MediaQuery.sizeOf(context);
-    final shade = Colors.black.withValues(alpha: 0.6);
+    final isZoomed = _zoomScale.value > 1.02;
+    final overlayActive = _liveOverlayMode.value != null;
+    final chromeVisible = _showUI.value && !isZoomed;
+    final showDesktopZoom = PlatformUtils.isDesktop && pageSize.width >= 560;
+
     return ValueListenableBuilder<Offset>(
       valueListenable: _dismissOffset,
       builder: (context, offset, child) {
         final opacity = _dismissOpacity(offset, pageSize);
         return IgnorePointer(
-          ignoring: !_showUI.value || opacity == 0,
+          ignoring: !chromeVisible || opacity == 0,
           child: Opacity(opacity: opacity, child: child),
         );
       },
-      // 点按显隐有自己的淡入淡出；拖动和回弹直接跟随图片的当前帧。
       child: AnimatedOpacity(
-        opacity: _showUI.value ? 1 : 0,
-        duration: const Duration(milliseconds: 200),
+        opacity: chromeVisible ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
         child: Stack(
           children: [
+            // 1. 极简顶栏：多图居中玻璃页码 + 右上角单个轻量关闭按钮（无脏黑渐变、无拥挤按钮排）。
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 100,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [shade, Colors.transparent],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: padding.top + 6,
+              top: padding.top + 10,
               left: padding.left + 16,
               right: padding.right + 16,
-              height: kMinInteractiveDimension,
-              child: NavigationToolbar(
-                middleSpacing: 4,
-                leading: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _controlButton(
-                      Symbols.save_alt_rounded,
-                      onSave,
-                      busy: _isSaving.value,
-                    ),
-                    if (onShare != null) ...[
-                      const SizedBox(width: 2),
-                      _controlButton(
-                        Symbols.share_rounded,
-                        onShare,
-                        busy: _isSharing.value,
-                      ),
-                    ],
-                  ],
-                ),
-                middle: pageCount > 1
-                    ? IgnorePointer(
-                        child: Container(
+              height: 44,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (pageCount > 1)
+                    IgnorePointer(
+                      child: _ViewerGlassPill(
+                        radius: 20,
+                        child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 6,
                           ),
-                          decoration: ShapeDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            shape: RoundedSuperellipseBorder(
-                              borderRadius: context.shapes.borderRadius(20),
-                            ),
-                          ),
                           child: Text(
                             '${currentIndex + 1} / $pageCount',
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 14,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-                      )
-                    : null,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _controlButton(
-                      Symbols.more_vert_rounded,
-                      _showTools,
-                      busy: _isEditing.value,
-                      tooltip: MaterialLocalizations.of(context)
-                          .moreButtonTooltip,
-                    ),
-                    _controlButton(
-                      Symbols.close_rounded,
-                      () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (filename != null && filename.isNotEmpty)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  child: Container(
-                    padding: EdgeInsets.fromLTRB(
-                      padding.left + 16,
-                      12,
-                      padding.right + 16,
-                      padding.bottom + 12,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [shade, Colors.transparent],
                       ),
                     ),
-                    child: Text(
-                      filename,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: MouseRegion(
+                      onEnter: (_) => _setPointerOnChrome(true),
+                      onExit: (_) => _setPointerOnChrome(false),
+                      child: _ViewerGlassCircleButton(
+                        icon: Symbols.close_rounded,
+                        tooltip: S.current.common_close,
+                        onTap: _handleEscapeAction,
+                      ),
                     ),
                   ),
+                ],
+              ),
+            ),
+
+            // 2. PC 端多图左右悬浮毛玻璃切图按钮
+            if (PlatformUtils.isDesktop && pageCount > 1 && !overlayActive) ...[
+              if (currentIndex > 0)
+                Positioned(
+                  left: padding.left + 16,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: MouseRegion(
+                      onEnter: (_) => _setPointerOnChrome(true),
+                      onExit: (_) => _setPointerOnChrome(false),
+                      child: _ViewerGlassCircleButton(
+                        icon: Symbols.chevron_left_rounded,
+                        size: 44,
+                        iconSize: 26,
+                        onTap: () => _goToPage(currentIndex - 1),
+                      ),
+                    ),
+                  ),
+                ),
+              if (currentIndex < pageCount - 1)
+                Positioned(
+                  right: padding.right + 16,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: MouseRegion(
+                      onEnter: (_) => _setPointerOnChrome(true),
+                      onExit: (_) => _setPointerOnChrome(false),
+                      child: _ViewerGlassCircleButton(
+                        icon: Symbols.chevron_right_rounded,
+                        size: 44,
+                        iconSize: 26,
+                        onTap: () => _goToPage(currentIndex + 1),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+
+            // 3. 统一底部毛玻璃操作坞（覆盖模式激活时交由 ImageLiveOverlay 在同位置承接，绝不双层叠压）
+            if (!overlayActive)
+              Positioned(
+                left: padding.left + 16,
+                right: padding.right + 16,
+                bottom: padding.bottom + 16,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (filename != null && filename.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: IgnorePointer(
+                          child: Text(
+                            filename,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.88),
+                              fontSize: 12.5,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withValues(alpha: 0.7),
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    MouseRegion(
+                      onEnter: (_) => _setPointerOnChrome(true),
+                      onExit: (_) => _setPointerOnChrome(false),
+                      child: _ViewerGlassPill(
+                        radius: 24,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _dockButton(
+                                Symbols.edit_rounded,
+                                _editCurrentImage,
+                                busy: _isEditing.value,
+                                tooltip: widget.onReply == null
+                                    ? S.current.imageUpload_editImage
+                                    : S.current.imageViewer_editReply,
+                              ),
+                              _dockButton(
+                                Symbols.document_scanner_rounded,
+                                _recognizeText,
+                                tooltip: S.current.imageViewer_recognizeText,
+                              ),
+                              _dockButton(
+                                Symbols.translate_rounded,
+                                _translateImage,
+                                tooltip: S.current.imageViewer_translateImage,
+                              ),
+                              if (onShare != null)
+                                _dockButton(
+                                  Symbols.share_rounded,
+                                  onShare,
+                                  busy: _isSharing.value,
+                                  tooltip: S.current.common_shareImage,
+                                ),
+                              _dockButton(
+                                Symbols.save_alt_rounded,
+                                onSave,
+                                busy: _isSaving.value,
+                                tooltip: ImageSaveUtils.actionLabel,
+                              ),
+                              _dockButton(
+                                Symbols.more_vert_rounded,
+                                _showTools,
+                                tooltip: MaterialLocalizations.of(
+                                  context,
+                                ).moreButtonTooltip,
+                              ),
+                              if (showDesktopZoom) ...[
+                                Container(
+                                  width: 1,
+                                  height: 18,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                ),
+                                _dockButton(
+                                  Symbols.remove_rounded,
+                                  () => _stepZoom(-0.5),
+                                  iconSize: 18,
+                                ),
+                                InkWell(
+                                  onTap: _resetZoom,
+                                  borderRadius: context.shapes.borderRadius(12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 8,
+                                    ),
+                                    child: Text(
+                                      '${(_zoomScale.value * 100).round()}%',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                _dockButton(
+                                  Symbols.add_rounded,
+                                  () => _stepZoom(0.5),
+                                  iconSize: 18,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
@@ -1645,34 +2193,30 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  /// 圆形底色保持 40，按钮本身留足 48 的点击范围。
-  Widget _controlButton(
+  Widget _dockButton(
     IconData icon,
     VoidCallback action, {
     bool busy = false,
     String? tooltip,
+    double iconSize = 20,
   }) {
-    return SizedBox.square(
-      dimension: kMinInteractiveDimension,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.black.withValues(alpha: 0.5),
-          ),
-          Positioned.fill(
-            child: IconButton(
-              tooltip: tooltip,
-              onPressed: busy ? null : action,
-              icon: busy
-                  ? const LoadingSpinner(size: 16, color: Colors.white)
-                  : Icon(icon, color: Colors.white),
-            ),
-          ),
-        ],
+    final button = SizedBox.square(
+      dimension: 40,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        onPressed: busy ? null : action,
+        icon: busy
+            ? const LoadingSpinner(size: 16, color: Colors.white)
+            : Icon(icon, size: iconSize, color: Colors.white),
       ),
     );
+    return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
+  }
+
+  bool get _currentImageMayBeAnimated {
+    if (widget.imageBytes != null) return false;
+    final ext = BlobImageCache.httpUrlExtension(_currentImageUrl).toLowerCase();
+    return ext == 'gif' || ext == 'webp' || ext == 'avif';
   }
 
   void _showTools() {
@@ -1689,7 +2233,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   ? S.current.imageUpload_editImage
                   : S.current.imageViewer_editReply,
             ),
-            subtitle: Text(S.current.imageViewer_editFrameHint),
+            subtitle: _currentImageMayBeAnimated
+                ? Text(S.current.imageViewer_editFrameHint)
+                : null,
             enabled: !_isEditing.value,
             onTap: () {
               Navigator.pop(ctx);
@@ -1702,6 +2248,35 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             onTap: () {
               Navigator.pop(ctx);
               _recognizeText();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Symbols.translate_rounded),
+            title: Text(S.current.imageViewer_translateImage),
+            onTap: () {
+              Navigator.pop(ctx);
+              _translateImage();
+            },
+          ),
+          const Divider(height: 1),
+          Consumer(
+            builder: (ctx, ref, _) {
+              final enabled = ref.watch(
+                preferencesProvider.select((p) => p.imageDirectTextSelect),
+              );
+              return SwitchListTile(
+                secondary: const Icon(Symbols.text_fields_rounded),
+                title: Text(S.current.imageViewer_directTextSelect),
+                subtitle: Text(
+                  PlatformUtils.isDesktop
+                      ? S.current.imageViewer_directTextSelectDescDesktop
+                      : S.current.imageViewer_directTextSelectDescMobile,
+                ),
+                value: enabled,
+                onChanged: (v) => ref
+                    .read(preferencesProvider.notifier)
+                    .setImageDirectTextSelect(v),
+              );
             },
           ),
         ],
@@ -1934,5 +2509,79 @@ class _BytesMenuRow extends StatelessWidget {
     return Row(
       children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
     );
+  }
+}
+
+/// 查看器专用的深色通透毛玻璃胶囊：在纯白底和纯黑边上都具备柔和边缘光与层次感。
+class _ViewerGlassPill extends StatelessWidget {
+  const _ViewerGlassPill({required this.child, this.radius = 24});
+
+  final Widget child;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderRadius = context.shapes.borderRadius(radius);
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
+        shadows: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRSuperellipse(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: const Color(0xFF26282E).withValues(alpha: 0.72),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: borderRadius,
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.16)),
+              ),
+            ),
+            child: Material(type: MaterialType.transparency, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 查看器圆形毛玻璃按钮（右上角关闭 / PC 左右切图箭头）。
+class _ViewerGlassCircleButton extends StatelessWidget {
+  const _ViewerGlassCircleButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+    this.size = 40,
+    this.iconSize = 20,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+  final double size;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final pill = _ViewerGlassPill(
+      radius: size / 2,
+      child: SizedBox.square(
+        dimension: size,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          onPressed: onTap,
+          icon: Icon(icon, size: iconSize, color: Colors.white),
+        ),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip!, child: pill) : pill;
   }
 }

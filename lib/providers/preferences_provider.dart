@@ -343,6 +343,9 @@ class AppPreferences {
   /// 表情风格:[EmojiHandler.followSite] 或 [EmojiHandler.selectableSets] 之一
   final String emojiStyle;
 
+  /// 看图页免点按钮直接划选文字（桌面端静默识别后左键拖选，移动端长按文字直达）
+  final bool imageDirectTextSelect;
+
   AppPreferences({
     required this.autoPanguSpacing,
     required this.displayPanguSpacing,
@@ -412,6 +415,7 @@ class AppPreferences {
     this.richToolbarTools = kDefaultRichVisibleTools,
     this.topicCardStyle = TopicCardStyle.defaults,
     this.emojiStyle = EmojiHandler.defaultPreference,
+    this.imageDirectTextSelect = true,
   });
 
   AppPreferences copyWith({
@@ -483,6 +487,7 @@ class AppPreferences {
     List<String>? richToolbarTools,
     TopicCardStyle? topicCardStyle,
     String? emojiStyle,
+    bool? imageDirectTextSelect,
   }) {
     return AppPreferences(
       autoPanguSpacing: autoPanguSpacing ?? this.autoPanguSpacing,
@@ -577,6 +582,8 @@ class AppPreferences {
       richToolbarTools: richToolbarTools ?? this.richToolbarTools,
       topicCardStyle: topicCardStyle ?? this.topicCardStyle,
       emojiStyle: emojiStyle ?? this.emojiStyle,
+      imageDirectTextSelect:
+          imageDirectTextSelect ?? this.imageDirectTextSelect,
     );
   }
 }
@@ -669,6 +676,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
   static const String _richToolbarToolsKey = 'pref_rich_toolbar_tools';
   static const String _topicCardStyleKey = 'pref_topic_card_style';
   static const String _emojiStyleKey = 'pref_emoji_style';
+  static const String _imageDirectTextSelectKey =
+      'pref_image_direct_text_select';
 
   static const _crashlyticsChannel = MethodChannel(
     'com.github.lingyan000.fluxdo/crashlytics',
@@ -800,6 +809,8 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
           emojiStyle:
               _prefs.getString(_emojiStyleKey) ??
               EmojiHandler.defaultPreference,
+          imageDirectTextSelect:
+              _prefs.getBool(_imageDirectTextSelectKey) ?? true,
         ),
       ) {
     // 首次迁移即固定服务，避免新用户开启翻译后被识别成旧版 AI 用户。
@@ -1295,6 +1306,13 @@ class PreferencesNotifier extends StateNotifier<AppPreferences> {
     }
     state = state.copyWith(editorToolbarTools: deduped);
     await _prefs.setStringList(_editorToolbarToolsKey, deduped);
+  }
+
+  /// 看图页免点按钮直接划选文字开关
+  Future<void> setImageDirectTextSelect(bool enabled) async {
+    if (state.imageDirectTextSelect == enabled) return;
+    state = state.copyWith(imageDirectTextSelect: enabled);
+    await _prefs.setBool(_imageDirectTextSelectKey, enabled);
   }
 
   void _syncSchedulerConfig() {
