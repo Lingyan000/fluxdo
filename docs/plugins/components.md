@@ -166,6 +166,8 @@ TileGrid(
 
 `ListPage`、`DetailPage` 和 `FormPage` 管理自己的滚动区域，清单页面设 `scroll: false`。`ListPage.actions` 和 `DetailPage.actions` 接收单个组件，通常使用 `ActionBar`。`FormPage.actions` 接收组件列表，在提交按钮前展示附加操作。附加操作的禁用状态由插件传入。
 
+`ListPage` 按实际可见的条目计算分组首尾、圆角与间距。条件分支返回零高度组件（例如 `SizedBoxShrink()`）时，不保留分隔线或条目间距；隐藏节点仍监听数据，条件变化后可重新显示。所有条目均隐藏时显示空态。透明度为零但仍占据布局高度的内容不视为隐藏项。
+
 列表的 `items` 是条目组件列表。空列表会显示加载、错误或空态，非空列表在刷新时保留当前条目。声明 `onLoadMore` 后，`hasMore: true` 显示加载更多按钮，`loadingMore: true` 显示分页进度，`hasMore: false` 显示末尾提示。`PageLayout` 和 `ListPage` 会在向下滚动至距离底部 240 像素内触发 `onLoadMore`。内容不足一屏时继续上滑也会触发。加载期间以及错误、末页状态暂停自动分页。插件应在请求开始和结束时更新 `loading` 或 `loadingMore`，并负责页码、追加数据和请求去重，`ListPage` 分页请求失败时通过 `error` 与 `onRetry` 提供恢复入口，`PageLayout` 使用 `loadMoreError` 暂停自动分页并由插件提供重试操作。
 
 表单字段使用以下结构。

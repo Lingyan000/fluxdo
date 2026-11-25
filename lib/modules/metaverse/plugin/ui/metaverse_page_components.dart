@@ -54,75 +54,24 @@ Map<String, LocalWidgetBuilder> _pageWidgets() => {
     overflowSpacing: 8,
     children: source.childList(['actions']),
   ),
-  'ListPage': (context, source) {
-    final items = source.childList(['items']);
-    final loading = source.v<bool>(['loading']) == true;
-    final error = source.v<String>(['error']) ?? '';
-    final loadMore = source.voidHandler(['onLoadMore']);
-    final loadingMore = source.v<bool>(['loadingMore']) == true;
-    final hasMore = source.v<bool>(['hasMore']) == true;
-    return _PluginPageLayout(
-      toolbar: source.optionalChild(['toolbar']),
-      lazy: true,
-      itemCount: items.length,
-      loading: loading,
-      onLoadMore: items.isEmpty ? null : loadMore,
-      hasMore: hasMore,
-      loadingMore: loadingMore,
-      loadMoreError: error,
-      onRefresh: source.voidHandler(['onRefresh']),
-      footer: source.optionalChild(['actions']),
-      children: [
-        if (source.optionalChild(['search']) case final search?) ...[
-          search,
-          const SizedBox(height: 16),
-        ],
-        if (source.optionalChild(['header']) case final header?)
-          _PluginOptionalPadding(padding: const EdgeInsets.only(bottom: 16), child: header),
-        if (items.isEmpty)
-          (loading ? source.optionalChild(['loadingPlaceholder']) :
-            error.isNotEmpty ? null : source.optionalChild(['empty'])) ?? _PluginPageStatus(
-            loading: loading,
-            error: error,
-            emptyTitle: source.v<String>(['emptyTitle']),
-            onRetry: source.voidHandler(['onRetry']),
-          ),
-        for (var index = 0; index < items.length; index++)
-          SegmentedCardItem(
-            index: index,
-            count: items.length,
-            gap: 3,
-            color: PageBackgroundScope.contentColor(context,
-                Theme.of(context).colorScheme.surfaceContainerLow),
-            child: items[index],
-          ),
-        if (items.isNotEmpty && error.isNotEmpty)
-          _PluginPageStatus(
-            error: error,
-            onRetry: source.voidHandler(['onRetry']),
-          ),
-        if (items.isNotEmpty && loadMore != null) ...[
-          if (hasMore && !loadingMore)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: OutlinedButton(
-                onPressed: loading ? null : loadMore,
-                child: Text(
-                  source.v<String>(['moreLabel']) ?? context.l10n.common_more,
-                ),
-              ),
-            )
-          else
-            PagedListFooter(
-              hasMore: hasMore,
-              isLoadingMore: loadingMore,
-              isLoadMoreFailed: false,
-              onRetry: loadMore,
-            ),
-        ],
-      ],
-    );
-  },
+  'ListPage': (context, source) => _PluginListPage(
+    items: source.childList(['items']),
+    loading: source.v<bool>(['loading']) == true,
+    loadingMore: source.v<bool>(['loadingMore']) == true,
+    hasMore: source.v<bool>(['hasMore']) == true,
+    error: source.v<String>(['error']) ?? '',
+    emptyTitle: source.v<String>(['emptyTitle']),
+    moreLabel: source.v<String>(['moreLabel']),
+    toolbar: source.optionalChild(['toolbar']),
+    search: source.optionalChild(['search']),
+    header: source.optionalChild(['header']),
+    footer: source.optionalChild(['actions']),
+    empty: source.optionalChild(['empty']),
+    loadingPlaceholder: source.optionalChild(['loadingPlaceholder']),
+    onRefresh: source.voidHandler(['onRefresh']),
+    onRetry: source.voidHandler(['onRetry']),
+    onLoadMore: source.voidHandler(['onLoadMore']),
+  ),
   'DetailPage': (context, source) {
     final content = source.childList(['sections']);
     final header = source.optionalChild(['header']);

@@ -27,6 +27,7 @@ import '../../../../widgets/layout/master_detail_layout.dart';
 import '../../../../services/toast_service.dart';
 
 part 'metaverse_page_components.dart';
+part 'metaverse_list_page.dart';
 part 'metaverse_form_component.dart';
 part 'metaverse_tile_grid.dart';
 part 'metaverse_grid_page.dart';

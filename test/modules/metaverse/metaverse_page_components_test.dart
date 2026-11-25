@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/modules/metaverse/plugin/ui/metaverse_widget_library.dart';
@@ -31,6 +32,7 @@ void main() {
     WidgetTester tester,
     String source, {
     double scale = 1,
+    SegmentedCardMode mode = SegmentedCardMode.segmented,
   }) async {
     runtime.update(
       metaversePluginLibraryName,
@@ -40,6 +42,7 @@ void main() {
       TranslationProvider(
         child: MaterialApp(
           navigatorKey: navigatorKey,
+          theme: ThemeData(extensions: [SegmentedCardStyle(mode: mode)]),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context)
                 .copyWith(textScaler: TextScaler.linear(scale)),
@@ -73,6 +76,82 @@ void main() {
     endRevision: data.endRevision, onLoadMore: event "more" {}, onRetry: event "retry" {},
     footer: TextInput(value: data.draft, hint: "消息", variant: "filled", minLines: 1,
       maxLines: 4, maxLength: 10, showCounter: false, readOnly: data.busy, onChanged: event "input" {}))''';
+
+  for (final mode in SegmentedCardMode.values) {
+    testWidgets('分组列表跳过隐藏的首中尾条目并响应状态变化 ${mode.name}', (tester) async {
+      await show(tester, '''ListPage(items: [
+        switch data.extra {true: ListItem(title: "首项"), default: SizedBoxShrink()},
+        ListItem(title: "第一行"),
+        switch data.extra {true: ListItem(title: "中间项"), default: SizedBoxShrink()},
+        ListItem(title: "第二行"),
+        switch data.extra {true: ListItem(title: "尾项"), default: SizedBoxShrink()},
+        switch data.extra {true: ListItem(title: "另一尾项"), default: SizedBoxShrink()}
+      ])''', mode: mode);
+      await tester.pumpAndSettle();
+      SegmentedCardItem row(String label) => tester.widget<SegmentedCardItem>(
+        find.ancestor(of: find.text(label), matching: find.byType(SegmentedCardItem)).first,
+      );
+      expect(row('第一行').index, 0);
+      expect(row('第一行').count, 2);
+      expect(row('第二行').index, 1);
+      final material = find.ancestor(of: find.text('第二行'), matching: find.byType(Material)).first;
+      final shape = tester.widget<Material>(material).shape! as RoundedSuperellipseBorder;
+      expect(shape.borderRadius.resolve(TextDirection.ltr).bottomLeft.x, greaterThan(0));
+      final firstBottom = tester.getBottomLeft(find.widgetWithText(ListTile, '第一行')).dy;
+      final secondTop = tester.getTopLeft(find.widgetWithText(ListTile, '第二行')).dy;
+      expect(secondTop - firstBottom, mode == SegmentedCardMode.segmented ? 3 : 0);
+      for (final item in tester.widgetList<SegmentedCardItem>(find.byType(SegmentedCardItem))) {
+        if (item.gap == 0) {
+          expect(tester.getSize(find.byWidget(item)).height, 0);
+        }
+      }
+      data.update('extra', true);
+      await tester.pumpAndSettle();
+      expect(row('首项').index, 0);
+      expect(row('另一尾项').index, 5);
+      expect(row('另一尾项').count, 6);
+      data.update('extra', false);
+      await tester.pumpAndSettle();
+      expect(row('第二行').index, 1);
+      expect(row('第二行').count, 2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('全部条目隐藏时显示空态，保留订阅并能恢复单行完整圆角', (tester) async {
+    await show(tester, '''ListPage(emptyTitle: "没有可见项目", items: [
+      switch data.visible {true: ListItem(title: "可见项目"), default: SizedBoxShrink()}
+    ])''');
+    await tester.pumpAndSettle();
+    expect(find.text('没有可见项目'), findsOneWidget);
+    data.update('visible', true);
+    await tester.pumpAndSettle();
+    expect(find.text('没有可见项目'), findsNothing);
+    final row = tester.widget<SegmentedCardItem>(find.byType(SegmentedCardItem));
+    expect((row.index, row.count), (0, 1));
+    data.update('visible', false);
+    await tester.pumpAndSettle();
+    expect(find.text('没有可见项目'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('长列表保持懒加载，到达尾部才排除隐藏尾项', (tester) async {
+    data.update('rows', [for (var i = 0; i < 120; i++) '项目 $i']);
+    await show(tester, '''ListPage(items: [
+      ...for row in data.rows: SizedBox(height: 64.0, child: Label(text: row)),
+      SizedBoxShrink(), SizedBoxShrink()
+    ])''');
+    await tester.pumpAndSettle();
+    expect(find.text('项目 119'), findsNothing);
+    expect(find.byType(SegmentedCardItem).evaluate().length, lessThan(30));
+    await tester.scrollUntilVisible(find.text('项目 119'), 700);
+    await tester.pumpAndSettle();
+    final last = tester.widget<SegmentedCardItem>(find.ancestor(
+      of: find.text('项目 119'), matching: find.byType(SegmentedCardItem),
+    ).first);
+    expect((last.index, last.count), (119, 120));
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('时间线首次定位、历史追加和新消息保留阅读位置，主动操作回到最新', (tester) async {
     tester.view.physicalSize = const Size(390, 844);

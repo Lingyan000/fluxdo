@@ -206,11 +206,12 @@ void main() {
     Brightness brightness = Brightness.light,
     double scale = 1,
     bool reducedMotion = false,
+    SegmentedCardMode? cardMode,
     Widget? barActions,
     _FixtureCodeStore? pluginStore,
   }) {
     const seed = Colors.indigo;
-    final theme = buildAppTheme(
+    final baseTheme = buildAppTheme(
       ColorScheme.fromSeed(seedColor: seed, brightness: brightness),
       AppColors.material(brightness),
       UiShapes.standard,
@@ -218,6 +219,10 @@ void main() {
       fullscreenSwipeBack: false,
       pageBackground: false,
     );
+    final theme = cardMode == null ? baseTheme : baseTheme.copyWith(extensions: [
+      ...baseTheme.extensions.values.where((value) => value is! SegmentedCardStyle),
+      SegmentedCardStyle(mode: cardMode),
+    ]);
     return ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
@@ -1703,6 +1708,44 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
     ],
   };
   for (final brightness in Brightness.values) {
+    testWidgets('我的士多未登录与登录后分组末项圆角 ${brightness.name}', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final runtime = Runtime()
+        ..update(metaverseWidgetLibraryName, createMetaverseWidgetLibrary(loadImage: (_) async => Uint8List(0)))
+        ..update(metaversePluginLibraryName, parseLibraryFile(File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync().replaceAll('\r\n', '\n')));
+      addTearDown(runtime.dispose);
+      final content = DynamicContent({...data, 'authorized': false});
+      await tester.pumpWidget(app(RemoteWidget(runtime: runtime,
+        widget: const FullyQualifiedWidgetName(metaversePluginLibraryName, 'Account'), data: content),
+        title: '我的士多', brightness: brightness, cardMode: SegmentedCardMode.outlined));
+      await tester.pumpAndSettle();
+      void expectLast(String label) {
+        final row = tester.widget<SegmentedCardItem>(find.ancestor(
+          of: find.text(label), matching: find.byType(SegmentedCardItem),
+        ).first);
+        expect(row.index, row.count - 1);
+        final material = find.ancestor(of: find.text(label), matching: find.byType(Material)).first;
+        final shape = tester.widget<Material>(material).shape! as RoundedSuperellipseBorder;
+        final radius = shape.borderRadius.resolve(TextDirection.ltr);
+        expect(radius.bottomLeft.x, greaterThan(0));
+        expect(radius.bottomRight.x, greaterThan(0));
+      }
+      expectLast('士多消息');
+      await snapshot(tester, 'account-outlined-${brightness.name}');
+      content.updateAll({'authorized': true, 'spendingSummary': '累计 12.50 LDC'});
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('消费记录'));
+      await tester.pumpAndSettle();
+      expectLast('消费记录');
+      content.update('authorized', false);
+      await tester.pumpAndSettle();
+      expectLast('士多消息');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('商城头像与订单补图、商户封面和评论头像 ${brightness.name}', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
