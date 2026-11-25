@@ -55,8 +55,15 @@ jobs:
       - run: dart tool/plugin_tools/create_mobile_smoke.dart
       - name: Run iOS simulator smoke
         run: |
+          set -o pipefail
           device=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"].values.flatten.find{|d|d["name"].start_with?("iPhone")};abort "No simulator" unless d;puts d["udid"]')
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
           cd build/plugin-mobile-smoke
-          flutter test integration_test/runtime_test.dart -d "$device"
+          flutter test --verbose --reporter expanded integration_test/runtime_test.dart -d "$device" 2>&1 | tee ios-smoke.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: plugin-ios-smoke
+          path: build/plugin-mobile-smoke/ios-smoke.log
+          if-no-files-found: ignore

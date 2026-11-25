@@ -21,6 +21,7 @@ Future<void> main() async {
       '${root.path.replaceAll(Platform.pathSeparator, '/')}/$relative';
   await File('${target.path}/pubspec.yaml').writeAsString('''
 name: plugin_mobile_smoke
+version: 1.0.0+1
 publish_to: none
 environment:
   sdk: ^3.14.0
