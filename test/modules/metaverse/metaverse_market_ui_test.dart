@@ -74,6 +74,28 @@ class _Catalog extends MetaverseMarketController {
 class _Updates extends MetaverseUpdatesController {
   @override
   Future<MetaverseUpdateState> build() async => const MetaverseUpdateState();
+  @override
+  Future<void> setPreview(bool value) async {
+    state = AsyncData(MetaverseUpdateState(preview: value));
+  }
+}
+
+class _ChannelCatalog extends _Catalog {
+  @override
+  MetaverseMarketState build() {
+    final market = super.build();
+    final base = market.entries.first;
+    return MetaverseMarketState(sources: market.sources, entries: [
+      base,
+      MetaverseMarketEntry.parse({
+        'id': base.id, 'name': base.name, 'version': '2.0.0',
+        'channel': 'preview', 'apiVersion': 1, 'summary': base.summary,
+        'author': base.author, 'repository': base.repository,
+        'packageUrl': base.packageUrl, 'sha256': base.sha256,
+      }, base.source),
+      market.entries.last,
+    ]);
+  }
 }
 
 class _Plugins extends MetaversePluginsController {
@@ -104,7 +126,7 @@ void main() {
         .load();
   });
   final capture = GlobalKey();
-  Widget app({bool dark = false, double scale = 1, Widget? page}) {
+  Widget app({bool dark = false, double scale = 1, Widget? page, bool channels = false}) {
     final brightness = dark ? Brightness.dark : Brightness.light;
     final theme = buildAppTheme(
       ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: brightness),
@@ -117,7 +139,7 @@ void main() {
     return ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(preferences),
-        metaverseMarketProvider.overrideWith(_Catalog.new),
+        metaverseMarketProvider.overrideWith(channels ? _ChannelCatalog.new : _Catalog.new),
         metaverseUpdatesProvider.overrideWith(_Updates.new),
         metaversePluginsProvider.overrideWith(_Plugins.new),
       ],
@@ -176,6 +198,24 @@ void main() {
           .writeAsBytes(bytes!.buffer.asUint8List());
     });
   }
+
+  testWidgets('同源正式版和测试版并存，关闭测试渠道仍展示正式版', (tester) async {
+    await tester.pumpWidget(app(channels: true));
+    await tester.pumpAndSettle();
+    expect(find.text('LD士多'), findsOneWidget);
+    expect(find.text('FluxDO 社区 · 1.0.0'), findsNWidgets(2));
+    expect(find.text('FluxDO 社区 · 2.0.0'), findsNothing);
+    final container = ProviderScope.containerOf(tester.element(find.byType(MetaverseMarketPage)));
+    await container.read(metaverseUpdatesProvider.notifier).setPreview(true);
+    await tester.pumpAndSettle();
+    expect(find.text('LD士多'), findsOneWidget);
+    expect(find.text('FluxDO 社区 · 2.0.0'), findsOneWidget);
+    await container.read(metaverseUpdatesProvider.notifier).setPreview(false);
+    await tester.pumpAndSettle();
+    expect(find.text('LD士多'), findsOneWidget);
+    expect(find.text('FluxDO 社区 · 1.0.0'), findsNWidgets(2));
+    expect(find.text('FluxDO 社区 · 2.0.0'), findsNothing);
+  });
 
   for (final dark in [false, true]) {
     for (final scale in [1.0, 1.4]) {
