@@ -624,6 +624,7 @@ class _PluginPageLayout extends StatefulWidget {
     this.loadingMore = false,
     this.loadMoreError = '',
     this.body,
+    this.onFooterVisibility,
   });
   final List<Widget> children;
   final Widget? toolbar;
@@ -639,6 +640,7 @@ class _PluginPageLayout extends StatefulWidget {
   final bool loadingMore;
   final String loadMoreError;
   final Widget? body;
+  final ValueChanged<bool>? onFooterVisibility;
   @override
   State<_PluginPageLayout> createState() => _PluginPageLayoutState();
 }
@@ -792,6 +794,7 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
             PageBackdrop(
               child: _PluginOptionalPadding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
+                onVisibility: widget.onFooterVisibility,
                 child: Center(heightFactor: 1, child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 928),
                   child: SizedBox(width: double.infinity, child: widget.footer),
@@ -806,19 +809,23 @@ class _PluginPageLayoutState extends State<_PluginPageLayout> {
 
 /// 声明式插槽可能在运行时变成空组件，不能为它保留操作栏或标题间距。
 class _PluginOptionalPadding extends SingleChildRenderObjectWidget {
-  const _PluginOptionalPadding({required this.padding, super.child});
+  const _PluginOptionalPadding({required this.padding, this.onVisibility, super.child});
   final EdgeInsets padding;
+  final ValueChanged<bool>? onVisibility;
   @override
-  RenderObject createRenderObject(BuildContext context) => _OptionalPaddingRender(padding);
+  RenderObject createRenderObject(BuildContext context) => _OptionalPaddingRender(padding, onVisibility);
   @override
   void updateRenderObject(BuildContext context, _OptionalPaddingRender renderObject) {
     renderObject.padding = padding;
+    renderObject.onVisibility = onVisibility;
   }
 }
 
 class _OptionalPaddingRender extends RenderShiftedBox {
-  _OptionalPaddingRender(this._padding) : super(null);
+  _OptionalPaddingRender(this._padding, this.onVisibility) : super(null);
   EdgeInsets _padding;
+  ValueChanged<bool>? onVisibility;
+  bool? _lastVisible;
   set padding(EdgeInsets value) {
     if (_padding == value) return;
     _padding = value;
@@ -835,6 +842,13 @@ class _OptionalPaddingRender extends RenderShiftedBox {
   void performLayout() {
     child?.layout(constraints.deflate(_padding), parentUsesSize: true);
     size = _size(constraints, child?.size ?? Size.zero);
+    final visible = size.height > 0;
+    if (_lastVisible != visible) {
+      _lastVisible = visible;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (attached && _lastVisible == visible) onVisibility?.call(visible);
+      });
+    }
     if (child != null) {
       (child!.parentData! as BoxParentData).offset = Offset(_padding.left, _padding.top);
     }

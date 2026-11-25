@@ -45,6 +45,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
   bool _requested = false;
   int _generation = 0;
   double _bottomPadding = 16;
+  bool _footerVisible = false;
 
   @override
   void initState() {
@@ -56,9 +57,15 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _updatePadding();
+  }
+
+  void _updatePadding() {
     final padding =
         16 +
-        (widget.footer == null ? MediaQuery.paddingOf(context).bottom : 0.0);
+        (_footerVisible && widget.footer != null
+            ? 0.0
+            : MediaQuery.paddingOf(context).bottom);
     if (_bottomPadding == padding) return;
     _bottomPadding = padding;
     if (!_scroll.hasClients || _scroll.position.extentBefore <= 80) {
@@ -123,9 +130,7 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
   void didUpdateWidget(_PluginTimelinePage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final identityChanged = oldWidget.identity != widget.identity;
-    _bottomPadding =
-        16 +
-        (widget.footer == null ? MediaQuery.paddingOf(context).bottom : 0.0);
+    _updatePadding();
     if (identityChanged || widget.items.isEmpty) _away = false;
     final keysChanged =
         oldWidget.itemKeys.length != widget.itemKeys.length ||
@@ -205,6 +210,13 @@ class _PluginTimelinePageState extends State<_PluginTimelinePage> {
             )
           : widget.header,
       footer: widget.footer,
+      onFooterVisibility: (visible) {
+        if (!mounted || _footerVisible == visible) return;
+        setState(() {
+          _footerVisible = visible;
+          _updatePadding();
+        });
+      },
       body: Stack(
         children: [
           Positioned.fill(

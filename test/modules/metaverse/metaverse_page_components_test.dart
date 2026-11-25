@@ -172,6 +172,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('时间线条件隐藏底栏时仍为手势区留白，显示底栏不重复留白', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 34);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    await show(tester, '''TimelinePage(identity: "one", itemKeys: ["1"],
+      items: [SizedBox(height: 60.0, child: Label(text: "记录"))],
+      footer: switch data.footer {true: Button(label: "发送"), default: SizedBoxShrink()})''');
+    await tester.pumpAndSettle();
+    final scroll = tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!;
+    expect(scroll.position.minScrollExtent, -50);
+    expect(scroll.offset, -50);
+    expect(tester.getRect(find.text('记录')).bottom, lessThanOrEqualTo(794));
+    data.update('footer', true);
+    await tester.pumpAndSettle();
+    expect(scroll.position.minScrollExtent, -16);
+    expect(scroll.offset, -16);
+    expect(tester.getRect(find.widgetWithText(FilledButton, '发送')).bottom, lessThanOrEqualTo(810));
+    data.update('footer', false);
+    await tester.pumpAndSettle();
+    expect(scroll.offset, -50);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('表单校验必填、回传原生字段并在加载时禁用', (tester) async {
     data.update('fields', [
       {'name': 'title', 'label': '标题', 'required': true},
