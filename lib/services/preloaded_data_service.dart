@@ -56,7 +56,7 @@ class PreloadedDataService {
     : _dio = DiscourseDio.create(
         defaultHeaders: {
           'Accept':
-              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
       );
@@ -600,7 +600,6 @@ class PreloadedDataService {
       final response = await _dio.get(
         AppConstants.baseUrl,
         options: Options(
-          headers: {'Accept': 'text/html'},
           extra: {
             if (AppConstants.skipCsrfForHomeRequest) 'skipCsrf': true,
             // 诊断标注:首页 HTML 是 CF 盾高发路径,日志里需可辨识

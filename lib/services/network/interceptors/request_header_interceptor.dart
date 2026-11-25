@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../constants.dart';
 import '../../log/log_writer.dart';
 import '../../user_presence_service.dart';
+import '../adapters/webview_http_adapter.dart';
 import '../cookie/csrf_token_service.dart';
 import '../flux_request_spec.dart';
 import '../health/network_health_controller.dart';
@@ -110,6 +111,15 @@ class RequestHeaderInterceptor extends Interceptor {
       } else {
         options.headers.remove('Discourse-Present');
       }
+    } else if (options.extra[WebViewHttpAdapter.resourceKindExtraKey] ==
+        WebViewHttpAdapter.resourceKindHtml) {
+      // 主站 HTML 导航请求（如首页预加载）：补齐浏览器顶级导航头，
+      // 避免携带 Chrome UA + Sec-CH-UA 却缺失 Sec-Fetch-* 导航特征。
+      options.headers.putIfAbsent('Sec-Fetch-Dest', () => 'document');
+      options.headers.putIfAbsent('Sec-Fetch-Mode', () => 'navigate');
+      options.headers.putIfAbsent('Sec-Fetch-Site', () => 'none');
+      options.headers.putIfAbsent('Sec-Fetch-User', () => '?1');
+      options.headers.putIfAbsent('Upgrade-Insecure-Requests', () => '1');
     }
 
     handler.next(options);
