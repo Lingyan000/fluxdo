@@ -109,6 +109,8 @@
   "webviewAdapter_enabledDesc": "主站 API、主站圖片及信任等級查詢透過瀏覽器傳送",
   "webviewAdapter_hint": "信任等級查詢的登入重新導向全程使用瀏覽器。訊息推播、其他網域及不支援的請求仍使用網路核心或備援通道。",
   "webviewAdapter_title": "WebView 網路引擎",
+  "webviewAdapter_autoFallbackTitle": "驗證無效時自動切換相容模式",
+  "webviewAdapter_autoFallbackDesc": "安全驗證完成但原生網路仍被攔截時，自動在本次工作階段切換到 WebView 相容模式",
   "fingerprintPreset_title": "指紋範本",
   "fingerprintPreset_auto": "自動",
   "fingerprintPreset_autoDescription": "優先使用目前裝置的瀏覽器取樣，取樣完成前使用相符的預設範本。",

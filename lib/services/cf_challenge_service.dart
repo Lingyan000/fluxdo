@@ -363,18 +363,28 @@ class CfChallengeService {
     CfChallengeLogger.logCooldown(entering: true, until: _cooldownUntil);
   }
 
-  static void showGlobalMessage(String message, {bool isError = true}) {
+  static void showGlobalMessage(
+    String message, {
+    bool isError = true,
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+    bool bypassCooldown = false,
+  }) {
     final now = DateTime.now();
-    if (_lastToastAt != null &&
+    if (!bypassCooldown &&
+        _lastToastAt != null &&
         now.difference(_lastToastAt!) < _toastCooldown) {
       return;
     }
     _lastToastAt = now;
-    if (isError) {
-      ToastService.showError(message);
-    } else {
-      ToastService.showInfo(message);
-    }
+    ToastService.show(
+      message,
+      type: isError ? ToastType.error : ToastType.info,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
   }
 
   /// 原生链路在完成验证后仍被 CF 拒绝时，询问用户是否仅在本次会话

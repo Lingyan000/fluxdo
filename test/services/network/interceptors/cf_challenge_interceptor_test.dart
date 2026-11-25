@@ -393,6 +393,64 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('开启自动切换开关后，验证无效时免弹窗自动切换并弹出带关闭操作的提示', (tester) async {
+    await mount(tester);
+    final webViewSettings = WebViewAdapterSettingsService.instance;
+    webViewSettings.resetForTest();
+    await webViewSettings.initialize(prefs);
+    expect(webViewSettings.autoFallbackEnabled, isFalse);
+    await webViewSettings.setAutoFallbackEnabled(true);
+    addTearDown(() async {
+      await webViewSettings.setAutoFallbackEnabled(false);
+      webViewSettings.resetForTest();
+    });
+
+    // 第 1 次原始请求 403 CF，第 2 次原生重试仍 403 CF，第 3 次自动切换兼容模式后 200
+    final adapter = _ChallengeAdapter([challenged, ok]);
+    final dio = client(adapter);
+
+    Response<dynamic>? result;
+    var completed = false;
+    final request = dio
+        .get<dynamic>(
+          '/latest.json',
+          options: Options(headers: {'Accept': 'application/json'}),
+        )
+        .then<void>((response) {
+          result = response;
+          completed = true;
+        });
+
+    await openVerification(tester);
+    finishVerification();
+    for (var i = 0; i < 30 && !completed; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(completed, isTrue);
+    await request;
+    expect(result?.statusCode, 200);
+    expect(adapter.requests, 3);
+    expect(webViewSettings.sessionFallbackEnabled, isTrue);
+    expect(find.text(S.current.cf_sessionCompatTitle), findsNothing);
+    // 等待顶部灵动胶囊展开动画完成，按钮进入可点击区域
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(find.text(S.current.cf_sessionCompatAutoEnabled), findsOneWidget);
+    expect(find.text(S.current.cf_sessionCompatCloseAction), findsOneWidget);
+
+    // 点击提示中的关闭按钮：立即退出临时兼容模式并暂停本会话再次自动切换
+    await tester.tap(find.text(S.current.cf_sessionCompatCloseAction));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 650));
+
+    expect(webViewSettings.sessionFallbackEnabled, isFalse);
+    expect(webViewSettings.canAutoFallbackThisSession, isFalse);
+    expect(find.text(S.current.cf_sessionCompatDisabled), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
 
 class _ChallengeAdapter implements HttpClientAdapter {
