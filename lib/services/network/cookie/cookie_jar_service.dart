@@ -31,6 +31,12 @@ class CookieJarService {
   CookieJar? _cookieJar;
   bool _initialized = false;
   late final PlatformCookieStrategy _strategy;
+  RawCookieWriter _rawWriter = RawCookieWriter.instance;
+
+  @visibleForTesting
+  void setRawCookieWriterForTesting(RawCookieWriter? writer) {
+    _rawWriter = writer ?? RawCookieWriter.instance;
+  }
 
   /// Discourse 论坛登录 session(仅 _t / _forum_session)。
   /// 这些是 Discourse 内核约定的 cookie 名,
@@ -606,14 +612,18 @@ class CookieJarService {
       await SessionCookieSentinel.instance.drain();
 
       // 直接清理平台存储也必须使在途快照失效。
-      RawCookieWriter.instance.invalidateReads();
+      _rawWriter.invalidateReads();
       try {
         await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
         for (final name in authCookieNames) {
-          await _deleteWebViewCookieVariants(name, knownHosts);
+          await _deleteWebViewCookieVariants(
+            name,
+            knownHosts,
+            baseHost: baseHost,
+          );
         }
       } finally {
-        RawCookieWriter.instance.invalidateReads();
+        _rawWriter.invalidateReads();
       }
 
       CookieLogger.delete(name: '*', source: 'clearAll');
@@ -623,15 +633,20 @@ class CookieJarService {
   }
 
   /// 从 WebView cookie store 删除指定名称的 cookie。
-  /// 同时尝试 host-only / host / .host 三种变体，避免不同 WebView
-  /// cookie store 的 domain 形态不一致导致残留。
+  ///
+  /// 优先通过 [RawCookieWriter.nukeAllVariants] 清理：
+  /// - Android 会覆盖 `Secure` / `SameSite=None` / `Partitioned` 等属性变体并
+  ///   多轮 `flush()`，避免插件 `deleteCookie` 删不掉 `cf_clearance`；
+  /// - iOS / macOS 枚举真实 `WKHTTPCookieStore` 对象并同步清理
+  ///   `HTTPCookieStorage.shared`；
+  /// - Windows / Linux 先按真实 cookie 精确删，再兜底穷举候选域/路径。
   Future<void> deleteWebViewCookie(String name) async {
     if (!_initialized) await initialize();
 
     try {
       final baseHost = Uri.parse(AppConstants.baseUrl).host;
       final hosts = await getKnownHostsForDomain(baseHost);
-      await _deleteWebViewCookieVariants(name, hosts);
+      await _deleteWebViewCookieVariants(name, hosts, baseHost: baseHost);
     } catch (e) {
       debugPrint('[CookieJar] Failed to delete WebView cookie $name: $e');
     }
@@ -639,14 +654,45 @@ class CookieJarService {
 
   Future<void> _deleteWebViewCookieVariants(
     String name,
-    Set<String> hosts,
-  ) async {
-    for (final host in hosts) {
-      final url = WebUri('https://$host');
-      for (final domain in <String?>{null, host, '.$host'}) {
+    Set<String> hosts, {
+    String? baseHost,
+  }) async {
+    final effectiveBaseHost =
+        (baseHost ?? Uri.parse(AppConstants.baseUrl).host).toLowerCase();
+    final useRawWriter = _rawWriter.isSupported;
+    for (final rawHost in hosts) {
+      final host = rawHost.toLowerCase();
+      final url = 'https://$host';
+      final domainCandidates = <String?>{
+        null,
+        host,
+        '.$host',
+        if (effectiveBaseHost.isNotEmpty && effectiveBaseHost != host) ...[
+          effectiveBaseHost,
+          '.$effectiveBaseHost',
+        ],
+      };
+      if (useRawWriter) {
+        try {
+          await _rawWriter.nukeAllVariants(
+            url: url,
+            name: name,
+            domainCandidates: domainCandidates.toList(growable: false),
+            pathCandidates: const ['/'],
+          );
+          continue;
+        } catch (e) {
+          debugPrint(
+            '[CookieJar] RawCookieWriter.nukeAllVariants failed for '
+            '$name @ $host, fallback to CookieManager.deleteCookie: $e',
+          );
+        }
+      }
+      final webUri = WebUri(url);
+      for (final domain in domainCandidates) {
         try {
           await webViewCookieManager.deleteCookie(
-            url: url,
+            url: webUri,
             name: name,
             domain: domain,
             path: '/',
