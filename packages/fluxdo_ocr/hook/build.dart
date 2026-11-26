@@ -82,7 +82,21 @@ Future<void> main(List<String> args) => build(args, (input, output) async {
     library = input.outputDirectory.resolve(
       os == OS.iOS ? 'libTensorFlowLiteC.a' : member.split('/').last,
     );
-    _extract(files, member, library);
+    if (os == OS.macOS) {
+      // macOS xcframework 分发的是 arm64+x86_64 通用二进制，hooks 校验要求按目标架构拆成单架构 Mach-O。
+      final universal = input.outputDirectory.resolve(
+        'libCLiteRT_mac.universal.dylib',
+      );
+      _extract(files, member, universal);
+      try {
+        await _thinMachO(universal, library, arch);
+      } finally {
+        final f = File.fromUri(universal);
+        if (await f.exists()) await f.delete();
+      }
+    } else {
+      _extract(files, member, library);
+    }
   } finally {
     zip.closeSync();
   }
@@ -114,6 +128,33 @@ String _androidAbi(Architecture arch) => switch (arch) {
   Architecture.x64 => 'x86_64',
   _ => throw UnsupportedError('LiteRT $_version 没有 Android $arch 的官方 CPU 库'),
 };
+
+Future<void> _thinMachO(
+  Uri universal,
+  Uri destination,
+  Architecture arch,
+) async {
+  final slice = switch (arch) {
+    Architecture.arm64 => 'arm64',
+    Architecture.x64 => 'x86_64',
+    _ => throw UnsupportedError('LiteRT $_version 没有 macOS $arch 的官方 CPU 库'),
+  };
+  final result = await Process.run('lipo', [
+    '-thin',
+    slice,
+    universal.toFilePath(),
+    '-output',
+    destination.toFilePath(),
+  ]);
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      'lipo',
+      ['-thin', slice, universal.toFilePath(), '-output', destination.toFilePath()],
+      '${result.stderr}',
+      result.exitCode,
+    );
+  }
+}
 
 void _extract(Archive files, String member, Uri destination) {
   final file = files.findFile(member);

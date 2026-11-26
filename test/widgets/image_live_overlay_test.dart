@@ -26,6 +26,29 @@ class _ReadyModelStore extends Fake implements OcrModelStore {
       (detector: 'det', recognizer: 'rec', config: 'cfg');
 }
 
+class _FailingDownloadModelStore extends Fake implements OcrModelStore {
+  int downloadAttempts = 0;
+
+  @override
+  Future<bool> isReady() async => false;
+
+  @override
+  Future<void> download({
+    required CancelToken cancelToken,
+    required void Function(double) onProgress,
+  }) async {
+    downloadAttempts++;
+    throw DioException.badResponse(
+      statusCode: 302,
+      requestOptions: RequestOptions(path: 'https://modelscope.cn/det.tflite'),
+      response: Response<void>(
+        statusCode: 302,
+        requestOptions: RequestOptions(path: 'https://modelscope.cn/det.tflite'),
+      ),
+    );
+  }
+}
+
 class _StubOcrService extends Fake implements LocalOcrService {
   _StubOcrService(this.ocrResult);
   final OcrResult ocrResult;
@@ -502,5 +525,63 @@ void main() {
     for (final c in controllers) {
       c.dispose();
     }
+  });
+
+  testWidgets('模型下载失败时展示错误与查看详情/重试按钮，不被下载提示覆盖', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(480, 400);
+    addTearDown(tester.view.reset);
+
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 200, height: 200)),
+    );
+    final failingStore = _FailingDownloadModelStore();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final chromeVisible = ValueNotifier(true);
+    final gestureController = ImageGestureController();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          ocrModelStoreProvider.overrideWithValue(failingStore),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: Scaffold(
+              body: ImageLiveOverlay(
+                sourceKey: 'download-fail',
+                mode: ImageLiveOverlayMode.liveText,
+                loadImage: (_) async => png,
+                gestureController: gestureController,
+                chromeVisible: chromeVisible,
+                onClose: () {},
+                onModeChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(failingStore.downloadAttempts, 1);
+    expect(find.text('模型下载或校验失败，请重试'), findsOneWidget);
+    expect(find.text('查看详情'), findsOneWidget);
+    expect(find.text('重试'), findsOneWidget);
+
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(failingStore.downloadAttempts, 2);
+    expect(tester.takeException(), isNull);
+
+    chromeVisible.dispose();
+    gestureController.dispose();
   });
 }

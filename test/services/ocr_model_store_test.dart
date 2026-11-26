@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/network/interceptors/redirect_interceptor.dart';
 import 'package:fluxdo/services/ocr/ocr_model_store.dart';
 import 'package:path/path.dart' as p;
 
@@ -292,5 +293,90 @@ void main() {
     await expectLater(download(), throwsA(isA<HttpException>()));
     expect(adapter.requests, hasLength(1));
     expect(await local('rec.tflite.part').readAsBytes(), model.sublist(0, 2));
+  });
+
+  test('适配器返回 302 重定向（NetCoreHttpAdapter 路径）时自动跟随并保留 206 续传', () async {
+    await local('rec.tflite.part').writeAsBytes(model.sublist(0, 2));
+    adapter.respond = (request, _) {
+      // 模拟魔搭 LFS CDN：拒绝空 User-Agent（403）
+      final ua = request.headers[HttpHeaders.userAgentHeader]?.toString() ?? '';
+      if (ua.isEmpty) {
+        return ResponseBody.fromString('denied by UA ACL', 403);
+      }
+      if (request.uri.host == 'modelscope.cn') {
+        final name = request.uri.pathSegments.last;
+        return ResponseBody.fromString(
+          'redirect',
+          302,
+          headers: {
+            HttpHeaders.locationHeader: [
+              'https://cdn-lfs-cn-1.modelscope.cn/objects/$name',
+            ],
+          },
+        );
+      }
+      if (request.uri.path.endsWith('rec.tflite')) {
+        expect(request.headers[HttpHeaders.rangeHeader], 'bytes=2-');
+        return ResponseBody.fromBytes(
+          model.sublist(2),
+          206,
+          headers: {
+            HttpHeaders.contentRangeHeader: [
+              'bytes 2-${model.length - 1}/${model.length}',
+            ],
+          },
+        );
+      }
+      return ResponseBody.fromBytes(config, 200);
+    };
+    await download();
+    expect(await store.isReady(), isTrue);
+    expect(
+      adapter.requests.map((r) => r.uri.host),
+      [
+        'modelscope.cn',
+        'cdn-lfs-cn-1.modelscope.cn',
+        'modelscope.cn',
+        'cdn-lfs-cn-1.modelscope.cn',
+      ],
+    );
+  });
+
+  test('挂接 RedirectInterceptor 时也能正确跟随 302 下载流式模型', () async {
+    store.dispose();
+    final dio = Dio(BaseOptions(followRedirects: false))
+      ..httpClientAdapter = adapter;
+    dio.interceptors.add(RedirectInterceptor(dio));
+    store = OcrModelStore(
+      dio: dio,
+      directory: () async => directory,
+      bundles: [bundle],
+    );
+    adapter.respond = (request, _) {
+      // 模拟魔搭 LFS CDN：拒绝空 User-Agent（403）
+      final ua = request.headers[HttpHeaders.userAgentHeader]?.toString() ?? '';
+      if (ua.isEmpty) {
+        return ResponseBody.fromString('denied by UA ACL', 403);
+      }
+      if (request.uri.host == 'modelscope.cn') {
+        final name = request.uri.pathSegments.last;
+        return ResponseBody.fromString(
+          'redirect',
+          302,
+          headers: {
+            HttpHeaders.locationHeader: [
+              'https://cdn-lfs-cn-1.modelscope.cn/objects/$name',
+            ],
+          },
+        );
+      }
+      return direct(request);
+    };
+    await download();
+    expect(await store.isReady(), isTrue);
+    expect(
+      adapter.requests.where((r) => r.uri.host == 'cdn-lfs-cn-1.modelscope.cn'),
+      hasLength(2),
+    );
   });
 }

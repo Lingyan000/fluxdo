@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../constants.dart';
 import '../app_logger.dart';
 import '../network/flux_request_spec.dart';
 import '../translation_service.dart';
@@ -425,30 +426,63 @@ class OcrModelStore {
     if (offset >= size) offset = 0;
 
     // 只在同一发布文件内续传。主源散文件和备用源 tar 有各自的断点。
+    const redirectStatuses = {301, 302, 303, 307, 308};
+    var currentUrl = url;
+    var redirects = 0;
     for (;;) {
       token.throwIfCancellationRequested();
       final response = await _dio.get<ResponseBody>(
-        url,
+        currentUrl,
         cancelToken: token,
         options: Options(
           responseType: ResponseType.stream,
           headers: {
+            HttpHeaders.userAgentHeader: AppConstants.userAgent,
             HttpHeaders.acceptEncodingHeader: 'identity',
             if (offset > 0) HttpHeaders.rangeHeader: 'bytes=$offset-',
           },
-          validateStatus: (code) => code == 200 || code == 206 || code == 416,
+          // 必须放行 3xx，否则 Dio 会在 RedirectInterceptor.onResponse 之前直接抛 badResponse。
+          validateStatus: (code) =>
+              code == 200 ||
+              code == 206 ||
+              code == 416 ||
+              redirectStatuses.contains(code),
           receiveTimeout: const Duration(seconds: 15),
           extra: {FluxRequestKeys.callTimeoutMillis: 120000},
         ),
       );
       final body = response.data!;
+      final status = response.statusCode;
+      if (redirectStatuses.contains(status)) {
+        await body.stream
+            .listen((_) {}, onError: (Object _, StackTrace _) {})
+            .cancel();
+        final location = response.headers.value(HttpHeaders.locationHeader);
+        if (location == null || location.isEmpty) {
+          throw const HttpException('OCR 下载重定向缺少目标地址');
+        }
+        redirects++;
+        if (redirects > 10) {
+          throw const HttpException('OCR 下载重定向次数过多');
+        }
+        final target = Uri.parse(currentUrl).resolve(location);
+        if (target.scheme != 'https' ||
+            target.host.isEmpty ||
+            target.userInfo.isNotEmpty) {
+          throw const FormatException('OCR 下载重定向地址无效');
+        }
+        currentUrl = target.toString();
+        continue;
+      }
       final range = response.headers.value(HttpHeaders.contentRangeHeader);
-      final partial = response.statusCode == 206;
-      if (response.statusCode == 416 ||
+      final partial = status == 206;
+      if (status == 416 ||
           (partial && range != 'bytes $offset-${size - 1}/$size')) {
         await body.stream.listen((_) {}).cancel();
         if (offset == 0) throw const FormatException('OCR 下载范围无效');
         offset = 0;
+        currentUrl = url;
+        redirects = 0;
         continue;
       }
       var received = partial ? offset : 0;
@@ -480,6 +514,8 @@ class OcrModelStore {
       await part.delete();
       if (offset > 0) {
         offset = 0;
+        currentUrl = url;
+        redirects = 0;
         continue;
       }
       throw const FormatException('OCR 模型校验失败');

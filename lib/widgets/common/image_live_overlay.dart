@@ -1344,35 +1344,6 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
       );
     }
 
-    if (_needsDownload) {
-      return _FrostedMediaPill(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-              ),
-              const SizedBox(width: 6),
-              _DockTextAction(
-                label: l10n.common_confirm,
-                emphasize: true,
-                onTap: () => _startFlow(download: true),
-              ),
-              _DockIconAction(
-                icon: Symbols.close_rounded,
-                tooltip: l10n.common_close,
-                onTap: widget.onClose,
-                compact: true,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     if (_errorTitle != null) {
       return _FrostedMediaPill(
         child: Padding(
@@ -1402,6 +1373,35 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                 label: l10n.common_retry,
                 emphasize: true,
                 onTap: () => _startFlow(download: _needsDownload),
+              ),
+              _DockIconAction(
+                icon: Symbols.close_rounded,
+                tooltip: l10n.common_close,
+                onTap: widget.onClose,
+                compact: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_needsDownload) {
+      return _FrostedMediaPill(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+              const SizedBox(width: 6),
+              _DockTextAction(
+                label: l10n.common_confirm,
+                emphasize: true,
+                onTap: () => _startFlow(download: true),
               ),
               _DockIconAction(
                 icon: Symbols.close_rounded,
