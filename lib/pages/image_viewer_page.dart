@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
@@ -345,6 +346,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   final Map<int, int> _pageRotations = {};
   final Map<int, Size> _pageNaturalSizes = {};
   final _naturalSizeNotifier = ValueNotifier<Size?>(null);
+  final Set<int> _desktopActivePointers = {};
+  int? _desktopBackdropPointer;
+  Offset? _desktopBackdropDownGlobal;
   int _liveOverlayPage = 0;
   Offset? _liveOverlayTap;
   VoidCallback? _liveOverlayTapMissed;
@@ -1014,42 +1018,104 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
-  void _handleDesktopCanvasTapUp(TapUpDetails details) {
-    if (_liveOverlayKey.currentState?.clearSelectionIfAny() ?? false) return;
-    if (_liveOverlayMode.value != null) return;
-    final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
-    if (canvasRo is! RenderBox || !canvasRo.hasSize) {
-      Navigator.of(context).pop();
-      return;
-    }
-    final local = canvasRo.globalToLocal(details.globalPosition);
-    final canvasSize = canvasRo.size;
+  /// 计算当前图片在 `_desktopCanvasKey` 局部坐标系中的实际渲染矩形。
+  ///
+  /// 注意：`RenderRawGestureImage` 的 `destinationRect` 与 `layoutRect` 均处于其
+  /// 所在 `RepaintBoundary` 坐标系（桌面端顶栏在画布上方时 `layoutRect.topLeft`
+  /// 可能非零），必须平移 `-layoutRect.topLeft` 才能与画布局部坐标对齐。
+  Rect? _desktopRenderedImageRect(Size canvasSize) {
     final ctrlDetails = _activeGestureController?.details;
     final turns = _rotationForPage(_activePageIndex);
-
-    Rect? renderedRect;
-    if (turns == 0) {
-      renderedRect = ctrlDetails?.destinationRect ?? ctrlDetails?.rawDestinationRect;
-    } else {
-      final natural = _pageNaturalSizes[_activePageIndex];
-      if (natural != null && !natural.isEmpty) {
-        final rotatedSize = turns.isOdd
-            ? Size(natural.height, natural.width)
-            : natural;
-        final fitted = applyBoxFit(BoxFit.contain, rotatedSize, canvasSize);
-        final scale = ctrlDetails?.totalScale ?? 1.0;
-        renderedRect = Rect.fromCenter(
-          center: canvasSize.center(Offset.zero),
-          width: fitted.destination.width * scale,
-          height: fitted.destination.height * scale,
-        );
+    if (turns == 0 && ctrlDetails != null) {
+      final rawDest =
+          ctrlDetails.destinationRect ?? ctrlDetails.rawDestinationRect;
+      if (rawDest != null && !rawDest.isEmpty) {
+        final layout = ctrlDetails.layoutRect;
+        return (layout != null && !layout.isEmpty)
+            ? rawDest.shift(-layout.topLeft)
+            : rawDest;
       }
     }
 
-    if (renderedRect != null && !renderedRect.isEmpty && renderedRect.contains(local)) {
+    final natural = _pageNaturalSizes[_activePageIndex];
+    if (natural != null && !natural.isEmpty) {
+      final orientedSize = turns.isOdd
+          ? Size(natural.height, natural.width)
+          : natural;
+      final fitted = applyBoxFit(BoxFit.contain, orientedSize, canvasSize);
+      final scale = ctrlDetails?.totalScale ?? 1.0;
+      return Rect.fromCenter(
+        center: canvasSize.center(Offset.zero),
+        width: fitted.destination.width * scale,
+        height: fitted.destination.height * scale,
+      );
+    }
+    return null;
+  }
+
+  bool _isPointInsideDesktopImage(Offset globalPosition) {
+    final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
+    if (canvasRo is! RenderBox || !canvasRo.hasSize) return false;
+    final local = canvasRo.globalToLocal(globalPosition);
+    final renderedRect = _desktopRenderedImageRect(canvasRo.size);
+    return renderedRect != null &&
+        !renderedRect.isEmpty &&
+        renderedRect.contains(local);
+  }
+
+  void _handleDesktopCanvasPointerDown(PointerDownEvent event) {
+    _desktopActivePointers.add(event.pointer);
+    if (_desktopActivePointers.length > 1) {
+      _desktopBackdropPointer = null;
+      _desktopBackdropDownGlobal = null;
       return;
     }
-    Navigator.of(context).pop();
+    // 仅主按钮（左键/触控）触发空白暗幕关闭；右键保留给上下文菜单。
+    if (event.kind == PointerDeviceKind.mouse &&
+        (event.buttons & kPrimaryButton) == 0) {
+      _desktopBackdropPointer = null;
+      _desktopBackdropDownGlobal = null;
+      return;
+    }
+    if (_isPointInsideDesktopImage(event.position)) {
+      _desktopBackdropPointer = null;
+      _desktopBackdropDownGlobal = null;
+      return;
+    }
+    _desktopBackdropPointer = event.pointer;
+    _desktopBackdropDownGlobal = event.position;
+  }
+
+  void _handleDesktopCanvasPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _desktopBackdropPointer) return;
+    final down = _desktopBackdropDownGlobal;
+    if (down == null || (event.position - down).distance > 8.0) {
+      _desktopBackdropPointer = null;
+      _desktopBackdropDownGlobal = null;
+    }
+  }
+
+  void _handleDesktopCanvasPointerUp(PointerUpEvent event) {
+    _desktopActivePointers.remove(event.pointer);
+    if (event.pointer != _desktopBackdropPointer) return;
+    final down = _desktopBackdropDownGlobal;
+    _desktopBackdropPointer = null;
+    _desktopBackdropDownGlobal = null;
+    if (down == null || (event.position - down).distance > 8.0) return;
+    if (_isPointInsideDesktopImage(event.position)) return;
+    if (_liveOverlayKey.currentState?.clearSelectionIfAny() ?? false) return;
+    if (_liveOverlayMode.value != null) return;
+    if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _handleDesktopCanvasPointerCancel(PointerCancelEvent event) {
+    _desktopActivePointers.remove(event.pointer);
+    if (event.pointer == _desktopBackdropPointer) {
+      _desktopBackdropPointer = null;
+      _desktopBackdropDownGlobal = null;
+    }
   }
 
   Future<void> _copyActiveContent() async {
@@ -2279,7 +2345,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (isMemory) {
       content = GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTapUp: _handleDesktopCanvasTapUp,
         onSecondaryTapUp: (details) =>
             _showBytesContextMenu(context, position: details.globalPosition),
         child: RotatedBox(
@@ -2306,7 +2371,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       final url = widget.imageUrl!;
       content = GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTapUp: _handleDesktopCanvasTapUp,
         onSecondaryTapUp: (details) =>
             _showContextMenu(context, position: details.globalPosition),
         child: RotatedBox(
@@ -2343,7 +2407,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     } else {
       content = GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onTapUp: _handleDesktopCanvasTapUp,
         onSecondaryTapUp: (details) =>
             _showContextMenu(context, position: details.globalPosition),
         child: ExtendedImageGesturePageView.builder(
@@ -2432,13 +2495,21 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
     return ClipRect(
       key: _desktopCanvasKey,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          content,
-          if (hasExplicitOverlay || hasPassiveOverlay)
-            _buildActiveLiveOverlay(passive: hasPassiveOverlay),
-          if (isGallery && !hasExplicitOverlay) ...[
+      child: RepaintBoundary(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: _handleDesktopCanvasPointerDown,
+              onPointerMove: _handleDesktopCanvasPointerMove,
+              onPointerUp: _handleDesktopCanvasPointerUp,
+              onPointerCancel: _handleDesktopCanvasPointerCancel,
+              child: content,
+            ),
+            if (hasExplicitOverlay || hasPassiveOverlay)
+              _buildActiveLiveOverlay(passive: hasPassiveOverlay),
+            if (isGallery && !hasExplicitOverlay) ...[
             if (currentIndex > 0)
               Positioned(
                 left: 16,
@@ -2467,8 +2538,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   ),
                 ),
               ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

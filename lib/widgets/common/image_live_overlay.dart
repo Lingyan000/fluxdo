@@ -410,10 +410,18 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
         if (slideOffset != null) {
           rect = rect.shift(slideOffset);
         }
+        // RawGestureImage 的 layoutRect 位于其所在 RepaintBoundary 坐标系，
+        // 桌面端顶栏位于画布上方时 layoutRect.topLeft 可能非零，平移回局部坐标对齐。
+        rect = rect.shift(-layoutRect.topLeft);
         if (!rect.isEmpty && rect.isFinite) return rect;
       }
       final dest = details.destinationRect;
-      if (dest != null && !dest.isEmpty && dest.isFinite) return dest;
+      if (dest != null && !dest.isEmpty && dest.isFinite) {
+        final layout = details.layoutRect;
+        return (layout != null && !layout.isEmpty)
+            ? dest.shift(-layout.topLeft)
+            : dest;
+      }
     }
 
     return fallbackRaw ?? Rect.zero;

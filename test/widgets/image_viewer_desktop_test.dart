@@ -233,4 +233,78 @@ void main() {
     expect(find.text('3 / 3'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('桌面端宽图上下暗幕单击立即关闭（不因顶栏偏移误判，也不受双击竞争与拖拽干扰）', (tester) async {
+    PlatformUtils.debugDesktopOverride = true;
+    addTearDown(() => PlatformUtils.debugDesktopOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 700);
+    addTearDown(tester.view.reset);
+
+    // 宽图 800x200：在 1000x~604 画布中居中渲染高度 250px，上下各有 ~177px 空白暗幕
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 800, height: 200)),
+    );
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          ocrModelStoreProvider.overrideWithValue(_NotReadyModelStore()),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: Builder(
+              builder: (context) {
+                hostContext = context;
+                return Scaffold(
+                  body: Center(
+                    child: TextButton(
+                      onPressed: () => ImageViewerPage.openBytes(context, png),
+                      child: const Text('打开宽图'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {
+      await precacheImage(MemoryImage(png), hostContext);
+    });
+
+    await tester.tap(find.text('打开宽图'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+
+    // 在下方暗幕拖拽（模拟滑动切图手势），不应误关
+    await tester.dragFrom(const Offset(500, 560), const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsOneWidget);
+
+    // 在紧贴图片底部的下方暗幕单击（原 48px 顶栏坐标偏移 bug 覆盖的区域）：
+    // 抬手瞬间即触发 pop，无需等待 300ms 双击超时
+    final canvasRect = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(ImageViewerPage),
+            matching: find.byType(ClipRect),
+          )
+          .first,
+    );
+    final imageBottomY = canvasRect.center.dy + 125; // 1000 * (200/800) / 2
+    await tester.tapAt(Offset(500, imageBottomY + 20));
+    await tester.pump(const Duration(milliseconds: 50));
+    // 仅 50ms（远小于 300ms 双击超时）路由就已开始退场
+    expect(Navigator.of(hostContext).canPop(), isFalse);
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
