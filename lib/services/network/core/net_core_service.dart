@@ -259,6 +259,7 @@ class NetCoreConfig {
     this.webViewMitm = false,
     this.fingerprintCachePath,
     this.http3CachePath,
+    this.allowUncalibratedHttp3 = false,
     this.fingerprintUserAgent,
     this.fingerprintPreset,
     this.caCertPem,
@@ -283,6 +284,7 @@ class NetCoreConfig {
   final bool webViewMitm;
   final String? fingerprintCachePath;
   final String? http3CachePath;
+  final bool allowUncalibratedHttp3;
   final String? fingerprintUserAgent;
   final String? fingerprintPreset;
   final String? caCertPem;
@@ -311,6 +313,7 @@ class NetCoreConfig {
     webViewMitm: webViewMitm,
     fingerprintCachePath: fingerprintCachePath,
     http3CachePath: http3CachePath,
+    allowUncalibratedHttp3: allowUncalibratedHttp3,
     fingerprintUserAgent: fingerprintUserAgent,
     fingerprintPreset: fingerprintPreset,
     caCertPem: caCertPem,
@@ -344,6 +347,7 @@ class NetCoreConfig {
     if (fingerprintCachePath != null)
       'fingerprint_cache_path': fingerprintCachePath,
     if (http3CachePath != null) 'http3_cache_path': http3CachePath,
+    'allow_uncalibrated_http3': allowUncalibratedHttp3,
     if (caCertPem != null) 'ca_cert_pem': caCertPem,
     if (caKeyPem != null) 'ca_key_pem': caKeyPem,
   };
@@ -357,6 +361,7 @@ class NetCoreConfig {
       if (systemProxy != null) '系统代理 开',
       if (serverIp != null && serverIp!.isNotEmpty) '指定 IP $serverIp',
       if (preferIpv6) '优先 IPv6',
+      if (allowUncalibratedHttp3) '无模板强制 HTTP/3',
       webViewMitm ? 'WebView 经核心' : 'WebView 直连',
       if (caCertPem != null) '设备证书',
     ];
@@ -439,6 +444,7 @@ class NetCoreStatus {
     this.templateDiagnostics = const {},
     this.userAgent,
     this.webViewMitm = false,
+    this.allowUncalibratedHttp3 = false,
     this.systemProxy = false,
     this.establishedConnections = 0,
     this.pooledHttp2 = 0,
@@ -461,6 +467,7 @@ class NetCoreStatus {
   /// 采样时 WebView 的 UA；与当前 UA 不符说明 WebView 升级过，需要重采。
   final String? userAgent;
   final bool webViewMitm;
+  final bool allowUncalibratedHttp3;
   final bool systemProxy;
 
   /// 自启动以来新建的连接数
@@ -484,6 +491,7 @@ class NetCoreStatus {
       ),
       userAgent: json['user_agent'] as String?,
       webViewMitm: json['webview_mitm'] == true,
+      allowUncalibratedHttp3: json['allow_uncalibrated_http3'] == true,
       systemProxy: json['system_proxy'] == true,
       establishedConnections: json['established_connections'] as int? ?? 0,
       pooledHttp2: pooled?['http2'] as int? ?? 0,

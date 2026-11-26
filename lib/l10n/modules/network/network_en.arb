@@ -90,6 +90,9 @@
   "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload.",
   "webviewAdapter_autoFallbackTitle": "Auto-switch on ineffective verification",
   "webviewAdapter_autoFallbackDesc": "Automatically switch to WebView compatibility mode for this session when verification passes but native requests are still blocked",
+  "webviewAdapter_siteTunnelTitle": "Align main-site transport protocol",
+  "webviewAdapter_siteTunnelDesc": "Route only main-site HTTPS through a local TCP tunnel (without TLS decryption) so WebView and the network core both use HTTP/2, helping when some proxy nodes still fail after verification",
+  "webviewAdapter_siteTunnelUnsupported": "The system WebView version does not support per-domain proxy rules",
   "fingerprintPreset_title": "Fingerprint template",
   "fingerprintPreset_auto": "Automatic",
   "fingerprintPreset_autoDescription": "Use the device’s browser sample; use a matching preset until sampling completes.",
@@ -143,5 +146,10 @@
         "type": "int"
       }
     }
-  }
+  },
+  "networkCore_forceHttp3Section": "Transport protocol",
+  "networkCore_forceHttp3Title": "Force HTTP/3 without H3 template",
+  "networkCore_forceHttp3Desc": "Allow the network core to attempt HTTP/3 with default QUIC parameters when no H3 template is sampled (mutually exclusive with main-site protocol alignment; may affect anti-bot behavior)",
+  "networkCore_forceHttp3MutualExclusiveTip": "Forced HTTP/3 enabled; main-site protocol alignment turned off automatically",
+  "webviewAdapter_siteTunnelMutualExclusiveTip": "Main-site protocol alignment enabled; forced HTTP/3 turned off automatically"
 }

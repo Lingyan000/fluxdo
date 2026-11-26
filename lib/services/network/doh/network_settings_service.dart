@@ -18,11 +18,15 @@ import '../doh_proxy/proxy_certificate.dart';
 import '../doh_proxy/windows_cert_trust_service.dart';
 import '../fingerprint/fingerprint_template_service.dart';
 import '../fingerprint/fingerprint_presets.dart';
+import '../fingerprint/h3_calibration_status.dart';
 import '../proxy/proxy_settings_service.dart';
 import '../system_proxy_service.dart';
+import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
 import 'ech_dns_policy.dart';
+
+enum _WebViewProxyMode { none, mitm, siteTunnel }
 
 class NetworkSettings {
   const NetworkSettings({
@@ -35,6 +39,8 @@ class NetworkSettings {
     this.fingerprintPreset = FingerprintPreset.automatic,
     this.serverIp,
     this.echDnsPolicy = const EchDnsPolicy(),
+    this.webViewSiteTunnelEnabled = false,
+    this.allowUncalibratedHttp3 = false,
   });
 
   final bool dohEnabled;
@@ -58,6 +64,13 @@ class NetworkSettings {
 
   final EchDnsPolicy echDnsPolicy;
 
+  /// 仅将主站 HTTPS 经核心本地 TCP 隧道转发（不解密 TLS），使 WebView 与核心
+  /// 统一使用 HTTP/2 与相同出口，缓解部分节点因 H3/H2 协议分裂导致过盾失败。
+  final bool webViewSiteTunnelEnabled;
+
+  /// 无 H3/QUIC 模板时仍允许网络核心使用默认 QUIC 参数尝试 HTTP/3（与主站协议对齐互斥）。
+  final bool allowUncalibratedHttp3;
+
   NetworkSettings copyWith({
     bool? dohEnabled,
     String? fingerprintPreset,
@@ -68,6 +81,8 @@ class NetworkSettings {
     bool? preferIPv6,
     String? Function()? serverIp,
     EchDnsPolicy? echDnsPolicy,
+    bool? webViewSiteTunnelEnabled,
+    bool? allowUncalibratedHttp3,
   }) {
     return NetworkSettings(
       dohEnabled: dohEnabled ?? this.dohEnabled,
@@ -79,6 +94,10 @@ class NetworkSettings {
       preferIPv6: preferIPv6 ?? this.preferIPv6,
       serverIp: serverIp != null ? serverIp() : this.serverIp,
       echDnsPolicy: echDnsPolicy ?? this.echDnsPolicy,
+      webViewSiteTunnelEnabled:
+          webViewSiteTunnelEnabled ?? this.webViewSiteTunnelEnabled,
+      allowUncalibratedHttp3:
+          allowUncalibratedHttp3 ?? this.allowUncalibratedHttp3,
     );
   }
 }
@@ -126,11 +145,22 @@ class NetworkSettingsService {
     FingerprintTemplateService.instance.calibrationRevision.addListener(
       _refreshTemplateStatus,
     );
+    WebViewAdapterSettingsService.instance.effectiveNotifier.addListener(
+      _handleWebViewCompatChanged,
+    );
   }
 
   void _refreshTemplateStatus() {
     _coreService.refreshStatus();
+    if (!_needsWebViewMitm && _coreService.isRunning) {
+      unawaited(_syncWebViewProxyState());
+    }
     _touch();
+  }
+
+  void _handleWebViewCompatChanged() {
+    if (_prefs == null || _needsWebViewMitm || !_coreService.isRunning) return;
+    unawaited(_syncWebViewProxyState());
   }
 
   static final NetworkSettingsService instance =
@@ -144,6 +174,35 @@ class NetworkSettingsService {
   static const _serverIpKey = 'doh_server_ip';
   static const _echServerKey = 'doh_ech_server';
   static const _echDnsPolicyKey = 'doh_ech_dns_policy';
+  static const webViewSiteTunnelKey = 'webview_site_tunnel_enabled';
+  static const allowUncalibratedHttp3Key = 'network_allow_uncalibrated_http3';
+
+  /// 计算「对齐主站传输协议（H2）」与「无模板强制开启 HTTP/3」的互斥结果。
+  @visibleForTesting
+  static ({bool siteTunnel, bool allowUncalibratedHttp3})
+  resolveMutualExclusiveProtocol({
+    required bool currentSiteTunnel,
+    required bool currentAllowUncalibratedHttp3,
+    bool? nextSiteTunnel,
+    bool? nextAllowUncalibratedHttp3,
+  }) {
+    var siteTunnel = nextSiteTunnel ?? currentSiteTunnel;
+    var forceH3 = nextAllowUncalibratedHttp3 ?? currentAllowUncalibratedHttp3;
+    if (nextSiteTunnel == true) {
+      forceH3 = false;
+    } else if (nextAllowUncalibratedHttp3 == true) {
+      siteTunnel = false;
+    } else if (siteTunnel && forceH3) {
+      // 防御性归一：历史异常同时开启时保留更稳妥的主站协议对齐。
+      forceH3 = false;
+    }
+    return (siteTunnel: siteTunnel, allowUncalibratedHttp3: forceH3);
+  }
+
+  /// 当前平台是否支持仅对主站域名启用零 MITM 的本地 TCP 隧道。
+  /// Windows 已有独立 H3 校准环境；Linux WebKitGTK 默认不启用 H3。
+  static bool get supportsWebViewSiteTunnel =>
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
   final ValueNotifier<NetworkSettings> notifier = ValueNotifier(
     NetworkSettings(
@@ -228,6 +287,18 @@ class NetworkSettingsService {
       // 旧配置损坏时恢复默认规则。
     }
     final resolvedSelected = _resolveSelected(selected, custom);
+    final rawSiteTunnel = prefs.getBool(webViewSiteTunnelKey) ?? false;
+    final rawForceH3 = prefs.getBool(allowUncalibratedHttp3Key) ?? false;
+    final resolvedProtocol = resolveMutualExclusiveProtocol(
+      currentSiteTunnel: rawSiteTunnel,
+      currentAllowUncalibratedHttp3: rawForceH3,
+    );
+    if (resolvedProtocol.allowUncalibratedHttp3 != rawForceH3) {
+      await prefs.setBool(
+        allowUncalibratedHttp3Key,
+        resolvedProtocol.allowUncalibratedHttp3,
+      );
+    }
     notifier.value = NetworkSettings(
       dohEnabled: dohEnabled,
       fingerprintPreset: FingerprintPreset.normalize(
@@ -240,6 +311,8 @@ class NetworkSettingsService {
       preferIPv6: preferIPv6,
       serverIp: serverIp,
       echDnsPolicy: echDnsPolicy,
+      webViewSiteTunnelEnabled: resolvedProtocol.siteTunnel,
+      allowUncalibratedHttp3: resolvedProtocol.allowUncalibratedHttp3,
     );
     _resolver = DohResolver(
       serverUrl: notifier.value.selectedServerUrl,
@@ -284,6 +357,123 @@ class NetworkSettingsService {
       _setStartFailed(false);
     }
     await prefs.setBool(_dohEnabledKey, enabled);
+    await _applyProxyState();
+    _touch();
+  }
+
+  /// 开关「对齐主站传输协议」（仅对主站 HTTPS 挂零 MITM 的本地 TCP 隧道）。
+  ///
+  /// 与 [setAllowUncalibratedHttp3] 自动互斥：开启时若已启用强制 HTTP/3，会自动将其关闭。
+  /// 返回 false 表示当前设备 WebView/系统版本不支持按域名代理覆盖，未开启。
+  Future<bool> setWebViewSiteTunnelEnabled(bool enabled) async {
+    final prefs = _prefs;
+    if (prefs == null) return false;
+    if (enabled && !await _isSiteTunnelPlatformSupported()) {
+      NetworkLogger.log(
+        '[WebView] 当前平台/WebView 不支持按域名协议对齐隧道，忽略开启',
+        level: 'warning',
+      );
+      return false;
+    }
+    final previousSiteTunnel = current.webViewSiteTunnelEnabled;
+    final previousForceH3 = current.allowUncalibratedHttp3;
+    final next = resolveMutualExclusiveProtocol(
+      currentSiteTunnel: previousSiteTunnel,
+      currentAllowUncalibratedHttp3: previousForceH3,
+      nextSiteTunnel: enabled,
+    );
+    if (previousSiteTunnel == next.siteTunnel &&
+        previousForceH3 == next.allowUncalibratedHttp3) {
+      await _syncWebViewProxyState();
+      return true;
+    }
+    final forceH3Changed = previousForceH3 != next.allowUncalibratedHttp3;
+    await prefs.setBool(webViewSiteTunnelKey, next.siteTunnel);
+    if (forceH3Changed) {
+      await prefs.setBool(
+        allowUncalibratedHttp3Key,
+        next.allowUncalibratedHttp3,
+      );
+    }
+    notifier.value = current.copyWith(
+      webViewSiteTunnelEnabled: next.siteTunnel,
+      allowUncalibratedHttp3: next.allowUncalibratedHttp3,
+    );
+    if (previousSiteTunnel != next.siteTunnel) {
+      LogWriter.instance.write({
+        'type': 'settings',
+        'event': 'network_setting_changed',
+        'setting': webViewSiteTunnelKey,
+        'previousValue': previousSiteTunnel,
+        'value': next.siteTunnel,
+        'persistent': true,
+      });
+    }
+    if (forceH3Changed) {
+      LogWriter.instance.write({
+        'type': 'settings',
+        'event': 'network_setting_changed',
+        'setting': allowUncalibratedHttp3Key,
+        'previousValue': previousForceH3,
+        'value': next.allowUncalibratedHttp3,
+        'persistent': true,
+      });
+      _beginApply();
+      await _applyProxyState();
+    } else {
+      await _syncWebViewProxyState();
+    }
+    _touch();
+    return true;
+  }
+
+  /// 开关网络核心「无模板时强制开启 HTTP/3」。
+  ///
+  /// 与 [setWebViewSiteTunnelEnabled] 自动互斥：开启时自动关闭主站协议对齐。
+  Future<void> setAllowUncalibratedHttp3(bool enabled) async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final previousForceH3 = current.allowUncalibratedHttp3;
+    final previousSiteTunnel = current.webViewSiteTunnelEnabled;
+    final next = resolveMutualExclusiveProtocol(
+      currentSiteTunnel: previousSiteTunnel,
+      currentAllowUncalibratedHttp3: previousForceH3,
+      nextAllowUncalibratedHttp3: enabled,
+    );
+    if (previousForceH3 == next.allowUncalibratedHttp3 &&
+        previousSiteTunnel == next.siteTunnel) {
+      return;
+    }
+    final siteTunnelChanged = previousSiteTunnel != next.siteTunnel;
+    await prefs.setBool(allowUncalibratedHttp3Key, next.allowUncalibratedHttp3);
+    if (siteTunnelChanged) {
+      await prefs.setBool(webViewSiteTunnelKey, next.siteTunnel);
+    }
+    _beginApply();
+    notifier.value = current.copyWith(
+      webViewSiteTunnelEnabled: next.siteTunnel,
+      allowUncalibratedHttp3: next.allowUncalibratedHttp3,
+    );
+    if (previousForceH3 != next.allowUncalibratedHttp3) {
+      LogWriter.instance.write({
+        'type': 'settings',
+        'event': 'network_setting_changed',
+        'setting': allowUncalibratedHttp3Key,
+        'previousValue': previousForceH3,
+        'value': next.allowUncalibratedHttp3,
+        'persistent': true,
+      });
+    }
+    if (siteTunnelChanged) {
+      LogWriter.instance.write({
+        'type': 'settings',
+        'event': 'network_setting_changed',
+        'setting': webViewSiteTunnelKey,
+        'previousValue': previousSiteTunnel,
+        'value': next.siteTunnel,
+        'persistent': true,
+      });
+    }
     await _applyProxyState();
     _touch();
   }
@@ -507,6 +697,7 @@ class NetworkSettingsService {
           http3CachePath: fingerprintCachePath == null
               ? null
               : '${File(fingerprintCachePath).parent.path}/http3_services.json',
+          allowUncalibratedHttp3: current.allowUncalibratedHttp3,
           // Windows 的 UA 读取需要本次代理对应的 Environment。
           // 核心先启动并确定代理地址，随后由现有采样流程核对真实 UA。
           fingerprintUserAgent: fingerprintUserAgent,
@@ -536,12 +727,8 @@ class NetworkSettingsService {
         _touch();
       }
 
-      // WebView：需要 MITM 时指向核心，否则清掉代理让它直连
-      if (webViewMitm) {
-        await _applyWebViewProxy();
-      } else {
-        await _clearWebViewProxy();
-      }
+      // WebView：需要 MITM 时全量指向核心；直连模式下若开启主站协议对齐则仅对主站挂零 MITM 隧道
+      await _syncWebViewProxyState(webViewMitmOverride: webViewMitm);
       // 直连模式下 WebView 不经过核心，指纹只能靠探针采样
       if (port != null &&
           current.fingerprintPreset == FingerprintPreset.automatic) {
@@ -670,11 +857,110 @@ class NetworkSettingsService {
     }
   }
 
-  bool _webViewProxySet = false;
+  _WebViewProxyMode _webViewProxyMode = _WebViewProxyMode.none;
 
-  /// 已向 WebView 登记本地代理覆盖。Windows 的已存在环境可能需重启生效。
+  /// 已向 WebView 登记本地代理覆盖（含全量 MITM 或主站零 MITM 隧道）。
   /// 供日志区分核心提供 MITM 与平台实际接受代理设置这两个阶段。
-  bool get webViewProxyOverrideRegistered => _webViewProxySet;
+  bool get webViewProxyOverrideRegistered =>
+      _webViewProxyMode != _WebViewProxyMode.none;
+
+  /// 当前是否仅对主站域名启用了零 MITM 的本地 TCP 隧道。
+  bool get webViewSiteTunnelActive =>
+      _webViewProxyMode == _WebViewProxyMode.siteTunnel;
+
+  bool get _shouldUseWebViewSiteTunnel =>
+      supportsWebViewSiteTunnel &&
+      current.webViewSiteTunnelEnabled &&
+      !_needsWebViewMitm &&
+      !WebViewAdapterSettingsService.instance.effectiveEnabled &&
+      H3CalibrationStatus.fromJson(
+            _coreService.status.templateDiagnostics['h3'],
+          ).state !=
+          H3CalibrationState.sampled;
+
+  Future<bool> _isSiteTunnelPlatformSupported() async {
+    if (Platform.isAndroid) {
+      final hasOverride = await inappwebview.WebViewFeature.isFeatureSupported(
+        inappwebview.WebViewFeature.PROXY_OVERRIDE,
+      );
+      if (!hasOverride) return false;
+      return inappwebview.WebViewFeature.isFeatureSupported(
+        inappwebview.WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS,
+      );
+    }
+    if (Platform.isIOS) return _isiOS17OrAbove();
+    if (Platform.isMacOS) return _isMacOS14OrAbove();
+    return false;
+  }
+
+  /// 构造仅限主站域名的零 MITM TCP 隧道代理规则。
+  @visibleForTesting
+  static inappwebview.ProxySettings buildSiteTunnelProxySettings({
+    required int port,
+    required String baseHost,
+    required bool isAndroid,
+  }) {
+    final host = baseHost.toLowerCase();
+    if (isAndroid) {
+      return inappwebview.ProxySettings(
+        proxyRules: [
+          inappwebview.ProxyRule(
+            url: 'http://127.0.0.1:$port',
+            schemeFilter: inappwebview.ProxySchemeFilter.MATCH_HTTPS,
+          ),
+        ],
+        bypassRules: [host, '*.$host'],
+        // 必须移除隐式规则（localhost / 127.0.0.1），否则 reverseBypass 会把本地探针反向卷入代理。
+        removeImplicitRules: true,
+        reverseBypassEnabled: true,
+      );
+    }
+    return inappwebview.ProxySettings(
+      proxyRules: [
+        inappwebview.ProxyRule(
+          url: 'http://127.0.0.1:$port',
+          matchDomains: [host],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _syncWebViewProxyState({bool? webViewMitmOverride}) async {
+    final useMitm = webViewMitmOverride ?? webViewUsesCoreMitm;
+    if (useMitm) {
+      await _applyWebViewProxy();
+    } else if (_coreService.isRunning && _shouldUseWebViewSiteTunnel) {
+      await _applySiteTunnelWebViewProxy();
+    } else {
+      await _clearWebViewProxy();
+    }
+  }
+
+  Future<void> _applySiteTunnelWebViewProxy() async {
+    final port = _coreService.port;
+    if (port == null) return;
+    if (!await _isSiteTunnelPlatformSupported()) {
+      await _clearWebViewProxy();
+      return;
+    }
+    final baseHost = Uri.parse(AppConstants.baseUrl).host;
+    if (baseHost.isEmpty) return;
+    try {
+      await inappwebview.ProxyController.instance().setProxyOverride(
+        settings: buildSiteTunnelProxySettings(
+          port: port,
+          baseHost: baseHost,
+          isAndroid: Platform.isAndroid,
+        ),
+      );
+      _webViewProxyMode = _WebViewProxyMode.siteTunnel;
+      NetworkLogger.log(
+        '[WebView] 主站协议对齐隧道已启用 -> 127.0.0.1:$port (domain=$baseHost, 零 MITM)',
+      );
+    } catch (e) {
+      NetworkLogger.log('[WebView] 主站协议对齐隧道设置失败: $e', level: 'error');
+    }
+  }
 
   Future<void> _applyWebViewProxy() async {
     final port = _coreService.port;
@@ -684,7 +970,7 @@ class NetworkSettingsService {
       try {
         final applied = await WindowsWebViewEnvironmentService.instance
             .setProxy('http://127.0.0.1:$port');
-        _webViewProxySet = true;
+        _webViewProxyMode = _WebViewProxyMode.mitm;
         NetworkLogger.log(
           applied
               ? '[WebView] WebView2 代理已设置 -> 127.0.0.1:$port'
@@ -714,7 +1000,7 @@ class NetworkSettingsService {
           proxyRules: [inappwebview.ProxyRule(url: 'http://127.0.0.1:$port')],
         ),
       );
-      _webViewProxySet = true;
+      _webViewProxyMode = _WebViewProxyMode.mitm;
       NetworkLogger.log('[WebView] 代理已设置 -> 127.0.0.1:$port');
     } catch (e) {
       NetworkLogger.log('[WebView] 代理设置失败: $e', level: 'error');
@@ -726,7 +1012,7 @@ class NetworkSettingsService {
       try {
         final applied = await WindowsWebViewEnvironmentService.instance
             .setProxy(null);
-        _webViewProxySet = false;
+        _webViewProxyMode = _WebViewProxyMode.none;
         NetworkLogger.log(
           applied
               ? '[WebView] WebView2 代理已清除'
@@ -739,7 +1025,7 @@ class NetworkSettingsService {
       }
     }
 
-    if (!_webViewProxySet) return true;
+    if (_webViewProxyMode == _WebViewProxyMode.none) return true;
 
     if (!Platform.isAndroid &&
         !await _isMacOS14OrAbove() &&
@@ -748,7 +1034,7 @@ class NetworkSettingsService {
     }
     try {
       await inappwebview.ProxyController.instance().clearProxyOverride();
-      _webViewProxySet = false;
+      _webViewProxyMode = _WebViewProxyMode.none;
       NetworkLogger.log('[WebView] 代理已清除');
       return true;
     } catch (e) {

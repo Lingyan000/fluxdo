@@ -370,6 +370,7 @@ pub struct HttpEgressClient {
     sessions: ClientSessions,
     exec: Executor,
     h3: Arc<h3::Http3Upgrade>,
+    allow_uncalibrated_http3: bool,
     #[cfg(test)]
     test_tls: parking_lot::Mutex<Option<TlsClientConfig>>,
 }
@@ -385,6 +386,7 @@ impl HttpEgressClient {
             sessions: ClientSessions::default(),
             exec: Executor::new(),
             h3: Arc::default(),
+            allow_uncalibrated_http3: false,
             #[cfg(test)]
             test_tls: Default::default(),
         }
@@ -399,6 +401,11 @@ impl HttpEgressClient {
         if let Some(path) = path {
             self.h3 = Arc::new(h3::Http3Upgrade::with_cache(path.into(), namespace));
         }
+        self
+    }
+
+    pub(crate) fn with_allow_uncalibrated_http3(mut self, allow: bool) -> Self {
+        self.allow_uncalibrated_http3 = allow;
         self
     }
 
@@ -482,6 +489,7 @@ impl HttpEgressClient {
             key: &key,
             template: template.as_ref(),
             uses_browser_fingerprint: self.templates.is_some(),
+            allow_uncalibrated_http3: self.allow_uncalibrated_http3,
             h3_template: h3_profile.map(|(_,p)|p),
             host: &host,
             port,
@@ -998,6 +1006,8 @@ struct Target<'a> {
     template: Option<&'a FingerprintTemplate>,
     /// 区分尚无样本的浏览器客户端与不使用指纹的普通/DoH 客户端。
     uses_browser_fingerprint: bool,
+    /// 用户显式允许在缺少 H3 模板时按默认 QUIC 参数尝试 HTTP/3。
+    allow_uncalibrated_http3: bool,
     h3_template: Option<Arc<crate::h3_template::Profile>>,
     host: &'a str,
     port: u16,

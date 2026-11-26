@@ -14,6 +14,7 @@ import '../cf_channel_trace_probe.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
 import '../deadline_dio.dart';
+import '../doh/network_settings_service.dart';
 import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../../l10n/s.dart';
@@ -48,6 +49,46 @@ class CfChallengeInterceptor extends Interceptor {
 
   final Dio dio;
   final CookieJarService cookieJarService;
+  static bool _protocolMismatchPrompted = false;
+
+  static void _notifyProtocolMismatchIfNeeded(CfChannelTraceReport? report) {
+    if (report == null || !report.hasHttpProtocolMismatch) return;
+    if (_protocolMismatchPrompted) return;
+    if (!NetworkSettingsService.supportsWebViewSiteTunnel) return;
+    final settings = NetworkSettingsService.instance;
+    if (settings.current.webViewSiteTunnelEnabled ||
+        settings.current.allowUncalibratedHttp3 ||
+        settings.webViewUsesCoreMitm) {
+      return;
+    }
+    _protocolMismatchPrompted = true;
+    CfChallengeService.showGlobalMessage(
+      S.current.cf_protocolMismatchHint(report.core.http!, report.webview.http!),
+      isError: false,
+      duration: const Duration(seconds: 8),
+      actionLabel: S.current.cf_protocolMismatchEnableAction,
+      bypassCooldown: true,
+      onAction: () {
+        unawaited(_enableSiteTunnelFromHint());
+      },
+    );
+  }
+
+  static Future<void> _enableSiteTunnelFromHint() async {
+    final enabled = await NetworkSettingsService.instance
+        .setWebViewSiteTunnelEnabled(true);
+    if (!enabled) {
+      ToastService.showError(S.current.webviewAdapter_siteTunnelUnsupported);
+      return;
+    }
+    CfChannelTraceProbe.instance.clearProtocolMismatch();
+    CfChallengeService().resetCooldown();
+    final webview = WebViewAdapterSettingsService.instance;
+    if (webview.sessionFallbackEnabled) {
+      webview.disableSessionFallback();
+    }
+    ToastService.showSuccess(S.current.cf_protocolMismatchEnabled);
+  }
 
   /// 共享的 cookie 同步 Future：验证成功后只执行一次 sync
   static Future<void>? _activeSyncFuture;
@@ -312,10 +353,12 @@ class CfChallengeInterceptor extends Interceptor {
                 retryOptions.uri,
               )) {
             unawaited(
-              CfChannelTraceProbe.instance.probeIfNeeded(
-                triggerPath: retryOptions.uri.path,
-                triggerStatusCode: retryError.response?.statusCode,
-              ),
+              CfChannelTraceProbe.instance
+                  .probeIfNeeded(
+                    triggerPath: retryOptions.uri.path,
+                    triggerStatusCode: retryError.response?.statusCode,
+                  )
+                  .then(_notifyProtocolMismatchIfNeeded),
             );
           }
 

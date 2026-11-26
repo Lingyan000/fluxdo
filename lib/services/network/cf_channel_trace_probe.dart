@@ -98,6 +98,16 @@ class CfChannelTraceReport {
   final bool? sameTls;
   final bool? sameKex;
 
+  /// 同出口、同机房，但 Core 与 WebView 使用了不同 HTTP 协议（典型为 http/2 vs http/3）。
+  bool get hasHttpProtocolMismatch =>
+      core.ok &&
+      webview.ok &&
+      sameIp == true &&
+      sameColo == true &&
+      sameHttp == false &&
+      core.http != null &&
+      webview.http != null;
+
   Map<String, dynamic> toJson() => {
     'triggerPath': triggerPath,
     if (triggerStatusCode != null) 'triggerStatusCode': triggerStatusCode,
@@ -145,6 +155,17 @@ class CfChannelTraceProbe {
 
   DateTime? _lastProbeAt;
   Future<CfChannelTraceReport?>? _inflight;
+
+  /// 最近一次检测到「同 IP 同机房但 HTTP 协议不一致」的对照报告。
+  /// 供网络设置页展示提醒与一键开启主站协议对齐。
+  final ValueNotifier<CfChannelTraceReport?> protocolMismatchNotifier =
+      ValueNotifier<CfChannelTraceReport?>(null);
+
+  void clearProtocolMismatch() {
+    if (protocolMismatchNotifier.value != null) {
+      protocolMismatchNotifier.value = null;
+    }
+  }
 
   /// 若不在冷却期内且核心可用，则在后台执行一次双通道 trace 对照。
   Future<CfChannelTraceReport?> probeIfNeeded({
@@ -212,6 +233,13 @@ class CfChannelTraceProbe {
         sameKex: _compare(coreSummary.kex, webViewSummary.kex),
       );
       _logReport(report);
+      if (report.hasHttpProtocolMismatch) {
+        protocolMismatchNotifier.value = report;
+      } else if (report.core.ok &&
+          report.webview.ok &&
+          report.sameHttp == true) {
+        clearProtocolMismatch();
+      }
       return report;
     } catch (e) {
       debugPrint('[CfTraceProbe] 对照采样异常（已忽略）: ${e.runtimeType}');
@@ -396,5 +424,6 @@ class CfChannelTraceProbe {
   void resetForTesting() {
     _lastProbeAt = null;
     _inflight = null;
+    protocolMismatchNotifier.value = null;
   }
 }

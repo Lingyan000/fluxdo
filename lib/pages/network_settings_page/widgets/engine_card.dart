@@ -8,8 +8,10 @@ import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../../l10n/s.dart';
 import '../../../constants.dart';
+import '../../../services/cf_challenge_service.dart';
 import '../../../services/network/adapters/core_fallback_service.dart';
 import '../../../services/network/adapters/platform_adapter.dart';
+import '../../../services/network/cf_channel_trace_probe.dart';
 import '../../../services/network/core/net_core_service.dart';
 import '../../../services/network/core/network_health_monitor.dart';
 import '../../../services/network/doh/network_settings_service.dart';
@@ -46,11 +48,19 @@ class EngineCard extends StatelessWidget {
         webview.effectiveNotifier,
         fallback,
         NetworkHealthMonitor.instance,
+        CfChannelTraceProbe.instance.protocolMismatchNotifier,
       ]),
       builder: (context, _) {
         final startFailed =
             settings.lastStartFailed && !settings.isApplying.value;
         final autoFellBack = fallback.hasFallenBack;
+        final protocolMismatch =
+            CfChannelTraceProbe.instance.protocolMismatchNotifier.value;
+        final showProtocolMismatch =
+            protocolMismatch != null &&
+            !settings.current.webViewSiteTunnelEnabled &&
+            !settings.current.allowUncalibratedHttp3 &&
+            !settings.webViewUsesCoreMitm;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -60,13 +70,16 @@ class EngineCard extends StatelessWidget {
             ),
             if (startFailed ||
                 autoFellBack ||
-                webview.sessionFallbackEnabled) ...[
+                webview.sessionFallbackEnabled ||
+                showProtocolMismatch) ...[
               const SizedBox(height: 3),
               SegmentedCardGroup(
                 children: [
                   if (startFailed) const _StartFailedRow(),
                   if (autoFellBack && !startFailed) const _FallbackRow(),
                   if (webview.sessionFallbackEnabled) const _SessionCompatRow(),
+                  if (showProtocolMismatch)
+                    _ProtocolMismatchRow(report: protocolMismatch),
                 ],
               ),
             ],
@@ -175,6 +188,7 @@ class _ConnectionOverview extends StatelessWidget {
             webview.notifier,
             webview.autoFallbackNotifier,
             webview.effectiveNotifier,
+            service.notifier,
           ]),
           builder: (context, _) => _WebViewSwitch(webview: webview),
         ),
@@ -327,6 +341,86 @@ class _SessionCompatRow extends StatelessWidget {
   }
 }
 
+/// 检测到 Core 与 WebView 通道协议不一致时的提示行。
+class _ProtocolMismatchRow extends StatelessWidget {
+  const _ProtocolMismatchRow({required this.report});
+
+  final CfChannelTraceReport report;
+
+  Future<void> _confirmForceHttp3(BuildContext context) async {
+    final l10n = context.l10n;
+    final confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.cf_protocolMismatchForceH3ConfirmTitle),
+        content: Text(l10n.cf_protocolMismatchForceH3ConfirmDesc),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.common_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.cf_protocolMismatchForceH3Action),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await NetworkSettingsService.instance.setAllowUncalibratedHttp3(true);
+    CfChannelTraceProbe.instance.clearProtocolMismatch();
+    CfChallengeService().resetCooldown();
+    final webview = WebViewAdapterSettingsService.instance;
+    if (webview.sessionFallbackEnabled) {
+      webview.disableSessionFallback();
+    }
+    ToastService.showSuccess(S.current.cf_protocolMismatchForceH3Enabled);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final supportsSiteTunnel = NetworkSettingsService.supportsWebViewSiteTunnel;
+    return _NoticeRow(
+      icon: Symbols.sync_alt_rounded,
+      message: l10n.cf_protocolMismatchHint(
+        report.core.http ?? 'http/2',
+        report.webview.http ?? 'http/3',
+      ),
+      actions: [
+        // 弱化备选：允许用户显式在无模板场景强制尝试 HTTP/3（带二次确认）
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: muted),
+          onPressed: () => _confirmForceHttp3(context),
+          child: Text(l10n.cf_protocolMismatchForceH3Action),
+        ),
+        if (supportsSiteTunnel)
+          TextButton(
+            onPressed: () async {
+              final enabled = await NetworkSettingsService.instance
+                  .setWebViewSiteTunnelEnabled(true);
+              if (!enabled) {
+                ToastService.showError(
+                  S.current.webviewAdapter_siteTunnelUnsupported,
+                );
+                return;
+              }
+              CfChannelTraceProbe.instance.clearProtocolMismatch();
+              CfChallengeService().resetCooldown();
+              final webview = WebViewAdapterSettingsService.instance;
+              if (webview.sessionFallbackEnabled) {
+                webview.disableSessionFallback();
+              }
+              ToastService.showSuccess(S.current.cf_protocolMismatchEnabled);
+            },
+            child: Text(l10n.cf_protocolMismatchEnableAction),
+          ),
+      ],
+    );
+  }
+}
+
 /// 卡片内的提示行：图标 + 说明（可带详情）+ 操作按钮。
 class _NoticeRow extends StatelessWidget {
   const _NoticeRow({
@@ -396,6 +490,9 @@ class _WebViewSwitch extends StatelessWidget {
     final l10n = context.l10n;
     final enabled = webview.enabled;
     final autoFallback = webview.autoFallbackEnabled;
+    final siteTunnel =
+        NetworkSettingsService.instance.current.webViewSiteTunnelEnabled;
+    final supportsSiteTunnel = NetworkSettingsService.supportsWebViewSiteTunnel;
     final mutedColor = Theme.of(context).colorScheme.onSurfaceVariant;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -442,6 +539,35 @@ class _WebViewSwitch extends StatelessWidget {
             await webview.setAutoFallbackEnabled(value);
           },
         ),
+        if (supportsSiteTunnel)
+          M3eSwitchListTile(
+            secondary: Icon(
+              Symbols.sync_alt_rounded,
+              color: siteTunnel ? context.emphasis.selected : mutedColor,
+            ),
+            title: Text(l10n.webviewAdapter_siteTunnelTitle),
+            subtitle: Text(l10n.webviewAdapter_siteTunnelDesc),
+            value: siteTunnel,
+            onChanged: (value) async {
+              final settings = NetworkSettingsService.instance;
+              final hadForceH3 = settings.current.allowUncalibratedHttp3;
+              final ok = await settings.setWebViewSiteTunnelEnabled(value);
+              if (value && !ok) {
+                ToastService.showError(
+                  S.current.webviewAdapter_siteTunnelUnsupported,
+                );
+                return;
+              }
+              if (value) {
+                CfChannelTraceProbe.instance.clearProtocolMismatch();
+                if (hadForceH3) {
+                  ToastService.showInfo(
+                    S.current.webviewAdapter_siteTunnelMutualExclusiveTip,
+                  );
+                }
+              }
+            },
+          ),
       ],
     );
   }

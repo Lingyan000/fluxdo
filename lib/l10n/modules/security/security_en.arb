@@ -62,5 +62,12 @@
   "cf_sessionCompatAutoEnabled": "Native connection wasn't trusted; switched to WebView compatibility mode",
   "cf_sessionCompatCloseAction": "Turn off",
   "cf_sessionCompatDisabled": "Temporary compatibility mode turned off",
-  "cf_sessionCompatDisable": "Exit temporary compatibility mode"
+  "cf_sessionCompatDisable": "Exit temporary compatibility mode",
+  "cf_protocolMismatchHint": "Detected transport protocol mismatch (core {coreHttp}, browser {webviewHttp}). Enabling main-site protocol alignment may resolve verification failures",
+  "cf_protocolMismatchEnableAction": "Enable",
+  "cf_protocolMismatchEnabled": "Main-site protocol alignment enabled; verification will now use HTTP/2 to match the core",
+  "cf_protocolMismatchForceH3Action": "Force HTTP/3",
+  "cf_protocolMismatchForceH3ConfirmTitle": "Force HTTP/3?",
+  "cf_protocolMismatchForceH3ConfirmDesc": "No WebView HTTP/3 template has been sampled. Forcing HTTP/3 uses default QUIC parameters in the network core and may still trigger anti-bot challenges on some nodes. Main-site protocol alignment will be turned off automatically. Enabling protocol alignment is generally recommended first.",
+  "cf_protocolMismatchForceH3Enabled": "Forced HTTP/3 enabled; upcoming requests will attempt to upgrade"
 }

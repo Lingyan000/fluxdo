@@ -107,7 +107,8 @@ impl Core {
         let client = Arc::new(
             HttpEgressClient::new(connector.clone(), Some(templates.clone()))
                 .with_sessions(sessions)
-                .with_http3_cache(config.http3_cache_path.as_deref(), &namespace),
+                .with_http3_cache(config.http3_cache_path.as_deref(), &namespace)
+                .with_allow_uncalibrated_http3(config.allow_uncalibrated_http3),
         );
         let dns = connector.dns().cloned();
 
@@ -218,6 +219,7 @@ impl Core {
             "template_preset": template.as_ref().and_then(|template| template.source.id()),
             "user_agent": template.and_then(|template| template.user_agent),
             "webview_mitm": self.config.webview_mitm,
+            "allow_uncalibrated_http3": self.config.allow_uncalibrated_http3,
             "doh": self.config.enable_doh,
             "system_proxy": self.config.system_proxy.is_some() || system_proxy::configured(),
         })
