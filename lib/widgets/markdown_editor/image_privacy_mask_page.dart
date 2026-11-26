@@ -957,7 +957,7 @@ class _PrivacyOverlayPainter extends CustomPainter {
       if (region.enabled) {
         switch (style) {
           case PrivacyMaskStyle.mosaic:
-            _paintMosaicPreview(canvas, size, rrect, rect);
+            _paintMosaicPreview(canvas, size, rect);
           case PrivacyMaskStyle.solid:
             canvas.drawRRect(
               rrect,
@@ -967,12 +967,13 @@ class _PrivacyOverlayPainter extends CustomPainter {
             // 模糊内容由下方 BackdropFilter 渲染，这里只补边框。
             break;
         }
+        final isMosaic = style == PrivacyMaskStyle.mosaic;
         canvas.drawRRect(
           rrect,
           Paint()
-            ..color = accentColor.withValues(alpha: 0.9)
+            ..color = accentColor.withValues(alpha: isMosaic ? 0.45 : 0.9)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.6,
+            ..strokeWidth = isMosaic ? 1.0 : 1.6,
         );
       } else {
         canvas.drawRRect(
@@ -1010,11 +1011,10 @@ class _PrivacyOverlayPainter extends CustomPainter {
   void _paintMosaicPreview(
     Canvas canvas,
     Size canvasSize,
-    RRect rrect,
     Rect rect,
   ) {
     canvas.save();
-    canvas.clipRRect(rrect);
+    canvas.clipRect(rect);
     final mosaic = mosaicImage;
     if (mosaic != null) {
       // 将真实像素化纹理以最近邻采样对齐铺满画布并裁切到目标区域，与导出效果像素一致。

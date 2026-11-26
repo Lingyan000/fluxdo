@@ -10,9 +10,20 @@ enum PrivacyMaskStyle { mosaic, blur, solid }
 
 /// 在后台 isolate 对图片指定矩形区域渲染马赛克、高斯模糊或纯色遮挡。
 abstract final class ImageMaskRenderer {
-  /// 按图片短边计算默认马赛克块像素尺寸，确保在各类分辨率下颗粒清晰均匀。
+  /// 按图片短边计算默认预览马赛克块像素尺寸，贴合单行文字 3~4 格高的自然颗粒感。
   static int defaultMosaicTileSize(int width, int height) =>
-      (math.min(width, height) / 90).round().clamp(5, 16);
+      (math.min(width, height) / 130).round().clamp(4, 10);
+
+  /// 按遮挡区域尺寸计算马赛克块大小：
+  /// - 文字行（短边 <= 64px）保持约 3 行清晰方格，融入白底/暗底且不可辨认；
+  /// - 大区域（二维码、头像、大框选）适当增大颗粒，确保二维码无法被扫码还原。
+  static int mosaicBlockSizeForRegion(int width, int height) {
+    final minDim = math.min(width, height);
+    if (minDim <= 64) {
+      return (minDim / 3.2).round().clamp(4, 18);
+    }
+    return (minDim / 6.0).round().clamp(12, 24);
+  }
 
   /// 预生成整张图的缩略马赛克 RGBA 网格，供打码页以最近邻采样（FilterQuality.none）
   /// 实时预览真实像素马赛克，做到所见即所得。
@@ -94,7 +105,6 @@ abstract final class ImageMaskRenderer {
     final style = PrivacyMaskStyle.values[styleIndex];
     final maxW = image.width;
     final maxH = image.height;
-    final baseTile = defaultMosaicTileSize(maxW, maxH);
 
     for (final raw in rects) {
       final x1 = raw[0].floor().clamp(0, maxW - 1);
@@ -107,7 +117,7 @@ abstract final class ImageMaskRenderer {
 
       switch (style) {
         case PrivacyMaskStyle.mosaic:
-          _applyMosaic(image, x1, y1, w, h, baseTile);
+          _applyMosaic(image, x1, y1, w, h);
         case PrivacyMaskStyle.blur:
           _applyBlur(image, x1, y1, w, h);
         case PrivacyMaskStyle.solid:
@@ -128,19 +138,27 @@ abstract final class ImageMaskRenderer {
     int y1,
     int w,
     int h,
-    int baseTile,
   ) {
-    // 小字号文本框缩小颗粒尺寸，避免整行只剩 1~2 行块导致糊成纯色条。
-    final blockSize = math
-        .min(baseTile, math.max(5, (math.min(w, h) / 3.2).round()))
-        .clamp(4, 16);
-    for (var by = y1; by < y1 + h; by += blockSize) {
-      final bh = math.min(blockSize, y1 + h - by);
-      for (var bx = x1; bx < x1 + w; bx += blockSize) {
-        final bw = math.min(blockSize, x1 + w - bx);
-        final sampled = _sampleMosaicTile(image, bx, by, bw, bh);
-        for (var py = by; py < by + bh; py++) {
-          for (var px = bx; px < bx + bw; px++) {
+    final blockSize = mosaicBlockSizeForRegion(w, h);
+    final x2 = x1 + w;
+    final y2 = y1 + h;
+    // 对齐到全图方格网格，避免相邻区域拼缝错位；同时严格裁切在目标矩形内采样与回填，
+    // 防止紧邻文字上下的细表格线或外框颜色串入马赛克。
+    final startX = (x1 ~/ blockSize) * blockSize;
+    final startY = (y1 ~/ blockSize) * blockSize;
+    for (var by = startY; by < y2; by += blockSize) {
+      final py1 = math.max(y1, by);
+      final py2 = math.min(y2, by + blockSize);
+      final bh = py2 - py1;
+      if (bh <= 0) continue;
+      for (var bx = startX; bx < x2; bx += blockSize) {
+        final px1 = math.max(x1, bx);
+        final px2 = math.min(x2, bx + blockSize);
+        final bw = px2 - px1;
+        if (bw <= 0) continue;
+        final sampled = _sampleMosaicTile(image, px1, py1, bw, bh);
+        for (var py = py1; py < py2; py++) {
+          for (var px = px1; px < px2; px++) {
             image.setPixelRgb(px, py, sampled.r, sampled.g, sampled.b);
           }
         }
@@ -148,8 +166,9 @@ abstract final class ImageMaskRenderer {
     }
   }
 
-  /// 计算单个马赛克块的颜色：融合块均值与块内对比最强像素，
-  /// 在保留真实画面色彩的同时，避免深/浅纯色背景上的细文字被均值冲淡成一整块纯黑或纯白。
+  /// 计算单个马赛克块的纯区域均值颜色：
+  /// 纯白/纯黑背景块保持原底色自然融入画面，文字笔画处生成柔和层次的灰阶像素方格，
+  /// 不人为压黑、不产生突兀脏色块。
   static ({int r, int g, int b}) _sampleMosaicTile(
     img.Image image,
     int bx,
@@ -171,38 +190,10 @@ abstract final class ImageMaskRenderer {
       }
     }
     if (count == 0) return (r: 0, g: 0, b: 0);
-    final avgR = rSum / count;
-    final avgG = gSum / count;
-    final avgB = bSum / count;
-
-    var maxDistSq = -1.0;
-    var farR = avgR;
-    var farG = avgG;
-    var farB = avgB;
-    for (var py = by; py < by + bh; py++) {
-      for (var px = bx; px < bx + bw; px++) {
-        final p = image.getPixel(px, py);
-        final dr = p.r.toDouble() - avgR;
-        final dg = p.g.toDouble() - avgG;
-        final db = p.b.toDouble() - avgB;
-        final distSq = dr * dr + dg * dg + db * db;
-        if (distSq > maxDistSq) {
-          maxDistSq = distSq;
-          farR = p.r.toDouble();
-          farG = p.g.toDouble();
-          farB = p.b.toDouble();
-        }
-      }
-    }
-
-    // 平滑色块（如照片背景）中 farthest≈avg，自然退化为纯均值；
-    // 高对比文字笔画处保留适度颗粒反差，观感更接近真实像素马赛克。
-    const peakWeight = 0.38;
-    const avgWeight = 1.0 - peakWeight;
     return (
-      r: (avgR * avgWeight + farR * peakWeight).round().clamp(0, 255),
-      g: (avgG * avgWeight + farG * peakWeight).round().clamp(0, 255),
-      b: (avgB * avgWeight + farB * peakWeight).round().clamp(0, 255),
+      r: (rSum / count).round().clamp(0, 255),
+      g: (gSum / count).round().clamp(0, 255),
+      b: (bSum / count).round().clamp(0, 255),
     );
   }
 
