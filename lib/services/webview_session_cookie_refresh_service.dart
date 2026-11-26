@@ -106,8 +106,13 @@ class WebViewSessionCookieRefreshService {
 
   /// 上次 fingerprint 上报 404 → 判定弹药过期(预加载插件候选 / WebView
   /// 缓存里的旧插件 JS 提取出的端点已被站点轮换)。置位后下一次 bootstrap
-  /// 绕过注入候选并以 no-cache 拉插件 JS,强制新鲜 discover;成功即复位。
+  /// 绕过注入候选，强制重新拉取首页并新鲜 discover；成功即复位。
   bool _forceFreshPlugin = false;
+
+  /// 最近一次成功命中的指纹插件 URL（站点级缓存）。
+  /// 后续 bootstrap 若发现该 URL 仍在当前候选列表里，优先探测以直接命中
+  /// 浏览器 HTTP 缓存（1 次完成，避免重复扫描其他插件）。
+  String? _lastMatchedPluginUrl;
 
   /// 当前失败退避冷却:45s → 90s → 3m → 6m → 12m → 15m 封顶。
   Duration get _effectiveCooldown {
@@ -516,7 +521,8 @@ class WebViewSessionCookieRefreshService {
       }
       await controller.evaluateJavascript(
         source:
-            'window.__fluxdoFreshPlugin = ${freshPlugin ? 'true' : 'false'};',
+            'window.__fluxdoFreshPlugin = ${freshPlugin ? 'true' : 'false'};'
+            'window.__fluxdoLastPluginUrl = ${freshPlugin ? 'null' : jsonEncode(_lastMatchedPluginUrl)};',
       );
       if (isCancelled?.call() == true) {
         return const SessionBootstrapResult.failure(phase: 'cancelled');
@@ -537,22 +543,32 @@ class WebViewSessionCookieRefreshService {
             ]);
       final ok = result['ok'] == true;
       final cfBlocked = result['cfBlocked'] == true;
+      final pluginUrl = result['plugin']?.toString();
       final endpoint = result['endpoint']?.toString();
       final status = (result['status'] as num?)?.toInt();
       final phase = result['phase']?.toString();
+      final scannedCount = (result['scannedCount'] as num?)?.toInt();
+      final discoverMs = (result['discoverMs'] as num?)?.toInt();
+      final collectMs = (result['collectMs'] as num?)?.toInt();
+      final postMs = (result['postMs'] as num?)?.toInt();
       if (ok) {
         _forceFreshPlugin = false;
+        if (pluginUrl != null && pluginUrl.isNotEmpty) {
+          _lastMatchedPluginUrl = pluginUrl;
+        }
       } else if (status == 404 || phase == 'discover') {
         // 端点 404 / 候选里找不到插件 = 弹药过期,下一轮强制新鲜 discover;
-        // 同时废掉 PreloadedDataService 里的旧候选,别的调用方也不再拿它。
+        // 同时废掉 PreloadedDataService 里的旧候选和上次命中缓存。
         _forceFreshPlugin = true;
+        _lastMatchedPluginUrl = null;
         PreloadedDataService().invalidatePluginCandidates();
       }
       debugPrint(
         '[WebViewSessionSync] bootstrap result: ok=$ok cfBlocked=$cfBlocked '
         'reason=$reason phase=$phase '
-        'plugin=${result['plugin']} endpoint=$endpoint status=$status '
-        'fresh=$freshPlugin error=${result['error']}',
+        'plugin=$pluginUrl endpoint=$endpoint status=$status '
+        'scanned=$scannedCount discoverMs=$discoverMs collectMs=$collectMs '
+        'postMs=$postMs fresh=$freshPlugin error=${result['error']}',
       );
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
@@ -565,9 +581,20 @@ class WebViewSessionCookieRefreshService {
         if (cfBlocked) 'cfBlocked': true,
         if (freshPlugin) 'freshPlugin': true,
         'phase': phase,
-        'plugin': result['plugin']?.toString(),
+        'plugin': pluginUrl,
         'endpoint': endpoint,
         'status': status,
+        'scannedCount': ?scannedCount,
+        'discoverMs': ?discoverMs,
+        'collectMs': ?collectMs,
+        'postMs': ?postMs,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        if (result['cfMitigated'] != null &&
+            result['cfMitigated'].toString().isNotEmpty)
+          'cfMitigated': result['cfMitigated'].toString(),
+        if (result['contentType'] != null &&
+            result['contentType'].toString().isNotEmpty)
+          'contentType': result['contentType'].toString(),
         'error': result['error']?.toString(),
       });
       return ok
@@ -641,6 +668,20 @@ class WebViewSessionCookieRefreshService {
     );
   }
 
+  /// 仅测试用：导出 bootstrap 脚本内容以校验语法和提取逻辑。
+  @visibleForTesting
+  String buildBootstrapScriptForTest(String handlerName) =>
+      _bootstrapScript(handlerName);
+
+  @visibleForTesting
+  String? get lastMatchedPluginUrlForTest => _lastMatchedPluginUrl;
+
+  @visibleForTesting
+  void resetPluginCacheForTest() {
+    _lastMatchedPluginUrl = null;
+    _forceFreshPlugin = false;
+  }
+
   String _bootstrapScript(String handlerName) {
     final handler = jsonEncode(handlerName);
     final baseUrl = jsonEncode(AppConstants.baseUrl);
@@ -652,6 +693,29 @@ class WebViewSessionCookieRefreshService {
     try {
       window.flutter_inappwebview.callHandler(handlerName, JSON.stringify(payload || {}));
     } catch (e) {}
+  }
+
+  function isCfChallengeResponse(response, text) {
+    const status = response ? response.status : 0;
+    if (status !== 403 && status !== 429) return false;
+    const cfMitigated = (response.headers && response.headers.get('cf-mitigated') || '').trim().toLowerCase();
+    if (cfMitigated === 'challenge') return true;
+    const contentType = (response.headers && response.headers.get('content-type') || '').toLowerCase();
+    if (contentType && contentType.indexOf('text/html') < 0) return false;
+    const body = String(text || '');
+    if (body.indexOf('cf_chl_opt') >= 0) return true;
+    if (body.indexOf('challenge-platform') >= 0 && body.indexOf('cloudflare') >= 0) return true;
+    if (body.indexOf('Just a moment') >= 0 && (body.indexOf('cloudflare') >= 0 || body.indexOf('cf-challenge') >= 0)) return true;
+    return false;
+  }
+
+  function createHttpError(message, response, text) {
+    const err = new Error(message);
+    err.status = response ? response.status : null;
+    err.cfMitigated = (response && response.headers && response.headers.get('cf-mitigated')) || '';
+    err.contentType = (response && response.headers && response.headers.get('content-type')) || '';
+    err.cfBlocked = isCfChallengeResponse(response, text);
+    return err;
   }
 
   async function readCsrfToken() {
@@ -695,7 +759,7 @@ class WebViewSessionCookieRefreshService {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error('POST ' + url + ' -> ' + response.status + ': ' + text.slice(0, 160));
+      throw createHttpError('POST ' + url + ' -> ' + response.status + ': ' + text.slice(0, 160), response, text);
     }
     return {
       url,
@@ -715,6 +779,53 @@ class WebViewSessionCookieRefreshService {
     }
   }
 
+  function isPluginChunkUrl(url) {
+    return url.indexOf('_chunk.') >= 0 || url.indexOf('_chunk-') >= 0;
+  }
+
+  function extractCandidatesFromHtml(html) {
+    const nonOfficialMain = [];
+    const otherMain = [];
+    const fallback = [];
+    const seen = new Set();
+
+    function push(bucket, raw) {
+      const url = normalizeAssetUrl(raw);
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      bucket.push(url);
+    }
+
+    const scriptTagRe = /<script\\b[^>]*>/gi;
+    const srcAttrRe = /\\bsrc\\s*=\\s*(?:"([^"]+)"|'([^']+)'|([^\\s>]+))/i;
+    const nonOfficialRe = /\\bdata-official\\s*=\\s*(?:"false"|'false'|false\\b)/i;
+    let tagMatch;
+    while ((tagMatch = scriptTagRe.exec(html)) !== null) {
+      const tag = tagMatch[0];
+      if (tag.indexOf('/plugins/') < 0) continue;
+      const srcMatch = srcAttrRe.exec(tag);
+      if (!srcMatch) continue;
+      const raw = srcMatch[1] || srcMatch[2] || srcMatch[3] || '';
+      if (raw.indexOf('/assets/') < 0 || raw.indexOf('.js') < 0) continue;
+      const chunk = isPluginChunkUrl(raw);
+      if (!chunk && nonOfficialRe.test(tag)) {
+        push(nonOfficialMain, raw);
+      } else if (!chunk) {
+        push(otherMain, raw);
+      } else {
+        push(fallback, raw);
+      }
+    }
+
+    const assetPattern = /(https?:\\/\\/[^"'\\s<>]+\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?|\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?)/g;
+    let match;
+    while ((match = assetPattern.exec(html)) !== null) {
+      const raw = match[1];
+      push(isPluginChunkUrl(raw) ? fallback : otherMain, raw);
+    }
+    return nonOfficialMain.concat(otherMain, fallback);
+  }
+
   async function discoverPluginUrls() {
     // 优先用 dart 侧 PreloadedDataService 注入的列表 (来源同一份首页 HTML),
     // 避免 bootstrap 再 fetch 一次首页。无注入时降级到自己拉首页扫描。
@@ -725,7 +836,6 @@ class WebViewSessionCookieRefreshService {
       return injected.slice();
     }
 
-    const urls = new Set();
     const response = await fetch('/?__fluxdo_session_bootstrap=' + Date.now(), {
       method: 'GET',
       credentials: 'include',
@@ -734,73 +844,169 @@ class WebViewSessionCookieRefreshService {
     });
     const html = await response.text();
     if (!response.ok) {
-      throw new Error('home fetch -> ' + response.status + ': ' + html.slice(0, 120));
+      throw createHttpError('home fetch -> ' + response.status + ': ' + html.slice(0, 120), response, html);
     }
-
-    const assetPattern = /(https?:\\/\\/[^"'\\s<>]+\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?|\\/assets\\/[^"'\\s<>]*plugins\\/[^"'\\s<>]+?\\.js(?:\\?[^"'\\s<>]*)?)/g;
-    let match;
-    while ((match = assetPattern.exec(html)) !== null) {
-      const url = normalizeAssetUrl(match[1]);
-      if (url) urls.add(url);
-    }
-    return Array.from(urls);
+    return extractCandidatesFromHtml(html);
   }
 
-  async function findFingerprintPlugin() {
-    // dart 侧在上次端点 404 后置位:插件 JS 必须绕过 HTTP 缓存重新拉,
-    // 否则 force-cache 会一直命中旧 JS,提取出的过期端点重试也是 404。
-    const freshPlugin = window.__fluxdoFreshPlugin === true;
-    const candidates = await discoverPluginUrls();
-    for (const url of candidates) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          credentials: 'omit',
-          cache: freshPlugin ? 'reload' : 'force-cache'
-        });
-        if (!response.ok) continue;
-        const source = await response.text();
-        if (
-          source.indexOf('initializers/fingerprint') >= 0 &&
-          source.indexOf('visitor_id') >= 0 &&
-          source.indexOf('Fingerprint') >= 0
-        ) {
-          return { url, source };
-        }
-      } catch (_) {}
-    }
+  function isFingerprintPluginSource(source) {
+    return (
+      source.indexOf('initializers/fingerprint') >= 0 &&
+      source.indexOf('visitor_id') >= 0 &&
+      source.indexOf('Fingerprint') >= 0
+    );
+  }
+
+  function pluginCacheMode(url, freshPlugin) {
+    if (!freshPlugin) return 'force-cache';
+    // 带内容哈希的 .digested.js 是不可变静态资源，重扫新首页后仍可直接命中 HTTP 缓存；
+    // 仅对不带摘要的静态路径走 no-cache 校验新鲜度。
+    return /\\.digested\\.js(?:[?#]|\$)/.test(url) ? 'force-cache' : 'no-cache';
+  }
+
+  async function probePluginUrl(url, freshPlugin, signal) {
+    try {
+      const options = {
+        method: 'GET',
+        credentials: 'omit',
+        cache: pluginCacheMode(url, freshPlugin)
+      };
+      if (signal) options.signal = signal;
+      const response = await fetch(url, options);
+      if (!response.ok) return null;
+      const source = await response.text();
+      if (isFingerprintPluginSource(source)) {
+        return { url, source };
+      }
+    } catch (_) {}
     return null;
   }
 
+  async function findFingerprintPlugin() {
+    const discoverStart = Date.now();
+    const freshPlugin = window.__fluxdoFreshPlugin === true;
+    const lastPluginUrl = typeof window.__fluxdoLastPluginUrl === 'string' && window.__fluxdoLastPluginUrl.length > 0
+      ? window.__fluxdoLastPluginUrl
+      : null;
+    const candidates = await discoverPluginUrls();
+    let scannedCount = 0;
+
+    // 上次命中的插件 URL 仍在当前候选列表时优先探测 1 次，直接命中浏览器缓存。
+    let remaining = candidates;
+    if (!freshPlugin && lastPluginUrl && candidates.indexOf(lastPluginUrl) >= 0) {
+      scannedCount++;
+      const hit = await probePluginUrl(lastPluginUrl, false, null);
+      if (hit) {
+        hit.scannedCount = scannedCount;
+        hit.discoverMs = Date.now() - discoverStart;
+        return hit;
+      }
+      remaining = candidates.filter(function(u) { return u !== lastPluginUrl; });
+    }
+
+    // 参考网页端 HTTP/2 静态资源并行加载：并发拉取高优候选，任意命中立即取消其余请求。
+    const concurrency = Math.min(8, remaining.length);
+    if (concurrency <= 0) {
+      return null;
+    }
+    const abortController = typeof AbortController === 'function' ? new AbortController() : null;
+    const signal = abortController ? abortController.signal : null;
+    let nextIndex = 0;
+    let found = null;
+
+    async function worker() {
+      while (!found) {
+        const idx = nextIndex++;
+        if (idx >= remaining.length) return;
+        const url = remaining[idx];
+        const hit = await probePluginUrl(url, freshPlugin, signal);
+        scannedCount++;
+        if (hit && !found) {
+          found = hit;
+          if (abortController) {
+            try { abortController.abort(); } catch (_) {}
+          }
+          return;
+        }
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < concurrency; i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    if (found) {
+      found.scannedCount = scannedCount;
+      found.discoverMs = Date.now() - discoverStart;
+    }
+    return found;
+  }
+
   function extractFingerprintRunner(source) {
-    // 端点上报调用的压缩函数名会随论坛构建变化(曾是 `_`,现为 `L`),
+    // 端点上报调用的压缩函数名会随论坛构建变化(曾是 `_`,现为 `L`/`S`),
     // 不写死函数名,只匹配 `<任意标识符>("<端点>",{type:"POST",data:{visitor_id:` 这一稳定结构。
-    const endpointMatch = source.match(/[A-Za-z_\$][\\w\$]*\\("([^"]+)",\\{type:"POST",data:\\{visitor_id:/);
+    const endpointMatch = source.match(/[A-Za-z_\$][\\w\$]*\\(\\s*["']([^"']+)["']\\s*,\\s*\\{\\s*type\\s*:\\s*["']POST["']\\s*,\\s*data\\s*:\\s*\\{\\s*visitor_id\\s*:/);
     if (!endpointMatch) {
       throw new Error('fingerprint endpoint not found');
     }
-    const fpMatch = source.match(/[A-Za-z_\$][\\w\$]*=(function\\(n\\)\\{function e[\\s\\S]*?Object\\.defineProperty\\(n,"__esModule",\\{value:!0\\}\\),n\\})\\(\\{\\}\\)/);
-    if (!fpMatch) {
+
+    // 泛化匹配内置 FingerprintJS IIFE 工厂：不写死压缩形参名(如 n/e)，
+    // 按 `__esModule` 导出尾部反向定位同形参 `function(<param>){...}` 并验证可求值出 `.load()`。
+    const esModuleRe = /Object\\.defineProperty\\(\\s*([A-Za-z_\$][\\w\$]*)\\s*,\\s*["']__esModule["']\\s*,\\s*\\{\\s*value\\s*:\\s*(?:!0|true)\\s*\\}\\s*\\)\\s*,\\s*\\1\\s*\\}/g;
+    let endMatch;
+    let fingerprint = null;
+    while ((endMatch = esModuleRe.exec(source)) !== null) {
+      const param = endMatch[1];
+      const endIdx = endMatch.index + endMatch[0].length;
+      const tail = source.slice(endIdx, endIdx + 16);
+      if (!/^\\s*\\)?\\s*\\(\\s*\\{\\s*\\}\\s*\\)/.test(tail)) continue;
+      const prefix = source.slice(0, endMatch.index);
+      const escapedParam = param.replace(/\\\$/g, '\\\\\$');
+      const startRe = new RegExp('function\\\\s*\\\\(\\\\s*' + escapedParam + '\\\\s*\\\\)\\\\s*\\\\{', 'g');
+      const starts = [];
+      let sm;
+      while ((sm = startRe.exec(prefix)) !== null) {
+        starts.push(sm.index);
+      }
+      for (let i = starts.length - 1; i >= 0; i--) {
+        const candidate = source.slice(starts[i], endIdx);
+        if (candidate.indexOf('visitorId') < 0 || candidate.indexOf('components') < 0) {
+          continue;
+        }
+        try {
+          const factory = (0, eval)('(' + candidate + ')');
+          if (typeof factory !== 'function') continue;
+          const instance = factory({});
+          if (instance && typeof instance.load === 'function') {
+            fingerprint = instance;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (fingerprint) break;
+    }
+    if (!fingerprint) {
       throw new Error('fingerprint engine not found');
     }
     return {
       endpoint: endpointMatch[1],
-      engineFactory: fpMatch[1]
+      fingerprint: fingerprint
     };
   }
 
   async function runFingerprintSource(plugin) {
+    const collectStart = Date.now();
     const runner = extractFingerprintRunner(plugin.source);
-    const fingerprint = (0, eval)('(' + runner.engineFactory + ')({})');
-    if (!fingerprint || typeof fingerprint.load !== 'function') {
-      throw new Error('fingerprint engine invalid');
-    }
-    const agent = await fingerprint.load();
+    const agent = await runner.fingerprint.load();
     const result = await agent.get();
+    const collectMs = Date.now() - collectStart;
     const data = {};
     Object.keys(result.components || {}).forEach(function(key) {
       data[key] = result.components[key] && result.components[key].value;
     });
+    const postStart = Date.now();
     const post = await postForm(runner.endpoint, {
       visitor_id: result.visitorId,
       version: result.version,
@@ -808,6 +1014,10 @@ class WebViewSessionCookieRefreshService {
     });
     post.endpoint = runner.endpoint;
     post.plugin = plugin.url;
+    post.scannedCount = plugin.scannedCount;
+    post.discoverMs = plugin.discoverMs;
+    post.collectMs = collectMs;
+    post.postMs = Date.now() - postStart;
     return post;
   }
 
@@ -825,15 +1035,31 @@ class WebViewSessionCookieRefreshService {
       phase: 'post',
       plugin: post && post.plugin,
       status: post && post.status,
-      endpoint: post && post.endpoint
+      endpoint: post && post.endpoint,
+      scannedCount: post && post.scannedCount,
+      discoverMs: post && post.discoverMs,
+      collectMs: post && post.collectMs,
+      postMs: post && post.postMs
     });
   } catch (e) {
     var msg = String(e && e.message ? e.message : e);
-    // home fetch / postForm 失败时 throw 的 message 形如 "... -> 403: ...",
-    // 从中解析出 HTTP status,把 403/429 标记为 CF 拦截,供 dart 侧统一处理。
-    var statusMatch = msg.match(/->\\s*(\\d{3})/);
-    var st = statusMatch ? parseInt(statusMatch[1], 10) : null;
-    return done({ ok: false, phase: 'exception', error: msg, status: st, cfBlocked: st === 403 || st === 429 });
+    var st = e && typeof e.status === 'number' ? e.status : null;
+    if (st === null) {
+      var statusMatch = msg.match(/->\\s*(\\d{3})/);
+      st = statusMatch ? parseInt(statusMatch[1], 10) : null;
+    }
+    var cfBlocked = Boolean(e && e.cfBlocked === true);
+    var cfMitigated = e && e.cfMitigated ? String(e.cfMitigated) : '';
+    var contentType = e && e.contentType ? String(e.contentType) : '';
+    return done({
+      ok: false,
+      phase: 'exception',
+      error: msg,
+      status: st,
+      cfBlocked: cfBlocked,
+      cfMitigated: cfMitigated,
+      contentType: contentType
+    });
   }
 })();
 ''';

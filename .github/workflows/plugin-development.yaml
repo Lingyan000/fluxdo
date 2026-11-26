@@ -9,7 +9,9 @@ on:
       - 'lib/services/plugin_image_cache.dart'
       - 'lib/services/data_management/cache_size_service.dart'
       - 'lib/pages/image_viewer*.dart'
+      - 'lib/widgets/common/image_live_overlay.dart'
       - 'test/widgets/image_viewer*_test.dart'
+      - 'test/widgets/image_live_overlay_test.dart'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
       - 'packages/common_ui/lib/src/pin_input.dart'
@@ -53,7 +55,9 @@ on:
       - 'lib/services/plugin_image_cache.dart'
       - 'lib/services/data_management/cache_size_service.dart'
       - 'lib/pages/image_viewer*.dart'
+      - 'lib/widgets/common/image_live_overlay.dart'
       - 'test/widgets/image_viewer*_test.dart'
+      - 'test/widgets/image_live_overlay_test.dart'
       - 'lib/modules/cdk/**'
       - 'lib/modules/ldc_payment/**'
       - 'packages/common_ui/lib/src/pin_input.dart'
@@ -127,7 +131,7 @@ jobs:
         working-directory: tools
       - run: pnpm build
         working-directory: tools
-      # 准备脚本会直接导入 slang，首次检出需先解析依赖才能启动。
+      # 显式解析应用依赖，再生成本地化和其他测试资源。
       - name: Install application dependencies
         working-directory: app
         run: flutter pub get
@@ -198,9 +202,9 @@ jobs:
       - name: Verify shared image viewer and controlled image sources
         working-directory: app
         run: |
-          flutter analyze lib/pages/image_viewer_page.dart lib/pages/image_viewer_memory_source.dart lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/modules/metaverse/metaverse_content_components_test.dart
+          flutter analyze lib/pages/image_viewer_page.dart lib/pages/image_viewer_memory_source.dart lib/widgets/common/image_live_overlay.dart lib/modules/metaverse/plugin/ui/metaverse_widget_library.dart test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_live_overlay_test.dart test/widgets/image_viewer_live_text_gestures_test.dart test/modules/metaverse/metaverse_content_components_test.dart
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          flutter test --reporter expanded test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_viewer_fade_continuity_test.dart test/widgets/image_viewer_gradient_transition_test.dart
+          flutter test --reporter expanded test/widgets/image_viewer_memory_source_test.dart test/widgets/image_viewer_system_ui_test.dart test/widgets/image_viewer_fade_continuity_test.dart test/widgets/image_viewer_gradient_transition_test.dart test/widgets/image_live_overlay_test.dart test/widgets/image_viewer_live_text_gestures_test.dart
           exit $LASTEXITCODE
       - name: Verify native CDK claims and shared checkout without live transactions
         working-directory: app

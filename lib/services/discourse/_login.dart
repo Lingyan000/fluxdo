@@ -152,11 +152,24 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// 优先识别站点返回的登录错误，其他非成功 HTTP 响应按请求失败处理。
   LoginResult parseSessionJsonBody(int status, String body) {
     Map<String, dynamic>? map;
+    bool isBadCsrf = false;
     try {
       final decoded = jsonDecode(body);
-      if (decoded is Map) map = Map<String, dynamic>.from(decoded);
+      if (decoded is Map) {
+        map = Map<String, dynamic>.from(decoded);
+      } else if (status == 403 &&
+          decoded is List &&
+          decoded.any((item) => item.toString() == 'BAD CSRF')) {
+        isBadCsrf = true;
+      }
     } catch (_) {
       map = null;
+    }
+    if (isBadCsrf) {
+      return const LoginResult.error(
+        LoginErrorKind.unknown,
+        message: '会话校验失败 (BAD CSRF)，请重试',
+      );
     }
     if (map == null) {
       return LoginResult.error(
@@ -188,6 +201,9 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   @override
   Future<void> finalizeNativeLoginSuccess(String identifier) async {
     AuthSession().advance();
+    // 登录成功后会话 Cookie 已轮换，清空登录前残留的旧 CSRF token，
+    // 确保后续写请求使用与新 _forum_session 对应的 CSRF。
+    _cookieSync.clearCsrfToken();
 
     final token = await _cookieJar.getTToken() ?? '';
     if (token.isEmpty) {

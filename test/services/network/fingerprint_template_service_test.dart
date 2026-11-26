@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/services/log/log_writer.dart';
 import 'package:fluxdo/services/network/core/net_core_diagnostics.dart';
 import 'package:fluxdo/services/network/fingerprint/fingerprint_template_service.dart';
 
@@ -376,4 +378,75 @@ void main() {
     expect(service.templateReady.value, true);
   });
 
+  group('TLS 能力审计日志', () {
+    late Directory tempDir;
+
+    setUpAll(() async {
+      await LogWriter.resetForTesting();
+    });
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('fp_audit_test_');
+      await LogWriter.initForTesting(tempDir);
+    });
+
+    tearDown(() async {
+      await LogWriter.resetForTesting();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('采样完成写入 capability_audit 摘要且不重复刷屏', () async {
+      final service = FingerprintTemplateService.forTesting(
+        status: (_) async => {
+          'ready': true,
+          'user_agent': 'Chrome/114',
+          'source': 'sampled',
+          'cache_state': 'updated',
+          'tls_permute_extensions': true,
+          'fetch_headers_sampled': true,
+          'tls_capabilities': {
+            'scope': 'tcp_full_handshake_without_ech',
+            'status': 'backend_mismatch',
+            'backend': 'BoringSSL',
+            'differences': {
+              'extension_ids': {
+                'sampled': [0, 23, 35],
+                'emitted': [0, 35],
+              },
+            },
+          },
+        },
+        probe: (_, _) async {},
+        userAgent: () async => 'Chrome/114',
+      );
+
+      await service.ensure(1);
+      await service.ensure(1);
+      await LogWriter.instance.flushNow();
+
+      final entries = <Map<String, dynamic>>[];
+      await for (final entity in tempDir.list(recursive: true)) {
+        if (entity is File) {
+          for (final line in await entity.readAsLines()) {
+            if (line.trim().isEmpty) continue;
+            final decoded = jsonDecode(line);
+            if (decoded is Map<String, dynamic> &&
+                decoded['event'] == 'fingerprint_capability_audit') {
+              entries.add(decoded);
+            }
+          }
+        }
+      }
+
+      expect(entries, hasLength(1));
+      final entry = entries.single;
+      expect(entry['level'], 'warning');
+      expect(entry['auditStatus'], 'backend_mismatch');
+      expect(entry['backend'], 'BoringSSL');
+      expect(entry['source'], 'sampled');
+      expect(entry['diffFields'], ['extension_ids']);
+    });
+  });
 }

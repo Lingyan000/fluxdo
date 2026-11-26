@@ -82,4 +82,31 @@ void main() {
       );
     });
   });
+
+  group('WebViewHttpAdapter 浏览器安全请求头过滤', () {
+    test('过滤 Sec-Fetch-*、Sec-CH-UA* 与 Upgrade-Insecure-Requests，保留常规头', () {
+      final safe = WebViewHttpAdapter.buildBrowserSafeHeadersForTesting({
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'User-Agent': 'Mozilla/5.0',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Sec-CH-UA': '"Chromium";v="114"',
+        'Upgrade-Insecure-Requests': '1',
+        'X-Requested-With': 'XMLHttpRequest',
+      });
+
+      expect(safe.keys, containsAll(['Accept', 'Accept-Language', 'X-Requested-With']));
+      expect(safe.keys, isNot(contains('User-Agent')));
+      expect(safe.keys, isNot(contains('Sec-Fetch-Dest')));
+      expect(safe.keys, isNot(contains('Sec-Fetch-Mode')));
+      expect(safe.keys, isNot(contains('Sec-Fetch-Site')));
+      expect(safe.keys, isNot(contains('Sec-Fetch-User')));
+      expect(safe.keys, isNot(contains('Sec-CH-UA')));
+      expect(safe.keys, isNot(contains('Upgrade-Insecure-Requests')));
+    });
+  });
 }

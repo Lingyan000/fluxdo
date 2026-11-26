@@ -4,12 +4,9 @@ import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/s.dart';
-import '../services/auth_session.dart';
-import '../services/cf_challenge_service.dart';
+import '../services/browser_trust_coordinator.dart';
 import '../services/credential_store_service.dart';
 import '../services/discourse/discourse_service.dart';
-import '../services/network/cookie/boundary_sync_service.dart';
-import '../services/network/cookie/cookie_jar_service.dart';
 import '../services/toast_service.dart';
 import '../services/user_api_key_login_flow.dart';
 import '../utils/blur_config.dart';
@@ -66,6 +63,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.initState();
     _setupEntryAnimations();
     _loadSavedCredentials();
+    // 登出时会停止静默续期；进入登录页后若已有 sitekey，恢复 Turnstile 预热，
+    // 让用户在填写凭据与人机验证期间提前准备好 cf_clearance。
+    BrowserTrustCoordinator.instance.startClearanceRefresh(
+      reason: 'login_page_open',
+    );
   }
 
   /// staggered 入场动画 (对齐 onboarding 的节奏)
@@ -147,37 +149,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
-  /// 确保 jar 里有 cf_clearance。没有 → 弹 fluxdo 现有的 CF 手动验证页让用户
-  /// 人机交互拿 cookie, 然后**显式 sync** 从 WebView cookie store 到 dart jar
-  /// (这步 [CfChallengeService.showManualVerify] 本身不做, sync 一般是
-  /// [CfChallengeInterceptor._syncCookiesOnce] 触发, 我们直接调 showManualVerify
-  /// 不经过 interceptor, 所以要手动 sync, 不然 jar 还是空)。
-  Future<bool> _ensureCfClearance() async {
-    final jar = CookieJarService();
-    var clearance = await jar.getCfClearance();
-    if (clearance != null && clearance.isNotEmpty) return true;
-    if (!mounted) return false;
-
-    final requestGeneration = AuthSession().generation;
-    final ok = await CfChallengeService().showManualVerify(context, true);
-    if (ok != true) return false;
-
-    // 等 1.5s 让 WV 网络栈把 Set-Cookie 写完, 然后同步 CF/验证码相关 cookie。
-    // 这里明确排除 Discourse session cookie，登录成功收口流程会单独同步它们。
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    for (var i = 0; i < 3; i++) {
-      await BoundarySyncService.instance.syncFromWebView(
-        cookieNames: null,
-        excludeCookieNames: CookieJarService.authCookieNames,
-        requestGeneration: requestGeneration,
-      );
-      clearance = await jar.getCfClearance();
-      if (clearance != null && clearance.isNotEmpty) return true;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-    return false;
-  }
-
   /// 表单提交回调。返 true 表示走完成功路径并已 pop, false 留在表单。
   Future<bool> _handleSubmit({
     required String identifier,
@@ -209,16 +180,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   ) async {
     final service = DiscourseService();
 
-    // Step 0: jar 必须有 cf_clearance, 否则 native dio 任何请求都被 CF 当 bot
-    // 直接 403 (TLS 指纹不对). 没有就弹 CF 手动验证页让用户人机过一次。
-    if (!await _ensureCfClearance()) {
-      if (mounted) {
-        ToastService.showError(context.l10n.login_cfIncomplete);
-      }
-      return false;
-    }
-    if (!mounted || ModalRoute.of(context)?.isActive == false) return false;
-
     // hcaptcha endpoint: 从 SharedPreferences 拿 (站长改 mount 时填到设置里);
     // 没配就让 dialog 用内置 fallback 列表 (/captcha/hcaptcha/create.json →
     // /hcaptcha/create.json)。读 prefs 直接走 SharedPreferences (不依赖
@@ -228,9 +189,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     if (!mounted || ModalRoute.of(context)?.isActive == false) return false;
 
     // Step 1-3: WebView 内 JS 全流程登录 (csrf → hcaptcha/create → session)。
-    // 三个请求都由 WebView 内核发出, TLS/JA3 指纹与 CF 签发 cf_clearance 时一致,
-    // 避开 dio 与 WebView 指纹不一致导致的 403 (BAD CSRF)。
-    // 2FA 通过 onNeedSecondFactor 回调弹 TOTP, 由 dialog 内同一 WebView 重试。
+    // 不在请求前强求 cf_clearance（源站无盾放行时 /challenge 返回 404 且不签发
+    // clearance，强求会死锁）；若登录请求真实命中 CF 挑战，由 WebViewLoginHost 内部
+    // 识别响应特征后按需拉起验证并重试。
     final result = await _webLogin.currentState!.show(
       siteKey: _kLinuxDoHcaptchaSiteKey,
       identifier: identifier,

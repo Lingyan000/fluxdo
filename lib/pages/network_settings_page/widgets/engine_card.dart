@@ -173,6 +173,7 @@ class _ConnectionOverview extends StatelessWidget {
         AnimatedBuilder(
           animation: Listenable.merge([
             webview.notifier,
+            webview.autoFallbackNotifier,
             webview.effectiveNotifier,
           ]),
           builder: (context, _) => _WebViewSwitch(webview: webview),
@@ -384,7 +385,7 @@ class _NoticeRow extends StatelessWidget {
   }
 }
 
-/// 兼容模式开关：主站 API 改由 WebView 代发。
+/// 兼容模式开关：主站 API 改由 WebView 代发，以及验证无效时自动切换开关。
 class _WebViewSwitch extends StatelessWidget {
   const _WebViewSwitch({required this.webview});
 
@@ -394,31 +395,54 @@ class _WebViewSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final enabled = webview.enabled;
-    return SwitchListTile(
-      secondary: Icon(
-        Symbols.language_rounded,
-        fill: enabled ? 1 : 0,
-        color: enabled
-            ? context.emphasis.selected
-            : Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-      title: Text(l10n.webviewAdapter_title),
-      subtitle: Text(
-        enabled
-            ? l10n.webviewAdapter_enabledDesc
-            : l10n.webviewAdapter_disabledDesc,
-      ),
-      value: enabled,
-      onChanged: (value) async {
-        // Windows 下 DoH 开着时 WebView 经核心 MITM，需要先装好受信任 CA
-        if (value &&
-            Platform.isWindows &&
-            NetworkSettingsService.instance.current.dohEnabled &&
-            !await ensureWindowsCertTrusted(context)) {
-          return;
-        }
-        await webview.setEnabled(value);
-      },
+    final autoFallback = webview.autoFallbackEnabled;
+    final mutedColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SwitchListTile(
+          secondary: Icon(
+            Symbols.language_rounded,
+            fill: enabled ? 1 : 0,
+            color: enabled ? context.emphasis.selected : mutedColor,
+          ),
+          title: Text(l10n.webviewAdapter_title),
+          subtitle: Text(
+            enabled
+                ? l10n.webviewAdapter_enabledDesc
+                : l10n.webviewAdapter_disabledDesc,
+          ),
+          value: enabled,
+          onChanged: (value) async {
+            // Windows 下 DoH 开着时 WebView 经核心 MITM，需要先装好受信任 CA
+            if (value &&
+                Platform.isWindows &&
+                NetworkSettingsService.instance.current.dohEnabled &&
+                !await ensureWindowsCertTrusted(context)) {
+              return;
+            }
+            await webview.setEnabled(value);
+          },
+        ),
+        SwitchListTile(
+          secondary: Icon(
+            Symbols.call_split_rounded,
+            color: autoFallback ? context.emphasis.selected : mutedColor,
+          ),
+          title: Text(l10n.webviewAdapter_autoFallbackTitle),
+          subtitle: Text(l10n.webviewAdapter_autoFallbackDesc),
+          value: autoFallback,
+          onChanged: (value) async {
+            if (value &&
+                Platform.isWindows &&
+                NetworkSettingsService.instance.current.dohEnabled &&
+                !await ensureWindowsCertTrusted(context)) {
+              return;
+            }
+            await webview.setAutoFallbackEnabled(value);
+          },
+        ),
+      ],
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:fluxdo/services/network/cookie/csrf_token_service.dart';
 import 'package:fluxdo/services/network/webview/webview_adapter_settings_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -84,6 +85,51 @@ void main() {
         service.shouldUseWebView(Uri.parse('https://cdn.linux.do/image.png')),
         false,
       );
+    });
+
+    test('切换有效通道时清空缓存的 CSRF token，防止跨通道会话错配', () async {
+      final csrf = CsrfTokenService();
+      csrf.setCsrfToken('token-before-switch');
+      expect(csrf.csrfToken, 'token-before-switch');
+
+      service.enableSessionFallback();
+      expect(csrf.csrfToken, isNull);
+
+      csrf.setCsrfToken('token-in-webview-channel');
+      // 持久化开启不会改变有效通道（本来就是 true），不应无谓清空
+      await service.setEnabled(true);
+      expect(csrf.csrfToken, 'token-in-webview-channel');
+
+      service.disableSessionFallback();
+      expect(csrf.csrfToken, 'token-in-webview-channel');
+
+      // 有效通道从 webview 切回 core 时应清空
+      await service.setEnabled(false);
+      expect(csrf.csrfToken, isNull);
+    });
+
+    test('自动切换兼容模式开关默认关闭，支持持久化与本会话关闭抑制', () async {
+      expect(service.autoFallbackEnabled, isFalse);
+      expect(service.canAutoFallbackThisSession, isFalse);
+
+      await service.setAutoFallbackEnabled(true);
+      expect(service.autoFallbackEnabled, isTrue);
+      expect(service.canAutoFallbackThisSession, isTrue);
+      expect(prefs.getBool('webview_auto_fallback_enabled'), isTrue);
+
+      // 用户点击提示中的关闭后，本会话暂停自动切换，但不改动持久化开关
+      service.suppressAutoFallbackForSession();
+      expect(service.autoFallbackEnabled, isTrue);
+      expect(service.canAutoFallbackThisSession, isFalse);
+
+      // 会话重置（登出）后恢复
+      service.resetSessionFallback();
+      expect(service.canAutoFallbackThisSession, isTrue);
+
+      await service.setAutoFallbackEnabled(false);
+      expect(service.autoFallbackEnabled, isFalse);
+      expect(service.canAutoFallbackThisSession, isFalse);
+      expect(prefs.getBool('webview_auto_fallback_enabled'), isFalse);
     });
   });
 }

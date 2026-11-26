@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/_cli_ui.dart';
@@ -63,6 +65,40 @@ void main() {
     test('padRightDisplayWidth 按终端显示宽度对齐中文标签', () {
       expect(displayWidth(padRightDisplayWidth('版本', 8)), 8);
       expect(displayWidth(padRightDisplayWidth('Tag', 8)), 8);
+    });
+  });
+
+  group('冷启动引导脚本守卫', () {
+    test('pub get 之前运行的引导脚本不得直接或间接依赖 package:*', () {
+      const bootstrapEntryPoints = <String>[
+        'tool/_workspace_cli.dart',
+        'tool/bootstrap_workspace.dart',
+        'tool/init_workspace.dart',
+        'tool/project_prep.dart',
+        'tool/project_tasks.dart',
+        'tool/sync_ide_sdk.dart',
+      ];
+      final packageImport = RegExp(r'''^\s*import\s+['"]package:''', multiLine: true);
+      final localImport = RegExp(r'''^\s*import\s+['"]([^:'"]+\.dart)['"]''', multiLine: true);
+
+      final visited = <String>{};
+      final queue = List<String>.from(bootstrapEntryPoints);
+      while (queue.isNotEmpty) {
+        final path = queue.removeLast();
+        if (!visited.add(path)) continue;
+        final content = File(path).readAsStringSync();
+        expect(
+          packageImport.hasMatch(content),
+          isFalse,
+          reason: '$path 在 pub get 之前就会被运行，不能包含 package:* 导入',
+        );
+        for (final match in localImport.allMatches(content)) {
+          final relative = match.group(1)!;
+          final resolved = File(path).parent.uri.resolve(relative).toFilePath();
+          final normalized = resolved.replaceFirst('${Directory.current.path}${Platform.pathSeparator}', '');
+          queue.add(normalized);
+        }
+      }
     });
   });
 }

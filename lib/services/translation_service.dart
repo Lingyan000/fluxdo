@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 
+import '../constants.dart';
 import '../models/translation_engine.dart';
 import 'network/adapters/platform_adapter.dart';
 import 'network/deadline_dio.dart';
 import 'network/flux_request_spec.dart';
+import 'network/interceptors/redirect_interceptor.dart';
 
 enum TranslationFailure { unavailable, rateLimited, incomplete }
 
@@ -21,13 +24,21 @@ class TranslationService {
 
   final Dio _dio;
 
-  static Dio createClient() => DeadlineDio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      sendTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 90),
-    ),
-  )..httpClientAdapter = createExternalHttpAdapter();
+  static Dio createClient() {
+    final dio = DeadlineDio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        sendTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 90),
+        followRedirects: false,
+        // NetCoreHttpAdapter 不自动补 User-Agent；部分 CDN（如魔搭 LFS）会以 403 拒绝空 UA。
+        headers: {HttpHeaders.userAgentHeader: AppConstants.userAgent},
+      ),
+    )..httpClientAdapter = createExternalHttpAdapter();
+    // NetCoreHttpAdapter 不会自动跟随 3xx，统一交由 RedirectInterceptor 跨适配器处理重定向。
+    dio.interceptors.add(RedirectInterceptor(dio));
+    return dio;
+  }
 
   void dispose() => _dio.close(force: true);
 

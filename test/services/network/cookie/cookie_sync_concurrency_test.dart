@@ -344,4 +344,59 @@ void main() {
     await drain;
     expect(drained, isTrue);
   });
+
+  test('挂起认证 Cookie 回写期间，不覆盖 WebView 中新的 _forum_session，且释放后恢复', () async {
+    final oldSession = CanonicalCookie(
+      name: '_forum_session',
+      value: 'old-jar-session',
+      domain: 'linux.do',
+      path: '/',
+      hostOnly: true,
+      secure: true,
+      httpOnly: true,
+    );
+    final newSession = oldSession.copyWith(value: 'fresh-webview-session');
+    final nonAuth = CanonicalCookie(
+      name: 'theme',
+      value: 'dark',
+      domain: 'linux.do',
+      path: '/',
+      hostOnly: true,
+      secure: true,
+      httpOnly: false,
+    );
+    jar.cookies = [oldSession, nonAuth];
+    writer.cookies = [info(newSession)];
+
+    final release = sentinel.suspendAuthBackSync();
+    expect(sentinel.isAuthBackSyncSuspended, isTrue);
+
+    await priming.prime(origin);
+    expect(priming.isPrimed, isFalse);
+    expect(
+      writer.cookies.singleWhere((c) => c.name == '_forum_session').value,
+      'fresh-webview-session',
+    );
+    expect(writer.cookies.singleWhere((c) => c.name == 'theme').value, 'dark');
+
+    sentinel.scheduleSyncFromJar(origin, ['_forum_session']);
+    await sentinel.drain();
+    final direct = await sentinel.syncFromJar(origin, '_forum_session');
+    expect(direct.status, SweepStatus.noop);
+    expect(
+      writer.cookies.singleWhere((c) => c.name == '_forum_session').value,
+      'fresh-webview-session',
+    );
+
+    release();
+    release(); // 幂等
+    expect(sentinel.isAuthBackSyncSuspended, isFalse);
+
+    await priming.prime(origin);
+    expect(priming.isPrimed, isTrue);
+    expect(
+      writer.cookies.singleWhere((c) => c.name == '_forum_session').value,
+      'old-jar-session',
+    );
+  });
 }

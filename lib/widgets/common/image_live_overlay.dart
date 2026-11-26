@@ -111,6 +111,10 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
   Offset? _dragFixedAnchor;
   int? _lastHapticGlyph;
   bool _hoveringText = false;
+  Offset? _pendingSelectionGlobalPosition;
+  Offset? _pendingSelectionImagePosition;
+  Offset? _longPressDragGlobalPosition;
+  bool _initialSelectionResolved = false;
 
   /// 覆盖翻译结果。
   List<TranslatedTextBlock> _translatedBlocks = const [];
@@ -132,6 +136,84 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
 
   /// 供宿主快捷键调用：是否有正在选中的文字。
   bool get hasSelection => _selection != null;
+
+  /// 长按可重复选择同一图片中的文字；尚未读到的行在后续识别结果中选中。
+  bool selectTextAt(Offset globalPosition) {
+    if (widget.mode != ImageLiveOverlayMode.liveText) return false;
+    if (_selectLineAt(globalPosition)) return true;
+    if (_reading) {
+      _pendingSelectionGlobalPosition = globalPosition;
+      _pendingSelectionImagePosition = _computePriorityPoint(globalPosition);
+      return true;
+    }
+    return false;
+  }
+
+  /// 首次长按的指针仍由查看器持有，移动与抬手事件也由查看器转交。
+  void updateLongPressSelection(Offset globalPosition) {
+    if (widget.mode != ImageLiveOverlayMode.liveText) return;
+    _longPressDragGlobalPosition = globalPosition;
+    _extendLongPressSelection();
+  }
+
+  void endLongPressSelection() {
+    if (_longPressDragGlobalPosition == null) return;
+    _longPressDragGlobalPosition = null;
+    _onPanEnd();
+  }
+
+  bool _selectLineAt(Offset globalPosition) {
+    final point = _computePriorityPoint(globalPosition);
+    return point != null && _selectLineAtImagePoint(point);
+  }
+
+  bool _selectLineAtImagePoint(Offset point) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || _layout == null) return false;
+    final display = _displayRect(box.size);
+    if (display.isEmpty) return false;
+    final hit = _layout!.glyphAt(
+      point.dx,
+      point.dy,
+      reach: 10 * _imageSize.width / display.width,
+    );
+    if (hit == null) return false;
+    setState(() {
+      _selection = _layout!.lineRangeOf(hit);
+      _pendingSelectionGlobalPosition = null;
+      _pendingSelectionImagePosition = null;
+      _initialSelectionResolved = true;
+    });
+    return true;
+  }
+
+  void _extendLongPressSelection() {
+    final position = _longPressDragGlobalPosition;
+    final selection = _selection;
+    final layout = _layout;
+    final box = context.findRenderObject();
+    if (position == null ||
+        selection == null ||
+        layout == null ||
+        _pendingSelectionGlobalPosition != null ||
+        box is! RenderBox ||
+        !box.hasSize) {
+      return;
+    }
+    if (_activeDrag == null) {
+      final anchor = layout.glyphs[selection.start];
+      _activeDrag = _DragTarget.directSlide;
+      _activeDragKind = PointerDeviceKind.touch;
+      _dragFixedAnchor = Offset(anchor.centerX, anchor.centerY);
+    }
+    _onPanUpdate(
+      DragUpdateDetails(
+        globalPosition: position,
+        localPosition: box.globalToLocal(position),
+      ),
+      box.size,
+    );
+  }
 
   /// 供宿主快捷键（Esc）调用：若存在选区先清选区，否则返回 false 由宿主关闭覆盖层。
   bool clearSelectionIfAny() {
@@ -159,6 +241,7 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
   @override
   void initState() {
     super.initState();
+    _pendingSelectionGlobalPosition = widget.initialTapGlobalPosition;
     _engine = ref.read(preferencesProvider).translationEngine;
     _targetCode = ref.read(aiTranslationTargetLanguageProvider);
     widget.gestureController?.addListener(_onGestureChanged);
@@ -240,6 +323,10 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
     _dragFixedAnchor = null;
     _lastHapticGlyph = null;
     _hoveringText = false;
+    _pendingSelectionGlobalPosition = widget.initialTapGlobalPosition;
+    _pendingSelectionImagePosition = null;
+    _longPressDragGlobalPosition = null;
+    _initialSelectionResolved = false;
     _translatedBlocks = const [];
     _showOriginalPeek = false;
     _needsDownload = false;
@@ -410,7 +497,13 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
           _ocrProgress = null;
         });
         _syncPulse();
-        final priority = _computePriorityPoint();
+        final priority =
+            _pendingSelectionImagePosition ??
+            _computePriorityPoint(_pendingSelectionGlobalPosition);
+        if (_pendingSelectionGlobalPosition != null) {
+          // 排队期间缩放或平移图片，也要保留长按时指向的原图位置。
+          _pendingSelectionImagePosition = priority;
+        }
         final hasMissFallback =
             !widget.passive &&
             priority != null &&
@@ -453,19 +546,19 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
           },
           onPartial: (partial) {
             if (!mounted || token.isCancelled) return;
-            _updateLayoutKeepingSelection(partial, autoSelectAt: priority);
+            _updateLayoutKeepingSelection(partial);
           },
         );
         if (!mounted || token.isCancelled || missedLongPress) return;
         _ocrResult = ocr;
-        _updateLayoutKeepingSelection(ocr, autoSelectAt: priority);
+        _updateLayoutKeepingSelection(ocr);
         setState(() {
           _reading = false;
           _ocrProgress = null;
         });
         _syncPulse();
 
-        if (hasMissFallback && (ocr.isEmpty || _selection == null)) {
+        if (hasMissFallback && (ocr.isEmpty || !_initialSelectionResolved)) {
           final onMissed = widget.onInitialTapMissed;
           widget.onClose();
           onMissed?.call();
@@ -577,8 +670,8 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
     }
   }
 
-  Offset? _computePriorityPoint() {
-    final tap = widget.initialTapGlobalPosition;
+  Offset? _computePriorityPoint([Offset? globalPosition]) {
+    final tap = globalPosition ?? widget.initialTapGlobalPosition;
     final img = _decodedImage;
     if (tap == null || img == null) return null;
     final ro = context.findRenderObject();
@@ -593,10 +686,7 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
     );
   }
 
-  void _updateLayoutKeepingSelection(
-    OcrResult ocr, {
-    Offset? autoSelectAt,
-  }) {
+  void _updateLayoutKeepingSelection(OcrResult ocr) {
     final prevLayout = _layout;
     final prevSelection = _selection;
     Offset? anchorStart;
@@ -616,24 +706,17 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
       if (a != null && b != null) {
         nextSelection = (start: math.min(a, b), end: math.max(a, b));
       }
-    } else if (prevSelection == null &&
-        autoSelectAt != null &&
-        widget.mode == ImageLiveOverlayMode.liveText &&
-        !next.isEmpty) {
-      final hit = next.glyphAt(
-        autoSelectAt.dx,
-        autoSelectAt.dy,
-        reach: ocr.imageWidth * 0.04,
-      );
-      if (hit != null) {
-        nextSelection = next.lineRangeOf(hit);
-      }
     }
 
     setState(() {
       _layout = next;
       if (nextSelection != null) _selection = nextSelection;
     });
+    final pending = _pendingSelectionImagePosition;
+    if (pending != null && widget.mode == ImageLiveOverlayMode.liveText) {
+      _selectLineAtImagePoint(pending);
+    }
+    _extendLongPressSelection();
   }
 
   String get _selectedText {
@@ -870,8 +953,8 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
       }
     }
 
-    // 2. 移动端手指与桌面端鼠标按在文字上均可直接滑动选字，
-    //    赢得单指拖拽竞技场避免底图跟着拖走；空白处与双指触控板滑动完全放行。
+    // 2. 鼠标直接拖选；触摸只有拖动手柄或长按后才选字，普通滑动留给画廊。
+    if (kind != PointerDeviceKind.mouse) return null;
     final hit = _hitTextGlyph(pos, kind, viewport);
     if (hit != null) {
       final g = layout.glyphs[hit];
@@ -1044,7 +1127,7 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
               ),
             ),
 
-            // 2. 实况选字手势层：桌面 I-beam 光标 + 仅在命中文字或手柄时参与拖拽，空白处放行缩放平移。
+            // 2. 鼠标命中文字可拖选；触摸只认领手柄，普通滑动放行给画廊。
             if (widget.mode == ImageLiveOverlayMode.liveText &&
                 _layout != null &&
                 !_layout!.isEmpty)
@@ -1263,37 +1346,6 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
       );
     }
 
-    if (_needsDownload) {
-      return _FrostedMediaPill(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                ),
-              ),
-              const SizedBox(width: 6),
-              _DockTextAction(
-                label: l10n.common_confirm,
-                emphasize: true,
-                onTap: () => _startFlow(download: true),
-              ),
-              _DockIconAction(
-                icon: Symbols.close_rounded,
-                tooltip: l10n.common_close,
-                onTap: widget.onClose,
-                compact: true,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     if (_errorTitle != null) {
       return _FrostedMediaPill(
         child: Padding(
@@ -1323,6 +1375,37 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                 label: l10n.common_retry,
                 emphasize: true,
                 onTap: () => _startFlow(download: _needsDownload),
+              ),
+              _DockIconAction(
+                icon: Symbols.close_rounded,
+                tooltip: l10n.common_close,
+                onTap: widget.onClose,
+                compact: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_needsDownload) {
+      return _FrostedMediaPill(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  '${l10n.imageViewer_downloadOcr}（$totalMiB MiB）',
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 6),
+              _DockTextAction(
+                label: l10n.common_confirm,
+                emphasize: true,
+                onTap: () => _startFlow(download: true),
               ),
               _DockIconAction(
                 icon: Symbols.close_rounded,

@@ -9,9 +9,12 @@ import '../../constants.dart';
 import '../../l10n/s.dart';
 import '../../services/auth_session.dart';
 import '../../services/cf_challenge_service.dart';
+import '../../services/cf_clearance_refresh_service.dart';
 import '../../services/discourse/discourse_service.dart';
+import '../../services/log/log_writer.dart';
 import '../../services/network/cookie/boundary_sync_service.dart';
 import '../../services/network/cookie/cookie_jar_service.dart';
+import '../../services/network/cookie/session_cookie_sentinel.dart';
 import '../../services/network/cookie/webview_cookie_priming.dart';
 import '../../services/preloaded_data_service.dart';
 import '../../services/toast_service.dart';
@@ -248,19 +251,28 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
   bool _finished = false; // 防止重复 pop / 回调重入
   bool _cookiesPrimed = false; // 方案 A: 是否已从 jar 预灌 cookie
   bool _windowsInlineHtmlInjected = false;
-  bool _cfRetryUsed = false; // CSRF 403 自动重验证只做一次, 避免死循环
+  bool _cfRetryUsed = false; // CF 拦截自动重验证只做一次, 避免死循环
+  bool _badCsrfRetryUsed = false; // BAD CSRF 同 WebView 重取 CSRF 重试只做一次
+  VoidCallback? _releaseAuthBackSyncGuard;
   final int _flowGeneration = AuthSession().generation;
-  // 最近一次 _runLogin 的参数, CSRF 403 重新过 CF 后用同样参数重跑。
-  // CSRF 失败发生在 JS __fluxdoLogin 第一步 (fetch /session/csrf), 此时
-  // hcaptchaToken 还没被 hcaptcha/create 消费, 可直接重用; secondFactorToken
-  // 也未用过。
+  // 最近一次 _runLogin 的参数, 重试时按阶段决定是否复用 hcaptchaToken。
   String? _lastHcaptchaToken;
   String? _lastSecondFactorToken;
 
   @override
   void initState() {
     super.initState();
+    // 登录期间挂起 Jar → WebView 的认证 Cookie 回写，避免后台任务覆盖
+    // 登录 WebView 刚拿到的 _forum_session，破坏与 CSRF token 的对应关系。
+    _releaseAuthBackSyncGuard = SessionCookieSentinel.instance
+        .suspendAuthBackSync();
     _startLoadTimeout();
+  }
+
+  void _releaseAuthGuard() {
+    final release = _releaseAuthBackSyncGuard;
+    _releaseAuthBackSyncGuard = null;
+    release?.call();
   }
 
   void _startLoadTimeout() {
@@ -314,6 +326,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     if (!_abandoned) _abandonment.complete();
     _finished = true;
     _loadTimeout?.cancel();
+    _releaseAuthGuard();
   }
 
   /// data:url 内嵌页面: hcaptcha widget + 登录全流程 JS。
@@ -419,6 +432,30 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     // WebView 内核同源全流程登录。所有请求 credentials:'include' 带 store cookie。
     // 只设 X-CSRF-Token / X-Requested-With / Content-Type / Accept;
     // Cookie / User-Agent / Origin / Referer / sec-* 由内核自管, 不手设。
+    function isCfChallengeResponse(response, text) {
+      const status = response ? response.status : 0;
+      if (status !== 403 && status !== 429) return false;
+      const cfMitigated = (response.headers && response.headers.get('cf-mitigated') || '').trim().toLowerCase();
+      if (cfMitigated === 'challenge') return true;
+      const contentType = (response.headers && response.headers.get('content-type') || '').toLowerCase();
+      if (contentType && contentType.indexOf('text/html') < 0) return false;
+      const body = String(text || '');
+      if (body.indexOf('cf_chl_opt') >= 0) return true;
+      if (body.indexOf('challenge-platform') >= 0 && body.indexOf('cloudflare') >= 0) return true;
+      if (body.indexOf('Just a moment') >= 0 && (body.indexOf('cloudflare') >= 0 || body.indexOf('cf-challenge') >= 0)) return true;
+      return false;
+    }
+    function isBadCsrfResponse(status, text) {
+      if (status !== 403) return false;
+      const body = String(text || '').trim();
+      if (body === '["BAD CSRF"]') return true;
+      try {
+        const parsed = JSON.parse(body);
+        return Array.isArray(parsed) && parsed.some(item => String(item) === 'BAD CSRF');
+      } catch (_) {
+        return false;
+      }
+    }
     window.__fluxdoLogin = async function(identifier, password, hcaptchaToken, secondFactorToken) {
       function done(p) {
         try { window.flutter_inappwebview.callHandler('login_result', JSON.stringify(p)); } catch (e) {}
@@ -431,10 +468,42 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
           credentials: 'include',
           cache: 'no-store'
         });
-        if (c.status !== 200) { return done({ phase: 'csrf', status: c.status, body: await c.text() }); }
-        var csrf = (await c.json()).csrf;
+        var cBody = await c.text();
+        var cMitigated = (c.headers && c.headers.get('cf-mitigated')) || '';
+        var cContentType = (c.headers && c.headers.get('content-type')) || '';
+        var cCfRay = (c.headers && c.headers.get('cf-ray')) || '';
+        if (c.status !== 200) {
+          return done({
+            phase: 'csrf',
+            status: c.status,
+            body: cBody,
+            cfBlocked: isCfChallengeResponse(c, cBody),
+            badCsrf: false,
+            cfMitigated: cMitigated,
+            contentType: cContentType,
+            cfRay: cCfRay
+          });
+        }
+        var csrf = null;
+        try {
+          var cJson = JSON.parse(cBody);
+          csrf = cJson && typeof cJson.csrf === 'string' && cJson.csrf.length > 0 ? cJson.csrf : null;
+        } catch (_) {}
+        if (!csrf) {
+          return done({
+            phase: 'csrf',
+            status: c.status,
+            body: cBody,
+            cfBlocked: isCfChallengeResponse(c, cBody),
+            badCsrf: false,
+            invalidJson: true,
+            cfMitigated: cMitigated,
+            contentType: cContentType,
+            cfRay: cCfRay
+          });
+        }
 
-        // 2. hcaptcha/create — 仅首次 (有 token) 调; 2FA 重试 token=null 跳过。
+        // 2. hcaptcha/create — 仅首次 (有 token) 调; 2FA/BAD CSRF 重试 token=null 跳过。
         //    按 endpoint 列表顺序尝试: caller 配置 → /captcha/hcaptcha/create.json → /hcaptcha/create.json
         //    任意一个返 200 即成功, 其他 (404 / 网络错误) 继续 fallback。
         if (hcaptchaToken) {
@@ -454,16 +523,41 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
                 },
                 body: 'token=' + encodeURIComponent(hcaptchaToken)
               });
-              hcaptchaLast = { endpoint: ep, status: h.status, body: await h.text() };
+              var hBody = await h.text();
+              hcaptchaLast = {
+                endpoint: ep,
+                status: h.status,
+                body: hBody,
+                cfBlocked: isCfChallengeResponse(h, hBody),
+                badCsrf: isBadCsrfResponse(h.status, hBody),
+                cfMitigated: (h.headers && h.headers.get('cf-mitigated')) || '',
+                contentType: (h.headers && h.headers.get('content-type')) || ''
+              };
               if (h.status === 200) { hcaptchaOk = true; break; }
               // 404 视为路径不对, 继续 fallback
               if (h.status !== 404) break;
             } catch (e) {
-              hcaptchaLast = { endpoint: ep, status: 0, body: String(e) };
+              hcaptchaLast = {
+                endpoint: ep,
+                status: 0,
+                body: String(e),
+                cfBlocked: false,
+                badCsrf: false,
+                cfMitigated: '',
+                contentType: ''
+              };
             }
           }
           if (!hcaptchaOk) {
-            return done({ phase: 'hcaptcha', status: hcaptchaLast ? hcaptchaLast.status : 0, body: 'tried=' + JSON.stringify(hcaptchaEndpoints) + ' last=' + JSON.stringify(hcaptchaLast) });
+            return done({
+              phase: 'hcaptcha',
+              status: hcaptchaLast ? hcaptchaLast.status : 0,
+              body: 'tried=' + JSON.stringify(hcaptchaEndpoints) + ' last=' + JSON.stringify(hcaptchaLast),
+              cfBlocked: hcaptchaLast ? Boolean(hcaptchaLast.cfBlocked) : false,
+              badCsrf: hcaptchaLast ? Boolean(hcaptchaLast.badCsrf) : false,
+              cfMitigated: hcaptchaLast ? hcaptchaLast.cfMitigated : '',
+              contentType: hcaptchaLast ? hcaptchaLast.contentType : ''
+            });
           }
         }
 
@@ -484,9 +578,19 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
           },
           body: form
         });
-        return done({ phase: 'session', status: s.status, body: await s.text() });
+        var sBody = await s.text();
+        return done({
+          phase: 'session',
+          status: s.status,
+          body: sBody,
+          cfBlocked: isCfChallengeResponse(s, sBody),
+          badCsrf: isBadCsrfResponse(s.status, sBody),
+          cfMitigated: (s.headers && s.headers.get('cf-mitigated')) || '',
+          contentType: (s.headers && s.headers.get('content-type')) || '',
+          cfRay: (s.headers && s.headers.get('cf-ray')) || ''
+        });
       } catch (e) {
-        return done({ phase: 'exception', status: 0, body: String(e) });
+        return done({ phase: 'exception', status: 0, body: String(e), cfBlocked: false, badCsrf: false });
       }
     };
   </script>
@@ -613,8 +717,13 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
     if (_cookiesPrimed) return;
     _cookiesPrimed = true;
     try {
-      await WebViewCookiePriming.instance.prime(AppConstants.baseUrl);
-      debugPrint('[WebViewLogin] 已从 jar 预灌 cookie 到登录 WebView store');
+      // 只同步非认证 Cookie，绝不把 Jar 里可能残留的旧 _forum_session / _t
+      // 写进登录 WebView，避免破坏登录会话与 CSRF token 的对应关系。
+      await WebViewCookiePriming.instance.prime(
+        AppConstants.baseUrl,
+        excludeAuthCookies: true,
+      );
+      debugPrint('[WebViewLogin] 已从 jar 预灌非认证 cookie 到登录 WebView store');
     } catch (e) {
       debugPrint('[WebViewLogin] 预灌 cookie 失败 (继续, 依赖共享 store): $e');
     }
@@ -718,23 +827,96 @@ document.close();
     final phase = payload['phase']?.toString();
     final status = (payload['status'] as num?)?.toInt() ?? 0;
     final body = payload['body']?.toString() ?? '';
+    final cfBlocked = payload['cfBlocked'] == true;
+    final badCsrf = payload['badCsrf'] == true;
+    final invalidJson = payload['invalidJson'] == true;
+    final cfMitigated = payload['cfMitigated']?.toString() ?? '';
+    final contentType = payload['contentType']?.toString() ?? '';
+    final cfRay = payload['cfRay']?.toString() ?? '';
+
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': phase == 'session' && status >= 200 && status < 300
+          ? 'info'
+          : 'warning',
+      'type': 'auth',
+      'event': 'native_login_step_result',
+      'message': '原生登录 WebView 步骤结果: phase=$phase status=$status',
+      'phase': phase,
+      'status': status,
+      'cfBlocked': cfBlocked,
+      'badCsrf': badCsrf,
+      if (invalidJson) 'invalidJson': true,
+      if (cfMitigated.isNotEmpty) 'cfMitigated': cfMitigated,
+      if (contentType.isNotEmpty) 'contentType': contentType,
+      if (cfRay.isNotEmpty) 'cfRay': cfRay,
+      'cfRetryUsed': _cfRetryUsed,
+      'badCsrfRetryUsed': _badCsrfRetryUsed,
+      'attempt': _attempt,
+    });
 
     switch (phase) {
       case 'csrf':
-        // CF 在 fetch 时拦截 (store 里 cf_clearance 失效 / IP 漂移 / TLS 指纹
-        // 不一致)。第一次自动重过一次 CF 再试; 仍失败才报错给用户。
-        await _handleCsrfFailure(status);
+        // 只有确认命中 CF 挑战才拉起 CF 验证；普通 403/429/5xx 或解析异常直接报错。
+        if (cfBlocked) {
+          await _handleCfRetry(
+            phase: 'csrf',
+            status: status,
+            reuseHcaptchaToken: true,
+          );
+          return;
+        }
+        _finishFailure(
+          LoginErrorKind.network,
+          invalidJson
+              ? '获取登录令牌失败，请重试 (CSRF 响应异常)'
+              : '获取登录令牌失败，请重试 (CSRF $status)',
+        );
         return;
       case 'hcaptcha':
+        if (badCsrf && !_badCsrfRetryUsed) {
+          await _handleBadCsrfRetry(
+            phase: 'hcaptcha',
+            reuseHcaptchaToken: true,
+          );
+          return;
+        }
+        if (cfBlocked && !_cfRetryUsed) {
+          await _handleCfRetry(
+            phase: 'hcaptcha',
+            status: status,
+            reuseHcaptchaToken: true,
+          );
+          return;
+        }
         _finishFailure(
           LoginErrorKind.unknown,
-          '人机验证失败, 请重试 (hcaptcha $status)',
+          badCsrf
+              ? '会话校验失败 (BAD CSRF)，请重试'
+              : '人机验证失败, 请重试 (hcaptcha $status)',
         );
         return;
       case 'exception':
         _finishFailure(LoginErrorKind.network, '登录请求异常: $body');
         return;
       case 'session':
+        if (badCsrf && !_badCsrfRetryUsed) {
+          // hcaptcha/create 已成功并写入 2 分钟 TTL 的 h_captcha_temp_id，
+          // 重试时跳过 hcaptcha/create，重新取 CSRF 后再提交 /session.json。
+          await _handleBadCsrfRetry(
+            phase: 'session',
+            reuseHcaptchaToken: false,
+          );
+          return;
+        }
+        if (cfBlocked && !_cfRetryUsed) {
+          await _handleCfRetry(
+            phase: 'session',
+            status: status,
+            reuseHcaptchaToken: false,
+          );
+          return;
+        }
         break;
       default:
         _finishFailure(LoginErrorKind.unknown, '未知登录阶段: $phase');
@@ -755,63 +937,120 @@ document.close();
     _finishFailure(failure.kind, failure.message);
   }
 
-  /// CSRF 阶段 403 处理: 自动重过一次 CF 验证, 再用同样参数重跑登录。
-  ///
-  /// 触发场景:
-  /// - jar 里的 cf_clearance 已被 CF 拒 (IP 漂移 / TLS 指纹不一致 / 自然过期)
-  /// - 普通 toast "请重试" 没用 — cookie 已废, 再点登录还是同样的 403
-  ///
-  /// 策略: 重过一次 CF, 把新 cf_clearance 同步到 jar, 重新灌进 dialog WV
-  /// 的 cookie store, 再调一次 __fluxdoLogin。只重试一次, 仍失败 toast 原错。
-  Future<void> _handleCsrfFailure(int status) async {
+  /// 确认命中 BAD CSRF 后，在当前同一 WebView 会话内重拉 CSRF 重试一次。
+  Future<void> _handleBadCsrfRetry({
+    required String phase,
+    required bool reuseHcaptchaToken,
+  }) async {
+    if (_finished) return;
+    _badCsrfRetryUsed = true;
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'warning',
+      'type': 'auth',
+      'event': 'native_login_bad_csrf_retry',
+      'message': '原生登录收到 BAD CSRF，重取 CSRF 后重试一次',
+      'phase': phase,
+      'reuseHcaptchaToken': reuseHcaptchaToken,
+    });
+    await _runLogin(
+      hcaptchaToken: reuseHcaptchaToken ? _lastHcaptchaToken : null,
+      secondFactorToken: _lastSecondFactorToken,
+    );
+  }
+
+  /// 确认命中 CF 挑战后: 自动重过一次 CF 验证, 再按阶段决定是否复用参数重跑登录。
+  Future<void> _handleCfRetry({
+    required String phase,
+    required int status,
+    required bool reuseHcaptchaToken,
+  }) async {
     if (_finished) return;
     if (_cfRetryUsed) {
       _finishFailure(
         LoginErrorKind.network,
-        'Cloudflare 验证已失效, 请重试 (CSRF $status)',
+        'Cloudflare 验证已失效, 请重试 (${phase.toUpperCase()} $status)',
       );
       return;
     }
     _cfRetryUsed = true;
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'warning',
+      'type': 'auth',
+      'event': 'native_login_cf_retry',
+      'message': '原生登录命中 CF 挑战，准备拉起验证并重试',
+      'phase': phase,
+      'status': status,
+      'reuseHcaptchaToken': reuseHcaptchaToken,
+    });
 
     if (mounted) {
       ToastService.showInfo('Cloudflare 验证已失效, 正在重新验证...');
     }
 
-    // 1. 拉起 CF 手动验证页, 用户过完后 sync cookie 到 jar
-    final ok = await CfChallengeService().showManualVerify(context, true);
+    // 1. 拉起 CF 手动验证页（固定使用站点 /challenge 入口），拿到本轮验证状态
+    final cfService = CfChallengeService();
+    final verifyState = await cfService.verifyPage(
+      context: context,
+      presentation: CfVerifyPresentation.foreground,
+    );
     if (_finished) return;
-    if (ok != true) {
+    if (verifyState == null || !verifyState.reachedOrigin) {
       _finishFailure(
         LoginErrorKind.network,
-        'Cloudflare 验证已失效, 请重试 (CSRF $status)',
+        'Cloudflare 验证已失效, 请重试 (${phase.toUpperCase()} $status)',
       );
       return;
     }
 
-    // 2. 等 WV 网络栈把 Set-Cookie 写完, 再同步 CF/验证码相关 cookie。
-    //    session cookie 只在登录成功收口时同步，避免旧会话回写。
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    // 等待验证页发起的完成同步落库，避免重复空等。
+    await cfService.waitForCompletionCookieSync();
     if (_finished) return;
-    for (var i = 0; i < 3; i++) {
+
+    // 2. 同步非认证 cookie；若 /challenge 本轮无盾直出 404 且尚无 cf_clearance，
+    //    主动拉起 Turnstile 静默铸造并给短窗口等待其落库，拿到即立即重试。
+    var clearance = await CookieJarService().getCfClearance();
+    final needsTurnstileMint =
+        (clearance == null || clearance.isEmpty) &&
+        verifyState.stage == CfVerificationStage.noChallengeObserved;
+    if (needsTurnstileMint) {
+      CfClearanceRefreshService().start();
+    }
+
+    final maxSyncPolls = needsTurnstileMint ? 6 : 3;
+    for (var i = 0; i < maxSyncPolls; i++) {
       await BoundarySyncService.instance.syncFromWebView(
         cookieNames: null,
         excludeCookieNames: CookieJarService.authCookieNames,
         requestGeneration: _flowGeneration,
       );
-      final clearance = await CookieJarService().getCfClearance();
+      clearance = await CookieJarService().getCfClearance();
       if (clearance != null && clearance.isNotEmpty) break;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (i + 1 < maxSyncPolls) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      if (_finished) return;
     }
     if (_finished) return;
 
-    // 3. 把 jar 里的新 cookie 重新灌进 dialog WV (清掉一次锁, 否则跳过)
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'info',
+      'type': 'auth',
+      'event': 'native_login_cf_retry_ready',
+      'message': '原生登录 CF 验证收尾，准备重试',
+      'phase': phase,
+      'verifyStage': verifyState.stage.name,
+      'hasCfClearance': clearance != null && clearance.isNotEmpty,
+    });
+
+    // 3. 把 jar 里的新非认证 cookie 重新灌进 dialog WV (清掉一次锁, 否则跳过)
     _cookiesPrimed = false;
 
-    // 4. 重跑登录: hcaptcha token 还没被 hcaptcha/create 消费 (上次卡在
-    //    csrf 阶段, 是 hcaptcha 之前的步骤), 直接复用即可。
+    // 4. 重跑登录，实际重试原请求以验证是否真正放行
     await _runLogin(
-      hcaptchaToken: _lastHcaptchaToken,
+      hcaptchaToken: reuseHcaptchaToken ? _lastHcaptchaToken : null,
       secondFactorToken: _lastSecondFactorToken,
     );
   }
@@ -898,6 +1137,8 @@ document.close();
       );
     } catch (e) {
       debugPrint('[WebViewLogin] syncFromWebView 失败: $e');
+    } finally {
+      _releaseAuthGuard();
     }
     _returnResult(
       AuthSession().isValid(_flowGeneration)
@@ -909,12 +1150,14 @@ document.close();
   void _finishFailure(LoginErrorKind kind, String? message) {
     if (_finished) return;
     _finished = true;
+    _releaseAuthGuard();
     _returnResult(WebViewLoginDialogResult.failure(kind, message));
   }
 
   void _finishCanceled() {
     if (_finished) return;
     _finished = true;
+    _releaseAuthGuard();
     _returnResult(const WebViewLoginDialogResult.canceled());
   }
 

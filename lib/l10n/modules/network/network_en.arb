@@ -88,6 +88,8 @@
   "networkSettings_upload": "File uploads",
   "networkSettings_forceDisableMultipart": "Force disable multipart uploads",
   "networkSettings_forceDisableMultipartDescription": "Use standard uploads for all files regardless of site settings. Enable if multipart uploads are failing. Applies to the next upload.",
+  "webviewAdapter_autoFallbackTitle": "Auto-switch on ineffective verification",
+  "webviewAdapter_autoFallbackDesc": "Automatically switch to WebView compatibility mode for this session when verification passes but native requests are still blocked",
   "fingerprintPreset_title": "Fingerprint template",
   "fingerprintPreset_auto": "Automatic",
   "fingerprintPreset_autoDescription": "Use the device’s browser sample; use a matching preset until sampling completes.",

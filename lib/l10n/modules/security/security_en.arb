@@ -59,5 +59,8 @@
   "cf_sessionCompatDisableAuto": "Prefer not to be interrupted? Turn off auto verification",
   "cf_autoVerifyDisabledHint": "Auto verification is off. Tap verify on the page when a challenge appears.",
   "cf_sessionCompatEnabled": "Temporary compatibility mode enabled",
+  "cf_sessionCompatAutoEnabled": "Native connection wasn't trusted; switched to WebView compatibility mode",
+  "cf_sessionCompatCloseAction": "Turn off",
+  "cf_sessionCompatDisabled": "Temporary compatibility mode turned off",
   "cf_sessionCompatDisable": "Exit temporary compatibility mode"
 }

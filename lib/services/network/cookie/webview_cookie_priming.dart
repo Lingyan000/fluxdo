@@ -19,7 +19,10 @@ class WebViewCookiePriming {
   CookieJarService _jar = CookieJarService();
   SessionCookieSentinel _sentinel = SessionCookieSentinel.instance;
 
-  final Map<String, ({String url, int generation, Future<void> future})>
+  final Map<
+    String,
+    ({String url, int generation, bool excludeAuth, Future<void> future})
+  >
   _tasks = {};
   bool _isPrimed = false;
   int? _readyGeneration;
@@ -38,10 +41,11 @@ class WebViewCookiePriming {
     if (sentinel != null) _sentinel = sentinel;
   }
 
-  Future<void> prime(String url) async {
+  Future<void> prime(String url, {bool excludeAuthCookies = false}) async {
     final uri = Uri.parse(url);
     final normalizedUrl = uri.replace(query: '', fragment: '').toString();
     final origin = uri.origin;
+    final skipAuth = excludeAuthCookies || _sentinel.isAuthBackSyncSuspended;
     while (_tasks.containsKey(origin)) {
       final task = _tasks[origin]!;
       try {
@@ -49,19 +53,26 @@ class WebViewCookiePriming {
       } catch (_) {
         if (task.generation == AuthSession().generation) rethrow;
       }
+      final canReuse = !task.excludeAuth || skipAuth;
       if (task.url == normalizedUrl &&
-          task.generation == AuthSession().generation) {
+          task.generation == AuthSession().generation &&
+          canReuse) {
         return;
       }
     }
     final generation = AuthSession().generation;
     late final Future<void> future;
-    future = _primeInternal(normalizedUrl, generation).whenComplete(() {
+    future = _primeInternal(
+      normalizedUrl,
+      generation,
+      excludeAuthCookies: skipAuth,
+    ).whenComplete(() {
       if (identical(_tasks[origin]?.future, future)) _tasks.remove(origin);
     });
     _tasks[origin] = (
       url: normalizedUrl,
       generation: generation,
+      excludeAuth: skipAuth,
       future: future,
     );
     return future;
@@ -82,11 +93,19 @@ class WebViewCookiePriming {
     _readyGeneration = null;
   }
 
-  Future<void> _primeInternal(String url, int generation) async {
+  Future<void> _primeInternal(
+    String url,
+    int generation, {
+    required bool excludeAuthCookies,
+  }) async {
     final watch = Stopwatch()..start();
     CookieLogger.priming(event: 'invoked', url: url, isPrimed: isPrimed);
     CookieStoreObserver.instance.registerUrl(url);
     _isPrimed = false;
+    bool shouldExclude(String name) =>
+        name == 'cf_clearance' ||
+        ((excludeAuthCookies || _sentinel.isAuthBackSyncSuspended) &&
+            CookieJarService.authCookieNames.contains(name));
     try {
       if (!_jar.isInitialized) await _jar.initialize();
       await _jar.enforceAuthCookiePolicy(reason: 'webview_priming');
@@ -96,7 +115,12 @@ class WebViewCookiePriming {
       await _writer.clearSharedAuthCookieCopies(
         url,
         initial
-            .where((cookie) => !cookie.isExpired && cookie.value.isNotEmpty)
+            .where(
+              (cookie) =>
+                  !cookie.isExpired &&
+                  cookie.value.isNotEmpty &&
+                  !shouldExclude(cookie.name),
+            )
             .map((cookie) => cookie.name),
       );
       var injected = 0;
@@ -108,7 +132,7 @@ class WebViewCookiePriming {
         final names = expected
             .where(
               (cookie) =>
-                  cookie.name != 'cf_clearance' &&
+                  !shouldExclude(cookie.name) &&
                   cookie.value.isNotEmpty &&
                   !cookie.isExpired,
             )
@@ -139,7 +163,7 @@ class WebViewCookiePriming {
         final currentNames = current
             .where(
               (cookie) =>
-                  cookie.name != 'cf_clearance' &&
+                  !shouldExclude(cookie.name) &&
                   cookie.value.isNotEmpty &&
                   !cookie.isExpired,
             )
@@ -155,8 +179,12 @@ class WebViewCookiePriming {
         );
         if (!AuthSession().isValid(generation)) throw StateError('预热所属会话已结束');
         if (consistent) {
-          _readyGeneration = generation;
-          _isPrimed = true;
+          final authSkipped =
+              excludeAuthCookies || _sentinel.isAuthBackSyncSuspended;
+          if (!authSkipped) {
+            _readyGeneration = generation;
+            _isPrimed = true;
+          }
           CookieLogger.priming(
             event: 'completed',
             url: url,

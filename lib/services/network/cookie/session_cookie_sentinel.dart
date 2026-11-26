@@ -68,9 +68,33 @@ class SessionCookieSentinel {
 
   /// 每次取消递增，原生操作晚于取消返回时仍能识别旧任务。
   int _cancellationGeneration = 0;
+  int _authBackSyncSuspendCount = 0;
   final Set<Future<dynamic>> _operations = {};
   final Map<(String, String), Future<void>> _pendingSync = {};
   final Map<(String, String), (Set<String>, _CookieSession)> _dirtySync = {};
+
+  /// 是否暂停后台将 Jar 中的认证 Cookie（`_t` / `_forum_session`）回写到 WebView。
+  ///
+  /// 登录流程运行在 WebView 内时，服务端会直接通过浏览器网络栈下发新会话；
+  /// 此时若后台预热或并发响应把 Jar 里的旧 `_forum_session` 写回 WebView，
+  /// 会破坏当前 WebView 会话与 CSRF token 的对应关系。
+  bool get isAuthBackSyncSuspended => _authBackSyncSuspendCount > 0;
+
+  /// 暂停 Jar → WebView 的认证 Cookie 回写，返回幂等的释放回调。
+  VoidCallback suspendAuthBackSync() {
+    _authBackSyncSuspendCount++;
+    var released = false;
+    return () {
+      if (released) return;
+      released = true;
+      if (_authBackSyncSuspendCount > 0) {
+        _authBackSyncSuspendCount--;
+      }
+    };
+  }
+
+  bool _isAuthBackSyncBlocked(String name) =>
+      isAuthBackSyncSuspended && CookieJarService.authCookieNames.contains(name);
 
   _CookieSession get _session =>
       (generation: _auth.generation, cancellation: _cancellationGeneration);
@@ -104,7 +128,7 @@ class SessionCookieSentinel {
   /// 任务执行时读取最新 jar，同一名称最多保留一个在途任务和一次待处理更新。
   void scheduleSyncFromJar(String url, Iterable<String> names) {
     for (final name in names.toSet()) {
-      if (name == 'cf_clearance') continue;
+      if (name == 'cf_clearance' || _isAuthBackSyncBlocked(name)) continue;
       final key = (Uri.parse(url).origin, name);
       final session = _session;
       final queued = _dirtySync[key];
@@ -261,10 +285,28 @@ class SessionCookieSentinel {
     var before = 0;
     var after = 0;
     if (_isCancelled(session)) return _emitCancelled(url, name, session, watch);
+    if (_isAuthBackSyncBlocked(name)) {
+      return SweepResult(
+        name: name,
+        status: SweepStatus.noop,
+        variantsBefore: 0,
+        variantsAfter: 0,
+        elapsed: watch.elapsed,
+      );
+    }
     await _writer.clearSharedAuthCookieCopies(url, [name]);
     for (var attempt = 0; attempt < 2; attempt++) {
       if (_isCancelled(session)) {
         return _emitCancelled(url, name, session, watch);
+      }
+      if (_isAuthBackSyncBlocked(name)) {
+        return SweepResult(
+          name: name,
+          status: SweepStatus.noop,
+          variantsBefore: before,
+          variantsAfter: before,
+          elapsed: watch.elapsed,
+        );
       }
       final stored = (await _writer.getAllCookieInfos(url))
           .where((cookie) => cookie.name == name)
@@ -274,7 +316,9 @@ class SessionCookieSentinel {
         return _emitCancelled(url, name, session, watch);
       }
       before = stored.length;
-      if (name == 'cf_clearance' || matchesSnapshot(url, stored, expected)) {
+      if (_isAuthBackSyncBlocked(name) ||
+          name == 'cf_clearance' ||
+          matchesSnapshot(url, stored, expected)) {
         return SweepResult(
           name: name,
           status: SweepStatus.noop,
@@ -294,6 +338,15 @@ class SessionCookieSentinel {
       final fresh = await _cookiesForHost(url, name);
       if (_isCancelled(session)) {
         return _emitCancelled(url, name, session, watch);
+      }
+      if (_isAuthBackSyncBlocked(name)) {
+        return SweepResult(
+          name: name,
+          status: SweepStatus.noop,
+          variantsBefore: before,
+          variantsAfter: before,
+          elapsed: watch.elapsed,
+        );
       }
       var written = true;
       for (final cookie in fresh) {
@@ -480,6 +533,7 @@ class SessionCookieSentinel {
     _lastSweptAt.clear();
     _consecutiveLockTimeouts.clear();
     _cancellationGeneration++;
+    _authBackSyncSuspendCount = 0;
     _pendingSync.clear();
     _dirtySync.clear();
   }

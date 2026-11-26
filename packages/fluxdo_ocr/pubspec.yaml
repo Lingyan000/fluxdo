@@ -1,5 +1,5 @@
 name: fluxdo_ocr
-description: FluxDO 图片识字使用的 ONNX Runtime CPU 推理接口。
+description: FluxDO 图片识字使用的 LiteRT CPU 推理接口。
 publish_to: none
 resolution: workspace
 version: 0.1.0

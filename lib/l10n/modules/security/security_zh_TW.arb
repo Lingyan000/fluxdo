@@ -80,6 +80,9 @@
   "cf_sessionCompatDisableAuto": "不想每次被打斷？關閉自動驗證",
   "cf_autoVerifyDisabledHint": "已關閉自動驗證，之後遇到驗證時可在頁面上手動點擊",
   "cf_sessionCompatEnabled": "已暫時切換到相容模式",
+  "cf_sessionCompatAutoEnabled": "原生網路未通過驗證，已自動切換到 WebView 相容模式",
+  "cf_sessionCompatCloseAction": "關閉",
+  "cf_sessionCompatDisabled": "已關閉暫時相容模式",
   "cf_sessionCompatDisable": "退出暫時相容模式",
   "@cf_verifying": {
     "placeholders": {

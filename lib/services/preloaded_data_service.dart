@@ -7,7 +7,9 @@ import 'package:material_ui/material_ui.dart';
 import '../constants.dart';
 import '../models/topic.dart';
 import '../models/category.dart';
+import 'network/adapters/webview_http_adapter.dart';
 import 'network/discourse_dio.dart';
+import 'network/flux_request_spec.dart';
 import 'network/cookie/csrf_token_service.dart';
 import 'cf_challenge_service.dart';
 import 'cf_clearance_refresh_service.dart';
@@ -54,7 +56,7 @@ class PreloadedDataService {
     : _dio = DiscourseDio.create(
         defaultHeaders: {
           'Accept':
-              'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
       );
@@ -115,8 +117,8 @@ class PreloadedDataService {
   }
 
   /// 确保预加载数据已准备好
-  Future<void> ensureLoaded() async {
-    await _ensureLoaded();
+  Future<void> ensureLoaded({bool skipWebViewAdapter = false}) async {
+    await _ensureLoaded(skipWebViewAdapter: skipWebViewAdapter);
   }
 
   /// 获取 currentUser 数据（包含通知计数等）
@@ -575,7 +577,7 @@ class PreloadedDataService {
   }
 
   /// 确保数据已加载
-  Future<void> _ensureLoaded() async {
+  Future<void> _ensureLoaded({bool skipWebViewAdapter = false}) async {
     if (_loaded) return;
     if (_loading) {
       // 等待正在进行的加载完成
@@ -584,11 +586,11 @@ class PreloadedDataService {
       }
       if (_loaded) return; // 上次成功了才跳过
     }
-    await _loadPreloadedData();
+    await _loadPreloadedData(skipWebViewAdapter: skipWebViewAdapter);
   }
 
   /// 加载预加载数据
-  Future<void> _loadPreloadedData() async {
+  Future<void> _loadPreloadedData({bool skipWebViewAdapter = false}) async {
     if (_loading) return;
     _loading = true;
 
@@ -598,11 +600,14 @@ class PreloadedDataService {
       final response = await _dio.get(
         AppConstants.baseUrl,
         options: Options(
-          headers: {'Accept': 'text/html'},
           extra: {
             if (AppConstants.skipCsrfForHomeRequest) 'skipCsrf': true,
             // 诊断标注:首页 HTML 是 CF 盾高发路径,日志里需可辨识
             'requestTag': 'preload-home',
+            // 允许在兼容模式（永久或临时）及 CF 重试兜底时由 WebView 适配器接管。
+            WebViewHttpAdapter.resourceKindExtraKey:
+                WebViewHttpAdapter.resourceKindHtml,
+            if (skipWebViewAdapter) FluxRequestKeys.skipWebViewAdapter: true,
           },
         ),
       );
@@ -1067,11 +1072,59 @@ Map<String, dynamic>? _decodePreloadedJsonInIsolate(List<String> input) {
   return result;
 }
 
-List<String> _extractPluginCandidatesInIsolate(List<String> input) {
-  final html = input[0];
-  final baseUrl = input[1];
+List<String> _extractPluginCandidatesInIsolate(List<String> input) =>
+    extractPluginCandidatesFromHtml(input[0], input[1]);
+
+/// 从首页 HTML 中扫描插件 JS URL，并按结构特征分层排序：
+/// 1. `data-official="false"` 的非 `_chunk.` 插件主包（站点自定义插件优先）
+/// 2. 其他 `<script>` 中的非 `_chunk.` 插件主包
+/// 3. `_chunk.` 分包及非 `<script>` 标签中出现的 `/plugins/*.js`（全量兜底）
+@visibleForTesting
+List<String> extractPluginCandidatesFromHtml(String html, String baseUrl) {
+  final nonOfficialMain = <String>[];
+  final otherMain = <String>[];
+  final fallback = <String>[];
   final seen = <String>{};
-  final ordered = <String>[];
+
+  void addCandidate(List<String> bucket, String? raw) {
+    if (raw == null || raw.isEmpty) return;
+    final normalized = _normalizePluginCandidateUrl(raw, baseUrl);
+    if (normalized == null) return;
+    if (seen.add(normalized)) {
+      bucket.add(normalized);
+    }
+  }
+
+  final scriptTagPattern = RegExp(r'<script\b[^>]*>', caseSensitive: false);
+  final srcAttrPattern = RegExp(
+    r'''\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))''',
+    caseSensitive: false,
+  );
+  final nonOfficialPattern = RegExp(
+    r'''\bdata-official\s*=\s*(?:"false"|'false'|false\b)''',
+    caseSensitive: false,
+  );
+
+  for (final tagMatch in scriptTagPattern.allMatches(html)) {
+    final tag = tagMatch.group(0)!;
+    if (!tag.contains('/plugins/')) continue;
+    final srcMatch = srcAttrPattern.firstMatch(tag);
+    if (srcMatch == null) continue;
+    final rawSrc = srcMatch.group(1) ?? srcMatch.group(2) ?? srcMatch.group(3);
+    if (rawSrc == null) continue;
+    final trimmed = _trimPluginJsUrl(rawSrc);
+    if (trimmed == null) continue;
+    final isChunk = _isPluginChunkUrl(trimmed);
+    if (!isChunk && nonOfficialPattern.hasMatch(tag)) {
+      addCandidate(nonOfficialMain, trimmed);
+    } else if (!isChunk) {
+      addCandidate(otherMain, trimmed);
+    } else {
+      addCandidate(fallback, trimmed);
+    }
+  }
+
+  // 全文兜底扫描（兼容 modulepreload 等非 <script src> 引用）。
   var index = 0;
   while (true) {
     final pluginIndex = html.indexOf('/plugins/', index);
@@ -1080,14 +1133,29 @@ List<String> _extractPluginCandidatesInIsolate(List<String> input) {
     final raw = _extractPluginCandidateAround(html, pluginIndex);
     index = pluginIndex + '/plugins/'.length;
     if (raw == null) continue;
-
-    final normalized = _normalizePluginCandidateUrl(raw, baseUrl);
-    if (normalized == null) continue;
-    if (seen.add(normalized)) {
-      ordered.add(normalized);
-    }
+    addCandidate(_isPluginChunkUrl(raw) ? fallback : otherMain, raw);
   }
-  return ordered;
+
+  return [...nonOfficialMain, ...otherMain, ...fallback];
+}
+
+bool _isPluginChunkUrl(String url) =>
+    url.contains('_chunk.') || url.contains('_chunk-');
+
+String? _trimPluginJsUrl(String raw) {
+  if (!raw.contains('/assets/') || !raw.contains('/plugins/')) return null;
+  if (!raw.startsWith('http://') &&
+      !raw.startsWith('https://') &&
+      !raw.startsWith('/assets/')) {
+    return null;
+  }
+  final jsIndex = raw.indexOf('.js', raw.indexOf('/plugins/'));
+  if (jsIndex < 0) return null;
+  final afterJs = jsIndex + '.js'.length;
+  if (afterJs >= raw.length || raw.codeUnitAt(afterJs) != 0x3f) {
+    raw = raw.substring(0, afterJs);
+  }
+  return raw.isEmpty ? null : raw;
 }
 
 String? _extractPluginCandidateAround(String html, int pluginIndex) {
@@ -1101,22 +1169,7 @@ String? _extractPluginCandidateAround(String html, int pluginIndex) {
     end++;
   }
 
-  var raw = html.substring(start, end);
-  if (!raw.contains('/assets/')) return null;
-  if (!raw.startsWith('http://') &&
-      !raw.startsWith('https://') &&
-      !raw.startsWith('/assets/')) {
-    return null;
-  }
-
-  final jsIndex = raw.indexOf('.js', raw.indexOf('/plugins/'));
-  if (jsIndex < 0) return null;
-  final afterJs = jsIndex + '.js'.length;
-  if (afterJs >= raw.length || raw.codeUnitAt(afterJs) != 0x3f) {
-    raw = raw.substring(0, afterJs);
-  }
-  if (raw.isEmpty) return null;
-  return raw;
+  return _trimPluginJsUrl(html.substring(start, end));
 }
 
 bool _isPluginCandidateBoundary(int codeUnit) {

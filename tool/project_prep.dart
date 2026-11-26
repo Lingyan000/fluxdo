@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import '_workspace_cli.dart';
-import 'gen_l10n.dart' as gen_l10n;
+
+// 本脚本可能在 pub get 之前（无 .dart_tool/package_config.json）由 CI 或全新克隆运行，
+// 因此禁止静态 import 任何 `package:*` 依赖（含间接导入 gen_l10n.dart）。
 
 const _certCrtPath = 'core/net_core/certs/ca.crt';
 const _certDerPath = 'core/net_core/certs/ca.der';
@@ -16,19 +18,29 @@ Future<void> main(List<String> args) async {
 Future<void> runProjectPrep(
   List<String> args, {
   bool forceL10n = false,
+  Future<void> Function({required bool force})? onGenerateL10n,
   Future<void> Function(List<String> doctorArgs)? onNativeDoctor,
 }) async {
   enterWorkspaceRoot();
 
   final command = args.isEmpty ? 'app' : args.first;
+  final effectiveForceL10n = forceL10n || args.contains('--force');
 
   switch (command) {
     case 'app':
     case 'bootstrap':
-      await _prepareApp(includeCerts: true, forceL10n: forceL10n);
+      await _prepareApp(
+        includeCerts: true,
+        forceL10n: effectiveForceL10n,
+        onGenerateL10n: onGenerateL10n,
+      );
       return;
     case 'test':
-      await _prepareApp(includeCerts: false, forceL10n: forceL10n);
+      await _prepareApp(
+        includeCerts: false,
+        forceL10n: effectiveForceL10n,
+        onGenerateL10n: onGenerateL10n,
+      );
       return;
     case 'certs':
       await _ensureProxyCertResources();
@@ -51,13 +63,33 @@ Future<void> runProjectPrep(
 Future<void> _prepareApp({
   required bool includeCerts,
   required bool forceL10n,
+  Future<void> Function({required bool force})? onGenerateL10n,
 }) async {
   await syncIdeFlutterSdkLink(quiet: true);
   await ensurePubGet();
-  await gen_l10n.runGenL10n(force: forceL10n);
+  await _generateL10n(force: forceL10n, onGenerateL10n: onGenerateL10n);
   if (includeCerts) {
     await _ensureProxyCertResources();
   }
+}
+
+Future<void> _generateL10n({
+  required bool force,
+  Future<void> Function({required bool force})? onGenerateL10n,
+}) async {
+  if (!force && isL10nUpToDate()) {
+    stdout.writeln('==> l10n 生成产物已是最新状态');
+    return;
+  }
+  if (onGenerateL10n != null) {
+    await onGenerateL10n(force: force);
+    return;
+  }
+  await runOrExit(
+    title: '生成 l10n',
+    executable: Platform.resolvedExecutable,
+    arguments: ['tool/gen_l10n.dart', if (force) '--force'],
+  );
 }
 
 Future<void> _ensureProxyCertResources() async {

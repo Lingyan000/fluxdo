@@ -10,6 +10,9 @@ import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
+import 'package:fluxdo/services/log/log_policy.dart';
+import 'package:fluxdo/services/log/log_writer.dart';
+import 'package:fluxdo/services/network/cookie/session_cookie_sentinel.dart';
 import 'package:fluxdo/widgets/auth/login_form.dart';
 import 'package:fluxdo/widgets/auth/webview_login_dialog.dart';
 import 'package:fluxdo/widgets/common/captcha_panel.dart';
@@ -63,6 +66,9 @@ void main() {
     prefs = await SharedPreferences.getInstance();
     directory = await Directory.systemTemp.createTemp('login-captcha-test-');
     await platform.initialize(cookieDirectory: directory.path);
+    // 在根 Zone 预先初始化 LogWriter 单例，避免其首次访问落在某个 testWidgets 的
+    // FakeAsync Zone 内导致后续 resetForTesting() 等待跨 Zone 微任务挂起。
+    await LogWriter.resetForTesting();
   });
   tearDownAll(() => directory.delete(recursive: true));
   setUp(() async {
@@ -489,5 +495,130 @@ void main() {
     expect(find.text(l.login_confirmingVerification), findsNothing);
     expect(find.text(l.login_captchaSubmitting), findsNothing);
     expect(find.byType(InAppWebView, skipOffstage: false), findsNothing);
+    expect(SessionCookieSentinel.instance.isAuthBackSyncSuspended, isFalse);
+  });
+
+  group('登录失败分类与诊断日志', () {
+    late Directory logDir;
+    setUp(() async {
+      logDir = await Directory.systemTemp.createTemp('login-csrf-log-');
+      await LogWriter.initForTesting(logDir);
+    });
+    tearDown(() async {
+      await LogWriter.resetForTesting();
+      if (logDir.existsSync()) {
+        await logDir.delete(recursive: true);
+      }
+    });
+
+    testWidgets('CSRF 非 CF 错误不弹验证页，写入诊断日志并释放认证回写守卫', (tester) async {
+      await open(tester);
+      expect(SessionCookieSentinel.instance.isAuthBackSyncSuspended, isTrue);
+      send('hcaptcha_pass', 'fixture-token');
+      await tester.pump();
+      send(
+        'login_result',
+        jsonEncode({
+          'phase': 'csrf',
+          'status': 500,
+          'body': 'internal error',
+          'cfBlocked': false,
+          'badCsrf': false,
+          'contentType': 'text/plain',
+        }),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(result?.status, WebViewLoginStatus.failure);
+      expect(result?.errorMessage, contains('CSRF 500'));
+      expect(platform.controller.submissions, 1);
+      expect(SessionCookieSentinel.instance.isAuthBackSyncSuspended, isFalse);
+
+      final exported = await tester.runAsync(() async {
+        await LogWriter.instance.flushNow();
+        final raw = await LogWriter.readAllContent();
+        return LogPolicy.export(raw);
+      });
+      final stepEvent = const LineSplitter()
+          .convert(exported!)
+          .map((line) => jsonDecode(line) as Map<String, dynamic>)
+          .singleWhere((row) => row['event'] == 'native_login_step_result');
+      expect(stepEvent['phase'], 'csrf');
+      expect(stepEvent['status'], 500);
+      expect(stepEvent['cfBlocked'], isFalse);
+      expect(exported, isNot(contains('fixture-token')));
+    });
+  });
+
+  testWidgets('session 阶段遇到 BAD CSRF 自动在同 WebView 重试一次并成功', (tester) async {
+    await open(tester);
+    send('hcaptcha_pass', 'fixture-token');
+    await tester.pump();
+    expect(platform.controller.submissions, 1);
+
+    send(
+      'login_result',
+      jsonEncode({
+        'phase': 'session',
+        'status': 403,
+        'body': '["BAD CSRF"]',
+        'cfBlocked': false,
+        'badCsrf': true,
+        'contentType': 'application/json',
+      }),
+    );
+    await tester.pump();
+    expect(result, isNull);
+    expect(platform.controller.submissions, 2);
+
+    send(
+      'login_result',
+      jsonEncode({
+        'phase': 'session',
+        'status': 200,
+        'body': jsonEncode({
+          'user': {'id': 1},
+        }),
+        'cfBlocked': false,
+        'badCsrf': false,
+      }),
+    );
+    await tester.pump();
+    final bootstrap = platform.controller.handlers.keys.singleWhere(
+      (name) => name.startsWith('fluxdo_session_bootstrap_'),
+    );
+    send(bootstrap, jsonEncode({'ok': true}));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(result?.status, WebViewLoginStatus.success);
+    expect(SessionCookieSentinel.instance.isAuthBackSyncSuspended, isFalse);
+  });
+
+  testWidgets('session 阶段连续两次 BAD CSRF 明确报错而非报非 JSON', (tester) async {
+    await open(tester);
+    send('hcaptcha_pass', 'fixture-token');
+    await tester.pump();
+
+    final badCsrfPayload = jsonEncode({
+      'phase': 'session',
+      'status': 403,
+      'body': '["BAD CSRF"]',
+      'cfBlocked': false,
+      'badCsrf': true,
+      'contentType': 'application/json',
+    });
+    send('login_result', badCsrfPayload);
+    await tester.pump();
+    expect(platform.controller.submissions, 2);
+
+    send('login_result', badCsrfPayload);
+    await tester.pumpAndSettle();
+
+    expect(result?.status, WebViewLoginStatus.failure);
+    expect(result?.errorMessage, contains('BAD CSRF'));
+    expect(result?.errorMessage, isNot(contains('非 JSON')));
+    expect(SessionCookieSentinel.instance.isAuthBackSyncSuspended, isFalse);
   });
 }

@@ -19,6 +19,58 @@ String get toolingStampPath =>
 String get l10nStampPath =>
     '.dart_tool${Platform.pathSeparator}fluxdo_tooling${Platform.pathSeparator}l10n.stamp';
 
+const l10nRequiredOutputs = <String>[
+  'lib/l10n/slang/strings.g.dart',
+  'lib/l10n/generated/app_localizations_compat.g.dart',
+];
+
+bool isL10nUpToDate() {
+  final stampFile = File(l10nStampPath);
+  if (!stampFile.existsSync()) {
+    return false;
+  }
+  for (final outputPath in l10nRequiredOutputs) {
+    if (!File(outputPath).existsSync()) {
+      return false;
+    }
+  }
+  return stampFile.readAsStringSync() == _buildL10nStamp();
+}
+
+void writeL10nStamp() {
+  final stampFile = File(l10nStampPath);
+  stampFile.parent.createSync(recursive: true);
+  stampFile.writeAsStringSync(_buildL10nStamp());
+}
+
+String _buildL10nStamp() {
+  final tracked = <File>[
+    File('slang.yaml'),
+    File('tool/gen_l10n.dart'),
+    File('tool/gen_slang_compat.dart'),
+    for (final output in l10nRequiredOutputs) File(output),
+    ..._collectL10nArbFiles(),
+  ].where((file) => file.existsSync()).toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+
+  return tracked.map((file) {
+    final stat = file.statSync();
+    return '${file.path}|${stat.modified.millisecondsSinceEpoch}|${stat.size}';
+  }).join('\n');
+}
+
+Iterable<File> _collectL10nArbFiles() sync* {
+  final dir = Directory('lib/l10n/modules');
+  if (!dir.existsSync()) {
+    return;
+  }
+  for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+    if (entity is File && entity.path.endsWith('.arb')) {
+      yield entity;
+    }
+  }
+}
+
 final String _workspaceRootPath = _resolveWorkspaceRootPath();
 
 AndroidJavaRuntime? _cachedAndroidJavaRuntime;

@@ -54,6 +54,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     'trailer',
     'transfer-encoding',
     'upgrade',
+    'upgrade-insecure-requests',
     'user-agent',
     'via',
   };
@@ -63,6 +64,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
   static const String cookieModeExtraKey = 'webViewCookieMode';
   static const String resourceKindImage = 'image';
   static const String resourceKindUpload = 'upload';
+  static const String resourceKindHtml = 'html';
   static const String cookieModeReadOnly = 'readOnly';
   static const String cookieModeNone = 'none';
   static const Set<String> _supportedFetchCacheModes = {
@@ -1497,7 +1499,14 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     return builder.isEmpty ? null : builder.takeBytes();
   }
 
-  Map<String, String> _buildBrowserSafeHeaders(Map<String, dynamic> headers) {
+  @visibleForTesting
+  static Map<String, String> buildBrowserSafeHeadersForTesting(
+    Map<String, dynamic> headers,
+  ) => _buildBrowserSafeHeaders(headers);
+
+  static Map<String, String> _buildBrowserSafeHeaders(
+    Map<String, dynamic> headers,
+  ) {
     final headersMap = <String, String>{};
     final droppedHeaders = <String>[];
 
@@ -1524,7 +1533,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     return headersMap;
   }
 
-  bool _isForbiddenBrowserHeader(String key) {
+  static bool _isForbiddenBrowserHeader(String key) {
     final normalized = key.trim().toLowerCase();
     if (_forbiddenBrowserHeaders.contains(normalized)) {
       return true;
@@ -1532,7 +1541,7 @@ class WebViewHttpAdapter implements HttpClientAdapter {
     return normalized.startsWith('sec-') || normalized.startsWith('proxy-');
   }
 
-  String? _headerValueToString(Object? value) {
+  static String? _headerValueToString(Object? value) {
     if (value == null) return null;
     if (value is Iterable) {
       return value

@@ -19,22 +19,22 @@ postinstall = "dart tool/sync_ide_sdk.dart"
 [tasks.init]
 description = "首次克隆或新建 worktree 一键初始化（子模块 + SDK 链接 + bootstrap + sync）"
 raw = true
-run = "dart tool/cli.dart init"
+run = "dart tool/init_workspace.dart"
 
 [tasks.bootstrap]
 description = "初始化工作区依赖与包链接 (melos bootstrap)"
 raw = true
-run = "dart tool/cli.dart bootstrap"
+run = "dart tool/bootstrap_workspace.dart"
 
 [tasks.sync]
 description = "同步项目状态（pub get、增量 l10n、代理证书、IDE SDK 链接）"
 raw = true
-run = "dart tool/cli.dart sync"
+run = "dart tool/project_prep.dart app"
 
 [tasks."sdk:link"]
 description = "同步 .tooling/flutter_sdk 指向当前激活的 Flutter SDK"
 raw = true
-run = "dart tool/cli.dart sdk:link"
+run = "dart tool/sync_ide_sdk.dart"
 
 [tasks.doctor]
 description = "检查开发环境、SDK 链接、l10n、证书与原生构建环境"

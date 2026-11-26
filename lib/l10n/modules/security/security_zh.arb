@@ -83,6 +83,9 @@
   "cf_sessionCompatDisableAuto": "不想每次被打断？关闭自动验证",
   "cf_autoVerifyDisabledHint": "已关闭自动验证，之后遇到验证时可在页面上手动点击",
   "cf_sessionCompatEnabled": "已临时切换到兼容模式",
+  "cf_sessionCompatAutoEnabled": "原生网络未通过验证，已自动切换到 WebView 兼容模式",
+  "cf_sessionCompatCloseAction": "关闭",
+  "cf_sessionCompatDisabled": "已关闭临时兼容模式",
   "cf_sessionCompatDisable": "退出临时兼容模式",
   "@cf_verifying": {
     "placeholders": {

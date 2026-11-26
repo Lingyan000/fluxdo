@@ -113,11 +113,17 @@ modules:
       - type: dir
         path: stage/source-tree
         dest: source-tree
-      # 构建沙箱离线，提前准备识字所需的微软 CPU 运行库。
+      # 构建沙箱离线，从 Google 官方发布物预取 LiteRT CPU 库。
       - type: file
-        url: https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.19.2/microsoft.ml.onnxruntime.1.19.2.nupkg
-        sha256: fa133c8fe6238445a0dd3e8447baa5c7d16f418caa8e576c7e253ba77b27b61b
+        url: https://files.pythonhosted.org/packages/4b/a9/87d838fbc6f9e4059158b92d3e6e355838af8ca14938d872c6b4d94b352b/ai_edge_litert-2.4.0-cp312-cp312-manylinux_2_27_x86_64.whl
+        sha256: 1ad7b17c7fd0267db96a58d48ae09c7a39738c181a3f23c414b5cb0555f9ee47
         dest: source-tree/packages/fluxdo_ocr/.dart_tool/runtime
+        only-arches: [x86_64]
+      - type: file
+        url: https://files.pythonhosted.org/packages/03/7e/3887c67fa5235373f22fbe6ebf5378a68c3d6547441776b5654e8f8dff21/ai_edge_litert-2.4.0-cp312-cp312-manylinux_2_27_aarch64.whl
+        sha256: 575ff9fdd7fcdda0fe8b79f26bcc08dca2b98395d41d1b59771f87eda01bc6f0
+        dest: source-tree/packages/fluxdo_ocr/.dart_tool/runtime
+        only-arches: [aarch64]
       - type: file
         url: https://npmmirror.com/mirrors/ffmpeg-static/b6.0/ffmpeg-linux-x64
         sha256: ed652b2f32e0851d1946894fb8333f5b677c1b2ce6b9d187910a67f8b99da028

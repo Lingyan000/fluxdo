@@ -4,110 +4,140 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
-const _bridge = 'package:fluxdo_ocr/bridge';
+part 'src/litert_bindings.dart';
 
-@Native<Pointer<Void> Function()>(
-  symbol: 'OrtGetApiBase',
-  assetId: 'package:fluxdo_ocr/onnxruntime',
-)
-external Pointer<Void> _ortApiBase();
+const _runtime = 'package:fluxdo_ocr/litert';
 
-@Native<
-  Pointer<Void> Function(Pointer<Void>, Pointer<Uint8>, Size, Pointer<Utf8>)
->(symbol: 'ocr_open', assetId: _bridge)
-external Pointer<Void> _open(
-  Pointer<Void> api,
-  Pointer<Uint8> bytes,
-  int length,
-  Pointer<Utf8> error,
-);
-
-@Native<Void Function(Pointer<Void>)>(symbol: 'ocr_close', assetId: _bridge)
-external void _close(Pointer<Void> model);
-
-final class _Output extends Struct {
-  external Pointer<Void> value;
-  external Pointer<Float> data;
-  @Array(4)
-  external Array<Int64> dimensions;
-  @Size()
-  external int rank;
+void _check(int status, String operation) {
+  if (status != 0) throw StateError('LiteRT $operation 失败（$status）');
 }
 
-@Native<
-  Int32 Function(
-    Pointer<Void>,
-    Pointer<Float>,
-    Int32,
-    Int32,
-    Pointer<_Output>,
-    Pointer<Utf8>,
-  )
->(symbol: 'ocr_run', assetId: _bridge)
-external int _run(
-  Pointer<Void> model,
-  Pointer<Float> pixels,
-  int width,
-  int height,
-  Pointer<_Output> out,
-  Pointer<Utf8> error,
-);
-
-@Native<Void Function(Pointer<Void>, Pointer<_Output>)>(
-  symbol: 'ocr_release_output',
-  assetId: _bridge,
-)
-external void _releaseOutput(Pointer<Void> model, Pointer<_Output> out);
-
-/// PP-OCR 的 CPU 会话。每个识字任务在自己的 isolate 内创建并释放。
+/// 随包 LiteRT 的 CPU 会话。动态输出由解释器持有，每个任务在工作 isolate 内使用。
 final class OcrInferenceModel {
-  OcrInferenceModel._(this._handle);
-  Pointer<Void> _handle;
+  OcrInferenceModel._();
 
-  factory OcrInferenceModel.open(String path) => using((arena) {
+  Pointer<Void> _model = nullptr;
+  Pointer<Void> _interpreter = nullptr;
+  Pointer<Void> _delegate = nullptr;
+  Pointer<Uint8> _modelBytes = nullptr;
+  int _width = 0;
+  int _height = 0;
+  bool _busy = false;
+
+  factory OcrInferenceModel.open(String path) {
     final bytes = File(path).readAsBytesSync();
-    final data = arena<Uint8>(bytes.length);
-    data.asTypedList(bytes.length).setAll(0, bytes);
-    final error = arena<Uint8>(512).cast<Utf8>();
-    final handle = _open(
-      Platform.isIOS ? nullptr : _ortApiBase(),
-      data,
-      bytes.length,
-      error,
-    );
-    if (handle == nullptr) throw StateError(error.toDartString());
-    return OcrInferenceModel._(handle);
-  });
+    if (bytes.length < 8 ||
+        bytes[4] != 0x54 ||
+        bytes[5] != 0x46 ||
+        bytes[6] != 0x4c ||
+        bytes[7] != 0x33) {
+      throw const FormatException('OCR 模型不是 LiteRT FlatBuffer');
+    }
+    final session = OcrInferenceModel._();
+    try {
+      // LiteRT 不复制模型数据，必须保留至解释器和模型都释放后。
+      session._modelBytes = calloc<Uint8>(bytes.length);
+      session._modelBytes.asTypedList(bytes.length).setAll(0, bytes);
+      session._model = _modelCreate(session._modelBytes, bytes.length);
+      if (session._model == nullptr) {
+        throw const FormatException('LiteRT 无法读取识字模型');
+      }
+      final options = _optionsCreate();
+      if (options == nullptr) throw StateError('LiteRT 无法创建推理配置');
+      try {
+        _optionsThreads(options, 2);
+        using((arena) {
+          final xnnOptions = arena<_XnnOptions>()..ref = _xnnOptionsDefault();
+          xnnOptions.ref.numThreads = 2;
+          session._delegate = _xnnCreate(xnnOptions);
+        });
+        if (session._delegate != nullptr) {
+          _optionsAddDelegate(options, session._delegate);
+        }
+        session._interpreter = _interpreterCreate(session._model, options);
+      } finally {
+        _optionsDelete(options);
+      }
+      if (session._interpreter == nullptr) throw StateError('LiteRT 无法创建识字会话');
+      if (_inputCount(session._interpreter) != 1 ||
+          _outputCount(session._interpreter) != 1) {
+        throw const FormatException('OCR 模型需要单个输入和输出');
+      }
+      final input = _inputTensor(session._interpreter, 0);
+      final output = _outputTensor(session._interpreter, 0);
+      if (_tensorType(input) != 1 ||
+          _tensorRank(input) != 4 ||
+          _tensorDim(input, 1) != 3) {
+        throw const FormatException('OCR 模型输入必须是 NCHW float32');
+      }
+      if (_tensorType(output) != 1) {
+        throw const FormatException('OCR 模型输出必须是 float32');
+      }
+      return session;
+    } catch (_) {
+      session.close();
+      rethrow;
+    }
+  }
 
-  /// 输出视图只在回调执行期间有效，避免把整幅概率图复制到 Dart 堆。
+  /// 输出视图只在回调内有效。同尺寸复用输入，变宽文本和长截图切片按需调整张量。
   T infer<T>(
     int width,
     int height,
     Float32List pixels,
     T Function(List<int> shape, Float32List scores) read,
-  ) => using((arena) {
-    if (_handle == nullptr) throw StateError('识字模型已释放');
+  ) {
+    if (_interpreter == nullptr) throw StateError('识字模型已释放');
+    if (_busy) throw StateError('同一识字会话不能重入');
     if (width < 1 || height < 1 || pixels.length != width * height * 3) {
       throw ArgumentError('OCR 图片尺寸不匹配');
     }
-    final input = arena<Float>(pixels.length);
-    input.asTypedList(pixels.length).setAll(0, pixels);
-    final out = arena<_Output>();
-    final error = arena<Uint8>(512).cast<Utf8>();
-    if (_run(_handle, input, width, height, out, error) == 0) {
-      throw StateError(error.toDartString());
-    }
+    _busy = true;
     try {
-      final shape = List.generate(out.ref.rank, (i) => out.ref.dimensions[i]);
+      if (_width != width || _height != height) {
+        _width = _height = 0;
+        using((arena) {
+          final dimensions = arena<Int32>(4);
+          dimensions.asTypedList(4).setAll(0, [1, 3, height, width]);
+          _check(_resizeInput(_interpreter, 0, dimensions, 4), '调整图片尺寸');
+          _check(_allocateTensors(_interpreter), '分配张量');
+        });
+        _width = width;
+        _height = height;
+      }
+      final input = _inputTensor(_interpreter, 0);
+      if (_tensorBytes(input) != pixels.lengthInBytes ||
+          _tensorData(input) == nullptr) {
+        throw const FormatException('OCR 输入缓冲区尺寸不匹配');
+      }
+      _tensorData(input).asTypedList(pixels.length).setAll(0, pixels);
+      _check(_invoke(_interpreter), '执行模型');
+      // 动态输出只有 Invoke 后才具有最终尺寸；每次都重新读取 tensor 指针和 shape。
+      final output = _outputTensor(_interpreter, 0);
+      final rank = _tensorRank(output);
+      if (rank < 1 || rank > 4) throw const FormatException('OCR 输出维度无效');
+      final shape = List<int>.generate(rank, (i) => _tensorDim(output, i));
+      if (shape.any((d) => d <= 0)) throw const FormatException('OCR 输出尺寸无效');
       final length = shape.reduce((a, b) => a * b);
-      return read(shape, out.ref.data.asTypedList(length));
+      if (_tensorBytes(output) != length * sizeOf<Float>() ||
+          _tensorData(output) == nullptr) {
+        throw const FormatException('OCR 输出缓冲区尺寸不匹配');
+      }
+      return read(shape, _tensorData(output).asTypedList(length));
     } finally {
-      _releaseOutput(_handle, out);
+      _busy = false;
     }
-  });
+  }
 
   void close() {
-    _close(_handle);
-    _handle = nullptr;
+    if (_busy) throw StateError('不能在读取输出时释放识字会话');
+    if (_interpreter != nullptr) _interpreterDelete(_interpreter);
+    if (_delegate != nullptr) _xnnDelete(_delegate);
+    if (_model != nullptr) _modelDelete(_model);
+    if (_modelBytes != nullptr) calloc.free(_modelBytes);
+    _interpreter = nullptr;
+    _delegate = nullptr;
+    _model = nullptr;
+    _modelBytes = nullptr;
   }
 }

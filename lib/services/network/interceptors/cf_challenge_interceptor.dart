@@ -7,8 +7,10 @@ import '../../cf_challenge_service.dart';
 import '../../cf_challenge_logger.dart';
 import '../../cf_clearance_refresh_service.dart';
 import '../../cf_clearance_authority.dart';
+import '../../toast_service.dart';
 import 'network_log_interceptor.dart';
 import '../adapters/platform_adapter.dart';
+import '../cf_channel_trace_probe.dart';
 import '../cookie/boundary_sync_service.dart';
 import '../cookie/cookie_jar_service.dart';
 import '../deadline_dio.dart';
@@ -303,15 +305,34 @@ class CfChallengeInterceptor extends Interceptor {
           final retryStillBlockedByCf =
               retryError.error is CfVerificationIneffectiveException;
 
+          // 验证放行但原生通道重试仍被 CF 拒绝：后台异步触发一次双通道
+          // /cdn-cgi/trace 脱敏对照（带强冷却与单飞，零阻塞），定位出口或指纹差异。
+          if (retryStillBlockedByCf &&
+              WebViewAdapterSettingsService.instance.canUseWebView(
+                retryOptions.uri,
+              )) {
+            unawaited(
+              CfChannelTraceProbe.instance.probeIfNeeded(
+                triggerPath: retryOptions.uri.path,
+                triggerStatusCode: retryError.response?.statusCode,
+              ),
+            );
+          }
+
           // 验证入口已无盾，原生链路仍被 CF 拒绝。浏览器与原生通道的
-          // 放行结果可能不同，仅对用户可见请求询问一次，
-          // 用户确认后本次会话改用浏览器网络栈，并立即重放原请求。
+          // 放行结果可能不同：开启自动切换开关时直接切入临时兼容模式并给带
+          // 关闭操作的提示；默认关闭时仅对用户可见请求询问一次。
           if (retryStillBlockedByCf &&
               !isSilent &&
               requestCanUseWebViewAdapter(retryOptions)) {
             final webViewSettings = WebViewAdapterSettingsService.instance;
+            final alreadyEffective = webViewSettings.effectiveEnabled;
+            final autoFallback =
+                !alreadyEffective &&
+                webViewSettings.canAutoFallbackThisSession;
             final shouldFallback =
-                webViewSettings.effectiveEnabled ||
+                alreadyEffective ||
+                autoFallback ||
                 await cfService.confirmSessionCompatibilityMode();
             final cancelled = retryOptions.cancelToken?.cancelError;
             if (cancelled != null) return handler.next(cancelled);
@@ -322,10 +343,40 @@ class CfChallengeInterceptor extends Interceptor {
               retryOptions.extra.remove(FluxRequestKeys.skipWebViewAdapter);
               try {
                 final fallbackResponse = await dio.fetch(retryOptions);
-                CfChallengeService.showGlobalMessage(
-                  S.current.cf_sessionCompatEnabled,
-                  isError: false,
-                );
+                if (autoFallback) {
+                  CfChallengeService.showGlobalMessage(
+                    S.current.cf_sessionCompatAutoEnabled,
+                    isError: false,
+                    duration: const Duration(seconds: 6),
+                    actionLabel: S.current.cf_sessionCompatCloseAction,
+                    bypassCooldown: true,
+                    onAction: () {
+                      webViewSettings.disableSessionFallback();
+                      webViewSettings.suppressAutoFallbackForSession();
+                      scheduleMicrotask(() {
+                        ToastService.showInfo(
+                          S.current.cf_sessionCompatDisabled,
+                        );
+                      });
+                    },
+                  );
+                } else if (!alreadyEffective) {
+                  CfChallengeService.showGlobalMessage(
+                    S.current.cf_sessionCompatEnabled,
+                    isError: false,
+                    duration: const Duration(seconds: 5),
+                    actionLabel: S.current.cf_sessionCompatCloseAction,
+                    bypassCooldown: true,
+                    onAction: () {
+                      webViewSettings.disableSessionFallback();
+                      scheduleMicrotask(() {
+                        ToastService.showInfo(
+                          S.current.cf_sessionCompatDisabled,
+                        );
+                      });
+                    },
+                  );
+                }
                 CfChallengeLogger.logInterceptorRetry(
                   url: requestUrl,
                   success: true,

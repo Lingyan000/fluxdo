@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../constants.dart';
 import '../app_logger.dart';
 import '../network/flux_request_spec.dart';
 import '../translation_service.dart';
@@ -27,25 +28,35 @@ class OcrModelFile {
 }
 
 class OcrModelBundle {
-  const OcrModelBundle(
-    this.repo,
-    this.revision,
-    this.archiveSize,
-    this.archiveSha,
-    this.files,
-  );
-  final String repo;
-  final String revision;
+  const OcrModelBundle({
+    required this.baseUrl,
+    required this.archiveName,
+    required this.archiveSize,
+    required this.archiveSha,
+    required this.files,
+    this.archiveBaseUrl = '',
+  });
+  final String baseUrl;
+  final String archiveBaseUrl;
+  final String archiveName;
   final int archiveSize;
   final String archiveSha;
   final List<OcrModelFile> files;
 
-  String url(OcrModelFile file) =>
-      'https://modelscope.cn/models/PaddlePaddle/$repo/resolve/$revision/${file.member}';
-  String get archiveName => '${repo}_infer';
-  String get archiveUrl =>
-      'https://paddle-model-ecology.bj.bcebos.com/paddlex/'
-      'official_inference_model/paddle3.0.0/$archiveName.tar';
+  String url(OcrModelFile file) => _resolve(baseUrl, file.member);
+  String? get archiveUrl => archiveBaseUrl.isEmpty
+      ? null
+      : _resolve(archiveBaseUrl, '$archiveName.tar');
+
+  static String _resolve(String base, String member) {
+    final uri = Uri.tryParse(base);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      throw StateError('请配置项目自己的 FLUXDO_OCR_MODEL_BASE_URL（HTTPS）');
+    }
+    return Uri.parse(base.endsWith('/') ? base : '$base/')
+        .resolve(member)
+        .toString();
+  }
 }
 
 typedef OcrModelPaths = ({String detector, String recognizer, String config});
@@ -54,43 +65,49 @@ class OcrModelStore {
   OcrModelStore({
     Dio? dio,
     Future<Directory> Function()? directory,
-    this.bundles = officialBundles,
+    this.bundles = defaultBundles,
   }) : _dio = dio ?? TranslationService.createClient(),
        _directory = directory ?? _defaultDirectory;
 
-  // 飞桨官方 PP-OCRv6 small。两个渠道解包后逐文件一致，识别配置里含唯一一份字典。
+  // 从飞桨官方 PP-OCRv6 small 转换；转换与发布契约见 packages/fluxdo_ocr/README.md。
+  // 只发布固定摘要的 FP16 权重，输入输出仍是 float32。运行库随包，模型按需下载。
+  static const modelVersion = 'ppocr-v6-small-litert-1';
+  static const _baseUrl = String.fromEnvironment(
+    'FLUXDO_OCR_MODEL_BASE_URL',
+    defaultValue:
+        'https://modelscope.cn/models/pyteng/fluxdo-ocr/resolve/'
+        '5e40c1fd3e8c6c2c18119622120c39cb77a8dd09/',
+  );
+  static const _archiveBaseUrl = String.fromEnvironment(
+    'FLUXDO_OCR_MODEL_ARCHIVE_BASE_URL',
+  );
   static const _det = OcrModelFile(
-    'det.onnx',
-    'inference.onnx',
-    9880512,
-    'd73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e',
+    'det.tflite',
+    'det.tflite',
+    4995092,
+    '90c01fa278a2d8175026b48b8b80c8f48d95448d36370122e35abbbd366ff4aa',
   );
   static const _rec = OcrModelFile(
-    'rec.onnx',
-    'inference.onnx',
-    21159378,
-    '5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634',
+    'rec.tflite',
+    'rec.tflite',
+    10610876,
+    'be121dcbaea1aec7ea3b5619b604992306836e166f32ac02d747df0ba055ff64',
   );
   static const _config = OcrModelFile(
     'rec.yml',
-    'inference.yml',
+    'rec.yml',
     150579,
     'ab078671bb49f06228eadccd34f1bb501e157f7a047095ffb943ba81512c77d1',
   );
-  static const officialBundles = [
+  static const defaultBundles = [
     OcrModelBundle(
-      'PP-OCRv6_small_det_onnx',
-      '956a0b620a4017cc04056c692be1703b0025d028',
-      9891840,
-      'd218f6fbf0f1c23d2161bd6ac7f5eaa6104fa89955c09290497e31008e2618e4',
-      [_det],
-    ),
-    OcrModelBundle(
-      'PP-OCRv6_small_rec_onnx',
-      '296d43bc0ebced0fd9c605174aa5962e49810ab6',
-      21319680,
-      'd267ab077a44a0eedb1ea8f8c542d263f211de8e9d7a029bf9fcfff7e5a88fb1',
-      [_rec, _config],
+      baseUrl: _baseUrl,
+      archiveBaseUrl: _archiveBaseUrl,
+      archiveName: modelVersion,
+      archiveSize: 15779840,
+      archiveSha:
+          '854f5d62cda1e0b0ac6b3ee426dc519dfe00720d388e8a7b3ab55870b91576bc',
+      files: [_det, _rec, _config],
     ),
   ];
   static int get downloadBytes => _det.size + _rec.size + _config.size;
@@ -101,11 +118,7 @@ class OcrModelStore {
   final Map<String, ({int size, int modifiedMs})> _verifiedFiles = {};
 
   static Future<Directory> _defaultDirectory() async => Directory(
-    p.join(
-      (await getApplicationSupportDirectory()).path,
-      'ocr',
-      'ppocr-v6-small-onnx-1',
-    ),
+    p.join((await getApplicationSupportDirectory()).path, 'ocr', modelVersion),
   );
 
   Future<OcrModelPaths> paths() async {
@@ -287,6 +300,7 @@ class OcrModelStore {
               error is! TlsException) {
             rethrow;
           }
+          if (bundle.archiveUrl == null) rethrow;
           AppLogger.warning(
             'OCR 模型主源下载失败，切换备用源: ${spec.name} ($error)',
             tag: 'OCR',
@@ -316,11 +330,14 @@ class OcrModelStore {
     progress(1);
     // 仅在新模型完整落盘后回收旧版应用专用的模型目录。
     if (_directory == _defaultDirectory) {
-      final old = Directory(p.join(dir.parent.path, 'ppocr-v6-1'));
-      try {
-        if (await old.exists()) await old.delete(recursive: true);
-      } on FileSystemException {
-        /* 下次下载时重试。 */
+      // 只清理本功能曾使用的精确目录；保留其他模型和失败下载前的旧资源。
+      for (final name in ['ppocr-v6-1', 'ppocr-v6-small-onnx-1']) {
+        final old = Directory(p.join(dir.parent.path, name));
+        try {
+          if (await old.exists()) await old.delete(recursive: true);
+        } on FileSystemException {
+          /* 下次下载时重试。 */
+        }
       }
     }
   }
@@ -334,7 +351,7 @@ class OcrModelStore {
   ) async {
     final archive = File(p.join(dir.path, '${bundle.archiveName}.tar.part'));
     await _fetch(
-      bundle.archiveUrl,
+      bundle.archiveUrl!,
       archive,
       bundle.archiveSize,
       bundle.archiveSha,
@@ -409,30 +426,63 @@ class OcrModelStore {
     if (offset >= size) offset = 0;
 
     // 只在同一发布文件内续传。主源散文件和备用源 tar 有各自的断点。
+    const redirectStatuses = {301, 302, 303, 307, 308};
+    var currentUrl = url;
+    var redirects = 0;
     for (;;) {
       token.throwIfCancellationRequested();
       final response = await _dio.get<ResponseBody>(
-        url,
+        currentUrl,
         cancelToken: token,
         options: Options(
           responseType: ResponseType.stream,
           headers: {
+            HttpHeaders.userAgentHeader: AppConstants.userAgent,
             HttpHeaders.acceptEncodingHeader: 'identity',
             if (offset > 0) HttpHeaders.rangeHeader: 'bytes=$offset-',
           },
-          validateStatus: (code) => code == 200 || code == 206 || code == 416,
+          // 必须放行 3xx，否则 Dio 会在 RedirectInterceptor.onResponse 之前直接抛 badResponse。
+          validateStatus: (code) =>
+              code == 200 ||
+              code == 206 ||
+              code == 416 ||
+              redirectStatuses.contains(code),
           receiveTimeout: const Duration(seconds: 15),
           extra: {FluxRequestKeys.callTimeoutMillis: 120000},
         ),
       );
       final body = response.data!;
+      final status = response.statusCode;
+      if (redirectStatuses.contains(status)) {
+        await body.stream
+            .listen((_) {}, onError: (Object _, StackTrace _) {})
+            .cancel();
+        final location = response.headers.value(HttpHeaders.locationHeader);
+        if (location == null || location.isEmpty) {
+          throw const HttpException('OCR 下载重定向缺少目标地址');
+        }
+        redirects++;
+        if (redirects > 10) {
+          throw const HttpException('OCR 下载重定向次数过多');
+        }
+        final target = Uri.parse(currentUrl).resolve(location);
+        if (target.scheme != 'https' ||
+            target.host.isEmpty ||
+            target.userInfo.isNotEmpty) {
+          throw const FormatException('OCR 下载重定向地址无效');
+        }
+        currentUrl = target.toString();
+        continue;
+      }
       final range = response.headers.value(HttpHeaders.contentRangeHeader);
-      final partial = response.statusCode == 206;
-      if (response.statusCode == 416 ||
+      final partial = status == 206;
+      if (status == 416 ||
           (partial && range != 'bytes $offset-${size - 1}/$size')) {
         await body.stream.listen((_) {}).cancel();
         if (offset == 0) throw const FormatException('OCR 下载范围无效');
         offset = 0;
+        currentUrl = url;
+        redirects = 0;
         continue;
       }
       var received = partial ? offset : 0;
@@ -464,6 +514,8 @@ class OcrModelStore {
       await part.delete();
       if (offset > 0) {
         offset = 0;
+        currentUrl = url;
+        redirects = 0;
         continue;
       }
       throw const FormatException('OCR 模型校验失败');
