@@ -706,11 +706,17 @@ class _NotificationBodyState extends ConsumerState<_NotificationBody>
           .read(notificationPanelTabProvider.notifier)
           .select(NotificationPanelTab.values[_tabController.index]);
     });
+    final hadCachedRecent = ref.read(recentNotificationsProvider.exists);
     Future.microtask(() {
+      if (!mounted) return;
       ref
           .read(notificationPanelTabProvider.notifier)
           .select(NotificationPanelTab.all);
-      ref.invalidate(recentNotificationsProvider);
+      // 首次打开面板时，首帧 ref.watch(recentNotificationsProvider) 已触发首次加载，
+      // 仅在已有缓存且当前不在加载中时刷新，避免 10ms 内连发两次 GET /notifications。
+      if (hadCachedRecent && !ref.read(recentNotificationsProvider).isLoading) {
+        ref.invalidate(recentNotificationsProvider);
+      }
     });
   }
 
