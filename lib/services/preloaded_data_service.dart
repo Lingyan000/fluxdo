@@ -1072,11 +1072,59 @@ Map<String, dynamic>? _decodePreloadedJsonInIsolate(List<String> input) {
   return result;
 }
 
-List<String> _extractPluginCandidatesInIsolate(List<String> input) {
-  final html = input[0];
-  final baseUrl = input[1];
+List<String> _extractPluginCandidatesInIsolate(List<String> input) =>
+    extractPluginCandidatesFromHtml(input[0], input[1]);
+
+/// 从首页 HTML 中扫描插件 JS URL，并按结构特征分层排序：
+/// 1. `data-official="false"` 的非 `_chunk.` 插件主包（站点自定义插件优先）
+/// 2. 其他 `<script>` 中的非 `_chunk.` 插件主包
+/// 3. `_chunk.` 分包及非 `<script>` 标签中出现的 `/plugins/*.js`（全量兜底）
+@visibleForTesting
+List<String> extractPluginCandidatesFromHtml(String html, String baseUrl) {
+  final nonOfficialMain = <String>[];
+  final otherMain = <String>[];
+  final fallback = <String>[];
   final seen = <String>{};
-  final ordered = <String>[];
+
+  void addCandidate(List<String> bucket, String? raw) {
+    if (raw == null || raw.isEmpty) return;
+    final normalized = _normalizePluginCandidateUrl(raw, baseUrl);
+    if (normalized == null) return;
+    if (seen.add(normalized)) {
+      bucket.add(normalized);
+    }
+  }
+
+  final scriptTagPattern = RegExp(r'<script\b[^>]*>', caseSensitive: false);
+  final srcAttrPattern = RegExp(
+    r'''\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))''',
+    caseSensitive: false,
+  );
+  final nonOfficialPattern = RegExp(
+    r'''\bdata-official\s*=\s*(?:"false"|'false'|false\b)''',
+    caseSensitive: false,
+  );
+
+  for (final tagMatch in scriptTagPattern.allMatches(html)) {
+    final tag = tagMatch.group(0)!;
+    if (!tag.contains('/plugins/')) continue;
+    final srcMatch = srcAttrPattern.firstMatch(tag);
+    if (srcMatch == null) continue;
+    final rawSrc = srcMatch.group(1) ?? srcMatch.group(2) ?? srcMatch.group(3);
+    if (rawSrc == null) continue;
+    final trimmed = _trimPluginJsUrl(rawSrc);
+    if (trimmed == null) continue;
+    final isChunk = _isPluginChunkUrl(trimmed);
+    if (!isChunk && nonOfficialPattern.hasMatch(tag)) {
+      addCandidate(nonOfficialMain, trimmed);
+    } else if (!isChunk) {
+      addCandidate(otherMain, trimmed);
+    } else {
+      addCandidate(fallback, trimmed);
+    }
+  }
+
+  // 全文兜底扫描（兼容 modulepreload 等非 <script src> 引用）。
   var index = 0;
   while (true) {
     final pluginIndex = html.indexOf('/plugins/', index);
@@ -1085,14 +1133,29 @@ List<String> _extractPluginCandidatesInIsolate(List<String> input) {
     final raw = _extractPluginCandidateAround(html, pluginIndex);
     index = pluginIndex + '/plugins/'.length;
     if (raw == null) continue;
-
-    final normalized = _normalizePluginCandidateUrl(raw, baseUrl);
-    if (normalized == null) continue;
-    if (seen.add(normalized)) {
-      ordered.add(normalized);
-    }
+    addCandidate(_isPluginChunkUrl(raw) ? fallback : otherMain, raw);
   }
-  return ordered;
+
+  return [...nonOfficialMain, ...otherMain, ...fallback];
+}
+
+bool _isPluginChunkUrl(String url) =>
+    url.contains('_chunk.') || url.contains('_chunk-');
+
+String? _trimPluginJsUrl(String raw) {
+  if (!raw.contains('/assets/') || !raw.contains('/plugins/')) return null;
+  if (!raw.startsWith('http://') &&
+      !raw.startsWith('https://') &&
+      !raw.startsWith('/assets/')) {
+    return null;
+  }
+  final jsIndex = raw.indexOf('.js', raw.indexOf('/plugins/'));
+  if (jsIndex < 0) return null;
+  final afterJs = jsIndex + '.js'.length;
+  if (afterJs >= raw.length || raw.codeUnitAt(afterJs) != 0x3f) {
+    raw = raw.substring(0, afterJs);
+  }
+  return raw.isEmpty ? null : raw;
 }
 
 String? _extractPluginCandidateAround(String html, int pluginIndex) {
@@ -1106,22 +1169,7 @@ String? _extractPluginCandidateAround(String html, int pluginIndex) {
     end++;
   }
 
-  var raw = html.substring(start, end);
-  if (!raw.contains('/assets/')) return null;
-  if (!raw.startsWith('http://') &&
-      !raw.startsWith('https://') &&
-      !raw.startsWith('/assets/')) {
-    return null;
-  }
-
-  final jsIndex = raw.indexOf('.js', raw.indexOf('/plugins/'));
-  if (jsIndex < 0) return null;
-  final afterJs = jsIndex + '.js'.length;
-  if (afterJs >= raw.length || raw.codeUnitAt(afterJs) != 0x3f) {
-    raw = raw.substring(0, afterJs);
-  }
-  if (raw.isEmpty) return null;
-  return raw;
+  return _trimPluginJsUrl(html.substring(start, end));
 }
 
 bool _isPluginCandidateBoundary(int codeUnit) {
