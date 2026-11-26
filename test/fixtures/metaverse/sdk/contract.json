@@ -1,6 +1,6 @@
 {
   "contractVersion": 1,
-  "sdkVersion": "0.16.0",
+  "sdkVersion": "1.0.0",
   "apiVersion": 2,
   "manifestSchemas": [
     9,

@@ -7,12 +7,13 @@ import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_installer.dart'
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_network.dart';
 
 void main() {
-  test('实际发行插件包通过原生签名和安装结构校验',() async {
+  test('首发候选包通过原生签名和安装结构校验',() async {
     final network=MetaversePluginNetwork();addTearDown(network.dispose);
-    for(final name in ['ld-store-2.8.0','ld-store-2.8.1','ld-store-2.9.0','ld-store-2.9.1','ld-store-2.9.2','ld-store-2.9.3','activity-feed-1.4.0']) {
-      final result=await MetaversePluginInstaller(network:network).importBundle(File('test/fixtures/metaverse/$name.fluxplugin').openRead());
+    for(final name in ['ld-store','activity-feed','quick-notes']) {
+      final result=await MetaversePluginInstaller(network:network).importBundle(File('test/fixtures/metaverse/release/$name-1.0.0.fluxplugin').openRead());
       expect(result.signature,isNotNull);
-      expect(result.manifest.requiredFeatures,contains('storageScopes'));
+      expect(result.manifest.version, '1.0.0');
+      expect(result.manifest.apiVersion, 2);
     }
   });
   final fixtures = jsonDecode(

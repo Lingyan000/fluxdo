@@ -1,6 +1,6 @@
 # 插件开发工具选型与热更新
 
-工具、脚手架和 SDK 0.16.0 支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合、时间线、输入框与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
+工具、脚手架和 SDK 的首发版本为 1.0.0，支持 schema 12、设备配对、JS/RFW 热更新和离线校验。可在开发中心预览自适应集合、时间线、输入框与页面标题栏、体验按需授权，在测试宿主分发 `task.run` 调试后台业务。系统调度、通知和底栏入口用已安装包验证。宿主使用 Flutter 3.50。
 
 ## 选型依据
 
@@ -68,31 +68,31 @@ Vite 用于开发期的模块依赖图、TypeScript 转换缓存、文件监听�
 
 CLI 的完整 RFW 解析器来自官方 Dart 实现；组件参数名从生产注册代码导出，SDK、CLI、宿主用同一契约。检查顶层参数名，以及能从组件读取位置推导的静态参数类型和嵌套路径；诊断给出组件、字段与行列。动态引用、循环结果及不能可靠推导的类型仍须在原生预览中验证。模块顶层已完成的外部副作用无法回滚；开发应使用测试服务或模拟宿主。
 
-SDK 0.6.0 增加 `cardNavigation` 与 `contentPresentation`，CLI 同时校验默认卡片页面、统计、金额、数量输入、Markdown、复制和固定工具区参数。插件需声明必需能力，旧宿主会提示升级而不会静默丢弃交互。
+SDK 提供 `cardNavigation` 与 `contentPresentation`，CLI 同时校验默认卡片页面、统计、金额、数量输入、Markdown、复制和固定工具区参数。插件需声明必需能力，旧宿主会提示升级而不会静默丢弃交互。
 
-SDK 0.7.0 增加 `eventStreams`、SSE 订阅与状态事件。开发中心的实时连接示例可动态查看消息、断线与重连，测试宿主通过 `dispatch("stream.event", ...)` 注入事件，不依赖真实服务。
+SDK 提供 `eventStreams`、SSE 订阅与状态事件。开发中心的实时连接示例可动态查看消息、断线与重连，测试宿主通过 `dispatch("stream.event", ...)` 注入事件，不依赖真实服务。
 
-SDK 0.9.0 增加 `pageChrome`。页面可通过清单的 `appBar.title` 和 `appBar.actions` 引用 RFW 组件，与正文共用数据和事件来源。CLI 同时校验能力声明和组件引用；宿主保留返回、关闭与安全区。参见[页面标题栏](components.md#页面标题栏)。
+SDK 提供 `pageChrome`。页面可通过清单的 `appBar.title` 和 `appBar.actions` 引用 RFW 组件，与正文共用数据和事件来源。CLI 同时校验能力声明和组件引用；宿主保留返回、关闭与安全区。参见[页面标题栏](components.md#页面标题栏)。
 
-SDK 0.11.0 增加 `credentialClaims` 与 `iconButtonContent`。插件可通过 `credentials.status(name, {jwt: true})` 获取所属有效凭证的声明用于展示资料，不能将未验签的声明当作服务端身份核验。标题栏按钮可使用 `IconButton.child` 组合头像等原生组件，并保留按钮的交互和无障碍语义。
+SDK 提供 `credentialClaims` 与 `iconButtonContent`。插件可通过 `credentials.status(name, {jwt: true})` 获取所属有效凭证的声明用于展示资料，不能将未验签的声明当作服务端身份核验。标题栏按钮可使用 `IconButton.child` 组合头像等原生组件，并保留按钮的交互和无障碍语义。
 
 ## 模拟场景和发布
 
-SDK 0.8.0 的 createScenario 提供可显式控制的权限、账号、离线、凭证失效、宿主环境和设置响应；createPluginHarness 的 virtualTimers 与 advance 可推进重试计时。事件流通过 dispatch 注入帧和状态。测试替身不会模拟真实认证、网络栈或系统调度，也不等于设备端安全验收。
+SDK 的 createScenario 提供可显式控制的权限、账号、离线、凭证失效、宿主环境和设置响应；createPluginHarness 的 virtualTimers 与 advance 可推进重试计时。事件流通过 dispatch 注入帧和状态。测试替身不会模拟真实认证、网络栈或系统调度，也不等于设备端安全验收。
 
 [data-migration 示例](https://github.com/Lingyan000/fluxdo-plugin-tools/tree/main/examples/data-migration)包含隔离存储迁移、语言选择及声明式设置。插件可在 preferences.changed、host.environmentChanged 和恢复可见时重新读取宿主环境。
 
 脚手架包含手动触发的 GitHub Actions 发布模板，完成类型检查、模拟测试、打包和 SHA-256，再创建草稿 Release。作者可配置 PLUGIN_SIGNING_KEY 与轮换时的 PLUGIN_PREVIOUS_SIGNING_KEY；临时私钥文件受限权限且退出步骤即删除，不进入包或产物。作者审阅草稿后自行发布，再提交生成的市场条目。发布信任与撤回规则见[定时更新](automatic-updates.md)。
 
-SDK 0.12.0 提供 `notifications.status()` 和用户点击限定的 `notifications.openSettings()`。插件授权与操作系统设置分别查询；系统关闭通知时仍可正常同步数据。Windows、Linux 无法查询完整投递许可时返回 `unknown`，不把未知当成已授权。
+SDK 提供 `notifications.status()` 和用户点击限定的 `notifications.openSettings()`。插件授权与操作系统设置分别查询；系统关闭通知时仍可正常同步数据。Windows、Linux 无法查询完整投递许可时返回 `unknown`，不把未知当成已授权。
 
 CLI、SDK 与脚手架具有 npm 发布配置；维护者需配置 npm 的包发布权限和可信发布者后运行独立仓库的发布工作流。尚未发布到 npm 时使用 GitHub Release 的 tgz。脚手架 `--distribution npm` 可生成 npm 版本依赖，默认继续使用可取得的 GitHub Release。
 
 ## 多语言项目
 
-SDK 0.13.0 的 `@fluxdo/plugin-sdk/i18n` 提供 `createTranslator(catalogs, baseLocale)`。`setLocale` 选择地区或语言回退，`text` 只替换产品文案的参数，不翻译服务器正文。脚手架 `--template localized` 提供可直接开发、热替换和打包的 TypeScript 示例；在 `host.environmentChanged` 和页面恢复时读取应用语言，再更新显示数据。
+SDK 的 `@fluxdo/plugin-sdk/i18n` 提供 `createTranslator(catalogs, baseLocale)`。`setLocale` 选择地区或语言回退，`text` 只替换产品文案的参数，不翻译服务器正文。脚手架 `--template localized` 提供可直接开发、热替换和打包的 TypeScript 示例；在 `host.environmentChanged` 和页面恢复时读取应用语言，再更新显示数据。
 
-SDK 0.14.0 的 `storage.partition` 支持账号分区迁移。开发热更新会话使用全新的隔离存储，不执行正式数据迁移，也不为迁移创建第二条模块连接。纯分类逻辑可在 SDK 测试宿主中用 `task` 上下文分发此事件并断言返回数据；正式升级、快照回退和账号切换需用已安装包验证。
+SDK 的 `storage.partition` 支持账号分区迁移。开发热更新会话使用全新的隔离存储，不执行正式数据迁移，也不为迁移创建第二条模块连接。纯分类逻辑可在 SDK 测试宿主中用 `task` 上下文分发此事件并断言返回数据；正式升级、快照回退和账号切换需用已安装包验证。
 
 已有独立 JS/TS 脚本可使用 `fluxdo localize [目录]`，在 `fluxdo.config.json` 配置 `localization: {baseLocale, script, ui}`，将词典放在 `locales/<语言>.json`。命令生成脚本、RFW 和清单译文；`--check` 可用于 CI 检查产物。缺少显式词典翻译会失败；中文基准可自动生成台湾及香港繁体。带模块导入的 TS 项目使用 SDK 翻译函数并由 Vite 构建，不走独立脚本转换。
 
@@ -106,7 +106,7 @@ SDK 0.14.0 的 `storage.partition` 支持账号分区迁移。开发热更新会
 
 ## 查询与分页
 
-SDK 0.15.0 的 `@fluxdo/plugin-sdk/data` 提供 `createQueryClient`、`createPagedList` 和 `QueryCancelledError`，由 Vite 打包到插件脚本，不增加宿主业务 API。独立脚本的本地化编译可声明 `runtimeHelpers: ["data"]`，使用同版的 `fluxdoData` 对象；产物不依赖运行时 CDN。
+SDK 的 `@fluxdo/plugin-sdk/data` 提供 `createQueryClient`、`createPagedList` 和 `QueryCancelledError`，由 Vite 打包到插件脚本，不增加宿主业务 API。独立脚本的本地化编译可声明 `runtimeHelpers: ["data"]`，使用同版的 `fluxdoData` 对象；产物不依赖运行时 CDN。
 
 ```ts
 import {createQueryClient, createPagedList} from '@fluxdo/plugin-sdk/data';

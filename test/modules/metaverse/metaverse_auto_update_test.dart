@@ -23,6 +23,7 @@ import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/models/user.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_update_provider.dart';
 import 'package:fluxdo/modules/metaverse/plugin/metaverse_plugin_host.dart';
+import 'package:fluxdo/modules/metaverse/plugin/metaverse_credential.dart';
 import 'package:fluxdo/modules/metaverse/host/metaverse_task_store.dart';
 
 import 'metaverse_navigation_forum_test.dart' show Engine, Delegate;
@@ -340,6 +341,61 @@ void main() {
     await updater.check(force: true);
     expect(downloads, 0);
   });
+  for (final entry in {'ld-store': '2.9.3', 'activity-feed': '1.4.0'}.entries) {
+    test('${entry.key} 开发版本改号须手动审阅，同源保留数据与关闭的权限', () async {
+      Future<MetaversePluginPackage> readPackage(String path) =>
+          installer.importBundle(File('test/fixtures/metaverse/$path.fluxplugin').openRead(),
+            source: updateSource.id);
+      final oldPackage = await readPackage('${entry.key}-${entry.value}');
+      final nextPackage = await readPackage('release/${entry.key}-1.0.0');
+      expect(nextPackage.signature!.fingerprint, oldPackage.signature!.fingerprint);
+      expect(nextPackage.manifest.dataVersion, oldPackage.manifest.dataVersion);
+      await controller.install(oldPackage, choices: {
+        MetaversePluginPermission.identity: true,
+        if (oldPackage.manifest.capabilities.credentials.isNotEmpty)
+          MetaversePluginPermission.serviceAccount: true,
+      });
+      final id = oldPackage.manifest.id;
+      await controller.setEnabled(id, enabled: true);
+      final old = controller.byId(id)!;
+      final data = <String, Object?>{
+        '@shared:cache': ['cached'],
+        '@forum-account:7:draft': '保留账号草稿',
+        '@forum-account:8:draft': '其他账号保持隔离',
+        if (entry.key == 'ld-store')
+          '@forum-account:7:submission:7': {
+            'token': 'ord_11111111111111111111111111111111',
+            'productId': 'fixture-product', 'quantity': 1,
+            'expectedAmount': 5.0, 'state': 'created',
+            'orderNo': 'fixture-order',
+          },
+      };
+      await plugins.updateStorageEntries(id, data);
+      for (final name in old.manifest.capabilities.credentials.keys) {
+        await plugins.writeCredential(id, name,
+          const MetaverseCredential('test-only-secret', accountId: 7),
+          isActive: () => true, revision: plugins.credentialRevision(id, name));
+      }
+      expect(await controller.installAutomatic(nextPackage, old, () => true), isFalse);
+      expect(controller.byId(id), same(old));
+      expect(await plugins.readStorage(id), data);
+      final next = await controller.install(nextPackage);
+      expect(next.manifest.version, '1.0.0');
+      expect(next.source, old.source);
+      expect(next.enabled, isTrue);
+      expect(next.blockedPermissions, old.blockedPermissions);
+      expect(next.allows(MetaversePluginPermission.background), isFalse);
+      expect(next.allows(MetaversePluginPermission.notifications), isFalse);
+      final stored = await plugins.readStorage(id);
+      for (final item in data.entries) {
+        expect(stored[item.key], item.value);
+      }
+      for (final name in old.manifest.capabilities.credentials.keys) {
+        expect((await plugins.readCredential(id, name))?.secret, 'test-only-secret');
+      }
+      expect(await plugins.readCode(id), nextPackage.code);
+    });
+  }
   test('下载超时撤销写入资格，迟到结果丢弃', () async {
     downloadGate = Completer<void>();
     await updater.check(timeout: const Duration(milliseconds: 10));

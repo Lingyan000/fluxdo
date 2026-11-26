@@ -35,7 +35,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/preview_fonts.dart';
 
-const _bundle = 'test/fixtures/metaverse/activity-feed-1.4.0.fluxplugin';
+const _bundle = 'test/fixtures/metaverse/release/activity-feed-1.0.0.fluxplugin';
 const _plugin = 'community.fluxdo.activity';
 const _screenshots = bool.fromEnvironment('PLUGIN_SNAPSHOTS');
 

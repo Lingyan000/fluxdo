@@ -2222,9 +2222,9 @@ fluxdo.on('card.refresh',ctx=>{ctx.setData('stats',[{value:'3',label:'待付款'
       }
     });
   }
-  test('已发布插件的静态图标均有原生映射', () {
+  test('首发插件候选的静态图标均有原生映射', () {
     final sources = [File('test/fixtures/metaverse/ld-store/ui.rfwtxt').readAsStringSync(),
-      (jsonDecode(File('test/fixtures/metaverse/activity-feed-1.4.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
+      (jsonDecode(File('test/fixtures/metaverse/release/activity-feed-1.0.0.fluxplugin').readAsStringSync()) as Map)['files']['ui.rfwtxt'] as String];
     for (final source in sources) {
       for (final match in RegExp(r'(?:icon:|Symbol\(name:)\s*"([a-z_]+)"').allMatches(source)) {
         expect(metaverseIcons, contains(match[1]), reason: match[0]);
