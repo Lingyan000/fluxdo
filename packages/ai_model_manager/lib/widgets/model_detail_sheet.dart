@@ -146,25 +146,7 @@ class _ModelDetailSheetState extends State<_ModelDetailSheet> {
 
   InputDecoration _inputDeco(BuildContext context, String? hint,
       {Widget? suffix}) {
-    final cs = Theme.of(context).colorScheme;
-    return InputDecoration(
-      filled: true,
-      fillColor: cs.surfaceContainerLow,
-      hintText: hint,
-      border: OutlineInputBorder(
-        borderRadius: context.shapes.borderRadius(14),
-        borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: context.shapes.borderRadius(14),
-        borderSide: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: context.shapes.borderRadius(14),
-        borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
-      ),
-      suffixIcon: suffix,
-    );
+    return InputDecoration(hintText: hint, suffixIcon: suffix);
   }
 
   @override

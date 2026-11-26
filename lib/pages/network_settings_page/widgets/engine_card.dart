@@ -400,7 +400,7 @@ class _WebViewSwitch extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SwitchListTile(
+        M3eSwitchListTile(
           secondary: Icon(
             Symbols.language_rounded,
             fill: enabled ? 1 : 0,
@@ -424,7 +424,7 @@ class _WebViewSwitch extends StatelessWidget {
             await webview.setEnabled(value);
           },
         ),
-        SwitchListTile(
+        M3eSwitchListTile(
           secondary: Icon(
             Symbols.call_split_rounded,
             color: autoFallback ? context.emphasis.selected : mutedColor,

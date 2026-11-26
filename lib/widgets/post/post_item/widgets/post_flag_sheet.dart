@@ -195,9 +195,6 @@ class _PostFlagSheetState extends State<PostFlagSheet> {
                 maxLines: 3,
                 decoration: InputDecoration(
                   hintText: context.l10n.post_flagDescriptionHint,
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(12),
-                  ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),

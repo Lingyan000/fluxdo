@@ -60,7 +60,7 @@ class _DohDetailSettingsPageState extends State<DohDetailSettingsPage> {
               // IPv6 开关
               SegmentedCardGroup(
                 children: [
-                  SwitchListTile(
+                  M3eSwitchListTile(
                     title: Text(context.l10n.dohDetail_ipv6Prefer),
                     subtitle: Text(context.l10n.dohDetail_ipv6PreferDesc),
                     secondary: Icon(

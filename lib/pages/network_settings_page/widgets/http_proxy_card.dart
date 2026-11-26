@@ -77,7 +77,7 @@ class _HttpProxyCardInner extends StatelessWidget {
               ? theme.colorScheme.tertiaryContainer.withValues(alpha: 0.3)
               : null,
           children: [
-            SwitchListTile(
+            M3eSwitchListTile(
               title: Text(context.l10n.httpProxy_title),
               subtitle: Text(
                 vpnLocked
@@ -274,14 +274,16 @@ class _HttpProxyCardInner extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DropdownButtonFormField<UpstreamProxyProtocol>(
+                    AppDropdownFormField<UpstreamProxyProtocol>(
                       initialValue: selectedProtocol,
-                      decoration: InputDecoration(labelText: dialogContext.l10n.httpProxy_protocol),
+                      decoration: InputDecoration(
+                        labelText: dialogContext.l10n.httpProxy_protocol,
+                      ),
                       items: UpstreamProxyProtocol.values
                           .map(
-                            (item) => DropdownMenuItem<UpstreamProxyProtocol>(
+                            (item) => AppDropdownItem<UpstreamProxyProtocol>(
                               value: item,
-                              child: Text(item.displayName),
+                              label: item.displayName,
                             ),
                           )
                           .toList(),
@@ -353,14 +355,16 @@ class _HttpProxyCardInner extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     if (isShadowsocks) ...[
-                      DropdownButtonFormField<String>(
+                      AppDropdownFormField<String>(
                         initialValue: selectedCipher,
-                        decoration: InputDecoration(labelText: dialogContext.l10n.httpProxy_cipher),
+                        decoration: InputDecoration(
+                          labelText: dialogContext.l10n.httpProxy_cipher,
+                        ),
                         items: ProxySettingsService.supportedShadowsocksCiphers
                             .map(
-                              (item) => DropdownMenuItem<String>(
+                              (item) => AppDropdownItem<String>(
                                 value: item,
-                                child: Text(item),
+                                label: item,
                               ),
                             )
                             .toList(),
@@ -386,18 +390,17 @@ class _HttpProxyCardInner extends StatelessWidget {
                         obscureText: true,
                       ),
                     ] else ...[
-                      Row(
-                        children: [
-                          Checkbox(
-                            value: requireAuth,
-                            onChanged: (value) {
-                              setState(() {
-                                requireAuth = value ?? false;
-                              });
-                            },
-                          ),
-                          Text(dialogContext.l10n.httpProxy_requireAuth),
-                        ],
+                      CheckboxListTile(
+                        value: requireAuth,
+                        onChanged: (value) {
+                          setState(() {
+                            requireAuth = value ?? false;
+                          });
+                        },
+                        title: Text(dialogContext.l10n.httpProxy_requireAuth),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
                       ),
                       if (requireAuth) ...[
                         const SizedBox(height: 8),

@@ -26,7 +26,7 @@ class ErudaCard extends StatelessWidget {
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
               : null,
           children: [
-            SwitchListTile(
+            M3eSwitchListTile(
               title: const Text('Eruda 调试控制台'),
               subtitle: Text(
                 enabled

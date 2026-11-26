@@ -171,7 +171,7 @@ class _TopicCardStyleSettingsPageState
                 ],
               ),
             ),
-            SwitchListTile(
+            M3eSwitchListTile(
               title: Text(l10n.topicCardStyle_animatedAvatar),
               subtitle: Text(l10n.topicCardStyle_animatedAvatarDesc),
               secondary: Icon(
@@ -412,7 +412,7 @@ class _TopicCardStyleSettingsPageState
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return SwitchListTile(
+    return M3eSwitchListTile(
       title: Text(title),
       subtitle: subtitle != null ? Text(subtitle) : null,
       secondary: Icon(

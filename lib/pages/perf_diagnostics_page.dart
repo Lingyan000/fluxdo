@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
@@ -182,7 +183,7 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile(
+            M3eSwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('启用监控'),
               subtitle: Text(
@@ -193,7 +194,7 @@ class _PerfDiagnosticsPageState extends State<PerfDiagnosticsPage> {
               value: FrameJankMonitor.isRunning,
               onChanged: _toggle,
             ),
-            SwitchListTile(
+            M3eSwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('悬浮监控面板'),
               subtitle: const Text(

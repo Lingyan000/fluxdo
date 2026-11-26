@@ -1,8 +1,7 @@
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
-
 import 'dart:io';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
+import 'package:m3e_ui/m3e_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 import 'package:app_icons/app_icons.dart';
@@ -779,7 +778,7 @@ class _TopicFilterKeywordsDialogState
               },
             ),
             const SizedBox(height: 8),
-            SwitchListTile.adaptive(
+            M3eSwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(l10n.preferences_topicFilterWholeWord),
               subtitle: Text(l10n.preferences_topicFilterWholeWordDesc),
@@ -1025,9 +1024,6 @@ class _EntryChipsEditorState extends State<_EntryChipsEditor> {
             hintText: widget.hintText,
             helperText: widget.helperText,
             helperMaxLines: 2,
-            border: OutlineInputBorder(
-              borderRadius: context.shapes.borderRadius(4),
-            ),
           ),
           keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
@@ -1058,9 +1054,6 @@ void _showStickerBaseUrlDialog(BuildContext context, WidgetRef ref) {
             controller: controller,
             decoration: InputDecoration(
               hintText: context.l10n.preferences_enterUrl,
-              border: OutlineInputBorder(
-                borderRadius: context.shapes.borderRadius(4),
-              ),
             ),
             keyboardType: TextInputType.url,
             autofocus: true,

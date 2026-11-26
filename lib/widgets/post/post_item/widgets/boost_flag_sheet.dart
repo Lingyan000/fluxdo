@@ -325,9 +325,6 @@ class _BoostFlagSheetState extends State<BoostFlagSheet> {
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: context.l10n.post_flagDescriptionHint,
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(12),
-                  ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),

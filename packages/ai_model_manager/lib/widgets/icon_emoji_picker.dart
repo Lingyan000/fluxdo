@@ -160,8 +160,6 @@ class _IconEmojiPickerState extends State<IconEmojiPicker>
                       style: const TextStyle(fontSize: 22),
                       decoration: InputDecoration(
                         hintText: AiL10n.current.quickPromptsEmojiInputHint,
-                        border: OutlineInputBorder(
-                            borderRadius: context.shapes.borderRadius(4)),
                         isDense: true,
                       ),
                       onChanged: (value) {

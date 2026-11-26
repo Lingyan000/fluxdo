@@ -1212,16 +1212,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                DropdownButton<SearchSortOrder>(
+                AppDropdown<SearchSortOrder>(
                   value: ref.watch(searchSettingsProvider).sortOrder,
-                  isDense: true,
-                  underline: const SizedBox(),
-                  items: SearchSortOrder.values.map((order) {
-                    return DropdownMenuItem(
-                      value: order,
-                      child: Text(order.label),
-                    );
-                  }).toList(),
+                  compact: true,
+                  items: SearchSortOrder.values
+                      .map(
+                        (order) =>
+                            AppDropdownItem(value: order, label: order.label),
+                      )
+                      .toList(),
                   onChanged: _onSortChanged,
                 ),
                 const Spacer(),
@@ -1252,7 +1251,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     height: 32,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Switch(
+                      child: M3eSwitch(
                         value:
                             ref.watch(searchSettingsProvider).aiSearchEnabled &&
                             ref.watch(searchSettingsProvider).sortOrder ==

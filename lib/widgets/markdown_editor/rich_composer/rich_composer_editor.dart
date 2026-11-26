@@ -4767,11 +4767,8 @@ class _MarkdownInputDialogState extends State<_MarkdownInputDialog> {
           autofocus: true,
           maxLines: 10,
           style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             hintText: '任意 Discourse markdown/bbcode…',
-            border: OutlineInputBorder(
-              borderRadius: context.shapes.borderRadius(4),
-            ),
           ),
         ),
       ),
@@ -4821,11 +4818,6 @@ class _SingleLineInputDialogState extends State<_SingleLineInputDialog> {
       content: TextField(
         controller: _controller,
         autofocus: true,
-        decoration: InputDecoration(
-          border: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(4),
-          ),
-        ),
         onSubmitted: (v) => Navigator.pop(context, v),
       ),
       actions: [

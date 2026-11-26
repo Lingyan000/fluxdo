@@ -1,4 +1,3 @@
-import 'package:common_ui/common_ui.dart' show UiShapesContext;
 import 'package:material_ui/material_ui.dart';
 import 'package:common_ui/common_ui.dart' show showInteractionDialog;
 
@@ -34,12 +33,7 @@ class _AltDialogState extends State<_AltDialog> {
         autofocus: true,
         minLines: 2,
         maxLines: 4,
-        decoration: InputDecoration(
-          hintText: '描述图片内容',
-          border: OutlineInputBorder(
-            borderRadius: context.shapes.borderRadius(4),
-          ),
-        ),
+        decoration: const InputDecoration(hintText: '描述图片内容'),
       ),
     ),
     actions: [

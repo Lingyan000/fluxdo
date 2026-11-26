@@ -571,12 +571,12 @@ class _CustomThemeEditorPageState
             style.glass,
             (v) => style.copyWith(glass: v),
           ),
-          SwitchListTile(
+          M3eSwitchListTile(
             title: Text(l10n.appearance_styleShadows),
             value: style.shadows,
             onChanged: (v) => _setStyle(style.copyWith(shadows: v)),
           ),
-          SwitchListTile(
+          M3eSwitchListTile(
             title: Text(l10n.appearance_styleTexture),
             value: style.texture == TextureStyle.paper,
             onChanged: (v) => _setStyle(

@@ -6,7 +6,8 @@ library;
 import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 填充式输入框装饰（无边框 + 圆角 12 + surfaceContainerHighest 填充）。
+/// 弹窗表单输入框装饰：跟随全局 [InputDecorationTheme]（填充 / 描边 / 下划线），
+/// 仅收紧为紧凑密度。
 InputDecoration cryptoSheetInputDecoration(
   ThemeData theme, {
   String? labelText,
@@ -18,27 +19,6 @@ InputDecoration cryptoSheetInputDecoration(
     suffixIcon: suffixIcon,
     prefixIcon: prefixIcon,
     isDense: true,
-    filled: true,
-    fillColor: theme.colorScheme.surfaceContainerHigh,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    border: OutlineInputBorder(
-      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
-          .borderRadius(12),
-      borderSide: BorderSide.none,
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
-          .borderRadius(12),
-      borderSide: BorderSide.none,
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: (theme.extension<UiShapes>() ?? UiShapes.standard)
-          .borderRadius(12),
-      borderSide: BorderSide(
-        color: theme.colorScheme.primary.withValues(alpha: 0.6),
-        width: 1.4,
-      ),
-    ),
   );
 }
 

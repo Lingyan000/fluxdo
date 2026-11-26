@@ -202,9 +202,6 @@ class _ChatFlagSheetState extends State<_ChatFlagSheet> {
                 maxLines: 4,
                 decoration: InputDecoration(
                   hintText: context.l10n.chat_flagMessageHint,
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(12),
-                  ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),

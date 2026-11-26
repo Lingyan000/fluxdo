@@ -1,12 +1,152 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'ui_shapes.dart';
+
+/// 超椭圆轮廓的输入框边框，用于与卡片、弹层、菜单等全局超椭圆形状对齐。
+///
+/// 保持 `isOutline == true`，支持浮动标签缺口裁切，并在 [InputDecoration]
+/// 填充时自动沿超椭圆轮廓裁切底色。
+class RoundedSuperellipseInputBorder extends InputBorder {
+  const RoundedSuperellipseInputBorder({
+    super.borderSide = const BorderSide(),
+    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
+    this.gapPadding = 4.0,
+  }) : assert(gapPadding >= 0.0);
+
+  final BorderRadius borderRadius;
+  final double gapPadding;
+
+  @override
+  bool get isOutline => true;
+
+  RoundedSuperellipseBorder get _shape => RoundedSuperellipseBorder(
+    borderRadius: borderRadius,
+    side: borderSide,
+  );
+
+  @override
+  RoundedSuperellipseInputBorder copyWith({
+    BorderSide? borderSide,
+    BorderRadius? borderRadius,
+    double? gapPadding,
+  }) => RoundedSuperellipseInputBorder(
+    borderSide: borderSide ?? this.borderSide,
+    borderRadius: borderRadius ?? this.borderRadius,
+    gapPadding: gapPadding ?? this.gapPadding,
+  );
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.all(borderSide.width);
+
+  @override
+  RoundedSuperellipseInputBorder scale(double t) =>
+      RoundedSuperellipseInputBorder(
+        borderSide: borderSide.scale(t),
+        borderRadius: borderRadius * t,
+        gapPadding: gapPadding * t,
+      );
+
+  @override
+  ShapeBorder? lerpFrom(ShapeBorder? a, double t) {
+    if (a is RoundedSuperellipseInputBorder) {
+      return RoundedSuperellipseInputBorder(
+        borderSide: BorderSide.lerp(a.borderSide, borderSide, t),
+        borderRadius: BorderRadius.lerp(a.borderRadius, borderRadius, t)!,
+        gapPadding: a.gapPadding + (gapPadding - a.gapPadding) * t,
+      );
+    }
+    return super.lerpFrom(a, t);
+  }
+
+  @override
+  ShapeBorder? lerpTo(ShapeBorder? b, double t) {
+    if (b is RoundedSuperellipseInputBorder) {
+      return RoundedSuperellipseInputBorder(
+        borderSide: BorderSide.lerp(borderSide, b.borderSide, t),
+        borderRadius: BorderRadius.lerp(borderRadius, b.borderRadius, t)!,
+        gapPadding: gapPadding + (b.gapPadding - gapPadding) * t,
+      );
+    }
+    return super.lerpTo(b, t);
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      _shape.getInnerPath(rect, textDirection: textDirection);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      _shape.getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect rect, {
+    double? gapStart,
+    double gapExtent = 0.0,
+    double gapPercentage = 0.0,
+    TextDirection? textDirection,
+  }) {
+    if (borderSide.style == BorderStyle.none || borderSide.width <= 0) return;
+
+    final double extent =
+        gapStart == null || gapExtent <= 0 || gapPercentage <= 0
+        ? 0.0
+        : (gapExtent + gapPadding * 2) * gapPercentage.clamp(0.0, 1.0);
+    if (extent <= 0.0) {
+      _shape.paint(canvas, rect, textDirection: textDirection);
+      return;
+    }
+
+    final double start = switch (textDirection ?? TextDirection.ltr) {
+      TextDirection.ltr => gapStart! - gapPadding,
+      TextDirection.rtl => gapStart! - gapExtent - gapPadding,
+    };
+    final double clampedLeft = math.max(rect.left, start);
+    final double clampedRight = math.min(rect.right, start + extent);
+    if (clampedRight <= clampedLeft) {
+      _shape.paint(canvas, rect, textDirection: textDirection);
+      return;
+    }
+
+    final double strokeAllowance = borderSide.width + 2.0;
+    final Rect gapRect = Rect.fromLTRB(
+      clampedLeft,
+      rect.top - strokeAllowance,
+      clampedRight,
+      rect.top + strokeAllowance + 2.0,
+    );
+    final Path clipPath = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(rect.inflate(strokeAllowance)),
+      Path()..addRect(gapRect),
+    );
+    canvas.save();
+    canvas.clipPath(clipPath);
+    _shape.paint(canvas, rect, textDirection: textDirection);
+    canvas.restore();
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoundedSuperellipseInputBorder &&
+          other.borderSide == borderSide &&
+          other.borderRadius == borderRadius &&
+          other.gapPadding == gapPadding;
+
+  @override
+  int get hashCode => Object.hash(borderSide, borderRadius, gapPadding);
+}
 
 /// 无边框输入框（标题、正文、自带容器的搜索栏等）。
 ///
 /// 只写 `border: InputBorder.none` 挡不住主题：主题配置的
 /// enabledBorder / focusedBorder 优先于输入框自己的 border，描边、下划线
-/// 风格的主题下仍会画出框。这里把各状态的边框一并清掉。
+/// 风格的主题下仍会画出框；填充主题下也会带出默认底色。这里把各状态边框
+/// 与默认填充一并清掉（显式传入 `filled: true` 时保留调用方选择）。
 extension InputDecorationWithoutBorder on InputDecoration {
   InputDecoration withoutBorder() => copyWith(
     border: InputBorder.none,
@@ -15,6 +155,7 @@ extension InputDecorationWithoutBorder on InputDecoration {
     errorBorder: InputBorder.none,
     focusedErrorBorder: InputBorder.none,
     disabledBorder: InputBorder.none,
+    filled: filled ?? false,
   );
 }
 

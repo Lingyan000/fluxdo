@@ -791,28 +791,18 @@ class _AssignDetailsDialogState extends State<_AssignDetailsDialog> {
             ],
             if (_assignStatusEnabled) ...[
               const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
+              AppDropdownFormField<String?>(
                 initialValue: _status,
-                isExpanded: true,
                 decoration: InputDecoration(labelText: l10n.topicAssign_status),
                 items: [
-                  DropdownMenuItem(
-                    value: null,
-                    child: Text(l10n.common_notSet),
-                  ),
+                  AppDropdownItem(value: null, label: l10n.common_notSet),
                   // 现有指定的状态值可能已被站点从配置里删掉——仍要出现在
-                  // 列表里,否则 Dropdown 对不上 value 直接断言崩溃。
+                  // 列表里，保持当前值的可见性与可保留性。
                   if (_status != null &&
                       !_assignStatusOptions.contains(_status))
-                    DropdownMenuItem(
-                      value: _status,
-                      child: Text(_status!, overflow: TextOverflow.ellipsis),
-                    ),
+                    AppDropdownItem(value: _status, label: _status!),
                   ..._assignStatusOptions.map(
-                    (status) => DropdownMenuItem(
-                      value: status,
-                      child: Text(status, overflow: TextOverflow.ellipsis),
-                    ),
+                    (status) => AppDropdownItem(value: status, label: status),
                   ),
                 ],
                 onChanged: (v) => setState(() => _status = v),

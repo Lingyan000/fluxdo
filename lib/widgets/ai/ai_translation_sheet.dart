@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:app_icons/app_icons.dart';
+import 'package:common_ui/common_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -207,16 +208,18 @@ class _TranslationSheetBodyState extends ConsumerState<TranslationSheetBody> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Wrap(
-          spacing: 16,
+          spacing: 10,
+          runSpacing: 8,
           children: [
-            DropdownButton<TranslationEngine>(
+            AppDropdown<TranslationEngine>(
               value: _engine,
-              hint: Text(l10n.ai_translationEngine),
+              hint: l10n.ai_translationEngine,
+              isDense: true,
               items: [
                 for (final engine in TranslationEngine.values)
-                  DropdownMenuItem(
+                  AppDropdownItem(
                     value: engine,
-                    child: Text(translationEngineLabel(engine)),
+                    label: translationEngineLabel(engine),
                   ),
               ],
               onChanged: (engine) {
@@ -228,14 +231,15 @@ class _TranslationSheetBodyState extends ConsumerState<TranslationSheetBody> {
                 _start();
               },
             ),
-            DropdownButton<String>(
+            AppDropdown<String>(
               value: _target,
-              hint: Text(l10n.ai_translationTargetLanguage),
+              hint: l10n.ai_translationTargetLanguage,
+              isDense: true,
               items: [
                 for (final language in aiTranslationLanguages.entries)
-                  DropdownMenuItem(
+                  AppDropdownItem(
                     value: language.key,
-                    child: Text(language.value),
+                    label: language.value,
                   ),
               ],
               onChanged: (target) {

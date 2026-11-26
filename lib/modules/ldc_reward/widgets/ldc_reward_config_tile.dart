@@ -135,11 +135,8 @@ class LdcRewardConfigTile extends ConsumerWidget {
               const SizedBox(height: 16),
               TextField(
                 controller: clientIdController,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Client ID',
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4),
-                  ),
                   isDense: true,
                 ),
               ),
@@ -147,11 +144,8 @@ class LdcRewardConfigTile extends ConsumerWidget {
               TextField(
                 controller: clientSecretController,
                 obscureText: true,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'Client Secret',
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4),
-                  ),
                   isDense: true,
                 ),
               ),

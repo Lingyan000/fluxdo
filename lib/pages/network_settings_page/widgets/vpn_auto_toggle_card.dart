@@ -31,7 +31,7 @@ class VpnAutoToggleCard extends StatelessWidget {
 
         return SegmentedCardGroup(
           children: [
-            SwitchListTile(
+            M3eSwitchListTile(
               title: Text(context.l10n.vpnToggle_title),
               subtitle: Text(context.l10n.vpnToggle_subtitle),
               secondary: Icon(

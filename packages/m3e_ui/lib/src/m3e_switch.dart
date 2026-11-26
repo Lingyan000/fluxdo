@@ -331,12 +331,22 @@ class M3eSwitchListTile extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.secondary,
+    this.dense,
+    this.contentPadding,
+    this.controlAffinity,
+    this.shape,
+    this.visualDensity,
   });
   final bool value;
   final ValueChanged<bool>? onChanged;
   final Widget title;
   final Widget? subtitle;
   final Widget? secondary;
+  final bool? dense;
+  final EdgeInsetsGeometry? contentPadding;
+  final ListTileControlAffinity? controlAffinity;
+  final ShapeBorder? shape;
+  final VisualDensity? visualDensity;
 
   @override
   Widget build(BuildContext context) {
@@ -347,6 +357,11 @@ class M3eSwitchListTile extends StatelessWidget {
         title: title,
         subtitle: subtitle,
         secondary: secondary,
+        dense: dense,
+        contentPadding: contentPadding,
+        controlAffinity: controlAffinity,
+        shape: shape,
+        visualDensity: visualDensity,
       );
     }
     final control = ExcludeFocus(
@@ -356,15 +371,19 @@ class M3eSwitchListTile extends StatelessWidget {
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
-    final leading =
-        ListTileTheme.of(context).controlAffinity ==
-        ListTileControlAffinity.leading;
+    final effectiveAffinity =
+        controlAffinity ?? ListTileTheme.of(context).controlAffinity;
+    final leading = effectiveAffinity == ListTileControlAffinity.leading;
     return MergeSemantics(
       child: ListTile(
         leading: leading ? control : secondary,
         trailing: leading ? secondary : control,
         title: title,
         subtitle: subtitle,
+        dense: dense,
+        contentPadding: contentPadding,
+        shape: shape,
+        visualDensity: visualDensity,
         enabled: onChanged != null,
         onTap: onChanged == null ? null : () => onChanged!(!value),
       ),

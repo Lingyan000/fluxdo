@@ -146,9 +146,6 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                 decoration: InputDecoration(
                   labelText: 'URL / 搜索站内话题',
                   hintText: 'https://… 或输入关键词搜话题',
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4),
-                  ),
                   suffixIcon: _searching
                       ? const Padding(
                           padding: EdgeInsets.all(12),
@@ -229,9 +226,6 @@ class _LinkInsertDialogState extends State<LinkInsertDialog> {
                 decoration: InputDecoration(
                   labelText: S.current.link_textLabel,
                   hintText: '可空,默认用 URL',
-                  border: OutlineInputBorder(
-                    borderRadius: context.shapes.borderRadius(4),
-                  ),
                 ),
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => _submit(),
