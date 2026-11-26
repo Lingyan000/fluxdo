@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../../l10n/s.dart';
 import '../../services/auth_session.dart';
 import '../../services/cf_challenge_service.dart';
+import '../../services/cf_clearance_refresh_service.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../services/log/log_writer.dart';
 import '../../services/network/cookie/boundary_sync_service.dart';
@@ -470,6 +471,7 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
         var cBody = await c.text();
         var cMitigated = (c.headers && c.headers.get('cf-mitigated')) || '';
         var cContentType = (c.headers && c.headers.get('content-type')) || '';
+        var cCfRay = (c.headers && c.headers.get('cf-ray')) || '';
         if (c.status !== 200) {
           return done({
             phase: 'csrf',
@@ -478,7 +480,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
             cfBlocked: isCfChallengeResponse(c, cBody),
             badCsrf: false,
             cfMitigated: cMitigated,
-            contentType: cContentType
+            contentType: cContentType,
+            cfRay: cCfRay
           });
         }
         var csrf = null;
@@ -495,7 +498,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
             badCsrf: false,
             invalidJson: true,
             cfMitigated: cMitigated,
-            contentType: cContentType
+            contentType: cContentType,
+            cfRay: cCfRay
           });
         }
 
@@ -582,7 +586,8 @@ class _WebViewLoginDialogState extends State<_WebViewLoginDialog> {
           cfBlocked: isCfChallengeResponse(s, sBody),
           badCsrf: isBadCsrfResponse(s.status, sBody),
           cfMitigated: (s.headers && s.headers.get('cf-mitigated')) || '',
-          contentType: (s.headers && s.headers.get('content-type')) || ''
+          contentType: (s.headers && s.headers.get('content-type')) || '',
+          cfRay: (s.headers && s.headers.get('cf-ray')) || ''
         });
       } catch (e) {
         return done({ phase: 'exception', status: 0, body: String(e), cfBlocked: false, badCsrf: false });
@@ -827,6 +832,7 @@ document.close();
     final invalidJson = payload['invalidJson'] == true;
     final cfMitigated = payload['cfMitigated']?.toString() ?? '';
     final contentType = payload['contentType']?.toString() ?? '';
+    final cfRay = payload['cfRay']?.toString() ?? '';
 
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
@@ -843,6 +849,7 @@ document.close();
       if (invalidJson) 'invalidJson': true,
       if (cfMitigated.isNotEmpty) 'cfMitigated': cfMitigated,
       if (contentType.isNotEmpty) 'contentType': contentType,
+      if (cfRay.isNotEmpty) 'cfRay': cfRay,
       'cfRetryUsed': _cfRetryUsed,
       'badCsrfRetryUsed': _badCsrfRetryUsed,
       'attempt': _attempt,
@@ -982,10 +989,14 @@ document.close();
       ToastService.showInfo('Cloudflare 验证已失效, 正在重新验证...');
     }
 
-    // 1. 拉起 CF 手动验证页, 用户过完后 sync 非认证 cookie 到 jar
-    final ok = await CfChallengeService().showManualVerify(context, true);
+    // 1. 拉起 CF 手动验证页（固定使用站点 /challenge 入口），拿到本轮验证状态
+    final cfService = CfChallengeService();
+    final verifyState = await cfService.verifyPage(
+      context: context,
+      presentation: CfVerifyPresentation.foreground,
+    );
     if (_finished) return;
-    if (ok != true) {
+    if (verifyState == null || !verifyState.reachedOrigin) {
       _finishFailure(
         LoginErrorKind.network,
         'Cloudflare 验证已失效, 请重试 (${phase.toUpperCase()} $status)',
@@ -993,21 +1004,46 @@ document.close();
       return;
     }
 
-    // 2. 等 WV 网络栈把 Set-Cookie 写完, 再同步 CF/验证码相关 cookie。
-    //    session cookie 只在登录成功收口时同步，避免旧会话回写。
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    // 等待验证页发起的完成同步落库，避免重复空等。
+    await cfService.waitForCompletionCookieSync();
     if (_finished) return;
-    for (var i = 0; i < 3; i++) {
+
+    // 2. 同步非认证 cookie；若 /challenge 本轮无盾直出 404 且尚无 cf_clearance，
+    //    主动拉起 Turnstile 静默铸造并给短窗口等待其落库，拿到即立即重试。
+    var clearance = await CookieJarService().getCfClearance();
+    final needsTurnstileMint =
+        (clearance == null || clearance.isEmpty) &&
+        verifyState.stage == CfVerificationStage.noChallengeObserved;
+    if (needsTurnstileMint) {
+      CfClearanceRefreshService().start();
+    }
+
+    final maxSyncPolls = needsTurnstileMint ? 6 : 3;
+    for (var i = 0; i < maxSyncPolls; i++) {
       await BoundarySyncService.instance.syncFromWebView(
         cookieNames: null,
         excludeCookieNames: CookieJarService.authCookieNames,
         requestGeneration: _flowGeneration,
       );
-      final clearance = await CookieJarService().getCfClearance();
+      clearance = await CookieJarService().getCfClearance();
       if (clearance != null && clearance.isNotEmpty) break;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (i + 1 < maxSyncPolls) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      if (_finished) return;
     }
     if (_finished) return;
+
+    LogWriter.instance.write({
+      'timestamp': DateTime.now().toIso8601String(),
+      'level': 'info',
+      'type': 'auth',
+      'event': 'native_login_cf_retry_ready',
+      'message': '原生登录 CF 验证收尾，准备重试',
+      'phase': phase,
+      'verifyStage': verifyState.stage.name,
+      'hasCfClearance': clearance != null && clearance.isNotEmpty,
+    });
 
     // 3. 把 jar 里的新非认证 cookie 重新灌进 dialog WV (清掉一次锁, 否则跳过)
     _cookiesPrimed = false;

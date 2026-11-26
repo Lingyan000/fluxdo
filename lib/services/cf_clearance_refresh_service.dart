@@ -67,9 +67,11 @@ class CfClearanceRefreshService {
   int _consecutiveFailures = 0;
 
   String? _lastCookieValue;
+  String? _lastWebViewCookieValue;
   DateTime? _lastCookieExpiresAt;
   DateTime? _runningStartedAt;
   DateTime? _lastSignalAt;
+  DateTime? _lastTurnstileActivityAt;
   DateTime? _lastCookieAdvanceAt;
 
   Timer? _initialTimer;
@@ -121,8 +123,9 @@ class CfClearanceRefreshService {
 
   /// 启动服务：创建持久轻量 WebView，加载 Turnstile。
   ///
-  /// 这个方法不阻塞启动链路；没有 sitekey 或没有现存 cf_clearance 时不会
-  /// 主动拉起验证页，交给正常请求的 CF challenge 流程处理。
+  /// 对齐站点网页端的 Turnstile Pre-Clearance 行为：只要拿到 sitekey 且处于
+  /// 前台即可启动（不要求已登录，也不要求已有 cf_clearance），从 0 静默铸造
+  /// 并持续保活 cf_clearance；没有 sitekey 时不启动。
   void start() {
     // Windows 的常驻 Turnstile WebView 会让 Flutter 合成线程持续退化，
     // 最终卡死；按需 CF 验证仍由 CfChallengeService 负责。
@@ -249,13 +252,17 @@ class CfClearanceRefreshService {
           !_isForeground) {
         return;
       }
-      if (baseline == null) {
-        CfChallengeLogger.log('[CfRefresh] 无 cf_clearance，跳过启动');
-        return;
-      }
 
-      _rememberCookieSnapshot(baseline, markAdvanced: false);
+      if (baseline != null) {
+        _rememberCookieSnapshot(baseline, markAdvanced: false);
+        _lastWebViewCookieValue = baseline.value;
+      } else {
+        _lastCookieValue = null;
+        _lastWebViewCookieValue = null;
+        _lastCookieExpiresAt = null;
+      }
       _runningStartedAt = DateTime.now();
+      _lastTurnstileActivityAt = null;
       _lastCookieAdvanceAt = _runningStartedAt;
       await _createAndRunWebView(sitekey, gen);
     }());
@@ -387,8 +394,12 @@ class CfClearanceRefreshService {
       handlerName: 'onTurnstileToken',
       callback: (args) {
         if (!_canHandleGeneration(gen)) return null;
-        _lastSignalAt = DateTime.now();
+        final now = DateTime.now();
+        _lastSignalAt = now;
+        _lastTurnstileActivityAt = now;
         _cancelInitialTimer();
+        _consecutiveFailures = 0;
+        _staleReloads = 0;
         final tokenLength = _readInt(args, 'length');
         CfChallengeLogger.log(
           '[CfRefresh] Turnstile token 回调 len=$tokenLength',
@@ -599,7 +610,7 @@ document.close();
       // 平时不做 WebView cookie 同步(那是一趟平台主线程 IPC,主路径
       // 已由 JS 信号事件驱动 + 2min 兜底轮询覆盖);只在逼近 stale 窗口
       // 时同步一次拿最新状态,确认真 stale 才重载。
-      final anchor = _lastCookieAdvanceAt ?? _runningStartedAt;
+      final anchor = _latestActivityAnchor();
       if (anchor == null) return;
       var idle = DateTime.now().difference(anchor);
       if (idle < _staleRefreshWindow) return;
@@ -607,7 +618,7 @@ document.close();
       await _syncAndCheckCookies('health', gen);
       if (!_canHandleGeneration(gen)) return;
 
-      final freshAnchor = _lastCookieAdvanceAt ?? _runningStartedAt;
+      final freshAnchor = _latestActivityAnchor();
       if (freshAnchor == null) return;
       idle = DateTime.now().difference(freshAnchor);
       if (idle >= _staleRefreshWindow) {
@@ -615,7 +626,7 @@ document.close();
             ? 'never'
             : '${DateTime.now().difference(_lastSignalAt!).inSeconds}s';
         CfChallengeLogger.log(
-          '[CfRefresh] 长时间未观察到 cf_clearance 更新，原地重载 Turnstile '
+          '[CfRefresh] 长时间未观察到 Turnstile 活动或 cf_clearance 更新，原地重载 '
           '(idle=${idle.inSeconds}s, lastSignalAgo=$lastSignalAgo)',
         );
         unawaited(_reloadTurnstile('stale_refresh', gen: gen));
@@ -680,31 +691,70 @@ document.close();
 
       if (!_canHandleGeneration(gen)) return false;
       final snapshot = await _readClearanceSnapshot();
-      if (snapshot == null) {
+      var advanced = false;
+      if (snapshot != null) {
+        advanced = _isCookieAdvanced(snapshot);
+        _rememberCookieSnapshot(snapshot, markAdvanced: advanced);
+        if (advanced) {
+          _lastWebViewCookieValue = snapshot.value;
+        }
+      }
+
+      // jar 在位值健康时 CfClearanceAuthority 会跳过异值覆盖，不能把这误判
+      // 成 Turnstile 停摆：顺带核对 WebView 侧是否已经铸出新值。
+      var webViewAdvanced = false;
+      if (!advanced) {
+        try {
+          final webViewValues = await BoundarySyncService.instance
+              .readCookieValuesFromWebView(
+                name: _cookieName,
+                currentUrl: AppConstants.baseUrl,
+                controller: controller,
+              );
+          if (!_canHandleGeneration(gen)) return false;
+          if (webViewValues.isNotEmpty) {
+            final latestWebView = webViewValues.first;
+            if (_lastWebViewCookieValue == null ||
+                !webViewValues.contains(_lastWebViewCookieValue)) {
+              _lastWebViewCookieValue = latestWebView;
+              _lastCookieAdvanceAt = DateTime.now();
+              webViewAdvanced = true;
+            }
+          }
+        } catch (e) {
+          if (reason != 'poll' && reason != 'health') {
+            CfChallengeLogger.log(
+              '[CfRefresh] 读取 WebView cf_clearance 活跃状态失败: $e',
+            );
+          }
+        }
+      }
+
+      if (snapshot == null && !webViewAdvanced) {
         if (reason != 'poll' && reason != 'health') {
           CfChallengeLogger.log('[CfRefresh] 同步后未找到 cf_clearance: $reason');
         }
         return false;
       }
 
-      final advanced = _isCookieAdvanced(snapshot);
-      _rememberCookieSnapshot(snapshot, markAdvanced: advanced);
-
-      if (advanced) {
+      if (advanced || webViewAdvanced) {
         _cancelInitialTimer();
         _consecutiveFailures = 0;
         _staleReloads = 0;
         CfChallengeLogger.log(
-          '[CfRefresh] cf_clearance 已更新: reason=$reason '
-          'expires=${snapshot.expiresAt?.toIso8601String() ?? '-'}',
+          advanced
+              ? '[CfRefresh] cf_clearance 已更新: reason=$reason '
+                    'expires=${snapshot?.expiresAt?.toIso8601String() ?? '-'}'
+              : '[CfRefresh] WebView 侧 cf_clearance 已更新（jar 在位值保持）: '
+                    'reason=$reason',
         );
       } else if (reason != 'poll' && reason != 'health') {
         CfChallengeLogger.log(
           '[CfRefresh] cf_clearance 未变化: reason=$reason '
-          'expires=${snapshot.expiresAt?.toIso8601String() ?? '-'}',
+          'expires=${snapshot?.expiresAt?.toIso8601String() ?? '-'}',
         );
       }
-      return advanced;
+      return advanced || webViewAdvanced;
     } catch (e) {
       if (reason != 'poll' && reason != 'health') {
         CfChallengeLogger.log('[CfRefresh] cookie 同步失败: reason=$reason $e');
@@ -730,24 +780,73 @@ document.close();
     );
   }
 
-  bool _isCookieAdvanced(_ClearanceSnapshot snapshot) {
-    final previousValue = _lastCookieValue;
-    final previousExpires = _lastCookieExpiresAt;
+  DateTime? _latestActivityAnchor() {
+    DateTime? latest = _runningStartedAt;
+    for (final candidate in [_lastCookieAdvanceAt, _lastTurnstileActivityAt]) {
+      if (candidate == null) continue;
+      if (latest == null || candidate.isAfter(latest)) {
+        latest = candidate;
+      }
+    }
+    return latest;
+  }
 
-    if (previousValue != null && snapshot.value != previousValue) {
+  /// 是否应视作 Turnstile 活跃推进：从无到有铸出首枚，或值/有效期推进。
+  @visibleForTesting
+  static bool isClearanceSnapshotAdvanced({
+    required String? previousValue,
+    required DateTime? previousExpires,
+    required String currentValue,
+    required DateTime? currentExpires,
+  }) {
+    if (currentValue.isEmpty) return false;
+    if (previousValue == null || currentValue != previousValue) {
       return true;
     }
     if (previousExpires != null &&
-        snapshot.expiresAt != null &&
-        snapshot.expiresAt!.isAfter(
+        currentExpires != null &&
+        currentExpires.isAfter(
           previousExpires.add(const Duration(seconds: 30)),
         )) {
       return true;
     }
-    if (previousExpires == null && snapshot.expiresAt != null) {
+    if (previousExpires == null && currentExpires != null) {
       return true;
     }
     return false;
+  }
+
+  bool _isCookieAdvanced(_ClearanceSnapshot snapshot) =>
+      isClearanceSnapshotAdvanced(
+        previousValue: _lastCookieValue,
+        previousExpires: _lastCookieExpiresAt,
+        currentValue: snapshot.value,
+        currentExpires: snapshot.expiresAt,
+      );
+
+  /// 仅测试用：判断是否处于运行态或期望运行态。
+  @visibleForTesting
+  bool get isRunningForTest => _isRunning;
+
+  @visibleForTesting
+  bool get shouldBeRunningForTest => _shouldBeRunning;
+
+  @visibleForTesting
+  DateTime? get latestActivityAnchorForTest => _latestActivityAnchor();
+
+  @visibleForTesting
+  Future<void> resetForTest() async {
+    await stop();
+    _sitekey = null;
+    _isForeground = true;
+    _lastCookieValue = null;
+    _lastWebViewCookieValue = null;
+    _lastCookieExpiresAt = null;
+    _runningStartedAt = null;
+    _lastSignalAt = null;
+    _lastTurnstileActivityAt = null;
+    _lastCookieAdvanceAt = null;
+    _staleReloads = 0;
   }
 
   void _rememberCookieSnapshot(

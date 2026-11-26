@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/services/browser_trust_coordinator.dart';
 import 'package:fluxdo/services/cf_challenge_service.dart';
+import 'package:fluxdo/services/cf_clearance_refresh_service.dart';
 import 'package:fluxdo/services/network/adapters/platform_adapter.dart';
 import 'package:fluxdo/services/network/adapters/webview_http_adapter.dart';
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
@@ -66,6 +67,7 @@ void main() {
     await SiteWebViewRuntime.instance.suspendAndDrain();
   });
   setUp(() async {
+    await CfClearanceRefreshService().resetForTest();
     await platform.reset();
     preload.reset();
     http = _HomeAdapter();
@@ -73,6 +75,7 @@ void main() {
     stages.clear();
   });
   tearDownAll(() async {
+    await CfClearanceRefreshService().resetForTest();
     startup.preloadStage.removeListener(record);
     preload.dioForTesting.httpClientAdapter = originalAdapter;
     preload.reset();
@@ -107,6 +110,16 @@ void main() {
       expect(preload.siteSettingsSync?['title'], 'FluxDO');
     });
   }
+
+  test('未登录首页预加载提取到 sitekey 后自动启动静默续期预热', () async {
+    http.body =
+        '$_home<div class="cf-turnstile" data-sitekey="0x4AAAAAAAc2BQjPEms9tKlM"></div>';
+    await startup.ensurePreloaded(reason: 'startup_anon');
+
+    expect(preload.currentUserSync, isNull);
+    expect(CfClearanceRefreshService().sitekey, '0x4AAAAAAAc2BQjPEms9tKlM');
+    expect(CfClearanceRefreshService().shouldBeRunningForTest, isTrue);
+  });
 
   test('首页权限 403 保留响应并可由用户重新加载', () async {
     http.status = 403;

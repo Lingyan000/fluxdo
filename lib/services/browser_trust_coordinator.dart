@@ -248,7 +248,7 @@ class BrowserTrustCoordinator {
         ).whenComplete(() {
           _completeRequestGate(gateCompleter, false);
           if (_pendingClearanceRefreshReason != null) {
-            _startClearanceRefreshIfLoggedIn(reason: 'browser_trust_settled');
+            _flushPendingClearanceRefresh(reason: 'browser_trust_settled');
           }
           if (identical(_activeBrowserTrust, future)) {
             _activeBrowserTrust = null;
@@ -326,7 +326,7 @@ class BrowserTrustCoordinator {
       if (hydrated == true) {
         _lastPreloadPath = BrowserTrustPreloadPath.webView;
         _log('startup WebView preload success reason=$reason');
-        _startClearanceRefreshIfLoggedIn();
+        startClearanceRefresh(reason: '$reason:preload_webview');
         return;
       }
       _log(
@@ -353,6 +353,9 @@ class BrowserTrustCoordinator {
     if (!_preload.isLoaded) return;
     if (_preload.currentUserSync == null) {
       _log('skip native preload browser trust settle: not logged in');
+      // 对齐站点网页端：未登录态也按 sitekey 启动 Turnstile Pre-Clearance，
+      // 让登录与后续匿名浏览提前拿到 cf_clearance。
+      startClearanceRefresh(reason: '$reason:preload_anon');
       return;
     }
 
@@ -422,7 +425,7 @@ class BrowserTrustCoordinator {
       'browser trust sync end reason=$reason synced=$synced '
       'elapsedMs=${stopwatch.elapsedMilliseconds}',
     );
-    _startClearanceRefreshIfLoggedIn();
+    _flushPendingClearanceRefresh(reason: 'preload_settled');
     return synced;
   }
 
@@ -733,16 +736,12 @@ class BrowserTrustCoordinator {
     return trusted;
   }
 
-  void _startClearanceRefreshIfLoggedIn({String reason = 'preload_logged_in'}) {
-    if (_preload.currentUserSync != null) {
-      final pendingReason = _pendingClearanceRefreshReason;
-      _pendingClearanceRefreshReason = null;
-      _startClearanceRefreshNow(
-        reason: pendingReason == null ? reason : '$reason:$pendingReason',
-      );
-    } else {
-      _log('skip cf_clearance refresh: not logged in');
-    }
+  void _flushPendingClearanceRefresh({String reason = 'preload_settled'}) {
+    final pendingReason = _pendingClearanceRefreshReason;
+    _pendingClearanceRefreshReason = null;
+    _startClearanceRefreshNow(
+      reason: pendingReason == null ? reason : '$reason:$pendingReason',
+    );
   }
 
   void _log(String message, {String level = 'info'}) {

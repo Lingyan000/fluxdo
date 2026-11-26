@@ -4,6 +4,7 @@ import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../l10n/s.dart';
+import '../services/browser_trust_coordinator.dart';
 import '../services/credential_store_service.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/toast_service.dart';
@@ -62,6 +63,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.initState();
     _setupEntryAnimations();
     _loadSavedCredentials();
+    // 登出时会停止静默续期；进入登录页后若已有 sitekey，恢复 Turnstile 预热，
+    // 让用户在填写凭据与人机验证期间提前准备好 cf_clearance。
+    BrowserTrustCoordinator.instance.startClearanceRefresh(
+      reason: 'login_page_open',
+    );
   }
 
   /// staggered 入场动画 (对齐 onboarding 的节奏)
