@@ -2,6 +2,7 @@ import 'package:common_ui/common_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluxdo_render/fluxdo_render.dart' show BlockNode;
 
 import '../../l10n/s.dart';
 import '../../models/nested_topic.dart';
@@ -19,6 +20,7 @@ import '../../utils/fluxdo_render_callbacks.dart';
 import '../../utils/responsive.dart';
 import '../../utils/time_utils.dart';
 import '../post/post_item/quote_selection_helper.dart';
+import '../post/post_item/render_parse_cache.dart';
 import '../crypto/crypto_decrypt_sheet.dart';
 import '../../services/crypto/crypto_cipher_format.dart';
 import '../post/post_item/widgets/post_footer_section/post_footer_section.dart';
@@ -133,6 +135,47 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
   NestedReadingScope? _reading;
   int _visibleChildCount = 3;
   final List<NestedNode> _pendingChildren = [];
+
+  /// 正文解析产物 + 回调缓存：解析结果走全局 [RenderParseCache.shortPost]
+  /// 跨挂载复用（滑出回收再滑回零重解析/零重排），回调按当前 (post, topicId)
+  /// 独立持有，避免不同帖子上下文串用。
+  Post? _cachedRenderPost;
+  int? _cachedRenderTopicId;
+  String? _cachedPreprocessedCooked;
+  List<BlockNode>? _cachedParsedNodes;
+  FluxdoRenderCallbacks? _cachedRenderCallbacks;
+
+  ({String preprocessed, List<BlockNode> nodes, FluxdoRenderCallbacks callbacks})
+  _renderDataFor(Post post) {
+    if (identical(_cachedRenderPost, post) &&
+        _cachedRenderTopicId == widget.topicId &&
+        _cachedPreprocessedCooked != null &&
+        _cachedParsedNodes != null &&
+        _cachedRenderCallbacks != null) {
+      return (
+        preprocessed: _cachedPreprocessedCooked!,
+        nodes: _cachedParsedNodes!,
+        callbacks: _cachedRenderCallbacks!,
+      );
+    }
+    final parsed = RenderParseCache.shortPost(post);
+    final callbacks = FluxdoRenderCallbacks.forPost(
+      post: post,
+      topicId: widget.topicId,
+      preprocessedCooked: parsed.preprocessed,
+      parsedNodes: parsed.nodes,
+    );
+    _cachedRenderPost = post;
+    _cachedRenderTopicId = widget.topicId;
+    _cachedPreprocessedCooked = parsed.preprocessed;
+    _cachedParsedNodes = parsed.nodes;
+    _cachedRenderCallbacks = callbacks;
+    return (
+      preprocessed: parsed.preprocessed,
+      nodes: parsed.nodes,
+      callbacks: callbacks,
+    );
+  }
 
   /// 过滤结果缓存：visibleNestedNodes 递归复制整棵子树，开销不小；
   /// _children 只在明确的变更点（insert/addAll）改动，名单变化走
@@ -696,6 +739,7 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
     // 解决方案水印章:与平铺 PostHeaderSection 同款(nested API 带
     // accepted_answer/can_accept_answer,OP 帖走 PostItem 已有,树节点补齐)
     final showStamp = _acceptedAnswer || post.canAcceptAnswer;
+    final renderData = _renderDataFor(post);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -719,13 +763,10 @@ class _NestedPostCardState extends ConsumerState<NestedPostCard> {
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) =>
                   CodeSelectionContextTracker.instance.clear(),
-              child:
-                  FluxdoRenderCallbacks.forPost(
-                    post: post,
-                    topicId: widget.topicId,
-                  ).render(
-                    cookedHtml: post.cooked,
-                    baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
+              child: renderData.callbacks.render(
+                cookedHtml: renderData.preprocessed,
+                parsedNodes: renderData.nodes,
+                baseTextStyle: theme.textTheme.bodyMedium?.copyWith(
                       height: 1.5,
                       fontSize:
                           (theme.textTheme.bodyMedium?.fontSize ?? 14) *

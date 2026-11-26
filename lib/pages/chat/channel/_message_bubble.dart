@@ -742,6 +742,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
               : 'chat_overlay_${message.channelId}_${message.id}',
         ).render(
           cookedHtml: message.cooked,
+          parsedNodes: RenderParseCache.genericHtml(
+            'chat:${message.channelId}:${message.id}',
+            message.cooked,
+          ),
           baseTextStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
           // 桌面可划词(鼠标拖选);移动端长按已被消息菜单占用,
           // 划词走长按菜单里的"复制"
