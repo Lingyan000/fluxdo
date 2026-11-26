@@ -45,7 +45,7 @@ void main() {
       expect(result.headers['Upgrade-Insecure-Requests'], '1');
     });
 
-    test('XHR 请求继续注入 cors 语义头，不注入导航头', () async {
+    test('同源 GET XHR 请求注入 cors 语义头，不注入 Origin 与导航头', () async {
       final options = RequestOptions(
         path: 'https://linux.do/latest.json',
         method: 'GET',
@@ -57,8 +57,24 @@ void main() {
       expect(result.headers['Sec-Fetch-Dest'], 'empty');
       expect(result.headers['Sec-Fetch-Mode'], 'cors');
       expect(result.headers['Sec-Fetch-Site'], 'same-origin');
+      expect(result.headers.containsKey('Origin'), isFalse);
       expect(result.headers.containsKey('Sec-Fetch-User'), isFalse);
       expect(result.headers.containsKey('Upgrade-Insecure-Requests'), isFalse);
+    });
+
+    test('同源 POST XHR 请求注入 Origin 与 cors 语义头', () async {
+      final options = RequestOptions(
+        path: 'https://linux.do/posts',
+        method: 'POST',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        extra: {'skipCsrf': true},
+      );
+
+      final result = await runOnRequest(options);
+      expect(result.headers['Origin'], 'https://linux.do');
+      expect(result.headers['Sec-Fetch-Dest'], 'empty');
+      expect(result.headers['Sec-Fetch-Mode'], 'cors');
+      expect(result.headers['Sec-Fetch-Site'], 'same-origin');
     });
 
     test('未标注 resourceKindHtml 的普通 GET 不注入导航头', () async {

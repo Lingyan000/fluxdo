@@ -116,6 +116,9 @@ pub struct FingerprintTemplate {
     pub fetch_header_order: Vec<String>,
     /// fetch 类请求的 Accept-Encoding
     pub accept_encoding: Option<String>,
+    /// fetch 类请求的 Accept-Language；旧缓存缺省为 None
+    #[serde(default)]
+    pub accept_language: Option<String>,
     /// 采样时 WebView 的 User-Agent（WebView 升级后 UA 变化，宿主据此决定重采）
     #[serde(default)]
     pub user_agent: Option<String>,
@@ -151,6 +154,7 @@ pub struct FingerprintTemplates {
     hello: RwLock<Option<ClientHello>>,
     h2: RwLock<Option<(EarlyFrameCapture, PseudoHeaderOrder)>>,
     fetch: RwLock<Option<(Vec<String>, Option<String>)>>,
+    accept_language: RwLock<Option<String>>,
     user_agent: RwLock<Option<String>>,
     tls_permute_extensions: RwLock<Option<bool>>,
     low_entropy_client_hints: RwLock<Option<Vec<(String, String)>>>,
@@ -350,6 +354,7 @@ impl FingerprintTemplates {
             *templates.h2.write() = Some((template.early_frames, template.pseudo_order));
             *templates.fetch.write() =
                 Some((template.fetch_header_order, template.accept_encoding));
+            *templates.accept_language.write() = template.accept_language;
             *templates.user_agent.write() = template.user_agent;
             *templates.tls_permute_extensions.write() = template.tls_permute_extensions;
             *templates.low_entropy_client_hints.write() = template.low_entropy_client_hints;
@@ -370,6 +375,7 @@ impl FingerprintTemplates {
             *self.tls_permute_extensions.write() = None;
             *self.h2.write() = None;
             *self.fetch.write() = None;
+            *self.accept_language.write() = None;
             *self.low_entropy_client_hints.write() = None;
             *self.fetch_h2_priority.write() = None;
                 *self.hpack_indexing.write() = None;
@@ -387,6 +393,7 @@ impl FingerprintTemplates {
             if old_hash.is_some() {
                 *self.h2.write() = None;
                 *self.fetch.write() = None;
+                *self.accept_language.write() = None;
                 *self.user_agent.write() = None;
                 *self.tls_permute_extensions.write() = None;
                 *self.low_entropy_client_hints.write() = None;
@@ -535,6 +542,18 @@ impl FingerprintTemplates {
                 }
                 *current = next_fetch;
             }
+            if let Some(accept_language) = headers
+                .get("accept-language")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned)
+            {
+                let next_lang = Some(accept_language);
+                let mut current = self.accept_language.write();
+                if current.is_some() && *current != next_lang {
+                    self.generation.fetch_add(1, Ordering::Relaxed);
+                }
+                *current = next_lang;
+            }
             let hints = headers
                 .iter()
                 .filter_map(|(name, value)| {
@@ -587,6 +606,7 @@ impl FingerprintTemplates {
             pseudo_order,
             fetch_header_order,
             accept_encoding,
+            accept_language: self.accept_language.read().clone(),
             user_agent: self.user_agent.read().clone(),
             tls_permute_extensions: *self.tls_permute_extensions.read(),
             low_entropy_client_hints: self.low_entropy_client_hints.read().clone(),

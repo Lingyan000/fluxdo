@@ -1306,6 +1306,14 @@ fn build_request(
                     headers.insert(name, value);
                 }
             }
+            if template.is_calibrated()
+                && let Some(value) = template
+                    .accept_language
+                    .as_deref()
+                    .and_then(|value| HeaderValue::from_str(value).ok())
+            {
+                headers.insert("accept-language", value);
+            }
         }
         if headers.contains_key("range") {
             // 区间请求不能套用普通 fetch 的压缩列表；保留调用方的显式编码协商。
@@ -1638,6 +1646,52 @@ mod tests {
                 assert_eq!(request.headers()["if-none-match"].hpack_indexing(), None);
             }
         }
+    }
+
+    #[test]
+    fn sampled_accept_language_replays_only_for_calibrated_same_ua_https() {
+        let mut template = crate::presets::by_id("android-webview133").unwrap();
+        assert!(template.accept_language.is_none());
+        template.user_agent = Some("Probe-UA".into());
+        template.tls_permute_extensions = Some(true);
+        template.low_entropy_client_hints = Some(Vec::new());
+        template.accept_language = Some("zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7".into());
+
+        let make = |tmpl: &FingerprintTemplate, scheme: &str, ua: &str| {
+            let request = Request::builder()
+                .uri(format!("{scheme}://example.test/latest.json"))
+                .header("user-agent", ua)
+                .header("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .body(Body::empty())
+                .unwrap();
+            build_request(Some(tmpl), request, "example.test", 443, Version::HTTP_2).unwrap()
+        };
+
+        let matched = make(&template, "https", "Probe-UA");
+        assert_eq!(
+            matched.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+        );
+
+        let wrong_scheme = make(&template, "http", "Probe-UA");
+        assert_eq!(
+            wrong_scheme.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
+
+        let wrong_ua = make(&template, "https", "Other-UA");
+        assert_eq!(
+            wrong_ua.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
+
+        let mut uncalibrated = template.clone();
+        uncalibrated.tls_permute_extensions = None;
+        let not_ready = make(&uncalibrated, "https", "Probe-UA");
+        assert_eq!(
+            not_ready.headers()["accept-language"],
+            "zh-CN,zh;q=0.9,en;q=0.8"
+        );
     }
 
     #[test]
