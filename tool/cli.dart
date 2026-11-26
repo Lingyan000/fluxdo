@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import '_cli_ui.dart';
 import '_workspace_cli.dart';
 import 'flutterw.dart' as flutterw;
 import 'gen_l10n.dart' as gen_l10n;
+import 'init_workspace.dart' as init_workspace;
 import 'project_prep.dart' as project_prep;
 import 'project_tasks.dart' as project_tasks;
 import 'release.dart' as release;
@@ -26,7 +26,9 @@ Future<void> main(List<String> args) async {
 
   switch (command) {
     case 'init':
-      await _runInit();
+      await init_workspace.runInitWorkspace(
+        onGenerateL10n: _inProcessGenL10n,
+      );
       return;
     case 'bootstrap':
       await _runBootstrap();
@@ -35,6 +37,7 @@ Future<void> main(List<String> args) async {
       await project_prep.runProjectPrep(
         const ['app'],
         forceL10n: rest.contains('--force'),
+        onGenerateL10n: _inProcessGenL10n,
       );
       return;
     case 'sdk:link':
@@ -128,8 +131,15 @@ Future<void> main(List<String> args) async {
   }
 }
 
+Future<void> _inProcessGenL10n({required bool force}) async {
+  await gen_l10n.runGenL10n(force: force);
+}
+
 Future<void> _inProcessPrep(String mode) {
-  return project_prep.runProjectPrep([mode]);
+  return project_prep.runProjectPrep(
+    [mode],
+    onGenerateL10n: _inProcessGenL10n,
+  );
 }
 
 Future<void> _runFlutter(List<String> flutterArgs) {
@@ -150,33 +160,6 @@ Future<void> _runBootstrap() async {
     title: '执行 melos bootstrap',
     executable: Platform.resolvedExecutable,
     arguments: const ['run', 'melos', 'bootstrap'],
-  );
-}
-
-Future<void> _runInit() async {
-  final ui = CliUi();
-  ui.intro('FluxDO Init', subtitle: '工作区与子模块一键初始化');
-  final watch = Stopwatch()..start();
-
-  ui.step('[1/4] 初始化 packages/fluxdo_render 子模块');
-  await runOrExit(
-    title: '同步 git 子模块',
-    executable: 'git',
-    arguments: const ['submodule', 'update', '--init', 'packages/fluxdo_render'],
-  );
-
-  ui.step('[2/4] 同步 IDE Flutter SDK 链接');
-  await syncIdeFlutterSdkLink();
-
-  ui.step('[3/4] 初始化 workspace 依赖 (melos bootstrap)');
-  await _runBootstrap();
-
-  ui.step('[4/4] 同步项目生成物与证书资源');
-  await project_prep.runProjectPrep(const ['app']);
-
-  watch.stop();
-  ui.outro(
-    '工作区初始化完成 (${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)}s)',
   );
 }
 

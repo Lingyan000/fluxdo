@@ -79,10 +79,10 @@ brew install --cask Lingyan000/tap/fluxdo
 
 3. **不安装 `mise`（已有 Flutter / Rust 环境）**
    ```bash
-   dart tool/cli.dart init
+   dart tool/init_workspace.dart
    dart tool/cli.dart dev macos
    ```
-   `dart tool/cli.dart init` 同样会自动把本机当前的 Flutter SDK 链接到 `.tooling/flutter_sdk` 并完成全部预处理。
+   `dart tool/init_workspace.dart` 仅依赖 Dart 标准库，无需预先 `pub get`，会自动拉取子模块、把本机当前的 Flutter SDK 链接到 `.tooling/flutter_sdk` 并完成全部预处理。
 
    如需透传额外 Flutter 参数（如 `--dart-define`）：
    ```bash
