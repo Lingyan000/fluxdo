@@ -168,7 +168,7 @@ void main() {
       expect(synced, 'minted-from-zero');
     });
 
-    test('健康在位值被 Authority 保护跳过覆盖时，token 回调与 WebView 新值仍推进活跃锚点', () async {
+    test('Turnstile 现场新铸的 cf_clearance 立即替换健康在位值并忽略旧残留', () async {
       if (Platform.isWindows) return;
 
       await CookieJarService().setCookie(
@@ -176,6 +176,8 @@ void main() {
         'healthy-incumbent',
         expires: DateTime.now().toUtc().add(const Duration(days: 7)),
       );
+      // 启动前 WebView 里已存在的旧残留必须被记入基线，不能借同步覆盖在位值。
+      platform.cookies.values = [cfTestCookie('preexisting-stale-residue')];
       final service = CfClearanceRefreshService();
       service.updateSitekey('0x4AAAAAAAc2BQjPEms9tKlM');
       service.start();
@@ -184,19 +186,56 @@ void main() {
       final initialAnchor = service.latestActivityAnchorForTest;
       expect(initialAnchor, isNotNull);
 
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      platform.cookies.values = [cfTestCookie('turnstile-rotated-value')];
+      // 仅旧残留存在时，即使触发 token 回调也不得覆盖健康在位值。
       final controller = platform.headlessViews.single._controller;
       controller.handlers['onTurnstileToken']?.call([
         {'length': 256},
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 50));
-
-      // jar 仍保留健康在位值（未被异值顶替），但活跃锚点已推进，不会 8 分钟后误判 stale。
       expect(await CookieJarService().getCfClearance(), 'healthy-incumbent');
+
+      // Turnstile 现场铸出全新 cf_clearance（与旧残留并存），应立即替换 jar 在位值。
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      platform.cookies.values = [
+        cfTestCookie('preexisting-stale-residue'),
+        cfTestCookie('turnstile-rotated-value'),
+      ];
+      controller.handlers['onTurnstileToken']?.call([
+        {'length': 256},
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        await CookieJarService().getCfClearance(),
+        'turnstile-rotated-value',
+      );
       expect(
         service.latestActivityAnchorForTest!.isAfter(initialAnchor!),
         isTrue,
+      );
+    });
+
+    test('pickFreshlyMintedClearance 仅接受不在基线中的唯一新值', () {
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a', 'incumbent'},
+          currentWebViewValues: {'old-a', 'fresh-b'},
+        ),
+        'fresh-b',
+      );
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a'},
+          currentWebViewValues: {'old-a'},
+        ),
+        isNull,
+      );
+      expect(
+        CfClearanceRefreshService.pickFreshlyMintedClearance(
+          knownValues: {'old-a'},
+          currentWebViewValues: {'fresh-1', 'fresh-2'},
+        ),
+        isNull,
       );
     });
   });

@@ -68,6 +68,10 @@ class CfClearanceRefreshService {
 
   String? _lastCookieValue;
   String? _lastWebViewCookieValue;
+  /// 启动/重载前 WebView 中已存在的 cf_clearance 归一化值集合；
+  /// 只有 Turnstile 运行后新出现的差集值才视为本轮现场铸造的新票，允许立即替换在位值，
+  /// 已存在于 WebView 的历史残留仍交由 CfClearanceAuthority 拦截。
+  Set<String> _knownWebViewValues = const {};
   DateTime? _lastCookieExpiresAt;
   DateTime? _runningStartedAt;
   DateTime? _lastSignalAt;
@@ -336,6 +340,9 @@ class CfClearanceRefreshService {
         throw StateError('Headless WebView controller is null');
       }
 
+      await _captureKnownWebViewValues(controller);
+      if (!_canHandleGeneration(gen)) return;
+
       if (io.Platform.isWindows) {
         await controller.loadUrl(
           urlRequest: URLRequest(url: WebUri(_windowsBootstrapUrl)),
@@ -490,6 +497,8 @@ document.close();
     FrameJankMonitor.logEvent('WEBVIEW', 'CfRefresh reload($reason)');
 
     try {
+      await _captureKnownWebViewValues(controller);
+      if (!_canHandleGeneration(gen)) return;
       final html = _buildTurnstileHtml(sitekey);
       if (io.Platform.isWindows) {
         await _writeTurnstileHtml(controller, html);
@@ -675,6 +684,51 @@ document.close();
     }
   }
 
+  Future<void> _captureKnownWebViewValues(
+    InAppWebViewController controller,
+  ) async {
+    final known = <String>{
+      if (_lastCookieValue != null && _lastCookieValue!.isNotEmpty)
+        CookieValueCodec.decode(_lastCookieValue!),
+    };
+    try {
+      final existing = await BoundarySyncService.instance
+          .readCookieValuesFromWebView(
+            name: _cookieName,
+            currentUrl: AppConstants.baseUrl,
+            controller: controller,
+          );
+      for (final value in existing) {
+        if (value.isNotEmpty) {
+          known.add(CookieValueCodec.decode(value));
+        }
+      }
+    } catch (e) {
+      CfChallengeLogger.log('[CfRefresh] 记录基线 WebView cf_clearance 失败: $e');
+    }
+    _knownWebViewValues = known;
+  }
+
+  /// 从当前 WebView 快照中识别本轮 Turnstile 现场新铸造的唯一 cf_clearance。
+  /// 仅返回不在 [_knownWebViewValues] 中的差集，且仅当差集唯一时才视为可立即晋升。
+  @visibleForTesting
+  static String? pickFreshlyMintedClearance({
+    required Set<String> knownValues,
+    required Set<String> currentWebViewValues,
+  }) {
+    final fresh = <String>[];
+    final seenNormalized = <String>{};
+    for (final raw in currentWebViewValues) {
+      if (raw.isEmpty) continue;
+      final normalized = CookieValueCodec.decode(raw);
+      if (knownValues.contains(normalized)) continue;
+      if (seenNormalized.add(normalized)) {
+        fresh.add(raw);
+      }
+    }
+    return fresh.length == 1 ? fresh.single : null;
+  }
+
   Future<bool> _syncAndCheckCookies(String reason, int gen) async {
     if (!_canHandleGeneration(gen) || _isSyncingCookies) return false;
     final controller = _webViewController;
@@ -682,14 +736,49 @@ document.close();
 
     _isSyncingCookies = true;
     try {
+      String? freshlyMinted;
+      final canPromoteFreshMint =
+          reason == 'turnstile_token' ||
+          (reason == 'poll' && _lastTurnstileActivityAt != null);
+      if (canPromoteFreshMint) {
+        try {
+          final currentWebViewValues = await BoundarySyncService.instance
+              .readCookieValuesFromWebView(
+                name: _cookieName,
+                currentUrl: AppConstants.baseUrl,
+                controller: controller,
+              );
+          if (!_canHandleGeneration(gen)) return false;
+          freshlyMinted = pickFreshlyMintedClearance(
+            knownValues: _knownWebViewValues,
+            currentWebViewValues: currentWebViewValues,
+          );
+        } catch (e) {
+          if (reason != 'poll') {
+            CfChallengeLogger.log(
+              '[CfRefresh] 读取 Turnstile 新铸 cf_clearance 失败，回退常规同步: $e',
+            );
+          }
+        }
+      }
+
       await BoundarySyncService.instance.syncFromWebView(
         currentUrl: AppConstants.baseUrl,
         controller: controller,
         cookieNames: const {_cookieName},
         trusted: true,
+        acceptValues: freshlyMinted == null
+            ? null
+            : {_cookieName: freshlyMinted},
       );
 
       if (!_canHandleGeneration(gen)) return false;
+      if (freshlyMinted != null) {
+        _knownWebViewValues = {
+          ..._knownWebViewValues,
+          CookieValueCodec.decode(freshlyMinted),
+        };
+      }
       final snapshot = await _readClearanceSnapshot();
       var advanced = false;
       if (snapshot != null) {
@@ -697,6 +786,10 @@ document.close();
         _rememberCookieSnapshot(snapshot, markAdvanced: advanced);
         if (advanced) {
           _lastWebViewCookieValue = snapshot.value;
+          _knownWebViewValues = {
+            ..._knownWebViewValues,
+            CookieValueCodec.decode(snapshot.value),
+          };
         }
       }
 
@@ -841,6 +934,7 @@ document.close();
     _isForeground = true;
     _lastCookieValue = null;
     _lastWebViewCookieValue = null;
+    _knownWebViewValues = const {};
     _lastCookieExpiresAt = null;
     _runningStartedAt = null;
     _lastSignalAt = null;
