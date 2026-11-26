@@ -330,7 +330,7 @@ class BookmarksListContent extends ConsumerWidget {
           statsAvailableWidth: statsAvailableWidth,
           suggestions: bookmarkNameSuggestions,
           reminderExpired: reminderExpired,
-          themeId: identityHashCode(Theme.of(context)),
+          themeSig: TopicCardLayout.themeSignature(Theme.of(context)),
           categoryMap: categoryMap,
           cardStyle: TopicCardStyleScope.current,
         );
@@ -381,7 +381,7 @@ class BookmarksListContent extends ConsumerWidget {
         items: filteredTopics,
         signature: (
           identityHashCode(filteredTopics),
-          identityHashCode(Theme.of(context)),
+          TopicCardLayout.themeSignature(Theme.of(context)),
           topicCardWidthFor(context),
           statsAvailableWidth,
           identityHashCode(categoryMap),

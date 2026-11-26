@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:fluxdo_render/fluxdo_render.dart' show GlyphPrebaker;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/category.dart';
@@ -7,6 +8,7 @@ import '../../models/topic.dart';
 import '../../models/topic_card_style.dart';
 import '../../services/discourse_cache_manager.dart';
 import '../../utils/idle_task.dart';
+import '../../utils/scroll_busy_signal.dart';
 import 'painted_topic_card.dart';
 import 'topic_card_layout.dart';
 import 'topic_item_builder.dart';
@@ -61,6 +63,11 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
   /// 换代即弃:数据/环境变化重启扫描,老 idle 链自灭
   int _generation = 0;
   IdleTaskHandle? _pendingWarmUp;
+  int _warmIndex = 0;
+  final Set<BuildContext> _activeScrolls = {};
+  final GlyphPrebaker _glyphBaker = GlyphPrebaker(
+    shouldDefer: () => isIdleTaskUserInteracting,
+  );
 
   Object? _lastSignature;
 
@@ -72,40 +79,86 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
   /// 300 = 覆盖十几屏的余量,同时给其他列表页留出共享空间。
   static const int _maxWarmCount = 300;
 
+  bool get _isScrolling {
+    if (_activeScrolls.isEmpty) return false;
+    _activeScrolls.removeWhere((ctx) => !ctx.mounted);
+    return _activeScrolls.isNotEmpty;
+  }
+
+  int get _warmLimit =>
+      widget.items.length < _maxWarmCount ? widget.items.length : _maxWarmCount;
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    ScrollBusySignal.onScrollNotification(notification);
+    final ctx = notification.context;
+    if (notification is ScrollStartNotification) {
+      if (ctx != null) _activeScrolls.add(ctx);
+      _pendingWarmUp?.cancel();
+      _pendingWarmUp = null;
+      _glyphBaker.clear();
+    } else if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      if (ctx != null) _activeScrolls.add(ctx);
+      _pendingWarmUp?.cancel();
+      _pendingWarmUp = null;
+      _glyphBaker.clear();
+    } else if (notification is ScrollEndNotification) {
+      if (ctx != null) _activeScrolls.remove(ctx);
+      if (!_isScrolling &&
+          kUsePaintedTopicCard &&
+          _pendingWarmUp == null &&
+          _warmIndex < _warmLimit) {
+        _scheduleStep(_generation);
+      }
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (kUsePaintedTopicCard && widget.signature != _lastSignature) {
       _lastSignature = widget.signature;
       _restart();
     }
-    return widget.child;
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: widget.child,
+    );
   }
 
   @override
   void dispose() {
     _generation++;
     _pendingWarmUp?.cancel();
+    _pendingWarmUp = null;
+    _glyphBaker.dispose();
+    _activeScrolls.clear();
     super.dispose();
   }
 
   void _restart() {
     _pendingWarmUp?.cancel();
     _pendingWarmUp = null;
+    _glyphBaker.clear();
     final generation = ++_generation;
-    if (widget.items.isEmpty) return;
-    var index = 0;
-    bool canceled() => !mounted || generation != _generation;
+    _warmIndex = 0;
+    if (widget.items.isEmpty || _isScrolling) return;
+    _scheduleStep(generation);
+  }
+
+  void _scheduleStep(int generation) {
+    bool canceled() => !mounted || generation != _generation || _isScrolling;
 
     void step() {
+      _pendingWarmUp = null;
       if (canceled()) return;
       final items = widget.items;
-      final limit = items.length < _maxWarmCount
-          ? items.length
-          : _maxWarmCount;
+      final limit = _warmLimit;
       final stopwatch = Stopwatch()..start();
       final baked = <TopicCardLayout>[];
-      while (index < limit && stopwatch.elapsedMicroseconds < _budgetMicros) {
-        final item = items[index++];
+      while (_warmIndex < limit &&
+          stopwatch.elapsedMicroseconds < _budgetMicros) {
+        final item = items[_warmIndex++];
         final buildsBefore = TopicCardLayout.layoutBuildCount;
         final layout = widget.warmItem(context, item);
         if (layout == null) continue;
@@ -126,7 +179,7 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
         }
       }
       _bakeGlyphs(baked);
-      if (index < limit) {
+      if (_warmIndex < limit && !canceled()) {
         _pendingWarmUp = scheduleIdleTask(step, isCanceled: canceled);
       }
     }
@@ -134,52 +187,42 @@ class _CardPrewarmScopeState<T> extends State<CardPrewarmScope<T>> {
     _pendingWarmUp = scheduleIdleTask(step, isCanceled: canceled);
   }
 
-  /// 字形预烤:把本步新排版的段落离屏光栅化一次,字形提前进引擎
-  /// 全局字形图集(glyph atlas)。
-  ///
-  /// 动机(拖影定案实验):快滚含摘要列表时"灰块替代摘要文字 = 明显
-  /// 变顺",坐实卡顿来自字形光栅化/图集上传 —— 两行中文摘要每卡
-  /// 60~80 个不重复汉字,且 12px 摘要与标题不同字号在图集中互不共享,
-  /// 首见字形的光栅化+纹理上传全堆在滚入帧的 raster 线程。
-  ///
-  /// 只 build 段落不够:图集在 raster 阶段才填充,必须真画一次。
-  /// 所有段落原点重叠着画进一张 Picture(重叠不影响图集收录),
-  /// toImage 走引擎同一光栅上下文,每步一次、离屏小图、即弃。
+  /// 字形预烤:把本步新排版的段落经 [GlyphPrebaker] 按真实 devicePixelRatio
+  /// 离屏光栅化一次（带全局串行背压，滚动开始即清队），让字形提前进入引擎
+  /// 全局字形图集（glyph atlas）对应的物理像素缩放桶。
   void _bakeGlyphs(List<TopicCardLayout> layouts) {
-    if (layouts.isEmpty) return;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    double w = 1, h = 1;
-    void draw(ui.Paragraph p) {
-      canvas.drawParagraph(p, Offset.zero);
-      if (p.longestLine > w) w = p.longestLine;
-      if (p.height > h) h = p.height;
-    }
-
+    if (layouts.isEmpty || !mounted) return;
+    final paragraphs = <ui.Paragraph>[];
     for (final l in layouts) {
-      for (final p in [l.band, l.title, l.excerpt, l.author, l.time,
-          l.catTags, l.stats]) {
-        if (p != null) draw(p);
+      for (final p in [
+        l.band,
+        l.title,
+        l.excerpt,
+        l.author,
+        l.time,
+        l.catTags,
+        l.stats,
+      ]) {
+        if (p != null) paragraphs.add(p);
       }
       for (final (_, p) in l.titleIcons) {
-        draw(p);
+        paragraphs.add(p);
       }
       for (final (_, p) in l.bandIcons) {
-        draw(p);
+        paragraphs.add(p);
       }
       for (final (_, p) in l.statsIcons) {
-        draw(p);
+        paragraphs.add(p);
       }
       for (final (_, p) in l.extraTexts) {
-        draw(p);
+        paragraphs.add(p);
       }
     }
-    final picture = recorder.endRecording();
-    picture
-        .toImage(w.ceil().clamp(1, 4096), h.ceil().clamp(1, 4096))
-        .then((img) => img.dispose())
-        .catchError((_) {})
-        .whenComplete(picture.dispose);
+    if (paragraphs.isEmpty) return;
+    _glyphBaker.enqueueParagraphs(
+      paragraphs,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    );
   }
 }
 
@@ -212,7 +255,7 @@ class TopicCardPrewarmScope extends StatelessWidget {
       items: topics,
       signature: (
         identityHashCode(topics),
-        identityHashCode(Theme.of(context)),
+        TopicCardLayout.themeSignature(Theme.of(context)),
         topicCardWidthFor(context),
         statsAvailableWidth,
         messageStyle,

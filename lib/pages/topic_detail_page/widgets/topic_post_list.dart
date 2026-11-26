@@ -30,11 +30,13 @@ import 'package:m3e_ui/m3e_ui.dart';
 import 'package:fluxdo_render/fluxdo_render.dart'
     show
         BlockNode,
+        GlyphPrebaker,
         HeadingAnchorRegistry,
         HeadingAnchorScope,
         HtmlChunk,
         ParagraphWarmup,
-        ParagraphWarmupProbe;
+        ParagraphWarmupScope,
+        ParagraphWarmupTracker;
 
 import '../../../widgets/post/post_item/post_item.dart';
 import '../../../widgets/post/post_item/render_parse_cache.dart';
@@ -365,6 +367,9 @@ class _TopicPostListState extends State<TopicPostList> {
     _previousLoadingChanges.removeListener(_onPreviousLoadingChanged);
     widget.listController.itemPositions.removeListener(_onItemPositionsChanged);
     widget.scrollController.removeListener(_scrollJumpProbe);
+    _cancelWarmUp();
+    _glyphBaker.dispose();
+    _warmupTracker.reset();
     _parseWarmUpRetry?.cancel();
     super.dispose();
   }
@@ -577,8 +582,11 @@ class _TopicPostListState extends State<TopicPostList> {
 
   /// 可见性由引擎布局后的 itemPositions 统一更新。
   bool _handleScrollNotification(ScrollNotification notification) {
+    ScrollBusySignal.onScrollNotification(notification);
     final result = onScrollNotification(notification);
-    if (notification is ScrollEndNotification) {
+    if (notification is ScrollStartNotification) {
+      _cancelWarmUp();
+    } else if (notification is ScrollEndNotification) {
       _scheduleChunkWarmUp();
     }
 
@@ -586,24 +594,38 @@ class _TopicPostListState extends State<TopicPostList> {
   }
 
   /// 滚动停下后空闲预热,两级流水(单 idle task 只做一小步,不与滚动帧
-  /// 抢主线程;新滚动开始 _warmUpGeneration 递增即全部停):
+  /// 抢主线程;新滚动开始 _warmUpGeneration 递增并取消在途任务):
   ///
   /// 1. **chunk 预解析**(原有):把已进列表的长帖中尚未解析的 chunk
   ///    逐块解析(1-3ms/块),再滚到时 parse 命中 RenderParseCache;
   /// 2. **段落预 flatten + 预排版**(笔2 新增):对滚动方向前方的楼层,
   ///    把顶层段落 flatten 进 FlattenCache、纯文字段落排版进
   ///    ParagraphLayoutCache —— 首次滚到也全程查表(直绘零排版)。
-  ///    缓存 key 经 ParagraphWarmupProbe 探针取自真实挂载(theme/
-  ///    baseStyle/env/宽度全同源,不手工重建);探针未收敛(首屏尚无
-  ///    直绘块挂载)则本轮只跑第 1 级。
+  ///    缓存 key 经本列表专属 [ParagraphWarmupTracker] 取自当前页真实挂载
+  ///    (theme/baseStyle/env/宽度全同源,不与上一页互相污染)。
   int _warmUpGeneration = 0;
+  IdleTaskHandle? _pendingWarmUpHandle;
+  final ParagraphWarmupTracker _warmupTracker = ParagraphWarmupTracker();
+  final GlyphPrebaker _glyphBaker = GlyphPrebaker(
+    shouldDefer: () => isIdleTaskUserInteracting,
+  );
+  Object? _lastWarmupEnvKey;
 
-  /// 段落预热游标:(postId, nodeIndex);楼层列表变化后从头再扫
+  /// 段落预热游标:(postId, nodeIndex);楼层列表或布局环境变化后从头再扫
   /// (已热的段落是缓存命中,重扫只付查表成本)。
   int? _warmPostCursor;
   int _warmNodeCursor = 0;
 
+  void _cancelWarmUp() {
+    _warmUpGeneration++;
+    _pendingWarmUpHandle?.cancel();
+    _pendingWarmUpHandle = null;
+    _glyphBaker.clear();
+  }
+
   void _scheduleChunkWarmUp() {
+    _pendingWarmUpHandle?.cancel();
+    _pendingWarmUpHandle = null;
     final generation = ++_warmUpGeneration;
     void step() {
       if (!mounted || generation != _warmUpGeneration) return;
@@ -620,7 +642,8 @@ class _TopicPostListState extends State<TopicPostList> {
         // scheduleIdleTask 是我们自己包的安全版:Flutter 3.44 的
         // SchedulerBinding.scheduleTask(idle) 撞上持续动画会让事件循环
         // 忙等活锁(Windows 上表现为窗口卡死),原生 scheduleTask 不能用。
-        scheduleIdleTask(() {
+        _pendingWarmUpHandle = scheduleIdleTask(() {
+          _pendingWarmUpHandle = null;
           pending!.warmUpOneChunk();
           step();
         }, isCanceled: () => !mounted || generation != _warmUpGeneration);
@@ -636,8 +659,14 @@ class _TopicPostListState extends State<TopicPostList> {
   /// 段落预热一步:取滚动方向前方(向下读 = 当前楼层之后)最近的
   /// 未热完楼层,预热其顶层段落;单步预算 4ms,步进由 idle task 驱动。
   void _scheduleParagraphWarmUp(int generation) {
-    final snapshot = ParagraphWarmupProbe.snapshot();
+    final snapshot = _warmupTracker.snapshot();
     if (snapshot == null) return; // 探针未收敛,等下次滚动停止再试
+    final envKey = snapshot.environmentKey;
+    if (_lastWarmupEnvKey != envKey) {
+      _lastWarmupEnvKey = envKey;
+      _warmPostCursor = null;
+      _warmNodeCursor = 0;
+    }
     final posts = detail.postStream.posts;
     if (posts.isEmpty) return;
 
@@ -651,7 +680,17 @@ class _TopicPostListState extends State<TopicPostList> {
     // scheduleIdleTask 是我们自己包的安全版,原因见 _scheduleChunkWarmUp
     // 顶部注释(原生 SchedulerBinding.scheduleTask(idle) 撞持续动画会
     // 活锁)。
-    scheduleIdleTask(() {
+    _pendingWarmUpHandle = scheduleIdleTask(() {
+      _pendingWarmUpHandle = null;
+      // 每次真正执行前再取一次本页实时快照，防止等待期间窗口/主题已变化
+      final currentSnapshot = _warmupTracker.snapshot();
+      if (currentSnapshot == null) return;
+      final currentEnvKey = currentSnapshot.environmentKey;
+      if (_lastWarmupEnvKey != currentEnvKey) {
+        _lastWarmupEnvKey = currentEnvKey;
+        _warmPostCursor = null;
+        _warmNodeCursor = 0;
+      }
       // 找目标楼层:游标楼层仍有效则续,否则从 startIndex 起第一个
       // 已有解析产物的楼层(不为预热触发解析 —— 短帖解析很便宜但
       // 语义上归级 1/首建;这里只吃现成 AST)。
@@ -681,7 +720,7 @@ class _TopicPostListState extends State<TopicPostList> {
 
       final next = ParagraphWarmup.warmParagraphs(
         nodes: nodes,
-        ctx: snapshot,
+        ctx: currentSnapshot,
         context: context,
         // 预热产物按 (inlines 身份, style, theme) 进全局缓存,handler 用
         // 共享 static(emoji/mention/localDate/math/download)+ 无 post
@@ -690,6 +729,8 @@ class _TopicPostListState extends State<TopicPostList> {
         // context,linkHandler 闭包冻结的 post.id 仅用于点击追踪,预热
         // 段落全部来自「该 post 自己的 AST」,forPost 语义一致。
         totalImagesInPost: 0,
+        glyphBaker: _glyphBaker,
+        devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
         startIndex: _warmNodeCursor,
         budgetMicros: 4000,
       );
@@ -1047,9 +1088,11 @@ class _TopicPostListState extends State<TopicPostList> {
       'bottom-padding',
     ];
 
-    return QuoteImageScope(
-      handler: widget.onQuoteImage,
-      child: NotificationListener<ScrollNotification>(
+    return ParagraphWarmupScope(
+      tracker: _warmupTracker,
+      child: QuoteImageScope(
+        handler: widget.onQuoteImage,
+        child: NotificationListener<ScrollNotification>(
         onNotification: _handleScrollNotification,
         child: Listener(
           behavior: HitTestBehavior.translucent,
@@ -1114,6 +1157,7 @@ class _TopicPostListState extends State<TopicPostList> {
           ),
         ),
       ),
+    ),
     );
   }
 

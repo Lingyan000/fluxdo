@@ -36,6 +36,7 @@ import '../widgets/topic/topic_filter_menu.dart';
 import '../widgets/common/topic_badges.dart';
 import '../widgets/common/search_capsule.dart';
 import '../widgets/topic/category_drawer.dart';
+import '../widgets/topic/topic_card_layout.dart';
 import '../widgets/topic/topic_card_prewarmer.dart';
 import '../widgets/topic/topic_item_builder.dart';
 import '../widgets/topic/pinned_topics_header.dart';
@@ -3301,13 +3302,13 @@ class _TopicListState extends ConsumerState<_TopicList>
                           category: _categorySignatureFor(topic),
                           statsWidthTier: statsWidthTier,
                           cardStyle: topicCardStyle,
-                          // 主题恒等进签名:自绘卡的文字颜色在排版期
-                          // 烤死,obtain 发生在缓存短路点之外 —— 不换
-                          // 代则深浅色切换后旧排版继续画(底色由
-                          // PaintedTopicCard 自身 Theme 依赖刷新,文字
-                          // 停留旧主题)。didChangeDependencies 清缓存
-                          // 兜不住:State 自身 context 未注册 Theme 依赖
-                          themeId: identityHashCode(Theme.of(context)),
+                          // 主题值指纹进签名:自绘卡的文字颜色在排版期
+                          // 烤死,obtain 发生在缓存短路点之外 —— 既在深浅色
+                          // 切换后换代,又避免 Theme.of 本地化缓存被挤出后
+                          // 产生同值新对象导致全列表缓存误失效。
+                          themeSig: TopicCardLayout.themeSignature(
+                            Theme.of(context),
+                          ),
                         );
                         final cached = _topicItemCache[topic.id];
                         if (cached != null && cached.signature == signature) {

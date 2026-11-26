@@ -904,10 +904,7 @@ class MainApp extends ConsumerWidget {
                 // 平台主线程 IPC)据此在滚动中让路,见 ScrollBusySignal
                 result = NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
-                    if (notification is ScrollUpdateNotification ||
-                        notification is ScrollStartNotification) {
-                      ScrollBusySignal.touch();
-                    }
+                    ScrollBusySignal.onScrollNotification(notification);
                     return false;
                   },
                   child: result,

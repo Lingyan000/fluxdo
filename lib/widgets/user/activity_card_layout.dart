@@ -75,62 +75,56 @@ class ActivityCardFrame extends StatelessWidget {
           constraints.maxWidth < Breakpoints.mobile;
       final theme = Theme.of(context);
       final style = SegmentedCardStyle.of(context);
-      return Theme(
-        data: compact
-            ? theme.copyWith(
-                extensions: [
-                  ...theme.extensions.values.where(
-                    (extension) => extension is! SegmentedCardStyle,
-                  ),
-                  style.copyWith(mode: SegmentedCardMode.flat),
-                ],
+      Widget buildCard(BuildContext context) {
+        final content = Padding(
+          padding: const EdgeInsets.all(16),
+          child: child,
+        );
+        final baseColor = compact
+            ? Colors.transparent
+            : PageBackgroundScope.contentColor(
+                context,
+                theme.cardTheme.color ??
+                    theme.colorScheme.surfaceContainerLow,
+              );
+        final cardColor = highlighted
+            ? Color.alphaBlend(
+                context.emphasis.selected.withValues(
+                  alpha: compact ? 0.055 : 0.07,
+                ),
+                baseColor,
               )
-            : theme,
-        child: Builder(
-          builder: (context) {
-            final content = Padding(
-              padding: const EdgeInsets.all(16),
-              child: child,
-            );
-            final baseColor = compact
-                ? Colors.transparent
-                : PageBackgroundScope.contentColor(
+            : baseColor;
+        return SegmentedCardItem(
+          index: position.index,
+          count: position.count,
+          gap: 4,
+          outerRadius: compact ? 0 : 20,
+          color: cardColor,
+          child: onTap == null
+              ? content
+              : TopicCardInteractiveSurface(
+                  onTap: onTap!,
+                  onLongPress: onLongPress,
+                  onPreviewIntent: onPreviewIntent,
+                  borderRadius: SegmentedCardItem.borderRadiusOf(
                     context,
-                    theme.cardTheme.color ??
-                        theme.colorScheme.surfaceContainerLow,
-                  );
-            final cardColor = highlighted
-                ? Color.alphaBlend(
-                    context.emphasis.selected.withValues(
-                      alpha: compact ? 0.055 : 0.07,
-                    ),
-                    baseColor,
-                  )
-                : baseColor;
-            return SegmentedCardItem(
-              index: position.index,
-              count: position.count,
-              gap: 4,
-              outerRadius: compact ? 0 : 20,
-              color: cardColor,
-              child: onTap == null
-                  ? content
-                  : TopicCardInteractiveSurface(
-                      onTap: onTap!,
-                      onLongPress: onLongPress,
-                      onPreviewIntent: onPreviewIntent,
-                      borderRadius: SegmentedCardItem.borderRadiusOf(
-                        context,
-                        index: position.index,
-                        count: position.count,
-                        outerRadius: compact ? 0 : 20,
-                      ),
-                      child: content,
-                    ),
-            );
-          },
-        ),
-      );
+                    index: position.index,
+                    count: position.count,
+                    outerRadius: compact ? 0 : 20,
+                  ),
+                  child: content,
+                ),
+        );
+      }
+
+      if (compact && style.mode != SegmentedCardMode.flat) {
+        return SegmentedCardStyleScope(
+          style: style.copyWith(mode: SegmentedCardMode.flat),
+          child: Builder(builder: buildCard),
+        );
+      }
+      return buildCard(context);
     },
   );
 }
