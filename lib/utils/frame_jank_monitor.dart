@@ -134,6 +134,11 @@ class FrameJankMonitor {
   static const _maxJankRecords = 500;
   static const _maxEvents = 300;
 
+  /// 按帧号留存的阶段/账单/构建样本数。
+  /// release 模式下 FrameTiming 可能约每秒批量回传，120Hz 下 64 帧不足
+  /// 0.6s 就会冲掉早期慢帧明细；扩到 256 帧（>2s @120Hz）避免丢记录。
+  static const _maxFrameSamples = 256;
+
   static bool _started = false;
   static bool get isRunning => _started;
 
@@ -395,7 +400,7 @@ class FrameJankMonitor {
     final frame =
         WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
     (_spans[frame] ??= []).add((label, micros));
-    if (_spans.length > 64) {
+    if (_spans.length > _maxFrameSamples) {
       int? oldest;
       for (final k in _spans.keys) {
         if (oldest == null || k < oldest) oldest = k;
@@ -405,8 +410,9 @@ class FrameJankMonitor {
   }
 
   /// 本帧 span 账单行:降序 top6 + layout 未覆盖余量。
-  /// [phase] 提供 layout 相位总量时,余量 = layout − Σ(lay: span);
-  /// 余量 >1ms 才展示——它是"埋点盲区"的量化指标。
+  /// [phase] 提供 layout 相位总量时,取 `lay:` 与 `tlay:` 合计的较大值作为
+  /// 已覆盖下界(避免外层 `lay:` 与内层 `tlay:` 嵌套重复相加，也把未包
+  /// PerfSpanBox 入口的 `tlay:miss` 计入覆盖);余量 >1ms 才展示。
   static String? _spanLineFor(int frameNumber, PhaseSample? phase) {
     final spans = _spans[frameNumber];
     if (spans == null || spans.isEmpty) return null;
@@ -419,10 +425,16 @@ class FrameJankMonitor {
     var line = 'spans[$head$more]';
     if (phase != null && phase.layoutUs > 0) {
       var layCovered = 0;
+      var tlayCovered = 0;
       for (final s in spans) {
-        if (s.$1.startsWith('lay:')) layCovered += s.$2;
+        if (s.$1.startsWith('lay:')) {
+          layCovered += s.$2;
+        } else if (s.$1.startsWith('tlay:')) {
+          tlayCovered += s.$2;
+        }
       }
-      final uncovered = phase.layoutUs - layCovered;
+      final covered = layCovered >= tlayCovered ? layCovered : tlayCovered;
+      final uncovered = phase.layoutUs - covered;
       if (uncovered > 1000) {
         line += ' 未覆盖 layout ≈${(uncovered / 1000).toStringAsFixed(1)}ms';
       }
@@ -441,7 +453,7 @@ class FrameJankMonitor {
   static PhaseSample? phaseSlot(int frameNumber) {
     if (!_started) return null;
     final slot = _phases[frameNumber] ??= PhaseSample();
-    if (_phases.length > 64) {
+    if (_phases.length > _maxFrameSamples) {
       int? oldest;
       for (final k in _phases.keys) {
         if (oldest == null || k < oldest) oldest = k;
@@ -457,7 +469,7 @@ class FrameJankMonitor {
     final frame =
         WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
     (_buildNotes[frame] ??= []).add(key);
-    if (_buildNotes.length > 64) {
+    if (_buildNotes.length > _maxFrameSamples) {
       int? oldest;
       for (final k in _buildNotes.keys) {
         if (oldest == null || k < oldest) oldest = k;
