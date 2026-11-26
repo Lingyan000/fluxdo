@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:material_ui/material_ui.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:common_ui/common_ui.dart';
@@ -34,6 +35,7 @@ import '../models/shortcut_binding.dart';
 import '../providers/image_ocr_provider.dart';
 import '../providers/preferences_provider.dart';
 import '../providers/shortcut_provider.dart';
+import '../providers/theme_provider.dart' show sharedPreferencesProvider;
 import '../providers/core_providers.dart';
 import '../services/toast_service.dart';
 import '../utils/platform_utils.dart';
@@ -334,9 +336,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   Uint8List? _pendingReplyImage;
   String? _pendingReplySource;
   final _showUI = ValueNotifier(true);
+  final _alwaysShowChrome = ValueNotifier(true);
   final _zoomScale = ValueNotifier<double>(1.0);
   final _liveOverlayMode = ValueNotifier<ImageLiveOverlayMode?>(null);
   final _liveOverlayKey = GlobalKey<ImageLiveOverlayState>();
+  final _desktopCanvasKey = GlobalKey();
+  final _thumbScrollController = ScrollController();
+  final Map<int, int> _pageRotations = {};
+  final Map<int, Size> _pageNaturalSizes = {};
+  final _naturalSizeNotifier = ValueNotifier<Size?>(null);
   int _liveOverlayPage = 0;
   Offset? _liveOverlayTap;
   VoidCallback? _liveOverlayTapMissed;
@@ -387,14 +395,16 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     double maxScale = 4.0,
     double animationMaxScale = 4.5,
   }) {
+    final effectiveMax = PlatformUtils.isDesktop ? 8.0 : maxScale;
+    final effectiveAnimMax = PlatformUtils.isDesktop ? 8.5 : animationMaxScale;
     final controller = _gestureControllers.putIfAbsent(
       index,
       () => ImageGestureController(
         config: GestureConfig(
           minScale: 0.9,
           animationMinScale: 0.7,
-          maxScale: maxScale,
-          animationMaxScale: animationMaxScale,
+          maxScale: effectiveMax,
+          animationMaxScale: effectiveAnimMax,
           speed: 1.0,
           inertialSpeed: 500.0,
           initialScale: 1.0,
@@ -526,10 +536,12 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 );
               },
       ),
-      child: ViewerHeroForeground(
-        foregroundBuilder: _buildHeroControls,
-        child: child,
-      ),
+      child: PlatformUtils.isDesktop
+          ? child
+          : ViewerHeroForeground(
+              foregroundBuilder: _buildHeroControls,
+              child: child,
+            ),
     );
   }
 
@@ -708,9 +720,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 发布 null 走 Hero 默认的布局盒子几何。
   void _publishExitFlightRect() {
     final details = _gestureControllers[currentIndex]?.details;
-    final rect = details?.destinationRect;
+    var rect = details?.destinationRect;
     final baseline = details?.rawDestinationRect;
     final displaced = _isDisplacedFromBaseline(rect, baseline);
+    if (displaced && rect != null && PlatformUtils.isDesktop) {
+      final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
+      if (canvasRo is RenderBox && canvasRo.hasSize) {
+        rect = rect.shift(canvasRo.localToGlobal(Offset.zero));
+      }
+    }
     final ctrl = HeroVisibilityController.instance;
     ctrl.setExitFlightRect(displaced ? rect : null);
     // 一并发布「此刻看得见的那部分图」:只喂盒子不够,飞行体还要靠它把
@@ -773,8 +791,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _observedGestureController?.removeListener(_onActiveGestureChanged);
     _dismissOffset.dispose();
     _showUI.dispose();
+    _alwaysShowChrome.dispose();
     _zoomScale.dispose();
     _liveOverlayMode.dispose();
+    _thumbScrollController.dispose();
+    _naturalSizeNotifier.dispose();
     _isSaving.dispose();
     _isSharing.dispose();
     _isEditing.dispose();
@@ -800,44 +821,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     _desktopIdleTimer?.cancel();
     _showUI.value = !_showUI.value;
     _updateSystemUI();
-  }
-
-  /// 桌面端仅在鼠标移入顶部关闭区、底部操作坞区或画廊左右切图边缘区时唤醒控制条；
-  /// 在画面中间浏览/阅读/移动鼠标时保持隐藏不打扰，避免底栏反复跳出遮挡图片。
-  void _onDesktopMouseHover(PointerHoverEvent event) {
-    if (!PlatformUtils.isDesktop) return;
-    final size = MediaQuery.sizeOf(context);
-    if (size.isEmpty) return;
-    final pos = event.position;
-    final isGallery = (widget.galleryImages?.length ?? 1) > 1;
-    final inBottomDockZone = pos.dy >= size.height - 92;
-    final inTopCloseZone =
-        pos.dy <= 68 && (isGallery || pos.dx >= size.width - 120);
-    final inSideArrowZone =
-        isGallery &&
-        _liveOverlayMode.value == null &&
-        pos.dy >= size.height * 0.25 &&
-        pos.dy <= size.height * 0.75 &&
-        (pos.dx <= 76 || pos.dx >= size.width - 76);
-
-    if (inBottomDockZone || inTopCloseZone || inSideArrowZone) {
-      if (!_showUI.value) {
-        _showUI.value = true;
-        _updateSystemUI();
-      }
-      _armDesktopIdleTimer();
-    } else if (_showUI.value && !_pointerOnChrome) {
-      // 鼠标已离开边缘区回到画面中央：若尚未启动倒计时则温和倒计时自动收起
-      _desktopIdleTimer ??= Timer(const Duration(milliseconds: 2200), () {
-        _desktopIdleTimer = null;
-        if (!mounted || _pointerOnChrome) return;
-        if (_liveOverlayKey.currentState?.hasSelection ?? false) return;
-        if (_showUI.value) {
-          _showUI.value = false;
-          _updateSystemUI();
-        }
-      });
-    }
   }
 
   void _armDesktopIdleTimer() {
@@ -890,6 +873,183 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   void _resetZoom() {
     _activeGestureController?.zoomTo(1.0);
+  }
+
+  int get _activePageIndex => widget.imageBytes != null ? 0 : currentIndex;
+
+  int _rotationForPage(int index) => ((_pageRotations[index] ?? 0) % 4 + 4) % 4;
+
+  void _syncNaturalSizeNotifier(Size? size) {
+    if (_naturalSizeNotifier.value == size) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final latest = _pageNaturalSizes[_activePageIndex];
+        if (_naturalSizeNotifier.value != latest) {
+          _naturalSizeNotifier.value = latest;
+        }
+      });
+    } else {
+      _naturalSizeNotifier.value = size;
+    }
+  }
+
+  void _recordNaturalSize(int pageIndex, Size size) {
+    if (size.isEmpty) return;
+    final prev = _pageNaturalSizes[pageIndex];
+    if (prev == size) return;
+    _pageNaturalSizes[pageIndex] = size;
+    if (PlatformUtils.isDesktop && mounted && pageIndex == _activePageIndex) {
+      _syncNaturalSizeNotifier(size);
+    }
+  }
+
+  bool _hasPreferencesProvider() {
+    try {
+      ref.read(sharedPreferencesProvider);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _readDirectTextSelect() {
+    if (!_hasPreferencesProvider()) return false;
+    return ref.read(preferencesProvider).imageDirectTextSelect;
+  }
+
+  AppLocalizations _l10n(BuildContext context) {
+    try {
+      return context.l10n;
+    } catch (_) {
+      return t;
+    }
+  }
+
+  void _rotateBy(int delta) {
+    final pageIdx = _activePageIndex;
+    final nextTurns = (_rotationForPage(pageIdx) + delta) % 4;
+    final normalized = (nextTurns + 4) % 4;
+    _activeGestureController?.reset();
+    setState(() {
+      _pageRotations[pageIdx] = normalized;
+      if (normalized != 0 && _liveOverlayMode.value != null) {
+        _liveOverlayMode.value = null;
+        _liveOverlayTap = null;
+        _liveOverlayTapMissed = null;
+      }
+      if (normalized != 0) {
+        _passiveOcrArmed = false;
+      }
+    });
+    _schedulePassiveOcrIfNeeded();
+  }
+
+  void _toggleActualSize() {
+    final controller = _activeGestureController;
+    if (controller == null) return;
+    final details = controller.details;
+    final rawDest = details?.rawDestinationRect;
+    final currentScale = details?.totalScale ?? 1.0;
+    final natural = _pageNaturalSizes[_activePageIndex];
+    if (rawDest == null || rawDest.isEmpty || natural == null || natural.isEmpty) {
+      controller.zoomTo(currentScale > 1.1 ? 1.0 : 2.0);
+      return;
+    }
+    final oddTurn = _rotationForPage(_activePageIndex).isOdd;
+    final effW = oddTurn ? natural.height : natural.width;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final physicalOneToOne = (effW / dpr) / rawDest.width;
+    final logicalOneToOne = effW / rawDest.width;
+    final target = (physicalOneToOne > 1.05 ? physicalOneToOne : logicalOneToOne)
+        .clamp(1.0, controller.config.maxScale);
+    if ((currentScale - target).abs() < 0.08 || target <= 1.05) {
+      _resetZoom();
+    } else {
+      controller.zoomTo(target);
+    }
+  }
+
+  void _zoomToFitWidth() {
+    final controller = _activeGestureController;
+    final details = controller?.details;
+    final rawDest = details?.rawDestinationRect;
+    final layoutRect = details?.layoutRect;
+    if (controller == null ||
+        rawDest == null ||
+        rawDest.isEmpty ||
+        layoutRect == null ||
+        layoutRect.isEmpty) {
+      return;
+    }
+    final currentScale = details?.totalScale ?? 1.0;
+    final target = (layoutRect.width / rawDest.width).clamp(
+      1.0,
+      controller.config.maxScale,
+    );
+    if ((currentScale - target).abs() < 0.08 || target <= 1.05) {
+      _resetZoom();
+    } else {
+      // 长图适配宽度时锚定到顶部，方便从头阅读。
+      controller.zoomTo(
+        target,
+        focalPoint: Offset(layoutRect.center.dx, rawDest.top),
+      );
+    }
+  }
+
+  void _scrollThumbnailTo(int index) {
+    if (!PlatformUtils.isDesktop || !_thumbScrollController.hasClients) return;
+    const itemExtent = 56.0; // 48px 缩略图 + 8px 间距
+    final viewport = _thumbScrollController.position.viewportDimension;
+    final target = (index * itemExtent - (viewport - itemExtent) / 2).clamp(
+      0.0,
+      _thumbScrollController.position.maxScrollExtent,
+    );
+    _thumbScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleDesktopCanvasTapUp(TapUpDetails details) {
+    if (_liveOverlayKey.currentState?.clearSelectionIfAny() ?? false) return;
+    if (_liveOverlayMode.value != null) return;
+    final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
+    if (canvasRo is! RenderBox || !canvasRo.hasSize) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final local = canvasRo.globalToLocal(details.globalPosition);
+    final canvasSize = canvasRo.size;
+    final ctrlDetails = _activeGestureController?.details;
+    final turns = _rotationForPage(_activePageIndex);
+
+    Rect? renderedRect;
+    if (turns == 0) {
+      renderedRect = ctrlDetails?.destinationRect ?? ctrlDetails?.rawDestinationRect;
+    } else {
+      final natural = _pageNaturalSizes[_activePageIndex];
+      if (natural != null && !natural.isEmpty) {
+        final rotatedSize = turns.isOdd
+            ? Size(natural.height, natural.width)
+            : natural;
+        final fitted = applyBoxFit(BoxFit.contain, rotatedSize, canvasSize);
+        final scale = ctrlDetails?.totalScale ?? 1.0;
+        renderedRect = Rect.fromCenter(
+          center: canvasSize.center(Offset.zero),
+          width: fitted.destination.width * scale,
+          height: fitted.destination.height * scale,
+        );
+      }
+    }
+
+    if (renderedRect != null && !renderedRect.isEmpty && renderedRect.contains(local)) {
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   Future<void> _copyActiveContent() async {
@@ -1086,7 +1246,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (!PlatformUtils.isDesktop) return;
     if (_liveOverlayMode.value != null ||
         _currentImageMayBeAnimated ||
-        !ref.read(preferencesProvider).imageDirectTextSelect) {
+        _rotationForPage(_activePageIndex) != 0 ||
+        !_readDirectTextSelect()) {
       if (_passiveOcrArmed && mounted) {
         setState(() => _passiveOcrArmed = false);
       }
@@ -1099,7 +1260,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           targetPage != currentIndex ||
           _liveOverlayMode.value != null ||
           _currentImageMayBeAnimated ||
-          !ref.read(preferencesProvider).imageDirectTextSelect) {
+          _rotationForPage(_activePageIndex) != 0 ||
+          !_readDirectTextSelect()) {
         return;
       }
       final ready = await ref.read(ocrModelStoreProvider).isReady();
@@ -1107,7 +1269,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           !ready ||
           targetPage != currentIndex ||
           _liveOverlayMode.value != null ||
-          !ref.read(preferencesProvider).imageDirectTextSelect) {
+          _rotationForPage(_activePageIndex) != 0 ||
+          !_readDirectTextSelect()) {
         return;
       }
       setState(() => _passiveOcrArmed = true);
@@ -1140,7 +1303,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     if (PlatformUtils.isDesktop ||
         _isEditing.value ||
         _liveOverlayMode.value != null ||
-        !ref.read(preferencesProvider).imageDirectTextSelect) {
+        !_readDirectTextSelect()) {
       openMenu();
       return;
     }
@@ -1172,6 +1335,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     VoidCallback? onTapMissed,
   }) {
     _passiveOcrTimer?.cancel();
+    final pageIdx = _activePageIndex;
     setState(() {
       if (_liveOverlayMode.value == mode &&
           _liveOverlayPage == currentIndex &&
@@ -1180,6 +1344,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         _liveOverlayTap = null;
         _liveOverlayTapMissed = null;
       } else {
+        if (_rotationForPage(pageIdx) != 0) {
+          _pageRotations[pageIdx] = 0;
+          _activeGestureController?.reset();
+        }
         _liveOverlayPage = currentIndex;
         _liveOverlayTap = tapPosition;
         _liveOverlayTapMissed = onTapMissed;
@@ -1538,8 +1706,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     }
   }
 
-  /// 桌面端包裹完整快捷键（Esc 逐层退出、左右方向键切图、+/- / 0 缩放、Space 对比原图、Cmd/Ctrl+C 复制）
-  /// 以及鼠标活动唤醒 / 静止自动淡出控制条。
+  /// 桌面端包裹完整快捷键（Esc 逐层退出、左右方向键切图、+/- / 0 / 1 / W 缩放、R / [ / ] 旋转、Space 对比原图、Cmd/Ctrl+C 复制）。
   Widget _wrapDesktopShortcuts(BuildContext context, Widget child) {
     if (!PlatformUtils.isDesktop) return child;
     return Consumer(
@@ -1548,43 +1715,51 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             .read(shortcutProvider.notifier)
             .getBinding(ShortcutAction.closeOverlay);
         final isMac = Platform.isMacOS;
-        return MouseRegion(
-          onHover: _onDesktopMouseHover,
-          child: CallbackShortcuts(
-            bindings: {
-              if (binding != null) binding.activator: _handleEscapeAction,
-              const SingleActivator(LogicalKeyboardKey.escape):
-                  _handleEscapeAction,
-              const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-                  _goToPage(currentIndex - 1),
-              const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-                  _goToPage(currentIndex + 1),
-              const SingleActivator(LogicalKeyboardKey.pageUp): () =>
-                  _goToPage(currentIndex - 1),
-              const SingleActivator(LogicalKeyboardKey.pageDown): () =>
-                  _goToPage(currentIndex + 1),
-              const SingleActivator(LogicalKeyboardKey.equal): () =>
-                  _stepZoom(0.5),
-              const SingleActivator(LogicalKeyboardKey.add): () =>
-                  _stepZoom(0.5),
-              const SingleActivator(LogicalKeyboardKey.numpadAdd): () =>
-                  _stepZoom(0.5),
-              const SingleActivator(LogicalKeyboardKey.minus): () =>
-                  _stepZoom(-0.5),
-              const SingleActivator(LogicalKeyboardKey.numpadSubtract): () =>
-                  _stepZoom(-0.5),
-              const SingleActivator(LogicalKeyboardKey.digit0): _resetZoom,
-              const SingleActivator(LogicalKeyboardKey.numpad0): _resetZoom,
-              const SingleActivator(LogicalKeyboardKey.space): () =>
-                  _liveOverlayKey.currentState?.toggleOriginalPeek(),
-              SingleActivator(
-                LogicalKeyboardKey.keyC,
-                meta: isMac,
-                control: !isMac,
-              ): () => unawaited(_copyActiveContent()),
-            },
-            child: Focus(autofocus: true, child: child),
-          ),
+        return CallbackShortcuts(
+          bindings: {
+            if (binding != null) binding.activator: _handleEscapeAction,
+            const SingleActivator(LogicalKeyboardKey.escape):
+                _handleEscapeAction,
+            const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                _goToPage(currentIndex - 1),
+            const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                _goToPage(currentIndex + 1),
+            const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                _goToPage(currentIndex - 1),
+            const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                _goToPage(currentIndex + 1),
+            const SingleActivator(LogicalKeyboardKey.equal): () =>
+                _stepZoom(0.5),
+            const SingleActivator(LogicalKeyboardKey.add): () => _stepZoom(0.5),
+            const SingleActivator(LogicalKeyboardKey.numpadAdd): () =>
+                _stepZoom(0.5),
+            const SingleActivator(LogicalKeyboardKey.minus): () =>
+                _stepZoom(-0.5),
+            const SingleActivator(LogicalKeyboardKey.numpadSubtract): () =>
+                _stepZoom(-0.5),
+            const SingleActivator(LogicalKeyboardKey.digit0): _resetZoom,
+            const SingleActivator(LogicalKeyboardKey.numpad0): _resetZoom,
+            const SingleActivator(LogicalKeyboardKey.digit1): _toggleActualSize,
+            const SingleActivator(LogicalKeyboardKey.numpad1):
+                _toggleActualSize,
+            const SingleActivator(LogicalKeyboardKey.digit2): _zoomToFitWidth,
+            const SingleActivator(LogicalKeyboardKey.keyW): _zoomToFitWidth,
+            const SingleActivator(LogicalKeyboardKey.keyR): () => _rotateBy(1),
+            const SingleActivator(LogicalKeyboardKey.keyR, shift: true): () =>
+                _rotateBy(-1),
+            const SingleActivator(LogicalKeyboardKey.bracketRight): () =>
+                _rotateBy(1),
+            const SingleActivator(LogicalKeyboardKey.bracketLeft): () =>
+                _rotateBy(-1),
+            const SingleActivator(LogicalKeyboardKey.space): () =>
+                _liveOverlayKey.currentState?.toggleOriginalPeek(),
+            SingleActivator(
+              LogicalKeyboardKey.keyC,
+              meta: isMac,
+              control: !isMac,
+            ): () => unawaited(_copyActiveContent()),
+          },
+          child: Focus(autofocus: true, child: child),
         );
       },
     );
@@ -1592,30 +1767,42 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   @override
   Widget build(BuildContext context) {
-    final directTextSelect = ref.watch(
-      preferencesProvider.select((p) => p.imageDirectTextSelect),
-    );
-    ref.listen<bool>(
-      preferencesProvider.select((p) => p.imageDirectTextSelect),
-      (prev, next) {
-        if (prev == next) return;
-        if (next) {
-          _schedulePassiveOcrIfNeeded();
-        } else {
-          _passiveOcrTimer?.cancel();
-          if (_passiveOcrArmed && mounted) {
-            setState(() => _passiveOcrArmed = false);
+    final hasPrefs = _hasPreferencesProvider();
+    final directTextSelect = hasPrefs
+        ? ref.watch(preferencesProvider.select((p) => p.imageDirectTextSelect))
+        : false;
+    if (hasPrefs) {
+      ref.listen<bool>(
+        preferencesProvider.select((p) => p.imageDirectTextSelect),
+        (prev, next) {
+          if (prev == next) return;
+          if (next) {
+            _schedulePassiveOcrIfNeeded();
+          } else {
+            _passiveOcrTimer?.cancel();
+            if (_passiveOcrArmed && mounted) {
+              setState(() => _passiveOcrArmed = false);
+            }
           }
-        }
-      },
-    );
+        },
+      );
+    }
     final hasExplicitOverlay = _liveOverlayMode.value != null;
     final hasPassiveOverlay =
         !hasExplicitOverlay &&
         PlatformUtils.isDesktop &&
         directTextSelect &&
         _passiveOcrArmed &&
-        !_currentImageMayBeAnimated;
+        !_currentImageMayBeAnimated &&
+        _rotationForPage(_activePageIndex) == 0;
+
+    if (PlatformUtils.isDesktop) {
+      return _buildDesktopViewer(
+        context,
+        hasExplicitOverlay: hasExplicitOverlay,
+        hasPassiveOverlay: hasPassiveOverlay,
+      );
+    }
 
     // 内存图片模式
     if (widget.imageBytes != null) {
@@ -1902,6 +2089,650 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     );
   }
 
+  /// 桌面端独立三分区布局：顶部轻量信息/关闭栏 + 中间纯净画布（不遮图、禁用下滑关闭、
+  /// 点击图片外空白暗幕关闭）+ 底部常驻工具栏与多图缩略图预览条（放大时依然可见）。
+  Widget _buildDesktopViewer(
+    BuildContext context, {
+    required bool hasExplicitOverlay,
+    required bool hasPassiveOverlay,
+  }) {
+    final isMemory = widget.imageBytes != null;
+    final images = isMemory
+        ? const <String>[]
+        : (widget.galleryImages ?? [widget.imageUrl!]);
+    final isGallery = !isMemory && images.length > 1;
+    final pageCount = isMemory ? 1 : images.length;
+    final hasHero =
+        !isMemory &&
+        (widget.heroTag != null ||
+            (isGallery && (widget.heroTags?.isNotEmpty ?? false)));
+    final onSave = isMemory ? _saveMemoryImage : _saveCurrentImage;
+    final onShare = !isMemory && widget.enableShare && ShareUtils.canShareFiles
+        ? _shareImage
+        : null;
+
+    return _wrapDesktopShortcuts(
+      context,
+      AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: _viewerScaffold(
+          hasHero: hasHero,
+          body: ColoredBox(
+            color: const Color(0xEE101216),
+            child: Column(
+              children: [
+                _buildDesktopTopBar(
+                  context,
+                  pageCount: pageCount,
+                  filename: isMemory ? null : _currentFilename,
+                ),
+                Expanded(
+                  child: _buildDesktopCanvas(
+                    context,
+                    isMemory: isMemory,
+                    images: images,
+                    isGallery: isGallery,
+                    hasExplicitOverlay: hasExplicitOverlay,
+                    hasPassiveOverlay: hasPassiveOverlay,
+                  ),
+                ),
+                _buildDesktopBottomBar(
+                  context,
+                  images: images,
+                  pageCount: pageCount,
+                  onSave: onSave,
+                  onShare: onShare,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopTopBar(
+    BuildContext context, {
+    required int pageCount,
+    String? filename,
+  }) {
+    final l10n = _l10n(context);
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final hasFilename = filename != null && filename.isNotEmpty;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF17191F),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, topPadding + 4, 12, 4),
+        child: SizedBox(
+          height: 40,
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    if (pageCount > 1)
+                      Container(
+                        margin: const EdgeInsets.only(right: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: ShapeDecoration(
+                          color: Colors.white.withValues(alpha: 0.10),
+                          shape: RoundedSuperellipseBorder(
+                            borderRadius: context.shapes.borderRadius(12),
+                          ),
+                        ),
+                        child: Text(
+                          '${currentIndex + 1} / $pageCount',
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (hasFilename)
+                      Flexible(
+                        child: Text(
+                          filename,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ValueListenableBuilder<Size?>(
+                      valueListenable: _naturalSizeNotifier,
+                      builder: (context, naturalSize, _) {
+                        if (naturalSize == null || naturalSize.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: EdgeInsets.only(left: hasFilename ? 10 : 0),
+                          child: Text(
+                            '${naturalSize.width.round()} × ${naturalSize.height.round()}',
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.54),
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Tooltip(
+                message: '${l10n.common_close} (Esc)',
+                child: SizedBox.square(
+                  dimension: 34,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _handleEscapeAction,
+                    style: IconButton.styleFrom(
+                      hoverColor: Colors.white.withValues(alpha: 0.12),
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: context.shapes.borderRadius(10),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Symbols.close_rounded,
+                      size: 19,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopCanvas(
+    BuildContext context, {
+    required bool isMemory,
+    required List<String> images,
+    required bool isGallery,
+    required bool hasExplicitOverlay,
+    required bool hasPassiveOverlay,
+  }) {
+    Widget content;
+    if (isMemory) {
+      content = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTapUp: _handleDesktopCanvasTapUp,
+        onSecondaryTapUp: (details) =>
+            _showBytesContextMenu(context, position: details.globalPosition),
+        child: RotatedBox(
+          quarterTurns: _rotationForPage(0),
+          child: GestureImageView(
+            image: MemoryImage(widget.imageBytes!),
+            controller: _obtainGestureController(0, inPageView: false),
+            fit: BoxFit.contain,
+            enableSlideOutPage: false,
+            onDoubleTap: (state) => handleDoubleTapZoom(state),
+            onImageLoaded: (imageInfo) {
+              _recordNaturalSize(
+                0,
+                Size(
+                  imageInfo.image.width.toDouble(),
+                  imageInfo.image.height.toDouble(),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } else if (!isGallery) {
+      final url = widget.imageUrl!;
+      content = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTapUp: _handleDesktopCanvasTapUp,
+        onSecondaryTapUp: (details) =>
+            _showContextMenu(context, position: details.globalPosition),
+        child: RotatedBox(
+          quarterTurns: _rotationForPage(0),
+          child: GestureImageView(
+            image: _clampedViewerProvider(url),
+            placeholder: widget.thumbnailUrl != null
+                ? _thumbnailProvider(widget.thumbnailUrl!)
+                : null,
+            controller: _obtainGestureController(0, inPageView: false),
+            fit: BoxFit.contain,
+            enableSlideOutPage: false,
+            heroBuilder: widget.heroTag != null
+                ? (child) => _buildViewerHero(
+                    tag: widget.heroTag!,
+                    thumbUrl: widget.thumbnailUrl,
+                    child: child,
+                  )
+                : null,
+            onDoubleTap: (state) => handleDoubleTapZoom(state, imageUrl: url),
+            onImageLoaded: (imageInfo) {
+              final size = Size(
+                imageInfo.image.width.toDouble(),
+                imageInfo.image.height.toDouble(),
+              );
+              cacheImageSize(url, size);
+              _recordNaturalSize(0, size);
+            },
+            failedBuilder: (context, _) => _buildSvgFallback(url),
+            progressBuilder: _buildImageLoadingProgress,
+          ),
+        ),
+      );
+    } else {
+      content = GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTapUp: _handleDesktopCanvasTapUp,
+        onSecondaryTapUp: (details) =>
+            _showContextMenu(context, position: details.globalPosition),
+        child: ExtendedImageGesturePageView.builder(
+          itemCount: images.length,
+          physics: _liveOverlayMode.value == ImageLiveOverlayMode.liveText
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(),
+          controller: _ensureGalleryPageController,
+          onPageChanged: (index) {
+            _gestureControllers[currentIndex]?.reset();
+            _pageDirection = index >= currentIndex ? 1 : -1;
+            _passiveOcrTimer?.cancel();
+            setState(() {
+              currentIndex = index;
+              _passiveOcrArmed = false;
+              if (_liveOverlayMode.value != null) {
+                _liveOverlayMode.value = null;
+                _liveOverlayTap = null;
+                _liveOverlayTapMissed = null;
+              }
+            });
+            _schedulePassiveOcrIfNeeded();
+            _bindObservedGestureController(_gestureControllers[index]);
+            _syncNaturalSizeNotifier(_pageNaturalSizes[index]);
+            _activeHeroPage.value = index;
+            _scrollThumbnailTo(index);
+            final newTag = _getHeroTagForIndex(index);
+            HeroVisibilityController.instance.setHiddenTag(newTag);
+            if (newTag != null) {
+              unawaited(
+                HeroVisibilityController.instance.ensureSourceVisible(newTag),
+              );
+            }
+            _preloadAdjacentImages();
+          },
+          itemBuilder: (context, index) {
+            final url = images[index];
+            final thumbUrl = _getThumbnailForIndex(index);
+            return ValueListenableBuilder<int>(
+              valueListenable: _activeHeroPage,
+              builder: (context, activePage, _) {
+                final heroTag = index == activePage
+                    ? _getHeroTagForIndex(index)
+                    : null;
+                return RotatedBox(
+                  quarterTurns: _rotationForPage(index),
+                  child: GestureImageView(
+                    image: _clampedViewerProvider(url),
+                    placeholder: thumbUrl != null
+                        ? _thumbnailProvider(thumbUrl)
+                        : null,
+                    controller: _obtainGestureController(
+                      index,
+                      inPageView: true,
+                    ),
+                    fit: BoxFit.contain,
+                    enableSlideOutPage: false,
+                    inPageView: true,
+                    heroBuilder: heroTag != null
+                        ? (child) => _buildViewerHero(
+                            tag: heroTag,
+                            thumbUrl: thumbUrl,
+                            child: child,
+                          )
+                        : null,
+                    onDoubleTap: (state) =>
+                        handleDoubleTapZoom(state, imageUrl: url),
+                    onImageLoaded: (imageInfo) {
+                      final size = Size(
+                        imageInfo.image.width.toDouble(),
+                        imageInfo.image.height.toDouble(),
+                      );
+                      cacheImageSize(url, size);
+                      _recordNaturalSize(index, size);
+                    },
+                    failedBuilder: (context, _) => _buildSvgFallback(url),
+                    progressBuilder: _buildImageLoadingProgress,
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      );
+    }
+
+    return ClipRect(
+      key: _desktopCanvasKey,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          content,
+          if (hasExplicitOverlay || hasPassiveOverlay)
+            _buildActiveLiveOverlay(passive: hasPassiveOverlay),
+          if (isGallery && !hasExplicitOverlay) ...[
+            if (currentIndex > 0)
+              Positioned(
+                left: 16,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: _ViewerGlassCircleButton(
+                    icon: Symbols.chevron_left_rounded,
+                    size: 42,
+                    iconSize: 24,
+                    onTap: () => _goToPage(currentIndex - 1),
+                  ),
+                ),
+              ),
+            if (currentIndex < images.length - 1)
+              Positioned(
+                right: 16,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: _ViewerGlassCircleButton(
+                    icon: Symbols.chevron_right_rounded,
+                    size: 42,
+                    iconSize: 24,
+                    onTap: () => _goToPage(currentIndex + 1),
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopBottomBar(
+    BuildContext context, {
+    required List<String> images,
+    required int pageCount,
+    required VoidCallback onSave,
+    VoidCallback? onShare,
+  }) {
+    final l10n = _l10n(context);
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final saveTooltip = PlatformUtils.isDesktop
+        ? l10n.share_saveImageToFile
+        : l10n.share_saveToGallery;
+
+    return ListenableBuilder(
+      listenable: _controlChanges,
+      builder: (context, _) {
+        final mode = _liveOverlayMode.value;
+        final zoomPercent = '${(_zoomScale.value * 100).round()}%';
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFF17191F),
+            border: Border(
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: bottomPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (pageCount > 1)
+                  _buildDesktopThumbnailStrip(context, images),
+                SizedBox(
+                  height: 48,
+                  width: double.infinity,
+                  child: Center(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.content_copy_rounded,
+                            tooltip: l10n.image_copyImage,
+                            onTap: () => unawaited(_copyActiveContent()),
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.edit_rounded,
+                            busy: _isEditing.value,
+                            tooltip: widget.onReply == null
+                                ? l10n.imageUpload_editImage
+                                : l10n.imageViewer_editReply,
+                            onTap: _editCurrentImage,
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.document_scanner_rounded,
+                            active: mode == ImageLiveOverlayMode.liveText,
+                            tooltip: l10n.imageViewer_recognizeText,
+                            onTap: _recognizeText,
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.translate_rounded,
+                            active: mode == ImageLiveOverlayMode.translate,
+                            tooltip: l10n.imageViewer_translateImage,
+                            onTap: _translateImage,
+                          ),
+                          _desktopBarDivider(),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.rotate_left_rounded,
+                            tooltip: l10n.imageViewer_rotateLeft,
+                            onTap: () => _rotateBy(-1),
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.rotate_right_rounded,
+                            tooltip: l10n.imageViewer_rotateRight,
+                            onTap: () => _rotateBy(1),
+                          ),
+                          _desktopBarDivider(),
+                          if (onShare != null)
+                            _desktopBarButton(
+                              context,
+                              icon: Symbols.share_rounded,
+                              busy: _isSharing.value,
+                              tooltip: l10n.common_shareImage,
+                              onTap: onShare,
+                            ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.save_alt_rounded,
+                            busy: _isSaving.value,
+                            tooltip: saveTooltip,
+                            onTap: onSave,
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.more_vert_rounded,
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).moreButtonTooltip,
+                            onTap: _showTools,
+                          ),
+                          _desktopBarDivider(),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.remove_rounded,
+                            iconSize: 18,
+                            tooltip: l10n.imageViewer_zoomOut,
+                            onTap: () => _stepZoom(-0.5),
+                          ),
+                          _desktopTextPillButton(
+                            context,
+                            label: zoomPercent,
+                            tooltip: l10n.imageViewer_fitWindow,
+                            onTap: _resetZoom,
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.add_rounded,
+                            iconSize: 18,
+                            tooltip: l10n.imageViewer_zoomIn,
+                            onTap: () => _stepZoom(0.5),
+                          ),
+                          const SizedBox(width: 2),
+                          _desktopTextPillButton(
+                            context,
+                            label: '1:1',
+                            tooltip: l10n.imageViewer_actualSize,
+                            onTap: _toggleActualSize,
+                          ),
+                          _desktopBarButton(
+                            context,
+                            icon: Symbols.fit_screen_rounded,
+                            iconSize: 18,
+                            tooltip: l10n.imageViewer_fitWidth,
+                            onTap: _zoomToFitWidth,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopThumbnailStrip(
+    BuildContext context,
+    List<String> images,
+  ) {
+    final radius = context.shapes.borderRadius(8);
+    return Container(
+      height: 60,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: Center(
+        child: SingleChildScrollView(
+          controller: _thumbScrollController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < images.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(right: i == images.length - 1 ? 0 : 8),
+                  child: _DesktopThumbTile(
+                    provider: _thumbnailProvider(
+                      _getThumbnailForIndex(i) ?? images[i],
+                    ),
+                    selected: i == currentIndex,
+                    borderRadius: radius,
+                    onTap: () => _goToPage(i),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _desktopBarDivider() => Container(
+    width: 1,
+    height: 18,
+    margin: const EdgeInsets.symmetric(horizontal: 6),
+    color: Colors.white.withValues(alpha: 0.14),
+  );
+
+  Widget _desktopBarButton(
+    BuildContext context, {
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+    bool busy = false,
+    bool active = false,
+    double iconSize = 19,
+  }) {
+    final radius = context.shapes.borderRadius(10);
+    final button = SizedBox.square(
+      dimension: 36,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        onPressed: busy ? null : onTap,
+        style: IconButton.styleFrom(
+          backgroundColor: active
+              ? Colors.white.withValues(alpha: 0.18)
+              : Colors.transparent,
+          hoverColor: Colors.white.withValues(alpha: 0.12),
+          shape: RoundedSuperellipseBorder(borderRadius: radius),
+        ),
+        icon: busy
+            ? const LoadingSpinner(size: 15, color: Colors.white)
+            : Icon(icon, size: iconSize, color: Colors.white),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
+  }
+
+  Widget _desktopTextPillButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+    String? tooltip,
+  }) {
+    final radius = context.shapes.borderRadius(10);
+    final button = InkWell(
+      onTap: onTap,
+      borderRadius: radius,
+      hoverColor: Colors.white.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
+  }
+
   Widget _buildActiveLiveOverlay({required bool passive}) {
     final mode = passive
         ? ImageLiveOverlayMode.liveText
@@ -1909,20 +2740,22 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     final url = widget.imageBytes == null ? _currentImageUrl : null;
     final pageIdx = widget.imageBytes != null ? 0 : currentIndex;
     final sourceKey = widget.imageBytes != null ? 'memory' : '$pageIdx:$url';
+    final isDesktop = PlatformUtils.isDesktop;
     return ImageLiveOverlay(
       key: _liveOverlayKey,
       sourceKey: sourceKey,
       mode: mode,
       passive: passive,
+      keepDockVisibleWhenZoomed: isDesktop,
       loadImage: (token) => _loadToolImage(url, token),
       gestureController: _gestureControllers[pageIdx],
-      chromeVisible: _showUI,
+      chromeVisible: isDesktop ? _alwaysShowChrome : _showUI,
       initialTapGlobalPosition: passive ? null : _liveOverlayTap,
       onInitialTapMissed: passive ? null : _liveOverlayTapMissed,
       onClose: _closeLiveOverlay,
       onModeChanged: (next) => setState(() => _liveOverlayMode.value = next),
-      onChromeHoverChanged: _setPointerOnChrome,
-      onRequestToggleChrome: _toggleUI,
+      onChromeHoverChanged: isDesktop ? null : _setPointerOnChrome,
+      onRequestToggleChrome: isDesktop ? null : _toggleUI,
     );
   }
 
@@ -1985,6 +2818,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     int pageCount = 1,
     String? filename,
   }) {
+    final l10n = _l10n(context);
+    final saveTooltip = PlatformUtils.isDesktop
+        ? l10n.share_saveImageToFile
+        : l10n.share_saveToGallery;
     final padding = MediaQuery.paddingOf(context);
     final pageSize = MediaQuery.sizeOf(context);
     final isZoomed = _zoomScale.value > 1.02;
@@ -2043,7 +2880,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       onExit: (_) => _setPointerOnChrome(false),
                       child: _ViewerGlassCircleButton(
                         icon: Symbols.close_rounded,
-                        tooltip: S.current.common_close,
+                        tooltip: l10n.common_close,
                         onTap: _handleEscapeAction,
                       ),
                     ),
@@ -2141,31 +2978,31 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                                 _editCurrentImage,
                                 busy: _isEditing.value,
                                 tooltip: widget.onReply == null
-                                    ? S.current.imageUpload_editImage
-                                    : S.current.imageViewer_editReply,
+                                    ? l10n.imageUpload_editImage
+                                    : l10n.imageViewer_editReply,
                               ),
                               _dockButton(
                                 Symbols.document_scanner_rounded,
                                 _recognizeText,
-                                tooltip: S.current.imageViewer_recognizeText,
+                                tooltip: l10n.imageViewer_recognizeText,
                               ),
                               _dockButton(
                                 Symbols.translate_rounded,
                                 _translateImage,
-                                tooltip: S.current.imageViewer_translateImage,
+                                tooltip: l10n.imageViewer_translateImage,
                               ),
                               if (onShare != null)
                                 _dockButton(
                                   Symbols.share_rounded,
                                   onShare,
                                   busy: _isSharing.value,
-                                  tooltip: S.current.common_shareImage,
+                                  tooltip: l10n.common_shareImage,
                                 ),
                               _dockButton(
                                 Symbols.save_alt_rounded,
                                 onSave,
                                 busy: _isSaving.value,
-                                tooltip: ImageSaveUtils.actionLabel,
+                                tooltip: saveTooltip,
                               ),
                               _dockButton(
                                 Symbols.more_vert_rounded,
@@ -2291,27 +3128,29 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
               _translateImage();
             },
           ),
-          const Divider(height: 1),
-          Consumer(
-            builder: (ctx, ref, _) {
-              final enabled = ref.watch(
-                preferencesProvider.select((p) => p.imageDirectTextSelect),
-              );
-              return SwitchListTile(
-                secondary: const Icon(Symbols.text_fields_rounded),
-                title: Text(S.current.imageViewer_directTextSelect),
-                subtitle: Text(
-                  PlatformUtils.isDesktop
-                      ? S.current.imageViewer_directTextSelectDescDesktop
-                      : S.current.imageViewer_directTextSelectDescMobile,
-                ),
-                value: enabled,
-                onChanged: (v) => ref
-                    .read(preferencesProvider.notifier)
-                    .setImageDirectTextSelect(v),
-              );
-            },
-          ),
+          if (_hasPreferencesProvider()) ...[
+            const Divider(height: 1),
+            Consumer(
+              builder: (ctx, ref, _) {
+                final enabled = ref.watch(
+                  preferencesProvider.select((p) => p.imageDirectTextSelect),
+                );
+                return M3eSwitchListTile(
+                  secondary: const Icon(Symbols.text_fields_rounded),
+                  title: Text(S.current.imageViewer_directTextSelect),
+                  subtitle: Text(
+                    PlatformUtils.isDesktop
+                        ? S.current.imageViewer_directTextSelectDescDesktop
+                        : S.current.imageViewer_directTextSelectDescMobile,
+                  ),
+                  value: enabled,
+                  onChanged: (v) => ref
+                      .read(preferencesProvider.notifier)
+                      .setImageDirectTextSelect(v),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
@@ -2616,5 +3455,78 @@ class _ViewerGlassCircleButton extends StatelessWidget {
       ),
     );
     return tooltip != null ? Tooltip(message: tooltip!, child: pill) : pill;
+  }
+}
+
+/// 桌面端多图底部缩略图项：选中时白框高亮，非选中微淡，悬停平滑提亮。
+class _DesktopThumbTile extends StatefulWidget {
+  const _DesktopThumbTile({
+    required this.provider,
+    required this.selected,
+    required this.borderRadius,
+    required this.onTap,
+  });
+
+  final ImageProvider provider;
+  final bool selected;
+  final BorderRadius borderRadius;
+  final VoidCallback onTap;
+
+  @override
+  State<_DesktopThumbTile> createState() => _DesktopThumbTileState();
+}
+
+class _DesktopThumbTileState extends State<_DesktopThumbTile> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final opacity = widget.selected ? 1.0 : (_hovered ? 0.88 : 0.56);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedOpacity(
+          opacity: opacity,
+          duration: const Duration(milliseconds: 140),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: ShapeDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              shape: RoundedSuperellipseBorder(
+                borderRadius: widget.borderRadius,
+                side: BorderSide(
+                  color: widget.selected
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: _hovered ? 0.35 : 0.14),
+                  width: widget.selected ? 2 : 1,
+                ),
+              ),
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(widget.selected ? 2 : 1),
+              child: ClipRSuperellipse(
+                borderRadius: widget.borderRadius,
+                child: Image(
+                  image: widget.provider,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.low,
+                  errorBuilder: (_, _, _) => const Center(
+                    child: Icon(
+                      Symbols.image_rounded,
+                      size: 18,
+                      color: Colors.white38,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

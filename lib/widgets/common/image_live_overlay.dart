@@ -51,6 +51,7 @@ class ImageLiveOverlay extends ConsumerStatefulWidget {
     required this.onModeChanged,
     this.sourceKey = '',
     this.passive = false,
+    this.keepDockVisibleWhenZoomed = false,
     this.onChromeHoverChanged,
     this.onRequestToggleChrome,
     this.initialTapGlobalPosition,
@@ -70,6 +71,9 @@ class ImageLiveOverlay extends ConsumerStatefulWidget {
   /// 静默直选模式（桌面端后台识别）：不展示底栏、错误条与识别高亮框，
   /// 仅在识别完成后提供悬停 I-beam 光标与直接拖选文字，点击/双击完全透传。
   final bool passive;
+
+  /// 放大时是否仍保持底部模式胶囊可见（桌面端保持可见，移动端缩放时自动隐去）。
+  final bool keepDockVisibleWhenZoomed;
   final ValueChanged<bool>? onChromeHoverChanged;
   final VoidCallback? onRequestToggleChrome;
   final Offset? initialTapGlobalPosition;
@@ -1189,7 +1193,9 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
               builder: (context, chromeShown, _) {
                 final visible =
                     _hasBlockingStatus ||
-                    (chromeShown && _activeDrag == null && !isZoomed);
+                    (chromeShown &&
+                        _activeDrag == null &&
+                        (widget.keepDockVisibleWhenZoomed || !isZoomed));
                 return Positioned(
                   left: 16,
                   right: 16,
