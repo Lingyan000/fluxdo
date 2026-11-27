@@ -85,7 +85,12 @@ mixin _UsersMixin on _DiscourseServiceBase {
     final response = await _dio.get(
       '/u/$username/card.json',
       queryParameters: {'include_post_count_for': ?includePostCountFor},
-      options: isSilent ? Options(extra: const {'isSilent': true}) : null,
+      options: Options(
+        extra: {
+          FluxRequestKeys.allowCoalescing: true,
+          if (isSilent) FluxRequestKeys.isSilent: true,
+        },
+      ),
     );
     final data = response.data as Map<String, dynamic>;
     return User.fromJson(data['user'] ?? data);

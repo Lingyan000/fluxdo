@@ -10,14 +10,22 @@ mixin _NotificationsMixin on _DiscourseServiceBase {
   Future<NotificationListResponse> getRecentNotifications({
     List<String>? types,
     bool silent = false,
+    bool allowCoalescing = false,
   }) async {
-    final response = await _dio.get('/notifications', queryParameters: {
-      'recent': true,
-      'limit': 30,
-      'bump_last_seen_reviewable': true,
-      if (types != null && types.isNotEmpty) 'filter_by_types': types.join(','),
-      if (silent || (types != null && types.isNotEmpty)) 'silent': true,
-    });
+    final response = await _dio.get(
+      '/notifications',
+      queryParameters: {
+        'recent': true,
+        'limit': 30,
+        'bump_last_seen_reviewable': true,
+        if (types != null && types.isNotEmpty)
+          'filter_by_types': types.join(','),
+        if (silent || (types != null && types.isNotEmpty)) 'silent': true,
+      },
+      options: allowCoalescing
+          ? Options(extra: const {FluxRequestKeys.allowCoalescing: true})
+          : null,
+    );
     return NotificationListResponse.fromJson(response.data);
   }
 
@@ -28,6 +36,7 @@ mixin _NotificationsMixin on _DiscourseServiceBase {
   Future<NotificationListResponse> getNotifications({
     int? offset,
     String? filter,
+    bool allowCoalescing = false,
   }) async {
     final queryParams = <String, dynamic>{
       'limit': 60,
@@ -42,6 +51,9 @@ mixin _NotificationsMixin on _DiscourseServiceBase {
     final response = await _dio.get(
       '/notifications',
       queryParameters: queryParams,
+      options: allowCoalescing
+          ? Options(extra: const {FluxRequestKeys.allowCoalescing: true})
+          : null,
     );
     return NotificationListResponse.fromJson(response.data);
   }

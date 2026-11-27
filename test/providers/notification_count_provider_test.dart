@@ -51,6 +51,7 @@ class _NotificationsService extends Fake implements DiscourseService {
   Future<NotificationListResponse> getRecentNotifications({
     List<String>? types,
     bool silent = false,
+    bool allowCoalescing = false,
   }) async {
     if (types == null) {
       recentSilent.add(silent);
@@ -69,6 +70,7 @@ class _NotificationsService extends Fake implements DiscourseService {
   Future<NotificationListResponse> getNotifications({
     int? offset,
     String? filter,
+    bool allowCoalescing = false,
   }) async {
     if (offset != null) return nextHistoryPage.future;
     final page = response(read: markedAll);

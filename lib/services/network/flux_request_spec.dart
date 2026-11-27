@@ -72,6 +72,12 @@ class FluxRequestKeys {
   /// 绕过并发/速率调度器(框架内部请求,避免与调用方争抢槽位造成死锁)。
   static const String skipScheduler = 'skipScheduler';
 
+  /// 允许在途 GET 请求单飞合并（Opt-In，默认关闭）。
+  ///
+  /// 仅用于初始化加载、静态元数据等多入口并发读接口；MessageBus 推送刷新、
+  /// 手动下拉刷新和强实时拉取不开启，避免搭车到更早时间点的服务端快照。
+  static const String allowCoalescing = 'allowCoalescing';
+
   /// 关闭自动恢复(限流等待、瞬态重试)。
   ///
   /// 用于自己管调度的链路:长轮询要拿原始 429 读 Retry-After 自行退避;
@@ -144,6 +150,8 @@ extension type const FluxRequestSpec(Map<String, dynamic> _extra) {
       _extra[FluxRequestKeys.skipWebViewAdapter] == true;
 
   bool get skipScheduler => _extra[FluxRequestKeys.skipScheduler] == true;
+
+  bool get allowCoalescing => _extra[FluxRequestKeys.allowCoalescing] == true;
 
   /// 是否关闭自动恢复。
   ///

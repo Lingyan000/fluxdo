@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../constants.dart';
 import 'deadline_dio.dart';
+import 'request_coalescer.dart';
 import 'adapters/platform_adapter.dart';
 import 'cookie/app_cookie_manager.dart';
 import 'cookie/cookie_jar_service.dart';
@@ -36,6 +37,7 @@ class DiscourseDio {
     bool enableCfChallenge = true,
     bool enableCookies = true,
     bool enableNetworkLog = true,
+    bool enableCoalescing = true,
   }) {
     final dio = DeadlineDio(
       BaseOptions(
@@ -50,6 +52,7 @@ class DiscourseDio {
             status != null && status >= 200 && status < 400,
       ),
       callTimeout,
+      enableCoalescing ? RequestCoalescer() : null,
     );
 
     // 大响应(>50KB)的 JSON 解码移入 isolate:话题列表/详情等大 JSON

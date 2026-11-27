@@ -11,7 +11,11 @@ class RecentNotificationsNotifier extends AsyncNotifier<List<DiscourseNotificati
     final service = ref.read(discourseServiceProvider);
     final silent = _reloadSilently;
     _reloadSilently = false;
-    final response = await service.getRecentNotifications(silent: silent);
+    final response = await service.getRecentNotifications(
+      silent: silent,
+      // 仅首次加载允许合并，已读写入后的静默重载不搭车旧快照
+      allowCoalescing: !silent,
+    );
     return response.notifications;
   }
 
@@ -157,16 +161,22 @@ class CategorizedNotificationsNotifier
   final NotificationPanelTab tab;
   Set<int> _typeIds = const {};
   List<String> _typeNames = const [];
+  bool _reloadingAfterMutation = false;
 
   @override
   Future<List<DiscourseNotification>> build() async {
+    final reloading = _reloadingAfterMutation;
+    _reloadingAfterMutation = false;
     final siteTypes = await ref.watch(siteNotificationTypesProvider.future);
     _typeNames = tab.typeNames(siteTypes) ?? const [];
     _typeIds = {for (final name in _typeNames) ?siteTypes[name]};
     if (_typeNames.isEmpty) return const [];
     final response = await ref
         .read(discourseServiceProvider)
-        .getRecentNotifications(types: _typeNames);
+        .getRecentNotifications(
+          types: _typeNames,
+          allowCoalescing: !reloading,
+        );
     return response.notifications;
   }
 
@@ -201,6 +211,7 @@ class CategorizedNotificationsNotifier
   void markAllLocalRead() {
     if (state.isLoading) {
       // 旧请求可能返回标记前的快照；分类重查为 silent，不推进已看位置。
+      _reloadingAfterMutation = true;
       ref.invalidateSelf(asReload: true);
       return;
     }

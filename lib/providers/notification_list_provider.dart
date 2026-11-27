@@ -31,10 +31,15 @@ class NotificationListNotifier
         keyExtractor: (n) => n.id,
       );
 
-  Future<PagedPage<DiscourseNotification>> _loadFirstPage() async {
+  Future<PagedPage<DiscourseNotification>> _loadFirstPage({
+    bool allowCoalescing = false,
+  }) async {
     final requestRef = ref;
     final service = requestRef.read(discourseServiceProvider);
-    final response = await service.getNotifications(filter: filter.query);
+    final response = await service.getNotifications(
+      filter: filter.query,
+      allowCoalescing: allowCoalescing,
+    );
     if (requestRef.mounted) _totalRows = response.totalRowsNotifications;
     return PagedPage(
       items: response.notifications,
@@ -46,13 +51,13 @@ class NotificationListNotifier
   Future<List<DiscourseNotification>> build() async {
     resetPagingState();
     final requestRef = ref;
-    final page = await _loadFirstPage();
+    final page = await _loadFirstPage(allowCoalescing: true);
     return requestRef.mounted ? completePagedRefresh(page) : page.items;
   }
 
-  /// 刷新列表
+  /// 刷新列表（手动下拉刷新不合并在途旧请求，确保拿到最新快照）
   Future<void> refresh() async {
-    await runPagedRefresh(_loadFirstPage);
+    await runPagedRefresh(() => _loadFirstPage(allowCoalescing: false));
   }
 
   /// 加载更多

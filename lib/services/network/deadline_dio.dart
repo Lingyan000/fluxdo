@@ -5,14 +5,16 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 
 import 'flux_request_spec.dart';
+import 'request_coalescer.dart';
 
 /// 与 OkHttp callTimeout 一样，以逻辑调用而非单次传输为边界。
 /// 放在 fetch 外层，才能涵盖拦截器排队、重定向和恢复层的递归 fetch。
 /// 默认前台读取单独计算 CF 验证等待时间，显式指定的时限覆盖整次调用。
 class DeadlineDio extends DioForNative {
-  DeadlineDio([super.options, this.defaultCallTimeout]);
+  DeadlineDio([super.options, this.defaultCallTimeout, this.coalescer]);
 
   final Duration? defaultCallTimeout;
+  final RequestCoalescer? coalescer;
 
   static const _contextKey = '_logicalCallDeadline';
   static const _timingKey = '_logicalCallTiming';
@@ -37,6 +39,18 @@ class DeadlineDio extends DioForNative {
 
   @override
   Future<Response<T>> fetch<T>(RequestOptions requestOptions) async {
+    final activeCoalescer = coalescer;
+    if (activeCoalescer != null) {
+      return activeCoalescer.run<T>(
+        requestOptions,
+        defaultValidateStatus: options.validateStatus,
+        execute: (leaderOptions) => _fetchDirect<dynamic>(leaderOptions),
+      );
+    }
+    return _fetchDirect<T>(requestOptions);
+  }
+
+  Future<Response<T>> _fetchDirect<T>(RequestOptions requestOptions) async {
     final previous = requestOptions.extra[_timingKey] as _CallTiming?;
     final ownsTiming = previous == null || previous.finished;
     final timing = ownsTiming ? _CallTiming() : previous;
@@ -154,7 +168,11 @@ class DeadlineDio extends DioForNative {
     HttpClientAdapter? httpClientAdapter,
     Transformer? transformer,
   }) {
-    final dio = DeadlineDio(options ?? this.options, defaultCallTimeout);
+    final dio = DeadlineDio(
+      options ?? this.options,
+      defaultCallTimeout,
+      coalescer != null ? RequestCoalescer() : null,
+    );
     dio.interceptors.removeImplyContentTypeInterceptor();
     dio.interceptors.addAll(interceptors ?? this.interceptors);
     dio.httpClientAdapter = httpClientAdapter ?? this.httpClientAdapter;
