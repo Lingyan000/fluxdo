@@ -245,6 +245,36 @@ void main() {
     );
     expect(thumbImages, findsNWidgets(3));
 
+    // 左右切换按钮位于底部缩略图条两侧，不悬浮遮挡中间画布
+    final canvasRect = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(ImageViewerPage),
+            matching: find.byType(ClipRect),
+          )
+          .first,
+    );
+    final prevBtn = find.widgetWithIcon(
+      IconButton,
+      Symbols.chevron_left_rounded,
+    );
+    final nextBtn = find.widgetWithIcon(
+      IconButton,
+      Symbols.chevron_right_rounded,
+    );
+    expect(prevBtn, findsOneWidget);
+    expect(nextBtn, findsOneWidget);
+    expect(tester.getRect(prevBtn).top, greaterThanOrEqualTo(canvasRect.bottom));
+    expect(tester.getRect(nextBtn).top, greaterThanOrEqualTo(canvasRect.bottom));
+
+    // 通过底部下一张/上一张按钮切换图片
+    await tester.tap(nextBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.tap(prevBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 3'), findsOneWidget);
+
     // 点击第 3 张缩略图直接跳到 3 / 3
     await tester.tap(thumbImages.at(2));
     await tester.pumpAndSettle();

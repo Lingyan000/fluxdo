@@ -2685,36 +2685,6 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             ),
             if (hasExplicitOverlay || hasPassiveOverlay)
               _buildActiveLiveOverlay(passive: hasPassiveOverlay),
-            if (isGallery && !hasExplicitOverlay) ...[
-            if (currentIndex > 0)
-              Positioned(
-                left: 16,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: _ViewerGlassCircleButton(
-                    icon: Symbols.chevron_left_rounded,
-                    size: 42,
-                    iconSize: 24,
-                    onTap: () => _goToPage(currentIndex - 1),
-                  ),
-                ),
-              ),
-            if (currentIndex < images.length - 1)
-              Positioned(
-                right: 16,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: _ViewerGlassCircleButton(
-                    icon: Symbols.chevron_right_rounded,
-                    size: 42,
-                    iconSize: 24,
-                    onTap: () => _goToPage(currentIndex + 1),
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -2883,6 +2853,9 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     List<String> images,
   ) {
     final radius = context.shapes.borderRadius(8);
+    final materialL10n = MaterialLocalizations.of(context);
+    final hasPrev = currentIndex > 0;
+    final hasNext = currentIndex < images.length - 1;
     return Container(
       height: 60,
       width: double.infinity,
@@ -2891,28 +2864,54 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
         ),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Center(
-        child: SingleChildScrollView(
-          controller: _thumbScrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < images.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(right: i == images.length - 1 ? 0 : 8),
-                  child: _DesktopThumbTile(
-                    provider: _thumbnailProvider(
-                      _getThumbnailForIndex(i) ?? images[i],
-                    ),
-                    selected: i == currentIndex,
-                    borderRadius: radius,
-                    onTap: () => _goToPage(i),
-                  ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _desktopBarButton(
+              context,
+              icon: Symbols.chevron_left_rounded,
+              iconSize: 22,
+              tooltip: '${materialL10n.previousPageTooltip} (←)',
+              onTap: hasPrev ? () => _goToPage(currentIndex - 1) : null,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: SingleChildScrollView(
+                controller: _thumbScrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < images.length; i++)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          right: i == images.length - 1 ? 0 : 8,
+                        ),
+                        child: _DesktopThumbTile(
+                          provider: _thumbnailProvider(
+                            _getThumbnailForIndex(i) ?? images[i],
+                          ),
+                          selected: i == currentIndex,
+                          borderRadius: radius,
+                          onTap: () => _goToPage(i),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            _desktopBarButton(
+              context,
+              icon: Symbols.chevron_right_rounded,
+              iconSize: 22,
+              tooltip: '${materialL10n.nextPageTooltip} (→)',
+              onTap: hasNext ? () => _goToPage(currentIndex + 1) : null,
+            ),
+          ],
         ),
       ),
     );
@@ -2928,18 +2927,19 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   Widget _desktopBarButton(
     BuildContext context, {
     required IconData icon,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
     String? tooltip,
     bool busy = false,
     bool active = false,
     double iconSize = 19,
   }) {
     final radius = context.shapes.borderRadius(10);
+    final enabled = !busy && onTap != null;
     final button = SizedBox.square(
       dimension: 36,
       child: IconButton(
         padding: EdgeInsets.zero,
-        onPressed: busy ? null : onTap,
+        onPressed: enabled ? onTap : null,
         style: IconButton.styleFrom(
           backgroundColor: active
               ? Colors.white.withValues(alpha: 0.18)
@@ -2949,7 +2949,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         ),
         icon: busy
             ? const LoadingSpinner(size: 15, color: Colors.white)
-            : Icon(icon, size: iconSize, color: Colors.white),
+            : Icon(
+                icon,
+                size: iconSize,
+                color: Colors.white.withValues(alpha: enabled ? 1.0 : 0.28),
+              ),
       ),
     );
     return tooltip != null ? Tooltip(message: tooltip, child: button) : button;
