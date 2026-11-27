@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:app_icons/app_icons.dart';
 import 'package:extended_image_lite/extended_image_lite.dart';
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +15,9 @@ import 'package:fluxdo/services/discourse_cache_manager.dart';
 import 'package:fluxdo/services/local_notification_service.dart'
     show navigatorKey;
 import 'package:fluxdo/services/ocr/ocr_model_store.dart';
+import 'package:fluxdo/utils/hero_visibility_controller.dart';
 import 'package:fluxdo/utils/platform_utils.dart';
+import 'package:fluxdo/widgets/common/hero_image.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +25,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 class _NotReadyModelStore extends Fake implements OcrModelStore {
   @override
   Future<bool> isReady() async => false;
+}
+
+class _PendingImageProvider extends ImageProvider<_PendingImageProvider> {
+  const _PendingImageProvider();
+
+  @override
+  Future<_PendingImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_PendingImageProvider>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _PendingImageProvider key,
+    ImageDecoderCallback decode,
+  ) => OneFrameImageStreamCompleter(Completer<ImageInfo>().future);
 }
 
 void main() {
@@ -305,6 +323,171 @@ void main() {
     expect(Navigator.of(hostContext).canPop(), isFalse);
     await tester.pumpAndSettle();
     expect(find.byType(ImageViewerPage), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('GestureImageView 有缩略图占位时延迟显露进度环，避免本地解码瞬间闪黑圈', (
+    tester,
+  ) async {
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 40, height: 40)),
+    );
+    final controller = ImageGestureController(config: GestureConfig());
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GestureImageView(
+            image: const _PendingImageProvider(),
+            placeholder: MemoryImage(png),
+            controller: controller,
+            progressDelay: const Duration(milliseconds: 220),
+            progressBuilder: (_, _) =>
+                const SizedBox(key: Key('delayed-progress')),
+          ),
+        ),
+      ),
+    );
+
+    // 打开初期（< 220ms）不闪出进度环
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('delayed-progress')), findsNothing);
+
+    // 超过 220ms 仍未加载完成时再平滑显露进度环
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byKey(const Key('delayed-progress')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('点击打开图片首帧 Hero 未起飞前源图保持可见，不出现一帧黑洞闪烁', (tester) async {
+    PlatformUtils.debugDesktopOverride = true;
+    addTearDown(() => PlatformUtils.debugDesktopOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 700);
+    addTearDown(tester.view.reset);
+
+    const url = 'https://example.test/hero-no-flash.png';
+    const heroTag = 'hero-no-flash-tag';
+    final png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 240, height: 120)),
+    );
+    final dir = Directory.systemTemp.createTempSync('fluxdo-hero-no-flash-');
+    const pathChannel = MethodChannel('plugins.flutter.io/path_provider');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      pathChannel,
+      (_) async => dir.path,
+    );
+    await tester.runAsync(() async {
+      await BlobImageCache.configureForTesting(root: dir);
+      await BlobImageCache.write(BlobImageCache.originalBucket, url, png);
+      await BlobImageCache.write(BlobImageCache.contentBucket, url, png);
+    });
+    addTearDown(() async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        pathChannel,
+        null,
+      );
+      await BlobImageCache.configureForTesting();
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+
+    final showSource = ValueNotifier(false);
+    addTearDown(showSource.dispose);
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          ocrModelStoreProvider.overrideWithValue(_NotReadyModelStore()),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: Builder(
+              builder: (context) {
+                hostContext = context;
+                // 订阅 ModalRoute，模拟真实帖子页在 push 首帧因 isCurrent 变化触发重建
+                ModalRoute.of(context);
+                return Scaffold(
+                  body: Center(
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: showSource,
+                      builder: (context, ready, _) {
+                        if (!ready) return const SizedBox.shrink();
+                        return SizedBox(
+                          width: 240,
+                          height: 120,
+                          child: HeroImage(
+                            heroTag: heroTag,
+                            onTap: () => ImageViewerPage.open(
+                              context,
+                              url,
+                              heroTag: heroTag,
+                              thumbnailUrl: url,
+                            ),
+                            child: Image(
+                              image: discourseImageProvider(
+                                url,
+                                bucket: BlobImageCache.contentBucket,
+                              ),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {
+      await precacheImage(
+        ResizeImage(
+          discourseImageProvider(url, bucket: BlobImageCache.originalBucket),
+          width: 3000,
+          height: 3000,
+          policy: ResizeImagePolicy.fit,
+        ),
+        hostContext,
+      );
+      await precacheImage(
+        discourseImageProvider(url, bucket: BlobImageCache.contentBucket),
+        hostContext,
+      );
+    });
+    showSource.value = true;
+    await tester.pump();
+
+    await tester.tap(find.byType(HeroImage));
+    // 首帧（HeroController 尚未在 post-frame 挂出飞行体之前）：源图 Opacity 必须仍为 1.0
+    await tester.pump();
+    final frame0Opacity = tester.widget<Opacity>(
+      find.descendant(
+        of: find.byType(HeroImage),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(
+      frame0Opacity.opacity,
+      1.0,
+      reason: 'push 首帧飞行体尚未挂出，源图不能提前变透明闪出黑洞',
+    );
+
+    // 下一帧起飞后，源端才标记隐藏并交由飞行体接管
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(HeroVisibilityController.instance.hiddenHeroTag, heroTag);
+
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageViewerPage), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

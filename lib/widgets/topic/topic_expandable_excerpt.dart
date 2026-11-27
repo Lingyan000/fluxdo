@@ -256,6 +256,8 @@ class _TopicExpandableExcerptState
                   context,
                   images[index],
                   galleryImages: images,
+                  thumbnailUrl: images[index],
+                  thumbnailUrls: images,
                   initialIndex: index,
                 ),
                 child: Stack(

@@ -35,6 +35,7 @@ import '../services/auth_session.dart';
 import '../services/discourse_cache_manager.dart';
 import '../services/emoji_handler.dart';
 import '../services/highlighter_service.dart';
+import '../services/image_decode_spec_memo.dart';
 import '../services/svg_image_cache.dart';
 import '../theme/app_colors.dart';
 import '../services/media_compat_service.dart';
@@ -1859,6 +1860,13 @@ class _MermaidBlockState extends State<_MermaidBlock> {
     final imageUrl = onInk
         ? _buildMermaidInkUrl(widget.code, isDark)
         : _buildKrokiUrl(widget.code, isDark);
+    final previewProvider = ImageDecodeSpecMemo.remember(
+      imageUrl,
+      BlobImageProvider(
+        imageUrl,
+        bucket: BlobImageCache.externalBucket,
+      ),
+    );
     return ContentTapTarget(
       cursor: imageZoomCursor,
       onTap: () {
@@ -1868,16 +1876,18 @@ class _MermaidBlockState extends State<_MermaidBlock> {
         final hdUrl = onInk
             ? _buildMermaidInkUrl(widget.code, isDark, width: 2000)
             : imageUrl;
-        ImageViewerPage.open(context, hdUrl, enableShare: true);
+        ImageViewerPage.open(
+          context,
+          hdUrl,
+          thumbnailUrl: imageUrl,
+          enableShare: true,
+        );
       },
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Image(
           key: ValueKey('$imageUrl-$_retryCount'),
-          image: BlobImageProvider(
-            imageUrl,
-            bucket: BlobImageCache.externalBucket,
-          ),
+          image: previewProvider,
           fit: BoxFit.contain,
           gaplessPlayback: true,
           frameBuilder: (context, child, frame, wasSync) {

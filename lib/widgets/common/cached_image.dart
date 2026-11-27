@@ -5,6 +5,7 @@ import 'package:native_animated_image/native_animated_image.dart'
     show NativeAnimatedImageProvider;
 
 import '../../services/discourse_cache_manager.dart';
+import '../../services/image_decode_spec_memo.dart';
 import '../../services/sticker_thumbnail_provider.dart';
 
 /// 统一的缓存网络图片组件
@@ -97,7 +98,10 @@ class CachedImage extends StatelessWidget {
         ? (memCacheWidth ?? memCacheHeight)!
         : null;
 
-    final provider = _resolveProvider(hasTargetSize, targetSize);
+    final provider = ImageDecodeSpecMemo.remember(
+      url,
+      _resolveProvider(hasTargetSize, targetSize),
+    );
 
     return Image(
       image: provider,

@@ -124,8 +124,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   static CurvedAnimation _buildRouteFade(Animation<double> animation) {
     return CurvedAnimation(
       parent: animation,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-      reverseCurve: const Interval(0.4, 1.0, curve: Curves.easeIn),
+      curve: const Interval(0.0, 0.72, curve: Curves.easeOut),
+      reverseCurve: const Interval(0.35, 1.0, curve: Curves.easeIn),
     );
   }
 
@@ -202,10 +202,14 @@ class ImageViewerPage extends ConsumerStatefulWidget {
       heroTag = null;
       heroTags = null;
     }
+    final hasRouteHero =
+        heroTag != null || (heroTags?.isNotEmpty ?? false);
     final reply = ImageReplyScope.resolve(context);
     final route = InteractionPageRouteBuilder<String>(
       opaque: false,
       barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 250),
+      reverseTransitionDuration: const Duration(milliseconds: 190),
       pageBuilder: (context, animation, secondaryAnimation) {
         return ImageViewerPage(
           imageUrl: imageUrl,
@@ -235,11 +239,12 @@ class ImageViewerPage extends ConsumerStatefulWidget {
             animation,
             secondaryAnimation,
             child,
-            // 透明路由用 fade:滑出对「下方要透出内容」的查看器没有
-            // 意义。手势期同样是这个 fade(由手势进度驱动),与按钮
-            // 返回一致 —— 单一分支原则。
-            transitionBuilder: (_, animation, _, child) =>
-                _RouteFade(animation: animation, child: child),
+            // 透明路由用 fade（无 Hero 入口叠加轻盈微缩放）；手势期同样由手势进度驱动。
+            transitionBuilder: (_, animation, _, child) => _RouteFade(
+              animation: animation,
+              enableScale: !hasRouteHero,
+              child: child,
+            ),
           ),
     );
     final markdown = await Navigator.push<String>(context, route);
@@ -254,6 +259,8 @@ class ImageViewerPage extends ConsumerStatefulWidget {
       InteractionPageRouteBuilder(
         opaque: false,
         barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 220),
+        reverseTransitionDuration: const Duration(milliseconds: 170),
         pageBuilder: (context, animation, secondaryAnimation) {
           return ImageViewerPage(imageBytes: bytes);
         },
@@ -263,8 +270,11 @@ class ImageViewerPage extends ConsumerStatefulWidget {
               animation,
               secondaryAnimation,
               child,
-              transitionBuilder: (_, animation, _, child) =>
-                  _RouteFade(animation: animation, child: child),
+              transitionBuilder: (_, animation, _, child) => _RouteFade(
+                animation: animation,
+                enableScale: true,
+                child: child,
+              ),
             ),
       ),
     );
@@ -274,17 +284,22 @@ class ImageViewerPage extends ConsumerStatefulWidget {
   ConsumerState<ImageViewerPage> createState() => _ImageViewerPageState();
 }
 
-/// 承载查看器整页淡入淡出的壳:唯一职责是**跨帧持有那一份
-/// [CurvedAnimation]**,见 [ImageViewerPage._buildRouteFade] 的说明。
+/// 承载查看器整页淡入淡出（无 Hero 入口可选叠加轻微缩放）的壳:唯一职责是
+/// **跨帧持有那一份 [CurvedAnimation]**,见 [ImageViewerPage._buildRouteFade]。
 ///
 /// 转场树每帧重建,但同一路由的 [animation] 对象恒定,故本 State 只在
 /// animation 换了对象时才重建曲线(didUpdateWidget),其余帧一直复用同
 /// 一份 —— `_curveDirection` 得以跨帧存活,换向不再断崖。
 class _RouteFade extends StatefulWidget {
-  const _RouteFade({required this.animation, required this.child});
+  const _RouteFade({
+    required this.animation,
+    required this.child,
+    this.enableScale = false,
+  });
 
   final Animation<double> animation;
   final Widget child;
+  final bool enableScale;
 
   @override
   State<_RouteFade> createState() => _RouteFadeState();
@@ -292,32 +307,126 @@ class _RouteFade extends StatefulWidget {
 
 class _RouteFadeState extends State<_RouteFade> {
   late CurvedAnimation _opacity;
+  late CurvedAnimation _scaleCurve;
+  late Animation<double> _scale;
+
+  void _initAnimations() {
+    _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+    _scaleCurve = CurvedAnimation(
+      parent: widget.animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _scale = Tween<double>(begin: 0.94, end: 1.0).animate(_scaleCurve);
+  }
+
+  void _disposeAnimations() {
+    _opacity.dispose();
+    _scaleCurve.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
-    _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+    _initAnimations();
   }
 
   @override
   void didUpdateWidget(_RouteFade oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.animation, widget.animation)) {
-      _opacity.dispose();
-      _opacity = ImageViewerPage._buildRouteFade(widget.animation);
+      _disposeAnimations();
+      _initAnimations();
     }
   }
 
   @override
   void dispose() {
     // CurvedAnimation 在 parent 上挂了 status 监听,不摘会一直吊着路由动画
-    _opacity.dispose();
+    _disposeAnimations();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) =>
-      FadeTransition(opacity: _opacity, child: widget.child);
+  Widget build(BuildContext context) {
+    final faded = FadeTransition(opacity: _opacity, child: widget.child);
+    if (!widget.enableScale) return faded;
+    return ScaleTransition(scale: _scale, child: faded);
+  }
+}
+
+/// 桌面端顶/底工具栏的轻量分层位移动画（跨帧持有曲线，换向无跳变）。
+class _DesktopChromeSlide extends StatefulWidget {
+  const _DesktopChromeSlide({
+    required this.animation,
+    required this.beginOffset,
+    required this.child,
+  });
+
+  final Animation<double>? animation;
+  final Offset beginOffset;
+  final Widget child;
+
+  @override
+  State<_DesktopChromeSlide> createState() => _DesktopChromeSlideState();
+}
+
+class _DesktopChromeSlideState extends State<_DesktopChromeSlide> {
+  CurvedAnimation? _curve;
+  Animation<Offset>? _offset;
+
+  void _bind() {
+    final parent = widget.animation;
+    if (parent == null) {
+      _curve = null;
+      _offset = null;
+      return;
+    }
+    _curve = CurvedAnimation(
+      parent: parent,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _offset = Tween<Offset>(
+      begin: widget.beginOffset,
+      end: Offset.zero,
+    ).animate(_curve!);
+  }
+
+  void _unbind() {
+    _curve?.dispose();
+    _curve = null;
+    _offset = null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(_DesktopChromeSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.animation, widget.animation) ||
+        oldWidget.beginOffset != widget.beginOffset) {
+      _unbind();
+      _bind();
+    }
+  }
+
+  @override
+  void dispose() {
+    _unbind();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final offset = _offset;
+    if (offset == null) return widget.child;
+    return SlideTransition(position: offset, child: widget.child);
+  }
 }
 
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
@@ -524,6 +633,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                 if (ro is RenderBox && ro.hasSize && ro.size.height > 0) {
                   sourceAspect = ro.size.width / ro.size.height;
                 }
+                final Widget pushFallback =
+                    direction == HeroFlightDirection.push
+                    ? (fromContext.widget as Hero).child
+                    : child;
                 return CoverContainFlightImage(
                   image: _thumbnailProvider(thumbUrl),
                   animation: needsProgress
@@ -536,7 +649,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                   // 突变成完整图(聊天气泡因 clamp 夹高最明显)
                   coverSource: coverSource,
                   sourceAspect: sourceAspect,
-                  fallback: child,
+                  fallback: pushFallback,
                 );
               },
       ),
@@ -583,6 +696,18 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       return discourseImageProvider(url, bucket: BlobImageCache.avatarBucket);
     }
     return discourseImageProvider(url);
+  }
+
+  /// 为主图解析首帧零闪烁占位 provider：优先用显式传入的缩略图 URL，
+  /// 未传入时也尝试从 [ImageDecodeSpecMemo] 同步复用源图已解码缓存。
+  ImageProvider? _resolvePlaceholderProvider(String mainUrl, String? thumbUrl) {
+    if (thumbUrl != null) return _thumbnailProvider(thumbUrl);
+    return ImageDecodeSpecMemo.peek(mainUrl);
+  }
+
+  String? _resolveFlightThumbUrl(String mainUrl, String? thumbUrl) {
+    if (thumbUrl != null) return thumbUrl;
+    return ImageDecodeSpecMemo.peek(mainUrl) != null ? mainUrl : null;
   }
 
   /// 下滑关闭判定:惯性投影终点法。
@@ -641,10 +766,22 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     initDoubleTapZoom();
     // 预加载相邻图片
     _preloadAdjacentImages();
-    // 静默设置初始隐藏的图片（不触发通知，因为此时可能正在构建）
-    HeroVisibilityController.instance.setHiddenTagSilent(
-      _getHeroTagForIndex(currentIndex),
-    );
+    // 必须推迟到首帧 post-frame 再隐藏源端 Hero：
+    // Flutter 的 HeroController 在首帧 post-frame 才把飞行体挂进 Overlay；
+    // 若在 initState 同步写入 hiddenHeroTag，首帧 fromRoute 因 isCurrent 变化
+    // 重建时 HeroImage 会立刻把源图 Opacity 置 0，此时飞行体与查看器都尚未出现，
+    // 表现为点开瞬间源图位置闪出一帧黑洞。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final status = _route?.animation?.status;
+      if (status == AnimationStatus.reverse ||
+          status == AnimationStatus.dismissed) {
+        return;
+      }
+      HeroVisibilityController.instance.setHiddenTag(
+        _getHeroTagForIndex(currentIndex),
+      );
+    });
     _schedulePassiveOcrIfNeeded();
   }
 
@@ -723,23 +860,36 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
   /// 的 `calculateFinalDestinationRect`),两者近似相等即视为未偏离,
   /// 发布 null 走 Hero 默认的布局盒子几何。
   void _publishExitFlightRect() {
-    final details = _gestureControllers[currentIndex]?.details;
+    final details = _gestureControllers[_activePageIndex]?.details;
     var rect = details?.destinationRect;
     final baseline = details?.rawDestinationRect;
     final displaced = _isDisplacedFromBaseline(rect, baseline);
-    if (displaced && rect != null && PlatformUtils.isDesktop) {
-      final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
-      if (canvasRo is RenderBox && canvasRo.hasSize) {
-        rect = rect.shift(canvasRo.localToGlobal(Offset.zero));
+    Size viewportSize = MediaQuery.sizeOf(context);
+    Rect? visibleFraction;
+    if (displaced && rect != null) {
+      if (PlatformUtils.isDesktop) {
+        final layout = details?.layoutRect;
+        final localRect = (layout != null && !layout.isEmpty)
+            ? rect.shift(-layout.topLeft)
+            : rect;
+        final canvasRo = _desktopCanvasKey.currentContext?.findRenderObject();
+        if (canvasRo is RenderBox && canvasRo.hasSize) {
+          viewportSize = canvasRo.size;
+          visibleFraction = visibleFractionOf(localRect, viewportSize);
+          rect = localRect.shift(canvasRo.localToGlobal(Offset.zero));
+        } else {
+          visibleFraction = visibleFractionOf(localRect, viewportSize);
+          rect = localRect;
+        }
+      } else {
+        visibleFraction = visibleFractionOf(rect, viewportSize);
       }
     }
     final ctrl = HeroVisibilityController.instance;
     ctrl.setExitFlightRect(displaced ? rect : null);
     // 一并发布「此刻看得见的那部分图」:只喂盒子不够,飞行体还要靠它把
     // 取景框张回完整图。详见 HeroVisibilityController.exitVisibleFraction。
-    ctrl.setExitVisibleFraction(
-      displaced ? visibleFractionOf(rect!, MediaQuery.sizeOf(context)) : null,
-    );
+    ctrl.setExitVisibleFraction(displaced ? visibleFraction : null);
   }
 
   /// 把「整张图在屏上占据的矩形」与视口求交,换算成**相对全图的归一化窗口**。
@@ -1996,9 +2146,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       // content/original bucket，且源页面已经把 content 版本
                       // 解码进缓存。旧代码按 URL 相等直接丢掉占位，弱网下只剩
                       // 空黑画布等待 original bucket 下载。
-                      placeholder: widget.thumbnailUrl != null
-                          ? _thumbnailProvider(widget.thumbnailUrl!)
-                          : null,
+                      placeholder: _resolvePlaceholderProvider(
+                        widget.imageUrl!,
+                        widget.thumbnailUrl,
+                      ),
                       controller: _obtainGestureController(
                         0,
                         inPageView: false,
@@ -2008,7 +2159,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                       heroBuilder: widget.heroTag != null
                           ? (child) => _buildViewerHero(
                               tag: widget.heroTag!,
-                              thumbUrl: widget.thumbnailUrl,
+                              thumbUrl: _resolveFlightThumbUrl(
+                                widget.imageUrl!,
+                                widget.thumbnailUrl,
+                              ),
                               child: child,
                             )
                           : null,
@@ -2103,9 +2257,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
                             return GestureImageView(
                               image: _clampedViewerProvider(url),
-                              placeholder: thumbUrl != null
-                                  ? _thumbnailProvider(thumbUrl)
-                                  : null,
+                              placeholder: _resolvePlaceholderProvider(
+                                url,
+                                thumbUrl,
+                              ),
                               controller: _obtainGestureController(
                                 index,
                                 inPageView: true, // 必须为 true
@@ -2116,7 +2271,10 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                               heroBuilder: heroTag != null
                                   ? (child) => _buildViewerHero(
                                       tag: heroTag,
-                                      thumbUrl: thumbUrl,
+                                      thumbUrl: _resolveFlightThumbUrl(
+                                        url,
+                                        thumbUrl,
+                                      ),
                                       child: child,
                                     )
                                   : null,
@@ -2191,10 +2349,14 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             color: const Color(0xEE101216),
             child: Column(
               children: [
-                _buildDesktopTopBar(
-                  context,
-                  pageCount: pageCount,
-                  filename: isMemory ? null : _currentFilename,
+                _DesktopChromeSlide(
+                  animation: _route?.animation,
+                  beginOffset: const Offset(0, -0.14),
+                  child: _buildDesktopTopBar(
+                    context,
+                    pageCount: pageCount,
+                    filename: isMemory ? null : _currentFilename,
+                  ),
                 ),
                 Expanded(
                   child: _buildDesktopCanvas(
@@ -2206,12 +2368,16 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     hasPassiveOverlay: hasPassiveOverlay,
                   ),
                 ),
-                _buildDesktopBottomBar(
-                  context,
-                  images: images,
-                  pageCount: pageCount,
-                  onSave: onSave,
-                  onShare: onShare,
+                _DesktopChromeSlide(
+                  animation: _route?.animation,
+                  beginOffset: const Offset(0, 0.14),
+                  child: _buildDesktopBottomBar(
+                    context,
+                    images: images,
+                    pageCount: pageCount,
+                    onSave: onSave,
+                    onShare: onShare,
+                  ),
                 ),
               ],
             ),
@@ -2369,24 +2535,23 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       );
     } else if (!isGallery) {
       final url = widget.imageUrl!;
+      final turns = _rotationForPage(0);
       content = GestureDetector(
         behavior: HitTestBehavior.translucent,
         onSecondaryTapUp: (details) =>
             _showContextMenu(context, position: details.globalPosition),
         child: RotatedBox(
-          quarterTurns: _rotationForPage(0),
+          quarterTurns: turns,
           child: GestureImageView(
             image: _clampedViewerProvider(url),
-            placeholder: widget.thumbnailUrl != null
-                ? _thumbnailProvider(widget.thumbnailUrl!)
-                : null,
+            placeholder: _resolvePlaceholderProvider(url, widget.thumbnailUrl),
             controller: _obtainGestureController(0, inPageView: false),
             fit: BoxFit.contain,
             enableSlideOutPage: false,
-            heroBuilder: widget.heroTag != null
+            heroBuilder: widget.heroTag != null && turns == 0
                 ? (child) => _buildViewerHero(
                     tag: widget.heroTag!,
-                    thumbUrl: widget.thumbnailUrl,
+                    thumbUrl: _resolveFlightThumbUrl(url, widget.thumbnailUrl),
                     child: child,
                   )
                 : null,
@@ -2448,16 +2613,15 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             return ValueListenableBuilder<int>(
               valueListenable: _activeHeroPage,
               builder: (context, activePage, _) {
-                final heroTag = index == activePage
+                final turns = _rotationForPage(index);
+                final heroTag = index == activePage && turns == 0
                     ? _getHeroTagForIndex(index)
                     : null;
                 return RotatedBox(
-                  quarterTurns: _rotationForPage(index),
+                  quarterTurns: turns,
                   child: GestureImageView(
                     image: _clampedViewerProvider(url),
-                    placeholder: thumbUrl != null
-                        ? _thumbnailProvider(thumbUrl)
-                        : null,
+                    placeholder: _resolvePlaceholderProvider(url, thumbUrl),
                     controller: _obtainGestureController(
                       index,
                       inPageView: true,
@@ -2468,7 +2632,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
                     heroBuilder: heroTag != null
                         ? (child) => _buildViewerHero(
                             tag: heroTag,
-                            thumbUrl: thumbUrl,
+                            thumbUrl: _resolveFlightThumbUrl(url, thumbUrl),
                             child: child,
                           )
                         : null,
