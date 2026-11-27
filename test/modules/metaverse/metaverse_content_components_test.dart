@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluxdo/widgets/common/skeleton.dart';
 import 'package:fluxdo/widgets/layout/immersive_insets_hold.dart';
 import 'package:fluxdo/utils/dialog_utils.dart';
+import 'package:fluxdo/utils/platform_utils.dart';
 import 'package:fluxdo/providers/theme_provider.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/pages/image_viewer_page.dart';
@@ -364,7 +365,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('查看器重试再次经过插件加载器，拒绝时不回退到公共 URL 下载', (tester) async {
+  for (final desktop in [false, true]) {
+  testWidgets('查看器重试再次经过插件加载器，拒绝时不回退到公共 URL 下载 desktop=$desktop', (tester) async {
+    PlatformUtils.debugDesktopOverride = desktop;
+    addTearDown(() => PlatformUtils.debugDesktopOverride = null);
     final pending = Completer<Uint8List>();
     var allowed = false;
     imageLoader = (_) {
@@ -384,6 +388,7 @@ void main() {
     await tester.tap(find.text(S.current.common_retry));
     await tester.pumpAndSettle();
     expect(requests, hasLength(2));
+    expect(find.byType(ImageViewerPage), findsOneWidget);
     expect(find.text(S.current.common_retry), findsOneWidget);
     allowed = true;
     await tester.runAsync(
@@ -414,6 +419,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+  }
 
   testWidgets('Markdown 图片也复用公共查看器，预览开关关闭时不响应点击', (tester) async {
     validImage = true;

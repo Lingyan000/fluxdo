@@ -468,6 +468,7 @@ class _DesktopChromeSlideState extends State<_DesktopChromeSlide> {
 class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
     with TickerProviderStateMixin, DoubleTapZoomMixin, WidgetsBindingObserver {
   _ViewerMemoryImage? _memoryImage;
+  final _memoryRetryKey = GlobalKey();
   bool _memoryLoading = false;
   bool get _usesMemory =>
       widget.imageBytes != null || widget.imageLoader != null;
@@ -519,6 +520,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
         if (widget.imageLoader != null) ...[
           const SizedBox(height: 12),
           TextButton.icon(
+            key: _memoryRetryKey,
             style: TextButton.styleFrom(foregroundColor: Colors.white),
             onPressed: _loadMemoryImage,
             icon: const Icon(Symbols.refresh_rounded),
@@ -1320,7 +1322,11 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
 
   void _handleDesktopCanvasPointerDown(PointerDownEvent event) {
     _desktopActivePointers.add(event.pointer);
-    if (_desktopActivePointers.length > 1) {
+    // 原始指针监听不参与按钮的手势竞争；重试点击不能同时触发暗幕退出。
+    final retry = _memoryRetryKey.currentContext?.findRenderObject();
+    final onRetry = retry is RenderBox && retry.hasSize &&
+        (Offset.zero & retry.size).contains(retry.globalToLocal(event.position));
+    if (_desktopActivePointers.length > 1 || onRetry) {
       _desktopBackdropPointer = null;
       _desktopBackdropDownGlobal = null;
       return;
@@ -2679,6 +2685,8 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
             fit: BoxFit.contain,
             enableSlideOutPage: false,
             onDoubleTap: (state) => handleDoubleTapZoom(state),
+            failedBuilder: (_, _) => _buildMemoryError(),
+            progressBuilder: _buildImageLoadingProgress,
             onImageLoaded: (imageInfo) {
               _recordNaturalSize(
                 0,
