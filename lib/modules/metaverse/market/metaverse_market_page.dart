@@ -405,7 +405,7 @@ class _MarketDetailState extends ConsumerState<MetaverseMarketDetailPage> {
               trailing: const Icon(Symbols.expand_more_rounded),
               title: Text(!entry.publisherPreviewAvailable ? l.metaverse_publisherPending :
                 entry.publisherKeyFingerprint == null ? l.metaverse_publisherUnsigned : l.metaverse_publisherSigned),
-              subtitle: entry.publisherKeyFingerprint == null ? null : Text('${entry.publisherKeyFingerprint!.substring(0,8)}…${entry.publisherKeyFingerprint!.substring(58)}', maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: entry.publisherKeyFingerprint == null ? null : Text('${entry.publisherKeyFingerprint!.substring(0,4)}…${entry.publisherKeyFingerprint!.substring(60)}', maxLines: 1, overflow: TextOverflow.ellipsis),
               children: [ListTile(subtitle: SelectableText(entry.publisherKeyFingerprint ?? l.metaverse_previewVerification))],
             ),
             ExpansionTile(title: Text(l.metaverse_permissionPreview), trailing: const Icon(Symbols.expand_more_rounded),
