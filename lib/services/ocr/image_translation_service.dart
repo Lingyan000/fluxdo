@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -5,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:ai_model_manager/ai_model_manager.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/painting.dart';
 import 'package:image/image.dart' as img;
 
@@ -84,6 +87,91 @@ abstract final class ImageTranslationService {
   static final _listStartPattern = RegExp(
     r'^(?:[•·▪▸►◆◇●○\-–—\*]\s+|\d{1,3}[.)、．]\s*|[(（][0-9a-zA-Z一二三四五六七八九十]+[)）]\s*|[一二三四五六七八九十]+、\s*)',
   );
+
+  static const _maxCacheEntries = 512;
+  static final LinkedHashMap<String, String> _blockCache = LinkedHashMap();
+
+  /// 清空图片翻译块级缓存（供单元测试或主动重置使用）。
+  @visibleForTesting
+  static void clearCache() => _blockCache.clear();
+
+  static String? _readCache(String key) {
+    final hit = _blockCache.remove(key);
+    if (hit != null) _blockCache[key] = hit;
+    return hit;
+  }
+
+  static void _writeCache(String key, String value) {
+    _blockCache.remove(key);
+    _blockCache[key] = value;
+    while (_blockCache.length > _maxCacheEntries) {
+      _blockCache.remove(_blockCache.keys.first);
+    }
+  }
+
+  /// 快速判断单个文本块是否已经属于目标语言（用于混合语言截图跳过无效送翻）。
+  static bool isAlreadyTargetLanguage(String text, String targetCode) {
+    var han = 0;
+    var kana = 0;
+    var hangul = 0;
+    var cyrillic = 0;
+    var latin = 0;
+
+    for (final unit in text.codeUnits) {
+      if ((unit >= 0x4E00 && unit <= 0x9FFF) ||
+          (unit >= 0x3400 && unit <= 0x4DBF)) {
+        han++;
+      } else if ((unit >= 0x3040 && unit <= 0x30FF) ||
+          (unit >= 0x31F0 && unit <= 0x31FF)) {
+        kana++;
+      } else if ((unit >= 0xAC00 && unit <= 0xD7AF) ||
+          (unit >= 0x1100 && unit <= 0x11FF)) {
+        hangul++;
+      } else if (unit >= 0x0400 && unit <= 0x04FF) {
+        cyrillic++;
+      } else if ((unit >= 0x41 && unit <= 0x5A) ||
+          (unit >= 0x61 && unit <= 0x7A) ||
+          (unit >= 0xC0 && unit <= 0x024F)) {
+        latin++;
+      }
+    }
+    final letters = han + kana + hangul + cyrillic + latin;
+    if (letters == 0) return true;
+
+    switch (targetCode) {
+      case 'zh-CN':
+      case 'zh-TW':
+        return han > 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'en':
+        return latin > 0 &&
+            han == 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            cyrillic == 0;
+      case 'ja':
+        return kana > 0 &&
+            hangul == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'ko':
+        return hangul > 0 &&
+            kana == 0 &&
+            cyrillic == 0 &&
+            latin / letters < 0.35;
+      case 'ru':
+        return cyrillic > 0 &&
+            han == 0 &&
+            kana == 0 &&
+            hangul == 0 &&
+            latin / letters < 0.35;
+      default:
+        return false;
+    }
+  }
 
   /// 将 OCR 行聚合成适合原位翻译的区块（优先复用 line2para 视觉段落分组，未就绪时回退本地几何排版）。
   static List<ImageTextBlock> groupBlocks(OcrResult ocr) {
@@ -421,6 +509,11 @@ abstract final class ImageTranslationService {
       ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
 
   /// 批量翻译所有文本块并合并配色，返回可直接用于覆盖绘制的 [TranslatedTextBlock] 列表。
+  ///
+  /// 性能优化：
+  /// - 混合语言截图自动跳过已是目标语言的块（若全图皆为中文则保留，兼容繁简互转）；
+  /// - 命中块级 LRU 缓存的文本 0ms 即时返回；
+  /// - 多批次最多 3 路并发，且支持通过 [onPartialBlocks] 随批次或流式逐行渐进绘制译文。
   static Future<List<TranslatedTextBlock>> translateImage({
     required Uint8List imageBytes,
     required OcrResult ocr,
@@ -432,14 +525,33 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    void Function(List<TranslatedTextBlock> partialBlocks)? onPartialBlocks,
   }) async {
     final blocks = groupBlocks(ocr);
     if (blocks.isEmpty) return const [];
 
-    // 一次后台解码同时采样所有块及多行块内各原行的背景色，实现梯度/卡片背景下的柔和贴合。
-    final allRects = <Rect>[for (final b in blocks) b.bounds];
+    // 1. 过滤已是目标语言的块：
+    //    若目标为中/简/繁且整张图全部都是中文（用户刻意做繁简转换），则不过滤；
+    //    在社区常见的中英/中日混排截图中，直接跳过已是目标语言的块可省去 40%~70% 翻译量。
+    final targetMatch = [
+      for (final b in blocks)
+        isAlreadyTargetLanguage(b.originalText, targetCode),
+    ];
+    final isChineseTarget = targetCode == 'zh-CN' || targetCode == 'zh-TW';
+    final skipSameLanguage =
+        !(isChineseTarget && targetMatch.every((matched) => matched));
+
+    final candidateIndices = <int>[
+      for (var i = 0; i < blocks.length; i++)
+        if (!skipSameLanguage || !targetMatch[i]) i,
+    ];
+    if (candidateIndices.isEmpty) return const [];
+
+    // 2. 一次后台解码同时采样全部候选块及多行块内各原行的背景色。
+    final allRects = <Rect>[for (final i in candidateIndices) blocks[i].bounds];
     final rowRanges = <({int start, int count})>[];
-    for (final b in blocks) {
+    for (final i in candidateIndices) {
+      final b = blocks[i];
       if (b.sourceRows.length > 1) {
         rowRanges.add((start: allRects.length, count: b.sourceRows.length));
         allRects.addAll(b.sourceRows);
@@ -448,58 +560,117 @@ abstract final class ImageTranslationService {
       }
     }
 
-    // 并行：后台采样原图前/背景色 + 批量翻译文字块。
     final colorsFuture = sampleBlockColors(imageBytes, allRects);
-    final translations = await _translateBlocks(
-      blocks: blocks,
-      engine: engine,
-      targetCode: targetCode,
-      targetName: targetName,
-      translationService: translationService,
-      aiTranslationService: aiTranslationService,
-      aiModel: aiModel,
-      apiKey: apiKey,
-      cancelToken: cancelToken,
+    List<({Color bg, Color fg})>? resolvedColors;
+    unawaited(
+      colorsFuture.then((c) {
+        resolvedColors = c;
+      }).catchError((Object _) {}),
     );
-    final colors = await colorsFuture;
 
-    final result = <TranslatedTextBlock>[];
-    for (var i = 0; i < blocks.length; i++) {
-      final block = blocks[i];
-      final translated = (i < translations.length ? translations[i] : '').trim();
-      if (translated.isEmpty) continue;
-      // 译文与原文完全一致（如软件名、命令、已是目标语言）时保留原图高清字样。
-      if (translated.toLowerCase() == block.originalText.trim().toLowerCase()) {
-        continue;
+    final cachePrefix = engine == TranslationEngine.ai && aiModel != null
+        ? '${engine.name}:${aiModel.model.id}:$targetCode:'
+        : '${engine.name}:$targetCode:';
+    final outputs = List<String>.filled(candidateIndices.length, '');
+    final uncachedPositions = <int>[];
+
+    for (var pos = 0; pos < candidateIndices.length; pos++) {
+      final original = blocks[candidateIndices[pos]].originalText.trim();
+      final hit = _readCache('$cachePrefix$original');
+      if (hit != null) {
+        outputs[pos] = hit;
+      } else {
+        uncachedPositions.add(pos);
       }
-      final palette = colors[i];
-      final range = rowRanges[i];
-      final rowBgs = range.start >= 0
-          ? [
-              for (var r = 0; r < range.count; r++)
-                colors[range.start + r].bg,
-            ]
-          : const <Color>[];
-      result.add(
-        TranslatedTextBlock(
-          bounds: block.bounds,
-          originalText: block.originalText,
-          translatedText: translated,
-          backgroundColor: palette.bg,
-          foregroundColor: palette.fg,
-          lineCount: block.lineCount,
-          textAlign: block.textAlign,
-          sourceRows: block.sourceRows,
-          sourceRowBackgrounds: rowBgs,
-          sourceFontSize: block.sourceFontSize,
-        ),
+    }
+
+    List<TranslatedTextBlock> assemble(List<({Color bg, Color fg})> colors) {
+      final result = <TranslatedTextBlock>[];
+      for (var pos = 0; pos < candidateIndices.length; pos++) {
+        final translated = outputs[pos].trim();
+        if (translated.isEmpty) continue;
+        final block = blocks[candidateIndices[pos]];
+        // 译文与原文完全一致（如软件名、命令、已是目标语言）时保留原图高清字样。
+        if (translated.toLowerCase() ==
+            block.originalText.trim().toLowerCase()) {
+          continue;
+        }
+        final palette = colors[pos];
+        final range = rowRanges[pos];
+        final rowBgs = range.start >= 0
+            ? [
+                for (var r = 0; r < range.count; r++)
+                  colors[range.start + r].bg,
+              ]
+            : const <Color>[];
+        result.add(
+          TranslatedTextBlock(
+            bounds: block.bounds,
+            originalText: block.originalText,
+            translatedText: translated,
+            backgroundColor: palette.bg,
+            foregroundColor: palette.fg,
+            lineCount: block.lineCount,
+            textAlign: block.textAlign,
+            sourceRows: block.sourceRows,
+            sourceRowBackgrounds: rowBgs,
+            sourceFontSize: block.sourceFontSize,
+          ),
+        );
+      }
+      return result;
+    }
+
+    void emitPartialIfReady() {
+      if (onPartialBlocks == null || cancelToken.isCancelled) return;
+      final colors = resolvedColors;
+      if (colors == null) return;
+      final built = assemble(colors);
+      if (built.isNotEmpty) {
+        onPartialBlocks(built);
+      }
+    }
+
+    // 命中缓存的块待配色就绪后立刻先行渲染。
+    if (onPartialBlocks != null &&
+        uncachedPositions.length < candidateIndices.length) {
+      unawaited(
+        colorsFuture.then((colors) {
+          resolvedColors = colors;
+          emitPartialIfReady();
+        }).catchError((Object _) {}),
       );
     }
-    return result;
+
+    if (uncachedPositions.isNotEmpty) {
+      await _translateBlocksConcurrent(
+        blocks: blocks,
+        candidateIndices: candidateIndices,
+        uncachedPositions: uncachedPositions,
+        outputs: outputs,
+        cachePrefix: cachePrefix,
+        engine: engine,
+        targetCode: targetCode,
+        targetName: targetName,
+        translationService: translationService,
+        aiTranslationService: aiTranslationService,
+        aiModel: aiModel,
+        apiKey: apiKey,
+        cancelToken: cancelToken,
+        onUpdated: emitPartialIfReady,
+      );
+    }
+
+    final colors = resolvedColors ?? await colorsFuture;
+    return assemble(colors);
   }
 
-  static Future<List<String>> _translateBlocks({
+  static Future<void> _translateBlocksConcurrent({
     required List<ImageTextBlock> blocks,
+    required List<int> candidateIndices,
+    required List<int> uncachedPositions,
+    required List<String> outputs,
+    required String cachePrefix,
     required TranslationEngine engine,
     required String targetCode,
     required String targetName,
@@ -508,33 +679,79 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    required VoidCallback onUpdated,
   }) async {
-    final outputs = List<String>.filled(blocks.length, '');
-    final maxBatchChars = engine == TranslationEngine.google ? 700 : 2200;
+    final (maxBatchChars, maxBatchBlocks) = switch (engine) {
+      TranslationEngine.google => (2200, 30),
+      // 必应网页端单次硬上限 1000 字且长包易走慢速 LLM，小批次 + 并发更快。
+      TranslationEngine.bing => (560, 14),
+      TranslationEngine.bilibili => (1800, 25),
+      TranslationEngine.ai => (2200, 25),
+    };
 
+    final batches = <List<int>>[];
     var start = 0;
-    while (start < blocks.length) {
-      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+    while (start < uncachedPositions.length) {
       final batch = <int>[];
       var chars = 0;
-      while (start < blocks.length) {
-        final len = blocks[start].originalText.length + 12;
+      while (start < uncachedPositions.length) {
+        final pos = uncachedPositions[start];
+        final len = blocks[candidateIndices[pos]].originalText.length + 12;
         if (batch.isNotEmpty &&
-            (chars + len > maxBatchChars || batch.length >= 25)) {
+            (chars + len > maxBatchChars || batch.length >= maxBatchBlocks)) {
           break;
         }
-        batch.add(start);
+        batch.add(pos);
         chars += len;
         start++;
       }
+      batches.add(batch);
+    }
 
+    final isStreaming =
+        engine == TranslationEngine.ai || engine == TranslationEngine.bilibili;
+
+    Future<void> runBatch(List<int> batch) async {
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
       final payload = StringBuffer();
-      for (final idx in batch) {
-        final sanitized = blocks[idx].originalText.replaceAll('\n', ' ');
-        payload.writeln('[$idx] $sanitized');
+      for (final pos in batch) {
+        final sanitized = blocks[candidateIndices[pos]].originalText.replaceAll(
+          '\n',
+          ' ',
+        );
+        payload.writeln('[$pos] $sanitized');
+      }
+      final expectedSet = batch.toSet();
+      final marker = RegExp(r'^\s*[\[【]\s*(\d+)\s*[\]】]\s*(.*)$');
+      final fullBuffer = StringBuffer();
+      var parsedCursor = 0;
+
+      void absorbStreamingLines() {
+        if (!isStreaming) return;
+        final raw = fullBuffer.toString();
+        final lastNl = raw.lastIndexOf('\n');
+        if (lastNl <= parsedCursor) return;
+        final slice = raw.substring(parsedCursor, lastNl);
+        parsedCursor = lastNl + 1;
+        var changed = false;
+        for (final line in slice.split('\n')) {
+          final m = marker.firstMatch(line.trim());
+          if (m == null) continue;
+          final pos = int.tryParse(m.group(1)!);
+          final text = m.group(2)!.trim();
+          if (pos != null && expectedSet.contains(pos) && text.isNotEmpty) {
+            outputs[pos] = text;
+            _writeCache(
+              '$cachePrefix${blocks[candidateIndices[pos]].originalText.trim()}',
+              text,
+            );
+            changed = true;
+          }
+        }
+        if (changed) onUpdated();
       }
 
-      final raw = await _runSingleBatch(
+      await _streamSingleBatch(
         engine: engine,
         payload: payload.toString().trim(),
         targetCode: targetCode,
@@ -544,17 +761,65 @@ abstract final class ImageTranslationService {
         aiModel: aiModel,
         apiKey: apiKey,
         cancelToken: cancelToken,
+        onChunk: (delta) {
+          fullBuffer.write(delta);
+          absorbStreamingLines();
+        },
       );
 
-      final parsed = parseIndexedTranslations(raw, batch);
+      final parsed = parseIndexedTranslations(fullBuffer.toString(), batch);
+      var changed = false;
       for (final entry in parsed.entries) {
-        outputs[entry.key] = entry.value;
+        if (outputs[entry.key] != entry.value) {
+          outputs[entry.key] = entry.value;
+          changed = true;
+        }
+        _writeCache(
+          '$cachePrefix${blocks[candidateIndices[entry.key]].originalText.trim()}',
+          entry.value,
+        );
+      }
+      if (changed) onUpdated();
+    }
+
+    const maxConcurrency = 3;
+    if (batches.length <= 1) {
+      for (final batch in batches) {
+        await runBatch(batch);
+      }
+      return;
+    }
+
+    var nextIdx = 0;
+    Object? firstError;
+    StackTrace? firstStack;
+    final workerCount = math.min(maxConcurrency, batches.length);
+
+    Future<void> worker() async {
+      while (true) {
+        if (firstError != null || cancelToken.isCancelled) return;
+        if (nextIdx >= batches.length) return;
+        final batch = batches[nextIdx++];
+        try {
+          await runBatch(batch);
+        } catch (error, stackTrace) {
+          if (firstError == null) {
+            firstError = error;
+            firstStack = stackTrace;
+          }
+          return;
+        }
       }
     }
-    return outputs;
+
+    await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
+    if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
   }
 
-  static Future<String> _runSingleBatch({
+  static Future<void> _streamSingleBatch({
     required TranslationEngine engine,
     required String payload,
     required String targetCode,
@@ -564,6 +829,7 @@ abstract final class ImageTranslationService {
     ({AiProvider provider, AiModel model})? aiModel,
     String? apiKey,
     required CancelToken cancelToken,
+    required void Function(String chunk) onChunk,
   }) async {
     if (engine == TranslationEngine.ai) {
       if (aiTranslationService == null ||
@@ -572,7 +838,6 @@ abstract final class ImageTranslationService {
           apiKey.trim().isEmpty) {
         throw const TranslationException(TranslationFailure.unavailable);
       }
-      final buffer = StringBuffer();
       await for (final delta in aiTranslationService.translateStream(
         provider: aiModel.provider,
         model: aiModel.model,
@@ -582,12 +847,11 @@ abstract final class ImageTranslationService {
         targetLanguage: targetName,
       )) {
         if (cancelToken.isCancelled) throw cancelToken.cancelError!;
-        buffer.write(delta);
+        onChunk(delta);
       }
-      return buffer.toString();
+      return;
     }
 
-    final buffer = StringBuffer();
     await for (final chunk in translationService.translate(
       engine: engine,
       text: payload,
@@ -595,9 +859,9 @@ abstract final class ImageTranslationService {
       targetName: targetName,
       cancelToken: cancelToken,
     )) {
-      buffer.write(chunk);
+      if (cancelToken.isCancelled) throw cancelToken.cancelError!;
+      onChunk(chunk);
     }
-    return buffer.toString();
   }
 
   /// 解析带 `[index]` 编号的批量译文，兼容全角括号 `【index】` 和行序回退。

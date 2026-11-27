@@ -44,6 +44,7 @@ String aiTranslationLanguageLabel(String code) =>
 
 String translationEngineLabel(TranslationEngine engine) => switch (engine) {
   TranslationEngine.google => S.current.ai_translationGoogle,
+  TranslationEngine.bing => S.current.ai_translationBing,
   TranslationEngine.bilibili => S.current.ai_translationBilibili,
   TranslationEngine.ai => S.current.ai_translationAi,
 };

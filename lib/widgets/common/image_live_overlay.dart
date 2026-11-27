@@ -726,6 +726,10 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
       aiModel: aiModel,
       apiKey: apiKey,
       cancelToken: token,
+      onPartialBlocks: (partial) {
+        if (!mounted || token.isCancelled) return;
+        setState(() => _translatedBlocks = partial);
+      },
     );
     if (!mounted || token.isCancelled) return;
     setState(() {
@@ -874,14 +878,15 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                   style: Theme.of(ctx).textTheme.labelMedium,
                 ),
                 const SizedBox(height: 8),
-                M3eButtonGroup<TranslationEngine>(
-                  selected: engine,
-                  onSelected: (value) => setSheetState(() => engine = value),
-                  items: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
                     for (final item in TranslationEngine.values)
-                      M3eButtonGroupItem(
-                        value: item,
+                      ChoiceChip(
+                        selected: engine == item,
                         label: Text(translationEngineLabel(item)),
+                        onSelected: (_) => setSheetState(() => engine = item),
                       ),
                   ],
                 ),
@@ -1177,7 +1182,9 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
                             blocks: _showOriginalPeek
                                 ? const []
                                 : _translatedBlocks,
-                            detectedBoxes: _translating || _reading
+                            detectedBoxes:
+                                _reading ||
+                                    (_translating && _translatedBlocks.isEmpty)
                                 ? _detectedBoxes
                                 : const [],
                             pulse: _pulseController.value,

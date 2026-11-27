@@ -1,11 +1,33 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' show Rect, TextAlign;
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluxdo/models/translation_engine.dart';
 import 'package:fluxdo/services/ocr/image_translation_service.dart';
 import 'package:fluxdo/services/ocr/local_ocr_service.dart';
 import 'package:fluxdo/services/ocr/picture_text_layout.dart';
+import 'package:fluxdo/services/translation_service.dart';
 import 'package:image/image.dart' as img;
+
+class _FakeTranslationService extends TranslationService {
+  _FakeTranslationService(this._handler) : super(dio: Dio());
+  final Stream<String> Function(TranslationEngine, String, String) _handler;
+  final payloads = <String>[];
+
+  @override
+  Stream<String> translate({
+    required TranslationEngine engine,
+    required String text,
+    required String targetCode,
+    required String targetName,
+    required CancelToken cancelToken,
+  }) {
+    payloads.add(text);
+    return _handler(engine, text, targetCode);
+  }
+}
 
 OcrTextLine _line(
   String text, {
@@ -290,6 +312,95 @@ void main() {
       expect(colors[1].bg.b, greaterThan(0.7));
       expect(colors[1].bg.r, lessThan(0.2));
       expect(colors[1].fg.r, greaterThan(0.8));
+    });
+
+    test('三种排版模式：智能分段、保留换行、合并单段按预期即时重排', () {
+      final ocr = OcrResult(
+        imageWidth: 600,
+        imageHeight: 300,
+        lines: [
+          _line('第一段开头接续', left: 40, top: 20, width: 320, rowIndex: 0),
+          _line('同段第二行结尾。', left: 40, top: 50, width: 220, rowIndex: 1),
+          _line('Second implemen-', left: 40, top: 110, width: 320, rowIndex: 2),
+          _line('tation paragraph', left: 40, top: 140, width: 260, rowIndex: 3),
+        ],
+      );
+      final layout = PictureTextLayout.fromOcr(ocr);
+      expect(
+        layout.formatText(OcrTextLayoutMode.smartParagraph),
+        '第一段开头接续同段第二行结尾。\nSecond implementation paragraph',
+      );
+      expect(
+        layout.formatText(OcrTextLayoutMode.preserveLines),
+        '第一段开头接续\n同段第二行结尾。\nSecond implemen-\ntation paragraph',
+      );
+      expect(
+        layout.formatText(OcrTextLayoutMode.singleParagraph),
+        '第一段开头接续同段第二行结尾。Second implementation paragraph',
+      );
+    });
+
+    test('混排图跳过已是目标语言的块，命中块级 LRU 缓存且支持 SSE 逐行渐进渲染', () async {
+      ImageTranslationService.clearCache();
+      final png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 400, height: 300)),
+      );
+      final ocr = OcrResult(
+        imageWidth: 400,
+        imageHeight: 300,
+        lines: [
+          _line('这是纯中文标题', left: 20, top: 20, width: 200, rowIndex: 0),
+          _line('Hello world', left: 20, top: 90, width: 220, rowIndex: 1),
+          _line('Fast streaming', left: 20, top: 160, width: 240, rowIndex: 2),
+        ],
+        paragraphGroups: const [
+          [0],
+          [1],
+          [2],
+        ],
+      );
+
+      final fakeService = _FakeTranslationService((engine, payload, target) async* {
+        // 中英混排图翻简体中文时，纯中文标题不应被送翻。
+        expect(payload, isNot(contains('这是纯中文标题')));
+        expect(payload, contains('[0] Hello world'));
+        expect(payload, contains('[1] Fast streaming'));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        yield '[0] 你好世界\n';
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        yield '[1] 快速流式\n';
+      });
+      addTearDown(fakeService.dispose);
+
+      final partials = <int>[];
+      final result = await ImageTranslationService.translateImage(
+        imageBytes: png,
+        ocr: ocr,
+        engine: TranslationEngine.bilibili,
+        targetCode: 'zh-CN',
+        targetName: '简体中文',
+        translationService: fakeService,
+        cancelToken: CancelToken(),
+        onPartialBlocks: (blocks) => partials.add(blocks.length),
+      );
+      expect(result.map((b) => b.translatedText), ['你好世界', '快速流式']);
+      expect(fakeService.payloads, hasLength(1));
+      // 渐进回调先收到 1 块再收到 2 块。
+      expect(partials, contains(1));
+      expect(partials.last, 2);
+
+      // 二次调用完全命中块级缓存，不再发起任何网络请求。
+      final cachedResult = await ImageTranslationService.translateImage(
+        imageBytes: png,
+        ocr: ocr,
+        engine: TranslationEngine.bilibili,
+        targetCode: 'zh-CN',
+        targetName: '简体中文',
+        translationService: fakeService,
+        cancelToken: CancelToken(),
+      );
+      expect(cachedResult.map((b) => b.translatedText), ['你好世界', '快速流式']);
+      expect(fakeService.payloads, hasLength(1));
     });
   });
 }
