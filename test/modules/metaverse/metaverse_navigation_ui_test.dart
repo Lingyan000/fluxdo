@@ -21,6 +21,7 @@ import 'package:fluxdo/navigation/navigation_activity_scope.dart';
 import 'package:fluxdo/modules/metaverse/core/metaverse_service.dart';
 import 'package:fluxdo/modules/metaverse/metaverse_registry.dart';
 import 'package:fluxdo/modules/metaverse/market/metaverse_market_provider.dart';
+import 'package:fluxdo/modules/metaverse/market/metaverse_update_provider.dart';
 import 'package:fluxdo/modules/metaverse/plugin/providers/metaverse_plugin_providers.dart';
 import 'package:fluxdo/providers/core_providers.dart';
 import 'package:fluxdo/providers/preferences_provider.dart';
@@ -134,9 +135,13 @@ void main() {
     });
   }
   testWidgets('元宇宙入口按当前子页回顶和刷新，隐藏时不响应底栏动作', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     final service = _Service(), market = _Market(), hosts = _Hosts();
     final container = ProviderContainer(
       overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        metaverseAttentionProvider.overrideWithValue({}),
         metaverseServicesProvider.overrideWithValue([service]),
         metaverseMarketProvider.overrideWith(() => market),
         metaversePluginsProvider.overrideWith(_Plugins.new),
