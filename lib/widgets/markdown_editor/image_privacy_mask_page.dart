@@ -193,6 +193,12 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
   }
 
   Future<void> _scanOcrIfReady(Uint8List png) async {
+    final useSystemEngine = await shouldUseSystemOcrEngine(ref);
+    if (!mounted || _token.isCancelled) return;
+    if (useSystemEngine) {
+      await _runOcrScan(png, useSystemEngine: true);
+      return;
+    }
     final store = ref.read(ocrModelStoreProvider);
     final ready = await store.isReady();
     if (!mounted || _token.isCancelled) return;
@@ -241,7 +247,7 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
     }
   }
 
-  Future<void> _runOcrScan(Uint8List png) async {
+  Future<void> _runOcrScan(Uint8List png, {bool useSystemEngine = false}) async {
     setState(() {
       _scanningOcr = true;
       _ocrProgress = null;
@@ -249,9 +255,14 @@ class _ImagePrivacyMaskPageState extends ConsumerState<ImagePrivacyMaskPage> {
     try {
       final store = ref.read(ocrModelStoreProvider);
       final service = ref.read(localOcrServiceProvider);
+      final paths = useSystemEngine
+          ? (await store.isReady() ? await store.paths() : null)
+          : await store.paths();
+      if (!mounted || _token.isCancelled) return;
       final ocr = await service.recognizeDetailed(
         png,
-        await store.paths(),
+        paths,
+        useSystemEngine: useSystemEngine,
         cancelToken: _token,
         onProgress: (progress) {
           if (mounted) setState(() => _ocrProgress = progress);

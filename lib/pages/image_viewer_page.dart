@@ -1492,7 +1492,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
           !_readDirectTextSelect()) {
         return;
       }
-      final ready = await ref.read(ocrModelStoreProvider).isReady();
+      final ready = await isOcrReady(ref);
       if (!mounted ||
           !ready ||
           targetPage != currentIndex ||
@@ -1536,7 +1536,7 @@ class _ImageViewerPageState extends ConsumerState<ImageViewerPage>
       return;
     }
 
-    final ready = await ref.read(ocrModelStoreProvider).isReady();
+    final ready = await isOcrReady(ref);
     if (!mounted ||
         !context.mounted ||
         currentIndex != targetPage ||

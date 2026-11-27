@@ -54,9 +54,13 @@ class _StubOcrService extends Fake implements LocalOcrService {
   final OcrResult ocrResult;
 
   @override
+  Future<bool> isSystemEngineAvailable() async => false;
+
+  @override
   Future<OcrResult> recognizeDetailed(
     Uint8List pngBytes,
-    OcrModelPaths paths, {
+    OcrModelPaths? paths, {
+    bool useSystemEngine = false,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,

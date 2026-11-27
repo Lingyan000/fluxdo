@@ -452,9 +452,12 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
     });
 
     var failedWhileDownloading = download;
+    var useSystemEngine = false;
     try {
+      useSystemEngine = await shouldUseSystemOcrEngine(ref);
+      if (!mounted || token.isCancelled) return;
       final store = ref.read(ocrModelStoreProvider);
-      if (!await store.isReady()) {
+      if (!useSystemEngine && !await store.isReady()) {
         if (!mounted || token.isCancelled) return;
         if (widget.passive) return;
         if (!download) {
@@ -523,11 +526,16 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
         var missedLongPress = false;
         final service = ref.read(localOcrServiceProvider);
         final decodedImg = _decodedImage;
+        final paths = useSystemEngine
+            ? (await store.isReady() ? await store.paths() : null)
+            : await store.paths();
+        if (!mounted || token.isCancelled) return;
         ocr = await service.recognizeDetailed(
           bytes,
-          await store.paths(),
+          paths,
+          useSystemEngine: useSystemEngine,
           cancelToken: token,
-          loadRgba: decodedImg == null
+          loadRgba: useSystemEngine || decodedImg == null
               ? null
               : () async {
                   final bd = await decodedImg.toByteData(
@@ -627,7 +635,7 @@ class ImageLiveOverlayState extends ConsumerState<ImageLiveOverlay>
         error: error,
         stackTrace: stackTrace,
       );
-      if (!failedWhileDownloading && _ocrResult == null) {
+      if (!failedWhileDownloading && !useSystemEngine && _ocrResult == null) {
         ref.read(ocrModelStoreProvider).invalidateVerificationCache();
       }
       setState(() {

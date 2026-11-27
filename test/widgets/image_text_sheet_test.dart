@@ -57,9 +57,13 @@ class _OcrService extends Fake implements LocalOcrService {
   void Function(OcrProgress)? progressCallback;
 
   @override
+  Future<bool> isSystemEngineAvailable() async => false;
+
+  @override
   Future<OcrResult> recognizeDetailed(
     Uint8List pngBytes,
-    OcrModelPaths paths, {
+    OcrModelPaths? paths, {
+    bool useSystemEngine = false,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,

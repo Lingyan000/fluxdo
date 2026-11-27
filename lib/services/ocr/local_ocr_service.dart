@@ -14,6 +14,7 @@ import 'package:image/image.dart' as img;
 import 'package:yaml/yaml.dart';
 
 import '../app_logger.dart';
+import 'apple_vision_ocr.dart';
 import 'ocr_model_store.dart';
 import 'picture_text_layout.dart';
 
@@ -113,6 +114,13 @@ class OcrResult {
 /// - 识别行宽分桶 + 按桶连续推理，将 `AllocateTensors` 次数从十余次压到 1~3 次
 /// - 支持直传已解码 `OcrRgbaImage`（零 PNG 编解码），并用 256 项 LUT 直读字节流
 class LocalOcrService {
+  LocalOcrService({
+    Future<OcrResult> Function(Uint8List bytes)? systemRecognizer,
+    Future<bool> Function()? systemAvailabilityCheck,
+  }) : _systemRecognizer = systemRecognizer ?? AppleVisionOcr.recognize,
+       _systemAvailabilityCheck =
+           systemAvailabilityCheck ?? AppleVisionOcr.isAvailable;
+
   static const _maxCacheEntries = 8;
   static const _workerIdleTimeout = Duration(seconds: 45);
   static const _detectMaxWidth = 960;
@@ -147,7 +155,12 @@ class LocalOcrService {
     for (var v = 0; v < 256; v++) v / 127.5 - 1.0,
   ]);
 
+  final Future<OcrResult> Function(Uint8List bytes) _systemRecognizer;
+  final Future<bool> Function() _systemAvailabilityCheck;
   final LinkedHashMap<String, OcrResult> _cache = LinkedHashMap();
+
+  /// 当前设备上的系统原生 OCR 引擎是否可用（macOS / iOS 为 Apple Vision）。
+  Future<bool> isSystemEngineAvailable() => _systemAvailabilityCheck();
   String? _cachedDictPath;
   int? _cachedDictSize;
   int? _cachedDictModifiedMs;
@@ -223,6 +236,14 @@ class LocalOcrService {
     int until,
   ) => _decodeTokens(scores, steps, dictionary, width, from, until);
 
+  void _rememberResult(String cacheKey, OcrResult result) {
+    _cache.remove(cacheKey);
+    _cache[cacheKey] = result;
+    while (_cache.length > _maxCacheEntries) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
+
   /// 清空识别结果内存缓存并释放常驻工作 isolate（模型清理后必须释放旧句柄）。
   void clearCache() {
     _cache.clear();
@@ -240,13 +261,15 @@ class LocalOcrService {
   /// 兼容接口：仅返回拼合后的纯文本。
   Future<String> recognize(
     Uint8List pngBytes,
-    OcrModelPaths paths, {
+    OcrModelPaths? paths, {
+    bool useSystemEngine = false,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
   }) async {
     final result = await recognizeDetailed(
       pngBytes,
       paths,
+      useSystemEngine: useSystemEngine,
       cancelToken: cancelToken,
       loadRgba: loadRgba,
     );
@@ -255,13 +278,16 @@ class LocalOcrService {
 
   /// 完整识别接口：返回原图尺寸、逻辑行分组及每个字符的原图坐标，供识字、实况选字与隐私打码共用。
   ///
+  /// - [useSystemEngine]：为 `true` 时优先调用系统原生 Vision 引擎（macOS/iOS 硬件加速，免模型下载）；
+  ///   若原生识别异常且 [paths] 非空，自动回退到本地 LiteRT 模型。
   /// - [loadRgba]：可选的惰性 RGBA 帧提供者（仅在未命中缓存且实际执行 LiteRT 推理时调用，避免缓存命中或原生引擎下无谓的 GPU 回读）。
   /// - [priorityPoint]：可选的原图像素坐标；传入时优先识别离该点最近的那一行并立刻回调 [onPartial]。
   /// - [onDetected]：检测阶段完成后立刻触发（几百毫秒内），供 UI 播放文字行波纹点亮动画。
   /// - [onPartial]：识别过程中分批回传当前已识别出的 [OcrResult]，实现边识别边选字。
   Future<OcrResult> recognizeDetailed(
     Uint8List pngBytes,
-    OcrModelPaths paths, {
+    OcrModelPaths? paths, {
+    bool useSystemEngine = false,
     CancelToken? cancelToken,
     Future<OcrRgbaImage?> Function()? loadRgba,
     void Function(OcrProgress)? onProgress,
@@ -272,11 +298,58 @@ class LocalOcrService {
   }) async {
     if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
 
-    final cacheKey = pngBytes.isNotEmpty ? _fingerprint(pngBytes) : null;
+    final fingerprint = pngBytes.isNotEmpty ? _fingerprint(pngBytes) : null;
+    final enginePrefix = useSystemEngine ? 'vision' : 'litert';
+    final cacheKey = fingerprint != null ? '$enginePrefix:$fingerprint' : null;
     if (cacheKey != null) {
       final cached = _cache.remove(cacheKey);
       if (cached != null) {
         _cache[cacheKey] = cached;
+        onDetected?.call(
+          cached.imageWidth,
+          cached.imageHeight,
+          [for (final l in cached.lines) l.bounds],
+        );
+        onPartial?.call(cached);
+        return cached;
+      }
+    }
+
+    if (useSystemEngine) {
+      onProgress?.call(const OcrProgress(stage: OcrStage.recognizing));
+      try {
+        final result = await _systemRecognizer(pngBytes);
+        if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+        if (cacheKey != null) {
+          _rememberResult(cacheKey, result);
+        }
+        onDetected?.call(
+          result.imageWidth,
+          result.imageHeight,
+          [for (final l in result.lines) l.bounds],
+        );
+        if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+        onPartial?.call(result);
+        return result;
+      } catch (error) {
+        if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+        if (paths == null) rethrow;
+        AppLogger.warning(
+          '系统 Vision OCR 失败，自动回退至离线模型: $error',
+          tag: 'OCR',
+        );
+      }
+    }
+
+    if (paths == null) {
+      throw StateError('离线 OCR 模型路径缺失');
+    }
+
+    final litertCacheKey = fingerprint != null ? 'litert:$fingerprint' : null;
+    if (litertCacheKey != null && litertCacheKey != cacheKey) {
+      final cached = _cache.remove(litertCacheKey);
+      if (cached != null) {
+        _cache[litertCacheKey] = cached;
         onDetected?.call(
           cached.imageWidth,
           cached.imageHeight,
@@ -310,7 +383,7 @@ class LocalOcrService {
       return await _runInWorker(
         pngBytes: pngBytes,
         predecodedRgba: predecodedRgba,
-        cacheKey: cacheKey,
+        cacheKey: litertCacheKey,
         paths: paths,
         cachedDictionary: cachedDictionary,
         cancelToken: cancelToken,
@@ -440,10 +513,7 @@ class LocalOcrService {
         lines: [for (final item in raw.lines) _hydrateLine(item)],
       );
       if (cacheKey != null) {
-        _cache[cacheKey] = result;
-        while (_cache.length > _maxCacheEntries) {
-          _cache.remove(_cache.keys.first);
-        }
+        _rememberResult(cacheKey, result);
       }
       AppLogger.info(
         'OCR 识别完成: engine=litert total=${raw.totalMs}ms '

@@ -78,9 +78,12 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
       _errorStackTrace = null;
     });
     var failedWhileDownloading = download;
+    var useSystemEngine = false;
     try {
+      useSystemEngine = await shouldUseSystemOcrEngine(ref);
+      if (!mounted) return;
       final store = ref.read(ocrModelStoreProvider);
-      if (!await store.isReady()) {
+      if (!useSystemEngine && !await store.isReady()) {
         if (!mounted) return;
         if (!download) {
           setState(() => _phase = _OcrSheetPhase.needsDownload);
@@ -113,9 +116,14 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
       final service = ref.read(localOcrServiceProvider);
       final bytes = await widget.loadImage(_token);
       if (!mounted) return;
+      final paths = useSystemEngine
+          ? (await store.isReady() ? await store.paths() : null)
+          : await store.paths();
+      if (!mounted) return;
       final result = await service.recognizeDetailed(
         bytes,
-        await store.paths(),
+        paths,
+        useSystemEngine: useSystemEngine,
         cancelToken: _token,
         onProgress: (progress) {
           if (mounted && _phase == _OcrSheetPhase.recognizing) {
@@ -147,7 +155,9 @@ class _ImageTextSheetState extends ConsumerState<ImageTextSheet> {
           _errorStackTrace = stackTrace;
         });
       } else {
-        ref.read(ocrModelStoreProvider).invalidateVerificationCache();
+        if (!useSystemEngine) {
+          ref.read(ocrModelStoreProvider).invalidateVerificationCache();
+        }
         setState(() {
           _phase = _OcrSheetPhase.error;
           _ocrProgress = null;
