@@ -62,17 +62,37 @@ jobs:
           flutter-version: '3.50.0'
           cache: true
       - run: dart tool/plugin_tools/create_mobile_smoke.dart
-      - name: Run iOS simulator smoke
+      - name: Boot iOS simulator
+        timeout-minutes: 5
         run: |
-          set -o pipefail
+          set -euo pipefail
           device=$(xcrun simctl list devices available -j | ruby -rjson -e 'd=JSON.parse(STDIN.read)["devices"].values.flatten.find{|d|d["name"].start_with?("iPhone")};abort "No simulator" unless d;puts d["udid"]')
+          echo "PLUGIN_SMOKE_DEVICE=$device" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun simctl list runtimes
           xcrun simctl boot "$device" || true
           xcrun simctl bootstatus "$device" -b
-          cd build/plugin-mobile-smoke
-          flutter test --verbose --reporter expanded integration_test/runtime_test.dart -d "$device" 2>&1 | tee ios-smoke.log
+          open -a Simulator --args -CurrentDeviceUDID "$device"
+      - name: Run iOS simulator smoke
+        timeout-minutes: 18
+        working-directory: build/plugin-mobile-smoke
+        run: |
+          set -o pipefail
+          flutter test --verbose --reporter expanded integration_test/runtime_test.dart -d "$PLUGIN_SMOKE_DEVICE" 2>&1 | tee ios-smoke.log
+      - name: Collect iOS startup diagnostics
+        if: failure() && env.PLUGIN_SMOKE_DEVICE != ''
+        timeout-minutes: 2
+        run: |
+          mkdir -p build/plugin-mobile-smoke/diagnostics
+          xcrun simctl list devices > build/plugin-mobile-smoke/diagnostics/devices.txt
+          xcrun simctl io "$PLUGIN_SMOKE_DEVICE" screenshot build/plugin-mobile-smoke/diagnostics/simulator.png || true
+          xcrun simctl spawn "$PLUGIN_SMOKE_DEVICE" log show --last 20m --style compact --predicate 'process == "Runner" OR (process == "SpringBoard" AND eventMessage CONTAINS "pluginMobileSmoke")' > build/plugin-mobile-smoke/diagnostics/simulator.log 2>&1 || true
+          find "$HOME/Library/Logs/DiagnosticReports" -type f -name 'Runner*' -exec cp {} build/plugin-mobile-smoke/diagnostics/ \; 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: plugin-ios-smoke
-          path: build/plugin-mobile-smoke/ios-smoke.log
+          path: |
+            build/plugin-mobile-smoke/ios-smoke.log
+            build/plugin-mobile-smoke/diagnostics/
           if-no-files-found: ignore
